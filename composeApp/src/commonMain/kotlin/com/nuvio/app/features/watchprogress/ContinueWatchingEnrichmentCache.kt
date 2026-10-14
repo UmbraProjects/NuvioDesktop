@@ -115,6 +115,7 @@ internal object ContinueWatchingEnrichmentCache {
     }
 
     fun clearAll() {
+        NextUpNoCardCache.clear()
         ContinueWatchingEnrichmentStorage.removePayload(ProfileScopedKey.of(storageKey))
         lastPayloadHash = null
         _cacheCleared.value += 1

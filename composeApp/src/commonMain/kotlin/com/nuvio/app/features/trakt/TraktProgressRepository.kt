@@ -1,6 +1,7 @@
 package com.nuvio.app.features.trakt
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -160,6 +161,7 @@ object TraktProgressRepository {
     }
 
     suspend fun refreshNow() {
+        PerfTelemetry.count("TraktProgressRepository.refreshNow")
         ensureLoaded()
         val refresh = refreshJobMutex.withLock {
             inFlightRefresh?.takeIf { it.isActive } ?: scope.async {
@@ -182,6 +184,7 @@ object TraktProgressRepository {
         contentId: String,
         forceRefresh: Boolean = false,
     ) {
+        PerfTelemetry.count("TraktProgressRepository.refreshEpisodeProgress")
         ensureLoaded()
         val normalizedContentId = contentId.trim()
         if (normalizedContentId.isBlank()) return

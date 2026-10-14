@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
@@ -71,11 +74,28 @@ internal fun HeroAmbientBackdrop(
     onAccentChanged: (Color?) -> Unit,
     modifier: Modifier = Modifier,
     label: String = "hero_ambient_background",
+    /**
+     * Keep the wash at its row-top strength to the bottom instead of dimming toward background.
+     * On for every mode (Adaptive Ambient, TV ambient, Collections); false restores the dip.
+     */
+    holdBottom: Boolean = true,
 ) {
     val ambientBackdropColorFilter = remember {
         ColorFilter.colorMatrix(
             ColorMatrix().apply { setToSaturation(1.7f) },
         )
+    }
+    // Accent per backdrop URL. onSuccess only fires when an image finishes loading, so scrolling
+    // A -> B -> A quickly (A still loaded in the outgoing crossfade slot) never reported A again and
+    // the wash kept B's tint. Re-applying from this cache on every backdrop change fixes that.
+    // Unspecified stands for "extracted, no usable accent".
+    val accentCache = remember { mutableStateMapOf<String, Color>() }
+    val currentOnAccentChanged by rememberUpdatedState(onAccentChanged)
+    val cachedAccent = backdrop?.let { accentCache[it] }
+    LaunchedEffect(backdrop, cachedAccent) {
+        if (cachedAccent != null) {
+            currentOnAccentChanged(cachedAccent.takeIf { it != Color.Unspecified })
+        }
     }
     val ambientAccent by animateColorAsState(
         targetValue = accent ?: MaterialTheme.colorScheme.background,
@@ -97,9 +117,9 @@ internal fun HeroAmbientBackdrop(
                     },
                     blurred = variant != AmbientWashVariant.NoBlur,
                     onSuccess = { state ->
-                        if (backdrop == activeBackdrop) {
-                            onAccentChanged(extractHeroAccentColor(state.result.image))
-                        }
+                        if (accentCache.size > 64) accentCache.clear()
+                        accentCache[activeBackdrop] =
+                            extractHeroAccentColor(state.result.image) ?: Color.Unspecified
                     },
                 )
             }
@@ -112,6 +132,7 @@ internal fun HeroAmbientBackdrop(
                                 colorStops = ambientWashStops(
                                     accent = ambientAccent,
                                     background = background,
+                                    holdBottom = holdBottom,
                                 ),
                             ),
                         ),
@@ -161,6 +182,7 @@ internal fun HeroAmbientBackdrop(
 internal fun ambientWashStops(
     accent: Color,
     background: Color,
+    holdBottom: Boolean = false,
 ): Array<Pair<Float, Color>> {
     val dim = 0.38f
     fun fold(layerColor: Color, layerAlpha: Float): Color {
@@ -185,7 +207,7 @@ internal fun ambientWashStops(
     return arrayOf(
         0f to fold(accent, 0.46f),
         0.68f to fold(accent, 0.34f),
-        1f to fold(background, 0.55f),
+        1f to if (holdBottom) fold(accent, 0.34f) else fold(background, 0.55f),
     )
 }
 

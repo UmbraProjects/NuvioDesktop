@@ -33,6 +33,7 @@ internal object AutoSyncPlatform {
             .readTimeout(15, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
+            .eventListenerFactory(com.nuvio.app.core.perf.PerfOkHttpEventListenerFactory("autosync"))
             .build()
     }
 

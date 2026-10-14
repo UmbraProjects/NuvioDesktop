@@ -1,5 +1,6 @@
 package com.nuvio.app.features.catalog
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.posterservice.withCachedCustomPosters
 import com.nuvio.app.features.posterservice.withCustomPosterOverlay
 import com.nuvio.app.features.posterservice.CustomPosterScreen
@@ -49,6 +50,7 @@ object CatalogRepository {
         target: CatalogTarget,
         force: Boolean = false,
     ) {
+        PerfTelemetry.count("CatalogRepository.load")
         val request = catalogRequest(target)
         if (!force && activeRequest == request && (_uiState.value.items.isNotEmpty() || _uiState.value.isLoading)) {
             return
@@ -73,6 +75,7 @@ object CatalogRepository {
     }
 
     fun loadMore() {
+        PerfTelemetry.count("CatalogRepository.loadMore")
         val request = activeRequest ?: return
         val current = _uiState.value
         if (current.isLoading || current.nextSkip == null) return

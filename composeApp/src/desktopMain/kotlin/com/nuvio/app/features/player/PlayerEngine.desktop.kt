@@ -507,6 +507,7 @@ private fun NativePlayerSurface(
                 // a visible/audio-disrupting filter rebuild after playback has already begun.
                 animeSvpEnabled = initialAnimeSvpRequested,
                 isAnimeContent = isAnimeContent,
+                animeShaderRequested = desktopAnimeShaderRequested(playerSettings, isAnimeContent),
                 nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled &&
                     playerSettings.desktopMpvConfigMode != DesktopMpvConfigMode.Full,
                 nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled &&
@@ -949,6 +950,8 @@ private fun NativePlayerSurface(
                         nvidiaRtxSuperResolutionEnabled = settings.nvidiaRtxSuperResolutionEnabled,
                         nvidiaRtxSuperResolutionScale = vsrScale,
                         nvidiaRtxHdrEnabled = settings.nvidiaRtxHdrEnabled,
+                        nvidiaRtxHdrAnimeEnabled = settings.nvidiaRtxHdrAnimeEnabled,
+                        nvidiaRtxHdrAnimeShadersEnabled = settings.nvidiaRtxHdrAnimeShadersEnabled,
                         customShaderPaths = settings.desktopCustomShaderPaths,
                         customShaderSelectedPath = settings.desktopCustomShaderSelectedPath,
                     )
@@ -1363,16 +1366,61 @@ internal fun planDesktopAnimeShaders(
     )
 }
 
+// The d3d11vpp chain for the RTX features. The scale is written exactly as player_bridge.cpp's
+// roundTripFloatText writes it at file load ("2", "1.90277779"): a different spelling of the same
+// number ("2.0") makes mpv rebuild the video processor for nothing.
+internal fun desktopRtxVideoFilter(vsrActive: Boolean, trueHdrActive: Boolean, scale: Double?): String =
+    buildString {
+        if (!vsrActive && !trueHdrActive) return@buildString
+        append("d3d11vpp=")
+        if (vsrActive) {
+            append("scale=${desktopVsrScaleText(scale!!.coerceIn(1.0, 4.0))}:scaling-mode=nvidia")
+            if (trueHdrActive) append(":")
+        }
+        if (trueHdrActive) append("nvidia-true-hdr=yes")
+    }
+
+// C++ `ostream << setprecision(max_digits10 = 9) << float`: %.9g of the float, trailing zeros
+// dropped. Scales are 1..4, so %g never switches to exponent notation here.
+internal fun desktopVsrScaleText(scale: Double): String =
+    java.math.BigDecimal(scale.toFloat().toDouble())
+        .round(java.math.MathContext(9, java.math.RoundingMode.HALF_EVEN))
+        .stripTrailingZeros()
+        .toPlainString()
+
+// Same mode resolution as applyDesktopAnimeProfile, for the attach-time guess the native
+// file-load RTX install works from. The 4K shader skip is ignored: VSR has no scale there anyway.
+private fun desktopAnimeShaderRequested(settings: PlayerSettingsUiState, isAnime: Boolean): Boolean {
+    val mode = settings.desktopAnimeSessionOverride?.mode
+        ?: if (settings.desktopAnimeModeAutoEnabled && isAnime) settings.desktopAnimeMode else DesktopAnimeMode.Off
+    return mode != DesktopAnimeMode.Off
+}
+
+// `animeLayerActive` is the anime enhancement layer actually running (Anime4K / custom GLSL / SVP),
+// not anime detection: a detected anime title with no shader or SVP is plain video to the scaler.
 internal fun shouldEnableDesktopRtxSuperResolution(
     enabled: Boolean,
     isHdr: Boolean?,
-    isEffectivelyAnime: Boolean,
+    animeLayerActive: Boolean,
     scale: Double?,
 ): Boolean = enabled &&
     isHdr == false &&
-    !isEffectivelyAnime &&
+    !animeLayerActive &&
     scale != null &&
     scale > 1.01
+
+// True HDR's SDR->HDR pass tends to over-saturate/band flat cel-shaded anime and fights the
+// SDR-tuned colour presets, so detected anime needs the separate opt-in even with no anime layer.
+internal fun shouldEnableDesktopRtxTrueHdr(
+    enabled: Boolean,
+    isHdr: Boolean?,
+    isEffectivelyAnime: Boolean,
+    animeOptIn: Boolean,
+    animeLayerActive: Boolean,
+): Boolean = enabled &&
+    isHdr == false &&
+    !animeLayerActive &&
+    (!isEffectivelyAnime || animeOptIn)
 
 private fun applyDesktopAnimeProfile(
     controller: NativePlayerController,
@@ -1388,6 +1436,8 @@ private fun applyDesktopAnimeProfile(
     nvidiaRtxSuperResolutionEnabled: Boolean = false,
     nvidiaRtxSuperResolutionScale: Double? = null,
     nvidiaRtxHdrEnabled: Boolean = false,
+    nvidiaRtxHdrAnimeEnabled: Boolean = false,
+    nvidiaRtxHdrAnimeShadersEnabled: Boolean = false,
     customShaderPaths: String = "",
     customShaderSelectedPath: String = "",
 ): DesktopAnimeProfileResult {
@@ -1429,22 +1479,36 @@ private fun applyDesktopAnimeProfile(
     val isEffectivelyAnime = isAnime || requestedPreset != null ||
         requestedCustomShaderChain.isNotEmpty() || animeSvpSessionForced
 
+    val svpFilter = if (isEffectivelyAnime && animeSvpEnabled) {
+        DesktopAnimeSvp.vapoursynthArgument(
+            debugOverlay = PlayerSettingsRepository.uiState.value.desktopAnimeSvpDebugOverlayEnabled,
+        )
+    } else null
+    val svpActive = svpFilter != null
+
     // This function is the single owner of the mpv `vf` chain. NVIDIA RTX VSR and RTX True HDR
     // are both d3d11vpp sub-options; they must be set here so a profile rebuild doesn't wipe them.
-    // Anime4K (when active) takes the vf entirely — RTX features are suppressed while Anime4K runs.
     //
-    // RTX VSR and RTX True HDR are live-action enhancements; neither must stack on top of the
-    // anime enhancement layer (Anime4K / custom GLSL / SVP interpolation). The heavier anime
-    // branches below drop baselineVf entirely, but the SVP-only path reuses it, so gate both
-    // off for any effectively anime session here too. (True HDR's AI SDR->HDR pass tends to
-    // over-saturate/band flat cel-shaded anime and fights the SDR-tuned colour presets.)
+    // Neither must stack on top of the anime enhancement layer (Anime4K / custom GLSL / SVP
+    // interpolation). The shader branches below replace vf outright, so baselineVf only reaches
+    // mpv on the no-shader path, where the one layer that can still be running is SVP. Anime
+    // detection alone does not block VSR: a 1080p episode on a 4K screen with no shader is
+    // exactly what it is for. True HDR additionally needs its anime opt-in.
     // Native HDR, especially Dolby Vision decoded as P010, can turn into a solid green video
     // plane when passed through NVIDIA's d3d11vpp VSR scaler. Wait for positive SDR detection;
     // unknown/HDR content stays on gpu-next's normal colour-managed path.
     val vsrActive = shouldEnableDesktopRtxSuperResolution(
         enabled = nvidiaRtxSuperResolutionEnabled,
         isHdr = isHdr,
-        isEffectivelyAnime = isEffectivelyAnime,
+        animeLayerActive = svpActive,
+        scale = nvidiaRtxSuperResolutionScale,
+    )
+    // What RTX would be with no SVP. The native side skips SVP at >= 1.5x speed (live, without
+    // another profile pass), and should then run this rather than nothing.
+    val vsrActiveWithoutSvp = shouldEnableDesktopRtxSuperResolution(
+        enabled = nvidiaRtxSuperResolutionEnabled,
+        isHdr = isHdr,
+        animeLayerActive = false,
         scale = nvidiaRtxSuperResolutionScale,
     )
     // RTX True HDR requires mpv master ≥ Feb 19 2026: mpv sets IMGFMT_X2BGR10 output
@@ -1454,24 +1518,33 @@ private fun applyDesktopAnimeProfile(
     // True HDR is an SDR -> HDR enhancement. Wait until the stream is positively identified
     // as SDR before enabling it: treating the initial "unknown" state as SDR briefly applied
     // the filter to every file, and leaving this independent of isHdr applied it to native HDR.
-    val trueHdrActive = nvidiaRtxHdrEnabled && isHdr == false && !isEffectivelyAnime
-    val baselineVf = buildString {
-        if (vsrActive || trueHdrActive) {
-            append("d3d11vpp=")
-            if (vsrActive) {
-                append("scale=${nvidiaRtxSuperResolutionScale!!.coerceIn(1.0, 4.0)}:scaling-mode=nvidia")
-                if (trueHdrActive) append(":")
-            }
-            if (trueHdrActive) append("nvidia-true-hdr=yes")
-        }
+    val trueHdrActive = shouldEnableDesktopRtxTrueHdr(
+        enabled = nvidiaRtxHdrEnabled,
+        isHdr = isHdr,
+        isEffectivelyAnime = isEffectivelyAnime,
+        animeOptIn = nvidiaRtxHdrAnimeEnabled,
+        animeLayerActive = svpActive,
+    )
+    val trueHdrActiveWithoutSvp = shouldEnableDesktopRtxTrueHdr(
+        enabled = nvidiaRtxHdrEnabled,
+        isHdr = isHdr,
+        isEffectivelyAnime = isEffectivelyAnime,
+        animeOptIn = nvidiaRtxHdrAnimeEnabled,
+        animeLayerActive = false,
+    )
+    val baselineVf = desktopRtxVideoFilter(vsrActive, trueHdrActive, nvidiaRtxSuperResolutionScale)
+    // The shader branches below normally drop RTX entirely. With the opt-in, True HDR (only — VSR
+    // would upscale ahead of shaders that upscale themselves) stays in front of them: d3d11vpp
+    // runs on the decoder's GPU frames, and the GLSL shaders run later, in the renderer.
+    // trueHdrActive already excludes SVP, the one CPU layer it cannot follow.
+    val shaderTrueHdrVf = if (nvidiaRtxHdrAnimeShadersEnabled && trueHdrActive) {
+        desktopRtxVideoFilter(vsrActive = false, trueHdrActive = true, scale = null)
+    } else {
+        ""
     }
-
-    val svpFilter = if (isEffectivelyAnime && animeSvpEnabled) {
-        DesktopAnimeSvp.vapoursynthArgument(
-            debugOverlay = PlayerSettingsRepository.uiState.value.desktopAnimeSvpDebugOverlayEnabled,
-        )
-    } else null
-    val svpActive = svpFilter != null
+    val svpBypassVf = if (svpActive) {
+        desktopRtxVideoFilter(vsrActiveWithoutSvp, trueHdrActiveWithoutSvp, nvidiaRtxSuperResolutionScale)
+    } else ""
 
     if (customShaderChain.isNotEmpty()) {
         controller.setMpvProperty("scale", "ewa_lanczos")
@@ -1482,10 +1555,15 @@ private fun applyDesktopAnimeProfile(
         controller.setMpvProperty("glsl-shaders", customShaderChain)
 
 
-        controller.setMpvProperty("vf", listOfNotNull(svpFilter).joinToString(","))
+        controller.setSvpBypassVideoFilters("")
+        controller.setMpvProperty(
+            "vf",
+            listOfNotNull(shaderTrueHdrVf.takeIf { it.isNotEmpty() }, svpFilter).joinToString(","),
+        )
         controller.forceVideoRedraw()
         return DesktopAnimeProfileResult(
-            shaderLabel = customShaderChain.customShaderDisplayName(customShaderPaths),
+            shaderLabel = customShaderChain.customShaderDisplayName(customShaderPaths)
+                ?.withTrueHdrSuffix(shaderTrueHdrVf.isNotEmpty()),
             svpActive = svpActive,
         )
     }
@@ -1498,6 +1576,7 @@ private fun applyDesktopAnimeProfile(
         // However, if SVP is active, we MUST use a copy-back decoder for the CPU filter.
         
         val finalVf = listOfNotNull(baselineVf.takeIf { it.isNotEmpty() }, svpFilter).joinToString(",")
+        controller.setSvpBypassVideoFilters(svpBypassVf)
         controller.setMpvProperty("vf", finalVf)
         // Honour the user's "Upscaling" choice from the Advanced (mpv) menu for live-action; fall
         // back to the baseline scaler. Re-applied here because this profile refresh would otherwise
@@ -1531,21 +1610,35 @@ private fun applyDesktopAnimeProfile(
 
     // hqdn3d temporal/spatial denoise (Kai's standard anime VF). Skipped on HDR to avoid the heavier
     // filter chain fighting the tonemap path, matching Kai's denoise removal for HDR anime.
-    val hqdn3d = if (isHdr == true) "" else "@HQDN3D:lavfi=[hqdn3d=luma_spatial=5:chroma_spatial=5:luma_tmp=6:chroma_tmp=6]"
-    val finalVf = listOfNotNull(hqdn3d.takeIf { it.isNotEmpty() }, svpFilter).joinToString(",")
+    // Also skipped under True HDR: hqdn3d is a CPU (lavfi) filter, which moves decoding to
+    // copy-back, and d3d11vpp cannot take CPU frames.
+    val hqdn3d = if (isHdr == true || shaderTrueHdrVf.isNotEmpty()) {
+        ""
+    } else {
+        "@HQDN3D:lavfi=[hqdn3d=luma_spatial=5:chroma_spatial=5:luma_tmp=6:chroma_tmp=6]"
+    }
+    val finalVf = listOfNotNull(
+        shaderTrueHdrVf.takeIf { it.isNotEmpty() },
+        hqdn3d.takeIf { it.isNotEmpty() },
+        svpFilter,
+    ).joinToString(",")
 
     // When injecting CPU/software-based lavfi filters (hqdn3d, vapoursynth), we MUST dynamically switch
     // the hardware decoder to a copy-back mode, otherwise FFmpeg fails to map the d3d11 surface to RAM.
+    controller.setSvpBypassVideoFilters("")
     controller.setMpvProperty("vf", finalVf)
     controller.forceVideoRedraw()
     // Named as the shader family plus its preset. The chain behind a preset is six to ten
     // Anime4K_* files, which is not something to print, and the bare preset label ("Mode A (HQ)")
     // never says what is doing the work.
     return DesktopAnimeProfileResult(
-        shaderLabel = "Anime4K ${effectivePreset.label}",
+        shaderLabel = "Anime4K ${effectivePreset.label}".withTrueHdrSuffix(shaderTrueHdrVf.isNotEmpty()),
         svpActive = svpActive,
     )
 }
+
+/** Shader labels say when True HDR is stacked on them, since it changes the look outright. */
+private fun String.withTrueHdrSuffix(trueHdr: Boolean): String = if (trueHdr) "$this + True HDR" else this
 
 @Composable
 private fun DesktopStubPlayerSurface(

@@ -30,6 +30,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import com.nuvio.app.features.streams.StreamPickerController
+import com.nuvio.app.features.streams.StreamPickerDock
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -51,7 +58,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -122,6 +133,8 @@ fun DetailHero(
     heroGradientColor: Color? = null,
     onBackdropLoaded: (Painter, ImageBitmap?) -> Unit = { _, _ -> },
     desktopOverlay: Boolean = false,
+    /** The source picker is docked here: frost the whole backdrop so the list sits on it. */
+    backdropFrosted: Boolean = false,
     discoveryFacts: List<HeroDiscoveryFact> = emptyList(),
     maxDiscoveryBadges: Int = 0,
     playButtonLabel: String = stringResource(Res.string.action_play),
@@ -165,6 +178,11 @@ fun DetailHero(
         modifier = modifier.fillMaxWidth(),
     ) {
         val heroHeight = detailHeroHeight(maxWidth, viewportHeight, isTablet, desktopOverlay)
+        val backdropFrost by animateFloatAsState(
+            targetValue = if (backdropFrosted) 1f else 0f,
+            animationSpec = tween(durationMillis = 260),
+            label = "detail_hero_backdrop_frost",
+        )
         val trailerAlpha by animateFloatAsState(
             targetValue = if (heroTrailerReady) 1f else 0f,
             animationSpec = tween(durationMillis = 300),
@@ -197,6 +215,13 @@ fun DetailHero(
             maxWidth * 0.44f,
         )
         val heroTrailerArtworkBottomPadding = 358.dp
+        // The source picker docks in the trailer area. In narrower windows that runs over the
+        // overlay's content lane, which then fades out under it (laneFadeStart, applied by
+        // DetailDesktopHeroOverlay while frosted) — a roomy panel over a faded lane reads better
+        // than a sliver squeezed beside it.
+        val laneEnd = DetailHeroLaneStart + contentMaxWidth.coerceAtMost(DetailHeroLaneMaxWidth)
+        val streamDockStart = heroTrailerArtworkStart
+        val dockOverlapsLane = streamDockStart < laneEnd
         // The desktop hero draws its content over scrim gradients that normally fade to the theme
         // background. While a bounded trailer plays, the trailer-background setting recolours those
         // scrims (and the flat fill) so the whole surround honours the choice — the flat background
@@ -262,7 +287,14 @@ fun DetailHero(
                                 translationY = scrollOffset * 0.5f
                                 scaleX = backdropScale
                                 scaleY = backdropScale
-                            },
+                            }
+                            .then(
+                                if (backdropFrost > 0f) {
+                                    Modifier.blur((BackdropFrostBlurDp * backdropFrost).dp)
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         alignment = when {
                             desktopOverlay -> Alignment.CenterEnd
                             isTablet -> Alignment.TopCenter
@@ -272,6 +304,14 @@ fun DetailHero(
                         desktopImageScaling = NuvioDesktopImageScaling.Disabled,
                         onSuccess = { state -> onBackdropLoaded(state.painter, null) },
                     )
+                    if (backdropFrost > 0f) {
+                        // A little darker as well as blurred, so the source list reads on it.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = BackdropFrostDim * backdropFrost)),
+                        )
+                    }
                     if (backdropWashActive) {
                         // Dim the backdrop so the small trailer stays the focal point. The scrim
                         // gradients below add further darkening on the content side.
@@ -369,6 +409,9 @@ fun DetailHero(
                         ratingProviderName = ratingProviderName,
                         onCastClick = onCastClick,
                         onCompanyClick = onCompanyClick,
+                        badgesAlpha = 1f - backdropFrost,
+                        laneFadeStart = if (dockOverlapsLane) streamDockStart else null,
+                        laneFade = backdropFrost,
                     )
                 } else {
                     Column(
@@ -430,10 +473,42 @@ fun DetailHero(
                     )
                 }
 
-                if (discoveryFacts.isNotEmpty() && maxDiscoveryBadges > 0) {
+                if (desktopOverlay) {
+                    // Offer the trailer area to the source picker, which docks there instead of
+                    // opening over the page (StreamPickerController): the bounded trailer's region
+                    // out to the window's top and right edges, run a little lower so its bottom
+                    // lines up with the cast row's episode counts. Withdrawn when scrolling leaves
+                    // too little of it.
+                    val density = LocalDensity.current
+                    val dockKey = StreamPickerDock.forMeta(meta.id)
+                    DisposableEffect(dockKey) {
+                        onDispose { StreamPickerController.clearDock(dockKey) }
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .padding(
+                                start = streamDockStart,
+                                bottom = heroTrailerArtworkBottomPadding - 22.dp,
+                            )
+                            .onGloballyPositioned { coordinates ->
+                                val bounds = coordinates.boundsInWindow()
+                                if (bounds.height >= with(density) { 240.dp.toPx() }) {
+                                    StreamPickerController.reportDock(dockKey, bounds)
+                                } else {
+                                    StreamPickerController.clearDock(dockKey)
+                                }
+                            },
+                    )
+                }
+
+                // The badges sit where the docked source list's header goes; they fade out with the
+                // frost and leave the composition (and their click targets) once it is complete.
+                if (discoveryFacts.isNotEmpty() && maxDiscoveryBadges > 0 && backdropFrost < 1f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = 1f - backdropFrost }
                             .padding(
                                 top = WindowInsets.statusBars
                                     .asPaddingValues()
@@ -454,6 +529,13 @@ fun DetailHero(
         }
     }
 }
+
+private const val BackdropFrostBlurDp = 28f
+private const val BackdropFrostDim = 0.25f
+private val DetailHeroLaneStart = 64.dp
+private val DetailHeroLaneMaxWidth = 760.dp
+/** Width over which the content lane fades out ahead of an overlapping docked picker. */
+private val LaneFadeRamp = 96.dp
 
 @Composable
 private fun DetailDesktopHeroOverlay(
@@ -486,11 +568,16 @@ private fun DetailDesktopHeroOverlay(
     ratingProviderName: String?,
     onCastClick: ((MetaPerson, String?) -> Unit)?,
     onCompanyClick: ((MetaCompany, String) -> Unit)?,
+    badgesAlpha: Float = 1f,
+    /** Window-x where a docked picker overlapping the lane begins; null when it docks clear. */
+    laneFadeStart: Dp? = null,
+    /** 0..1: how far the lane has faded out under laneFadeStart (follows the backdrop frost). */
+    laneFade: Float = 0f,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         val safeTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val laneStart = 64.dp
-        val laneWidth = contentMaxWidth.coerceAtMost(760.dp)
+        val laneStart = DetailHeroLaneStart
+        val laneWidth = contentMaxWidth.coerceAtMost(DetailHeroLaneMaxWidth)
         val headingWidth = laneWidth.coerceAtMost(620.dp)
         val productionPeople = remember(meta) { meta.detailHeroProductionPeople() }
         val starringPeople = remember(meta.cast) {
@@ -536,7 +623,31 @@ private fun DetailDesktopHeroOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = laneStart, top = safeTop),
+                .padding(start = laneStart, top = safeTop)
+                .then(
+                    if (laneFadeStart != null && laneFade > 0f) {
+                        // Fades whatever runs under the docked picker (overview, cast, actions)
+                        // so the frosted panel isn't read over the page's own text.
+                        Modifier
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .drawWithContent {
+                                drawContent()
+                                val fadeEnd = (laneFadeStart - laneStart).toPx()
+                                val fadeBegin = fadeEnd - LaneFadeRamp.toPx()
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        0f to Color.Black,
+                                        1f to Color.Black.copy(alpha = 1f - laneFade),
+                                        startX = fadeBegin,
+                                        endX = fadeEnd,
+                                    ),
+                                    blendMode = BlendMode.DstIn,
+                                )
+                            }
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             DetailHeroLogoOrTitle(
                 meta = meta,
@@ -723,16 +834,19 @@ private fun DetailDesktopHeroOverlay(
             }
         }
 
-        DetailHeroProductionBadges(
-            meta = meta,
-            onCompanyClick = onCompanyClick,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(
-                    top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp,
-                    end = 24.dp,
-                ),
-        )
+        if (badgesAlpha > 0f) {
+            DetailHeroProductionBadges(
+                meta = meta,
+                onCompanyClick = onCompanyClick,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .graphicsLayer { alpha = badgesAlpha }
+                    .padding(
+                        top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp,
+                        end = 24.dp,
+                    ),
+            )
+        }
     }
 }
 

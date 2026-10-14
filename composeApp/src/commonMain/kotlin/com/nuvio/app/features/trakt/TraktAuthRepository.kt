@@ -2,6 +2,7 @@ package com.nuvio.app.features.trakt
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppVersionPolicy
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.RawHttpResponse
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.addons.httpRequestRaw
@@ -192,6 +193,7 @@ object TraktAuthRepository {
     }
 
     suspend fun refreshUserSettings(profileId: Int = ProfileRepository.activeProfileId): String? {
+        PerfTelemetry.count("TraktAuthRepository.refreshUserSettings")
         if (profileId != ProfileRepository.activeProfileId) return null
         ensureLoaded(profileId)
         return refreshUserSettingsForGeneration(profileId, profileGeneration)

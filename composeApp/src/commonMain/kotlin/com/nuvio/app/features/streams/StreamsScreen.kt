@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -162,6 +163,14 @@ import com.nuvio.app.core.ui.accentBrush
 // Streams Screen
 // ---------------------------------------------------------------------------
 
+enum class StreamsPresentation {
+    /** Full window, with its own artwork and back button. */
+    Screen,
+
+    /** Inside the source picker panel (see StreamPickerFrame), which supplies the frame. */
+    Panel,
+}
+
 internal fun manualLibraryRelativePath(
     title: String,
     releaseYear: Int?,
@@ -227,8 +236,16 @@ fun StreamsScreen(
         resumeProgressFraction: Float?,
     ) -> Unit = { _, _, _, _ -> },
     onBack: () -> Unit,
+    presentation: StreamsPresentation = StreamsPresentation.Screen,
+    /** Panel only: inset of the panel's content from the frame StreamPickerFrame draws. */
+    panelContentPadding: PaddingValues = PaddingValues(16.dp),
+    /** Panel only: docked in the details hero (see PanelStreamsLayout's glass). */
+    panelGlass: Boolean = false,
+    /** Panel only: false when the panel is too narrow for two columns (a squeezed dock). */
+    panelTwoColumnsFit: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val isPanel = presentation == StreamsPresentation.Panel
     // Splits the click → visible-screen gap into "work before composition finished" vs "work
     // between composition and the first painted frame", so a stall that leaves the user staring
     // at the previous screen points at a culprit instead of a range. markPending no-ops once a
@@ -344,6 +361,8 @@ fun StreamsScreen(
     }.collectAsStateWithLifecycle()
     val listSortOrder = streamBadgeSettings.listSortOrder
     val listCachedFirst = streamBadgeSettings.listCachedFirst
+    // Only the picker panel offers two columns; the full-screen layouts stay a single list.
+    val twoColumns = isPanel && panelTwoColumnsFit && streamBadgeSettings.listTwoColumns
     // Applied last, over whichever list the chip selected, so it also re-orders the HTPC tab.
     val displayGroups = remember(filterGroups, listSortOrder, listCachedFirst) {
         StreamListSort.apply(filterGroups, listSortOrder, listCachedFirst)
@@ -353,6 +372,25 @@ fun StreamsScreen(
             .filter { it.isSelectableForPlayback(debridSettings.canResolvePlayableLinks) }
     }
     val focusedStream = selectableStreams.getOrNull(focusedStreamIndex)
+    val gridRows = remember(displayGroups, uiState.selectedFilter, twoColumns) {
+        if (twoColumns) {
+            streamGridRows(
+                buildStreamListEntries(
+                    groups = displayGroups,
+                    showGroupHeaders = uiState.selectedFilter == null,
+                ),
+            )
+        } else {
+            null
+        }
+    }
+    val isSelectableStream: (StreamItem) -> Boolean = { candidate ->
+        selectableStreams.any { it === candidate }
+    }
+    fun focusStream(target: StreamItem) {
+        val index = selectableStreams.indexOfFirst { it === target }
+        if (index >= 0) focusedStreamIndex = index
+    }
 
     LaunchedEffect(type, videoId, seasonNumber, episodeNumber, manualSelection) {
         StreamsRepository.load(
@@ -436,6 +474,7 @@ fun StreamsScreen(
             groups = displayGroups,
             showGroupHeaders = uiState.selectedFilter == null,
             target = target,
+            twoColumns = twoColumns,
         )
         if (lazyIndex >= 0) {
             val layoutInfo = streamListState.layoutInfo
@@ -715,10 +754,23 @@ fun StreamsScreen(
         background ?: poster
     }
 
+    val reloadStreams: () -> Unit = {
+        StreamsRepository.reload(
+            type = type,
+            videoId = videoId,
+            parentMetaId = parentMetaId,
+            title = title,
+            season = seasonNumber,
+            episode = episodeNumber,
+            manualSelection = manualSelection,
+            preferLocalStreams = preferLocalStreams,
+        )
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .then(if (isPanel) Modifier else Modifier.background(MaterialTheme.colorScheme.background))
             .then(
                 if (isDesktop) {
                     Modifier
@@ -735,18 +787,42 @@ fun StreamsScreen(
                                     onBack()
                                     true
                                 }
-                                Key.DirectionUp -> {
-                                    focusedStreamIndex = (focusedStreamIndex - 1).coerceAtLeast(0)
-                                    keyboardNavTick++
-                                    true
+                                // The full screen leaves Escape to the window; the panel has
+                                // nothing behind it that Escape should reach first.
+                                Key.Escape -> {
+                                    if (isPanel) onBack()
+                                    isPanel
                                 }
-                                Key.DirectionDown -> {
-                                    focusedStreamIndex = (focusedStreamIndex + 1)
-                                        .coerceAtMost((selectableStreams.size - 1).coerceAtLeast(0))
+                                Key.DirectionUp, Key.DirectionDown -> {
+                                    val down = navKey == Key.DirectionDown
+                                    if (gridRows != null) {
+                                        gridVerticalTarget(gridRows, focusedStream, down, isSelectableStream)
+                                            ?.let(::focusStream)
+                                    } else if (down) {
+                                        focusedStreamIndex = (focusedStreamIndex + 1)
+                                            .coerceAtMost((selectableStreams.size - 1).coerceAtLeast(0))
+                                    } else {
+                                        focusedStreamIndex = (focusedStreamIndex - 1).coerceAtLeast(0)
+                                    }
                                     keyboardNavTick++
                                     true
                                 }
                                 Key.DirectionLeft, Key.DirectionRight -> {
+                                    // In two columns, step across the row first; only the outer
+                                    // edge moves to the neighbouring provider chip.
+                                    val sideways = gridRows?.let { rows ->
+                                        gridHorizontalTarget(
+                                            rows,
+                                            focusedStream,
+                                            right = navKey == Key.DirectionRight,
+                                            isSelectable = isSelectableStream,
+                                        )
+                                    }
+                                    if (sideways != null) {
+                                        focusStream(sideways)
+                                        keyboardNavTick++
+                                        return@onPreviewKeyEvent true
+                                    }
                                     val currentFilterIndex = providerIds.indexOf(uiState.selectedFilter)
                                         .coerceAtLeast(0)
                                     val delta = if (navKey == Key.DirectionRight) 1 else -1
@@ -857,7 +933,37 @@ fun StreamsScreen(
         )
 
         CompositionLocalProvider(LocalStreamRowActions provides streamRowActions) {
-        if (isTabletLayout) {
+        if (isPanel) {
+            PanelStreamsLayout(
+                isEpisode = isEpisode,
+                contentId = parentMetaId,
+                contentType = type,
+                displayGroups = displayGroups,
+                showHtpcChip = htpcGroup != null,
+                title = title,
+                seasonNumber = seasonNumber,
+                episodeNumber = episodeNumber,
+                episodeTitle = episodeTitle,
+                uiState = uiState,
+                debridEnabled = debridSettings.canResolvePlayableLinks,
+                appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
+                resumePositionMs = effectiveResumePositionMs,
+                resumeProgressFraction = effectiveResumeProgressFraction,
+                providerListState = providerListState,
+                streamListState = streamListState,
+                focusedStream = focusedStream,
+                onStreamSelected = { stream, positionMs, progressFraction ->
+                    tracedStreamSelection(stream, positionMs, progressFraction)
+                },
+                onStreamLongPress = { stream -> streamActionsTarget = stream },
+                onRefresh = reloadStreams,
+                onClose = onBack,
+                contentPadding = panelContentPadding,
+                glass = panelGlass,
+                twoColumns = twoColumns,
+                twoColumnsFit = panelTwoColumnsFit,
+            )
+        } else if (isTabletLayout) {
             TabletStreamsLayout(
                 isEpisode = isEpisode,
                 contentId = parentMetaId,
@@ -914,7 +1020,7 @@ fun StreamsScreen(
         }
         }
 
-        Row(
+        if (!isPanel) Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
@@ -936,20 +1042,7 @@ fun StreamsScreen(
                         color = MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
                         shape = CircleShape,
                     )
-                    .clickable(
-                        onClick = {
-                            StreamsRepository.reload(
-                                type = type,
-                                videoId = videoId,
-                                parentMetaId = parentMetaId,
-                                title = title,
-                                season = seasonNumber,
-                                episode = episodeNumber,
-                                manualSelection = manualSelection,
-                                preferLocalStreams = preferLocalStreams,
-                            )
-                        },
-                    ),
+                    .clickable(onClick = reloadStreams),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -1453,23 +1546,27 @@ private fun MobileStreamsLayout(
     }
 }
 
+/** "Resume from 28:01" / "Resume from 45%", or null when playback starts from the top. */
+@Composable
+internal fun resumeLabel(positionMs: Long?, progressFraction: Float?): String? = when {
+    progressFraction != null && progressFraction > 0f -> stringResource(
+        Res.string.streams_resume_from_percent,
+        (progressFraction * 100f).roundToInt(),
+    )
+    positionMs != null && positionMs > 0L -> stringResource(
+        Res.string.streams_resume_from_time,
+        positionMs.toPlaybackClock(),
+    )
+    else -> null
+}
+
 @Composable
 internal fun ResumeBanner(
     positionMs: Long?,
     progressFraction: Float? = null,
     modifier: Modifier = Modifier,
 ) {
-    val resumeText = when {
-        progressFraction != null && progressFraction > 0f -> stringResource(
-            Res.string.streams_resume_from_percent,
-            (progressFraction * 100f).roundToInt(),
-        )
-        positionMs != null && positionMs > 0L -> stringResource(
-            Res.string.streams_resume_from_time,
-            positionMs.toPlaybackClock(),
-        )
-        else -> null
-    } ?: return
+    val resumeText = resumeLabel(positionMs, progressFraction) ?: return
 
     Box(
         modifier = modifier
@@ -1647,9 +1744,24 @@ internal fun ProviderFilterRow(
     onFilterSelected: (String?) -> Unit,
     modifier: Modifier = Modifier,
     showHtpcChip: Boolean = false,
+    /** Controls pinned after Sort (the picker panel's layout toggle, refresh and close). */
+    trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val addonGroups = groups.filter { it.streams.isNotEmpty() || it.isLoading }
-    if (addonGroups.isEmpty()) return
+    if (addonGroups.isEmpty()) {
+        // Nothing to filter yet, but the panel's own controls still need a home.
+        if (trailing != null) {
+            Row(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                content = trailing,
+            )
+        }
+        return
+    }
 
     Row(
         modifier = modifier
@@ -1700,6 +1812,7 @@ internal fun ProviderFilterRow(
     }
     // Outside the scrolling row so it stays reachable however many addons there are.
     StreamSortChip()
+    trailing?.invoke(this)
     }
 }
 
@@ -1765,32 +1878,45 @@ private fun FilterChip(
         animationSpec = tween(durationMillis = 140),
         label = "filter_chip_scale",
     )
+    // In the docked picker the chips are the same glass as the cards below them, selection marked
+    // the way a focused card is, rather than a solid accent pill.
+    val glass = LocalStreamCardStyle.current == StreamCardStyle.Glass
     val containerColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        targetValue = when {
+            glass && isSelected -> StreamGlass.Raised
+            glass -> StreamGlass.Rest
+            isSelected -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
         },
         animationSpec = tween(durationMillis = 180),
         label = "filter_chip_container",
     )
     val contentColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurface
+        targetValue = when {
+            glass && isSelected -> Color.White
+            glass -> Color.White.copy(alpha = 0.78f)
+            isSelected -> MaterialTheme.colorScheme.onPrimary
+            else -> MaterialTheme.colorScheme.onSurface
         },
         animationSpec = tween(durationMillis = 180),
         label = "filter_chip_content",
     )
+    val chipShape = RoundedCornerShape(16.dp)
     Box(
         modifier = Modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(16.dp))
+            .clip(chipShape)
             .background(containerColor)
+            .then(
+                if (glass && isSelected) {
+                    Modifier.border(1.dp, StreamGlass.Edge, chipShape)
+                } else {
+                    Modifier
+                },
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -1837,6 +1963,8 @@ internal fun StreamList(
     // order drift from the visual order whenever sorting reordered rows, and merging (which drops
     // duplicate rows entirely) would have made that mismatch produce wrong targets.
     displayGroups: List<AddonStreamGroup>? = null,
+    /** 1, or 2 for side-by-side cards (the picker panel's two-column preference). */
+    columns: Int = 1,
 ) {
     val scoreProfile by StreamScoreRepository.uiState.collectAsStateWithLifecycle()
     val filteredGroups = displayGroups ?: rememberScoreSortedGroups(
@@ -1854,8 +1982,9 @@ internal fun StreamList(
         StreamBadgeSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
     val showGroupHeaders = uiState.selectedFilter == null
-    val entries = remember(filteredGroups, showGroupHeaders) {
+    val entries = remember(filteredGroups, showGroupHeaders, columns) {
         buildStreamListEntries(groups = filteredGroups, showGroupHeaders = showGroupHeaders)
+            .let { if (columns >= 2) pairStreamRows(it) else it }
     }
     // One context for every card's badge and right-click breakdown, so the number on a row and the
     // explanation behind it can never be computed differently — and so a list of two hundred rows
@@ -1874,6 +2003,35 @@ internal fun StreamList(
     KeepListAtTopWhileItemsArrive(listState, entries)
 
     val formatStreamSize = rememberStreamSizeLabelFormat()
+    val streamCard: @Composable (StreamItem, Modifier) -> Unit = { stream, cardModifier ->
+        StreamRowContextMenu(
+            stream = stream,
+            enabled = stream.playableDirectUrl != null || stream.isAddonDebridCandidate,
+            scoreContext = rowScoreContext,
+        ) {
+            StreamCard(
+                stream = stream,
+                enabled = stream.isSelectableForPlayback(debridEnabled),
+                appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
+                showFileSizeBadges = streamBadgeSettings.showFileSizeBadges,
+                showAddonLogo = streamBadgeSettings.showAddonLogo,
+                badgePlacement = streamBadgeSettings.badgePlacement,
+                focused = stream === focusedStream,
+                scoreContext = rowScoreContext,
+                modifier = cardModifier,
+                onClick = {
+                    if (stream.isSelectableForPlayback(debridEnabled)) {
+                        onStreamSelected(stream, resumePositionMs, resumeProgressFraction)
+                    }
+                },
+                onLongClick = {
+                    if (stream.playableDirectUrl != null || stream.isAddonDebridCandidate) {
+                        onStreamLongPress(stream)
+                    }
+                },
+            )
+        }
+    }
     CompositionLocalProvider(LocalStreamSizeLabelFormat provides formatStreamSize) {
     LazyColumn(
         state = listState,
@@ -1906,6 +2064,7 @@ internal fun StreamList(
                             is StreamListEntry.SectionHeader -> "sectionHeader"
                             is StreamListEntry.SourceHeader -> "sourceHeader"
                             is StreamListEntry.Stream -> "stream"
+                            is StreamListEntry.StreamRow -> "streamRow"
                         }
                     },
                 ) { entry ->
@@ -1918,32 +2077,24 @@ internal fun StreamList(
                         is StreamListEntry.SourceHeader -> StreamSourceHeader(sourceName = entry.sourceName)
 
                         is StreamListEntry.Stream -> {
-                            val stream = entry.stream
-                            StreamRowContextMenu(
-                                stream = stream,
-                                enabled = stream.playableDirectUrl != null || stream.isAddonDebridCandidate,
-                                scoreContext = rowScoreContext,
+                            streamCard(entry.stream, Modifier)
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+
+                        is StreamListEntry.StreamRow -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                StreamCard(
-                                    stream = stream,
-                                    enabled = stream.isSelectableForPlayback(debridEnabled),
-                                    appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
-                                    showFileSizeBadges = streamBadgeSettings.showFileSizeBadges,
-                                    showAddonLogo = streamBadgeSettings.showAddonLogo,
-                                    badgePlacement = streamBadgeSettings.badgePlacement,
-                                    focused = stream === focusedStream,
-                                    scoreContext = rowScoreContext,
-                                    onClick = {
-                                        if (stream.isSelectableForPlayback(debridEnabled)) {
-                                            onStreamSelected(stream, resumePositionMs, resumeProgressFraction)
-                                        }
-                                    },
-                                    onLongClick = {
-                                        if (stream.playableDirectUrl != null || stream.isAddonDebridCandidate) {
-                                            onStreamLongPress(stream)
-                                        }
-                                    },
-                                )
+                                entry.streams.forEach { stream ->
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        streamCard(stream, Modifier)
+                                    }
+                                }
+                                // A section's odd last stream keeps a column's width.
+                                if (entry.streams.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                             Spacer(modifier = Modifier.height(10.dp))
                         }
@@ -2072,6 +2223,82 @@ internal sealed interface StreamListEntry {
         override val key: String,
         val stream: StreamItem,
     ) : StreamListEntry
+
+    /** Two-column layout: up to two consecutive streams of one run, drawn side by side. */
+    data class StreamRow(
+        override val key: String,
+        val streams: List<StreamItem>,
+    ) : StreamListEntry
+}
+
+/**
+ * Pairs consecutive streams into [StreamListEntry.StreamRow]s for the two-column layout. Headers
+ * stay full-width rows of their own and break the pairing, so a section never shares a row with
+ * the one before it.
+ */
+internal fun pairStreamRows(entries: List<StreamListEntry>): List<StreamListEntry> {
+    val result = mutableListOf<StreamListEntry>()
+    val pending = mutableListOf<StreamListEntry.Stream>()
+    fun flush() {
+        pending.chunked(2).forEach { pair ->
+            result += StreamListEntry.StreamRow(
+                key = "row:" + pair.first().key,
+                streams = pair.map { it.stream },
+            )
+        }
+        pending.clear()
+    }
+    entries.forEach { entry ->
+        if (entry is StreamListEntry.Stream) {
+            pending += entry
+        } else {
+            flush()
+            result += entry
+        }
+    }
+    flush()
+    return result
+}
+
+/** The two-column grid as keyboard navigation sees it: each row's streams, headers dropped. */
+internal fun streamGridRows(entries: List<StreamListEntry>): List<List<StreamItem>> =
+    pairStreamRows(entries).mapNotNull { (it as? StreamListEntry.StreamRow)?.streams }
+
+/**
+ * Up/Down in the grid: the nearest row in that direction holding something playable, keeping the
+ * column when that cell is playable. Null when there is nowhere to go.
+ */
+internal fun gridVerticalTarget(
+    rows: List<List<StreamItem>>,
+    current: StreamItem?,
+    down: Boolean,
+    isSelectable: (StreamItem) -> Boolean,
+): StreamItem? {
+    val rowIndex = rows.indexOfFirst { row -> row.any { it === current } }
+    if (rowIndex < 0) return rows.asSequence().flatten().firstOrNull(isSelectable)
+    val column = rows[rowIndex].indexOfFirst { it === current }
+    val range = if (down) (rowIndex + 1 until rows.size) else (rowIndex - 1 downTo 0)
+    for (index in range) {
+        val row = rows[index]
+        row.getOrNull(column)?.takeIf(isSelectable)?.let { return it }
+        row.firstOrNull(isSelectable)?.let { return it }
+    }
+    return null
+}
+
+/**
+ * Left/Right in the grid: the other cell of the same row when it is playable. Null at the row's
+ * outer edge, where the keys fall back to switching the provider chip.
+ */
+internal fun gridHorizontalTarget(
+    rows: List<List<StreamItem>>,
+    current: StreamItem?,
+    right: Boolean,
+    isSelectable: (StreamItem) -> Boolean,
+): StreamItem? {
+    val row = rows.firstOrNull { cells -> cells.any { it === current } } ?: return null
+    val column = row.indexOfFirst { it === current }
+    return row.getOrNull(if (right) column + 1 else column - 1)?.takeIf(isSelectable)
 }
 
 /**
@@ -2165,8 +2392,16 @@ private fun streamLazyListIndex(
     groups: List<AddonStreamGroup>,
     showGroupHeaders: Boolean,
     target: StreamItem,
+    twoColumns: Boolean = false,
 ): Int = buildStreamListEntries(groups = groups, showGroupHeaders = showGroupHeaders)
-    .indexOfFirst { it is StreamListEntry.Stream && it.stream === target }
+    .let { if (twoColumns) pairStreamRows(it) else it }
+    .indexOfFirst { entry ->
+        when (entry) {
+            is StreamListEntry.Stream -> entry.stream === target
+            is StreamListEntry.StreamRow -> entry.streams.any { it === target }
+            else -> false
+        }
+    }
 
 // ---------------------------------------------------------------------------
 // Stream Section Header

@@ -391,6 +391,7 @@ fun main(args: Array<String>) {
         }
     }
     configureDesktopFileLogging()
+    desktopPerfLoggingSource()?.let(com.nuvio.app.core.perf.PerfTelemetry::start)
     // Now that this copy owns the data directory and before any store is read: a settings import
     // staged by the previous session lands here (see applyPendingSettingsImport).
     com.nuvio.app.features.settings.applyPendingSettingsImport(com.nuvio.app.core.storage.DesktopStorage.rootDir)
@@ -972,6 +973,7 @@ fun main(args: Array<String>) {
         withTimeoutOrNull(CACHE_FLUSH_TIMEOUT_MS) {
             runCatching { HeroCastMetadataService.flushPendingWrites() }
             runCatching { MdbListMetadataService.flushPendingWrites() }
+            runCatching { com.nuvio.app.features.details.LightweightMetaDiskCache.flushPendingWrites() }
         }
     }
     // Every store coalesces its writes (DesktopStorage.flushAll), including the two caches just

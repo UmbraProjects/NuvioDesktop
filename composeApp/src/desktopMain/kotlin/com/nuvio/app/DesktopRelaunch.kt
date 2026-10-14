@@ -1,6 +1,5 @@
 package com.nuvio.app
 
-import com.nuvio.app.core.storage.DesktopStorage
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.SwingUtilities
@@ -18,26 +17,46 @@ internal fun relaunchAfterExit(scriptName: String): Boolean {
         ?.takeIf(Files::isRegularFile)
         ?: return false
     val pid = ProcessHandle.current().pid()
-    val script = DesktopStorage.rootDir.resolve(scriptName)
-    val lines = listOf(
-        "@echo off",
-        "setlocal enableextensions",
-        "set \"PID=$pid\"",
-        "set \"EXE=$launcher\"",
-        ":waitloop",
-        "tasklist /fi \"PID eq %PID%\" /nh 2>nul | findstr \"%PID%\" >nul",
-        "if not errorlevel 1 (",
-        "  timeout /t 1 /nobreak >nul",
-        "  goto waitloop",
-        ")",
-        "start \"\" \"%EXE%\"",
-        "(goto) 2>nul & del \"%~f0\"",
-        "",
-    )
+    // Children too (TorrServer, WebView2): a portable switch copies the data folder at the next
+    // startup, and TorrServer holds a lock on its database until it has really gone. Captured
+    // before the helper below is started, so the helper never waits on itself.
+    val childPids = ProcessHandle.current().descendants().map { it.pid() }.toList()
+    val installDir = launcher.parent
+    // Neither the script nor anyone's working directory may sit in the data folder: Windows won't
+    // rename a folder that is some process's current directory or holds an open file, and a
+    // portable switch renames it (`data` -> `data.old`) at the very next startup.
+    val script = Path.of(System.getProperty("java.io.tmpdir")).resolve("nuvio-$pid-$scriptName")
+    val lines = buildList {
+        add("@echo off")
+        add("setlocal enableextensions")
+        add("set \"PID=$pid\"")
+        add("set \"EXE=$launcher\"")
+        add(":waitloop")
+        add("tasklist /fi \"PID eq %PID%\" /nh 2>nul | findstr \"%PID%\" >nul")
+        add("if not errorlevel 1 (")
+        add("  timeout /t 1 /nobreak >nul")
+        add("  goto waitloop")
+        add(")")
+        // Children get a bounded wait each: an orphan that refuses to die must not stop the
+        // restart altogether.
+        childPids.forEachIndexed { index, child ->
+            add("set /a TRIES=0")
+            add(":child$index")
+            add("tasklist /fi \"PID eq $child\" /nh 2>nul | findstr \"$child\" >nul")
+            add("if not errorlevel 1 if %TRIES% lss 15 (")
+            add("  set /a TRIES+=1")
+            add("  timeout /t 1 /nobreak >nul")
+            add("  goto child$index")
+            add(")")
+        }
+        add("start \"\" /D \"$installDir\" \"%EXE%\"")
+        add("(goto) 2>nul & del \"%~f0\"")
+        add("")
+    }
     Files.writeString(script, lines.joinToString("\r\n"), Charsets.US_ASCII)
     // Same inner "cmd /c" as the updater's helper, so the self-deleting script cannot leave a shell open.
     ProcessBuilder("cmd.exe", "/c", "start", "Nuvio Restart", "/min", "cmd.exe", "/c", script.toString())
-        .directory(DesktopStorage.rootDir.toFile())
+        .directory(installDir.toFile())
         .start()
     exitSoon()
     return true

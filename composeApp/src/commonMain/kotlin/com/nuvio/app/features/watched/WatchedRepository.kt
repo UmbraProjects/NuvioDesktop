@@ -1,6 +1,7 @@
 package com.nuvio.app.features.watched
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.effectiveEpisodeNumber
@@ -149,6 +150,7 @@ object WatchedRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        PerfTelemetry.count("WatchedRepository.pullFromServer")
         TraktAuthRepository.ensureLoaded(profileId)
         TraktSettingsRepository.ensureLoaded()
         currentProfileId = profileId
@@ -199,6 +201,7 @@ object WatchedRepository {
      * either; that has its own request budget and its own foreground caller.
      */
     suspend fun pullNuvioSyncChanges(profileId: Int) {
+        PerfTelemetry.count("WatchedRepository.pullNuvioSyncChanges")
         ensureLoaded()
         if (profileId != currentProfileId) return
         if (activeRemoteWatchedAdapter() != null) return
@@ -235,6 +238,7 @@ object WatchedRepository {
         force: Boolean = false,
         rereadInFull: Boolean = false,
     ) {
+        PerfTelemetry.count("WatchedRepository.pullConnectedProviderHistory")
         ensureLoaded()
         // This path is silent unless it throws, which made "imported nothing" and "never ran"
         // indistinguishable from the log. Every early return now says which gate closed.

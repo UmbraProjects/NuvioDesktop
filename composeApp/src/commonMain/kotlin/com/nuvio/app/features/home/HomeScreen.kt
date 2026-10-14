@@ -4,6 +4,7 @@ import coil3.compose.LocalPlatformContext
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import com.nuvio.app.core.i18n.localizedMediaTypeLabel
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.ui.nuvioDitheredVerticalGradient
 import com.nuvio.app.core.ui.HdrFadeCorrected
 import com.nuvio.app.core.ui.nuvioArtworkRequestSize
@@ -71,6 +72,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.watchprogress.NextUpNoCardCache
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -1737,9 +1739,23 @@ fun HomeScreen(
         }
 
         withContext(Dispatchers.Default) {
+            // Everything besides the seed that decides whether a seed yields a card.
+            val noCardSettingsKey = nextUpNoCardSettingsKey(
+                showUnairedNextUp = continueWatchingPreferences.showUnairedNextUp,
+                preferFurthestEpisode = continueWatchingPreferences.upNextFromFurthestEpisode,
+                metaProviderKey = metaProviderKey,
+            )
             val plan = planNextUpResolution(
                 completedSeriesCandidates = completedSeriesCandidates,
                 cachedNextUpItems = cachedNextUpItems,
+                isKnownNoCard = { candidate ->
+                    NextUpNoCardCache.isKnownNoCard(
+                        contentId = candidate.content.id,
+                        seedSeason = candidate.seasonNumber,
+                        seedEpisode = candidate.episodeNumber,
+                        settingsKey = noCardSettingsKey,
+                    )
+                },
             )
             val cachedMatchingSeed = plan.cachedBySeries
             val cachedStaleArtworkItems = plan.staleArtworkContentIds
@@ -1808,6 +1824,7 @@ fun HomeScreen(
                                 isTraktProgressActive = isTraktProgressActive,
                                 forceMetaRefresh = forceArtworkMetaRefresh &&
                                     completedEntry.content.id in cachedStaleArtworkItems,
+                                noCardSettingsKey = noCardSettingsKey,
                             )
                         }
                     }
@@ -1829,6 +1846,7 @@ fun HomeScreen(
                         nextUpItemsBySeries = progressiveResults
                         processedNextUpContentIds = (
                             cachedMatchingSeed.keys +
+                                plan.knownNoCardContentIds +
                                 processedFreshContentIds
                             ).toSet()
                     }
@@ -1851,6 +1869,7 @@ fun HomeScreen(
                 nextUpItemsBySeries = results
                 processedNextUpContentIds = (
                     cachedMatchingSeed.keys +
+                        plan.knownNoCardContentIds +
                         processedFreshContentIds
                     ).toSet()
             }
@@ -2002,6 +2021,10 @@ fun HomeScreen(
         homeSettingsUiState.heroAmbientBackgroundEnabled && isDesktop && showHeroSlot
     val tvModeEnabled =
         homeSettingsUiState.tvModeEnabled && isDesktop && showHeroSlot
+    // TV Mode's take on Adaptive Ambient: the same screen-wide wash, with the TV hero dissolving
+    // into it and the shelf scrim easing off instead of ending on black.
+    val tvAmbientBackgroundEnabled =
+        tvModeEnabled && homeSettingsUiState.tvAmbientBackgroundEnabled
     val heroFocusable = showHeroSlot
     // Frame-budget reporting. The label carries both axes that change what a browsing frame costs:
     // the tab (Home/Search/Library/Discover render different row sets) and the display mode, which
@@ -3478,7 +3501,7 @@ fun HomeScreen(
                 },
             ),
     ) {
-        if (heroAmbientBackgroundEnabled) {
+        if (heroAmbientBackgroundEnabled || tvAmbientBackgroundEnabled) {
             HeroAmbientBackdrop(
                 backdrop = activeHeroBackdrop,
                 accent = activeHeroAccent,
@@ -3650,7 +3673,8 @@ fun HomeScreen(
                     immersiveFullBackdrop = homeSettingsUiState.tvFullBackdropEnabled,
                     adaptiveHeroMode = adaptiveHeroEnabled,
                     pagedHero = pagedHomeHero,
-                    ambientBackground = heroAmbientBackgroundEnabled && !tvModeEnabled,
+                    ambientBackground =
+                        (heroAmbientBackgroundEnabled && !tvModeEnabled) || tvAmbientBackgroundEnabled,
                     // Adaptive's hero overlays the scrolling rows, so it can't be see-through: it
                     // carries its own copy of the wash instead. Basic's hero scrolls with the
                     // rows, with only the wash behind it.
@@ -4232,8 +4256,15 @@ fun HomeScreen(
                                     // background (#0D0D0D) left a dip to true black between the two
                                     // and then a near-black grey ramp under the posters - the band
                                     // OLED VRR gamma shift flickers most. True black is pixels off.
-                                    backgroundColor = Color.Black,
+                                    // TV ambient keeps the theme colour the ambient scrim was
+                                    // tuned against, as Collections' folder view does.
+                                    backgroundColor = if (tvAmbientBackgroundEnabled) {
+                                        MaterialTheme.colorScheme.background
+                                    } else {
+                                        Color.Black
+                                    },
                                     fullBackdrop = homeSettingsUiState.tvFullBackdropEnabled,
+                                    ambientBackgroundEnabled = tvAmbientBackgroundEnabled,
                                 ),
                             ),
                         )
@@ -4845,6 +4876,7 @@ internal fun buildHomeNextUpSeedCandidates(
     preferFurthestEpisode: Boolean,
     nowEpochMs: Long,
 ): List<CompletedSeriesCandidate> {
+    PerfTelemetry.count("HomeScreen.buildHomeNextUpSeedCandidates")
     val progressSeeds = progressEntries
         .asSequence()
         .filter { entry -> entry.parentMetaType.isSeriesTypeForContinueWatching() }
@@ -4911,6 +4943,14 @@ internal fun filterNextUpItemsByCurrentSeeds(
             item.nextUpSeedEpisodeNumber == currentSeed.second
     }
 
+internal fun nextUpNoCardSettingsKey(
+    showUnairedNextUp: Boolean,
+    preferFurthestEpisode: Boolean,
+    metaProviderKey: List<String>,
+): String =
+    // Hashed: the provider key is addon transport URLs, which carry user configs.
+    "$showUnairedNextUp|$preferFurthestEpisode|${metaProviderKey.joinToString(",").hashCode().toUInt().toString(16)}"
+
 private suspend fun resolveHomeNextUpCandidate(
     completedEntry: CompletedSeriesCandidate,
     watchProgressEntries: List<WatchProgressEntry>,
@@ -4921,7 +4961,19 @@ private suspend fun resolveHomeNextUpCandidate(
     dismissedNextUpKeys: Set<String>,
     isTraktProgressActive: Boolean,
     forceMetaRefresh: Boolean = false,
+    noCardSettingsKey: String? = null,
 ): Pair<String, Pair<Long, ContinueWatchingItem>>? {
+    // Only outcomes that hold until the seed or settings change are remembered; a failed fetch is
+    // retried next launch as before.
+    fun rememberNoCard() {
+        if (noCardSettingsKey == null) return
+        NextUpNoCardCache.record(
+            contentId = completedEntry.content.id,
+            seedSeason = completedEntry.seasonNumber,
+            seedEpisode = completedEntry.episodeNumber,
+            settingsKey = noCardSettingsKey,
+        )
+    }
     val contentId = completedEntry.content.id
     val meta = try {
         MetaDetailsRepository.fetch(
@@ -4963,6 +5015,7 @@ private suspend fun resolveHomeNextUpCandidate(
         // Covers the showUnairedNextUp preference: with it off, an unaired next episode yields no
         // action at all, so the whole card disappears rather than losing only its badge.
         logNextUpResolutionRejected(completedEntry, "no-primary-action (series finished, or unaired and showUnairedNextUp=off)")
+        rememberNoCard()
         return null
     }
     if (action.resumePositionMs != null &&
@@ -4981,6 +5034,7 @@ private suspend fun resolveHomeNextUpCandidate(
     val nextEpisode = meta.videoForSeriesAction(action)
     if (nextEpisode == null) {
         logNextUpResolutionRejected(completedEntry, "next-episode-missing-from-meta")
+        rememberNoCard()
         return null
     }
     val item = completedEntry.toContinueWatchingSeed(meta)
@@ -5166,6 +5220,7 @@ internal fun buildHomeContinueWatchingItems(
     todayIsoDate: String = "",
     cloudLibraryUiState: CloudLibraryUiState? = null,
 ): List<ContinueWatchingItem> {
+    PerfTelemetry.count("HomeScreen.buildHomeContinueWatchingItems")
     val suppressedSeriesIds = nextUpSuppressedSeriesIds
         ?: visibleEntries
             .asSequence()
@@ -5280,6 +5335,8 @@ internal data class NextUpResolutionPlan(
     val staleArtworkContentIds: Set<String>,
     val candidatesToResolve: List<CompletedSeriesCandidate>,
     val staleReleasePrecisionContentIds: Set<String> = emptySet(),
+    /** Seeds already known to produce no card (NextUpNoCardCache); processed without a fetch. */
+    val knownNoCardContentIds: Set<String> = emptySet(),
 )
 
 /** Launch/profile load starts at -1, so request version 0 still receives one real metadata read. */
@@ -5341,6 +5398,7 @@ internal fun planNextUpResolution(
     cachedNextUpItems: Map<String, Pair<Long, ContinueWatchingItem>>,
     todayIsoDate: String = CurrentDateProvider.todayIsoDate(),
     hasArtworkLoadFailed: (String) -> Boolean = ContinueWatchingArtworkFailures::hasFailed,
+    isKnownNoCard: (CompletedSeriesCandidate) -> Boolean = { false },
 ): NextUpResolutionPlan {
     val cachedBySeries = completedSeriesCandidates.mapNotNull { candidate ->
         val cached = cachedNextUpItems[candidate.content.id] ?: return@mapNotNull null
@@ -5360,9 +5418,10 @@ internal fun planNextUpResolution(
         .filterValues { (_, item) -> item.needsReleasePrecisionRefresh(todayIsoDate) }
         .keys
     val staleContentIds = staleArtworkContentIds + staleReleasePrecisionContentIds
-    val candidatesToResolve = completedSeriesCandidates.filter { candidate ->
-        candidate.content.id !in cachedBySeries
-    } + completedSeriesCandidates.filter { candidate ->
+    val (knownNoCard, uncached) = completedSeriesCandidates
+        .filter { candidate -> candidate.content.id !in cachedBySeries }
+        .partition(isKnownNoCard)
+    val candidatesToResolve = uncached + completedSeriesCandidates.filter { candidate ->
         candidate.content.id in staleContentIds
     }
     return NextUpResolutionPlan(
@@ -5370,6 +5429,7 @@ internal fun planNextUpResolution(
         staleArtworkContentIds = staleArtworkContentIds,
         candidatesToResolve = candidatesToResolve,
         staleReleasePrecisionContentIds = staleReleasePrecisionContentIds,
+        knownNoCardContentIds = knownNoCard.mapTo(mutableSetOf()) { it.content.id },
     )
 }
 

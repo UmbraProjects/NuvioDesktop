@@ -491,7 +491,9 @@ private fun ImmersiveCollectionContent(
     var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
-    val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled
+    // TV Mode clears the Adaptive ambient flag, so its own ambient toggle stands in for it here.
+    val tvAmbientBackgroundEnabled = homeSettings.tvModeEnabled && homeSettings.tvAmbientBackgroundEnabled
+    val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled || tvAmbientBackgroundEnabled
     val catalogSeeMoreEnabled = homeSettings.catalogSeeMoreEnabled
     val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
     val backButtonAlpha by animateFloatAsState(
@@ -742,6 +744,8 @@ private fun ImmersiveCollectionContent(
                 // follows the same backdrop choice. The toggle only appears while the home display mode
                 // is TV Mode, so nobody who has not deliberately chosen this look ever sees it here.
                 immersiveFullBackdrop = homeSettings.tvFullBackdropEnabled,
+                // Dissolve into the ambient wash rather than fading to black, as TV Home does.
+                ambientBackground = tvAmbientBackgroundEnabled,
                 heroInfoLines = homeSettings.heroInfoLines,
                 heroInfoPriority = homeSettings.heroInfoPriority,
                 heroBadgePlacement = homeSettings.heroBadgePlacement,

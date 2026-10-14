@@ -1,5 +1,6 @@
 package com.nuvio.app.features.trailer
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URI
@@ -71,7 +72,10 @@ internal object TrailerExtractionPlatform {
             }
         }
 
-        val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())
+        val request = requestBuilder.build()
+        val response = PerfTelemetry.timedHttp("trailer", request.method(), request.uri().toString(), { it.statusCode() }) {
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        }
         val status = response.statusCode()
         TrailerRequestResponse(
             ok = status in 200..299,

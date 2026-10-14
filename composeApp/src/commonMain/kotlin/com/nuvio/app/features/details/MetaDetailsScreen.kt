@@ -102,6 +102,8 @@ import com.nuvio.app.core.ui.LocalNuvioDesktopCompactWindow
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.core.ui.StartupOverlayCoordinator
+import com.nuvio.app.features.streams.StreamPickerController
 import com.nuvio.app.core.ui.TraktListPickerDialog
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.rememberMouseActivityState
@@ -233,6 +235,9 @@ fun MetaDetailsScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
+    val startupOverlay by StartupOverlayCoordinator.visibleOverlay.collectAsStateWithLifecycle()
+    val streamPickerRequest by StreamPickerController.request.collectAsStateWithLifecycle()
+    val streamPickerClosedCount by StreamPickerController.closedCount.collectAsStateWithLifecycle()
     val repositoryMeta = uiState.meta?.takeIf { it.type == type && it.id == id }
         ?: MetaDetailsRepository.peek(type, id)
     // Collection parts take the poster service here; More Like This already has it from the repository.
@@ -849,6 +854,11 @@ fun MetaDetailsScreen(
                 // in place (mpv loadfile) instead of rebuilding the native surface — a rebuild
                 // comes up on a permanent black frame.
                 var heroTrailerDismissed by remember(meta.id, heroTrailerCandidate?.id) { mutableStateOf(false) }
+                // The trailer last clicked (null while the auto candidate plays), and whether its
+                // one retry after a playback error has been spent. YouTube refuses its media URLs
+                // (403) often enough that one fresh extraction is worth it, as the home hero does.
+                var heroTrailerLastClicked by remember(meta.id) { mutableStateOf<MetaTrailer?>(null) }
+                var heroTrailerRetryUsed by remember(meta.id) { mutableStateOf(false) }
                 val heroTrailerMuted by HeroTrailerAudioState.muted.collectAsStateWithLifecycle()
                 val heroTrailerVolume by HeroTrailerAudioState.volume.collectAsStateWithLifecycle()
                 LaunchedEffect(
@@ -911,6 +921,11 @@ fun MetaDetailsScreen(
                     // and rebuilding it leaves the native player on a black frame.
                     trailerRequestToken += 1
                     val currentRequestToken = trailerRequestToken
+                    heroTrailerLastClicked = trailer
+                    heroTrailerRetryUsed = false
+                    // The source picker docks into the same hero area and holds trailers while
+                    // open. A trailer click is the newer request, so it takes the area back.
+                    StreamPickerController.close()
                     selectedTrailer = null
                     trailerPlaybackSource = null
                     trailerErrorMessage = null
@@ -1028,10 +1043,11 @@ fun MetaDetailsScreen(
                     }
                 }
                 val dropTrailerForPlaybackNavigation: () -> Unit = {
-                    // Native video surfaces can remain visually above Compose content for the
-                    // frame in which navigation begins. Remove the trailer source first so the
-                    // MPV host is disposed before the streams/player destination is presented.
-                    isLeavingDetails = true
+                    // Play usually opens the source picker on this page now rather than leaving
+                    // it, so the trailer is parked (paused, hidden, surface kept mounted) instead
+                    // of torn down: a later trailer click must still re-attach in place, and this
+                    // page must not think it is being left. Parking hides the native surface in
+                    // the same frame, so it cannot show over the picker or a player route either.
                     trailerRequestToken += 1
                     selectedTrailer = null
                     trailerPlaybackSource = null
@@ -1041,8 +1057,6 @@ fun MetaDetailsScreen(
                     heroTrailerAutoplayReady = false
                     heroTrailerManualPlayback = false
                     heroTrailerDismissed = true
-                    heroTrailerFinished = true
-                    heroTrailerPlaybackSource = null
                 }
                 val onPrimaryPlayClick: () -> Unit = primaryPlay@{
                     // A show with episodes but no episode to start (nothing released yet) must not
@@ -1759,15 +1773,25 @@ fun MetaDetailsScreen(
                     heroTrailerManualPlayback = false
                     heroTrailerDismissed = true
                 }
+                // A startup overlay (updater, API-key prompt, setup wizard) is a Compose sheet the
+                // native trailer would paint over, so the countdown holds while one is up and
+                // starts again from zero once it closes. The source picker docks into the very
+                // area the trailer plays in, so it holds the trailer the same way.
+                val startupOverlayVisible = startupOverlay != null || streamPickerRequest != null
                 LaunchedEffect(
                     heroTrailerSourceUrl,
                     metaScreenSettingsUiState.heroTrailerDelaySeconds,
                     isLeavingDetails,
                     heroTrailerManualPlayback,
                     heroTrailerDismissed,
+                    startupOverlayVisible,
                 ) {
                     heroTrailerAutoplayReady = false
-                    if (heroTrailerSourceUrl == null || isLeavingDetails || heroTrailerDismissed) return@LaunchedEffect
+                    if (heroTrailerSourceUrl == null || isLeavingDetails || heroTrailerDismissed ||
+                        startupOverlayVisible
+                    ) {
+                        return@LaunchedEffect
+                    }
                     // Both paths keep playWhenReady false during this wait, so the surface attaches
                     // paused and decodes its first frame before playback starts. The automatic path
                     // waits the configured delay; a user-clicked trailer only needs a brief buffer.
@@ -1797,6 +1821,7 @@ fun MetaDetailsScreen(
                     selectedSeasonForActions != null ||
                     recapBoundary != null ||
                     selectedComment != null ||
+                    startupOverlayVisible ||
                     // Only non-null while another trailer is being resolved/played elsewhere (the
                     // play-in-hero path clears it), so this never fights hero playback itself.
                     selectedTrailer != null
@@ -1978,6 +2003,11 @@ fun MetaDetailsScreen(
                     }
                 }
                 val currentHandleDetailTvKey = rememberUpdatedState(handleDetailTvKey)
+                // The picker held keyboard focus while it was open; take it back when it closes.
+                LaunchedEffect(streamPickerClosedCount) {
+                    if (streamPickerClosedCount == 0 || !detailsKeyboardNavigationEnabled) return@LaunchedEffect
+                    try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                }
                 LaunchedEffect(Unit) {
                     DetailTvKeyboardBridge.keys.collect { key ->
                         if (detailsKeyboardNavigationEnabled) {
@@ -2179,6 +2209,10 @@ fun MetaDetailsScreen(
                                             dominantBackdropImageBitmap = imageBitmap
                                         },
                                         desktopOverlay = useDesktopDetailLayout,
+                                        backdropFrosted = useDesktopDetailLayout &&
+                                            streamPickerRequest?.launch?.let { launch ->
+                                                (launch.parentMetaId ?: launch.videoId) == meta.id
+                                            } == true,
                                         discoveryFacts = if (metaScreenSettingsUiState.discoveryBadgesEnabled) {
                                             heroDiscoveryFacts
                                         } else {
@@ -2244,9 +2278,21 @@ fun MetaDetailsScreen(
                                             heroTrailerManualPlayback = false
                                         },
                                         onHeroTrailerError = {
-                                            heroTrailerReady = false
-                                            heroTrailerDismissed = true
-                                            heroTrailerManualPlayback = false
+                                            val retryTrailer = heroTrailerLastClicked ?: heroTrailerCandidate
+                                            // Never while the picker is open: the retry goes
+                                            // through the click path, which would close it.
+                                            if (!heroTrailerRetryUsed && retryTrailer != null && streamPickerRequest == null) {
+                                                // The auto candidate keeps its mute state; the
+                                                // click path would otherwise turn sound on.
+                                                val keepMuted = heroTrailerLastClicked == null && heroTrailerMuted
+                                                playTrailerInHero.value(retryTrailer)
+                                                heroTrailerRetryUsed = true
+                                                if (keepMuted) HeroTrailerAudioState.setMuted(true)
+                                            } else {
+                                                heroTrailerReady = false
+                                                heroTrailerDismissed = true
+                                                heroTrailerManualPlayback = false
+                                            }
                                         },
                                     )
                                     val showDesktopEpisodesOverlay = useDesktopDetailLayout &&
@@ -2263,6 +2309,9 @@ fun MetaDetailsScreen(
                                     if (showDesktopEpisodesOverlay) {
                                         DetailSeriesContent(
                                             meta = meta,
+                                            pickingSourceVideoId = streamPickerRequest?.launch
+                                                ?.takeIf { (it.parentMetaId ?: it.videoId) == meta.id }
+                                                ?.videoId,
                                             modifier = Modifier
                                                 .align(Alignment.BottomStart)
                                                 .fillMaxWidth()

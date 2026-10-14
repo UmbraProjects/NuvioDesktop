@@ -2,6 +2,7 @@ package com.nuvio.app.features.player
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppFeaturePolicy
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.enabledAddons
@@ -80,6 +81,7 @@ object PlayerStreamsRepository {
         episode: Int? = null,
         forceRefresh: Boolean = false,
     ) {
+        PerfTelemetry.count("PlayerStreamsRepository.loadSources")
         fetchStreams(
             type = type,
             videoId = videoId,
@@ -106,6 +108,7 @@ object PlayerStreamsRepository {
         sourceAffinity: PlayerSourceAffinity = PlayerSourceAffinity.Stream,
         forceRefresh: Boolean = false,
     ) {
+        PerfTelemetry.count("PlayerStreamsRepository.loadEpisodeStreams")
         fetchStreams(
             type = type,
             videoId = videoId,

@@ -19,6 +19,8 @@ internal actual object ImageCacheSettingsStorage {
     actual fun savePrewarmBackdrops(value: Boolean) = store.putBoolean("prewarm_backdrops", value)
     actual fun loadPrewarmCollectionContents(): Boolean? = store.getBoolean("prewarm_collection_contents")
     actual fun savePrewarmCollectionContents(value: Boolean) = store.putBoolean("prewarm_collection_contents", value)
+    actual fun loadMetadataCacheHours(): Int? = store.getInt("metadata_cache_hours")
+    actual fun saveMetadataCacheHours(value: Int) = store.putInt("metadata_cache_hours", value)
 
     actual fun usedBytes(): Long? =
         runCatching { SingletonImageLoader.get(PlatformContext.INSTANCE).diskCache?.size }.getOrNull()

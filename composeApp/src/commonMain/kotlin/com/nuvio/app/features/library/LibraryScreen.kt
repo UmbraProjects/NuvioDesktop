@@ -36,6 +36,9 @@ import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -48,6 +51,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -195,6 +201,11 @@ fun LibraryScreen(
 
     LaunchedEffect(Unit) {
         if (isDesktop) try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
+    // Local files are rescanned here, not at launch, so starting the app doesn't wake the HDD.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { LocalLibraryRepository.scanIfNotScannedThisSession() }
     }
 
     LaunchedEffect(visibleSections.size) {
@@ -585,7 +596,6 @@ fun LibraryNavigationContextMenu(
 
 // The library sort menu is styled after the floating search bar's discover picker, so the two
 // navbar menus read as one system: same translucent surface, hairline border and row metrics.
-internal val LibraryNavMenuWidth = 320.dp
 internal val LibraryNavMenuBorderColor = Color.White.copy(alpha = 0.13f)
 private val LibraryNavMenuRowSelectedColor = Color.White.copy(alpha = 0.1f)
 
@@ -610,8 +620,8 @@ internal val LibrarySortEntries: List<Pair<LibrarySortOption, String>> = listOf(
 
 /**
  * Standalone popup form, used where the menu has no bar to hang off (bottom navigation bar,
- * desktop hover sidebar). The floating top bar attaches [LibrarySortMenuPanel] under the pill
- * instead.
+ * desktop hover sidebar). The floating top bar attaches [LibraryQuickAccessMenuPanel] under the
+ * pill instead.
  */
 @Composable
 fun LibraryDisplayDropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit) {
@@ -623,9 +633,9 @@ fun LibraryDisplayDropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit) 
         tonalElevation = 0.dp,
         shadowElevation = MaterialTheme.nuvio.elevation.overlay,
         border = BorderStroke(0.5.dp, LibraryNavMenuBorderColor),
-        modifier = Modifier.width(240.dp),
+        modifier = Modifier.width(260.dp),
     ) {
-        LibrarySortMenuItems(onDismissRequest = onDismissRequest)
+        LibraryQuickAccessMenuItems(onDismissRequest = onDismissRequest)
     }
 }
 
@@ -634,7 +644,7 @@ fun LibraryDisplayDropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit) 
  * bar hangs this off the bottom of the nav pill exactly like the discover picker.
  */
 @Composable
-fun LibrarySortMenuPanel(
+fun LibraryQuickAccessMenuPanel(
     shape: Shape,
     modifier: Modifier = Modifier,
     onDismissRequest: () -> Unit = {},
@@ -648,30 +658,57 @@ fun LibrarySortMenuPanel(
         modifier = modifier,
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            LibrarySortMenuItems(onDismissRequest = onDismissRequest)
+            LibraryQuickAccessMenuItems(onDismissRequest = onDismissRequest)
         }
     }
 }
 
+/**
+ * Right-click on the Library nav item. Sorting moved to the Library's own filter bar, so the menu
+ * is now a shortcut into the local (folder-scanned) library: its browser, or its settings page.
+ */
 @Composable
-private fun LibrarySortMenuItems(onDismissRequest: () -> Unit) {
-    val settings by remember {
-        LibraryDisplaySettingsRepository.ensureLoaded()
-        LibraryDisplaySettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    Text(
-        text = stringResource(Res.string.library_sort),
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        style = MaterialTheme.typography.labelMedium,
-        color = Color.White.copy(alpha = 0.55f),
-    )
-    // The TMDB-backed orders need a TMDB key to look titles up with.
-    val tmdbAvailable = com.nuvio.app.features.discover.TmdbBrowse.isAvailable
-    LibrarySortEntries.filter { (option, _) -> tmdbAvailable || !option.needsFacts() }.forEach { (option, label) ->
-        LibraryMenuItem(label = label, selected = settings.sortOption == option) {
-            LibraryDisplaySettingsRepository.setSortOption(option)
-            onDismissRequest()
-        }
+private fun LibraryQuickAccessMenuItems(onDismissRequest: () -> Unit) {
+    LibraryQuickAccessItem(
+        icon = Icons.Rounded.VideoLibrary,
+        label = stringResource(Res.string.library_menu_local_library),
+    ) {
+        onDismissRequest()
+        LibraryQuickAccess.open(LibraryQuickAccessTarget.LocalLibrary)
+    }
+    LibraryQuickAccessItem(
+        icon = Icons.Rounded.Settings,
+        label = stringResource(Res.string.library_menu_local_library_settings),
+    ) {
+        onDismissRequest()
+        LibraryQuickAccess.open(LibraryQuickAccessTarget.LocalLibrarySettings)
+    }
+}
+
+@Composable
+private fun LibraryQuickAccessItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = Color.White.copy(alpha = 0.72f),
+        )
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.9f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

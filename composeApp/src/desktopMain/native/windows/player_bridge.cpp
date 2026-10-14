@@ -1364,6 +1364,13 @@ public:
         initialRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled;
         initialRtxHdrEnabled = nvidiaRtxHdrEnabled;
         initialAnimeContent = isAnimeContent;
+        initialAnimeLayer = isAnimeContent;
+        initialAnimeTrueHdr = false;
+        for (const auto &option : extraMpvOptions) {
+            if (option == "@nuvio-anime-layer=yes") initialAnimeLayer = true;
+            else if (option == "@nuvio-anime-layer=no") initialAnimeLayer = false;
+            else if (option == "@nuvio-anime-true-hdr=yes") initialAnimeTrueHdr = true;
+        }
         // Do not install VapourSynth as an mpv option during probing. It is applied synchronously
         // when FILE_LOADED arrives, before the first PLAYBACK_RESTART can reach the app.
         deferredAnimeSvpFilter = animeSvpFilter;
@@ -1403,6 +1410,8 @@ public:
             " initialProgress=" + std::to_string(initialProgressFraction) +
             " rtxVsr=" + (nvidiaRtxSuperResolutionEnabled ? "yes" : "no") +
             " rtxHdr=" + (nvidiaRtxHdrEnabled ? "yes" : "no") +
+            " anime=" + (isAnimeContent ? "yes" : "no") +
+            " animeLayer=" + (initialAnimeLayer ? "yes" : "no") +
             " animeSvp=" + (animeSvpFilter.empty() ? "no" : "yes")
         );
 
@@ -2010,7 +2019,9 @@ public:
         const bool requested = containsVapourSynthFilter(requestedVideoFilters);
         const bool bypass = requested && (speed >= svpSpeedBypassThreshold ||
             (svpBypassedForSpeed && speed > svpSpeedRestoreThreshold));
-        const std::string filters = bypass ? removeVapourSynthFilters(requestedVideoFilters) : requestedVideoFilters;
+        const std::string filters = !bypass ? requestedVideoFilters
+            : !svpBypassVideoFilters.empty() ? svpBypassVideoFilters
+            : removeVapourSynthFilters(requestedVideoFilters);
         const bool enabled = containsVapourSynthFilter(filters);
         if (svpGraphInitInFlight && filters != appliedVideoFilters) {
             // Keep the complete transition pending, including decoder and timing options.
@@ -2757,6 +2768,10 @@ public:
                 value + "\n");
             return;
         }
+        if (key == "@nuvio-svp-bypass-vf") {
+            svpBypassVideoFilters = value;
+            return;
+        }
         if (key == "vf") {
             videoPipelineManaged = true;
             requestedVideoFilters = value;
@@ -3079,6 +3094,11 @@ private:
     bool videoParamsPrimariesReceived = false;
     bool videoParamsGammaReceived = false;
     std::string requestedVideoFilters;
+    // Chain to run instead of requestedVideoFilters while its VapourSynth part is bypassed for
+    // speed, set from the "@nuvio-svp-bypass-vf" pseudo-property just before each `vf` write.
+    // Empty means "the same chain minus VapourSynth". It carries the RTX d3d11vpp filter, which
+    // must not stack on SVP but should come back when SVP is not actually running.
+    std::string svpBypassVideoFilters;
     std::string appliedVideoFilters;
     std::string deferredAnimeSvpFilter;
     std::string appTraceId = "none";
@@ -3131,6 +3151,12 @@ private:
     bool initialRtxSuperResolutionEnabled = false;
     bool initialRtxHdrEnabled = false;
     bool initialAnimeContent = false;
+    // From the "@nuvio-anime-layer" / "@nuvio-anime-true-hdr" markers. The layer flag is whether
+    // Kotlin expects Anime4K / a custom shader / SVP on this session; RTX never stacks on that, but
+    // detected anime without it gets VSR (and True HDR only with the anime opt-in). Without the
+    // marker, detected anime is treated as having the layer, which was the old behaviour.
+    bool initialAnimeLayer = false;
+    bool initialAnimeTrueHdr = false;
     int lastReportedHdrState = -1;
     // Last "videoSourceSize" value handed to Kotlin, so a re-observation of unchanged dimensions
     // does not restart the video-profile pass. -1 means nothing reported for this source yet.
@@ -3695,8 +3721,8 @@ private:
                 const bool svpActive = !animeSvpFilter.empty();
                 // RTX VSR / True HDR are suppressed on the anime enhancement layer (see
                 // applyDesktopAnimeProfile), so their verbose pipeline logging has nothing to
-                // diagnose there; only pay for it on non-anime content.
-                const bool animeEnhancementActive = initialAnimeContent || svpActive;
+                // diagnose there; only pay for it when RTX can actually run.
+                const bool animeEnhancementActive = initialAnimeLayer || svpActive;
                 const bool rtxVerbose = (nvidiaRtxSuperResolutionEnabled || nvidiaRtxHdrEnabled) &&
                     !animeEnhancementActive;
                 const bool deliverVerbose = verboseEnvSet || rtxVerbose || svpActive;
@@ -3925,6 +3951,7 @@ private:
                 if (option.rfind("@nuvio-trace-id=", 0) == 0) continue;
                 if (option.rfind("@nuvio-config-mode=", 0) == 0) continue;
                 if (option.rfind("@nuvio-low-vram=", 0) == 0) continue;
+                if (option.rfind("@nuvio-anime-", 0) == 0) continue;
                 const bool userOption = option.rfind("@nuvio-user:", 0) == 0;
                 const std::string optionText = userOption ? option.substr(12) : option;
                 std::string::size_type equals = optionText.find('=');
@@ -4175,6 +4202,18 @@ private:
         if (!topLevel || !IsWindow(topLevel)) return;
         DWORD thisThread = GetCurrentThreadId();
         DWORD targetThread = GetWindowThreadProcessId(topLevel, nullptr);
+        // The user is dragging the app window's edge or title bar. Windows' size/move loop owns
+        // the mouse capture then, and releasing it cancels the drag and snaps the window back to
+        // its pre-drag size. A trailer torn down mid-resize (the details page swapping layouts
+        // at a width threshold) used to do exactly that (2026-10-14). Focus can't be on the
+        // trailer during the drag anyway, so there is nothing to reclaim.
+        GUITHREADINFO guiInfo = {};
+        guiInfo.cbSize = sizeof(guiInfo);
+        if (targetThread != 0 && GetGUIThreadInfo(targetThread, &guiInfo) &&
+            (guiInfo.flags & GUI_INMOVESIZE) != 0) {
+            logBridge("reclaim host focus skipped: window move/size in progress");
+            return;
+        }
         bool attached = false;
         if (targetThread != 0 && targetThread != thisThread) {
             attached = AttachThreadInput(thisThread, targetThread, TRUE) != FALSE;
@@ -4182,7 +4221,11 @@ private:
         SetFocus(topLevel);
         // A press on the WebView2 can leave it holding the shared mouse capture too; with the
         // queues attached this releases it for the app's thread as well.
-        if (GetCapture()) ReleaseCapture();
+        // Only a capture the trailer's own windows hold; anyone else's (a drag in the app) stays.
+        HWND capture = GetCapture();
+        if (capture && containerHwnd && (capture == containerHwnd || IsChild(containerHwnd, capture))) {
+            ReleaseCapture();
+        }
         if (attached) {
             AttachThreadInput(thisThread, targetThread, FALSE);
         }
@@ -4763,13 +4806,14 @@ private:
                 // Install the final live-action RTX chain before the first playback restart.
                 // Kotlin constructs the same canonical string later, so its profile refresh is a
                 // no-op instead of tearing down and rebuilding an active D3D11 video processor.
-                if (!initialAnimeContent && hdrStateKnown) {
+                if (!initialAnimeLayer && hdrStateKnown) {
                     // NVIDIA's d3d11vpp VSR path can output a solid green plane for native HDR,
                     // particularly Dolby Vision P010. VSR is an SDR upscale enhancement here;
                     // HDR remains on gpu-next's normal colour-managed path.
                     const bool vsrActive = initialRtxSuperResolutionEnabled &&
                         !resolvedHdr && vsrScale > 1.01;
-                    const bool trueHdrActive = initialRtxHdrEnabled && !resolvedHdr;
+                    const bool trueHdrActive = initialRtxHdrEnabled && !resolvedHdr &&
+                        (!initialAnimeContent || initialAnimeTrueHdr);
                     std::string initialRtxFilters;
                     if (vsrActive || trueHdrActive) {
                         initialRtxFilters = "d3d11vpp=";

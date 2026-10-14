@@ -1,5 +1,6 @@
 package com.nuvio.app.features.search
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.posterservice.withCachedCustomPosters
 import com.nuvio.app.features.posterservice.withCustomPosterOverlay
 import com.nuvio.app.features.posterservice.CustomPosterScreen
@@ -211,6 +212,7 @@ object SearchRepository {
     }
 
     fun refreshDiscover(addons: List<ManagedAddon>) {
+        PerfTelemetry.count("SearchRepository.refreshDiscover")
         ensureBrowseLoaded()
         val activeAddons = addons.enabledAddons().filter { it.manifest != null }
         val tmdbAvailable = TmdbBrowse.isAvailable

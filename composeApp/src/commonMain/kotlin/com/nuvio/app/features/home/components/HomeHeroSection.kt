@@ -81,6 +81,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import com.nuvio.app.features.streams.StreamPickerController
+import com.nuvio.app.features.streams.StreamPickerDock
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -208,6 +213,13 @@ object HomeHeroPeoplePanelToggleTrigger {
 }
 
 private const val HERO_BACKDROP_WIDTH_FRACTION = 0.85f
+
+/** TV mode's source picker dock: the hero's right-hand share, clear of the metadata column. */
+private const val HERO_PICKER_DOCK_WIDTH_FRACTION = 0.6f
+private const val HERO_PICKER_FROST_BLUR_DP = 28f
+// Darker than the details page's 0.25: home backdrops are brighter key art, and the source list
+// has to read over them.
+private const val HERO_PICKER_FROST_DIM = 0.45f
 private const val HERO_BACKDROP_FADE_FRACTION = 0.35f
 private const val HERO_METADATA_PREFETCH_CONCURRENCY = 4
 private val heroImageLog = Logger.withTag("HomeHeroImages")
@@ -450,7 +462,15 @@ fun HomeHeroSection(
             item.type == displayCurrentItem.type && item.id == displayCurrentItem.id
         } ?: displayCurrentItem
 
-        LaunchedEffect(displayCurrentItem.type, displayCurrentItem.id) {
+        // Keyed on the artwork too: an item often arrives poster-only and gets its backdrop from
+        // enrichment a moment later. Keyed on id alone, the ambient wash stayed on the poster
+        // (e.g. an orange key-art poster tinting the wash under a blue backdrop).
+        LaunchedEffect(
+            displayCurrentItem.type,
+            displayCurrentItem.id,
+            displayCurrentItem.banner,
+            displayCurrentItem.poster,
+        ) {
             onActiveItemChanged?.invoke(displayCurrentItem)
         }
 
@@ -1171,8 +1191,9 @@ private fun DesktopHomeHeroFrame(
 ) {
     val backgroundColor = if (immersiveMode) Color.Black else MaterialTheme.colorScheme.background
     // Ambient: the hero stays the opaque dark hero above, and its lower part dissolves into the
-    // ambient wash the rows sit on, so the two meet without an edge.
-    val ambientFade = ambientBackground && !immersiveMode
+    // ambient wash the rows sit on, so the two meet without an edge. TV Mode only passes this when
+    // its own ambient toggle is on.
+    val ambientFade = ambientBackground
 
     val playerSettings by PlayerSettingsRepository.uiState.collectAsState()
     // TV-mode hero trailer (desktop only; mirrors Nuvio TV). The feature applies to the
@@ -1394,6 +1415,15 @@ private fun DesktopHomeHeroFrame(
         if (immersiveFullBackdropActive) layout.heroHeight else immersiveBackdropHeight
     val heroBackdropWidthFraction =
         if (immersiveFullBackdropActive) 1f else HERO_BACKDROP_WIDTH_FRACTION
+    // TV mode hosts the source picker (continue watching) in its backdrop area, the way the details
+    // page does in its trailer area: the artwork frosts behind it and the badges step aside.
+    val streamPickerRequest by StreamPickerController.request.collectAsState()
+    val heroDocksStreamPicker = immersiveMode && isDesktop
+    val heroFrost by animateFloatAsState(
+        targetValue = if (heroDocksStreamPicker && streamPickerRequest != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 260),
+        label = "home_hero_picker_frost",
+    )
 
     Box(
         modifier = Modifier
@@ -1426,7 +1456,15 @@ private fun DesktopHomeHeroFrame(
                         // Own layer, so the dissolve cuts the hero rather than what is under it.
                         Modifier
                             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .heroAmbientDissolve()
+                            .heroAmbientDissolve(
+                                // TV Mode's artwork stops at the shelf, not the hero's bottom: the
+                                // dissolve has to be complete there or the artwork ends on a hard edge.
+                                endFraction = if (immersiveMode && layout.heroHeight > 0.dp) {
+                                    (heroArtworkHeight / layout.heroHeight).coerceIn(0.2f, 1f)
+                                } else {
+                                    1f
+                                },
+                            )
                     } else {
                         Modifier
                     },
@@ -1497,7 +1535,15 @@ private fun DesktopHomeHeroFrame(
                         HeroBackdropImage(
                             item = items[layer.page],
                             contentDescription = items[layer.page].name,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (heroFrost > 0f) {
+                                        Modifier.blur((HERO_PICKER_FROST_BLUR_DP * heroFrost).dp)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                             crossfade = !pagedHero,
                             alignment = when {
                                 immersiveMode -> ImmersiveHeroBackdropAlignment
@@ -1510,6 +1556,14 @@ private fun DesktopHomeHeroFrame(
                             },
                         )
                     }
+                }
+                if (heroFrost > 0f) {
+                    // Darker as well as blurred, so the source list reads on it.
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(Color.Black.copy(alpha = HERO_PICKER_FROST_DIM * heroFrost)),
+                    )
                 }
             }
 
@@ -1598,6 +1652,28 @@ private fun DesktopHomeHeroFrame(
                     onSurfaceDisposed = onHeroTrailerSurfaceDisposed,
                 )
             }
+        }
+
+        if (heroDocksStreamPicker) {
+            // The backdrop area right of the metadata column, down to where the shelf starts.
+            val density = LocalDensity.current
+            DisposableEffect(Unit) {
+                onDispose { StreamPickerController.clearDock(StreamPickerDock.HOME) }
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .height(immersiveBackdropHeight)
+                    .fillMaxWidth(HERO_PICKER_DOCK_WIDTH_FRACTION)
+                    .onGloballyPositioned { coordinates ->
+                        val bounds = coordinates.boundsInWindow()
+                        if (bounds.height >= with(density) { 240.dp.toPx() }) {
+                            StreamPickerController.reportDock(StreamPickerDock.HOME, bounds)
+                        } else {
+                            StreamPickerController.clearDock(StreamPickerDock.HOME)
+                        }
+                    },
+            )
         }
 
         // Where the metadata column's box ends and how tall it would naturally be; the people
@@ -1741,14 +1817,14 @@ private fun DesktopHomeHeroFrame(
             }
         }
 
-        if (discoveryCache.isNotEmpty()) {
+        if (discoveryCache.isNotEmpty() && heroFrost < 1f) {
             Box(
                 modifier = heroDiscoveryMedalOverlayModifier(
                     placement = heroBadgePlacement,
                     immersiveMode = immersiveMode,
                     heroHeight = layout.heroHeight,
                     immersiveBackdropHeight = immersiveBackdropHeight,
-                ),
+                ).graphicsLayer { alpha = 1f - heroFrost },
                 contentAlignment = heroBadgePlacement.heroDiscoveryMedalAlignment(),
             ) {
                 visiblePages.forEachPage(keyedByPage = pagedHero) { layer ->
@@ -1871,17 +1947,21 @@ private fun Modifier.immersiveHeroExtraMask(
  * Dissolves the lower part of the hero to transparency, eased at both ends so neither the start nor
  * the end of the ramp reads as a line. Cuts with DstOut, so it needs an offscreen layer.
  */
-private fun Modifier.heroAmbientDissolve(): Modifier =
+private fun Modifier.heroAmbientDissolve(
+    /** Fraction of the height where the hero is fully gone; the ramp is scaled to end there. */
+    endFraction: Float = 1f,
+): Modifier =
     drawWithContent {
         drawContent()
         drawRect(
             brush = Brush.verticalGradient(
                 colorStops = arrayOf(
                     0f to Color.Transparent,
-                    HERO_AMBIENT_DISSOLVE_START to Color.Transparent,
-                    0.64f to Color.Black.copy(alpha = 0.12f),
-                    0.78f to Color.Black.copy(alpha = 0.45f),
-                    0.9f to Color.Black.copy(alpha = 0.82f),
+                    HERO_AMBIENT_DISSOLVE_START * endFraction to Color.Transparent,
+                    0.64f * endFraction to Color.Black.copy(alpha = 0.12f),
+                    0.78f * endFraction to Color.Black.copy(alpha = 0.45f),
+                    0.9f * endFraction to Color.Black.copy(alpha = 0.82f),
+                    endFraction to Color.Black,
                     1f to Color.Black,
                 ),
             ),

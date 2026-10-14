@@ -244,6 +244,19 @@ internal fun LazyListScope.homescreenSettingsContent(
                         )
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_home_tv_ambient_background),
+                            description = stringResource(
+                                Res.string.settings_home_tv_ambient_background_description,
+                            ),
+                            checked = homeSettings.tvAmbientBackgroundEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(
+                                SettingsScrollAnchor.searchKey("home-tv-ambient-background"),
+                            ),
+                            onCheckedChange = HomeCatalogSettingsRepository::setTvAmbientBackgroundEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
                             title = stringResource(Res.string.settings_home_row_jump_dots),
                             description = stringResource(Res.string.settings_home_row_jump_dots_description),
                             checked = homeSettings.tvRowDotsEnabled,

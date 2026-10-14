@@ -21,7 +21,7 @@ import com.nuvio.app.features.search.SearchRepository
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamContextStore
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
-import com.nuvio.app.features.streams.StreamLaunchStore
+import com.nuvio.app.features.streams.StreamPickerController
 import com.nuvio.app.features.streams.StreamPrefetchCache
 import com.nuvio.app.features.streams.StreamPrefetchService
 import com.nuvio.app.features.streams.StreamsRepository
@@ -69,7 +69,7 @@ internal object LocalAccountDataCleaner {
         com.nuvio.app.features.search.SearchHistoryRepository.onProfileChanged()
         SubtitleRepository.clear()
         PlayerLaunchStore.clear()
-        StreamLaunchStore.clear()
+        StreamPickerController.reset()
         StreamContextStore.clear()
     }
 }

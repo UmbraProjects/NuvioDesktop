@@ -849,6 +849,14 @@
     <string name="settings_updates_channel_nightly">Nightly</string>
     <string name="settings_updates_auto_install">Install Updates Automatically</string>
     <string name="settings_updates_auto_install_description">Does not auto accept prompt, just requires no manual extraction.</string>
+    <string name="settings_portable_mode">Portable Mode</string>
+    <string name="settings_portable_mode_description">Keep settings and caches in a data folder beside Nuvio.exe instead of AppData. Switching restarts Nuvio and moves your data across.</string>
+    <string name="settings_portable_mode_enable_title">Switch to portable mode?</string>
+    <string name="settings_portable_mode_enable_message">Nuvio will restart and copy your settings into a data folder next to Nuvio.exe. Image and torrent caches are not copied; they rebuild as you browse. Your AppData folder is left as it is.\n\nIf you have an antivirus exclusion for Nuvio, add the new data folder to it as well.</string>
+    <string name="settings_portable_mode_disable_title">Turn off portable mode?</string>
+    <string name="settings_portable_mode_disable_message">Nuvio will restart and copy your settings back to AppData. The portable folder is kept as data.old next to Nuvio.exe, and you can delete it afterwards.</string>
+    <string name="settings_portable_mode_restart">Restart</string>
+    <string name="settings_portable_mode_failed">Could not write to the folder Nuvio.exe is in. Move Nuvio somewhere your account can write to and try again.</string>
     <string name="settings_advanced_remember_last_profile">Remember Last Profile</string>
     <string name="settings_advanced_remember_last_profile_description">Remember last selected profile at startup</string>
     <string name="settings_advanced_clear_cw_cache">Clear Continue Watching Cache</string>
@@ -857,6 +865,12 @@
     <string name="settings_advanced_image_cache_size">Image Cache Size</string>
     <string name="settings_advanced_image_cache_size_description">Disk space for posters, logos and backdrops. %1$s in use. A change applies after restart.</string>
     <string name="settings_advanced_image_cache_size_description_unknown">Disk space for posters, logos and backdrops. A change applies after restart.</string>
+    <string name="settings_advanced_metadata_cache">Metadata Cache</string>
+    <string name="settings_advanced_metadata_cache_description">How long titles looked up for rows, the hero and artwork prewarm are kept between launches, so a restart does not fetch them all again. Changing metadata language, artwork source or addons refreshes them automatically.</string>
+    <string name="settings_advanced_metadata_cache_off">Off</string>
+    <string name="settings_advanced_metadata_cache_hours">%1$d hours</string>
+    <string name="settings_advanced_metadata_cache_days">%1$d days</string>
+    <string name="settings_advanced_metadata_cache_one_day">1 day</string>
     <string name="settings_advanced_image_prewarm">Prewarm Artwork</string>
     <string name="settings_advanced_image_prewarm_description">Download artwork for the hero, Continue Watching, every Home row and your Library in the background, so it is on disk before you scroll to it. Pauses during playback.</string>
     <string name="settings_advanced_image_prewarm_running">Prewarming… %1$d of %2$d checked.</string>
@@ -1808,6 +1822,10 @@
     <string name="settings_playback_nvidia_rtx_super_resolution_desc">Requires an RTX GPU.</string>
     <string name="settings_playback_nvidia_rtx_hdr">RTX Video True HDR</string>
     <string name="settings_playback_nvidia_rtx_hdr_desc">Requires an RTX GPU and Windows HDR enabled in Display Settings.</string>
+    <string name="settings_playback_nvidia_rtx_hdr_anime">True HDR on anime</string>
+    <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Off by default: the SDR-to-HDR pass can oversaturate flat anime colours. Never applies while Anime4K, a custom shader or SVP is running, unless the option below is on.</string>
+    <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Also with anime shaders</string>
+    <string name="settings_playback_nvidia_rtx_hdr_anime_shaders_desc">Runs True HDR together with Anime4K or a custom shader. Experimental and may look worse: the shaders are tuned for SDR. Anime4K's denoise filter is skipped while this is active. Never applies with SVP.</string>
     <string name="settings_playback_section_skip_segments">SKIP SEGMENTS</string>
     <string name="settings_playback_section_stream_auto_play">STREAM AUTO-PLAY</string>
     <string name="settings_playback_section_stream_selection">STREAM SELECTION</string>
@@ -3447,6 +3465,8 @@
     <string name="settings_hero_backdrop_crossfade_off">Off</string>
     <string name="settings_home_tv_full_backdrop">Full backdrop</string>
     <string name="settings_home_tv_full_backdrop_description">Backdrop becomes full screen rather than fading above posters.</string>
+    <string name="settings_home_tv_ambient_background">Ambient background</string>
+    <string name="settings_home_tv_ambient_background_description">Tints the screen with a blurred wash of the backdrop instead of black, like Adaptive Ambient.</string>
     <string name="settings_home_row_jump_dots">Row jump dots</string>
     <string name="settings_home_row_jump_dots_description">Clickable dots for quick navigation.</string>
     <string name="settings_home_search_trailers">Trailers in Search</string>
@@ -3461,6 +3481,8 @@
     <string name="cd_exit_search">Exit search</string>
     <string name="cd_send_to_top">Send to top</string>
     <string name="library_sort">Sort library</string>
+    <string name="library_menu_local_library">Local library</string>
+    <string name="library_menu_local_library_settings">Local library settings</string>
     <string name="meta_starring">Starring</string>
     <string name="player_subtitle_ass_mode">ASS/SSA styling</string>
     <string name="player_subtitle_ass_mode_original">Original</string>

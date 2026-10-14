@@ -12,7 +12,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 class SteamGridDbClient : AutoCloseable {
-    private val http = HttpClient(CIO) { expectSuccess = false }
+    private val http = HttpClient(CIO) {
+        expectSuccess = false
+        install(com.nuvio.app.core.perf.perfTelemetryPlugin("steamgriddb"))
+    }
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun logoFor(title: String, apiKey: String): String? {

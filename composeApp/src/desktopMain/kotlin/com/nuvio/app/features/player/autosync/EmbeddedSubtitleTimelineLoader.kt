@@ -102,6 +102,7 @@ internal object EmbeddedSubtitleTimelineLoader {
         .callTimeout(5, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
+        .eventListenerFactory(com.nuvio.app.core.perf.PerfOkHttpEventListenerFactory("subtitle-timeline"))
         .build()
 
     /**

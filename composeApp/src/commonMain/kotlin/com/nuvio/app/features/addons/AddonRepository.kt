@@ -2,6 +2,7 @@ package com.nuvio.app.features.addons
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.network.SupabaseProvider
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.profiles.ProfileRepository
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
@@ -106,6 +107,7 @@ object AddonRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        PerfTelemetry.count("AddonRepository.pullFromServer")
         currentProfileId = resolveEffectiveProfileId(profileId)
         log.i { "pullFromServer() — profileId=$profileId, initialized=$initialized, pulledFromServer=$pulledFromServer" }
         runCatching {
@@ -321,12 +323,14 @@ object AddonRepository {
     }
 
     fun refreshAll() {
+        PerfTelemetry.count("AddonRepository.refreshAll")
         _uiState.value.addons.filter { it.enabled }.distinctBy { it.manifestUrl }.forEach { addon ->
             refreshAddon(addon.manifestUrl)
         }
     }
 
     fun refreshAddon(manifestUrl: String) {
+        PerfTelemetry.count("AddonRepository.refreshAddon")
         val existingJob = activeRefreshJobs[manifestUrl]
         if (existingJob?.isActive == true) return
 

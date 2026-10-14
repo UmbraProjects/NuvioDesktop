@@ -3,6 +3,7 @@ package com.nuvio.app.features.watchprogress
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.AddonManifest
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.AddonsUiState
@@ -362,6 +363,7 @@ object WatchProgressRepository {
      * and the end of playback are the only automatic refreshes.
      */
     suspend fun refreshContinueWatchingOnForeground() {
+        PerfTelemetry.count("WatchProgressRepository.refreshContinueWatchingOnForeground")
         pullRemoteContinueWatching(
             reason = "foreground",
             minIntervalMs = WATCH_PROGRESS_FOREGROUND_POLL_MIN_INTERVAL_MS,
@@ -544,6 +546,7 @@ object WatchProgressRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        PerfTelemetry.count("WatchProgressRepository.pullFromServer")
         TraktAuthRepository.ensureLoaded(profileId)
         TraktSettingsRepository.ensureLoaded()
         TraktProgressRepository.ensureLoaded()
@@ -1149,6 +1152,7 @@ object WatchProgressRepository {
      * list is read again.
      */
     fun refreshContinueWatchingAfterPlaybackStops() {
+        PerfTelemetry.count("WatchProgressRepository.refreshContinueWatchingAfterPlaybackStops")
         ensureLoaded()
         when {
             shouldUseMdbListProgress() -> syncScope.launch {
@@ -1395,6 +1399,7 @@ object WatchProgressRepository {
     }
 
     fun refreshEpisodeProgress(contentId: String, forceRefresh: Boolean = false) {
+        PerfTelemetry.count("WatchProgressRepository.refreshEpisodeProgress")
         ensureLoaded()
         if (!shouldUseTraktProgress()) return
         syncScope.launch {

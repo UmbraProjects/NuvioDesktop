@@ -1058,6 +1058,23 @@ if (isWindowsHost) {
             inputs.files(
                 fileTree(desktopResourcesSourceDir) { include(externalDesktopResources) },
             )
+            // jpackage clears this folder before writing the image. A build run from it in portable
+            // mode keeps the user's whole data folder (settings, sign-ins, caches) right here, so
+            // building would delete it — and zipping the folder for a release would publish it.
+            doFirst {
+                val imageDir = layout.buildDirectory.dir("compose/binaries/$relativeImagePath").get().asFile
+                val portableData = listOf("data", "data.old", "portable", "portable.txt")
+                    .map(imageDir::resolve)
+                    .filter { it.exists() }
+                if (portableData.isNotEmpty()) {
+                    throw GradleException(
+                        "Portable-mode data found in the build output, which this task would delete: " +
+                            portableData.joinToString { it.name } + " in $imageDir. Turn Portable Mode off " +
+                            "in Settings > Account and restart Nuvio once (that moves the data back to " +
+                            "AppData), then delete data.old and build again.",
+                    )
+                }
+            }
             doLast {
                 val imageDir = layout.buildDirectory.dir("compose/binaries/$relativeImagePath").get().asFile
                 check(imageDir.resolve("Nuvio.exe").isFile) {

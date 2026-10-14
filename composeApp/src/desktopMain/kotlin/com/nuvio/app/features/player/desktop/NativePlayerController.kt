@@ -176,6 +176,9 @@ internal class NativePlayerController(
         isAnimeContent: Boolean = false,
         nvidiaRtxSuperResolutionEnabled: Boolean,
         nvidiaRtxHdrEnabled: Boolean,
+        // Whether Anime4K / a custom shader is expected on this session. With SVP, it tells the
+        // native file-load RTX install the same thing applyDesktopAnimeProfile decides later.
+        animeShaderRequested: Boolean = false,
         onError: (String?) -> Unit,
         controlsPageUrlSuffix: String = "",
         // Records this attach on PlaybackStartTrace. Only the main player surface passes true;
@@ -247,6 +250,12 @@ internal class NativePlayerController(
             extraMpvOptions = buildList {
                 if (tracePlaybackStart && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
                     add("@nuvio-trace-id=${PlaybackStartTrace.currentId}")
+                }
+                if (isAnimeContent && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+                    add("@nuvio-anime-layer=${if (animeShaderRequested || animeSvpEnabled) "yes" else "no"}")
+                    if (PlayerSettingsRepository.uiState.value.nvidiaRtxHdrAnimeEnabled) {
+                        add("@nuvio-anime-true-hdr=yes")
+                    }
                 }
                 // youtube-dl has nothing to add for a provider endpoint or a debrid CDN link, and
                 // when mpv cannot open one it hands the URL to ytdl_hook, whose "youtube-dl failed:
@@ -518,6 +527,15 @@ internal class NativePlayerController(
             pendingMpvProperties[key] = value
         }
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setMpvProperty(it, key, value) }
+    }
+
+    /**
+     * The chain native code runs instead of the next `vf` while it bypasses SVP for speed (see
+     * applySpeedSensitiveVideoFiltersLocked); "" means that `vf` minus VapourSynth. Set it right
+     * before every `vf` write. Windows-only pseudo-property; nothing else understands it.
+     */
+    fun setSvpBypassVideoFilters(value: String) {
+        if (DesktopHostOs.current == DesktopHostOs.WINDOWS) setMpvProperty("@nuvio-svp-bypass-vf", value)
     }
 
     fun completeSvpStartupProfile() {

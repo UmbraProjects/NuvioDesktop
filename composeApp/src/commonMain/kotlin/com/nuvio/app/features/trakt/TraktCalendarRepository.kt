@@ -1,6 +1,7 @@
 package com.nuvio.app.features.trakt
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.httpRequestRaw
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -107,6 +108,7 @@ object TraktCalendarRepository {
     }
 
     fun refreshAsync() {
+        PerfTelemetry.count("TraktCalendarRepository.refreshAsync")
         scope.launch {
             mutex.withLock {
                 entriesByDate.clear()

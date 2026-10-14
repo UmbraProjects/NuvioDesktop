@@ -155,6 +155,8 @@ fun DetailSeriesContent(
     onSameCastClick: ((MetaPreview) -> Unit)? = null,
     sameCastLabelPlacement: SameCastLabelPlacement = SameCastLabelPlacement.AUTO,
     episodeSearchQuery: String = "",
+    /** Playback video id the source picker is open for; its card is outlined. */
+    pickingSourceVideoId: String? = null,
 ) {
     val hasVideos = meta.videos.isNotEmpty()
     if (meta.type != "series" && !hasVideos) return
@@ -217,6 +219,7 @@ fun DetailSeriesContent(
                         focusedEpisodeIndex = focusedEpisodeIndex,
                         onEpisodeClick = onEpisodeClick,
                         onEpisodeLongPress = onEpisodeLongPress,
+                        pickingSourceVideoId = pickingSourceVideoId,
                     )
                 }
             }
@@ -508,6 +511,7 @@ fun DetailSeriesContent(
                             focusedEpisodeIndex = focusedEpisodeIndex,
                             onEpisodeClick = onEpisodeClick,
                             onEpisodeLongPress = onEpisodeLongPress,
+                            pickingSourceVideoId = pickingSourceVideoId,
                         )
                     } else {
                         Column(
@@ -1029,6 +1033,7 @@ private fun EpisodeHorizontalRow(
     compactDesktopLayout: Boolean = false,
     onEpisodeClick: ((MetaVideo) -> Unit)?,
     onEpisodeLongPress: ((MetaVideo) -> Unit)?,
+    pickingSourceVideoId: String? = null,
 ) {
     val rowMetrics = rememberEpisodeHorizontalCardMetrics(maxWidthDp, compactDesktopLayout)
     val listState = rememberLazyListState()
@@ -1120,6 +1125,8 @@ private fun EpisodeHorizontalRow(
                         ),
                     blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                     metrics = rowMetrics,
+                    isPickingSource = pickingSourceVideoId != null &&
+                        (pickingSourceVideoId == episodeVideoId || pickingSourceVideoId == episode.id),
                     onClick = { onEpisodeClick?.invoke(episode) },
                     onLongPress = { onEpisodeLongPress?.invoke(episode) },
                 )
@@ -1162,6 +1169,8 @@ private fun EpisodeHorizontalCard(
     isDownloaded: Boolean,
     blurUnwatchedEpisodes: Boolean,
     metrics: EpisodeHorizontalCardMetrics,
+    /** The source picker beside the row is open for this episode. */
+    isPickingSource: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
@@ -1180,8 +1189,12 @@ private fun EpisodeHorizontalCard(
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .nuvioCardDepth(cardShape, NuvioCardDepthSurface.Episodes)
             .border(
-                width = 1.dp,
-                color = Color.White.copy(alpha = 0.12f),
+                width = if (isPickingSource) 2.dp else 1.dp,
+                color = if (isPickingSource) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    Color.White.copy(alpha = 0.12f)
+                },
                 shape = cardShape,
             )
             .combinedClickable(

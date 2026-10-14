@@ -1,6 +1,7 @@
 package com.nuvio.app.features.discover
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.home.HeroDiscoveryMetadataService
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsSnapshot
@@ -130,6 +131,7 @@ object DiscoverRecommendationsRepository {
     }
 
     fun refresh(force: Boolean = false) {
+        PerfTelemetry.count("DiscoverRecommendationsRepository.refresh")
         scope.launch {
             refreshMutex.withLock {
                 hydrateFromDisk()

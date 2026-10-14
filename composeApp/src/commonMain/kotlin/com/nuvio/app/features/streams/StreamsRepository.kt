@@ -2,6 +2,7 @@ package com.nuvio.app.features.streams
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppFeaturePolicy
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.enabledAddons
@@ -84,6 +85,7 @@ object StreamsRepository {
     }
 
     fun load(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false, preferLocalStreams: Boolean = false) {
+        PerfTelemetry.count("StreamsRepository.load")
         load(
             preferLocalStreams = preferLocalStreams,
             type = type,
@@ -98,6 +100,7 @@ object StreamsRepository {
     }
 
     fun reload(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false, preferLocalStreams: Boolean = false) {
+        PerfTelemetry.count("StreamsRepository.reload")
         load(
             preferLocalStreams = preferLocalStreams,
             type = type,

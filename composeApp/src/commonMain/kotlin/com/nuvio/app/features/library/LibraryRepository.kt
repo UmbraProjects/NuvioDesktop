@@ -2,6 +2,7 @@ package com.nuvio.app.features.library
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.auth.AuthRepository
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
@@ -242,6 +243,7 @@ object LibraryRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        PerfTelemetry.count("LibraryRepository.pullFromServer")
         currentProfileId = profileId
 
         activeLibraryProvider()?.let { provider ->

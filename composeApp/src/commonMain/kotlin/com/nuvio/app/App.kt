@@ -1,5 +1,14 @@
 package com.nuvio.app
 
+import androidx.compose.runtime.key
+import com.nuvio.app.core.perf.PerfTelemetry
+import com.nuvio.app.features.settings.perfSettingsPage
+import com.nuvio.app.features.streams.StreamsPresentation
+import com.nuvio.app.features.streams.StreamPickerPlacement
+import com.nuvio.app.features.streams.StreamPickerFrame
+import com.nuvio.app.features.streams.StreamPickerRequest
+import com.nuvio.app.features.streams.StreamPickerController
+import com.nuvio.app.features.streams.StreamPickerDock
 import co.touchlab.kermit.Logger
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -21,6 +30,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
@@ -158,6 +168,7 @@ import com.nuvio.app.core.ui.platformExitApp
 import com.nuvio.app.core.ui.configurePlatformImageLoader
 import com.nuvio.app.core.ui.TransientImageErrorRetryInterceptor
 import com.nuvio.app.core.ui.NuvioToastHost
+import com.nuvio.app.core.ui.StartupOverlayCoordinator
 import com.nuvio.app.core.ui.LocalOpenMetaDetails
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.NuvioFloatingPrompt
@@ -238,8 +249,8 @@ import com.nuvio.app.features.home.randomPlayCategoryOrNull
 import com.nuvio.app.features.home.randomPlayPickTrace
 import com.nuvio.app.features.library.LibraryItem
 import com.nuvio.app.features.library.LibraryNavigationContextMenu
-import com.nuvio.app.features.library.LibraryNavMenuWidth
-import com.nuvio.app.features.library.LibrarySortMenuPanel
+import com.nuvio.app.features.library.LibraryQuickAccess
+import com.nuvio.app.features.library.LibraryQuickAccessMenuPanel
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.library.LibraryRepository
 import com.nuvio.app.features.librarypvr.ReleaseYearResolver
@@ -334,7 +345,6 @@ import com.nuvio.app.features.streams.BingeGroupCacheRepository
 import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLaunch
-import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.streams.StreamsRepository
 import com.nuvio.app.features.streams.StreamsScreen
@@ -515,11 +525,6 @@ data class CollectionEditorRoute(val collectionId: String? = null)
 data class FolderDetailRoute(val collectionId: String, val folderId: String)
 
 @Serializable
-data class StreamRoute(
-    val launchId: Long,
-)
-
-@Serializable
 data class CatalogRoute(
     val title: String,
     val subtitle: String,
@@ -598,6 +603,25 @@ private data class PosterActionTarget(
     val libraryItem: LibraryItem? = null,
     val libraryListKey: String? = null,
 )
+
+/** The screen name `(PerfScreen)` attributes a telemetry window to. */
+private fun perfScreenName(entry: NavBackStackEntry, tab: AppScreenTab, searchOverlayActive: Boolean): String {
+    val destination = entry.destination
+    return when {
+        destination.hasRoute<TabsRoute>() -> when {
+            searchOverlayActive -> "Search"
+            tab == AppScreenTab.Settings -> "Settings/$perfSettingsPage"
+            else -> tab.name
+        }
+        destination.hasRoute<DetailRoute>() -> entry.toRoute<DetailRoute>().let { "Details ${it.type} ${it.id}" }
+        else -> destination.route.orEmpty()
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringAfterLast('.')
+            .removeSuffix("Route")
+            .ifEmpty { "?" }
+    }
+}
 
 enum class AppScreenTab {
     Home,
@@ -835,6 +859,20 @@ private suspend fun warmProfileDeferredRepositories() {
             }
         }
         startupWarmStep("tvdb settings load", rethrow = false) { com.nuvio.app.features.tvdb.TvdbSettingsRepository.ensureLoaded() }
+        // The Playback settings page lists external players while composing. The first lookup
+        // spawns reg.exe for the default media association and probes known install paths and
+        // PATH for each player — on the UI thread, as a stall on opening that page. Cached after.
+        startupWarmStep("external player detection", rethrow = false) {
+            withContext(Dispatchers.IO) { com.nuvio.app.features.player.ExternalPlayerPlatform.availablePlayers() }
+        }
+        // The first initialize() reads every scraper's source out of nuvio_plugin_code (MBs of
+        // JS; the open alone measured ~2.9 s, likely AV scanning it). Left to first use, that
+        // was the stream screen, in series with the source list — or the UI thread, from settings.
+        if (AppFeaturePolicy.pluginsEnabled) {
+            startupWarmStep("plugins load", rethrow = false) {
+                withContext(Dispatchers.IO) { com.nuvio.app.features.plugins.PluginRepository.initialize() }
+            }
+        }
         startupWarmStep("collection sync observer start", rethrow = false) { CollectionSyncService.startObserving() }
         if (AppFeaturePolicy.downloadsEnabled) {
             startupWarmStep("library auto-download scheduler start", rethrow = false) {
@@ -1312,6 +1350,26 @@ private fun MainAppContent(
             openSimklDailyVisitIfDue(uriHandler::openUri)
         }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
+        val streamPickerRequest by StreamPickerController.request.collectAsStateWithLifecycle()
+        // The picker belongs to the screen that opened it; going anywhere else closes it. The
+        // player is exempt only because playback start closes it itself, without clearing the
+        // stream list the player's sources panel still reads.
+        LaunchedEffect(currentBackStackEntry?.id, streamPickerRequest?.launchId) {
+            val request = streamPickerRequest ?: return@LaunchedEffect
+            val entry = currentBackStackEntry ?: return@LaunchedEffect
+            if (entry.id == request.ownerEntryId) return@LaunchedEffect
+            if (entry.destination.hasRoute<PlayerRoute>()) return@LaunchedEffect
+            StreamPickerController.close()
+        }
+        // Closing a modal picker over the tabs leaves no focused node; hand focus back to the tab
+        // content the way a returning route does. The details page reclaims its own.
+        val streamPickerClosedCount by StreamPickerController.closedCount.collectAsStateWithLifecycle()
+        LaunchedEffect(streamPickerClosedCount) {
+            if (streamPickerClosedCount == 0) return@LaunchedEffect
+            if (navController.currentDestination?.hasRoute<TabsRoute>() == true) {
+                navigateToContentCount++
+            }
+        }
         var previousDestinationWasTabs by remember { mutableStateOf<Boolean?>(null) }
         LaunchedEffect(currentBackStackEntry) {
             val destinationIsTabs = currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true
@@ -1338,12 +1396,24 @@ private fun MainAppContent(
             searchQuery = searchQuery,
             submittedSearchQuery = submittedSearchQuery,
         )
+        LaunchedEffect(currentBackStackEntry?.id, selectedTab, searchOverlayActive) {
+            if (!PerfTelemetry.enabled) return@LaunchedEffect
+            val entry = currentBackStackEntry ?: return@LaunchedEffect
+            PerfTelemetry.markScreen(perfScreenName(entry, selectedTab, searchOverlayActive))
+        }
         LaunchedEffect(navController, selectedTab, rootTabBackStack, searchOverlayActive) {
             DesktopNavigationGestureBridge.backRequests.collect { source ->
                 // Back leaves game mode rather than navigating the app hidden behind it. Read
                 // straight off the flow: this collector is not re-keyed on the toggle.
                 if (GameModeController.active.value) {
                     GameModeController.setActive(false)
+                    return@collect
+                }
+                if (
+                    StreamPickerController.isOpen &&
+                    navController.currentDestination?.hasRoute<PlayerRoute>() != true
+                ) {
+                    StreamPickerController.close()
                     return@collect
                 }
                 // The native player WebView handles Mouse Back itself. On some Windows setups the
@@ -1412,6 +1482,14 @@ private fun MainAppContent(
         var selectedPosterMenuPosition by remember { mutableStateOf<IntOffset?>(null) }
         var selectedContinueWatchingMenuPosition by remember { mutableStateOf<IntOffset?>(null) }
         var requestedSettingsPageName by rememberSaveable { mutableStateOf<String?>(null) }
+        // The Library nav item's right-click shortcuts (any nav chrome) land on the local library
+        // settings page; the browser variant is opened there by SettingsScreen.
+        LaunchedEffect(Unit) {
+            LibraryQuickAccess.requests.collect {
+                requestedSettingsPageName = "LocalLibrary"
+                selectedTab = AppScreenTab.Settings
+            }
+        }
         val gameModeActive by GameModeController.active.collectAsStateWithLifecycle()
         var showLibraryListPicker by remember { mutableStateOf(false) }
         var pickerItem by remember { mutableStateOf<LibraryItem?>(null) }
@@ -1564,12 +1642,16 @@ private fun MainAppContent(
     // Search, Library, and a collection folder all render the same TV Mode / Adaptive Hero
     // hero as Home, so they count as "home" here too — otherwise their hero trailers could
     // never play.
-    // The setup wizard is the same kind of cover: a centred sheet the native trailer canvas would
-    // paint straight through, on a fresh install where the user is still reading it.
-    val setupWizardVisible by remember {
-        FirstRunWizardController.uiState.map { it.visible }.distinctUntilChanged()
-    }.collectAsStateWithLifecycle(initialValue = FirstRunWizardController.uiState.value.visible)
-    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive, setupWizardVisible) {
+    // The startup overlays (setup wizard, API-key prompt, updater) are the same kind of cover: a
+    // centred sheet the native trailer canvas would paint straight through, while the user is
+    // still reading it. Closing one restarts the dwell timer from zero.
+    val startupOverlayVisible by StartupOverlayCoordinator.visibleOverlay
+        .collectAsStateWithLifecycle()
+    // The source picker's modal is the same again whenever it opens over a home-style tab.
+    val streamPickerOpen by remember {
+        StreamPickerController.request.map { it != null }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = StreamPickerController.isOpen)
+    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive, startupOverlayVisible, streamPickerOpen) {
         val onTabsWithHomeStyleTab = (
             selectedTab == AppScreenTab.Home ||
                 selectedTab == AppScreenTab.Search ||
@@ -1581,7 +1663,8 @@ private fun MainAppContent(
         // Game mode covers the home screen, and the desktop trailer surface is a native canvas
         // that would paint straight over it — so the hero must count as "not home" while it is up.
         HomeHeroTrailerGate.setHomeActive(
-            (onTabsWithHomeStyleTab || onFolderDetail) && !gameModeActive && !setupWizardVisible,
+            (onTabsWithHomeStyleTab || onFolderDetail) && !gameModeActive && startupOverlayVisible == null &&
+                !streamPickerOpen,
         )
     }
 
@@ -1802,7 +1885,7 @@ private fun MainAppContent(
     }
 
     LaunchedEffect(currentBackStackEntry?.destination) {
-        val inPlaybackFlow = currentBackStackEntry?.destination?.hasRoute<StreamRoute>() == true ||
+        val inPlaybackFlow = StreamPickerController.isOpen ||
             currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true
         if (inPlaybackFlow) {
             resumePromptItem = null
@@ -2048,112 +2131,117 @@ private fun MainAppContent(
             } else {
                 LocalLibraryRepository.currentPlaybackPreference()
             }
-            val downloadedItem = if (AppFeaturePolicy.downloadsEnabled && preferLocalOverride != false) {
-                DownloadsRepository.findPlayableDownload(
-                    parentMetaId = parentMetaId,
-                    seasonNumber = seasonNumber,
-                    episodeNumber = episodeNumber,
-                    videoId = videoId,
-                )
-            } else {
-                null
-            }
-            val localSourceUrl = downloadedItem?.let(DownloadsRepository::playableLocalFileUri)
-            val hasLocalLibraryStream = AppFeaturePolicy.downloadsEnabled && preferLocalOverride != false &&
-                LocalLibraryRepository.localStreamsFor(parentMetaId, videoId).isNotEmpty()
-            val localRouting = configuredBehavior.resolvePlaybackRouting(
-                useAlternate = useAlternateBehavior,
-                hasDownloadedFile = !localSourceUrl.isNullOrBlank(),
-                hasLocalLibraryStream = hasLocalLibraryStream,
-            )
-            val prefersLocalStreams = localRouting.preferLocalStreams
-            val manualSelection = localRouting.manualSelection
-            PlaybackStartTrace.markPending(
-                "localRoute configured=$configuredBehavior requested=${localRouting.requestedBehavior} " +
-                    "downloaded=${!localSourceUrl.isNullOrBlank()} scanned=$hasLocalLibraryStream " +
-                    "manual=$manualSelection",
-            )
-
-            if (localRouting.playDownloadedFileDirectly && downloadedItem != null) {
-                if (!localSourceUrl.isNullOrBlank()) {
-                    val downloadedLabels = downloadedItem.playbackLabels(
-                        localPath = localSourceUrl,
-                        fallbackTitle = title,
-                        downloadedLabel = downloadedProviderLabel,
-                    )
-                    val playerLaunch = PlayerLaunch(
-                            title = title,
-                            sourceUrl = localSourceUrl,
-                            sourceHeaders = emptyMap(),
-                            sourceResponseHeaders = emptyMap(),
-                            logo = logo,
-                            poster = poster,
-                            background = background,
+            // The download lookup stats the file, and downloads live on the library drive: on a
+            // spun-down HDD that first stat waits out the spin-up, which froze the UI on the click.
+            // Resolve it on IO; the rest of the launch continues back on the UI thread.
+            coroutineScope.launch {
+                val (downloadedItem, localSourceUrl) = withContext(Dispatchers.IO) {
+                    val item = if (AppFeaturePolicy.downloadsEnabled && preferLocalOverride != false) {
+                        DownloadsRepository.findPlayableDownload(
+                            parentMetaId = parentMetaId,
                             seasonNumber = seasonNumber,
                             episodeNumber = episodeNumber,
-                            episodeTitle = episodeTitle,
-                            episodeThumbnail = episodeThumbnail,
-                            releaseYear = releaseYear,
-                            streamTitle = downloadedLabels.streamTitle,
-                            streamSubtitle = downloadedLabels.streamSubtitle,
-                            pauseDescription = pauseDescription,
-                            providerName = downloadedLabels.providerName,
-                            providerAddonId = downloadedItem.providerAddonId,
-                            contentType = type,
                             videoId = videoId,
-                            parentMetaId = parentMetaId,
-                            parentMetaType = parentMetaType,
-                            watchProgressSource = watchProgressSource,
-                            initialPositionMs = targetResumePositionMs,
-                            initialProgressFraction = targetResumeProgressFraction,
-                            disableProgressTracking = disableProgressTracking,
-                            autoPlayMode = autoPlayMode,
                         )
-                    if (playerSettingsUiState.externalPlayerEnabled) {
-                        coroutineScope.launch { openExternalPlayback(playerLaunch) }
-                        return
-                    }
-                    navController.navigateToPlayer(playerLaunch)
-                    return
-                }
-            }
-
-            val streamLaunchId = StreamLaunchStore.put(
-                StreamLaunch(
-                    type = type,
-                    videoId = videoId,
-                    streamVideoId = streamVideoId,
-                    parentMetaId = parentMetaId,
-                    parentMetaType = parentMetaType,
-                    watchProgressSource = watchProgressSource,
-                    title = title,
-                    logo = logo,
-                    poster = poster,
-                    background = background,
-                    releaseYear = releaseYear,
-                    seasonNumber = seasonNumber,
-                    episodeNumber = episodeNumber,
-                    episodeTitle = episodeTitle,
-                    episodeThumbnail = episodeThumbnail,
-                    pauseDescription = pauseDescription,
-                    resumePositionMs = if (startFromBeginning) 0L else resumePositionMs,
-                    resumeProgressFraction = targetResumeProgressFraction,
-                    manualSelection = manualSelection,
-                    preferLocalStreams = prefersLocalStreams,
-                    startFromBeginning = startFromBeginning,
-                    disableProgressTracking = disableProgressTracking,
-                    autoPlayMode = autoPlayMode,
-                    sourceAffinity = if (prefersLocalStreams) {
-                        PlayerSourceAffinity.Local
                     } else {
-                        PlayerSourceAffinity.Stream
-                    },
-                ),
-            )
-            PlaybackStartTrace.markPending("navigate:streamRoute")
-            navController.navigate(
-                StreamRoute(launchId = streamLaunchId),
-            )
+                        null
+                    }
+                    item to item?.let(DownloadsRepository::playableLocalFileUri)
+                }
+                val hasLocalLibraryStream = AppFeaturePolicy.downloadsEnabled && preferLocalOverride != false &&
+                    LocalLibraryRepository.localStreamsFor(parentMetaId, videoId).isNotEmpty()
+                val localRouting = configuredBehavior.resolvePlaybackRouting(
+                    useAlternate = useAlternateBehavior,
+                    hasDownloadedFile = !localSourceUrl.isNullOrBlank(),
+                    hasLocalLibraryStream = hasLocalLibraryStream,
+                )
+                val prefersLocalStreams = localRouting.preferLocalStreams
+                val manualSelection = localRouting.manualSelection
+                PlaybackStartTrace.markPending(
+                    "localRoute configured=$configuredBehavior requested=${localRouting.requestedBehavior} " +
+                        "downloaded=${!localSourceUrl.isNullOrBlank()} scanned=$hasLocalLibraryStream " +
+                        "manual=$manualSelection",
+                )
+
+                if (localRouting.playDownloadedFileDirectly && downloadedItem != null) {
+                    if (!localSourceUrl.isNullOrBlank()) {
+                        val downloadedLabels = downloadedItem.playbackLabels(
+                            localPath = localSourceUrl,
+                            fallbackTitle = title,
+                            downloadedLabel = downloadedProviderLabel,
+                        )
+                        val playerLaunch = PlayerLaunch(
+                                title = title,
+                                sourceUrl = localSourceUrl,
+                                sourceHeaders = emptyMap(),
+                                sourceResponseHeaders = emptyMap(),
+                                logo = logo,
+                                poster = poster,
+                                background = background,
+                                seasonNumber = seasonNumber,
+                                episodeNumber = episodeNumber,
+                                episodeTitle = episodeTitle,
+                                episodeThumbnail = episodeThumbnail,
+                                releaseYear = releaseYear,
+                                streamTitle = downloadedLabels.streamTitle,
+                                streamSubtitle = downloadedLabels.streamSubtitle,
+                                pauseDescription = pauseDescription,
+                                providerName = downloadedLabels.providerName,
+                                providerAddonId = downloadedItem.providerAddonId,
+                                contentType = type,
+                                videoId = videoId,
+                                parentMetaId = parentMetaId,
+                                parentMetaType = parentMetaType,
+                                watchProgressSource = watchProgressSource,
+                                initialPositionMs = targetResumePositionMs,
+                                initialProgressFraction = targetResumeProgressFraction,
+                                disableProgressTracking = disableProgressTracking,
+                                autoPlayMode = autoPlayMode,
+                            )
+                        if (playerSettingsUiState.externalPlayerEnabled) {
+                            coroutineScope.launch { openExternalPlayback(playerLaunch) }
+                            return@launch
+                        }
+                        navController.navigateToPlayer(playerLaunch)
+                        return@launch
+                    }
+                }
+
+                StreamPickerController.open(
+                    launch = StreamLaunch(
+                        type = type,
+                        videoId = videoId,
+                        streamVideoId = streamVideoId,
+                        parentMetaId = parentMetaId,
+                        parentMetaType = parentMetaType,
+                        watchProgressSource = watchProgressSource,
+                        title = title,
+                        logo = logo,
+                        poster = poster,
+                        background = background,
+                        releaseYear = releaseYear,
+                        seasonNumber = seasonNumber,
+                        episodeNumber = episodeNumber,
+                        episodeTitle = episodeTitle,
+                        episodeThumbnail = episodeThumbnail,
+                        pauseDescription = pauseDescription,
+                        resumePositionMs = if (startFromBeginning) 0L else resumePositionMs,
+                        resumeProgressFraction = targetResumeProgressFraction,
+                        manualSelection = manualSelection,
+                        preferLocalStreams = prefersLocalStreams,
+                        startFromBeginning = startFromBeginning,
+                        disableProgressTracking = disableProgressTracking,
+                        autoPlayMode = autoPlayMode,
+                        sourceAffinity = if (prefersLocalStreams) {
+                            PlayerSourceAffinity.Local
+                        } else {
+                            PlayerSourceAffinity.Stream
+                        },
+                    ),
+                    ownerEntryId = navController.currentBackStackEntry?.id,
+                )
+                PlaybackStartTrace.markPending("open:streamPicker")
+            }
         }
 
         val onPlay: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, String?, Long?) -> Unit =
@@ -3276,725 +3364,6 @@ private fun MainAppContent(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
-                composable<StreamRoute> { backStackEntry ->
-                    val route = backStackEntry.toRoute<StreamRoute>()
-                    val launch = remember(route.launchId) {
-                        StreamLaunchStore.get(route.launchId)
-                    }
-                    if (launch == null) {
-                        LaunchedEffect(route.launchId) {
-                            StreamsRepository.clear()
-                            navController.popBackStack()
-                        }
-                        return@composable
-                    }
-                    val pauseDescription = launch.pauseDescription
-                    val streamRouteScope = rememberCoroutineScope()
-                    var resolvingDebridStream by rememberSaveable(route.launchId) { mutableStateOf(false) }
-                    var pendingP2pStreamOpen by remember { mutableStateOf<PendingP2pStreamOpen?>(null) }
-                    val lifecycleOwner = backStackEntry
-                    DisposableEffect(lifecycleOwner, route.launchId) {
-                        val observer = LifecycleEventObserver { _, event ->
-                            if (event == Lifecycle.Event.ON_DESTROY) {
-                                StreamLaunchStore.remove(route.launchId)
-                            }
-                        }
-                        lifecycleOwner.lifecycle.addObserver(observer)
-                        onDispose {
-                            lifecycleOwner.lifecycle.removeObserver(observer)
-                        }
-                    }
-                    val resolvedLaunchEpisode = remember(
-                        launch.type,
-                        launch.parentMetaId,
-                        launch.videoId,
-                        launch.streamVideoId,
-                        launch.title,
-                        launch.seasonNumber,
-                        launch.episodeNumber,
-                    ) {
-                        MediaIdResolver.resolveLocalEpisodeIdentity(
-                            contentType = launch.type,
-                            parentMetaId = launch.parentMetaId ?: launch.videoId,
-                            videoId = launch.streamVideoId?.takeIf { it.isNotBlank() } ?: launch.videoId,
-                            title = launch.title,
-                            season = launch.seasonNumber,
-                            episode = launch.episodeNumber,
-                            isAnimeHint = launch.type.equals("anime", ignoreCase = true),
-                        )
-                    }
-                    val canonicalSeasonNumber = resolvedLaunchEpisode.season ?: launch.seasonNumber
-                    val canonicalEpisodeNumber = resolvedLaunchEpisode.episode ?: launch.episodeNumber
-                    val streamLookupSeasonNumber = resolvedLaunchEpisode.streamSeason ?: launch.seasonNumber
-                    val streamLookupEpisodeNumber = resolvedLaunchEpisode.streamEpisode ?: launch.episodeNumber
-                    val streamLookupVideoId = resolvedLaunchEpisode.videoId
-                    val canonicalLaunchVideoId = resolvedLaunchEpisode.canonicalVideoId
-                    val shouldResolveEpisodeVideoId =
-                        launch.parentMetaId != null &&
-                            canonicalSeasonNumber != null &&
-                            canonicalEpisodeNumber != null
-                    var effectiveVideoId by rememberSaveable(
-                        launch.videoId,
-                        launch.parentMetaId,
-                        canonicalSeasonNumber,
-                        canonicalEpisodeNumber,
-                    ) {
-                        mutableStateOf(launch.videoId)
-                    }
-                    var hasResolvedVideoId by rememberSaveable(
-                        launch.videoId,
-                        launch.parentMetaId,
-                        canonicalSeasonNumber,
-                        canonicalEpisodeNumber,
-                    ) {
-                        mutableStateOf(!shouldResolveEpisodeVideoId)
-                    }
-
-                    LaunchedEffect(
-                        launch.videoId,
-                        launch.parentMetaId,
-                        launch.parentMetaType,
-                        launch.type,
-                        canonicalSeasonNumber,
-                        canonicalEpisodeNumber,
-                    ) {
-                        effectiveVideoId = launch.videoId
-                        if (!shouldResolveEpisodeVideoId) {
-                            hasResolvedVideoId = true
-                            return@LaunchedEffect
-                        }
-
-                        hasResolvedVideoId = false
-                        val metaType = launch.parentMetaType ?: launch.type
-                        val metaId = launch.parentMetaId
-                        // Resolve against the *canonical* (franchise) coordinates, never the
-                        // entry-local stream ones. Native anime ids carry no season, so
-                        // streamLookupSeasonNumber falls back to the franchise season and would
-                        // pair it with a cour-local episode: playing Dr. STONE S04E25
-                        // (kitsu:50187:1) matched the S04E01 row, and everything keyed off the
-                        // active video — the next/previous episode cards, autoplay, the sources
-                        // panel — then walked the franchise from there. Share the player's own
-                        // resolver so the two can't disagree: it matches the metadata row id
-                        // first (the strongest evidence, and what the details list handed us),
-                        // then the canonical coordinates.
-                        val resolvedVideoId = runCatching {
-                            MetaDetailsRepository.fetch(metaType, metaId)
-                        }.getOrNull()
-                            ?.videos
-                            ?.resolveSeriesEpisodePosition(
-                                parentMetaId = metaId,
-                                videoId = launch.videoId,
-                                seasonNumber = canonicalSeasonNumber,
-                                episodeNumber = canonicalEpisodeNumber,
-                            )
-                            ?.video
-                            ?.id
-                            ?.takeIf { it.isNotBlank() }
-
-                        effectiveVideoId = resolvedVideoId ?: canonicalLaunchVideoId
-                        hasResolvedVideoId = true
-                    }
-
-                    val playerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
-                    val effectiveStreamVideoId = streamLookupVideoId.takeIf { it.isNotBlank() } ?: effectiveVideoId
-
-                    fun p2pSentinelUrl(infoHash: String, fileIdx: Int?): String =
-                        "torrent://$infoHash${fileIdx?.let { "?index=$it" }.orEmpty()}"
-
-                    fun openP2pStream(
-                        stream: StreamItem,
-                        resolvedResumePositionMs: Long?,
-                        resolvedResumeProgressFraction: Float?,
-                        replaceStreamRoute: Boolean,
-                    ) {
-                        val infoHash = stream.p2pInfoHash ?: return
-                        val sentinelUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
-                        if (playerSettings.streamReuseLastLinkEnabled) {
-                            val cacheKey = StreamLinkCacheRepository.contentKey(
-                                type = launch.type,
-                                videoId = effectiveStreamVideoId,
-                                parentMetaId = launch.parentMetaId,
-                                season = streamLookupSeasonNumber,
-                                episode = streamLookupEpisodeNumber,
-                            )
-                            StreamLinkCacheRepository.save(
-                                contentKey = cacheKey,
-                                url = "",
-                                streamName = stream.streamLabel,
-                                addonName = stream.addonName,
-                                addonId = stream.addonId,
-                                requestHeaders = emptyMap(),
-                                responseHeaders = emptyMap(),
-                                filename = stream.behaviorHints.filename,
-                                videoSize = stream.behaviorHints.videoSize,
-                                infoHash = infoHash,
-                                fileIdx = stream.p2pFileIdx,
-                                sources = stream.sources,
-                                bingeGroup = stream.behaviorHints.bingeGroup,
-                            )
-                        }
-                        val playerLaunch = PlayerLaunch(
-                            title = launch.title,
-                            sourceUrl = sentinelUrl,
-                            sourceHeaders = emptyMap(),
-                            sourceResponseHeaders = emptyMap(),
-                            streamType = stream.streamType,
-                            sourceAffinity = if (stream.streamType.equals("local", ignoreCase = true)) {
-                                PlayerSourceAffinity.Local
-                            } else {
-                                launch.sourceAffinity
-                            },
-                            logo = launch.logo,
-                            poster = launch.poster,
-                            background = launch.background,
-                            releaseYear = launch.releaseYear,
-                            seasonNumber = canonicalSeasonNumber,
-                            episodeNumber = canonicalEpisodeNumber,
-                            episodeTitle = launch.episodeTitle,
-                            episodeThumbnail = launch.episodeThumbnail,
-                            streamTitle = stream.streamLabel,
-                            streamFilename = stream.mediaFilename,
-                            streamSubtitle = stream.streamSubtitle,
-                            sourceIdentityKey = stream.playerSourceIdentityKey(),
-                            bingeGroup = stream.behaviorHints.bingeGroup,
-                            pauseDescription = pauseDescription,
-                            providerName = stream.addonName,
-                            providerAddonId = stream.addonId,
-                            contentType = launch.type,
-                            videoId = effectiveVideoId,
-                            parentMetaId = launch.parentMetaId ?: effectiveVideoId,
-                            parentMetaType = launch.parentMetaType ?: launch.type,
-                            watchProgressSource = launch.watchProgressSource,
-                            torrentInfoHash = infoHash,
-                            torrentFileIdx = stream.p2pFileIdx,
-                            torrentFilename = stream.behaviorHints.filename,
-                            torrentTrackers = stream.p2pTrackers,
-                            initialPositionMs = resolvedResumePositionMs ?: 0L,
-                            initialProgressFraction = resolvedResumeProgressFraction,
-                            disableProgressTracking = launch.disableProgressTracking,
-                            autoPlayMode = launch.autoPlayMode,
-                        )
-
-                        StreamsRepository.cancelLoading()
-                        navController.navigateToPlayer(playerLaunch) {
-                            if (replaceStreamRoute) {
-                                popUpTo<StreamRoute> { inclusive = true }
-                            }
-                        }
-                    }
-
-                    fun requestOrOpenP2pStream(
-                        stream: StreamItem,
-                        resolvedResumePositionMs: Long?,
-                        resolvedResumeProgressFraction: Float?,
-                        forceExternal: Boolean,
-                        forceInternal: Boolean,
-                        isAutoPlay: Boolean,
-                    ) {
-                        if (stream.p2pInfoHash == null) {
-                            if (isAutoPlay) StreamsRepository.skipAutoPlayStream(stream)
-                            return
-                        }
-                        if (!P2pSettingsRepository.isVisible) {
-                            if (isAutoPlay) StreamsRepository.skipAutoPlayStream(stream)
-                            return
-                        }
-                        if (!p2pSettingsUiState.p2pEnabled) {
-                            pendingP2pStreamOpen = PendingP2pStreamOpen(
-                                stream = stream,
-                                resumePositionMs = resolvedResumePositionMs,
-                                resumeProgressFraction = resolvedResumeProgressFraction,
-                                forceExternal = forceExternal,
-                                forceInternal = forceInternal,
-                                isAutoPlay = isAutoPlay,
-                            )
-                            return
-                        }
-                        openP2pStream(
-                            stream = stream,
-                            resolvedResumePositionMs = resolvedResumePositionMs,
-                            resolvedResumeProgressFraction = resolvedResumeProgressFraction,
-                            replaceStreamRoute = isAutoPlay,
-                        )
-                    }
-
-                    // Reuse Last Link: auto-play from cache if enabled (only on first entry)
-                    var reuseHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
-                    var reuseNavigated by remember { mutableStateOf(false) }
-                    LaunchedEffect(effectiveVideoId, hasResolvedVideoId, playerSettings.streamReuseLastLinkEnabled, launch.manualSelection) {
-                        if (!hasResolvedVideoId) return@LaunchedEffect
-                        if (reuseHandled) return@LaunchedEffect
-                        reuseHandled = true
-                        if (launch.manualSelection) return@LaunchedEffect
-                        if (!playerSettings.streamReuseLastLinkEnabled) return@LaunchedEffect
-                        val cacheKey = StreamLinkCacheRepository.contentKey(
-                            type = launch.type,
-                            videoId = effectiveStreamVideoId,
-                            parentMetaId = launch.parentMetaId,
-                            season = streamLookupSeasonNumber,
-                            episode = streamLookupEpisodeNumber,
-                        )
-                        val maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
-                        val cached = StreamLinkCacheRepository.getValid(cacheKey, maxAgeMs)
-                        if (cached != null) {
-                            if (cached.url.isBlank() && !cached.infoHash.isNullOrBlank()) {
-                                val cachedStream = StreamItem(
-                                    name = cached.streamName,
-                                    url = null,
-                                    infoHash = cached.infoHash,
-                                    fileIdx = cached.fileIdx,
-                                    sources = cached.sources,
-                                    addonName = cached.addonName,
-                                    addonId = cached.addonId,
-                                    behaviorHints = StreamBehaviorHints(
-                                        filename = cached.filename,
-                                        videoSize = cached.videoSize,
-                                        bingeGroup = cached.bingeGroup,
-                                    ),
-                                )
-                                requestOrOpenP2pStream(
-                                    stream = cachedStream,
-                                    resolvedResumePositionMs = launch.resumePositionMs,
-                                    resolvedResumeProgressFraction = launch.resumeProgressFraction,
-                                    forceExternal = false,
-                                    forceInternal = true,
-                                    isAutoPlay = true,
-                                )
-                                reuseNavigated = true
-                                return@LaunchedEffect
-                            }
-                            val playerLaunch = PlayerLaunch(
-                                    title = launch.title,
-                                    sourceUrl = cached.url,
-                                    sourceHeaders = sanitizePlaybackHeaders(cached.requestHeaders),
-                                    sourceResponseHeaders = sanitizePlaybackResponseHeaders(cached.responseHeaders),
-                                    streamType = cached.streamType,
-                                    sourceAffinity = if (cached.streamType.equals("local", ignoreCase = true)) {
-                                        PlayerSourceAffinity.Local
-                                    } else {
-                                        launch.sourceAffinity
-                                    },
-                                    logo = launch.logo,
-                                    poster = launch.poster,
-                                    background = launch.background,
-                                    seasonNumber = canonicalSeasonNumber,
-                                    episodeNumber = canonicalEpisodeNumber,
-                                    episodeTitle = launch.episodeTitle,
-                                    episodeThumbnail = launch.episodeThumbnail,
-                                    streamTitle = cached.streamName,
-                                    streamSubtitle = null,
-                                    bingeGroup = cached.bingeGroup,
-                                    pauseDescription = pauseDescription,
-                                    providerName = cached.addonName,
-                                    providerAddonId = cached.addonId,
-                                    contentType = launch.type,
-                                    videoId = effectiveVideoId,
-                                    parentMetaId = launch.parentMetaId ?: effectiveVideoId,
-                                    parentMetaType = launch.parentMetaType ?: launch.type,
-                                    watchProgressSource = launch.watchProgressSource,
-                                    initialPositionMs = launch.resumePositionMs ?: 0L,
-                                    initialProgressFraction = launch.resumeProgressFraction,
-                                    disableProgressTracking = launch.disableProgressTracking,
-                                    autoPlayMode = launch.autoPlayMode,
-                                )
-                            if (playerSettings.externalPlayerEnabled) {
-                                openExternalPlayback(playerLaunch)
-                                StreamsRepository.setOverlayVisible(false)
-                                reuseNavigated = true
-                                return@LaunchedEffect
-                            }
-                            StreamsRepository.clear()
-                            reuseNavigated = true
-                            navController.navigateToPlayer(playerLaunch) {
-                                popUpTo<StreamRoute> { inclusive = true }
-                            }
-                        }
-                    }
-
-                    val streamsUiState by StreamsRepository.uiState.collectAsStateWithLifecycle()
-                    val expectedStreamsRequestToken = StreamsRepository.requestToken(
-                        type = launch.type,
-                        videoId = effectiveStreamVideoId,
-                        parentMetaId = launch.parentMetaId,
-                        title = launch.title,
-                        season = streamLookupSeasonNumber,
-                        episode = streamLookupEpisodeNumber,
-                        manualSelection = launch.manualSelection,
-                    )
-                    var autoPlayHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
-                    LaunchedEffect(
-                        streamsUiState.autoPlayStream,
-                        streamsUiState.requestToken,
-                        expectedStreamsRequestToken,
-                        reuseHandled,
-                        launch.manualSelection,
-                    ) {
-                        if (!reuseHandled) return@LaunchedEffect
-                        if (launch.manualSelection) return@LaunchedEffect
-                        if (reuseNavigated) return@LaunchedEffect
-                        if (autoPlayHandled) return@LaunchedEffect
-                        if (streamsUiState.requestToken != expectedStreamsRequestToken) return@LaunchedEffect
-                        val selectedStream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
-                        val selectedSourceIdentityKey = selectedStream.playerSourceIdentityKey()
-                        val stream = if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(selectedStream)) {
-                            when (
-                                val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
-                                    stream = selectedStream,
-                                    season = streamLookupSeasonNumber,
-                                    episode = streamLookupEpisodeNumber,
-                                )
-                            ) {
-                                is DirectDebridPlayableResult.Success -> resolved.stream
-                                else -> {
-                                    val hasNextCandidate = StreamsRepository.skipAutoPlayStream(selectedStream)
-                                    if (!hasNextCandidate) {
-                                        resolved.toastMessage()?.let { NuvioToastController.show(it) }
-                                    }
-                                    if (!hasNextCandidate && resolved == DirectDebridPlayableResult.Stale) {
-                                        StreamsRepository.reload(
-                                            type = launch.type,
-                                            videoId = effectiveStreamVideoId,
-                                            parentMetaId = launch.parentMetaId,
-                                            title = launch.title,
-                                            season = streamLookupSeasonNumber,
-                                            episode = streamLookupEpisodeNumber,
-                                            manualSelection = launch.manualSelection,
-                                            preferLocalStreams = launch.preferLocalStreams,
-                                        )
-                                    }
-                                    return@LaunchedEffect
-                                }
-                            }
-                        } else {
-                            selectedStream
-                        }
-                        val sourceUrl = stream.playableDirectUrl
-                        if (sourceUrl == null && stream.needsLocalDebridResolve && stream.p2pInfoHash != null) {
-                            autoPlayHandled = true
-                            requestOrOpenP2pStream(
-                                stream = stream,
-                                resolvedResumePositionMs = launch.resumePositionMs,
-                                resolvedResumeProgressFraction = launch.resumeProgressFraction,
-                                forceExternal = false,
-                                forceInternal = true,
-                                isAutoPlay = true,
-                            )
-                            StreamsRepository.consumeAutoPlay()
-                            return@LaunchedEffect
-                        }
-                        if (sourceUrl == null) {
-                            StreamsRepository.skipAutoPlayStream(selectedStream)
-                            return@LaunchedEffect
-                        }
-                        autoPlayHandled = true
-                        if (playerSettings.streamReuseLastLinkEnabled) {
-                            val cacheKey = StreamLinkCacheRepository.contentKey(
-                                type = launch.type,
-                                videoId = effectiveStreamVideoId,
-                                parentMetaId = launch.parentMetaId,
-                                season = streamLookupSeasonNumber,
-                                episode = streamLookupEpisodeNumber,
-                            )
-                            StreamLinkCacheRepository.save(
-                                contentKey = cacheKey,
-                                url = sourceUrl,
-                                streamName = stream.streamLabel,
-                                addonName = stream.addonName,
-                                addonId = stream.addonId,
-                                requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
-                                responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                                filename = stream.behaviorHints.filename,
-                                videoSize = stream.behaviorHints.videoSize,
-                                bingeGroup = stream.behaviorHints.bingeGroup,
-                                streamType = stream.streamType,
-                            )
-                        }
-                        val playerLaunch = PlayerLaunch(
-                                title = launch.title,
-                                sourceUrl = sourceUrl,
-                                sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
-                                sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                                streamType = stream.streamType,
-                                sourceAffinity = if (stream.streamType.equals("local", ignoreCase = true)) {
-                                    PlayerSourceAffinity.Local
-                                } else {
-                                    launch.sourceAffinity
-                                },
-                                logo = launch.logo,
-                                poster = launch.poster,
-                                background = launch.background,
-                                seasonNumber = canonicalSeasonNumber,
-                                episodeNumber = canonicalEpisodeNumber,
-                                episodeTitle = launch.episodeTitle,
-                                episodeThumbnail = launch.episodeThumbnail,
-                                streamTitle = stream.streamLabel,
-                                streamFilename = stream.mediaFilename,
-                                streamSubtitle = stream.streamSubtitle,
-                                sourceIdentityKey = selectedSourceIdentityKey,
-                                bingeGroup = stream.behaviorHints.bingeGroup,
-                                pauseDescription = pauseDescription,
-                                providerName = stream.addonName,
-                                providerAddonId = stream.addonId,
-                                contentType = launch.type,
-                                videoId = effectiveVideoId,
-                                parentMetaId = launch.parentMetaId ?: effectiveVideoId,
-                                parentMetaType = launch.parentMetaType ?: launch.type,
-                                watchProgressSource = launch.watchProgressSource,
-                                initialPositionMs = launch.resumePositionMs ?: 0L,
-                                initialProgressFraction = launch.resumeProgressFraction,
-                                disableProgressTracking = launch.disableProgressTracking,
-                                autoPlayMode = launch.autoPlayMode,
-                            )
-                        if (playerSettings.externalPlayerEnabled) {
-                            openExternalPlayback(playerLaunch)
-                            StreamsRepository.consumeAutoPlay()
-                            StreamsRepository.cancelLoading()
-                            return@LaunchedEffect
-                        }
-                        StreamsRepository.consumeAutoPlay()
-                        StreamsRepository.cancelLoading()
-                        navController.navigateToPlayer(playerLaunch) {
-                            popUpTo<StreamRoute> { inclusive = true }
-                        }
-                    }
-
-                    if (!hasResolvedVideoId) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(color = MaterialTheme.nuvio.colors.accent)
-                        }
-                        return@composable
-                    }
-
-                    fun openSelectedStream(
-                        stream: StreamItem,
-                        resolvedResumePositionMs: Long?,
-                        resolvedResumeProgressFraction: Float?,
-                        forceExternal: Boolean,
-                        forceInternal: Boolean,
-                        sourceIdentityKey: String? = stream.playerSourceIdentityKey(),
-                    ) {
-                        if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
-                            if (resolvingDebridStream) return
-                            streamRouteScope.launch {
-                                resolvingDebridStream = true
-                                val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
-                                    stream = stream,
-                                    season = streamLookupSeasonNumber,
-                                    episode = streamLookupEpisodeNumber,
-                                )
-                                resolvingDebridStream = false
-                                when (resolved) {
-                                    is DirectDebridPlayableResult.Success -> openSelectedStream(
-                                        stream = resolved.stream,
-                                        resolvedResumePositionMs = resolvedResumePositionMs,
-                                        resolvedResumeProgressFraction = resolvedResumeProgressFraction,
-                                        forceExternal = forceExternal,
-                                        forceInternal = forceInternal,
-                                        sourceIdentityKey = sourceIdentityKey,
-                                    )
-                                    else -> {
-                                        resolved.toastMessage()?.let { NuvioToastController.show(it) }
-                                        if (resolved == DirectDebridPlayableResult.Stale) {
-                                            StreamsRepository.reload(
-                                                type = launch.type,
-                                                videoId = effectiveStreamVideoId,
-                                                parentMetaId = launch.parentMetaId,
-                                                title = launch.title,
-                                                season = streamLookupSeasonNumber,
-                                                episode = streamLookupEpisodeNumber,
-                                                manualSelection = launch.manualSelection,
-                                                preferLocalStreams = launch.preferLocalStreams,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            return
-                        }
-                        if (stream.needsLocalDebridResolve && stream.p2pInfoHash != null) {
-                            requestOrOpenP2pStream(
-                                stream = stream,
-                                resolvedResumePositionMs = resolvedResumePositionMs,
-                                resolvedResumeProgressFraction = resolvedResumeProgressFraction,
-                                forceExternal = forceExternal,
-                                forceInternal = forceInternal,
-                                isAutoPlay = false,
-                            )
-                            return
-                        }
-                        val sourceUrl = stream.playableDirectUrl ?: return
-                        if (playerSettings.streamReuseLastLinkEnabled) {
-                            val cacheKey = StreamLinkCacheRepository.contentKey(
-                                type = launch.type,
-                                videoId = effectiveStreamVideoId,
-                                parentMetaId = launch.parentMetaId,
-                                season = streamLookupSeasonNumber,
-                                episode = streamLookupEpisodeNumber,
-                            )
-                            StreamLinkCacheRepository.save(
-                                contentKey = cacheKey,
-                                url = sourceUrl,
-                                streamName = stream.streamLabel,
-                                addonName = stream.addonName,
-                                addonId = stream.addonId,
-                                requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
-                                responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                                filename = stream.behaviorHints.filename,
-                                videoSize = stream.behaviorHints.videoSize,
-                                bingeGroup = stream.behaviorHints.bingeGroup,
-                                streamType = stream.streamType,
-                            )
-                        }
-                        val playerLaunch = PlayerLaunch(
-                            title = launch.title,
-                            sourceUrl = sourceUrl,
-                            sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
-                            sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
-                            streamType = stream.streamType,
-                            sourceAffinity = if (stream.streamType.equals("local", ignoreCase = true)) {
-                                PlayerSourceAffinity.Local
-                            } else {
-                                launch.sourceAffinity
-                            },
-                            logo = launch.logo,
-                            poster = launch.poster,
-                            background = launch.background,
-                            releaseYear = launch.releaseYear,
-                            seasonNumber = canonicalSeasonNumber,
-                            episodeNumber = canonicalEpisodeNumber,
-                            episodeTitle = launch.episodeTitle,
-                            episodeThumbnail = launch.episodeThumbnail,
-                            streamTitle = stream.streamLabel,
-                            streamFilename = stream.mediaFilename,
-                            streamSubtitle = stream.streamSubtitle,
-                            sourceIdentityKey = sourceIdentityKey,
-                            bingeGroup = stream.behaviorHints.bingeGroup,
-                            pauseDescription = pauseDescription,
-                            providerName = stream.addonName,
-                            providerAddonId = stream.addonId,
-                            contentType = launch.type,
-                            videoId = effectiveVideoId,
-                            parentMetaId = launch.parentMetaId ?: effectiveVideoId,
-                            parentMetaType = launch.parentMetaType ?: launch.type,
-                            watchProgressSource = launch.watchProgressSource,
-                            initialPositionMs = resolvedResumePositionMs ?: 0L,
-                            initialProgressFraction = resolvedResumeProgressFraction,
-                            disableProgressTracking = launch.disableProgressTracking,
-                            autoPlayMode = launch.autoPlayMode,
-                        )
-
-                        if (!forceInternal && (forceExternal || playerSettings.externalPlayerEnabled)) {
-                            coroutineScope.launch { openExternalPlayback(playerLaunch) }
-                            StreamsRepository.cancelLoading()
-                            return
-                        }
-
-                        StreamsRepository.cancelLoading()
-                        navController.navigateToPlayer(playerLaunch)
-                    }
-
-                    // Hide overlay when reuse navigated to external player (prevents reload from showing it again)
-                    LaunchedEffect(reuseNavigated) {
-                        if (reuseNavigated) {
-                            StreamsRepository.setOverlayVisible(false)
-                        }
-                    }
-
-                    // Guard the back action so spam-clicking the back button during the exit fade
-                    // can't fire popBackStack repeatedly and pop past the NavHost root (which leaves
-                    // an empty host = whole-app black screen). Matches the detail screen's guard.
-                    val streamsOnBack = rememberGuardedPopBackStack(
-                        navController = navController,
-                        backStackEntry = backStackEntry,
-                        beforePop = { StreamsRepository.clear() },
-                    )
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        StreamsScreen(
-                            type = launch.type,
-                            videoId = effectiveStreamVideoId,
-                            parentMetaId = launch.parentMetaId ?: effectiveVideoId,
-                            parentMetaType = launch.parentMetaType ?: launch.type,
-                            title = launch.title,
-                            logo = launch.logo,
-                            poster = launch.poster,
-                            background = launch.background,
-                            releaseYear = launch.releaseYear,
-                            seasonNumber = canonicalSeasonNumber,
-                            episodeNumber = canonicalEpisodeNumber,
-                            episodeTitle = launch.episodeTitle,
-                            episodeThumbnail = launch.episodeThumbnail,
-                            resumePositionMs = launch.resumePositionMs,
-                            resumeProgressFraction = launch.resumeProgressFraction,
-                            manualSelection = launch.manualSelection,
-                            preferLocalStreams = launch.preferLocalStreams,
-                            startFromBeginning = launch.startFromBeginning,
-                            onStreamSelected = { stream, resolvedResumePositionMs, resolvedResumeProgressFraction ->
-                                openSelectedStream(
-                                    stream = stream,
-                                    resolvedResumePositionMs = resolvedResumePositionMs,
-                                    resolvedResumeProgressFraction = resolvedResumeProgressFraction,
-                                    forceExternal = false,
-                                    forceInternal = false,
-                                )
-                            },
-                            onStreamActionOpen = { stream, openExternally, resolvedResumePositionMs, resolvedResumeProgressFraction ->
-                                openSelectedStream(
-                                    stream = stream,
-                                    resolvedResumePositionMs = resolvedResumePositionMs,
-                                    resolvedResumeProgressFraction = resolvedResumeProgressFraction,
-                                    forceExternal = openExternally,
-                                    forceInternal = !openExternally,
-                                )
-                            },
-                            onBack = streamsOnBack,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        pendingP2pStreamOpen?.let { pending ->
-                            P2pConsentDialog(
-                                onEnableP2p = {
-                                    P2pSettingsRepository.setP2pEnabled(true)
-                                    pendingP2pStreamOpen = null
-                                    openP2pStream(
-                                        stream = pending.stream,
-                                        resolvedResumePositionMs = pending.resumePositionMs,
-                                        resolvedResumeProgressFraction = pending.resumeProgressFraction,
-                                        replaceStreamRoute = pending.isAutoPlay,
-                                    )
-                                },
-                                onDismiss = {
-                                    if (pending.isAutoPlay) {
-                                        StreamsRepository.skipAutoPlayStream(pending.stream)
-                                        StreamsRepository.consumeAutoPlay()
-                                    }
-                                    pendingP2pStreamOpen = null
-                                },
-                            )
-                        }
-                        if (resolvingDebridStream) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(MaterialTheme.nuvio.colors.overlayScrim.copy(alpha = MaterialTheme.nuvio.opacity.overlayHeavy)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(MaterialTheme.nuvio.spacing.cardPadding),
-                                ) {
-                                    CircularProgressIndicator(color = MaterialTheme.nuvio.colors.playerControlsForeground)
-                                    Text(
-                                        text = stringResource(Res.string.streams_finding_source),
-                                        color = MaterialTheme.nuvio.colors.playerControlsForeground.copy(alpha = MaterialTheme.nuvio.opacity.overlayHeavy),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
                 composable<PlayerRoute>(
                     enterTransition = {
                         if (isIos) fadeIn(animationSpec = tween(220)) else null
@@ -4716,11 +4085,779 @@ private fun MainAppContent(
                 onDismiss = { resumePromptItem = null },
             )
 
+            // The source picker. It used to be a route of its own; now it is drawn over whatever
+            // opened it (see StreamPickerController), above the NavHost and below the toasts.
+            val streamPickerDock by StreamPickerController.dock.collectAsStateWithLifecycle()
+            val streamPickerSession: @Composable (StreamPickerRequest) -> Unit = session@{ request ->
+                val launch = request.launch
+                val pauseDescription = launch.pauseDescription
+                val streamRouteScope = rememberCoroutineScope()
+                var resolvingDebridStream by rememberSaveable(request.launchId) { mutableStateOf(false) }
+                var pendingP2pStreamOpen by remember { mutableStateOf<PendingP2pStreamOpen?>(null) }
+                val resolvedLaunchEpisode = remember(
+                    launch.type,
+                    launch.parentMetaId,
+                    launch.videoId,
+                    launch.streamVideoId,
+                    launch.title,
+                    launch.seasonNumber,
+                    launch.episodeNumber,
+                ) {
+                    MediaIdResolver.resolveLocalEpisodeIdentity(
+                        contentType = launch.type,
+                        parentMetaId = launch.parentMetaId ?: launch.videoId,
+                        videoId = launch.streamVideoId?.takeIf { it.isNotBlank() } ?: launch.videoId,
+                        title = launch.title,
+                        season = launch.seasonNumber,
+                        episode = launch.episodeNumber,
+                        isAnimeHint = launch.type.equals("anime", ignoreCase = true),
+                    )
+                }
+                val canonicalSeasonNumber = resolvedLaunchEpisode.season ?: launch.seasonNumber
+                val canonicalEpisodeNumber = resolvedLaunchEpisode.episode ?: launch.episodeNumber
+                val streamLookupSeasonNumber = resolvedLaunchEpisode.streamSeason ?: launch.seasonNumber
+                val streamLookupEpisodeNumber = resolvedLaunchEpisode.streamEpisode ?: launch.episodeNumber
+                val streamLookupVideoId = resolvedLaunchEpisode.videoId
+                val canonicalLaunchVideoId = resolvedLaunchEpisode.canonicalVideoId
+                val shouldResolveEpisodeVideoId =
+                    launch.parentMetaId != null &&
+                        canonicalSeasonNumber != null &&
+                        canonicalEpisodeNumber != null
+                var effectiveVideoId by rememberSaveable(
+                    launch.videoId,
+                    launch.parentMetaId,
+                    canonicalSeasonNumber,
+                    canonicalEpisodeNumber,
+                ) {
+                    mutableStateOf(launch.videoId)
+                }
+                var hasResolvedVideoId by rememberSaveable(
+                    launch.videoId,
+                    launch.parentMetaId,
+                    canonicalSeasonNumber,
+                    canonicalEpisodeNumber,
+                ) {
+                    mutableStateOf(!shouldResolveEpisodeVideoId)
+                }
+
+                LaunchedEffect(
+                    launch.videoId,
+                    launch.parentMetaId,
+                    launch.parentMetaType,
+                    launch.type,
+                    canonicalSeasonNumber,
+                    canonicalEpisodeNumber,
+                ) {
+                    effectiveVideoId = launch.videoId
+                    if (!shouldResolveEpisodeVideoId) {
+                        hasResolvedVideoId = true
+                        return@LaunchedEffect
+                    }
+
+                    hasResolvedVideoId = false
+                    val metaType = launch.parentMetaType ?: launch.type
+                    val metaId = launch.parentMetaId
+                    // Resolve against the *canonical* (franchise) coordinates, never the
+                    // entry-local stream ones. Native anime ids carry no season, so
+                    // streamLookupSeasonNumber falls back to the franchise season and would
+                    // pair it with a cour-local episode: playing Dr. STONE S04E25
+                    // (kitsu:50187:1) matched the S04E01 row, and everything keyed off the
+                    // active video — the next/previous episode cards, autoplay, the sources
+                    // panel — then walked the franchise from there. Share the player's own
+                    // resolver so the two can't disagree: it matches the metadata row id
+                    // first (the strongest evidence, and what the details list handed us),
+                    // then the canonical coordinates.
+                    //
+                    // Only the addon's video rows matter here, and TMDB enrichment never changes
+                    // their ids or coordinates — so take any record already held, else the
+                    // un-enriched fetch. The enriched one gates this screen on TMDB: a long
+                    // series asks for a trailer list per season, those queue behind Home's own
+                    // TMDB traffic, and South Park sat out the full 5 s enrich timeout before
+                    // the source list could even compose.
+                    val resolvedVideoId = runCatching {
+                        MetaDetailsRepository.peekAny(metaType, metaId)
+                            ?.takeIf { it.videos.isNotEmpty() }
+                            ?: MetaDetailsRepository.fetch(metaType, metaId, enrichTmdb = false)
+                    }.getOrNull()
+                        ?.videos
+                        ?.resolveSeriesEpisodePosition(
+                            parentMetaId = metaId,
+                            videoId = launch.videoId,
+                            seasonNumber = canonicalSeasonNumber,
+                            episodeNumber = canonicalEpisodeNumber,
+                        )
+                        ?.video
+                        ?.id
+                        ?.takeIf { it.isNotBlank() }
+
+                    effectiveVideoId = resolvedVideoId ?: canonicalLaunchVideoId
+                    hasResolvedVideoId = true
+                }
+
+                val playerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
+                val effectiveStreamVideoId = streamLookupVideoId.takeIf { it.isNotBlank() } ?: effectiveVideoId
+
+                fun p2pSentinelUrl(infoHash: String, fileIdx: Int?): String =
+                    "torrent://$infoHash${fileIdx?.let { "?index=$it" }.orEmpty()}"
+
+                fun openP2pStream(
+                    stream: StreamItem,
+                    resolvedResumePositionMs: Long?,
+                    resolvedResumeProgressFraction: Float?,
+                ) {
+                    val infoHash = stream.p2pInfoHash ?: return
+                    val sentinelUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
+                    if (playerSettings.streamReuseLastLinkEnabled) {
+                        val cacheKey = StreamLinkCacheRepository.contentKey(
+                            type = launch.type,
+                            videoId = effectiveStreamVideoId,
+                            parentMetaId = launch.parentMetaId,
+                            season = streamLookupSeasonNumber,
+                            episode = streamLookupEpisodeNumber,
+                        )
+                        StreamLinkCacheRepository.save(
+                            contentKey = cacheKey,
+                            url = "",
+                            streamName = stream.streamLabel,
+                            addonName = stream.addonName,
+                            addonId = stream.addonId,
+                            requestHeaders = emptyMap(),
+                            responseHeaders = emptyMap(),
+                            filename = stream.behaviorHints.filename,
+                            videoSize = stream.behaviorHints.videoSize,
+                            infoHash = infoHash,
+                            fileIdx = stream.p2pFileIdx,
+                            sources = stream.sources,
+                            bingeGroup = stream.behaviorHints.bingeGroup,
+                        )
+                    }
+                    val playerLaunch = PlayerLaunch(
+                        title = launch.title,
+                        sourceUrl = sentinelUrl,
+                        sourceHeaders = emptyMap(),
+                        sourceResponseHeaders = emptyMap(),
+                        streamType = stream.streamType,
+                        sourceAffinity = if (stream.streamType.equals("local", ignoreCase = true)) {
+                            PlayerSourceAffinity.Local
+                        } else {
+                            launch.sourceAffinity
+                        },
+                        logo = launch.logo,
+                        poster = launch.poster,
+                        background = launch.background,
+                        releaseYear = launch.releaseYear,
+                        seasonNumber = canonicalSeasonNumber,
+                        episodeNumber = canonicalEpisodeNumber,
+                        episodeTitle = launch.episodeTitle,
+                        episodeThumbnail = launch.episodeThumbnail,
+                        streamTitle = stream.streamLabel,
+                        streamFilename = stream.mediaFilename,
+                        streamSubtitle = stream.streamSubtitle,
+                        sourceIdentityKey = stream.playerSourceIdentityKey(),
+                        bingeGroup = stream.behaviorHints.bingeGroup,
+                        pauseDescription = pauseDescription,
+                        providerName = stream.addonName,
+                        providerAddonId = stream.addonId,
+                        contentType = launch.type,
+                        videoId = effectiveVideoId,
+                        parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                        parentMetaType = launch.parentMetaType ?: launch.type,
+                        watchProgressSource = launch.watchProgressSource,
+                        torrentInfoHash = infoHash,
+                        torrentFileIdx = stream.p2pFileIdx,
+                        torrentFilename = stream.behaviorHints.filename,
+                        torrentTrackers = stream.p2pTrackers,
+                        initialPositionMs = resolvedResumePositionMs ?: 0L,
+                        initialProgressFraction = resolvedResumeProgressFraction,
+                        disableProgressTracking = launch.disableProgressTracking,
+                        autoPlayMode = launch.autoPlayMode,
+                    )
+
+                    StreamsRepository.cancelLoading()
+                    // Playback starting is the picker's job done, manual pick or not: leaving the
+                    // player returns to the page as it was, and sources switch in the player.
+                    StreamPickerController.close(clearStreams = false)
+                    navController.navigateToPlayer(playerLaunch)
+                }
+
+                fun requestOrOpenP2pStream(
+                    stream: StreamItem,
+                    resolvedResumePositionMs: Long?,
+                    resolvedResumeProgressFraction: Float?,
+                    forceExternal: Boolean,
+                    forceInternal: Boolean,
+                    isAutoPlay: Boolean,
+                ) {
+                    if (stream.p2pInfoHash == null) {
+                        if (isAutoPlay) StreamsRepository.skipAutoPlayStream(stream)
+                        return
+                    }
+                    if (!P2pSettingsRepository.isVisible) {
+                        if (isAutoPlay) StreamsRepository.skipAutoPlayStream(stream)
+                        return
+                    }
+                    if (!p2pSettingsUiState.p2pEnabled) {
+                        pendingP2pStreamOpen = PendingP2pStreamOpen(
+                            stream = stream,
+                            resumePositionMs = resolvedResumePositionMs,
+                            resumeProgressFraction = resolvedResumeProgressFraction,
+                            forceExternal = forceExternal,
+                            forceInternal = forceInternal,
+                            isAutoPlay = isAutoPlay,
+                        )
+                        return
+                    }
+                    openP2pStream(
+                        stream = stream,
+                        resolvedResumePositionMs = resolvedResumePositionMs,
+                        resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                    )
+                }
+
+                // Reuse Last Link: auto-play from cache if enabled (only on first entry)
+                var reuseHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
+                var reuseNavigated by remember { mutableStateOf(false) }
+                LaunchedEffect(effectiveVideoId, hasResolvedVideoId, playerSettings.streamReuseLastLinkEnabled, launch.manualSelection) {
+                    if (!hasResolvedVideoId) return@LaunchedEffect
+                    if (reuseHandled) return@LaunchedEffect
+                    reuseHandled = true
+                    if (launch.manualSelection) return@LaunchedEffect
+                    if (!playerSettings.streamReuseLastLinkEnabled) return@LaunchedEffect
+                    val cacheKey = StreamLinkCacheRepository.contentKey(
+                        type = launch.type,
+                        videoId = effectiveStreamVideoId,
+                        parentMetaId = launch.parentMetaId,
+                        season = streamLookupSeasonNumber,
+                        episode = streamLookupEpisodeNumber,
+                    )
+                    val maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
+                    val cached = StreamLinkCacheRepository.getValid(cacheKey, maxAgeMs)
+                    if (cached != null) {
+                        if (cached.url.isBlank() && !cached.infoHash.isNullOrBlank()) {
+                            val cachedStream = StreamItem(
+                                name = cached.streamName,
+                                url = null,
+                                infoHash = cached.infoHash,
+                                fileIdx = cached.fileIdx,
+                                sources = cached.sources,
+                                addonName = cached.addonName,
+                                addonId = cached.addonId,
+                                behaviorHints = StreamBehaviorHints(
+                                    filename = cached.filename,
+                                    videoSize = cached.videoSize,
+                                    bingeGroup = cached.bingeGroup,
+                                ),
+                            )
+                            requestOrOpenP2pStream(
+                                stream = cachedStream,
+                                resolvedResumePositionMs = launch.resumePositionMs,
+                                resolvedResumeProgressFraction = launch.resumeProgressFraction,
+                                forceExternal = false,
+                                forceInternal = true,
+                                isAutoPlay = true,
+                            )
+                            reuseNavigated = true
+                            return@LaunchedEffect
+                        }
+                        val playerLaunch = PlayerLaunch(
+                                title = launch.title,
+                                sourceUrl = cached.url,
+                                sourceHeaders = sanitizePlaybackHeaders(cached.requestHeaders),
+                                sourceResponseHeaders = sanitizePlaybackResponseHeaders(cached.responseHeaders),
+                                streamType = cached.streamType,
+                                sourceAffinity = if (cached.streamType.equals("local", ignoreCase = true)) {
+                                    PlayerSourceAffinity.Local
+                                } else {
+                                    launch.sourceAffinity
+                                },
+                                logo = launch.logo,
+                                poster = launch.poster,
+                                background = launch.background,
+                                seasonNumber = canonicalSeasonNumber,
+                                episodeNumber = canonicalEpisodeNumber,
+                                episodeTitle = launch.episodeTitle,
+                                episodeThumbnail = launch.episodeThumbnail,
+                                streamTitle = cached.streamName,
+                                streamSubtitle = null,
+                                bingeGroup = cached.bingeGroup,
+                                pauseDescription = pauseDescription,
+                                providerName = cached.addonName,
+                                providerAddonId = cached.addonId,
+                                contentType = launch.type,
+                                videoId = effectiveVideoId,
+                                parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                                parentMetaType = launch.parentMetaType ?: launch.type,
+                                watchProgressSource = launch.watchProgressSource,
+                                initialPositionMs = launch.resumePositionMs ?: 0L,
+                                initialProgressFraction = launch.resumeProgressFraction,
+                                disableProgressTracking = launch.disableProgressTracking,
+                                autoPlayMode = launch.autoPlayMode,
+                            )
+                        if (playerSettings.externalPlayerEnabled) {
+                            openExternalPlayback(playerLaunch)
+                            StreamsRepository.setOverlayVisible(false)
+                            reuseNavigated = true
+                            return@LaunchedEffect
+                        }
+                        StreamsRepository.clear()
+                        reuseNavigated = true
+                        StreamPickerController.close(clearStreams = false)
+                        navController.navigateToPlayer(playerLaunch)
+                    }
+                }
+
+                val streamsUiState by StreamsRepository.uiState.collectAsStateWithLifecycle()
+                val expectedStreamsRequestToken = StreamsRepository.requestToken(
+                    type = launch.type,
+                    videoId = effectiveStreamVideoId,
+                    parentMetaId = launch.parentMetaId,
+                    title = launch.title,
+                    season = streamLookupSeasonNumber,
+                    episode = streamLookupEpisodeNumber,
+                    manualSelection = launch.manualSelection,
+                )
+                var autoPlayHandled by rememberSaveable(launch.videoId, effectiveVideoId) { mutableStateOf(false) }
+                LaunchedEffect(
+                    streamsUiState.autoPlayStream,
+                    streamsUiState.requestToken,
+                    expectedStreamsRequestToken,
+                    reuseHandled,
+                    launch.manualSelection,
+                ) {
+                    if (!reuseHandled) return@LaunchedEffect
+                    if (launch.manualSelection) return@LaunchedEffect
+                    if (reuseNavigated) return@LaunchedEffect
+                    if (autoPlayHandled) return@LaunchedEffect
+                    if (streamsUiState.requestToken != expectedStreamsRequestToken) return@LaunchedEffect
+                    val selectedStream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
+                    val selectedSourceIdentityKey = selectedStream.playerSourceIdentityKey()
+                    val stream = if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(selectedStream)) {
+                        when (
+                            val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
+                                stream = selectedStream,
+                                season = streamLookupSeasonNumber,
+                                episode = streamLookupEpisodeNumber,
+                            )
+                        ) {
+                            is DirectDebridPlayableResult.Success -> resolved.stream
+                            else -> {
+                                val hasNextCandidate = StreamsRepository.skipAutoPlayStream(selectedStream)
+                                if (!hasNextCandidate) {
+                                    resolved.toastMessage()?.let { NuvioToastController.show(it) }
+                                }
+                                if (!hasNextCandidate && resolved == DirectDebridPlayableResult.Stale) {
+                                    StreamsRepository.reload(
+                                        type = launch.type,
+                                        videoId = effectiveStreamVideoId,
+                                        parentMetaId = launch.parentMetaId,
+                                        title = launch.title,
+                                        season = streamLookupSeasonNumber,
+                                        episode = streamLookupEpisodeNumber,
+                                        manualSelection = launch.manualSelection,
+                                        preferLocalStreams = launch.preferLocalStreams,
+                                    )
+                                }
+                                return@LaunchedEffect
+                            }
+                        }
+                    } else {
+                        selectedStream
+                    }
+                    val sourceUrl = stream.playableDirectUrl
+                    if (sourceUrl == null && stream.needsLocalDebridResolve && stream.p2pInfoHash != null) {
+                        autoPlayHandled = true
+                        requestOrOpenP2pStream(
+                            stream = stream,
+                            resolvedResumePositionMs = launch.resumePositionMs,
+                            resolvedResumeProgressFraction = launch.resumeProgressFraction,
+                            forceExternal = false,
+                            forceInternal = true,
+                            isAutoPlay = true,
+                        )
+                        StreamsRepository.consumeAutoPlay()
+                        return@LaunchedEffect
+                    }
+                    if (sourceUrl == null) {
+                        StreamsRepository.skipAutoPlayStream(selectedStream)
+                        return@LaunchedEffect
+                    }
+                    autoPlayHandled = true
+                    if (playerSettings.streamReuseLastLinkEnabled) {
+                        val cacheKey = StreamLinkCacheRepository.contentKey(
+                            type = launch.type,
+                            videoId = effectiveStreamVideoId,
+                            parentMetaId = launch.parentMetaId,
+                            season = streamLookupSeasonNumber,
+                            episode = streamLookupEpisodeNumber,
+                        )
+                        StreamLinkCacheRepository.save(
+                            contentKey = cacheKey,
+                            url = sourceUrl,
+                            streamName = stream.streamLabel,
+                            addonName = stream.addonName,
+                            addonId = stream.addonId,
+                            requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+                            responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
+                            filename = stream.behaviorHints.filename,
+                            videoSize = stream.behaviorHints.videoSize,
+                            bingeGroup = stream.behaviorHints.bingeGroup,
+                            streamType = stream.streamType,
+                        )
+                    }
+                    val playerLaunch = PlayerLaunch(
+                            title = launch.title,
+                            sourceUrl = sourceUrl,
+                            sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+                            sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
+                            streamType = stream.streamType,
+                            sourceAffinity = if (stream.streamType.equals("local", ignoreCase = true)) {
+                                PlayerSourceAffinity.Local
+                            } else {
+                                launch.sourceAffinity
+                            },
+                            logo = launch.logo,
+                            poster = launch.poster,
+                            background = launch.background,
+                            seasonNumber = canonicalSeasonNumber,
+                            episodeNumber = canonicalEpisodeNumber,
+                            episodeTitle = launch.episodeTitle,
+                            episodeThumbnail = launch.episodeThumbnail,
+                            streamTitle = stream.streamLabel,
+                            streamFilename = stream.mediaFilename,
+                            streamSubtitle = stream.streamSubtitle,
+                            sourceIdentityKey = selectedSourceIdentityKey,
+                            bingeGroup = stream.behaviorHints.bingeGroup,
+                            pauseDescription = pauseDescription,
+                            providerName = stream.addonName,
+                            providerAddonId = stream.addonId,
+                            contentType = launch.type,
+                            videoId = effectiveVideoId,
+                            parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                            parentMetaType = launch.parentMetaType ?: launch.type,
+                            watchProgressSource = launch.watchProgressSource,
+                            initialPositionMs = launch.resumePositionMs ?: 0L,
+                            initialProgressFraction = launch.resumeProgressFraction,
+                            disableProgressTracking = launch.disableProgressTracking,
+                            autoPlayMode = launch.autoPlayMode,
+                        )
+                    if (playerSettings.externalPlayerEnabled) {
+                        openExternalPlayback(playerLaunch)
+                        StreamsRepository.consumeAutoPlay()
+                        StreamsRepository.cancelLoading()
+                        return@LaunchedEffect
+                    }
+                    StreamsRepository.consumeAutoPlay()
+                    StreamsRepository.cancelLoading()
+                    StreamPickerController.close(clearStreams = false)
+                    navController.navigateToPlayer(playerLaunch)
+                }
+
+                // Drawn only while the screen that opened it is current. Starting playback or
+                // leaving that screen closes the picker, but only on the next frame — without
+                // this, that one frame drew it as the modal over the screen being navigated to.
+                val streamPickerEntry = currentBackStackEntry
+                val streamPickerHidden = streamPickerEntry?.id != request.ownerEntryId
+                // Which dock this request may use: its own details page, or the TV-mode home hero
+                // when it was opened from Home (continue watching). Anything else is the modal.
+                val streamPickerDockKey = when {
+                    streamPickerEntry?.id != request.ownerEntryId -> null
+                    streamPickerEntry?.destination?.hasRoute<DetailRoute>() == true ->
+                        StreamPickerDock.forMeta(launch.parentMetaId ?: launch.videoId)
+                    streamPickerEntry?.destination?.hasRoute<TabsRoute>() == true &&
+                        selectedTab == AppScreenTab.Home -> StreamPickerDock.HOME
+                    else -> null
+                }
+                val streamPickerPlacement = streamPickerDock
+                    ?.takeIf { dock -> streamPickerDockKey != null && dock.ownerKey == streamPickerDockKey }
+                    ?.let { dock -> StreamPickerPlacement.Docked(dock.bounds) }
+                    ?: StreamPickerPlacement.Modal
+
+                if (!hasResolvedVideoId) {
+                    if (!streamPickerHidden) {
+                        StreamPickerFrame(
+                            placement = streamPickerPlacement,
+                            onDismiss = { StreamPickerController.close() },
+                            animateInKey = request.launchId,
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(color = MaterialTheme.nuvio.colors.accent)
+                            }
+                        }
+                    }
+                    return@session
+                }
+
+                fun openSelectedStream(
+                    stream: StreamItem,
+                    resolvedResumePositionMs: Long?,
+                    resolvedResumeProgressFraction: Float?,
+                    forceExternal: Boolean,
+                    forceInternal: Boolean,
+                    sourceIdentityKey: String? = stream.playerSourceIdentityKey(),
+                ) {
+                    if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
+                        if (resolvingDebridStream) return
+                        streamRouteScope.launch {
+                            resolvingDebridStream = true
+                            val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
+                                stream = stream,
+                                season = streamLookupSeasonNumber,
+                                episode = streamLookupEpisodeNumber,
+                            )
+                            resolvingDebridStream = false
+                            when (resolved) {
+                                is DirectDebridPlayableResult.Success -> openSelectedStream(
+                                    stream = resolved.stream,
+                                    resolvedResumePositionMs = resolvedResumePositionMs,
+                                    resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                    forceExternal = forceExternal,
+                                    forceInternal = forceInternal,
+                                    sourceIdentityKey = sourceIdentityKey,
+                                )
+                                else -> {
+                                    resolved.toastMessage()?.let { NuvioToastController.show(it) }
+                                    if (resolved == DirectDebridPlayableResult.Stale) {
+                                        StreamsRepository.reload(
+                                            type = launch.type,
+                                            videoId = effectiveStreamVideoId,
+                                            parentMetaId = launch.parentMetaId,
+                                            title = launch.title,
+                                            season = streamLookupSeasonNumber,
+                                            episode = streamLookupEpisodeNumber,
+                                            manualSelection = launch.manualSelection,
+                                            preferLocalStreams = launch.preferLocalStreams,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        return
+                    }
+                    if (stream.needsLocalDebridResolve && stream.p2pInfoHash != null) {
+                        requestOrOpenP2pStream(
+                            stream = stream,
+                            resolvedResumePositionMs = resolvedResumePositionMs,
+                            resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                            forceExternal = forceExternal,
+                            forceInternal = forceInternal,
+                            isAutoPlay = false,
+                        )
+                        return
+                    }
+                    val sourceUrl = stream.playableDirectUrl ?: return
+                    if (playerSettings.streamReuseLastLinkEnabled) {
+                        val cacheKey = StreamLinkCacheRepository.contentKey(
+                            type = launch.type,
+                            videoId = effectiveStreamVideoId,
+                            parentMetaId = launch.parentMetaId,
+                            season = streamLookupSeasonNumber,
+                            episode = streamLookupEpisodeNumber,
+                        )
+                        StreamLinkCacheRepository.save(
+                            contentKey = cacheKey,
+                            url = sourceUrl,
+                            streamName = stream.streamLabel,
+                            addonName = stream.addonName,
+                            addonId = stream.addonId,
+                            requestHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+                            responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
+                            filename = stream.behaviorHints.filename,
+                            videoSize = stream.behaviorHints.videoSize,
+                            bingeGroup = stream.behaviorHints.bingeGroup,
+                            streamType = stream.streamType,
+                        )
+                    }
+                    val playerLaunch = PlayerLaunch(
+                        title = launch.title,
+                        sourceUrl = sourceUrl,
+                        sourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+                        sourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
+                        streamType = stream.streamType,
+                        sourceAffinity = if (stream.streamType.equals("local", ignoreCase = true)) {
+                            PlayerSourceAffinity.Local
+                        } else {
+                            launch.sourceAffinity
+                        },
+                        logo = launch.logo,
+                        poster = launch.poster,
+                        background = launch.background,
+                        releaseYear = launch.releaseYear,
+                        seasonNumber = canonicalSeasonNumber,
+                        episodeNumber = canonicalEpisodeNumber,
+                        episodeTitle = launch.episodeTitle,
+                        episodeThumbnail = launch.episodeThumbnail,
+                        streamTitle = stream.streamLabel,
+                        streamFilename = stream.mediaFilename,
+                        streamSubtitle = stream.streamSubtitle,
+                        sourceIdentityKey = sourceIdentityKey,
+                        bingeGroup = stream.behaviorHints.bingeGroup,
+                        pauseDescription = pauseDescription,
+                        providerName = stream.addonName,
+                        providerAddonId = stream.addonId,
+                        contentType = launch.type,
+                        videoId = effectiveVideoId,
+                        parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                        parentMetaType = launch.parentMetaType ?: launch.type,
+                        watchProgressSource = launch.watchProgressSource,
+                        initialPositionMs = resolvedResumePositionMs ?: 0L,
+                        initialProgressFraction = resolvedResumeProgressFraction,
+                        disableProgressTracking = launch.disableProgressTracking,
+                        autoPlayMode = launch.autoPlayMode,
+                    )
+
+                    if (!forceInternal && (forceExternal || playerSettings.externalPlayerEnabled)) {
+                        coroutineScope.launch { openExternalPlayback(playerLaunch) }
+                        StreamsRepository.cancelLoading()
+                        return
+                    }
+
+                    StreamsRepository.cancelLoading()
+                    // Closed for the in-app player only; an external player leaves the user here,
+                    // where the list is still the way to try another source.
+                    StreamPickerController.close(clearStreams = false)
+                    navController.navigateToPlayer(playerLaunch)
+                }
+
+                // Hide overlay when reuse navigated to external player (prevents reload from showing it again)
+                LaunchedEffect(reuseNavigated) {
+                    if (reuseNavigated) {
+                        StreamsRepository.setOverlayVisible(false)
+                    }
+                }
+
+                val streamsOnBack: () -> Unit = { StreamPickerController.close() }
+                if (streamPickerHidden) return@session
+                Box(modifier = Modifier.fillMaxSize()) {
+                    StreamPickerFrame(
+                        placement = streamPickerPlacement,
+                        onDismiss = streamsOnBack,
+                        animateInKey = request.launchId,
+                    ) {
+                        StreamsScreen(
+                            type = launch.type,
+                            videoId = effectiveStreamVideoId,
+                            parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                            parentMetaType = launch.parentMetaType ?: launch.type,
+                            title = launch.title,
+                            logo = launch.logo,
+                            poster = launch.poster,
+                            background = launch.background,
+                            releaseYear = launch.releaseYear,
+                            seasonNumber = canonicalSeasonNumber,
+                            episodeNumber = canonicalEpisodeNumber,
+                            episodeTitle = launch.episodeTitle,
+                            episodeThumbnail = launch.episodeThumbnail,
+                            resumePositionMs = launch.resumePositionMs,
+                            resumeProgressFraction = launch.resumeProgressFraction,
+                            manualSelection = launch.manualSelection,
+                            preferLocalStreams = launch.preferLocalStreams,
+                            startFromBeginning = launch.startFromBeginning,
+                            onStreamSelected = { stream, resolvedResumePositionMs, resolvedResumeProgressFraction ->
+                                openSelectedStream(
+                                    stream = stream,
+                                    resolvedResumePositionMs = resolvedResumePositionMs,
+                                    resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                    forceExternal = false,
+                                    forceInternal = false,
+                                )
+                            },
+                            onStreamActionOpen = { stream, openExternally, resolvedResumePositionMs, resolvedResumeProgressFraction ->
+                                openSelectedStream(
+                                    stream = stream,
+                                    resolvedResumePositionMs = resolvedResumePositionMs,
+                                    resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                    forceExternal = openExternally,
+                                    forceInternal = !openExternally,
+                                )
+                            },
+                            onBack = streamsOnBack,
+                            presentation = StreamsPresentation.Panel,
+                            // Docked, the panel fills the trailer area out to the window edges,
+                            // so its content needs more room from them than the modal card's.
+                            panelContentPadding = if (streamPickerPlacement is StreamPickerPlacement.Docked) {
+                                // Top lines the chip row up with the hero beside it: the logo on
+                                // the details page, the "Starring" header on the TV home hero.
+                                PaddingValues(
+                                    start = 28.dp,
+                                    top = if (streamPickerDockKey == StreamPickerDock.HOME) 18.dp else 70.dp,
+                                    end = 28.dp,
+                                    bottom = 12.dp,
+                                )
+                            } else {
+                                PaddingValues(16.dp)
+                            },
+                            panelGlass = streamPickerPlacement is StreamPickerPlacement.Docked,
+                            // Two source cards side by side need ~600dp; a dock squeezed by a
+                            // small window falls back to one column (the toggle stays saved).
+                            panelTwoColumnsFit = (streamPickerPlacement as? StreamPickerPlacement.Docked)
+                                ?.let { with(LocalDensity.current) { it.bounds.width.toDp() } >= 600.dp }
+                                ?: true,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    pendingP2pStreamOpen?.let { pending ->
+                        P2pConsentDialog(
+                            onEnableP2p = {
+                                P2pSettingsRepository.setP2pEnabled(true)
+                                pendingP2pStreamOpen = null
+                                openP2pStream(
+                                    stream = pending.stream,
+                                    resolvedResumePositionMs = pending.resumePositionMs,
+                                    resolvedResumeProgressFraction = pending.resumeProgressFraction,
+                                )
+                            },
+                            onDismiss = {
+                                if (pending.isAutoPlay) {
+                                    StreamsRepository.skipAutoPlayStream(pending.stream)
+                                    StreamsRepository.consumeAutoPlay()
+                                }
+                                pendingP2pStreamOpen = null
+                            },
+                        )
+                    }
+                    if (resolvingDebridStream) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.nuvio.colors.overlayScrim.copy(alpha = MaterialTheme.nuvio.opacity.overlayHeavy)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(MaterialTheme.nuvio.spacing.cardPadding),
+                            ) {
+                                CircularProgressIndicator(color = MaterialTheme.nuvio.colors.playerControlsForeground)
+                                Text(
+                                    text = stringResource(Res.string.streams_finding_source),
+                                    color = MaterialTheme.nuvio.colors.playerControlsForeground.copy(alpha = MaterialTheme.nuvio.opacity.overlayHeavy),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            streamPickerRequest?.let { request ->
+                key(request.launchId) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(15f),
+                    ) {
+                        streamPickerSession(request)
+                    }
+                }
+            }
+
             // Held back while the player is on screen: the prompt is queued the moment a title
             // finishes, which during a binge is mid auto-play into the next episode.
             RatingPromptHost(
                 isSuppressed = currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true ||
-                    currentBackStackEntry?.destination?.hasRoute<StreamRoute>() == true,
+                    streamPickerRequest != null,
             )
 
             NuvioToastHost(
@@ -4822,7 +4959,9 @@ private fun BindDiscordBrowsingPresence(
     DiscordPresenceSettingsRepository.ensureLoaded()
     val discordSettings by DiscordPresenceSettingsRepository.uiState.collectAsStateWithLifecycle()
     val detailsUiState by MetaDetailsRepository.uiState.collectAsStateWithLifecycle()
+    val streamPickerRequest by StreamPickerController.request.collectAsStateWithLifecycle()
     val activity = remember(
+        streamPickerRequest,
         currentBackStackEntry,
         selectedTab,
         searchOverlayActive,
@@ -4831,6 +4970,14 @@ private fun BindDiscordBrowsingPresence(
         detailsUiState.meta,
         detailsUiState.isLoading,
     ) {
+        val pickerLaunch = streamPickerRequest?.launch
+        if (pickerLaunch != null && currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() != true) {
+            return@remember browsingActivity(
+                title = "Choosing a stream for ${pickerLaunch.title}",
+                subtitle = "Sources",
+                imageUrl = pickerLaunch.poster ?: detailsUiState.meta?.poster,
+            )
+        }
         currentBackStackEntry?.toDiscordBrowsingActivity(
             selectedTab = selectedTab,
             searchOverlayActive = searchOverlayActive,
@@ -4904,14 +5051,6 @@ private fun NavBackStackEntry.toDiscordBrowsingActivity(
             browsingActivity(
                 title = route?.title?.let { "Browsing $it" } ?: "Browsing titles",
                 subtitle = "Discovery",
-            )
-        }
-        destination.hasRoute<StreamRoute>() -> {
-            val launch = routeOrNull<StreamRoute>()?.let { StreamLaunchStore.get(it.launchId) }
-            browsingActivity(
-                title = launch?.title?.let { "Choosing a stream for $it" } ?: "Choosing a stream",
-                subtitle = "Sources",
-                imageUrl = launch?.poster ?: detailPoster,
             )
         }
         destination.hasRoute<CatalogRoute>() -> {
@@ -5536,13 +5675,13 @@ private fun TabletFloatingTopBar(
     } else {
         FloatingTopBarWidth - FloatingTopBarQuadrantWidth
     }
-    // Right-clicking the Library quadrant hangs the sort menu off the bar the same way the
+    // Right-clicking the Library quadrant hangs its quick-access menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
-    var librarySortMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
+    var libraryMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
     val barAlpha by animateFloatAsState(
         // The menu is a popup, so it isn't covered by this alpha: let the bar dim out from under
         // it and the menu is left floating over nothing.
-        targetValue = if (dimUntilHovered && !isSearchActive && !activationZoneHovered && !librarySortMenuVisible) 0f else 1f,
+        targetValue = if (dimUntilHovered && !isSearchActive && !activationZoneHovered && !libraryMenuVisible) 0f else 1f,
         animationSpec = tween(durationMillis = 200),
     )
 
@@ -5573,7 +5712,7 @@ private fun TabletFloatingTopBar(
     val pickerItemCount = pickerEntries.size
     val pickerVisible = isSearchActive && searchBarHasFocus && visibleHistory.isNotEmpty()
     var historyShapeVisible by remember { mutableStateOf(false) }
-    val attachedPanelVisible = historyShapeVisible || librarySortMenuVisible
+    val attachedPanelVisible = historyShapeVisible || libraryMenuVisible
 
     LaunchedEffect(pickerEntries) {
         if (pickerSelectedIndex !in pickerEntries.indices) {
@@ -5860,7 +5999,7 @@ private fun TabletFloatingTopBar(
                             selected = selectedTab == AppScreenTab.Library,
                             activeColor = activeQuadColor,
                             onClick = { onTabSelected(AppScreenTab.Library) },
-                            onSecondaryClick = { librarySortMenuVisible = true },
+                            onSecondaryClick = { libraryMenuVisible = true },
                         ) {
                             Icon(
                                 painter = painterResource(Res.drawable.sidebar_library),
@@ -5892,18 +6031,20 @@ private fun TabletFloatingTopBar(
         // A Popup, not a sibling in this Column, so a click anywhere else dismisses it. The
         // offset hangs it off the bottom edge of the 44dp bar, overlapping the hairline border
         // by half a pixel so the two surfaces read as one shape.
-        if (librarySortMenuVisible) {
+        if (libraryMenuVisible) {
             val density = LocalDensity.current
             Popup(
                 alignment = Alignment.TopCenter,
                 offset = IntOffset(0, with(density) { (44.dp - 0.5.dp).roundToPx() }),
                 properties = PopupProperties(focusable = true),
-                onDismissRequest = { librarySortMenuVisible = false },
+                onDismissRequest = { libraryMenuVisible = false },
             ) {
-                LibrarySortMenuPanel(
+                LibraryQuickAccessMenuPanel(
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
-                    modifier = Modifier.width(LibraryNavMenuWidth),
-                    onDismissRequest = { librarySortMenuVisible = false },
+                    // The full bar's width (which counts the Discover quadrant when it is shown),
+                    // like the search history panel, so it reads as part of the pill.
+                    modifier = Modifier.width(topBarWidth),
+                    onDismissRequest = { libraryMenuVisible = false },
                 )
             }
         }

@@ -88,7 +88,7 @@ object HeroCastMetadataService {
      * Hero enrichment adds one of these per title, and writing the whole cache each time cost ~23 ms
      * on the UI thread. Batched instead; see [CoalescingCachePersister].
      */
-    private val persister = CoalescingCachePersister(tag = "heroCast") {
+    private val persister = CoalescingCachePersister(tag = "heroCast", writeDelayMs = MDBLIST_CACHE_WRITE_DELAY_MS) {
         val snapshot = cacheMutex.withLock { ensureCacheLoaded().toMap() }
         persistCache(snapshot)
     }

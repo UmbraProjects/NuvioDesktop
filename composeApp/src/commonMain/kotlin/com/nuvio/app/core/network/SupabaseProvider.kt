@@ -51,6 +51,7 @@ object SupabaseProvider {
                 defaultRequest {
                     headers.append(HttpHeaders.UserAgent, userAgent)
                 }
+                install(com.nuvio.app.core.perf.perfTelemetryPlugin("supabase"))
             }
             install(Auth)
             install(Postgrest)

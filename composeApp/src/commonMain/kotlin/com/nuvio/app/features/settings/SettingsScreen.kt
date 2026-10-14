@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.perf.PerfTelemetry
+import com.nuvio.app.features.library.LibraryQuickAccess
 import com.nuvio.app.core.build.AppFeaturePolicy
 
 import androidx.compose.foundation.border
@@ -219,6 +221,13 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+
+/**
+ * The settings page last shown, so `(PerfScreen)` can name it when the Settings tab is re-entered
+ * with its composition retained (the page effect does not re-run then).
+ */
+@Volatile
+internal var perfSettingsPage: String = SettingsPage.Addons.name
 
 private val SettingsSearchRevealThreshold = 28.dp
 private const val SettingsSearchRevealAnimationMillis = 240L
@@ -446,6 +455,10 @@ fun SettingsScreen(
         }
 
         var currentPage by rememberSaveable { mutableStateOf(SettingsPage.Addons.name) }
+        LaunchedEffect(currentPage) {
+            perfSettingsPage = currentPage
+            PerfTelemetry.markScreen("Settings/$currentPage")
+        }
         var selectedDownloadsShowId by rememberSaveable { mutableStateOf<String?>(null) }
         var pendingDownloadsDelete by remember { mutableStateOf<DownloadsSettingsDeleteTarget?>(null) }
         val scrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
@@ -807,6 +820,7 @@ private fun MobileSettingsScreen(
         LaunchedEffect(page) {
             if (page != SettingsPage.LocalLibrary) localLibraryTitlesState.browserOpen = false
         }
+        ApplyLibraryQuickAccessBrowser(page, localLibraryTitlesState)
         if (page == SettingsPage.LocalLibrary && localLibraryTitlesState.browserOpen) {
             LocalLibraryBrowserDialog(
                 state = localLibraryUiState,
@@ -1161,6 +1175,25 @@ private fun MobileSettingsScreen(
     }
 }
 
+/**
+ * The Library nav item's right-click shortcuts: once the LocalLibrary page is up (App has already
+ * requested it), open the titles browser or make sure it isn't covering the settings. Both the
+ * mobile and tablet/desktop layouts host the browser, so both call this.
+ */
+@Composable
+private fun ApplyLibraryQuickAccessBrowser(page: SettingsPage, titlesState: LocalLibraryTitlesState) {
+    LaunchedEffect(page, LibraryQuickAccess.browserPending) {
+        val openBrowser = LibraryQuickAccess.browserPending ?: return@LaunchedEffect
+        if (page != SettingsPage.LocalLibrary) return@LaunchedEffect
+        LibraryQuickAccess.browserPending = null
+        if (openBrowser) {
+            titlesState.openBrowser(FILTER_ALL)
+        } else {
+            titlesState.browserOpen = false
+        }
+    }
+}
+
 private fun SettingsPage.isEnabledByFeaturePolicy(): Boolean =
     when (this) {
         SettingsPage.Notifications -> AppFeaturePolicy.notificationsEnabled
@@ -1344,6 +1377,7 @@ private fun TabletSettingsScreen(
             LaunchedEffect(page) {
                 if (page != SettingsPage.LocalLibrary) localLibraryTitlesState.browserOpen = false
             }
+            ApplyLibraryQuickAccessBrowser(page, localLibraryTitlesState)
             if (page == SettingsPage.LocalLibrary && localLibraryTitlesState.browserOpen) {
                 LocalLibraryBrowserDialog(
                     state = localLibraryUiState,

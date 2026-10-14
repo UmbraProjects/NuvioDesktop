@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.posterservice.withCachedCustomPosters
 import com.nuvio.app.features.posterservice.withCustomPosterOverlay
 import com.nuvio.app.features.posterservice.CustomPosterScreen
@@ -117,6 +118,7 @@ object HomeRepository {
     }
 
     fun refresh(addons: List<ManagedAddon>, force: Boolean = false) {
+        PerfTelemetry.count("HomeRepository.refresh")
         val activeAddons = addons.enabledAddons()
         val requests = buildHomeCatalogDefinitions(activeAddons)
         currentDefinitions = requests
@@ -472,6 +474,7 @@ object HomeRepository {
      * an infinite-scroll trigger waits for that page instead of concluding the row is exhausted.
      */
     fun loadMoreCatalogRow(sectionKey: String): Job? {
+        PerfTelemetry.count("HomeRepository.loadMoreCatalogRow")
         // Every refusal is named. Horizontal paging is driven by scroll position, so it is called
         // constantly and declines most of the time — and while all four exits were silent there was
         // no way to tell "correctly idle" from "wedged" in a log.

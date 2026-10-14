@@ -1,6 +1,7 @@
 package com.nuvio.app.features.mdblist
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.trakt.TraktCalendarEntry
 import com.nuvio.app.features.trakt.TraktCalendarUiState
@@ -60,6 +61,7 @@ internal object MdbListCalendarRepository {
     }
 
     fun refreshAsync() {
+        PerfTelemetry.count("MdbListCalendarRepository.refreshAsync")
         scope.launch {
             resetState()
             ensureLoaded()

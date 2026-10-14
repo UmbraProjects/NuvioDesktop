@@ -32,6 +32,20 @@ fun desktopDebugLoggingRequested(): Boolean {
     return marker || env || devRun
 }
 
+/**
+ * Optimisation-pass telemetry (`(PerfNet)`, `(PerfStore)`, `(PerfWork)`, `(PerfScreen)`): a file
+ * named `perf-log` in the Nuvio data directory, or `NUVIO_PERF_LOG` set. Separate from debug-log
+ * on purpose - it writes a few summary lines per 30 s, not a line per event.
+ */
+fun desktopPerfLoggingSource(): String? {
+    val marker = runCatching { DesktopStorage.rootDir.resolve("perf-log").toFile().exists() }.getOrDefault(false)
+    return when {
+        marker -> "perf-log marker"
+        !System.getenv("NUVIO_PERF_LOG").isNullOrBlank() -> "NUVIO_PERF_LOG"
+        else -> null
+    }
+}
+
 private val desktopFileLoggingConfigured = AtomicBoolean(false)
 
 /**

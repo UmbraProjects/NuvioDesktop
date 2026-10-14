@@ -23,6 +23,13 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
+/**
+ * Both MDBList caches (ratings, hero cast) live in one ~2.8 MB properties file, and every write
+ * rewrites all of it. The default 3 s window still wrote it 5 times in a 4-minute browse (14 MB);
+ * these are caches, and the exit path flushes them, so a longer window costs nothing.
+ */
+internal const val MDBLIST_CACHE_WRITE_DELAY_MS = 30_000L
+
 object MdbListMetadataService {
     const val CACHE_VERSION = 4
 
@@ -283,7 +290,7 @@ object MdbListMetadataService {
      * Same burst as the hero cast cache next door, into the same 3.4 MB properties file — batched
      * for the same reason. See [CoalescingCachePersister].
      */
-    private val persister = CoalescingCachePersister(tag = "mdbListRatings") {
+    private val persister = CoalescingCachePersister(tag = "mdbListRatings", writeDelayMs = MDBLIST_CACHE_WRITE_DELAY_MS) {
         val snapshot = cacheMutex.withLock { ensureCacheLoaded().toMap() }
         persistCache(snapshot)
     }

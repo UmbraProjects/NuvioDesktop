@@ -46,8 +46,9 @@ internal fun immersiveHeroSideScrimStops(
 internal fun immersiveShelfScrimStops(
     backgroundColor: Color,
     fullBackdrop: Boolean,
-    // Collections' folder view dims its shelf less when the ambient background is on, since that
-    // already tints the whole screen. Irrelevant under full backdrop, which never reaches opaque.
+    // Lighter when the ambient background is on (TV ambient, Collections' folder view): the wash
+    // already darkens toward the bottom, and a heavy scrim here cut its colour off above the rows.
+    // Irrelevant under full backdrop, which never reaches opaque.
     ambientBackgroundEnabled: Boolean = false,
 ): Array<Pair<Float, Color>> = if (fullBackdrop) {
     arrayOf(
@@ -59,9 +60,10 @@ internal fun immersiveShelfScrimStops(
 } else {
     arrayOf(
         0f to backgroundColor.copy(alpha = 0f),
-        0.30f to backgroundColor.copy(alpha = 0.28f),
-        0.62f to backgroundColor.copy(alpha = if (ambientBackgroundEnabled) 0.74f else 0.88f),
-        1f to backgroundColor.copy(alpha = if (ambientBackgroundEnabled) 0.82f else 1f),
+        0.30f to backgroundColor.copy(alpha = if (ambientBackgroundEnabled) 0.14f else 0.28f),
+        // Ambient holds the row-top level to the bottom rather than darkening further.
+        0.62f to backgroundColor.copy(alpha = if (ambientBackgroundEnabled) 0.14f else 0.88f),
+        1f to backgroundColor.copy(alpha = if (ambientBackgroundEnabled) 0.14f else 1f),
     )
 }
 

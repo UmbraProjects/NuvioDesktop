@@ -128,6 +128,10 @@ internal expect object PlayerSettingsStorage {
     fun saveNvidiaRtxSuperResolutionEnabled(enabled: Boolean)
     fun loadNvidiaRtxHdrEnabled(): Boolean?
     fun saveNvidiaRtxHdrEnabled(enabled: Boolean)
+    fun loadNvidiaRtxHdrAnimeEnabled(): Boolean?
+    fun saveNvidiaRtxHdrAnimeEnabled(enabled: Boolean)
+    fun loadNvidiaRtxHdrAnimeShadersEnabled(): Boolean?
+    fun saveNvidiaRtxHdrAnimeShadersEnabled(enabled: Boolean)
     fun loadDesktopAnimeModeAutoEnabled(): Boolean?
     fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean)
     fun loadDesktopAnimeTreatAnimationAsAnime(): Boolean?

@@ -43,6 +43,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -156,8 +158,16 @@ internal fun LazyListScope.playbackSettingsContent(
     useLibass: Boolean,
     libassRenderType: String,
 ) {
-    item {
+    // One lazy item per top-level section rather than one item holding the whole page: that
+    // composed all ~400 rows (and resolved every one of their strings) in a single frame on every
+    // open, ~150ms each time and ~350ms the first. Sections now compose as they scroll into view;
+    // the largest is about a fifth of the page. Settings search still reaches rows further down
+    // (SeekSettingsAnchorIntoView walks the list until the target mounts). The conditions mirror
+    // the ones inside each section so a hidden section leaves no gap.
+    playbackSettingsParts().forEach { part ->
+        item(key = "playback-settings-$part") {
         PlaybackSettingsSection(
+            part = part,
             isTablet = isTablet,
             showLoadingOverlay = showLoadingOverlay,
             defaultPlaybackSpeed = defaultPlaybackSpeed,
@@ -173,7 +183,24 @@ internal fun LazyListScope.playbackSettingsContent(
             useLibass = useLibass,
             libassRenderType = libassRenderType,
         )
+        }
     }
+}
+
+private const val PlaybackSettingsFirstPart = 1
+
+private fun playbackSettingsParts(): List<Int> = buildList {
+    if (isWindows) add(0)
+    add(1)
+    if (isDesktop) add(2)
+    add(3)
+    add(4)
+    if (P2pSettingsRepository.isVisible) add(5)
+    add(6)
+    add(7)
+    if (isIos) add(8)
+    add(9)
+    add(10)
 }
 
 private fun formatStep(value: Float): String {
@@ -795,6 +822,8 @@ private fun SubtitleColorSwatch(color: Color) {
 
 @Composable
 private fun PlaybackSettingsSection(
+    /** Which of the page's top-level sections to draw; see [playbackSettingsContent]. */
+    part: Int,
     isTablet: Boolean,
     showLoadingOverlay: Boolean,
     defaultPlaybackSpeed: Float,
@@ -810,6 +839,15 @@ private fun PlaybackSettingsSection(
     useLibass: Boolean,
     libassRenderType: String,
 ) {
+    // How long the page takes from composing to its first frame.
+    val openedAt = remember { kotlin.time.TimeSource.Monotonic.markNow() }
+    LaunchedEffect(Unit) {
+        if (part != PlaybackSettingsFirstPart) return@LaunchedEffect
+        withFrameNanos { }
+        co.touchlab.kermit.Logger.withTag("SettingsPerf").i {
+            "Playback settings first frame in ${openedAt.elapsedNow().inWholeMilliseconds}ms"
+        }
+    }
     var showExternalPlayerAppDialog by remember { mutableStateOf(false) }
     var showAutoPlayRegexDialog by remember { mutableStateOf(false) }
     var showP2pConsentDialog by remember { mutableStateOf(false) }
@@ -862,1944 +900,1979 @@ private fun PlaybackSettingsSection(
     Column(
         verticalArrangement = Arrangement.spacedBy(sectionSpacing),
     ) {
-        if (isWindows) {
-            SettingsSection(
-                title = stringResource(Res.string.settings_playback_nvidia_rtx_video_section),
-                isTablet = isTablet,
-            ) {
-                SettingsGroup(isTablet = isTablet) {
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_nvidia_rtx_super_resolution),
-                        description = stringResource(Res.string.settings_playback_nvidia_rtx_super_resolution_desc),
-                        checked = autoPlayPlayerSettings.nvidiaRtxSuperResolutionEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setNvidiaRtxSuperResolutionEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_nvidia_rtx_hdr),
-                        description = stringResource(Res.string.settings_playback_nvidia_rtx_hdr_desc),
-                        checked = autoPlayPlayerSettings.nvidiaRtxHdrEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setNvidiaRtxHdrEnabled,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.RtxHdr),
-                    )
+        if (part == 0) {
+            if (isWindows) {
+                SettingsSection(
+                    title = stringResource(Res.string.settings_playback_nvidia_rtx_video_section),
+                    isTablet = isTablet,
+                ) {
+                    SettingsGroup(isTablet = isTablet) {
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_nvidia_rtx_super_resolution),
+                            description = stringResource(Res.string.settings_playback_nvidia_rtx_super_resolution_desc),
+                            checked = autoPlayPlayerSettings.nvidiaRtxSuperResolutionEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setNvidiaRtxSuperResolutionEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_nvidia_rtx_hdr),
+                            description = stringResource(Res.string.settings_playback_nvidia_rtx_hdr_desc),
+                            checked = autoPlayPlayerSettings.nvidiaRtxHdrEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setNvidiaRtxHdrEnabled,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.RtxHdr),
+                        )
+                        if (autoPlayPlayerSettings.nvidiaRtxHdrEnabled) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_nvidia_rtx_hdr_anime),
+                                description = stringResource(Res.string.settings_playback_nvidia_rtx_hdr_anime_desc),
+                                checked = autoPlayPlayerSettings.nvidiaRtxHdrAnimeEnabled,
+                                isTablet = isTablet,
+                                onCheckedChange = PlayerSettingsRepository::setNvidiaRtxHdrAnimeEnabled,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.RtxHdrAnime),
+                            )
+                            if (autoPlayPlayerSettings.nvidiaRtxHdrAnimeEnabled) {
+                                SettingsGroupDivider(isTablet = isTablet)
+                                SettingsSwitchRow(
+                                    title = stringResource(Res.string.settings_playback_nvidia_rtx_hdr_anime_shaders),
+                                    description = stringResource(Res.string.settings_playback_nvidia_rtx_hdr_anime_shaders_desc),
+                                    checked = autoPlayPlayerSettings.nvidiaRtxHdrAnimeShadersEnabled,
+                                    isTablet = isTablet,
+                                    onCheckedChange = PlayerSettingsRepository::setNvidiaRtxHdrAnimeShadersEnabled,
+                                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.RtxHdrAnimeShaders),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
-        SettingsSection(
-            title = stringResource(Res.string.settings_playback_section_player),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                // Leads the section: it resizes the whole player HUD, and it is the first thing
-                // a new user on a smaller display needs to find.
-                if (isDesktop) {
-                    val uiScalePercent = autoPlayPlayerSettings.desktopUiScalePercent
-                    SettingsSliderRow(
-                        title = stringResource(Res.string.settings_playback_ui_scale),
-                        value = uiScalePercent,
-                        valueText = "${if (uiScalePercent > 0) "+" else ""}$uiScalePercent%",
-                        valueTextForValue = { "${if (it > 0) "+" else ""}$it%" },
-                        valueRange = -50..50,
-                        step = 5,
-                        isTablet = isTablet,
-                        onValueChange = PlayerSettingsRepository::setDesktopUiScalePercent,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val controlIconScalePercent = autoPlayPlayerSettings.desktopControlIconScalePercent
-                    SettingsSliderRow(
-                        title = stringResource(Res.string.settings_playback_control_icon_scale),
-                        description = stringResource(Res.string.settings_playback_control_icon_scale_description),
-                        value = controlIconScalePercent,
-                        valueText = "${if (controlIconScalePercent > 0) "+" else ""}$controlIconScalePercent%",
-                        valueTextForValue = { "${if (it > 0) "+" else ""}$it%" },
-                        valueRange = -50..50,
-                        step = 5,
-                        isTablet = isTablet,
-                        onValueChange = PlayerSettingsRepository::setDesktopControlIconScalePercent,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                }
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_show_loading_overlay),
-                    description = stringResource(Res.string.settings_playback_show_loading_overlay_description),
-                    checked = showLoadingOverlay,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setShowLoadingOverlay,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                // Player preference picker: Internal / External
-                SettingsChoiceRow(
-                    title = stringResource(Res.string.settings_playback_player_preference),
-                    description = stringResource(Res.string.settings_playback_player_preference),
-                    options = listOf(
-                        SettingsChoiceOption(false, stringResource(Res.string.settings_playback_player_preference_internal)),
-                        SettingsChoiceOption(true, stringResource(Res.string.settings_playback_player_preference_external)),
-                    ),
-                    selectedValue = autoPlayPlayerSettings.externalPlayerEnabled,
-                    isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setExternalPlayerEnabled,
-                )
-                if ((isIos || isDesktop) && autoPlayPlayerSettings.externalPlayerEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_external_player_app),
-                        description = selectedExternalPlayer?.name
-                            ?: if (availableExternalPlayers.isEmpty()) {
-                                stringResource(Res.string.settings_playback_external_player_none_available)
-                            } else {
-                                stringResource(Res.string.settings_playback_not_set)
-                            },
-                        isTablet = isTablet,
-                        onClick = { showExternalPlayerAppDialog = true },
-                    )
-                }
-                if (!isIos && autoPlayPlayerSettings.externalPlayerEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
+        if (part == 1) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_playback_section_player),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    // Leads the section: it resizes the whole player HUD, and it is the first thing
+                    // a new user on a smaller display needs to find.
+                    if (isDesktop) {
+                        val uiScalePercent = autoPlayPlayerSettings.desktopUiScalePercent
+                        SettingsSliderRow(
+                            title = stringResource(Res.string.settings_playback_ui_scale),
+                            value = uiScalePercent,
+                            valueText = "${if (uiScalePercent > 0) "+" else ""}$uiScalePercent%",
+                            valueTextForValue = { "${if (it > 0) "+" else ""}$it%" },
+                            valueRange = -50..50,
+                            step = 5,
+                            isTablet = isTablet,
+                            onValueChange = PlayerSettingsRepository::setDesktopUiScalePercent,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val controlIconScalePercent = autoPlayPlayerSettings.desktopControlIconScalePercent
+                        SettingsSliderRow(
+                            title = stringResource(Res.string.settings_playback_control_icon_scale),
+                            description = stringResource(Res.string.settings_playback_control_icon_scale_description),
+                            value = controlIconScalePercent,
+                            valueText = "${if (controlIconScalePercent > 0) "+" else ""}$controlIconScalePercent%",
+                            valueTextForValue = { "${if (it > 0) "+" else ""}$it%" },
+                            valueRange = -50..50,
+                            step = 5,
+                            isTablet = isTablet,
+                            onValueChange = PlayerSettingsRepository::setDesktopControlIconScalePercent,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                    }
                     SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_external_player_forward_subtitles),
-                        description = stringResource(Res.string.settings_playback_external_player_forward_subtitles_description),
-                        checked = autoPlayPlayerSettings.externalPlayerForwardSubtitles,
+                        title = stringResource(Res.string.settings_playback_show_loading_overlay),
+                        description = stringResource(Res.string.settings_playback_show_loading_overlay_description),
+                        checked = showLoadingOverlay,
                         isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setExternalPlayerForwardSubtitles,
-                    )
-                }
-                SettingsGroupDivider(isTablet = isTablet)
-                // Speed sliders run in twentieths so their positions land exactly on the 0.05 grid
-                // the repository snaps to; 10..80 is 0.5x..4x.
-                SettingsSliderRow(
-                    title = stringResource(Res.string.settings_playback_default_speed),
-                    value = (defaultPlaybackSpeed * 20f).roundToInt(),
-                    valueText = formatPlaybackSpeedLabel(defaultPlaybackSpeed),
-                    valueTextForValue = { formatPlaybackSpeedLabel(it / 20f) },
-                    valueRange = 10..80,
-                    step = 1,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DefaultSpeed),
-                    onValueChange = { PlayerSettingsRepository.setDefaultPlaybackSpeed(it / 20f) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSliderRow(
-                    title = stringResource(Res.string.settings_playback_seek_step),
-                    description = stringResource(Res.string.settings_playback_seek_step_description),
-                    value = autoPlayPlayerSettings.seekStepSeconds,
-                    valueText = "${autoPlayPlayerSettings.seekStepSeconds}s",
-                    valueTextForValue = { "${it}s" },
-                    valueRange = SEEK_STEP_SECONDS_RANGE,
-                    step = 1,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("seek-step")),
-                    onValueChange = PlayerSettingsRepository::setSeekStepSeconds,
-                )
-                if (isDesktop) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_fine_speed_increments),
-                        description = stringResource(Res.string.settings_playback_fine_speed_increments_description),
-                        checked = autoPlayPlayerSettings.desktopPlaybackSpeedFineIncrementsEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackSpeedFineIncrementsEnabled,
+                        onCheckedChange = PlayerSettingsRepository::setShowLoadingOverlay,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsRangeSliderRow(
-                        title = stringResource(Res.string.settings_playback_speed_toggle),
-                        description = stringResource(Res.string.settings_playback_speed_toggle_description),
-                        lowValue = (autoPlayPlayerSettings.playbackSpeedToggleLow * 20f).roundToInt(),
-                        highValue = (autoPlayPlayerSettings.playbackSpeedToggleHigh * 20f).roundToInt(),
-                        valueTextForRange = { low, high ->
-                            "${formatPlaybackSpeedLabel(low / 20f)} ⇄ ${formatPlaybackSpeedLabel(high / 20f)}"
-                        },
+                    // Player preference picker: Internal / External
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_playback_player_preference),
+                        description = stringResource(Res.string.settings_playback_player_preference),
+                        options = listOf(
+                            SettingsChoiceOption(false, stringResource(Res.string.settings_playback_player_preference_internal)),
+                            SettingsChoiceOption(true, stringResource(Res.string.settings_playback_player_preference_external)),
+                        ),
+                        selectedValue = autoPlayPlayerSettings.externalPlayerEnabled,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setExternalPlayerEnabled,
+                    )
+                    if ((isIos || isDesktop) && autoPlayPlayerSettings.externalPlayerEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_playback_external_player_app),
+                            description = selectedExternalPlayer?.name
+                                ?: if (availableExternalPlayers.isEmpty()) {
+                                    stringResource(Res.string.settings_playback_external_player_none_available)
+                                } else {
+                                    stringResource(Res.string.settings_playback_not_set)
+                                },
+                            isTablet = isTablet,
+                            onClick = { showExternalPlayerAppDialog = true },
+                        )
+                    }
+                    if (!isIos && autoPlayPlayerSettings.externalPlayerEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_external_player_forward_subtitles),
+                            description = stringResource(Res.string.settings_playback_external_player_forward_subtitles_description),
+                            checked = autoPlayPlayerSettings.externalPlayerForwardSubtitles,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setExternalPlayerForwardSubtitles,
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    // Speed sliders run in twentieths so their positions land exactly on the 0.05 grid
+                    // the repository snaps to; 10..80 is 0.5x..4x.
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_playback_default_speed),
+                        value = (defaultPlaybackSpeed * 20f).roundToInt(),
+                        valueText = formatPlaybackSpeedLabel(defaultPlaybackSpeed),
+                        valueTextForValue = { formatPlaybackSpeedLabel(it / 20f) },
                         valueRange = 10..80,
                         step = 1,
                         isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SpeedToggle),
-                        onValueChange = { low, high ->
-                            PlayerSettingsRepository.setPlaybackSpeedToggleRange(
-                                low = low / 20f,
-                                high = high / 20f,
-                            )
-                        },
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DefaultSpeed),
+                        onValueChange = { PlayerSettingsRepository.setDefaultPlaybackSpeed(it / 20f) },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_mouse_move_reveals_controls),
-                        description = stringResource(Res.string.settings_playback_mouse_move_reveals_controls_description),
-                        checked = autoPlayPlayerSettings.mouseMoveRevealsControlsEnabled,
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_playback_seek_step),
+                        description = stringResource(Res.string.settings_playback_seek_step_description),
+                        value = autoPlayPlayerSettings.seekStepSeconds,
+                        valueText = "${autoPlayPlayerSettings.seekStepSeconds}s",
+                        valueTextForValue = { "${it}s" },
+                        valueRange = SEEK_STEP_SECONDS_RANGE,
+                        step = 1,
                         isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.MouseMove),
-                        onCheckedChange = PlayerSettingsRepository::setMouseMoveRevealsControlsEnabled,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("seek-step")),
+                        onValueChange = PlayerSettingsRepository::setSeekStepSeconds,
                     )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val sourceNotchLabels = mapOf(
-                        DesktopSourceNotchPosition.Right to
-                            stringResource(Res.string.settings_playback_source_notch_right),
-                        DesktopSourceNotchPosition.Left to
-                            stringResource(Res.string.settings_playback_source_notch_left),
-                        DesktopSourceNotchPosition.Hidden to
-                            stringResource(Res.string.settings_playback_source_notch_hidden),
-                    )
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_source_notch),
-                        description = sourceNotchLabels.getValue(
-                            autoPlayPlayerSettings.desktopSourceNotchPosition,
-                        ),
-                        options = DesktopSourceNotchPosition.entries.map { position ->
-                            SettingsChoiceOption(position, sourceNotchLabels.getValue(position))
-                        },
-                        selectedValue = autoPlayPlayerSettings.desktopSourceNotchPosition,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SourceNotch),
-                        onSelected = PlayerSettingsRepository::setDesktopSourceNotchPosition,
-                    )
-                    // Also governs the Episodes notch on the top edge, so it stays available
-                    // when the Sources notch itself is hidden.
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_source_notch_hover),
-                        description = stringResource(
-                            Res.string.settings_playback_source_notch_hover_description,
-                        ),
-                        checked = autoPlayPlayerSettings.desktopSourceNotchHoverEnabled,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(
-                            SettingsScrollAnchor.SourceNotchHover,
-                        ),
-                        onCheckedChange =
-                            PlayerSettingsRepository::setDesktopSourceNotchHoverEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val notificationPositionLabels = mapOf(
-                        DesktopPlayerNotificationPosition.Center to
-                            stringResource(Res.string.settings_playback_notification_position_center),
-                        DesktopPlayerNotificationPosition.TopCenter to
-                            stringResource(Res.string.settings_playback_notification_position_top_center),
-                    )
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_notification_position),
-                        description = notificationPositionLabels.getValue(
-                            autoPlayPlayerSettings.desktopPlayerNotificationPosition,
-                        ),
-                        options = DesktopPlayerNotificationPosition.entries.map { position ->
-                            SettingsChoiceOption(position, notificationPositionLabels.getValue(position))
-                        },
-                        selectedValue = autoPlayPlayerSettings.desktopPlayerNotificationPosition,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.NotificationPosition),
-                        onSelected = PlayerSettingsRepository::setDesktopPlayerNotificationPosition,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val hudLayoutLabels = mapOf(
-                        DesktopHudLayout.Standard to stringResource(Res.string.settings_playback_hud_layout_standard),
-                        DesktopHudLayout.Legacy to stringResource(Res.string.settings_playback_hud_layout_legacy),
-                        DesktopHudLayout.Minimal to stringResource(Res.string.settings_playback_hud_layout_minimal),
-                        DesktopHudLayout.Ultra to stringResource(Res.string.settings_playback_hud_layout_ultra),
-                        DesktopHudLayout.Official to stringResource(Res.string.settings_playback_hud_layout_official),
-                    )
-                    val hudLayoutDescriptions = mapOf(
-                        DesktopHudLayout.Standard to
-                            stringResource(Res.string.settings_playback_hud_layout_standard_description),
-                        DesktopHudLayout.Legacy to
-                            stringResource(Res.string.settings_playback_hud_layout_legacy_description),
-                        DesktopHudLayout.Minimal to
-                            stringResource(Res.string.settings_playback_hud_layout_minimal_description),
-                        DesktopHudLayout.Ultra to
-                            stringResource(Res.string.settings_playback_hud_layout_ultra_description),
-                        DesktopHudLayout.Official to
-                            stringResource(Res.string.settings_playback_hud_layout_official_description),
-                    )
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_hud_layout),
-                        description = hudLayoutDescriptions.getValue(autoPlayPlayerSettings.desktopHudLayout),
-                        options = DesktopHudLayout.entries.map { layout ->
-                            SettingsChoiceOption(layout, hudLayoutLabels.getValue(layout))
-                        },
-                        selectedValue = autoPlayPlayerSettings.desktopHudLayout,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setDesktopHudLayout,
-                    )
-                    if (autoPlayPlayerSettings.desktopHudLayout == DesktopHudLayout.Minimal) {
+                    if (isDesktop) {
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_hud_layout_pills),
-                            description = stringResource(Res.string.settings_playback_hud_layout_pills_description),
-                            checked = autoPlayPlayerSettings.desktopMinimalHudPillsEnabled,
+                            title = stringResource(Res.string.settings_playback_fine_speed_increments),
+                            description = stringResource(Res.string.settings_playback_fine_speed_increments_description),
+                            checked = autoPlayPlayerSettings.desktopPlaybackSpeedFineIncrementsEnabled,
                             isTablet = isTablet,
-                            onCheckedChange = PlayerSettingsRepository::setDesktopMinimalHudPillsEnabled,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackSpeedFineIncrementsEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsRangeSliderRow(
+                            title = stringResource(Res.string.settings_playback_speed_toggle),
+                            description = stringResource(Res.string.settings_playback_speed_toggle_description),
+                            lowValue = (autoPlayPlayerSettings.playbackSpeedToggleLow * 20f).roundToInt(),
+                            highValue = (autoPlayPlayerSettings.playbackSpeedToggleHigh * 20f).roundToInt(),
+                            valueTextForRange = { low, high ->
+                                "${formatPlaybackSpeedLabel(low / 20f)} ⇄ ${formatPlaybackSpeedLabel(high / 20f)}"
+                            },
+                            valueRange = 10..80,
+                            step = 1,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SpeedToggle),
+                            onValueChange = { low, high ->
+                                PlayerSettingsRepository.setPlaybackSpeedToggleRange(
+                                    low = low / 20f,
+                                    high = high / 20f,
+                                )
+                            },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_mouse_move_reveals_controls),
+                            description = stringResource(Res.string.settings_playback_mouse_move_reveals_controls_description),
+                            checked = autoPlayPlayerSettings.mouseMoveRevealsControlsEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.MouseMove),
+                            onCheckedChange = PlayerSettingsRepository::setMouseMoveRevealsControlsEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val sourceNotchLabels = mapOf(
+                            DesktopSourceNotchPosition.Right to
+                                stringResource(Res.string.settings_playback_source_notch_right),
+                            DesktopSourceNotchPosition.Left to
+                                stringResource(Res.string.settings_playback_source_notch_left),
+                            DesktopSourceNotchPosition.Hidden to
+                                stringResource(Res.string.settings_playback_source_notch_hidden),
+                        )
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_source_notch),
+                            description = sourceNotchLabels.getValue(
+                                autoPlayPlayerSettings.desktopSourceNotchPosition,
+                            ),
+                            options = DesktopSourceNotchPosition.entries.map { position ->
+                                SettingsChoiceOption(position, sourceNotchLabels.getValue(position))
+                            },
+                            selectedValue = autoPlayPlayerSettings.desktopSourceNotchPosition,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SourceNotch),
+                            onSelected = PlayerSettingsRepository::setDesktopSourceNotchPosition,
+                        )
+                        // Also governs the Episodes notch on the top edge, so it stays available
+                        // when the Sources notch itself is hidden.
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_source_notch_hover),
+                            description = stringResource(
+                                Res.string.settings_playback_source_notch_hover_description,
+                            ),
+                            checked = autoPlayPlayerSettings.desktopSourceNotchHoverEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(
+                                SettingsScrollAnchor.SourceNotchHover,
+                            ),
+                            onCheckedChange =
+                                PlayerSettingsRepository::setDesktopSourceNotchHoverEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val notificationPositionLabels = mapOf(
+                            DesktopPlayerNotificationPosition.Center to
+                                stringResource(Res.string.settings_playback_notification_position_center),
+                            DesktopPlayerNotificationPosition.TopCenter to
+                                stringResource(Res.string.settings_playback_notification_position_top_center),
+                        )
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_notification_position),
+                            description = notificationPositionLabels.getValue(
+                                autoPlayPlayerSettings.desktopPlayerNotificationPosition,
+                            ),
+                            options = DesktopPlayerNotificationPosition.entries.map { position ->
+                                SettingsChoiceOption(position, notificationPositionLabels.getValue(position))
+                            },
+                            selectedValue = autoPlayPlayerSettings.desktopPlayerNotificationPosition,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.NotificationPosition),
+                            onSelected = PlayerSettingsRepository::setDesktopPlayerNotificationPosition,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val hudLayoutLabels = mapOf(
+                            DesktopHudLayout.Standard to stringResource(Res.string.settings_playback_hud_layout_standard),
+                            DesktopHudLayout.Legacy to stringResource(Res.string.settings_playback_hud_layout_legacy),
+                            DesktopHudLayout.Minimal to stringResource(Res.string.settings_playback_hud_layout_minimal),
+                            DesktopHudLayout.Ultra to stringResource(Res.string.settings_playback_hud_layout_ultra),
+                            DesktopHudLayout.Official to stringResource(Res.string.settings_playback_hud_layout_official),
+                        )
+                        val hudLayoutDescriptions = mapOf(
+                            DesktopHudLayout.Standard to
+                                stringResource(Res.string.settings_playback_hud_layout_standard_description),
+                            DesktopHudLayout.Legacy to
+                                stringResource(Res.string.settings_playback_hud_layout_legacy_description),
+                            DesktopHudLayout.Minimal to
+                                stringResource(Res.string.settings_playback_hud_layout_minimal_description),
+                            DesktopHudLayout.Ultra to
+                                stringResource(Res.string.settings_playback_hud_layout_ultra_description),
+                            DesktopHudLayout.Official to
+                                stringResource(Res.string.settings_playback_hud_layout_official_description),
+                        )
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_hud_layout),
+                            description = hudLayoutDescriptions.getValue(autoPlayPlayerSettings.desktopHudLayout),
+                            options = DesktopHudLayout.entries.map { layout ->
+                                SettingsChoiceOption(layout, hudLayoutLabels.getValue(layout))
+                            },
+                            selectedValue = autoPlayPlayerSettings.desktopHudLayout,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setDesktopHudLayout,
+                        )
+                        if (autoPlayPlayerSettings.desktopHudLayout == DesktopHudLayout.Minimal) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_hud_layout_pills),
+                                description = stringResource(Res.string.settings_playback_hud_layout_pills_description),
+                                checked = autoPlayPlayerSettings.desktopMinimalHudPillsEnabled,
+                                isTablet = isTablet,
+                                onCheckedChange = PlayerSettingsRepository::setDesktopMinimalHudPillsEnabled,
+                            )
+                        }
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_seek_handle),
+                            description = stringResource(Res.string.settings_playback_seek_handle_description),
+                            checked = autoPlayPlayerSettings.desktopSeekHandleEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopSeekHandleEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_hud_vignette),
+                            description = stringResource(Res.string.settings_playback_hud_vignette_description),
+                            checked = autoPlayPlayerSettings.desktopHudVignetteEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopHudVignetteEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_always_show_clock),
+                            description = stringResource(Res.string.settings_playback_always_show_clock_description),
+                            checked = autoPlayPlayerSettings.desktopAlwaysShowClockEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopAlwaysShowClockEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_info_panel),
+                            description = stringResource(Res.string.settings_playback_info_panel_description),
+                            checked = autoPlayPlayerSettings.desktopPlaybackInfoPanelEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackInfoPanelEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_hdr_mode),
+                            description = autoPlayPlayerSettings.desktopHdrMode.description,
+                            options = DesktopHdrMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.desktopHdrMode,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HdrMode),
+                            onSelected = PlayerSettingsRepository::setDesktopHdrMode,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_color_profile),
+                            description = autoPlayPlayerSettings.desktopColorProfile.description,
+                            options = DesktopColorProfile.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.desktopColorProfile,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.ColorProfile),
+                            onSelected = PlayerSettingsRepository::setDesktopColorProfile,
+                        )
+                        // Only the Custom profile reads these; the presets carry their own offsets, so
+                        // showing the sliders next to Cinematic would imply an edit that goes nowhere.
+                        if (autoPlayPlayerSettings.desktopColorProfile == DesktopColorProfile.Custom) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSliderRow(
+                                title = stringResource(Res.string.settings_playback_desktop_color_contrast),
+                                description = stringResource(Res.string.settings_playback_desktop_color_custom_description),
+                                value = autoPlayPlayerSettings.desktopColorContrast,
+                                valueText = formatColorOffset(autoPlayPlayerSettings.desktopColorContrast),
+                                valueTextForValue = ::formatColorOffset,
+                                valueRange = DESKTOP_COLOR_OFFSET_RANGE,
+                                step = 1,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("color-contrast")),
+                                onValueChange = PlayerSettingsRepository::setDesktopColorContrast,
+                            )
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSliderRow(
+                                title = stringResource(Res.string.settings_playback_desktop_color_brightness),
+                                value = autoPlayPlayerSettings.desktopColorBrightness,
+                                valueText = formatColorOffset(autoPlayPlayerSettings.desktopColorBrightness),
+                                valueTextForValue = ::formatColorOffset,
+                                valueRange = DESKTOP_COLOR_OFFSET_RANGE,
+                                step = 1,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("color-brightness")),
+                                onValueChange = PlayerSettingsRepository::setDesktopColorBrightness,
+                            )
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSliderRow(
+                                title = stringResource(Res.string.settings_playback_desktop_color_saturation),
+                                value = autoPlayPlayerSettings.desktopColorSaturation,
+                                valueText = formatColorOffset(autoPlayPlayerSettings.desktopColorSaturation),
+                                valueTextForValue = ::formatColorOffset,
+                                valueRange = DESKTOP_COLOR_OFFSET_RANGE,
+                                step = 1,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("color-saturation")),
+                                onValueChange = PlayerSettingsRepository::setDesktopColorSaturation,
+                            )
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSliderRow(
+                                title = stringResource(Res.string.settings_playback_desktop_color_gamma),
+                                value = autoPlayPlayerSettings.desktopColorGamma,
+                                valueText = formatColorOffset(autoPlayPlayerSettings.desktopColorGamma),
+                                valueTextForValue = ::formatColorOffset,
+                                valueRange = DESKTOP_COLOR_OFFSET_RANGE,
+                                step = 1,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("color-gamma")),
+                                onValueChange = PlayerSettingsRepository::setDesktopColorGamma,
+                            )
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsNavigationRow(
+                                title = stringResource(Res.string.settings_playback_desktop_color_reset),
+                                description = stringResource(Res.string.settings_playback_desktop_color_reset_description),
+                                isTablet = isTablet,
+                                enabled = autoPlayPlayerSettings.desktopColorContrast != 0 ||
+                                    autoPlayPlayerSettings.desktopColorBrightness != 0 ||
+                                    autoPlayPlayerSettings.desktopColorSaturation != 0 ||
+                                    autoPlayPlayerSettings.desktopColorGamma != 0,
+                                onClick = PlayerSettingsRepository::resetDesktopColorTuning,
+                            )
+                        }
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_renderer),
+                            description = autoPlayPlayerSettings.desktopRendererApi.description,
+                            options = DesktopRendererApi.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.desktopRendererApi,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DesktopRenderer),
+                            onSelected = PlayerSettingsRepository::setDesktopRendererApi,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_hdr_ui_compensation),
+                            description = stringResource(Res.string.settings_playback_desktop_hdr_ui_compensation_description),
+                            checked = autoPlayPlayerSettings.desktopHdrUiCompensationEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("hdr-ui-compensation")),
+                            onCheckedChange = PlayerSettingsRepository::setDesktopHdrUiCompensation,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_steady_frame_pacing),
+                            description = stringResource(Res.string.settings_playback_desktop_steady_frame_pacing_description),
+                            checked = autoPlayPlayerSettings.desktopSteadyFramePacingEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("steady-frame-pacing")),
+                            onCheckedChange = PlayerSettingsRepository::setDesktopSteadyFramePacing,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_low_vram),
+                            description = autoPlayPlayerSettings.desktopLowVramMode.description,
+                            options = DesktopLowVramMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.desktopLowVramMode,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setDesktopLowVramMode,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_buffer_preset),
+                            description = autoPlayPlayerSettings.desktopBufferPreset.description,
+                            options = DesktopBufferPreset.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.desktopBufferPreset,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BufferPreset),
+                            onSelected = PlayerSettingsRepository::setDesktopBufferPreset,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_seek_thumbnails),
+                            description = autoPlayPlayerSettings.desktopSeekThumbnailMode.description,
+                            options = DesktopSeekThumbnailMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.desktopSeekThumbnailMode,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SeekThumbnails),
+                            onSelected = PlayerSettingsRepository::setDesktopSeekThumbnailMode,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_audio_passthrough),
+                            description = stringResource(Res.string.settings_playback_desktop_audio_passthrough_desc),
+                            checked = autoPlayPlayerSettings.desktopAudioPassthroughEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopAudioPassthroughEnabled,
                         )
                     }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_seek_handle),
-                        description = stringResource(Res.string.settings_playback_seek_handle_description),
-                        checked = autoPlayPlayerSettings.desktopSeekHandleEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setDesktopSeekHandleEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_hud_vignette),
-                        description = stringResource(Res.string.settings_playback_hud_vignette_description),
-                        checked = autoPlayPlayerSettings.desktopHudVignetteEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setDesktopHudVignetteEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_always_show_clock),
-                        description = stringResource(Res.string.settings_playback_always_show_clock_description),
-                        checked = autoPlayPlayerSettings.desktopAlwaysShowClockEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setDesktopAlwaysShowClockEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_info_panel),
-                        description = stringResource(Res.string.settings_playback_info_panel_description),
-                        checked = autoPlayPlayerSettings.desktopPlaybackInfoPanelEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackInfoPanelEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_desktop_hdr_mode),
-                        description = autoPlayPlayerSettings.desktopHdrMode.description,
-                        options = DesktopHdrMode.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.desktopHdrMode,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HdrMode),
-                        onSelected = PlayerSettingsRepository::setDesktopHdrMode,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_desktop_color_profile),
-                        description = autoPlayPlayerSettings.desktopColorProfile.description,
-                        options = DesktopColorProfile.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.desktopColorProfile,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.ColorProfile),
-                        onSelected = PlayerSettingsRepository::setDesktopColorProfile,
-                    )
-                    // Only the Custom profile reads these; the presets carry their own offsets, so
-                    // showing the sliders next to Cinematic would imply an edit that goes nowhere.
-                    if (autoPlayPlayerSettings.desktopColorProfile == DesktopColorProfile.Custom) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSliderRow(
-                            title = stringResource(Res.string.settings_playback_desktop_color_contrast),
-                            description = stringResource(Res.string.settings_playback_desktop_color_custom_description),
-                            value = autoPlayPlayerSettings.desktopColorContrast,
-                            valueText = formatColorOffset(autoPlayPlayerSettings.desktopColorContrast),
-                            valueTextForValue = ::formatColorOffset,
-                            valueRange = DESKTOP_COLOR_OFFSET_RANGE,
-                            step = 1,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("color-contrast")),
-                            onValueChange = PlayerSettingsRepository::setDesktopColorContrast,
+                }
+            }
+        }
+        if (part == 2) {
+            if (isDesktop) {
+                SettingsSection(
+                    title = stringResource(Res.string.settings_playback_section_anime),
+                    isTablet = isTablet,
+                ) {
+                    SettingsGroup(isTablet = isTablet) {
+                        var showCustomShaderPathsDialog by remember { mutableStateOf(false) }
+                        val shaderPathsNotSet = stringResource(Res.string.settings_playback_not_set)
+                        val customShaderOptions = DesktopCustomShaderCatalog.availableShaders(
+                            autoPlayPlayerSettings.desktopCustomShaderPaths,
                         )
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSliderRow(
-                            title = stringResource(Res.string.settings_playback_desktop_color_brightness),
-                            value = autoPlayPlayerSettings.desktopColorBrightness,
-                            valueText = formatColorOffset(autoPlayPlayerSettings.desktopColorBrightness),
-                            valueTextForValue = ::formatColorOffset,
-                            valueRange = DESKTOP_COLOR_OFFSET_RANGE,
-                            step = 1,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("color-brightness")),
-                            onValueChange = PlayerSettingsRepository::setDesktopColorBrightness,
+                        val animeEnhancementChoices = desktopAnimeEnhancementChoices(customShaderOptions)
+                        val selectedAnimeEnhancementChoice = selectedDesktopAnimeEnhancementChoice(
+                            mode = autoPlayPlayerSettings.desktopAnimeMode,
+                            selectedCustomShaderPath = autoPlayPlayerSettings.desktopCustomShaderSelectedPath,
+                            choices = animeEnhancementChoices,
                         )
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSliderRow(
-                            title = stringResource(Res.string.settings_playback_desktop_color_saturation),
-                            value = autoPlayPlayerSettings.desktopColorSaturation,
-                            valueText = formatColorOffset(autoPlayPlayerSettings.desktopColorSaturation),
-                            valueTextForValue = ::formatColorOffset,
-                            valueRange = DESKTOP_COLOR_OFFSET_RANGE,
-                            step = 1,
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_anime_mode),
+                            description = selectedAnimeEnhancementChoice.description,
+                            options = animeEnhancementChoices.map { choice ->
+                                SettingsChoiceOption(choice, choice.label)
+                            },
+                            selectedValue = selectedAnimeEnhancementChoice,
                             isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("color-saturation")),
-                            onValueChange = PlayerSettingsRepository::setDesktopColorSaturation,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeEnhancements),
+                            onSelected = { choice ->
+                                when (choice) {
+                                    is DesktopAnimeEnhancementChoice.BuiltIn ->
+                                        PlayerSettingsRepository.setDesktopAnimeMode(choice.mode)
+                                    is DesktopAnimeEnhancementChoice.Custom -> {
+                                        PlayerSettingsRepository.setDesktopCustomShaderSelectedPath(choice.shader.path)
+                                        PlayerSettingsRepository.setDesktopAnimeMode(DesktopAnimeMode.CustomShader)
+                                    }
+                                }
+                            },
                         )
+                        if (autoPlayPlayerSettings.desktopAnimeMode != DesktopAnimeMode.Off) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_desktop_anime_auto),
+                                description = stringResource(Res.string.settings_playback_desktop_anime_auto_desc),
+                                checked = autoPlayPlayerSettings.desktopAnimeModeAutoEnabled,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeAutoApply),
+                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeModeAutoEnabled,
+                            )
+                            if (autoPlayPlayerSettings.desktopAnimeModeAutoEnabled) {
+                                SettingsGroupDivider(isTablet = isTablet)
+                                SettingsSwitchRow(
+                                    title = stringResource(Res.string.settings_playback_desktop_anime_include_western),
+                                    description = stringResource(Res.string.settings_playback_desktop_anime_include_western_desc),
+                                    checked = autoPlayPlayerSettings.desktopAnimeTreatAnimationAsAnime,
+                                    isTablet = isTablet,
+                                    modifier = Modifier.settingsScrollAnchor(
+                                        SettingsScrollAnchor.AnimeIncludeWesternAnimation,
+                                    ),
+                                    onCheckedChange = PlayerSettingsRepository::setDesktopAnimeTreatAnimationAsAnime,
+                                )
+                            }
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_desktop_anime_skip_uhd),
+                                description = stringResource(Res.string.settings_playback_desktop_anime_skip_uhd_desc),
+                                checked = autoPlayPlayerSettings.desktopAnimeSkipUltraHdEnabled,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSkipUltraHd),
+                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSkipUltraHdEnabled,
+                            )
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_desktop_anime_svp),
+                                description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
+                                checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
+                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
+                            )
+                            if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
+                                SettingsGroupDivider(isTablet = isTablet)
+                                SettingsSwitchRow(
+                                    title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
+                                    description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
+                                    checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
+                                    isTablet = isTablet,
+                                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
+                                    onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
+                                )
+                            }
+                        }
                         SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSliderRow(
-                            title = stringResource(Res.string.settings_playback_desktop_color_gamma),
-                            value = autoPlayPlayerSettings.desktopColorGamma,
-                            valueText = formatColorOffset(autoPlayPlayerSettings.desktopColorGamma),
-                            valueTextForValue = ::formatColorOffset,
-                            valueRange = DESKTOP_COLOR_OFFSET_RANGE,
-                            step = 1,
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_playback_desktop_custom_shader_paths),
+                            description = autoPlayPlayerSettings.desktopCustomShaderPaths
+                                .lineSequence()
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                                .joinToString("  |  ")
+                                .ifBlank { shaderPathsNotSet },
                             isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("color-gamma")),
-                            onValueChange = PlayerSettingsRepository::setDesktopColorGamma,
+                            onClick = { showCustomShaderPathsDialog = true },
+                        )
+                        if (showCustomShaderPathsDialog) {
+                            CustomShaderPathsDialog(
+                                initialValue = autoPlayPlayerSettings.desktopCustomShaderPaths,
+                                onSave = {
+                                    PlayerSettingsRepository.setDesktopCustomShaderPaths(it)
+                                    showCustomShaderPathsDialog = false
+                                },
+                                onDismiss = { showCustomShaderPathsDialog = false },
+                            )
+                        }
+                    }
+                }
+
+                SettingsSection(
+                    title = stringResource(Res.string.settings_playback_section_advanced),
+                    isTablet = isTablet,
+                ) {
+                    SettingsGroup(isTablet = isTablet) {
+                        var showCustomMpvOptionsDialog by remember { mutableStateOf(false) }
+                        val mpvOptionsNotSet = stringResource(Res.string.settings_playback_not_set)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_mpv_configuration_mode),
+                            description = autoPlayPlayerSettings.desktopMpvConfigMode.description,
+                            options = DesktopMpvConfigMode.entries.map { mode ->
+                                SettingsChoiceOption(mode, mode.label)
+                            },
+                            selectedValue = autoPlayPlayerSettings.desktopMpvConfigMode,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setDesktopMpvConfigMode,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsNavigationRow(
-                            title = stringResource(Res.string.settings_playback_desktop_color_reset),
-                            description = stringResource(Res.string.settings_playback_desktop_color_reset_description),
+                            title = stringResource(Res.string.settings_playback_desktop_custom_mpv_options),
+                            description = autoPlayPlayerSettings.desktopCustomMpvOptions
+                                .lineSequence()
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                                .joinToString("  •  ")
+                                .ifBlank { mpvOptionsNotSet },
                             isTablet = isTablet,
-                            enabled = autoPlayPlayerSettings.desktopColorContrast != 0 ||
-                                autoPlayPlayerSettings.desktopColorBrightness != 0 ||
-                                autoPlayPlayerSettings.desktopColorSaturation != 0 ||
-                                autoPlayPlayerSettings.desktopColorGamma != 0,
-                            onClick = PlayerSettingsRepository::resetDesktopColorTuning,
+                            onClick = { showCustomMpvOptionsDialog = true },
                         )
-                    }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_desktop_renderer),
-                        description = autoPlayPlayerSettings.desktopRendererApi.description,
-                        options = DesktopRendererApi.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.desktopRendererApi,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.DesktopRenderer),
-                        onSelected = PlayerSettingsRepository::setDesktopRendererApi,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_desktop_hdr_ui_compensation),
-                        description = stringResource(Res.string.settings_playback_desktop_hdr_ui_compensation_description),
-                        checked = autoPlayPlayerSettings.desktopHdrUiCompensationEnabled,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("hdr-ui-compensation")),
-                        onCheckedChange = PlayerSettingsRepository::setDesktopHdrUiCompensation,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_desktop_steady_frame_pacing),
-                        description = stringResource(Res.string.settings_playback_desktop_steady_frame_pacing_description),
-                        checked = autoPlayPlayerSettings.desktopSteadyFramePacingEnabled,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("steady-frame-pacing")),
-                        onCheckedChange = PlayerSettingsRepository::setDesktopSteadyFramePacing,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_desktop_low_vram),
-                        description = autoPlayPlayerSettings.desktopLowVramMode.description,
-                        options = DesktopLowVramMode.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.desktopLowVramMode,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setDesktopLowVramMode,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_desktop_buffer_preset),
-                        description = autoPlayPlayerSettings.desktopBufferPreset.description,
-                        options = DesktopBufferPreset.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.desktopBufferPreset,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BufferPreset),
-                        onSelected = PlayerSettingsRepository::setDesktopBufferPreset,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_desktop_seek_thumbnails),
-                        description = autoPlayPlayerSettings.desktopSeekThumbnailMode.description,
-                        options = DesktopSeekThumbnailMode.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.desktopSeekThumbnailMode,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SeekThumbnails),
-                        onSelected = PlayerSettingsRepository::setDesktopSeekThumbnailMode,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_desktop_audio_passthrough),
-                        description = stringResource(Res.string.settings_playback_desktop_audio_passthrough_desc),
-                        checked = autoPlayPlayerSettings.desktopAudioPassthroughEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setDesktopAudioPassthroughEnabled,
-                    )
-                }
-            }
-        }
-
-        if (isDesktop) {
-            SettingsSection(
-                title = stringResource(Res.string.settings_playback_section_anime),
-                isTablet = isTablet,
-            ) {
-                SettingsGroup(isTablet = isTablet) {
-                    var showCustomShaderPathsDialog by remember { mutableStateOf(false) }
-                    val shaderPathsNotSet = stringResource(Res.string.settings_playback_not_set)
-                    val customShaderOptions = DesktopCustomShaderCatalog.availableShaders(
-                        autoPlayPlayerSettings.desktopCustomShaderPaths,
-                    )
-                    val animeEnhancementChoices = desktopAnimeEnhancementChoices(customShaderOptions)
-                    val selectedAnimeEnhancementChoice = selectedDesktopAnimeEnhancementChoice(
-                        mode = autoPlayPlayerSettings.desktopAnimeMode,
-                        selectedCustomShaderPath = autoPlayPlayerSettings.desktopCustomShaderSelectedPath,
-                        choices = animeEnhancementChoices,
-                    )
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_desktop_anime_mode),
-                        description = selectedAnimeEnhancementChoice.description,
-                        options = animeEnhancementChoices.map { choice ->
-                            SettingsChoiceOption(choice, choice.label)
-                        },
-                        selectedValue = selectedAnimeEnhancementChoice,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeEnhancements),
-                        onSelected = { choice ->
-                            when (choice) {
-                                is DesktopAnimeEnhancementChoice.BuiltIn ->
-                                    PlayerSettingsRepository.setDesktopAnimeMode(choice.mode)
-                                is DesktopAnimeEnhancementChoice.Custom -> {
-                                    PlayerSettingsRepository.setDesktopCustomShaderSelectedPath(choice.shader.path)
-                                    PlayerSettingsRepository.setDesktopAnimeMode(DesktopAnimeMode.CustomShader)
-                                }
-                            }
-                        },
-                    )
-                    if (autoPlayPlayerSettings.desktopAnimeMode != DesktopAnimeMode.Off) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_desktop_anime_auto),
-                            description = stringResource(Res.string.settings_playback_desktop_anime_auto_desc),
-                            checked = autoPlayPlayerSettings.desktopAnimeModeAutoEnabled,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeAutoApply),
-                            onCheckedChange = PlayerSettingsRepository::setDesktopAnimeModeAutoEnabled,
-                        )
-                        if (autoPlayPlayerSettings.desktopAnimeModeAutoEnabled) {
-                            SettingsGroupDivider(isTablet = isTablet)
-                            SettingsSwitchRow(
-                                title = stringResource(Res.string.settings_playback_desktop_anime_include_western),
-                                description = stringResource(Res.string.settings_playback_desktop_anime_include_western_desc),
-                                checked = autoPlayPlayerSettings.desktopAnimeTreatAnimationAsAnime,
-                                isTablet = isTablet,
-                                modifier = Modifier.settingsScrollAnchor(
-                                    SettingsScrollAnchor.AnimeIncludeWesternAnimation,
-                                ),
-                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeTreatAnimationAsAnime,
+                        if (showCustomMpvOptionsDialog) {
+                            CustomMpvOptionsDialog(
+                                initialValue = autoPlayPlayerSettings.desktopCustomMpvOptions,
+                                onSave = {
+                                    PlayerSettingsRepository.setDesktopCustomMpvOptions(it)
+                                    showCustomMpvOptionsDialog = false
+                                },
+                                onDismiss = { showCustomMpvOptionsDialog = false },
                             )
                         }
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_desktop_anime_skip_uhd),
-                            description = stringResource(Res.string.settings_playback_desktop_anime_skip_uhd_desc),
-                            checked = autoPlayPlayerSettings.desktopAnimeSkipUltraHdEnabled,
+                            title = stringResource(Res.string.settings_playback_desktop_verbose_mpv_logging),
+                            description = stringResource(Res.string.settings_playback_desktop_verbose_mpv_logging_desc),
+                            checked = autoPlayPlayerSettings.desktopVerboseMpvLoggingEnabled,
                             isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSkipUltraHd),
-                            onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSkipUltraHdEnabled,
-                        )
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_desktop_anime_svp),
-                            description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
-                            checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
-                            onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
-                        )
-                        if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
-                            SettingsGroupDivider(isTablet = isTablet)
-                            SettingsSwitchRow(
-                                title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
-                                description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
-                                checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
-                                isTablet = isTablet,
-                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
-                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
-                            )
-                        }
-                    }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_desktop_custom_shader_paths),
-                        description = autoPlayPlayerSettings.desktopCustomShaderPaths
-                            .lineSequence()
-                            .map { it.trim() }
-                            .filter { it.isNotEmpty() && !it.startsWith("#") }
-                            .joinToString("  |  ")
-                            .ifBlank { shaderPathsNotSet },
-                        isTablet = isTablet,
-                        onClick = { showCustomShaderPathsDialog = true },
-                    )
-                    if (showCustomShaderPathsDialog) {
-                        CustomShaderPathsDialog(
-                            initialValue = autoPlayPlayerSettings.desktopCustomShaderPaths,
-                            onSave = {
-                                PlayerSettingsRepository.setDesktopCustomShaderPaths(it)
-                                showCustomShaderPathsDialog = false
-                            },
-                            onDismiss = { showCustomShaderPathsDialog = false },
+                            onCheckedChange = PlayerSettingsRepository::setDesktopVerboseMpvLoggingEnabled,
                         )
                     }
-                }
-            }
-
-            SettingsSection(
-                title = stringResource(Res.string.settings_playback_section_advanced),
-                isTablet = isTablet,
-            ) {
-                SettingsGroup(isTablet = isTablet) {
-                    var showCustomMpvOptionsDialog by remember { mutableStateOf(false) }
-                    val mpvOptionsNotSet = stringResource(Res.string.settings_playback_not_set)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_mpv_configuration_mode),
-                        description = autoPlayPlayerSettings.desktopMpvConfigMode.description,
-                        options = DesktopMpvConfigMode.entries.map { mode ->
-                            SettingsChoiceOption(mode, mode.label)
-                        },
-                        selectedValue = autoPlayPlayerSettings.desktopMpvConfigMode,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setDesktopMpvConfigMode,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_desktop_custom_mpv_options),
-                        description = autoPlayPlayerSettings.desktopCustomMpvOptions
-                            .lineSequence()
-                            .map { it.trim() }
-                            .filter { it.isNotEmpty() && !it.startsWith("#") }
-                            .joinToString("  •  ")
-                            .ifBlank { mpvOptionsNotSet },
-                        isTablet = isTablet,
-                        onClick = { showCustomMpvOptionsDialog = true },
-                    )
-                    if (showCustomMpvOptionsDialog) {
-                        CustomMpvOptionsDialog(
-                            initialValue = autoPlayPlayerSettings.desktopCustomMpvOptions,
-                            onSave = {
-                                PlayerSettingsRepository.setDesktopCustomMpvOptions(it)
-                                showCustomMpvOptionsDialog = false
-                            },
-                            onDismiss = { showCustomMpvOptionsDialog = false },
-                        )
-                    }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_desktop_verbose_mpv_logging),
-                        description = stringResource(Res.string.settings_playback_desktop_verbose_mpv_logging_desc),
-                        checked = autoPlayPlayerSettings.desktopVerboseMpvLoggingEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setDesktopVerboseMpvLoggingEnabled,
-                    )
                 }
             }
         }
+        if (part == 3) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_playback_section_subtitle_audio),
+                isTablet = isTablet,
+            ) {
+                // Subtitle/Audio settings enable/disable logic:
+                // Internal: everything enabled
+                // External + forwarding enabled: subtitle language pickers, track kind and reject
+                //   keywords enabled (they filter what is forwarded), other subtitle options disabled
+                // External + forwarding disabled: entire subtitle section disabled
+                // External: audio language pickers always disabled (external player manages audio tracks)
+                val isExternalPlayer = autoPlayPlayerSettings.externalPlayerEnabled
+                val isForwardingSubtitles = autoPlayPlayerSettings.externalPlayerForwardSubtitles
+                val audioLanguageEnabled = !isExternalPlayer
+                val subtitleLanguageEnabled = !isExternalPlayer || isForwardingSubtitles
+                val otherSubtitleOptionsEnabled = !isExternalPlayer
+                val preferredAudioOptions: List<SettingsChoiceOption<String>> = listOf(
+                    SettingsChoiceOption(AudioLanguageOption.DEFAULT, stringResource(Res.string.settings_playback_option_default)),
+                    SettingsChoiceOption(AudioLanguageOption.DEVICE, stringResource(Res.string.settings_playback_option_device_language)),
+                    SettingsChoiceOption(AudioLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
+                ) + AvailableLanguageOptions.map { option ->
+                    SettingsChoiceOption(normalizeLanguageCode(option.code) ?: option.code, stringResource(option.labelRes))
+                }
+                val secondaryAudioOptions: List<SettingsChoiceOption<String?>> = listOf(
+                    SettingsChoiceOption<String?>(null, stringResource(Res.string.settings_playback_option_none)),
+                    SettingsChoiceOption<String?>(AudioLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
+                ) + AvailableLanguageOptions.map { option ->
+                    SettingsChoiceOption<String?>(normalizeLanguageCode(option.code), stringResource(option.labelRes))
+                }
+                val preferredSubtitleOptions: List<SettingsChoiceOption<String>> = listOf(
+                    SettingsChoiceOption(SubtitleLanguageOption.NONE, stringResource(Res.string.settings_playback_option_none)),
+                    SettingsChoiceOption(SubtitleLanguageOption.DEVICE, stringResource(Res.string.settings_playback_option_device_language)),
+                    SettingsChoiceOption(SubtitleLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
+                ) + AvailableLanguageOptions.map { option ->
+                    SettingsChoiceOption(normalizeLanguageCode(option.code) ?: option.code, stringResource(option.labelRes))
+                }
+                val secondarySubtitleOptions: List<SettingsChoiceOption<String?>> = listOf(
+                    SettingsChoiceOption<String?>(null, stringResource(Res.string.settings_playback_option_none)),
+                    SettingsChoiceOption<String?>(SubtitleLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
+                ) + AvailableLanguageOptions.map { option ->
+                    SettingsChoiceOption<String?>(normalizeLanguageCode(option.code), stringResource(option.labelRes))
+                }
 
-        SettingsSection(
-            title = stringResource(Res.string.settings_playback_section_subtitle_audio),
-            isTablet = isTablet,
-        ) {
-            // Subtitle/Audio settings enable/disable logic:
-            // Internal: everything enabled
-            // External + forwarding enabled: subtitle language pickers, track kind and reject
-            //   keywords enabled (they filter what is forwarded), other subtitle options disabled
-            // External + forwarding disabled: entire subtitle section disabled
-            // External: audio language pickers always disabled (external player manages audio tracks)
-            val isExternalPlayer = autoPlayPlayerSettings.externalPlayerEnabled
-            val isForwardingSubtitles = autoPlayPlayerSettings.externalPlayerForwardSubtitles
-            val audioLanguageEnabled = !isExternalPlayer
-            val subtitleLanguageEnabled = !isExternalPlayer || isForwardingSubtitles
-            val otherSubtitleOptionsEnabled = !isExternalPlayer
-            val preferredAudioOptions: List<SettingsChoiceOption<String>> = listOf(
-                SettingsChoiceOption(AudioLanguageOption.DEFAULT, stringResource(Res.string.settings_playback_option_default)),
-                SettingsChoiceOption(AudioLanguageOption.DEVICE, stringResource(Res.string.settings_playback_option_device_language)),
-                SettingsChoiceOption(AudioLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
-            ) + AvailableLanguageOptions.map { option ->
-                SettingsChoiceOption(normalizeLanguageCode(option.code) ?: option.code, stringResource(option.labelRes))
-            }
-            val secondaryAudioOptions: List<SettingsChoiceOption<String?>> = listOf(
-                SettingsChoiceOption<String?>(null, stringResource(Res.string.settings_playback_option_none)),
-                SettingsChoiceOption<String?>(AudioLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
-            ) + AvailableLanguageOptions.map { option ->
-                SettingsChoiceOption<String?>(normalizeLanguageCode(option.code), stringResource(option.labelRes))
-            }
-            val preferredSubtitleOptions: List<SettingsChoiceOption<String>> = listOf(
-                SettingsChoiceOption(SubtitleLanguageOption.NONE, stringResource(Res.string.settings_playback_option_none)),
-                SettingsChoiceOption(SubtitleLanguageOption.DEVICE, stringResource(Res.string.settings_playback_option_device_language)),
-                SettingsChoiceOption(SubtitleLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
-            ) + AvailableLanguageOptions.map { option ->
-                SettingsChoiceOption(normalizeLanguageCode(option.code) ?: option.code, stringResource(option.labelRes))
-            }
-            val secondarySubtitleOptions: List<SettingsChoiceOption<String?>> = listOf(
-                SettingsChoiceOption<String?>(null, stringResource(Res.string.settings_playback_option_none)),
-                SettingsChoiceOption<String?>(SubtitleLanguageOption.ORIGINAL, stringResource(Res.string.settings_playback_option_original)),
-            ) + AvailableLanguageOptions.map { option ->
-                SettingsChoiceOption<String?>(normalizeLanguageCode(option.code), stringResource(option.labelRes))
-            }
-
-            SettingsGroup(isTablet = isTablet) {
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_preferred_audio_language),
-                    description = when (preferredAudioLanguage) {
-                        AudioLanguageOption.DEFAULT -> stringResource(Res.string.settings_playback_option_default)
-                        AudioLanguageOption.DEVICE -> stringResource(Res.string.settings_playback_option_device_language)
-                        else -> languageLabelForCode(preferredAudioLanguage)
-                    },
-                    options = preferredAudioOptions,
-                    selectedValue = preferredAudioLanguage,
-                    enabled = audioLanguageEnabled,
-                    isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setPreferredAudioLanguage,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_secondary_audio_language),
-                    description = languageLabelForCode(secondaryPreferredAudioLanguage),
-                    options = secondaryAudioOptions,
-                    selectedValue = secondaryPreferredAudioLanguage,
-                    enabled = audioLanguageEnabled,
-                    isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setSecondaryPreferredAudioLanguage,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_preferred_subtitle_language),
-                    description = when (preferredSubtitleLanguage) {
-                        SubtitleLanguageOption.NONE -> stringResource(Res.string.settings_playback_option_none)
-                        SubtitleLanguageOption.DEVICE -> stringResource(Res.string.settings_playback_option_device_language)
-                        else -> languageLabelForCode(preferredSubtitleLanguage)
-                    },
-                    options = preferredSubtitleOptions,
-                    selectedValue = preferredSubtitleLanguage,
-                    enabled = subtitleLanguageEnabled,
-                    isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setPreferredSubtitleLanguage,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_secondary_subtitle_language),
-                    description = languageLabelForCode(secondaryPreferredSubtitleLanguage),
-                    options = secondarySubtitleOptions,
-                    selectedValue = secondaryPreferredSubtitleLanguage,
-                    enabled = subtitleLanguageEnabled,
-                    isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setSecondaryPreferredSubtitleLanguage,
-                )
-                if (isDesktop) {
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_preferred_audio_language),
+                        description = when (preferredAudioLanguage) {
+                            AudioLanguageOption.DEFAULT -> stringResource(Res.string.settings_playback_option_default)
+                            AudioLanguageOption.DEVICE -> stringResource(Res.string.settings_playback_option_device_language)
+                            else -> languageLabelForCode(preferredAudioLanguage)
+                        },
+                        options = preferredAudioOptions,
+                        selectedValue = preferredAudioLanguage,
+                        enabled = audioLanguageEnabled,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setPreferredAudioLanguage,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_secondary_audio_language),
+                        description = languageLabelForCode(secondaryPreferredAudioLanguage),
+                        options = secondaryAudioOptions,
+                        selectedValue = secondaryPreferredAudioLanguage,
+                        enabled = audioLanguageEnabled,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setSecondaryPreferredAudioLanguage,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_preferred_subtitle_language),
+                        description = when (preferredSubtitleLanguage) {
+                            SubtitleLanguageOption.NONE -> stringResource(Res.string.settings_playback_option_none)
+                            SubtitleLanguageOption.DEVICE -> stringResource(Res.string.settings_playback_option_device_language)
+                            else -> languageLabelForCode(preferredSubtitleLanguage)
+                        },
+                        options = preferredSubtitleOptions,
+                        selectedValue = preferredSubtitleLanguage,
+                        enabled = subtitleLanguageEnabled,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setPreferredSubtitleLanguage,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_secondary_subtitle_language),
+                        description = languageLabelForCode(secondaryPreferredSubtitleLanguage),
+                        options = secondarySubtitleOptions,
+                        selectedValue = secondaryPreferredSubtitleLanguage,
+                        enabled = subtitleLanguageEnabled,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setSecondaryPreferredSubtitleLanguage,
+                    )
+                    if (isDesktop) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_dual_subtitles),
+                            description = stringResource(Res.string.settings_playback_dual_subtitles_description),
+                            checked = autoPlayPlayerSettings.dualSubtitlesEnabled,
+                            enabled = otherSubtitleOptionsEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("dual-subtitles")),
+                            onCheckedChange = PlayerSettingsRepository::setDualSubtitlesEnabled,
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_track_kind),
+                        description = subtitleTrackKindDescription(autoPlayPlayerSettings.preferredSubtitleTrackKind),
+                        options = SubtitleTrackKind.entries.map { kind ->
+                            SettingsChoiceOption(kind, subtitleTrackKindLabel(kind))
+                        },
+                        selectedValue = autoPlayPlayerSettings.preferredSubtitleTrackKind,
+                        enabled = subtitleLanguageEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("subtitle-track-kind")),
+                        onSelected = PlayerSettingsRepository::setPreferredSubtitleTrackKind,
+                    )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_dual_subtitles),
-                        description = stringResource(Res.string.settings_playback_dual_subtitles_description),
-                        checked = autoPlayPlayerSettings.dualSubtitlesEnabled,
+                        title = stringResource(Res.string.settings_playback_strip_sdh),
+                        description = stringResource(Res.string.settings_playback_strip_sdh_description),
+                        checked = autoPlayPlayerSettings.stripSdhSubtitles,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("strip-sdh")),
+                        onCheckedChange = PlayerSettingsRepository::setStripSdhSubtitles,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_automatic_subtitle_sync),
+                        description = stringResource(Res.string.settings_playback_automatic_subtitle_sync_description),
+                        checked = autoPlayPlayerSettings.automaticSubtitleSyncEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("automatic-subtitle-sync")),
+                        onCheckedChange = PlayerSettingsRepository::setAutomaticSubtitleSyncEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_show_preferred_only),
+                        description = stringResource(Res.string.settings_playback_subtitle_show_preferred_only_description),
+                        checked = autoPlayPlayerSettings.subtitleStyle.showOnlyPreferredLanguages,
                         enabled = otherSubtitleOptionsEnabled,
                         isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("dual-subtitles")),
-                        onCheckedChange = PlayerSettingsRepository::setDualSubtitlesEnabled,
+                        onCheckedChange = { enabled ->
+                            PlayerSettingsRepository.setSubtitleStyle(
+                                autoPlayPlayerSettings.subtitleStyle.copy(showOnlyPreferredLanguages = enabled),
+                            )
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_addon_subtitle_startup_mode),
+                        description = addonSubtitleStartupModeLabel(autoPlayPlayerSettings.addonSubtitleStartupMode),
+                        options = AddonSubtitleStartupMode.entries.map { mode ->
+                            SettingsChoiceOption(mode, addonSubtitleStartupModeLabel(mode))
+                        },
+                        selectedValue = autoPlayPlayerSettings.addonSubtitleStartupMode,
+                        enabled = otherSubtitleOptionsEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("addon-subtitle-startup"),
+                        ),
+                        onSelected = PlayerSettingsRepository::setAddonSubtitleStartupMode,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_prefer_addon_subtitles),
+                        description = stringResource(Res.string.settings_playback_prefer_addon_subtitles_description),
+                        checked = autoPlayPlayerSettings.preferAddonSubtitles,
+                        // Fast startup never fetches addon subtitles automatically, so there is nothing
+                        // for this preference to reach for.
+                        enabled = otherSubtitleOptionsEnabled &&
+                            autoPlayPlayerSettings.addonSubtitleStartupMode != AddonSubtitleStartupMode.FAST_STARTUP,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("prefer-addon-subtitles"),
+                        ),
+                        onCheckedChange = PlayerSettingsRepository::setPreferAddonSubtitles,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsMultiSelectRow(
+                        title = stringResource(Res.string.settings_playback_reject_subtitle_keywords),
+                        description = stringResource(Res.string.settings_playback_reject_subtitle_keywords_description),
+                        options = SubtitleRejectKeyword.entries.map { keyword ->
+                            SettingsChoiceOption(keyword, subtitleRejectKeywordLabel(keyword))
+                        },
+                        selectedValues = autoPlayPlayerSettings.rejectedSubtitleKeywords,
+                        emptyLabel = stringResource(Res.string.settings_playback_reject_keywords_none),
+                        // Forwarded subtitles are filtered by these too, so it stays editable
+                        // whenever the language pickers are.
+                        enabled = subtitleLanguageEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("reject-subtitle-keywords"),
+                        ),
+                        summaryForCount = { count ->
+                            stringResource(Res.string.settings_playback_selected_count, count)
+                        },
+                        onToggle = { keyword ->
+                            val selected = autoPlayPlayerSettings.rejectedSubtitleKeywords
+                            PlayerSettingsRepository.setRejectedSubtitleKeywords(
+                                if (keyword in selected) selected - keyword else selected + keyword,
+                            )
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsMultiSelectRow(
+                        title = stringResource(Res.string.settings_playback_reject_audio_keywords),
+                        description = stringResource(Res.string.settings_playback_reject_audio_keywords_description),
+                        options = AudioRejectKeyword.entries.map { keyword ->
+                            SettingsChoiceOption(keyword, audioRejectKeywordLabel(keyword))
+                        },
+                        selectedValues = autoPlayPlayerSettings.rejectedAudioKeywords,
+                        emptyLabel = stringResource(Res.string.settings_playback_reject_keywords_none),
+                        enabled = audioLanguageEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("reject-audio-keywords"),
+                        ),
+                        summaryForCount = { count ->
+                            stringResource(Res.string.settings_playback_selected_count, count)
+                        },
+                        onToggle = { keyword ->
+                            val selected = autoPlayPlayerSettings.rejectedAudioKeywords
+                            PlayerSettingsRepository.setRejectedAudioKeywords(
+                                if (keyword in selected) selected - keyword else selected + keyword,
+                            )
+                        },
                     )
                 }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_track_kind),
-                    description = subtitleTrackKindDescription(autoPlayPlayerSettings.preferredSubtitleTrackKind),
-                    options = SubtitleTrackKind.entries.map { kind ->
-                        SettingsChoiceOption(kind, subtitleTrackKindLabel(kind))
-                    },
-                    selectedValue = autoPlayPlayerSettings.preferredSubtitleTrackKind,
-                    enabled = subtitleLanguageEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("subtitle-track-kind")),
-                    onSelected = PlayerSettingsRepository::setPreferredSubtitleTrackKind,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_strip_sdh),
-                    description = stringResource(Res.string.settings_playback_strip_sdh_description),
-                    checked = autoPlayPlayerSettings.stripSdhSubtitles,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("strip-sdh")),
-                    onCheckedChange = PlayerSettingsRepository::setStripSdhSubtitles,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_automatic_subtitle_sync),
-                    description = stringResource(Res.string.settings_playback_automatic_subtitle_sync_description),
-                    checked = autoPlayPlayerSettings.automaticSubtitleSyncEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("automatic-subtitle-sync")),
-                    onCheckedChange = PlayerSettingsRepository::setAutomaticSubtitleSyncEnabled,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_show_preferred_only),
-                    description = stringResource(Res.string.settings_playback_subtitle_show_preferred_only_description),
-                    checked = autoPlayPlayerSettings.subtitleStyle.showOnlyPreferredLanguages,
-                    enabled = otherSubtitleOptionsEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = { enabled ->
-                        PlayerSettingsRepository.setSubtitleStyle(
-                            autoPlayPlayerSettings.subtitleStyle.copy(showOnlyPreferredLanguages = enabled),
-                        )
-                    },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_addon_subtitle_startup_mode),
-                    description = addonSubtitleStartupModeLabel(autoPlayPlayerSettings.addonSubtitleStartupMode),
-                    options = AddonSubtitleStartupMode.entries.map { mode ->
-                        SettingsChoiceOption(mode, addonSubtitleStartupModeLabel(mode))
-                    },
-                    selectedValue = autoPlayPlayerSettings.addonSubtitleStartupMode,
-                    enabled = otherSubtitleOptionsEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(
-                        SettingsScrollAnchor.searchKey("addon-subtitle-startup"),
-                    ),
-                    onSelected = PlayerSettingsRepository::setAddonSubtitleStartupMode,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_prefer_addon_subtitles),
-                    description = stringResource(Res.string.settings_playback_prefer_addon_subtitles_description),
-                    checked = autoPlayPlayerSettings.preferAddonSubtitles,
-                    // Fast startup never fetches addon subtitles automatically, so there is nothing
-                    // for this preference to reach for.
-                    enabled = otherSubtitleOptionsEnabled &&
-                        autoPlayPlayerSettings.addonSubtitleStartupMode != AddonSubtitleStartupMode.FAST_STARTUP,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(
-                        SettingsScrollAnchor.searchKey("prefer-addon-subtitles"),
-                    ),
-                    onCheckedChange = PlayerSettingsRepository::setPreferAddonSubtitles,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsMultiSelectRow(
-                    title = stringResource(Res.string.settings_playback_reject_subtitle_keywords),
-                    description = stringResource(Res.string.settings_playback_reject_subtitle_keywords_description),
-                    options = SubtitleRejectKeyword.entries.map { keyword ->
-                        SettingsChoiceOption(keyword, subtitleRejectKeywordLabel(keyword))
-                    },
-                    selectedValues = autoPlayPlayerSettings.rejectedSubtitleKeywords,
-                    emptyLabel = stringResource(Res.string.settings_playback_reject_keywords_none),
-                    // Forwarded subtitles are filtered by these too, so it stays editable
-                    // whenever the language pickers are.
-                    enabled = subtitleLanguageEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(
-                        SettingsScrollAnchor.searchKey("reject-subtitle-keywords"),
-                    ),
-                    summaryForCount = { count ->
-                        stringResource(Res.string.settings_playback_selected_count, count)
-                    },
-                    onToggle = { keyword ->
-                        val selected = autoPlayPlayerSettings.rejectedSubtitleKeywords
-                        PlayerSettingsRepository.setRejectedSubtitleKeywords(
-                            if (keyword in selected) selected - keyword else selected + keyword,
-                        )
-                    },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsMultiSelectRow(
-                    title = stringResource(Res.string.settings_playback_reject_audio_keywords),
-                    description = stringResource(Res.string.settings_playback_reject_audio_keywords_description),
-                    options = AudioRejectKeyword.entries.map { keyword ->
-                        SettingsChoiceOption(keyword, audioRejectKeywordLabel(keyword))
-                    },
-                    selectedValues = autoPlayPlayerSettings.rejectedAudioKeywords,
-                    emptyLabel = stringResource(Res.string.settings_playback_reject_keywords_none),
-                    enabled = audioLanguageEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(
-                        SettingsScrollAnchor.searchKey("reject-audio-keywords"),
-                    ),
-                    summaryForCount = { count ->
-                        stringResource(Res.string.settings_playback_selected_count, count)
-                    },
-                    onToggle = { keyword ->
-                        val selected = autoPlayPlayerSettings.rejectedAudioKeywords
-                        PlayerSettingsRepository.setRejectedAudioKeywords(
-                            if (keyword in selected) selected - keyword else selected + keyword,
-                        )
-                    },
-                )
             }
         }
-
-        SettingsSection(
-            title = stringResource(Res.string.settings_playback_section_subtitle_rendering),
-            isTablet = isTablet,
-        ) {
-            val subtitleRenderingEnabled = !autoPlayPlayerSettings.externalPlayerEnabled
-            SettingsGroup(isTablet = isTablet) {
-                val subtitleStyle = autoPlayPlayerSettings.subtitleStyle
-                SettingsSliderRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_size),
-                    value = subtitleStyle.fontSizeSp,
-                    valueText = stringResource(Res.string.compose_player_font_size_value, subtitleStyle.fontSizeSp),
-                    valueRange = 6..40,
-                    step = 2,
-                    isTablet = isTablet,
-                    enabled = subtitleRenderingEnabled,
-                    onValueChange = { value ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(fontSizeSp = value))
-                    },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSliderRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_vertical_offset),
-                    value = subtitleStyle.bottomOffset,
-                    valueText = subtitleStyle.bottomOffset.toString(),
-                    valueRange = 0..200,
-                    step = 5,
-                    isTablet = isTablet,
-                    enabled = subtitleRenderingEnabled,
-                    onValueChange = { value ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(bottomOffset = value))
-                    },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_bold),
-                    description = stringResource(Res.string.settings_playback_subtitle_bold_description),
-                    checked = subtitleStyle.bold,
-                    enabled = subtitleRenderingEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = { enabled ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(bold = enabled))
-                    },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_italic),
-                    description = stringResource(Res.string.settings_playback_subtitle_italic_description),
-                    checked = subtitleStyle.italic,
-                    enabled = subtitleRenderingEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = { enabled ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(italic = enabled))
-                    },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_outline),
-                    description = stringResource(Res.string.settings_playback_subtitle_outline_description),
-                    checked = subtitleStyle.outlineEnabled,
-                    enabled = subtitleRenderingEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = { enabled ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineEnabled = enabled))
-                    },
-                )
-                if (subtitleStyle.outlineEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SubtitleColorDropdownRow(
-                        title = stringResource(Res.string.settings_playback_subtitle_outline_color),
-                        options = subtitleTextColorOptions(),
-                        selectedColor = subtitleStyle.outlineColor,
-                        enabled = subtitleRenderingEnabled,
+        if (part == 4) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_playback_section_subtitle_rendering),
+                isTablet = isTablet,
+            ) {
+                val subtitleRenderingEnabled = !autoPlayPlayerSettings.externalPlayerEnabled
+                SettingsGroup(isTablet = isTablet) {
+                    val subtitleStyle = autoPlayPlayerSettings.subtitleStyle
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_size),
+                        value = subtitleStyle.fontSizeSp,
+                        valueText = stringResource(Res.string.compose_player_font_size_value, subtitleStyle.fontSizeSp),
+                        valueRange = 6..40,
+                        step = 2,
                         isTablet = isTablet,
-                        onColorSelected = { color ->
-                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineColor = color))
+                        enabled = subtitleRenderingEnabled,
+                        onValueChange = { value ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(fontSizeSp = value))
                         },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSliderRow(
-                        title = stringResource(Res.string.settings_playback_subtitle_outline_width),
-                        value = subtitleStyle.outlineWidth,
-                        valueText = subtitleStyle.outlineWidth.toString(),
-                        valueRange = SUBTITLE_OUTLINE_WIDTH_MIN..SUBTITLE_OUTLINE_WIDTH_MAX,
+                        title = stringResource(Res.string.settings_playback_subtitle_vertical_offset),
+                        value = subtitleStyle.bottomOffset,
+                        valueText = subtitleStyle.bottomOffset.toString(),
+                        valueRange = 0..200,
+                        step = 5,
+                        isTablet = isTablet,
+                        enabled = subtitleRenderingEnabled,
+                        onValueChange = { value ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(bottomOffset = value))
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_bold),
+                        description = stringResource(Res.string.settings_playback_subtitle_bold_description),
+                        checked = subtitleStyle.bold,
+                        enabled = subtitleRenderingEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = { enabled ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(bold = enabled))
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_italic),
+                        description = stringResource(Res.string.settings_playback_subtitle_italic_description),
+                        checked = subtitleStyle.italic,
+                        enabled = subtitleRenderingEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = { enabled ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(italic = enabled))
+                        },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_outline),
+                        description = stringResource(Res.string.settings_playback_subtitle_outline_description),
+                        checked = subtitleStyle.outlineEnabled,
+                        enabled = subtitleRenderingEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = { enabled ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineEnabled = enabled))
+                        },
+                    )
+                    if (subtitleStyle.outlineEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SubtitleColorDropdownRow(
+                            title = stringResource(Res.string.settings_playback_subtitle_outline_color),
+                            options = subtitleTextColorOptions(),
+                            selectedColor = subtitleStyle.outlineColor,
+                            enabled = subtitleRenderingEnabled,
+                            isTablet = isTablet,
+                            onColorSelected = { color ->
+                                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineColor = color))
+                            },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSliderRow(
+                            title = stringResource(Res.string.settings_playback_subtitle_outline_width),
+                            value = subtitleStyle.outlineWidth,
+                            valueText = subtitleStyle.outlineWidth.toString(),
+                            valueRange = SUBTITLE_OUTLINE_WIDTH_MIN..SUBTITLE_OUTLINE_WIDTH_MAX,
+                            step = 1,
+                            isTablet = isTablet,
+                            enabled = subtitleRenderingEnabled,
+                            onValueChange = { value ->
+                                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineWidth = value))
+                            },
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_shadow),
+                        description = stringResource(Res.string.settings_playback_subtitle_shadow_description),
+                        checked = subtitleStyle.shadowEnabled,
+                        enabled = subtitleRenderingEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = { enabled ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowEnabled = enabled))
+                        },
+                    )
+                    if (subtitleStyle.shadowEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSliderRow(
+                            title = stringResource(Res.string.settings_playback_subtitle_shadow_offset),
+                            value = subtitleStyle.shadowOffset,
+                            valueText = subtitleShadowOffsetLabel(subtitleStyle.shadowOffset),
+                            valueRange = SUBTITLE_SHADOW_OFFSET_MIN..SUBTITLE_SHADOW_OFFSET_MAX,
+                            step = SUBTITLE_SHADOW_OFFSET_STEP,
+                            isTablet = isTablet,
+                            enabled = subtitleRenderingEnabled,
+                            onValueChange = { value ->
+                                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowOffset = value))
+                            },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SubtitleColorDropdownRow(
+                            title = stringResource(Res.string.settings_playback_subtitle_shadow_color),
+                            options = subtitleTextColorOptions(),
+                            selectedColor = subtitleStyle.shadowColor.copy(alpha = 1f),
+                            enabled = subtitleRenderingEnabled,
+                            isTablet = isTablet,
+                            onColorSelected = { color ->
+                                PlayerSettingsRepository.setSubtitleStyle(
+                                    subtitleStyle.copy(shadowColor = color.copy(alpha = subtitleStyle.shadowColor.alpha)),
+                                )
+                            },
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_blur),
+                        value = subtitleStyle.blur,
+                        valueText = subtitleStyle.blur.toString(),
+                        valueRange = SUBTITLE_BLUR_MIN..SUBTITLE_BLUR_MAX,
                         step = 1,
                         isTablet = isTablet,
                         enabled = subtitleRenderingEnabled,
                         onValueChange = { value ->
-                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineWidth = value))
-                        },
-                    )
-                }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_shadow),
-                    description = stringResource(Res.string.settings_playback_subtitle_shadow_description),
-                    checked = subtitleStyle.shadowEnabled,
-                    enabled = subtitleRenderingEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = { enabled ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowEnabled = enabled))
-                    },
-                )
-                if (subtitleStyle.shadowEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSliderRow(
-                        title = stringResource(Res.string.settings_playback_subtitle_shadow_offset),
-                        value = subtitleStyle.shadowOffset,
-                        valueText = subtitleShadowOffsetLabel(subtitleStyle.shadowOffset),
-                        valueRange = SUBTITLE_SHADOW_OFFSET_MIN..SUBTITLE_SHADOW_OFFSET_MAX,
-                        step = SUBTITLE_SHADOW_OFFSET_STEP,
-                        isTablet = isTablet,
-                        enabled = subtitleRenderingEnabled,
-                        onValueChange = { value ->
-                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowOffset = value))
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(blur = value))
                         },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SubtitleColorDropdownRow(
-                        title = stringResource(Res.string.settings_playback_subtitle_shadow_color),
+                        title = stringResource(Res.string.settings_playback_subtitle_text_color),
                         options = subtitleTextColorOptions(),
-                        selectedColor = subtitleStyle.shadowColor.copy(alpha = 1f),
+                        selectedColor = subtitleStyle.textColor,
                         enabled = subtitleRenderingEnabled,
                         isTablet = isTablet,
                         onColorSelected = { color ->
-                            PlayerSettingsRepository.setSubtitleStyle(
-                                subtitleStyle.copy(shadowColor = color.copy(alpha = subtitleStyle.shadowColor.alpha)),
-                            )
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(textColor = color))
                         },
                     )
-                }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSliderRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_blur),
-                    value = subtitleStyle.blur,
-                    valueText = subtitleStyle.blur.toString(),
-                    valueRange = SUBTITLE_BLUR_MIN..SUBTITLE_BLUR_MAX,
-                    step = 1,
-                    isTablet = isTablet,
-                    enabled = subtitleRenderingEnabled,
-                    onValueChange = { value ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(blur = value))
-                    },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SubtitleColorDropdownRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_text_color),
-                    options = subtitleTextColorOptions(),
-                    selectedColor = subtitleStyle.textColor,
-                    enabled = subtitleRenderingEnabled,
-                    isTablet = isTablet,
-                    onColorSelected = { color ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(textColor = color))
-                    },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SubtitleColorDropdownRow(
-                    title = stringResource(Res.string.settings_playback_subtitle_background_color),
-                    options = subtitleBackgroundColorOptions(),
-                    selectedColor = subtitleStyle.backgroundColor,
-                    enabled = subtitleRenderingEnabled,
-                    isTablet = isTablet,
-                    onColorSelected = { color ->
-                        PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(backgroundColor = color))
-                    },
-                )
-                // How much of everything above reaches an ASS/SSA track. Those scripts carry their
-                // own fonts, colours and placement, so by default none of it does — and this is
-                // the only way to resize or move one. Desktop-only: the ASS override level is an
-                // mpv/libass property, and Android renders ASS through ExoPlayer instead.
-                if (isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsDropdownChoiceRow(
-                        title = stringResource(Res.string.settings_subtitle_ass_mode_title),
-                        description = stringResource(Res.string.settings_subtitle_ass_mode_subtitle),
-                        options = SubtitleAssStyleMode.entries.map { mode ->
-                            SettingsChoiceOption(mode.name, subtitleAssStyleModeLabel(mode))
-                        },
-                        selectedValue = subtitleStyle.assStyleMode.name,
+                    SubtitleColorDropdownRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_background_color),
+                        options = subtitleBackgroundColorOptions(),
+                        selectedColor = subtitleStyle.backgroundColor,
                         enabled = subtitleRenderingEnabled,
                         isTablet = isTablet,
-                        onSelected = { value ->
-                            val mode = runCatching { SubtitleAssStyleMode.valueOf(value) }.getOrNull()
-                                ?: SubtitleAssStyleMode.Original
-                            PlayerSettingsRepository.setSubtitleStyle(
-                                subtitleStyle.copy(assStyleMode = mode),
-                            )
+                        onColorSelected = { color ->
+                            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(backgroundColor = color))
                         },
                     )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSliderRow(
-                        title = stringResource(Res.string.settings_subtitle_ass_scale_title),
-                        description = stringResource(Res.string.settings_subtitle_ass_scale_subtitle),
-                        value = subtitleStyle.assScalePercent,
-                        valueText = "${subtitleStyle.assScalePercent}%",
-                        valueRange = SUBTITLE_ASS_SCALE_MIN..SUBTITLE_ASS_SCALE_MAX,
-                        step = SUBTITLE_ASS_SCALE_STEP,
-                        isTablet = isTablet,
-                        enabled = subtitleRenderingEnabled &&
-                            subtitleStyle.assStyleMode != SubtitleAssStyleMode.Original,
-                        onValueChange = { value ->
-                            PlayerSettingsRepository.setSubtitleStyle(
-                                subtitleStyle.copy(assScalePercent = value),
-                            )
-                        },
-                    )
-                }
-                // Android-only: this picks between ExoPlayer's WASM/JNI ASS rendering backends.
-                // Desktop always renders ASS/SSA natively via mpv/libass regardless of this
-                // setting (see sub-ass-override handling in player_bridge.cpp) - showing it here
-                // was misleading since toggling it has no effect on this platform.
-                if (!isIos && !isDesktop) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_enable_libass),
-                        description = stringResource(Res.string.settings_playback_enable_libass_description),
-                        checked = useLibass,
-                        enabled = subtitleRenderingEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setUseLibass,
-                    )
-                    if (useLibass) {
+                    // How much of everything above reaches an ASS/SSA track. Those scripts carry their
+                    // own fonts, colours and placement, so by default none of it does — and this is
+                    // the only way to resize or move one. Desktop-only: the ASS override level is an
+                    // mpv/libass property, and Android renders ASS through ExoPlayer instead.
+                    if (isDesktop) {
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsDropdownChoiceRow(
-                            title = stringResource(Res.string.settings_playback_render_type),
-                            description = libassRenderTypeLabel(libassRenderType),
-                            options = listOf(
-                                "OVERLAY_OPEN_GL",
-                                "OVERLAY_CANVAS",
-                                "EFFECTS_OPEN_GL",
-                                "EFFECTS_CANVAS",
-                                "CUES",
-                            ).map { renderType ->
-                                SettingsChoiceOption(renderType, libassRenderTypeLabel(renderType))
+                            title = stringResource(Res.string.settings_subtitle_ass_mode_title),
+                            description = stringResource(Res.string.settings_subtitle_ass_mode_subtitle),
+                            options = SubtitleAssStyleMode.entries.map { mode ->
+                                SettingsChoiceOption(mode.name, subtitleAssStyleModeLabel(mode))
                             },
-                            selectedValue = libassRenderType,
+                            selectedValue = subtitleStyle.assStyleMode.name,
                             enabled = subtitleRenderingEnabled,
                             isTablet = isTablet,
-                            onSelected = PlayerSettingsRepository::setLibassRenderType,
+                            onSelected = { value ->
+                                val mode = runCatching { SubtitleAssStyleMode.valueOf(value) }.getOrNull()
+                                    ?: SubtitleAssStyleMode.Original
+                                PlayerSettingsRepository.setSubtitleStyle(
+                                    subtitleStyle.copy(assStyleMode = mode),
+                                )
+                            },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSliderRow(
+                            title = stringResource(Res.string.settings_subtitle_ass_scale_title),
+                            description = stringResource(Res.string.settings_subtitle_ass_scale_subtitle),
+                            value = subtitleStyle.assScalePercent,
+                            valueText = "${subtitleStyle.assScalePercent}%",
+                            valueRange = SUBTITLE_ASS_SCALE_MIN..SUBTITLE_ASS_SCALE_MAX,
+                            step = SUBTITLE_ASS_SCALE_STEP,
+                            isTablet = isTablet,
+                            enabled = subtitleRenderingEnabled &&
+                                subtitleStyle.assStyleMode != SubtitleAssStyleMode.Original,
+                            onValueChange = { value ->
+                                PlayerSettingsRepository.setSubtitleStyle(
+                                    subtitleStyle.copy(assScalePercent = value),
+                                )
+                            },
                         )
                     }
-                }
-            }
-        }
-
-        if (P2pSettingsRepository.isVisible) {
-            SettingsSection(
-                title = stringResource(Res.string.settings_p2p_title),
-                isTablet = isTablet,
-            ) {
-                SettingsGroup(isTablet = isTablet) {
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_p2p_title),
-                        description = stringResource(Res.string.settings_p2p_subtitle),
-                        checked = p2pSettings.p2pEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = { enabled ->
-                            if (enabled && !p2pSettings.p2pEnabled) {
-                                showP2pConsentDialog = true
-                            } else {
-                                P2pSettingsRepository.setP2pEnabled(enabled)
-                            }
-                        },
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_p2p_hide_stats_title),
-                        description = stringResource(Res.string.settings_p2p_hide_stats_subtitle),
-                        checked = p2pSettings.hideTorrentStats,
-                        isTablet = isTablet,
-                        onCheckedChange = P2pSettingsRepository::setHideTorrentStats,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val nuvioEngineAvailable = remember { P2pStreamingEngine.nuvioEngineAvailable }
-                    SettingsDropdownChoiceRow(
-                        title = stringResource(Res.string.settings_p2p_engine_title),
-                        description = if (nuvioEngineAvailable) {
-                            stringResource(Res.string.settings_p2p_engine_description)
-                        } else {
-                            stringResource(Res.string.settings_p2p_engine_unavailable)
-                        },
-                        options = listOf(
-                            SettingsChoiceOption(
-                                P2pEngineBackend.NUVIO_ENGINE,
-                                stringResource(Res.string.settings_p2p_engine_nuvio),
-                            ),
-                            SettingsChoiceOption(
-                                P2pEngineBackend.TORRSERVER,
-                                stringResource(Res.string.settings_p2p_engine_torrserver),
-                            ),
-                        ),
-                        selectedValue = if (nuvioEngineAvailable) {
-                            p2pSettings.engineBackend
-                        } else {
-                            P2pEngineBackend.TORRSERVER
-                        },
-                        enabled = nuvioEngineAvailable,
-                        isTablet = isTablet,
-                        onSelected = P2pSettingsRepository::setEngineBackend,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_p2p_upload_title),
-                        description = stringResource(Res.string.settings_p2p_upload_subtitle),
-                        checked = p2pSettings.enableUpload,
-                        isTablet = isTablet,
-                        onCheckedChange = P2pSettingsRepository::setEnableUpload,
-                    )
-                    val nuvioEngineSelected = nuvioEngineAvailable &&
-                        p2pSettings.engineBackend == P2pEngineBackend.NUVIO_ENGINE
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsDropdownChoiceRow(
-                        title = stringResource(Res.string.settings_p2p_profile_title),
-                        description = stringResource(Res.string.settings_p2p_profile_description),
-                        options = listOf(
-                            SettingsChoiceOption(
-                                P2pTorrentProfile.SOFT,
-                                stringResource(Res.string.settings_p2p_profile_soft),
-                            ),
-                            SettingsChoiceOption(
-                                P2pTorrentProfile.BALANCED,
-                                stringResource(Res.string.settings_p2p_profile_balanced),
-                            ),
-                            SettingsChoiceOption(
-                                P2pTorrentProfile.FAST,
-                                stringResource(Res.string.settings_p2p_profile_fast),
-                            ),
-                        ),
-                        selectedValue = p2pSettings.torrentProfile,
-                        enabled = nuvioEngineSelected,
-                        isTablet = isTablet,
-                        onSelected = P2pSettingsRepository::setTorrentProfile,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsDropdownChoiceRow(
-                        title = stringResource(Res.string.settings_p2p_cache_size_title),
-                        description = stringResource(Res.string.settings_p2p_cache_size_description),
-                        options = listOf(
-                            SettingsChoiceOption(
-                                P2pCacheSize.NONE,
-                                stringResource(Res.string.settings_p2p_cache_none),
-                            ),
-                            SettingsChoiceOption(
-                                P2pCacheSize.GB_2,
-                                stringResource(Res.string.settings_p2p_cache_2_gb),
-                            ),
-                            SettingsChoiceOption(
-                                P2pCacheSize.GB_5,
-                                stringResource(Res.string.settings_p2p_cache_5_gb),
-                            ),
-                            SettingsChoiceOption(
-                                P2pCacheSize.GB_10,
-                                stringResource(Res.string.settings_p2p_cache_10_gb),
-                            ),
-                        ),
-                        selectedValue = p2pSettings.cacheSize,
-                        enabled = nuvioEngineSelected,
-                        isTablet = isTablet,
-                        onSelected = { size ->
-                            P2pSettingsRepository.setCacheSize(size)
-                            p2pCacheClearResult = null
-                        },
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val p2pCacheState by P2pStreamingEngine.cacheState.collectAsStateWithLifecycle()
-                    val p2pStreamingState by P2pStreamingEngine.state.collectAsStateWithLifecycle()
-                    val cacheClearAvailable = nuvioEngineSelected &&
-                        p2pStreamingState !is P2pStreamingState.Connecting &&
-                        p2pStreamingState !is P2pStreamingState.Streaming &&
-                        !p2pCacheState.isClearing
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_p2p_clear_cache_title),
-                        description = when {
-                            p2pCacheState.isClearing ->
-                                stringResource(Res.string.settings_p2p_clear_cache_clearing)
-                            nuvioEngineSelected && !cacheClearAvailable ->
-                                stringResource(Res.string.settings_p2p_clear_cache_playback_active)
-                            p2pCacheClearFailed ->
-                                stringResource(Res.string.settings_p2p_clear_cache_failed)
-                            p2pCacheClearResult != null -> stringResource(
-                                Res.string.settings_p2p_clear_cache_done,
-                                formatP2pCacheBytes(p2pCacheClearResult!!.reclaimedBytes),
-                            )
-                            !p2pCacheState.hasMeasurement ->
-                                stringResource(Res.string.settings_p2p_clear_cache_usage_pending)
-                            else -> stringResource(
-                                Res.string.settings_p2p_clear_cache_usage,
-                                formatP2pCacheBytes(p2pCacheState.usedBytes),
-                            )
-                        },
-                        enabled = cacheClearAvailable,
-                        isTablet = isTablet,
-                        onClick = {
-                            p2pCacheClearResult = null
-                            p2pCacheClearFailed = false
-                            p2pCacheScope.launch {
-                                runCatching { P2pStreamingEngine.clearCache() }
-                                    .onSuccess { p2pCacheClearResult = it }
-                                    .onFailure { p2pCacheClearFailed = true }
-                            }
-                        },
-                    )
-                }
-            }
-        }
-
-        SettingsSection(
-            title = stringResource(Res.string.settings_playback_section_stream_selection),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_prefetch_streams),
-                    description = stringResource(Res.string.settings_playback_prefetch_streams_description),
-                    options = listOf(
-                        SettingsChoiceOption(
-                            StreamPrefetchScope.OFF,
-                            stringResource(Res.string.settings_playback_prefetch_scope_off),
-                        ),
-                        SettingsChoiceOption(
-                            StreamPrefetchScope.DETAILS,
-                            stringResource(Res.string.settings_playback_prefetch_scope_details),
-                        ),
-                        SettingsChoiceOption(
-                            StreamPrefetchScope.DETAILS_AND_CONTINUE_WATCHING,
-                            stringResource(Res.string.settings_playback_prefetch_scope_details_and_continue_watching),
-                        ),
-                    ),
-                    selectedValue = autoPlayPlayerSettings.streamPrefetchScope,
-                    isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setStreamPrefetchScope,
-                )
-                if (autoPlayPlayerSettings.streamPrefetchScope.isEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsDropdownChoiceRow(
-                        title = stringResource(Res.string.settings_playback_prefetch_cache_duration),
-                        description = stringResource(
-                            Res.string.settings_playback_prefetch_cache_duration_minutes,
-                            autoPlayPlayerSettings.streamPrefetchCacheMinutes,
-                        ),
-                        options = STREAM_PREFETCH_CACHE_MINUTE_VALUES.map { minutes ->
-                            SettingsChoiceOption(
-                                minutes,
-                                stringResource(
-                                    Res.string.settings_playback_prefetch_cache_duration_minutes,
-                                    minutes,
-                                ),
-                            )
-                        },
-                        selectedValue = autoPlayPlayerSettings.streamPrefetchCacheMinutes,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setStreamPrefetchCacheMinutes,
-                    )
-                    // Two conditions, both load-bearing. A resolver must be configured, and the
-                    // user's own "Prepare links" switch (Debrid -> Link Preparation) must be on —
-                    // this row extends that behaviour to background sweeps rather than replacing it,
-                    // and `DirectDebridStreamPreparer` refuses to do anything while its limit is 0.
-                    // Showing the row without both would offer a switch that reads On and silently
-                    // does nothing, which is exactly how this went unnoticed across three test runs.
-                    if (
-                        debridSettings.canResolvePlayableLinks &&
-                        debridSettings.instantPlaybackPreparationLimit > 0
-                    ) {
+                    // Android-only: this picks between ExoPlayer's WASM/JNI ASS rendering backends.
+                    // Desktop always renders ASS/SSA natively via mpv/libass regardless of this
+                    // setting (see sub-ass-override handling in player_bridge.cpp) - showing it here
+                    // was misleading since toggling it has no effect on this platform.
+                    if (!isIos && !isDesktop) {
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_prefetch_resolve_links),
-                            description = stringResource(
-                                Res.string.settings_playback_prefetch_resolve_links_description,
-                            ),
-                            checked = autoPlayPlayerSettings.streamPrefetchResolveLinks,
+                            title = stringResource(Res.string.settings_playback_enable_libass),
+                            description = stringResource(Res.string.settings_playback_enable_libass_description),
+                            checked = useLibass,
+                            enabled = subtitleRenderingEnabled,
                             isTablet = isTablet,
-                            onCheckedChange = PlayerSettingsRepository::setStreamPrefetchResolveLinks,
+                            onCheckedChange = PlayerSettingsRepository::setUseLibass,
                         )
-                    }
-                }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_reuse_last_link),
-                    description = stringResource(Res.string.settings_playback_reuse_last_link_description),
-                    checked = streamReuseLastLinkEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setStreamReuseLastLinkEnabled,
-                )
-                if (streamReuseLastLinkEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsDropdownChoiceRow(
-                        title = stringResource(Res.string.settings_playback_last_link_cache_duration),
-                        description = formatReuseCacheDuration(streamReuseLastLinkCacheHours),
-                        options = listOf(1, 6, 12, 24, 48, 72, 168).map { hours ->
-                            SettingsChoiceOption(hours, formatReuseCacheDuration(hours))
-                        },
-                        selectedValue = streamReuseLastLinkCacheHours,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setStreamReuseLastLinkCacheHours,
-                    )
-                }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_stream_failover),
-                    description = stringResource(Res.string.settings_playback_stream_failover_description),
-                    checked = autoPlayPlayerSettings.streamFailoverEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setStreamFailoverEnabled,
-                )
-                if (autoPlayPlayerSettings.streamFailoverEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_stream_failover_timeout),
-                        description = stringResource(
-                            Res.string.settings_playback_stream_failover_timeout_description,
-                        ),
-                        options = STREAM_FAILOVER_TIMEOUT_VALUES.map { seconds ->
-                            SettingsChoiceOption(
-                                seconds,
-                                stringResource(
-                                    Res.string.settings_playback_stream_failover_timeout_seconds,
-                                    seconds,
-                                ),
-                            )
-                        },
-                        selectedValue = autoPlayPlayerSettings.streamFailoverTimeoutSeconds,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setStreamFailoverTimeoutSeconds,
-                    )
-                }
-                if (isDesktop) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_desktop_rate_limit_recovery),
-                        description = autoPlayPlayerSettings.desktopRateLimitRecoveryMode.description,
-                        options = DesktopRateLimitRecoveryMode.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.desktopRateLimitRecoveryMode,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.RateLimitRecovery),
-                        onSelected = PlayerSettingsRepository::setDesktopRateLimitRecoveryMode,
-                    )
-                    // The waits only apply when a reconnect can actually happen, and never to
-                    // TorBox, which switches server immediately instead of waiting.
-                    val reconnectPossible = when (autoPlayPlayerSettings.desktopRateLimitRecoveryMode) {
-                        DesktopRateLimitRecoveryMode.Off -> false
-                        DesktopRateLimitRecoveryMode.PreferFailover -> !autoPlayPlayerSettings.streamFailoverEnabled
-                        DesktopRateLimitRecoveryMode.PreferReconnect -> true
-                    }
-                    if (reconnectPossible) {
-                        val delayOptions = RATE_LIMIT_RECONNECT_DELAY_VALUES.map { seconds ->
-                            SettingsChoiceOption(
-                                seconds,
-                                stringResource(Res.string.settings_playback_stream_failover_timeout_seconds, seconds),
+                        if (useLibass) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsDropdownChoiceRow(
+                                title = stringResource(Res.string.settings_playback_render_type),
+                                description = libassRenderTypeLabel(libassRenderType),
+                                options = listOf(
+                                    "OVERLAY_OPEN_GL",
+                                    "OVERLAY_CANVAS",
+                                    "EFFECTS_OPEN_GL",
+                                    "EFFECTS_CANVAS",
+                                    "CUES",
+                                ).map { renderType ->
+                                    SettingsChoiceOption(renderType, libassRenderTypeLabel(renderType))
+                                },
+                                selectedValue = libassRenderType,
+                                enabled = subtitleRenderingEnabled,
+                                isTablet = isTablet,
+                                onSelected = PlayerSettingsRepository::setLibassRenderType,
                             )
                         }
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsDropdownChoiceRow(
-                            title = stringResource(Res.string.settings_playback_desktop_rate_limit_first_wait),
-                            description = stringResource(Res.string.settings_playback_desktop_rate_limit_wait_desc),
-                            options = delayOptions,
-                            selectedValue = autoPlayPlayerSettings.desktopRateLimitReconnectFirstDelaySeconds,
-                            isTablet = isTablet,
-                            onSelected = PlayerSettingsRepository::setDesktopRateLimitReconnectFirstDelaySeconds,
-                        )
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsDropdownChoiceRow(
-                            title = stringResource(Res.string.settings_playback_desktop_rate_limit_second_wait),
-                            description = stringResource(Res.string.settings_playback_desktop_rate_limit_wait_desc),
-                            options = delayOptions,
-                            selectedValue = autoPlayPlayerSettings.desktopRateLimitReconnectSecondDelaySeconds,
-                            isTablet = isTablet,
-                            onSelected = PlayerSettingsRepository::setDesktopRateLimitReconnectSecondDelaySeconds,
-                        )
                     }
                 }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_pause_overlay_source),
-                    description = stringResource(
-                        Res.string.settings_playback_pause_overlay_source_description,
-                    ),
-                    checked = autoPlayPlayerSettings.desktopPauseOverlaySourceEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setDesktopPauseOverlaySourceEnabled,
-                )
             }
         }
-
-        SettingsSection(
-            title = stringResource(Res.string.settings_playback_section_stream_auto_play),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                SettingsChoiceRow(
-                    title = stringResource(Res.string.settings_playback_stream_selection_mode),
-                    description = stringResource(autoPlayPlayerSettings.streamAutoPlayMode.labelRes),
-                    options = StreamAutoPlayMode.entries.map { mode ->
-                        SettingsChoiceOption(mode, stringResource(mode.labelRes))
-                    },
-                    selectedValue = autoPlayPlayerSettings.streamAutoPlayMode,
+        if (part == 5) {
+            if (P2pSettingsRepository.isVisible) {
+                SettingsSection(
+                    title = stringResource(Res.string.settings_p2p_title),
                     isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setStreamAutoPlayMode,
-                )
-                if (autoPlayPlayerSettings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_manual_next_episode),
-                        description = stringResource(
-                            Res.string.settings_playback_manual_next_episode_description,
-                        ),
-                        checked = autoPlayPlayerSettings.streamAutoPlayManualNextEpisode,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(
-                            SettingsScrollAnchor.searchKey("manual-next-episode"),
-                        ),
-                        onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayManualNextEpisode,
-                    )
-                }
-                if (autoPlayPlayerSettings.streamAutoPlayMode == StreamAutoPlayMode.REGEX_MATCH) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val notSetLabel = stringResource(Res.string.settings_playback_not_set)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_regex_pattern),
-                        description = autoPlayPlayerSettings.streamAutoPlayRegex.ifBlank { notSetLabel },
-                        isTablet = isTablet,
-                        onClick = { showAutoPlayRegexDialog = true },
-                    )
-                }
-                SettingsGroupDivider(isTablet = isTablet)
-                val timeoutSec = autoPlayPlayerSettings.streamAutoPlayTimeoutSeconds
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1f).padding(end = 12.dp),
-                    ) {
-                        Text(
-                            text = stringResource(Res.string.settings_playback_stream_timeout),
-                            style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        SettingsSubtext(
-                            text = stringResource(Res.string.settings_playback_stream_timeout_description),
+                    SettingsGroup(isTablet = isTablet) {
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_p2p_title),
+                            description = stringResource(Res.string.settings_p2p_subtitle),
+                            checked = p2pSettings.p2pEnabled,
                             isTablet = isTablet,
-                        )
-                    }
-                    val timeoutIndex = STREAM_AUTO_PLAY_TIMEOUT_VALUES.indexOf(timeoutSec)
-                        .coerceAtLeast(0)
-                    val maxIndex = (STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1).toFloat()
-                    var sliderValue by remember(timeoutIndex) { mutableFloatStateOf(timeoutIndex.toFloat()) }
-                    var lastHapticStep by remember(timeoutIndex) { mutableStateOf(timeoutIndex.toFloat()) }
-                    val displayedTimeout = STREAM_AUTO_PLAY_TIMEOUT_VALUES[
-                        sliderValue.roundToInt().coerceIn(0, STREAM_AUTO_PLAY_TIMEOUT_VALUES.lastIndex)
-                    ]
-                    val displayedTimeoutLabel = when (displayedTimeout) {
-                        0 -> stringResource(Res.string.settings_playback_timeout_instant)
-                        Int.MAX_VALUE -> stringResource(Res.string.settings_playback_timeout_unlimited)
-                        else -> stringResource(Res.string.settings_playback_timeout_seconds, displayedTimeout)
-                    }
-                    Column(
-                        modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        ValueBox(text = displayedTimeoutLabel)
-                        SettingsModernSlider(
-                            value = sliderValue,
-                            onValueChange = {
-                                val snapped = snapToStep(it, 1f)
-                                sliderValue = snapped
-
-                                if (snapped != lastHapticStep) {
-                                    lastHapticStep = snapped
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onCheckedChange = { enabled ->
+                                if (enabled && !p2pSettings.p2pEnabled) {
+                                    showP2pConsentDialog = true
+                                } else {
+                                    P2pSettingsRepository.setP2pEnabled(enabled)
                                 }
                             },
-                            onValueChangeFinished = {
-                                val index = sliderValue.toInt().coerceIn(0, STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1)
-                                PlayerSettingsRepository.setStreamAutoPlayTimeoutSeconds(STREAM_AUTO_PLAY_TIMEOUT_VALUES[index])
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_p2p_hide_stats_title),
+                            description = stringResource(Res.string.settings_p2p_hide_stats_subtitle),
+                            checked = p2pSettings.hideTorrentStats,
+                            isTablet = isTablet,
+                            onCheckedChange = P2pSettingsRepository::setHideTorrentStats,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val nuvioEngineAvailable = remember { P2pStreamingEngine.nuvioEngineAvailable }
+                        SettingsDropdownChoiceRow(
+                            title = stringResource(Res.string.settings_p2p_engine_title),
+                            description = if (nuvioEngineAvailable) {
+                                stringResource(Res.string.settings_p2p_engine_description)
+                            } else {
+                                stringResource(Res.string.settings_p2p_engine_unavailable)
                             },
-                            valueRange = 0f..maxIndex,
-                            steps = calculateSteps(0f, maxIndex, 1f),
-                            modifier = Modifier.fillMaxWidth(),
+                            options = listOf(
+                                SettingsChoiceOption(
+                                    P2pEngineBackend.NUVIO_ENGINE,
+                                    stringResource(Res.string.settings_p2p_engine_nuvio),
+                                ),
+                                SettingsChoiceOption(
+                                    P2pEngineBackend.TORRSERVER,
+                                    stringResource(Res.string.settings_p2p_engine_torrserver),
+                                ),
+                            ),
+                            selectedValue = if (nuvioEngineAvailable) {
+                                p2pSettings.engineBackend
+                            } else {
+                                P2pEngineBackend.TORRSERVER
+                            },
+                            enabled = nuvioEngineAvailable,
+                            isTablet = isTablet,
+                            onSelected = P2pSettingsRepository::setEngineBackend,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_p2p_upload_title),
+                            description = stringResource(Res.string.settings_p2p_upload_subtitle),
+                            checked = p2pSettings.enableUpload,
+                            isTablet = isTablet,
+                            onCheckedChange = P2pSettingsRepository::setEnableUpload,
+                        )
+                        val nuvioEngineSelected = nuvioEngineAvailable &&
+                            p2pSettings.engineBackend == P2pEngineBackend.NUVIO_ENGINE
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsDropdownChoiceRow(
+                            title = stringResource(Res.string.settings_p2p_profile_title),
+                            description = stringResource(Res.string.settings_p2p_profile_description),
+                            options = listOf(
+                                SettingsChoiceOption(
+                                    P2pTorrentProfile.SOFT,
+                                    stringResource(Res.string.settings_p2p_profile_soft),
+                                ),
+                                SettingsChoiceOption(
+                                    P2pTorrentProfile.BALANCED,
+                                    stringResource(Res.string.settings_p2p_profile_balanced),
+                                ),
+                                SettingsChoiceOption(
+                                    P2pTorrentProfile.FAST,
+                                    stringResource(Res.string.settings_p2p_profile_fast),
+                                ),
+                            ),
+                            selectedValue = p2pSettings.torrentProfile,
+                            enabled = nuvioEngineSelected,
+                            isTablet = isTablet,
+                            onSelected = P2pSettingsRepository::setTorrentProfile,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsDropdownChoiceRow(
+                            title = stringResource(Res.string.settings_p2p_cache_size_title),
+                            description = stringResource(Res.string.settings_p2p_cache_size_description),
+                            options = listOf(
+                                SettingsChoiceOption(
+                                    P2pCacheSize.NONE,
+                                    stringResource(Res.string.settings_p2p_cache_none),
+                                ),
+                                SettingsChoiceOption(
+                                    P2pCacheSize.GB_2,
+                                    stringResource(Res.string.settings_p2p_cache_2_gb),
+                                ),
+                                SettingsChoiceOption(
+                                    P2pCacheSize.GB_5,
+                                    stringResource(Res.string.settings_p2p_cache_5_gb),
+                                ),
+                                SettingsChoiceOption(
+                                    P2pCacheSize.GB_10,
+                                    stringResource(Res.string.settings_p2p_cache_10_gb),
+                                ),
+                            ),
+                            selectedValue = p2pSettings.cacheSize,
+                            enabled = nuvioEngineSelected,
+                            isTablet = isTablet,
+                            onSelected = { size ->
+                                P2pSettingsRepository.setCacheSize(size)
+                                p2pCacheClearResult = null
+                            },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val p2pCacheState by P2pStreamingEngine.cacheState.collectAsStateWithLifecycle()
+                        val p2pStreamingState by P2pStreamingEngine.state.collectAsStateWithLifecycle()
+                        val cacheClearAvailable = nuvioEngineSelected &&
+                            p2pStreamingState !is P2pStreamingState.Connecting &&
+                            p2pStreamingState !is P2pStreamingState.Streaming &&
+                            !p2pCacheState.isClearing
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_p2p_clear_cache_title),
+                            description = when {
+                                p2pCacheState.isClearing ->
+                                    stringResource(Res.string.settings_p2p_clear_cache_clearing)
+                                nuvioEngineSelected && !cacheClearAvailable ->
+                                    stringResource(Res.string.settings_p2p_clear_cache_playback_active)
+                                p2pCacheClearFailed ->
+                                    stringResource(Res.string.settings_p2p_clear_cache_failed)
+                                p2pCacheClearResult != null -> stringResource(
+                                    Res.string.settings_p2p_clear_cache_done,
+                                    formatP2pCacheBytes(p2pCacheClearResult!!.reclaimedBytes),
+                                )
+                                !p2pCacheState.hasMeasurement ->
+                                    stringResource(Res.string.settings_p2p_clear_cache_usage_pending)
+                                else -> stringResource(
+                                    Res.string.settings_p2p_clear_cache_usage,
+                                    formatP2pCacheBytes(p2pCacheState.usedBytes),
+                                )
+                            },
+                            enabled = cacheClearAvailable,
+                            isTablet = isTablet,
+                            onClick = {
+                                p2pCacheClearResult = null
+                                p2pCacheClearFailed = false
+                                p2pCacheScope.launch {
+                                    runCatching { P2pStreamingEngine.clearCache() }
+                                        .onSuccess { p2pCacheClearResult = it }
+                                        .onFailure { p2pCacheClearFailed = true }
+                                }
+                            },
                         )
                     }
                 }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsChoiceRow(
-                    title = stringResource(Res.string.settings_playback_source_scope),
-                    description = stringResource(autoPlayPlayerSettings.streamAutoPlaySource.labelRes(pluginsEnabled)),
-                    options = StreamAutoPlaySource.entries
-                        .filter { pluginsEnabled || it != StreamAutoPlaySource.ENABLED_PLUGINS_ONLY }
-                        .map { source ->
-                            SettingsChoiceOption(source, stringResource(source.labelRes(pluginsEnabled)))
-                        },
-                    selectedValue = autoPlayPlayerSettings.streamAutoPlaySource,
-                    isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setStreamAutoPlaySource,
-                )
-                if (autoPlayPlayerSettings.streamAutoPlaySource != StreamAutoPlaySource.ENABLED_PLUGINS_ONLY) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val selectedAddons = autoPlayPlayerSettings.streamAutoPlaySelectedAddons
-                        .intersect(autoPlayAddonNames.toSet())
-                    SettingsMultiSelectRow(
-                        title = stringResource(Res.string.settings_playback_allowed_addons),
-                        description = stringResource(Res.string.settings_playback_all_addons),
-                        options = autoPlayAddonNames.map { name -> SettingsChoiceOption(name, name) },
-                        selectedValues = selectedAddons,
-                        emptyLabel = stringResource(Res.string.settings_playback_all_addons),
-                        isTablet = isTablet,
-                        summaryForCount = { count ->
-                            stringResource(Res.string.settings_playback_selected_count, count)
-                        },
-                        onToggle = { name ->
-                            PlayerSettingsRepository.setStreamAutoPlaySelectedAddons(
-                                if (name in selectedAddons) selectedAddons - name else selectedAddons + name,
-                            )
-                        },
-                    )
-                }
-                if (pluginsEnabled && autoPlayPlayerSettings.streamAutoPlaySource != StreamAutoPlaySource.INSTALLED_ADDONS_ONLY) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val selectedPlugins = autoPlayPlayerSettings.streamAutoPlaySelectedPlugins
-                        .intersect(autoPlayPluginNames.toSet())
-                    SettingsMultiSelectRow(
-                        title = stringResource(Res.string.settings_playback_allowed_plugins),
-                        description = stringResource(Res.string.settings_playback_all_plugins),
-                        options = autoPlayPluginNames.map { name -> SettingsChoiceOption(name, name) },
-                        selectedValues = selectedPlugins,
-                        emptyLabel = stringResource(Res.string.settings_playback_all_plugins),
-                        isTablet = isTablet,
-                        summaryForCount = { count ->
-                            stringResource(Res.string.settings_playback_selected_count, count)
-                        },
-                        onToggle = { name ->
-                            PlayerSettingsRepository.setStreamAutoPlaySelectedPlugins(
-                                if (name in selectedPlugins) selectedPlugins - name else selectedPlugins + name,
-                            )
-                        },
-                    )
-                }
             }
         }
-
-        if (isIos) {
+        if (part == 6) {
             SettingsSection(
-                title = stringResource(Res.string.settings_playback_ios_audio_output_section),
+                title = stringResource(Res.string.settings_playback_section_stream_selection),
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_ios_audio_output),
-                        description = autoPlayPlayerSettings.iosAudioOutputMode.label,
-                        options = IosAudioOutputMode.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.iosAudioOutputMode,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setIosAudioOutputMode,
-                    )
-                }
-            }
-
-            SettingsSection(
-                title = stringResource(Res.string.settings_playback_ios_video_output),
-                isTablet = isTablet,
-            ) {
-                SettingsGroup(isTablet = isTablet) {
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_ios_hardware_decoder),
-                        description = autoPlayPlayerSettings.iosHardwareDecoderMode.localizedLabel(),
-                        options = IosHardwareDecoderMode.entries.map { SettingsChoiceOption(it, it.localizedLabel()) },
-                        selectedValue = autoPlayPlayerSettings.iosHardwareDecoderMode,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setIosHardwareDecoderMode,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_ios_extended_dynamic_range),
-                        description = stringResource(Res.string.settings_playback_ios_extended_dynamic_range_desc),
-                        checked = autoPlayPlayerSettings.iosExtendedDynamicRangeEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setIosExtendedDynamicRangeEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_ios_display_color_hint),
-                        description = stringResource(Res.string.settings_playback_ios_display_color_hint_desc),
-                        checked = autoPlayPlayerSettings.iosTargetColorspaceHintEnabled,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setIosTargetColorspaceHintEnabled,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_ios_target_primaries),
-                        description = autoPlayPlayerSettings.iosTargetPrimaries.label,
-                        options = IosTargetPrimaries.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.iosTargetPrimaries,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setIosTargetPrimaries,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_ios_target_transfer),
-                        description = autoPlayPlayerSettings.iosTargetTransfer.label,
-                        options = IosTargetTransfer.entries.map { SettingsChoiceOption(it, it.label) },
-                        selectedValue = autoPlayPlayerSettings.iosTargetTransfer,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setIosTargetTransfer,
-                    )
-                }
-            }
-        }
-
-        SettingsSection(
-            title = stringResource(Res.string.settings_playback_section_skip_segments),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_skip_intro_outro_recap),
-                    description = stringResource(Res.string.settings_playback_skip_intro_outro_recap_description),
-                    checked = autoPlayPlayerSettings.skipIntroEnabled,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setSkipIntroEnabled,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_skip_auto_accept),
-                    description = stringResource(
-                        autoPlayPlayerSettings.skipAutoAcceptMode.descriptionRes,
-                    ),
-                    options = SkipAutoAcceptMode.entries.map { mode ->
-                        SettingsChoiceOption(mode, stringResource(mode.labelRes))
-                    },
-                    selectedValue = autoPlayPlayerSettings.skipAutoAcceptMode,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(
-                        SettingsScrollAnchor.searchKey("skip-auto-accept"),
-                    ),
-                    onSelected = PlayerSettingsRepository::setSkipAutoAcceptMode,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_skip_movie_credits_to_post_credits),
-                    description = stringResource(Res.string.settings_playback_skip_movie_credits_to_post_credits_description),
-                    checked = autoPlayPlayerSettings.skipMovieCreditsToPostCredits,
-                    enabled = autoPlayPlayerSettings.skipIntroEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(
-                        SettingsScrollAnchor.searchKey("skip-movie-credits-post-credits"),
-                    ),
-                    onCheckedChange = PlayerSettingsRepository::setSkipMovieCreditsToPostCredits,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_anime_skip),
-                    description = stringResource(Res.string.settings_playback_anime_skip_description),
-                    checked = autoPlayPlayerSettings.animeSkipEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(
-                        SettingsScrollAnchor.searchKey("anime-skip"),
-                    ),
-                    onCheckedChange = PlayerSettingsRepository::setAnimeSkipEnabled,
-                )
-                if (autoPlayPlayerSettings.animeSkipEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    var showAnimeSkipClientIdDialog by remember { mutableStateOf(false) }
-                    val notSetLabel = stringResource(Res.string.settings_playback_not_set)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_anime_skip_client_id),
-                        description = autoPlayPlayerSettings.animeSkipClientId.ifBlank { notSetLabel },
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(
-                            SettingsScrollAnchor.searchKey("anime-skip-client"),
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_prefetch_streams),
+                        description = stringResource(Res.string.settings_playback_prefetch_streams_description),
+                        options = listOf(
+                            SettingsChoiceOption(
+                                StreamPrefetchScope.OFF,
+                                stringResource(Res.string.settings_playback_prefetch_scope_off),
+                            ),
+                            SettingsChoiceOption(
+                                StreamPrefetchScope.DETAILS,
+                                stringResource(Res.string.settings_playback_prefetch_scope_details),
+                            ),
+                            SettingsChoiceOption(
+                                StreamPrefetchScope.DETAILS_AND_CONTINUE_WATCHING,
+                                stringResource(Res.string.settings_playback_prefetch_scope_details_and_continue_watching),
+                            ),
                         ),
-                        onClick = { showAnimeSkipClientIdDialog = true },
-                    )
-                    if (showAnimeSkipClientIdDialog) {
-                        AnimeSkipClientIdDialog(
-                            initialValue = autoPlayPlayerSettings.animeSkipClientId,
-                            onSave = {
-                                PlayerSettingsRepository.setAnimeSkipClientId(it)
-                                showAnimeSkipClientIdDialog = false
-                            },
-                            onDismiss = { showAnimeSkipClientIdDialog = false },
-                        )
-                    }
-                }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_intro_submit_enabled),
-                    description = stringResource(Res.string.settings_playback_intro_submit_enabled_description),
-                    checked = autoPlayPlayerSettings.introSubmitEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(
-                        SettingsScrollAnchor.searchKey("intro-submit"),
-                    ),
-                    onCheckedChange = PlayerSettingsRepository::setIntroSubmitEnabled,
-                )
-                if (autoPlayPlayerSettings.introSubmitEnabled) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    var showSkipDbApiKeyDialog by remember { mutableStateOf(false) }
-                    val notSetLabel = stringResource(Res.string.settings_playback_not_set)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_skipdb_api_key),
-                        description = autoPlayPlayerSettings.skipDbApiKey.ifBlank { notSetLabel },
+                        selectedValue = autoPlayPlayerSettings.streamPrefetchScope,
                         isTablet = isTablet,
-                        onClick = { showSkipDbApiKeyDialog = true },
+                        onSelected = PlayerSettingsRepository::setStreamPrefetchScope,
                     )
-                    if (showSkipDbApiKeyDialog) {
-                        SkipDbApiKeyDialog(
-                            initialValue = autoPlayPlayerSettings.skipDbApiKey,
-                            onSave = {
-                                PlayerSettingsRepository.setSkipDbApiKey(it)
-                                showSkipDbApiKeyDialog = false
-                            },
-                            onDismiss = { showSkipDbApiKeyDialog = false },
-                        )
-                    }
-
-                    SettingsGroupDivider(isTablet = isTablet)
-                    var showIntroDbApiKeyDialog by remember { mutableStateOf(false) }
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_playback_introdb_api_key),
-                        description = autoPlayPlayerSettings.introDbApiKey.ifBlank { notSetLabel },
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(
-                            SettingsScrollAnchor.searchKey("introdb-key"),
-                        ),
-                        onClick = { showIntroDbApiKeyDialog = true },
-                    )
-                    if (showIntroDbApiKeyDialog) {
-                        IntroDbApiKeyDialog(
-                            initialValue = autoPlayPlayerSettings.introDbApiKey,
-                            onSave = {
-                                PlayerSettingsRepository.setIntroDbApiKey(it)
-                                showIntroDbApiKeyDialog = false
-                            },
-                            onDismiss = { showIntroDbApiKeyDialog = false },
-                        )
-                    }
-                }
-            }
-        }
-
-        SettingsSection(
-            title = stringResource(Res.string.settings_playback_section_next_episode),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_auto_play_next_episode),
-                    description = stringResource(Res.string.settings_playback_auto_play_next_episode_description),
-                    checked = autoPlayPlayerSettings.streamAutoPlayNextEpisodeEnabled,
-                    isTablet = isTablet,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BingeMode),
-                    onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayNextEpisodeEnabled,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_playback_prefer_binge_group),
-                    description = stringResource(Res.string.settings_playback_prefer_binge_group_description),
-                    checked = autoPlayPlayerSettings.streamAutoPlayPreferBingeGroup,
-                    isTablet = isTablet,
-                    onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayPreferBingeGroup,
-                )
-                if (autoPlayPlayerSettings.streamAutoPlayPreferBingeGroup) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_reuse_binge_group),
-                        description = stringResource(Res.string.settings_playback_reuse_binge_group_description),
-                        checked = autoPlayPlayerSettings.streamAutoPlayReuseBingeGroup,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayReuseBingeGroup,
-                    )
-                }
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsDropdownChoiceRow(
-                    title = stringResource(Res.string.settings_playback_threshold_mode),
-                    description = stringResource(autoPlayPlayerSettings.nextEpisodeThresholdMode.labelRes),
-                    options = com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.entries.map { mode ->
-                        SettingsChoiceOption(mode, stringResource(mode.labelRes))
-                    },
-                    selectedValue = autoPlayPlayerSettings.nextEpisodeThresholdMode,
-                    isTablet = isTablet,
-                    onSelected = PlayerSettingsRepository::setNextEpisodeThresholdMode,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                when (autoPlayPlayerSettings.nextEpisodeThresholdMode) {
-                    com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.PERCENTAGE -> {
-                        val thresholdPercent = autoPlayPlayerSettings.nextEpisodeThresholdPercent
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(
-                                modifier = Modifier.weight(1f).padding(end = 12.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(Res.string.settings_playback_threshold_percentage),
-                                    style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                SettingsSubtext(
-                                    text = stringResource(Res.string.settings_playback_threshold_percentage_description),
-                                    isTablet = isTablet,
-                                )
-                            }
-                            var sliderValue by remember(thresholdPercent) { mutableFloatStateOf(thresholdPercent) }
-                            var lastHapticPercent by remember(thresholdPercent) { mutableStateOf(thresholdPercent) }
-                            Column(
-                                modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                ValueBox(
-                                    text = stringResource(
-                                        Res.string.settings_playback_threshold_percentage_value,
-                                        formatStep(sliderValue),
+                    if (autoPlayPlayerSettings.streamPrefetchScope.isEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsDropdownChoiceRow(
+                            title = stringResource(Res.string.settings_playback_prefetch_cache_duration),
+                            description = stringResource(
+                                Res.string.settings_playback_prefetch_cache_duration_minutes,
+                                autoPlayPlayerSettings.streamPrefetchCacheMinutes,
+                            ),
+                            options = STREAM_PREFETCH_CACHE_MINUTE_VALUES.map { minutes ->
+                                SettingsChoiceOption(
+                                    minutes,
+                                    stringResource(
+                                        Res.string.settings_playback_prefetch_cache_duration_minutes,
+                                        minutes,
                                     ),
                                 )
-                                SettingsModernSlider(
-                                    value = sliderValue,
-                                    onValueChange = {
-                                        val snapped = snapToStep(it, 0.5f)
-                                        sliderValue = snapped
-
-                                        if (snapped != lastHapticPercent) {
-                                            lastHapticPercent = snapped
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                    },
-                                    onValueChangeFinished = {
-                                        PlayerSettingsRepository.setNextEpisodeThresholdPercent(sliderValue)
-                                    },
-                                    valueRange = 97f..100f,
-                                    steps = calculateSteps(97f, 100f, 0.5f),
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
+                            },
+                            selectedValue = autoPlayPlayerSettings.streamPrefetchCacheMinutes,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setStreamPrefetchCacheMinutes,
+                        )
+                        // Two conditions, both load-bearing. A resolver must be configured, and the
+                        // user's own "Prepare links" switch (Debrid -> Link Preparation) must be on —
+                        // this row extends that behaviour to background sweeps rather than replacing it,
+                        // and `DirectDebridStreamPreparer` refuses to do anything while its limit is 0.
+                        // Showing the row without both would offer a switch that reads On and silently
+                        // does nothing, which is exactly how this went unnoticed across three test runs.
+                        if (
+                            debridSettings.canResolvePlayableLinks &&
+                            debridSettings.instantPlaybackPreparationLimit > 0
+                        ) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_prefetch_resolve_links),
+                                description = stringResource(
+                                    Res.string.settings_playback_prefetch_resolve_links_description,
+                                ),
+                                checked = autoPlayPlayerSettings.streamPrefetchResolveLinks,
+                                isTablet = isTablet,
+                                onCheckedChange = PlayerSettingsRepository::setStreamPrefetchResolveLinks,
+                            )
                         }
                     }
-                    com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.MINUTES_BEFORE_END -> {
-                        val thresholdMinutes = autoPlayPlayerSettings.nextEpisodeThresholdMinutesBeforeEnd
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(
-                                modifier = Modifier.weight(1f).padding(end = 12.dp),
-                            ) {
-                                Text(
-                                    text = stringResource(Res.string.settings_playback_minutes_before_end),
-                                    style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                SettingsSubtext(
-                                    text = stringResource(Res.string.settings_playback_minutes_before_end_description),
-                                    isTablet = isTablet,
-                                )
-                            }
-                            var sliderValue by remember(thresholdMinutes) { mutableFloatStateOf(thresholdMinutes) }
-                            var lastHapticMin by remember(thresholdMinutes) { mutableStateOf(thresholdMinutes) }
-                            Column(
-                                modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                ValueBox(
-                                    text = stringResource(
-                                        Res.string.settings_playback_minutes_value,
-                                        formatStep(sliderValue),
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_reuse_last_link),
+                        description = stringResource(Res.string.settings_playback_reuse_last_link_description),
+                        checked = streamReuseLastLinkEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setStreamReuseLastLinkEnabled,
+                    )
+                    if (streamReuseLastLinkEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsDropdownChoiceRow(
+                            title = stringResource(Res.string.settings_playback_last_link_cache_duration),
+                            description = formatReuseCacheDuration(streamReuseLastLinkCacheHours),
+                            options = listOf(1, 6, 12, 24, 48, 72, 168).map { hours ->
+                                SettingsChoiceOption(hours, formatReuseCacheDuration(hours))
+                            },
+                            selectedValue = streamReuseLastLinkCacheHours,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setStreamReuseLastLinkCacheHours,
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_stream_failover),
+                        description = stringResource(Res.string.settings_playback_stream_failover_description),
+                        checked = autoPlayPlayerSettings.streamFailoverEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setStreamFailoverEnabled,
+                    )
+                    if (autoPlayPlayerSettings.streamFailoverEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_stream_failover_timeout),
+                            description = stringResource(
+                                Res.string.settings_playback_stream_failover_timeout_description,
+                            ),
+                            options = STREAM_FAILOVER_TIMEOUT_VALUES.map { seconds ->
+                                SettingsChoiceOption(
+                                    seconds,
+                                    stringResource(
+                                        Res.string.settings_playback_stream_failover_timeout_seconds,
+                                        seconds,
                                     ),
                                 )
-                                SettingsModernSlider(
-                                    value = sliderValue,
-                                    onValueChange = {
-                                        val snapped = snapToStep(it, 0.5f)
-                                        sliderValue = snapped
-
-                                        if (snapped != lastHapticMin) {
-                                            lastHapticMin = snapped
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        }
-                                    },
-                                    onValueChangeFinished = {
-                                        PlayerSettingsRepository.setNextEpisodeThresholdMinutesBeforeEnd(sliderValue)
-                                    },
-                                    valueRange = 0f..3.5f,
-                                    steps = calculateSteps(0f, 3.5f, 0.5f),
-                                    modifier = Modifier.fillMaxWidth(),
+                            },
+                            selectedValue = autoPlayPlayerSettings.streamFailoverTimeoutSeconds,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setStreamFailoverTimeoutSeconds,
+                        )
+                    }
+                    if (isDesktop) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_rate_limit_recovery),
+                            description = autoPlayPlayerSettings.desktopRateLimitRecoveryMode.description,
+                            options = DesktopRateLimitRecoveryMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.desktopRateLimitRecoveryMode,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.RateLimitRecovery),
+                            onSelected = PlayerSettingsRepository::setDesktopRateLimitRecoveryMode,
+                        )
+                        // The waits only apply when a reconnect can actually happen, and never to
+                        // TorBox, which switches server immediately instead of waiting.
+                        val reconnectPossible = when (autoPlayPlayerSettings.desktopRateLimitRecoveryMode) {
+                            DesktopRateLimitRecoveryMode.Off -> false
+                            DesktopRateLimitRecoveryMode.PreferFailover -> !autoPlayPlayerSettings.streamFailoverEnabled
+                            DesktopRateLimitRecoveryMode.PreferReconnect -> true
+                        }
+                        if (reconnectPossible) {
+                            val delayOptions = RATE_LIMIT_RECONNECT_DELAY_VALUES.map { seconds ->
+                                SettingsChoiceOption(
+                                    seconds,
+                                    stringResource(Res.string.settings_playback_stream_failover_timeout_seconds, seconds),
                                 )
+                            }
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsDropdownChoiceRow(
+                                title = stringResource(Res.string.settings_playback_desktop_rate_limit_first_wait),
+                                description = stringResource(Res.string.settings_playback_desktop_rate_limit_wait_desc),
+                                options = delayOptions,
+                                selectedValue = autoPlayPlayerSettings.desktopRateLimitReconnectFirstDelaySeconds,
+                                isTablet = isTablet,
+                                onSelected = PlayerSettingsRepository::setDesktopRateLimitReconnectFirstDelaySeconds,
+                            )
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsDropdownChoiceRow(
+                                title = stringResource(Res.string.settings_playback_desktop_rate_limit_second_wait),
+                                description = stringResource(Res.string.settings_playback_desktop_rate_limit_wait_desc),
+                                options = delayOptions,
+                                selectedValue = autoPlayPlayerSettings.desktopRateLimitReconnectSecondDelaySeconds,
+                                isTablet = isTablet,
+                                onSelected = PlayerSettingsRepository::setDesktopRateLimitReconnectSecondDelaySeconds,
+                            )
+                        }
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_pause_overlay_source),
+                        description = stringResource(
+                            Res.string.settings_playback_pause_overlay_source_description,
+                        ),
+                        checked = autoPlayPlayerSettings.desktopPauseOverlaySourceEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopPauseOverlaySourceEnabled,
+                    )
+                }
+            }
+        }
+        if (part == 7) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_playback_section_stream_auto_play),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_playback_stream_selection_mode),
+                        description = stringResource(autoPlayPlayerSettings.streamAutoPlayMode.labelRes),
+                        options = StreamAutoPlayMode.entries.map { mode ->
+                            SettingsChoiceOption(mode, stringResource(mode.labelRes))
+                        },
+                        selectedValue = autoPlayPlayerSettings.streamAutoPlayMode,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setStreamAutoPlayMode,
+                    )
+                    if (autoPlayPlayerSettings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_manual_next_episode),
+                            description = stringResource(
+                                Res.string.settings_playback_manual_next_episode_description,
+                            ),
+                            checked = autoPlayPlayerSettings.streamAutoPlayManualNextEpisode,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(
+                                SettingsScrollAnchor.searchKey("manual-next-episode"),
+                            ),
+                            onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayManualNextEpisode,
+                        )
+                    }
+                    if (autoPlayPlayerSettings.streamAutoPlayMode == StreamAutoPlayMode.REGEX_MATCH) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val notSetLabel = stringResource(Res.string.settings_playback_not_set)
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_playback_regex_pattern),
+                            description = autoPlayPlayerSettings.streamAutoPlayRegex.ifBlank { notSetLabel },
+                            isTablet = isTablet,
+                            onClick = { showAutoPlayRegexDialog = true },
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    val timeoutSec = autoPlayPlayerSettings.streamAutoPlayTimeoutSeconds
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.settings_playback_stream_timeout),
+                                style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            SettingsSubtext(
+                                text = stringResource(Res.string.settings_playback_stream_timeout_description),
+                                isTablet = isTablet,
+                            )
+                        }
+                        val timeoutIndex = STREAM_AUTO_PLAY_TIMEOUT_VALUES.indexOf(timeoutSec)
+                            .coerceAtLeast(0)
+                        val maxIndex = (STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1).toFloat()
+                        var sliderValue by remember(timeoutIndex) { mutableFloatStateOf(timeoutIndex.toFloat()) }
+                        var lastHapticStep by remember(timeoutIndex) { mutableStateOf(timeoutIndex.toFloat()) }
+                        val displayedTimeout = STREAM_AUTO_PLAY_TIMEOUT_VALUES[
+                            sliderValue.roundToInt().coerceIn(0, STREAM_AUTO_PLAY_TIMEOUT_VALUES.lastIndex)
+                        ]
+                        val displayedTimeoutLabel = when (displayedTimeout) {
+                            0 -> stringResource(Res.string.settings_playback_timeout_instant)
+                            Int.MAX_VALUE -> stringResource(Res.string.settings_playback_timeout_unlimited)
+                            else -> stringResource(Res.string.settings_playback_timeout_seconds, displayedTimeout)
+                        }
+                        Column(
+                            modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            ValueBox(text = displayedTimeoutLabel)
+                            SettingsModernSlider(
+                                value = sliderValue,
+                                onValueChange = {
+                                    val snapped = snapToStep(it, 1f)
+                                    sliderValue = snapped
+
+                                    if (snapped != lastHapticStep) {
+                                        lastHapticStep = snapped
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
+                                },
+                                onValueChangeFinished = {
+                                    val index = sliderValue.toInt().coerceIn(0, STREAM_AUTO_PLAY_TIMEOUT_VALUES.size - 1)
+                                    PlayerSettingsRepository.setStreamAutoPlayTimeoutSeconds(STREAM_AUTO_PLAY_TIMEOUT_VALUES[index])
+                                },
+                                valueRange = 0f..maxIndex,
+                                steps = calculateSteps(0f, maxIndex, 1f),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_playback_source_scope),
+                        description = stringResource(autoPlayPlayerSettings.streamAutoPlaySource.labelRes(pluginsEnabled)),
+                        options = StreamAutoPlaySource.entries
+                            .filter { pluginsEnabled || it != StreamAutoPlaySource.ENABLED_PLUGINS_ONLY }
+                            .map { source ->
+                                SettingsChoiceOption(source, stringResource(source.labelRes(pluginsEnabled)))
+                            },
+                        selectedValue = autoPlayPlayerSettings.streamAutoPlaySource,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setStreamAutoPlaySource,
+                    )
+                    if (autoPlayPlayerSettings.streamAutoPlaySource != StreamAutoPlaySource.ENABLED_PLUGINS_ONLY) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val selectedAddons = autoPlayPlayerSettings.streamAutoPlaySelectedAddons
+                            .intersect(autoPlayAddonNames.toSet())
+                        SettingsMultiSelectRow(
+                            title = stringResource(Res.string.settings_playback_allowed_addons),
+                            description = stringResource(Res.string.settings_playback_all_addons),
+                            options = autoPlayAddonNames.map { name -> SettingsChoiceOption(name, name) },
+                            selectedValues = selectedAddons,
+                            emptyLabel = stringResource(Res.string.settings_playback_all_addons),
+                            isTablet = isTablet,
+                            summaryForCount = { count ->
+                                stringResource(Res.string.settings_playback_selected_count, count)
+                            },
+                            onToggle = { name ->
+                                PlayerSettingsRepository.setStreamAutoPlaySelectedAddons(
+                                    if (name in selectedAddons) selectedAddons - name else selectedAddons + name,
+                                )
+                            },
+                        )
+                    }
+                    if (pluginsEnabled && autoPlayPlayerSettings.streamAutoPlaySource != StreamAutoPlaySource.INSTALLED_ADDONS_ONLY) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        val selectedPlugins = autoPlayPlayerSettings.streamAutoPlaySelectedPlugins
+                            .intersect(autoPlayPluginNames.toSet())
+                        SettingsMultiSelectRow(
+                            title = stringResource(Res.string.settings_playback_allowed_plugins),
+                            description = stringResource(Res.string.settings_playback_all_plugins),
+                            options = autoPlayPluginNames.map { name -> SettingsChoiceOption(name, name) },
+                            selectedValues = selectedPlugins,
+                            emptyLabel = stringResource(Res.string.settings_playback_all_plugins),
+                            isTablet = isTablet,
+                            summaryForCount = { count ->
+                                stringResource(Res.string.settings_playback_selected_count, count)
+                            },
+                            onToggle = { name ->
+                                PlayerSettingsRepository.setStreamAutoPlaySelectedPlugins(
+                                    if (name in selectedPlugins) selectedPlugins - name else selectedPlugins + name,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        if (part == 8) {
+            if (isIos) {
+                SettingsSection(
+                    title = stringResource(Res.string.settings_playback_ios_audio_output_section),
+                    isTablet = isTablet,
+                ) {
+                    SettingsGroup(isTablet = isTablet) {
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_ios_audio_output),
+                            description = autoPlayPlayerSettings.iosAudioOutputMode.label,
+                            options = IosAudioOutputMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.iosAudioOutputMode,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setIosAudioOutputMode,
+                        )
+                    }
+                }
+
+                SettingsSection(
+                    title = stringResource(Res.string.settings_playback_ios_video_output),
+                    isTablet = isTablet,
+                ) {
+                    SettingsGroup(isTablet = isTablet) {
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_ios_hardware_decoder),
+                            description = autoPlayPlayerSettings.iosHardwareDecoderMode.localizedLabel(),
+                            options = IosHardwareDecoderMode.entries.map { SettingsChoiceOption(it, it.localizedLabel()) },
+                            selectedValue = autoPlayPlayerSettings.iosHardwareDecoderMode,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setIosHardwareDecoderMode,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_ios_extended_dynamic_range),
+                            description = stringResource(Res.string.settings_playback_ios_extended_dynamic_range_desc),
+                            checked = autoPlayPlayerSettings.iosExtendedDynamicRangeEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setIosExtendedDynamicRangeEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_ios_display_color_hint),
+                            description = stringResource(Res.string.settings_playback_ios_display_color_hint_desc),
+                            checked = autoPlayPlayerSettings.iosTargetColorspaceHintEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setIosTargetColorspaceHintEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_ios_target_primaries),
+                            description = autoPlayPlayerSettings.iosTargetPrimaries.label,
+                            options = IosTargetPrimaries.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.iosTargetPrimaries,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setIosTargetPrimaries,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_ios_target_transfer),
+                            description = autoPlayPlayerSettings.iosTargetTransfer.label,
+                            options = IosTargetTransfer.entries.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = autoPlayPlayerSettings.iosTargetTransfer,
+                            isTablet = isTablet,
+                            onSelected = PlayerSettingsRepository::setIosTargetTransfer,
+                        )
+                    }
+                }
+            }
+        }
+        if (part == 9) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_playback_section_skip_segments),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_skip_intro_outro_recap),
+                        description = stringResource(Res.string.settings_playback_skip_intro_outro_recap_description),
+                        checked = autoPlayPlayerSettings.skipIntroEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setSkipIntroEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_skip_auto_accept),
+                        description = stringResource(
+                            autoPlayPlayerSettings.skipAutoAcceptMode.descriptionRes,
+                        ),
+                        options = SkipAutoAcceptMode.entries.map { mode ->
+                            SettingsChoiceOption(mode, stringResource(mode.labelRes))
+                        },
+                        selectedValue = autoPlayPlayerSettings.skipAutoAcceptMode,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("skip-auto-accept"),
+                        ),
+                        onSelected = PlayerSettingsRepository::setSkipAutoAcceptMode,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_skip_movie_credits_to_post_credits),
+                        description = stringResource(Res.string.settings_playback_skip_movie_credits_to_post_credits_description),
+                        checked = autoPlayPlayerSettings.skipMovieCreditsToPostCredits,
+                        enabled = autoPlayPlayerSettings.skipIntroEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("skip-movie-credits-post-credits"),
+                        ),
+                        onCheckedChange = PlayerSettingsRepository::setSkipMovieCreditsToPostCredits,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_anime_skip),
+                        description = stringResource(Res.string.settings_playback_anime_skip_description),
+                        checked = autoPlayPlayerSettings.animeSkipEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("anime-skip"),
+                        ),
+                        onCheckedChange = PlayerSettingsRepository::setAnimeSkipEnabled,
+                    )
+                    if (autoPlayPlayerSettings.animeSkipEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        var showAnimeSkipClientIdDialog by remember { mutableStateOf(false) }
+                        val notSetLabel = stringResource(Res.string.settings_playback_not_set)
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_playback_anime_skip_client_id),
+                            description = autoPlayPlayerSettings.animeSkipClientId.ifBlank { notSetLabel },
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(
+                                SettingsScrollAnchor.searchKey("anime-skip-client"),
+                            ),
+                            onClick = { showAnimeSkipClientIdDialog = true },
+                        )
+                        if (showAnimeSkipClientIdDialog) {
+                            AnimeSkipClientIdDialog(
+                                initialValue = autoPlayPlayerSettings.animeSkipClientId,
+                                onSave = {
+                                    PlayerSettingsRepository.setAnimeSkipClientId(it)
+                                    showAnimeSkipClientIdDialog = false
+                                },
+                                onDismiss = { showAnimeSkipClientIdDialog = false },
+                            )
+                        }
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_intro_submit_enabled),
+                        description = stringResource(Res.string.settings_playback_intro_submit_enabled_description),
+                        checked = autoPlayPlayerSettings.introSubmitEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("intro-submit"),
+                        ),
+                        onCheckedChange = PlayerSettingsRepository::setIntroSubmitEnabled,
+                    )
+                    if (autoPlayPlayerSettings.introSubmitEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        var showSkipDbApiKeyDialog by remember { mutableStateOf(false) }
+                        val notSetLabel = stringResource(Res.string.settings_playback_not_set)
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_playback_skipdb_api_key),
+                            description = autoPlayPlayerSettings.skipDbApiKey.ifBlank { notSetLabel },
+                            isTablet = isTablet,
+                            onClick = { showSkipDbApiKeyDialog = true },
+                        )
+                        if (showSkipDbApiKeyDialog) {
+                            SkipDbApiKeyDialog(
+                                initialValue = autoPlayPlayerSettings.skipDbApiKey,
+                                onSave = {
+                                    PlayerSettingsRepository.setSkipDbApiKey(it)
+                                    showSkipDbApiKeyDialog = false
+                                },
+                                onDismiss = { showSkipDbApiKeyDialog = false },
+                            )
+                        }
+
+                        SettingsGroupDivider(isTablet = isTablet)
+                        var showIntroDbApiKeyDialog by remember { mutableStateOf(false) }
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_playback_introdb_api_key),
+                            description = autoPlayPlayerSettings.introDbApiKey.ifBlank { notSetLabel },
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(
+                                SettingsScrollAnchor.searchKey("introdb-key"),
+                            ),
+                            onClick = { showIntroDbApiKeyDialog = true },
+                        )
+                        if (showIntroDbApiKeyDialog) {
+                            IntroDbApiKeyDialog(
+                                initialValue = autoPlayPlayerSettings.introDbApiKey,
+                                onSave = {
+                                    PlayerSettingsRepository.setIntroDbApiKey(it)
+                                    showIntroDbApiKeyDialog = false
+                                },
+                                onDismiss = { showIntroDbApiKeyDialog = false },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (part == 10) {
+            SettingsSection(
+                title = stringResource(Res.string.settings_playback_section_next_episode),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_auto_play_next_episode),
+                        description = stringResource(Res.string.settings_playback_auto_play_next_episode_description),
+                        checked = autoPlayPlayerSettings.streamAutoPlayNextEpisodeEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BingeMode),
+                        onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayNextEpisodeEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_prefer_binge_group),
+                        description = stringResource(Res.string.settings_playback_prefer_binge_group_description),
+                        checked = autoPlayPlayerSettings.streamAutoPlayPreferBingeGroup,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayPreferBingeGroup,
+                    )
+                    if (autoPlayPlayerSettings.streamAutoPlayPreferBingeGroup) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_reuse_binge_group),
+                            description = stringResource(Res.string.settings_playback_reuse_binge_group_description),
+                            checked = autoPlayPlayerSettings.streamAutoPlayReuseBingeGroup,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayReuseBingeGroup,
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsDropdownChoiceRow(
+                        title = stringResource(Res.string.settings_playback_threshold_mode),
+                        description = stringResource(autoPlayPlayerSettings.nextEpisodeThresholdMode.labelRes),
+                        options = com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.entries.map { mode ->
+                            SettingsChoiceOption(mode, stringResource(mode.labelRes))
+                        },
+                        selectedValue = autoPlayPlayerSettings.nextEpisodeThresholdMode,
+                        isTablet = isTablet,
+                        onSelected = PlayerSettingsRepository::setNextEpisodeThresholdMode,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    when (autoPlayPlayerSettings.nextEpisodeThresholdMode) {
+                        com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.PERCENTAGE -> {
+                            val thresholdPercent = autoPlayPlayerSettings.nextEpisodeThresholdPercent
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(Res.string.settings_playback_threshold_percentage),
+                                        style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    SettingsSubtext(
+                                        text = stringResource(Res.string.settings_playback_threshold_percentage_description),
+                                        isTablet = isTablet,
+                                    )
+                                }
+                                var sliderValue by remember(thresholdPercent) { mutableFloatStateOf(thresholdPercent) }
+                                var lastHapticPercent by remember(thresholdPercent) { mutableStateOf(thresholdPercent) }
+                                Column(
+                                    modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    ValueBox(
+                                        text = stringResource(
+                                            Res.string.settings_playback_threshold_percentage_value,
+                                            formatStep(sliderValue),
+                                        ),
+                                    )
+                                    SettingsModernSlider(
+                                        value = sliderValue,
+                                        onValueChange = {
+                                            val snapped = snapToStep(it, 0.5f)
+                                            sliderValue = snapped
+
+                                            if (snapped != lastHapticPercent) {
+                                                lastHapticPercent = snapped
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            }
+                                        },
+                                        onValueChangeFinished = {
+                                            PlayerSettingsRepository.setNextEpisodeThresholdPercent(sliderValue)
+                                        },
+                                        valueRange = 97f..100f,
+                                        steps = calculateSteps(97f, 100f, 0.5f),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
+                        com.nuvio.app.features.player.skip.NextEpisodeThresholdMode.MINUTES_BEFORE_END -> {
+                            val thresholdMinutes = autoPlayPlayerSettings.nextEpisodeThresholdMinutesBeforeEnd
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(Res.string.settings_playback_minutes_before_end),
+                                        style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    SettingsSubtext(
+                                        text = stringResource(Res.string.settings_playback_minutes_before_end_description),
+                                        isTablet = isTablet,
+                                    )
+                                }
+                                var sliderValue by remember(thresholdMinutes) { mutableFloatStateOf(thresholdMinutes) }
+                                var lastHapticMin by remember(thresholdMinutes) { mutableStateOf(thresholdMinutes) }
+                                Column(
+                                    modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    ValueBox(
+                                        text = stringResource(
+                                            Res.string.settings_playback_minutes_value,
+                                            formatStep(sliderValue),
+                                        ),
+                                    )
+                                    SettingsModernSlider(
+                                        value = sliderValue,
+                                        onValueChange = {
+                                            val snapped = snapToStep(it, 0.5f)
+                                            sliderValue = snapped
+
+                                            if (snapped != lastHapticMin) {
+                                                lastHapticMin = snapped
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            }
+                                        },
+                                        onValueChangeFinished = {
+                                            PlayerSettingsRepository.setNextEpisodeThresholdMinutesBeforeEnd(sliderValue)
+                                        },
+                                        valueRange = 0f..3.5f,
+                                        steps = calculateSteps(0f, 3.5f, 0.5f),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
                             }
                         }
                     }

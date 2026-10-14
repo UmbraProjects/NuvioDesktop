@@ -28,6 +28,14 @@ object TvdbImageService {
         val logo: String?,
     )
 
+    /**
+     * English, else language-neutral, else nothing. TVDB wins over every other logo source, so
+     * falling back to "any language" here put e.g. a Polish logo on a show TMDB has an English
+     * one for. Returning null lets metahub / addon / TMDB (language-aware) supply it instead.
+     */
+    private fun List<TvdbArtwork>.selectEnglishOrNeutralLogo(): String? =
+        (firstOrNull { it.language == "eng" } ?: firstOrNull { it.language.isNullOrBlank() })?.image
+
     private const val BASE_URL = "https://api4.thetvdb.com/v4"
     private const val ARTWORK_BACKGROUND_SERIES = 3   // series landscape backdrop
     private const val ARTWORK_BACKGROUND_MOVIE = 15  // movie landscape backdrop
@@ -188,8 +196,7 @@ object TvdbImageService {
         val backdrop = backdrops2.firstOrNull { it.language.isNullOrBlank() }?.image
             ?: backdrops2.firstOrNull()?.image
         val logoList = artworks.filter { !it.image.isNullOrBlank() && it.type == ARTWORK_CLEARLOGO }
-        val logo = logoList.firstOrNull { it.language == "eng" }?.image
-            ?: logoList.firstOrNull()?.image
+        val logo = logoList.selectEnglishOrNeutralLogo()
         val result = TvdbImages(backdrop = backdrop, logo = logo)
         imageCacheMutex.withLock { imageCache[cacheKey] = result }
         return result
@@ -216,8 +223,7 @@ object TvdbImageService {
         val backdrop = backdrops.firstOrNull { it.language.isNullOrBlank() }?.image
             ?: backdrops.firstOrNull()?.image
         val logoList = artworks.filter { it.type == ARTWORK_CLEARLOGO && !it.image.isNullOrBlank() }
-        val logo = logoList.firstOrNull { it.language == "eng" }?.image
-            ?: logoList.firstOrNull()?.image
+        val logo = logoList.selectEnglishOrNeutralLogo()
 
         val result = TvdbImages(backdrop = backdrop, logo = logo)
         imageCacheMutex.withLock { imageCache[cacheKey] = result }

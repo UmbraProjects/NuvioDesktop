@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.storage.PortableMode
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -1018,6 +1019,16 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.Advanced,
+            key = "metadata-cache",
+            title = resolve(Res.string.settings_advanced_metadata_cache),
+            description = resolve(Res.string.settings_advanced_metadata_cache_description),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
+        )
+        addRow(
+            page = SettingsPage.Advanced,
             key = "image-prewarm",
             title = resolve(Res.string.settings_advanced_image_prewarm),
             description = resolve(Res.string.settings_advanced_image_prewarm_description),
@@ -1108,6 +1119,18 @@ private fun settingsSearchEntries(
             category = accountCategory,
             icon = Icons.Rounded.CloudDownload,
         )
+        if (PortableMode.isSupported) {
+            addRow(
+                page = SettingsPage.Account,
+                key = "portable-mode",
+                title = resolve(Res.string.settings_portable_mode),
+                description = resolve(Res.string.settings_portable_mode_description),
+                pageLabel = accountPage,
+                section = resolve(Res.string.settings_updates_section),
+                category = accountCategory,
+                icon = Icons.Rounded.CloudDownload,
+            )
+        }
     }
     addRow(
         page = SettingsPage.ContinueWatching,
@@ -1472,6 +1495,22 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_nvidia_rtx_hdr),
                 anchor = SettingsScrollAnchor.RtxHdr,
             ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "nvidia-rtx-hdr-anime",
+                resolve(Res.string.settings_playback_nvidia_rtx_hdr_anime),
+                resolve(Res.string.settings_playback_nvidia_rtx_hdr_anime_desc),
+                anchor = SettingsScrollAnchor.RtxHdrAnime,
+                fallbackAnchor = SettingsScrollAnchor.RtxHdr,
+                fallbackTitle = resolve(Res.string.settings_playback_nvidia_rtx_hdr),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "nvidia-rtx-hdr-anime-shaders",
+                resolve(Res.string.settings_playback_nvidia_rtx_hdr_anime_shaders),
+                resolve(Res.string.settings_playback_nvidia_rtx_hdr_anime_shaders_desc),
+                anchor = SettingsScrollAnchor.RtxHdrAnimeShaders,
+                fallbackAnchor = SettingsScrollAnchor.RtxHdr,
+                fallbackTitle = resolve(Res.string.settings_playback_nvidia_rtx_hdr),
+            ) else null,
         ),
     )
     addPlaybackRows(
@@ -1794,6 +1833,7 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("hero-backdrop-crossfade", "Backdrop crossfade", "How long the hero backdrop takes to fade when moving between titles."),
         PlaybackSearchRow("home-tv-row-transition", "Row change", "Cut, cross-fade, or cross-fade with a nudge when TV Mode moves between rows."),
         PlaybackSearchRow("home-tv-full-backdrop", "Full backdrop", "Extend the TV Mode backdrop to the bottom of the screen and let the rows float over it."),
+        PlaybackSearchRow("home-tv-ambient-background", "Ambient background", "Tint the TV Mode screen with a blurred wash of the backdrop instead of black."),
         PlaybackSearchRow("home-tv-row-dots", "Row jump dots", "Click a dot beside the TV Mode row name to jump straight to that catalog."),
         PlaybackSearchRow("home-tv-row-dots-anchor", "Row jump dot position", "Put the TV Mode jump dots on the row name's line or over the backdrop."),
         PlaybackSearchRow("home-hero-sources", resolve(Res.string.settings_homescreen_section_hero_sources)),

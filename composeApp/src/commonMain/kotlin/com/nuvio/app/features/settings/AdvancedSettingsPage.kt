@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.details.LightweightMetaDiskCache
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.ui.ImageCacheSettings
 import com.nuvio.app.core.ui.ImageCacheSettingsRepository
@@ -26,6 +27,12 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_advanced_clear_cw_cache
 import nuvio.composeapp.generated.resources.settings_advanced_clear_cw_cache_done
 import nuvio.composeapp.generated.resources.settings_advanced_clear_cw_cache_subtitle
+import nuvio.composeapp.generated.resources.settings_advanced_metadata_cache
+import nuvio.composeapp.generated.resources.settings_advanced_metadata_cache_days
+import nuvio.composeapp.generated.resources.settings_advanced_metadata_cache_description
+import nuvio.composeapp.generated.resources.settings_advanced_metadata_cache_hours
+import nuvio.composeapp.generated.resources.settings_advanced_metadata_cache_off
+import nuvio.composeapp.generated.resources.settings_advanced_metadata_cache_one_day
 import nuvio.composeapp.generated.resources.settings_advanced_remember_last_profile
 import nuvio.composeapp.generated.resources.settings_advanced_remember_last_profile_description
 import nuvio.composeapp.generated.resources.settings_advanced_section_cache
@@ -170,6 +177,24 @@ private fun ImageCacheRows(isTablet: Boolean) {
         onSelected = ImageCacheSettingsRepository::setDiskCacheGb,
     )
 
+    SettingsGroupDivider(isTablet = isTablet)
+    val metadataCacheScope = rememberCoroutineScope()
+    SettingsDropdownChoiceRow(
+        title = stringResource(Res.string.settings_advanced_metadata_cache),
+        description = stringResource(Res.string.settings_advanced_metadata_cache_description),
+        options = ImageCacheSettings.MetadataCacheHoursChoices.map { hours ->
+            SettingsChoiceOption(hours, metadataCacheHoursLabel(hours))
+        },
+        selectedValue = settings.metadataCacheHours,
+        isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("metadata-cache")),
+        onSelected = { hours ->
+            ImageCacheSettingsRepository.setMetadataCacheHours(hours)
+            // Off means nothing outlives the session, so what is already on disk goes too.
+            if (hours == 0) metadataCacheScope.launch { LightweightMetaDiskCache.clear() }
+        },
+    )
+
     val prewarmDescription = buildString {
         append(stringResource(Res.string.settings_advanced_image_prewarm_description))
         val status = prewarmStatus
@@ -283,4 +308,12 @@ private fun prewarmReadyText(count: Int, running: Boolean): String = stringResou
 
 private fun prewarmKindDescription(description: String, status: String?): String =
     if (status == null) description else "$description $status"
+
+@Composable
+private fun metadataCacheHoursLabel(hours: Int): String = when {
+    hours <= 0 -> stringResource(Res.string.settings_advanced_metadata_cache_off)
+    hours == 24 -> stringResource(Res.string.settings_advanced_metadata_cache_one_day)
+    hours % 24 == 0 -> stringResource(Res.string.settings_advanced_metadata_cache_days, hours / 24)
+    else -> stringResource(Res.string.settings_advanced_metadata_cache_hours, hours)
+}
 

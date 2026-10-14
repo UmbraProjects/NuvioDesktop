@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +54,27 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.streams_score_rejected
 import nuvio.composeapp.generated.resources.streams_season_pack_indicator
 import org.jetbrains.compose.resources.stringResource
+
+internal enum class StreamCardStyle {
+    /** Dark card that holds up over any backdrop: the full-screen list and the player's lists. */
+    Solid,
+
+    /** Docked in the details hero over an already darkened, frosted backdrop: barely a card. */
+    Glass,
+}
+
+internal val LocalStreamCardStyle = staticCompositionLocalOf { StreamCardStyle.Solid }
+
+/**
+ * The glass surface levels, shared by the cards and everything around them in the docked picker
+ * (chips, sort, buttons) so the whole panel reads as one material: a faint lift at rest, brighter
+ * with a light edge when selected or focused.
+ */
+internal object StreamGlass {
+    val Rest = Color.White.copy(alpha = 0.045f)
+    val Raised = Color.White.copy(alpha = 0.13f)
+    val Edge = Color.White.copy(alpha = 0.7f)
+}
 
 @Composable
 internal fun StreamCard(
@@ -102,21 +124,36 @@ internal fun StreamCard(
     }
     val badgeImages = stream.badges.filter { it.imageURL.isNotBlank() }
     val hasBadges = badgeImages.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints.videoSize != null)
+    val glass = LocalStreamCardStyle.current == StreamCardStyle.Glass
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 68.dp)
-            .shadow(
-                elevation = 2.dp,
-                shape = cardShape,
-                ambientColor = Color.Black.copy(alpha = 0.04f),
-                spotColor = Color.Black.copy(alpha = 0.04f),
+            .then(
+                if (glass) {
+                    Modifier
+                } else {
+                    Modifier.shadow(
+                        elevation = 2.dp,
+                        shape = cardShape,
+                        ambientColor = Color.Black.copy(alpha = 0.04f),
+                        spotColor = Color.Black.copy(alpha = 0.04f),
+                    )
+                },
             )
             .clip(cardShape)
-            // Opaque-enough dark scrim so the light card text stays legible even when the card sits
-            // over a busy, blurred backdrop (the near-transparent white tint used previously washed
-            // out against bright artwork). The current-item highlight is layered on top of it.
-            .background(Color.Black.copy(alpha = 0.42f))
+            // Solid: an opaque-enough dark scrim so the light card text stays legible even when the
+            // card sits over a busy, blurred backdrop (a near-transparent white tint washed out
+            // against bright artwork). Glass only sits on a backdrop that is already frosted and
+            // dimmed, where that scrim turned the list into a stack of boxes: a faint lift instead,
+            // brighter on the focused row. The current-item highlight is layered on top either way.
+            .background(
+                when {
+                    !glass -> Color.Black.copy(alpha = 0.42f)
+                    focused -> StreamGlass.Raised
+                    else -> StreamGlass.Rest
+                },
+            )
             .then(
                 if (isCurrent) {
                     Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
@@ -136,7 +173,14 @@ internal fun StreamCard(
                 },
             )
             .then(
-                if (focused) {
+                if (focused && glass) {
+                    // The episode cards' focus treatment rather than the accent ring.
+                    Modifier.border(
+                        width = 1.5.dp,
+                        color = StreamGlass.Edge,
+                        shape = cardShape,
+                    )
+                } else if (focused) {
                     Modifier.border(
                         width = 2.dp,
                         color = MaterialTheme.colorScheme.primary,

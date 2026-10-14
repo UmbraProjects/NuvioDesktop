@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.addons.enabledAddons
@@ -240,6 +241,7 @@ data class HomeCatalogSettingsUiState(
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
     val tvRowTransition: HomeTvRowTransition = HomeTvRowTransition.Fade,
     val tvFullBackdropEnabled: Boolean = false,
+    val tvAmbientBackgroundEnabled: Boolean = false,
     val randomPlayEnabled: Boolean = false,
     val randomPlayIncludeCollections: Boolean = false,
     val randomPlayCategories: Set<RandomPlayCategory> = RandomPlayCategory.entries.toSet(),
@@ -303,6 +305,8 @@ data class HomeCatalogSettingsUiState(
             append(tvRowTransition)
             append('|')
             append(tvFullBackdropEnabled)
+            append('|')
+            append(tvAmbientBackgroundEnabled)
             append('|')
             append(randomPlayEnabled)
             append('|')
@@ -563,6 +567,7 @@ private data class StoredHomeCatalogSettingsPayload(
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
     val tvRowTransition: HomeTvRowTransition = HomeTvRowTransition.Fade,
     val tvFullBackdropEnabled: Boolean = false,
+    val tvAmbientBackgroundEnabled: Boolean = false,
     val randomPlayEnabled: Boolean = false,
     val randomPlayIncludeCollections: Boolean = false,
     val randomPlayCategories: Set<RandomPlayCategory> = RandomPlayCategory.entries.toSet(),
@@ -643,6 +648,7 @@ object HomeCatalogSettingsRepository {
     private var tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
     private var tvRowTransition = HomeTvRowTransition.Fade
     private var tvFullBackdropEnabled = false
+    private var tvAmbientBackgroundEnabled = false
     private var randomPlayEnabled = false
     private var randomPlayIncludeCollections = false
     private var randomPlayCategories = RandomPlayCategory.entries.toSet()
@@ -698,6 +704,7 @@ object HomeCatalogSettingsRepository {
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         tvRowTransition = HomeTvRowTransition.Fade
         tvFullBackdropEnabled = false
+        tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
         definitions = emptyList()
         collectionDefinitions = emptyList()
@@ -756,6 +763,7 @@ object HomeCatalogSettingsRepository {
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         tvRowTransition = HomeTvRowTransition.Fade
         tvFullBackdropEnabled = false
+        tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
         _uiState.value = HomeCatalogSettingsUiState()
     }
@@ -765,6 +773,7 @@ object HomeCatalogSettingsRepository {
     private var lastSyncedCatalogKeys: List<String>? = null
 
     fun syncCatalogs(addons: List<ManagedAddon>) {
+        PerfTelemetry.count("HomeCatalogSettingsRepository.syncCatalogs")
         ensureLoaded()
         definitions = buildHomeCatalogDefinitions(addons)
         collectionDefinitions = buildCollectionDefinitions(CollectionRepository.collections.value)
@@ -788,6 +797,7 @@ object HomeCatalogSettingsRepository {
     }
 
     fun syncCollections(collections: List<Collection>) {
+        PerfTelemetry.count("HomeCatalogSettingsRepository.syncCollections")
         ensureLoaded()
         collectionDefinitions = buildCollectionDefinitions(collections)
         normalizePreferences()
@@ -1367,6 +1377,19 @@ object HomeCatalogSettingsRepository {
     }
 
     /**
+     * Whether TV Mode paints the Adaptive Ambient wash (blurred backdrop + accent tint) behind the
+     * screen, so the shelf sits on a tinted picture instead of black. Stored regardless of the mode
+     * being on, same as [setTvFullBackdropEnabled].
+     */
+    fun setTvAmbientBackgroundEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (tvAmbientBackgroundEnabled == enabled) return
+        tvAmbientBackgroundEnabled = enabled
+        publish()
+        persist()
+    }
+
+    /**
      * Whether hovering a poster opens the preview card, stored per display mode rather than
      * globally: the preview suits Basic, where the page is otherwise static, and fights the
      * Adaptive hero, which is already reacting to the row under the pointer. TV Mode has no
@@ -1558,6 +1581,7 @@ object HomeCatalogSettingsRepository {
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         tvRowTransition = HomeTvRowTransition.Fade
         tvFullBackdropEnabled = false
+        tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
         preferences.clear()
         normalizePreferences()
@@ -1691,6 +1715,7 @@ object HomeCatalogSettingsRepository {
             tvRowDotsAnchor = parsedPayload.tvRowDotsAnchor
             tvRowTransition = parsedPayload.tvRowTransition
             tvFullBackdropEnabled = parsedPayload.tvFullBackdropEnabled
+            tvAmbientBackgroundEnabled = parsedPayload.tvAmbientBackgroundEnabled
             randomPlayEnabled = parsedPayload.randomPlayEnabled
             randomPlayIncludeCollections = parsedPayload.randomPlayIncludeCollections
             randomPlayCategories = parsedPayload.randomPlayCategories
@@ -1881,6 +1906,7 @@ object HomeCatalogSettingsRepository {
             tvRowDotsAnchor = tvRowDotsAnchor,
             tvRowTransition = tvRowTransition,
             tvFullBackdropEnabled = tvFullBackdropEnabled,
+            tvAmbientBackgroundEnabled = tvAmbientBackgroundEnabled,
             randomPlayEnabled = randomPlayEnabled,
             randomPlayIncludeCollections = randomPlayIncludeCollections,
             randomPlayCategories = randomPlayCategories,
@@ -1989,6 +2015,7 @@ object HomeCatalogSettingsRepository {
             catalogProviderTagEnabled = catalogProviderTagEnabled,
                     tvRowDotsEnabled = tvRowDotsEnabled,
                     tvFullBackdropEnabled = tvFullBackdropEnabled,
+                    tvAmbientBackgroundEnabled = tvAmbientBackgroundEnabled,
                     tvRowDotsAnchor = tvRowDotsAnchor,
                     tvRowTransition = tvRowTransition,
                     randomPlayEnabled = randomPlayEnabled,

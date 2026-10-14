@@ -1,6 +1,7 @@
 package com.nuvio.app.features.details
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.AddonManifest
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
@@ -86,6 +87,7 @@ object MetaDetailsRepository {
     }
 
     fun load(type: String, id: String) {
+        PerfTelemetry.count("MetaDetailsRepository.load")
         log.d { "load() called — type=$type id=$id" }
         val requestKey = "$type:$id"
 
@@ -458,6 +460,7 @@ object MetaDetailsRepository {
      * performs the full fetch with its episodes.
      */
     suspend fun fetchHeroSummary(type: String, id: String): MetaDetails? {
+        PerfTelemetry.count("MetaDetailsRepository.fetchHeroSummary")
         // A record already in hand beats a summary and costs nothing - but only a *complete* one.
         // Deliberately not peekAny(): that also answers from the lightweight artwork cache, whose
         // records can be a name, a backdrop and a logo with no cast at all. Handing one of those to
@@ -548,12 +551,25 @@ object MetaDetailsRepository {
             inFlightLightweightMeta.getOrPut(requestKey) {
                 scope.async {
                     try {
+                        // Kept across launches (LightweightMetaDiskCache): the artwork prewarm asks
+                        // for the same ~1,100 titles every launch. Fingerprinted at the start so
+                        // the result is filed under the settings it was actually fetched with.
+                        val diskContext = lightweightDiskContext()
+                        LightweightMetaDiskCache.get(requestKey, diskContext)?.let { restored ->
+                            cacheLightweightMeta(requestKey, restored)
+                            return@async restored
+                        }
                         runLightweightMetaFetch(
                             type = type,
                             id = id,
                             preferTmdbImages = preferTmdbImages,
                             requestKey = requestKey,
-                        )
+                        ).also {
+                            // Only what the fetch chose to cache - an incomplete answer it declined
+                            // to keep for the session must not be kept for a day either.
+                            val cached = lightweightMetaMutex.withLock { lightweightMetaCache[requestKey] }
+                            if (cached != null) LightweightMetaDiskCache.put(requestKey, diskContext, cached)
+                        }
                     } finally {
                         // A failed fetch must not leave its Deferred behind for later callers to
                         // await forever, so the removal has to survive cancellation too.
@@ -610,6 +626,9 @@ object MetaDetailsRepository {
                     // block of TMDB traffic left: 474 season requests across 69 shows in one
                     // browsing session, none of them redundant, none of them used.
                     includeEpisodes = false,
+                    // Every consumer of the lightweight cache reads artwork, text, rating and
+                    // runtime only - see TmdbMetadataService.EnrichmentDepth.Card.
+                    tmdbDepth = TmdbMetadataService.EnrichmentDepth.Card,
                     origin = "lightweight:$requestKey",
                 )
             }
@@ -647,7 +666,10 @@ object MetaDetailsRepository {
                 val addonBg = addonResult?.background
                 val addonLogo = addonResult?.logo
                 val addonHasTvdbBackdrop = addonBg?.contains("artworks.thetvdb.com") == true || addonBg?.contains("metahub.space") == true
-                val addonHasTvdbLogo = addonLogo?.contains("artworks.thetvdb.com") == true || addonLogo?.contains("metahub.space") == true
+                // metahub logos are fanart.tv's, picked with no regard to language (a Polish show
+                // got its Polish logo over TMDB's English one), so they don't count as TVDB here;
+                // they rank below TMDB in the merge further down.
+                val addonHasTvdbLogo = addonLogo?.contains("artworks.thetvdb.com") == true
 
                 if (addonHasTvdbBackdrop) {
                     // Addon (e.g. AIOMetadata) already ran the TVDB selection and embedded the
@@ -699,7 +721,11 @@ object MetaDetailsRepository {
         } else null
         val tmdbFallbackId = if (resolvedTmdbNumericId != null) "tmdb:$resolvedTmdbNumericId" else id
         val rawTmdbResult = if (needsTmdb && resolvedTmdbNumericId != null) {
-            tryFetchTmdbFallbackMeta(type = type, id = tmdbFallbackId)
+            tryFetchTmdbFallbackMeta(
+                type = type,
+                id = tmdbFallbackId,
+                depth = TmdbMetadataService.EnrichmentDepth.Card,
+            )
         } else null
         // resolvedTmdbNumericId can come from a bare-numeric addon id trusted without
         // verification (TmdbService.ensureTmdbId's "all digits" branch) — if that number
@@ -739,12 +765,16 @@ object MetaDetailsRepository {
 
         // Merge independently per field so TMDB fills in when TVDB has no backdrop/logo.
         // e.g. a series not yet on TVDB gets TVDB logo (if present) + TMDB backdrop.
-        // Priority order: TVDB -> Explicit Metahub -> Addon -> TMDB
+        // Priority order: TVDB -> Addon -> TMDB -> Metahub. Logos differ from backdrops: metahub
+        // (fanart.tv) has no language selection, while TVDB/TMDB are filtered to the user's
+        // language, English or neutral - so metahub only fills a logo nobody else had.
         val textSource = tmdbResult ?: tvdbResult  // TMDB has richer text metadata
+        val addonLanguageAwareLogo = addonResult?.logo?.takeUnless(::isMetahubUrl)
         val merged = when {
             addonResult != null -> addonResult.copy(
                 background = tvdbResult?.background ?: explicitMetahubBackground ?: addonResult.background ?: tmdbResult?.background,
-                logo = tvdbResult?.logo ?: explicitMetahubLogo ?: addonResult.logo ?: tmdbResult?.logo,
+                logo = tvdbResult?.logo ?: addonLanguageAwareLogo ?: tmdbResult?.logo
+                    ?: explicitMetahubLogo ?: addonResult.logo,
                 genres = addonResult.genres.ifEmpty { textSource?.genres ?: emptyList() },
                 description = addonResult.description ?: textSource?.description,
                 releaseInfo = addonResult.releaseInfo ?: textSource?.releaseInfo,
@@ -761,12 +791,39 @@ object MetaDetailsRepository {
                     // than answering with a nameless title.
                     name = img.name.takeIf { it.isNotBlank() } ?: tmdbResult?.name.orEmpty(),
                     background = tvdbResult?.background ?: explicitMetahubBackground ?: tmdbResult?.background,
-                    logo = tvdbResult?.logo ?: explicitMetahubLogo ?: tmdbResult?.logo
+                    logo = tvdbResult?.logo ?: tmdbResult?.logo ?: explicitMetahubLogo
                 )
             }
         }
         merged?.let { cacheLightweightMeta(requestKey, it) }
         return merged
+    }
+
+    /**
+     * What a lightweight result depends on besides the title: TMDB's settings, the hero image
+     * source, whether TVDB can answer, and which addons are enabled. A disk entry made under any
+     * other combination is a miss. Hashed - the addon URLs carry user configs and keys.
+     */
+    private fun lightweightDiskContext(): String {
+        val tmdb = TmdbSettingsRepository.snapshot()
+        val addons = AddonRepository.uiState.value.addons
+            .enabledAddons()
+            .mapNotNull { it.manifest?.transportUrl }
+            .sorted()
+        return listOf(
+            // Bump when the merge rules change so stale disk entries miss.
+            // 2: metahub logos rank below TMDB (language-blind fanart.tv logos).
+            LIGHTWEIGHT_MERGE_VERSION,
+            tmdb.enabled,
+            tmdb.hasApiKey,
+            tmdb.language,
+            tmdb.useArtwork,
+            tmdb.useBasicInfo,
+            tmdb.useDetails,
+            tmdb.heroImageSource.name,
+            TvdbSettingsRepository.snapshot().hasApiKey,
+            addons.joinToString(","),
+        ).joinToString("|").hashCode().toUInt().toString(16)
     }
 
     private suspend fun cacheLightweightMeta(requestKey: String, meta: MetaDetails) {
@@ -857,6 +914,7 @@ object MetaDetailsRepository {
         enrichTmdb: Boolean = true,
         trailerScope: TmdbMetadataService.TrailerScope = TmdbMetadataService.TrailerScope.AllSeasons,
         includeEpisodes: Boolean = true,
+        tmdbDepth: TmdbMetadataService.EnrichmentDepth = TmdbMetadataService.EnrichmentDepth.Full,
         /**
          * Which cache namespace asked for this — diagnostic only, plan §21.3.
          *
@@ -894,6 +952,7 @@ object MetaDetailsRepository {
                         settings = TmdbSettingsRepository.snapshot(),
                         trailerScope = trailerScope,
                         includeEpisodes = includeEpisodes,
+                        depth = tmdbDepth,
                     )
                 } ?: result
             } else {
@@ -957,7 +1016,11 @@ object MetaDetailsRepository {
             ?: itemId
     }
 
-    private suspend fun tryFetchTmdbFallbackMeta(type: String, id: String): MetaDetails? {
+    private suspend fun tryFetchTmdbFallbackMeta(
+        type: String,
+        id: String,
+        depth: TmdbMetadataService.EnrichmentDepth = TmdbMetadataService.EnrichmentDepth.Full,
+    ): MetaDetails? {
         // TmdbMetadataService only understands `tmdb:` ids. A native anime movie id
         // (`kitsu:`/`mal:`/`simkl:`, which is what SIMKL Continue Watching produces) can be
         // translated through the anime-list mapping, so a setup whose anime metadata comes from
@@ -972,6 +1035,7 @@ object MetaDetailsRepository {
                 type = type,
                 id = lookupId,
                 settings = TmdbSettingsRepository.snapshot(),
+                depth = depth,
             )
         } ?: return null
         // The caller asked about the native id and everything downstream is keyed on it; only the
@@ -1099,8 +1163,15 @@ object MetaDetailsRepository {
             }
         }
 
-        val resolvedLogo = (tvdbResult?.logo ?: explicitMetahubLogo ?: moreLikeThisEnrichedMeta.logo)
-            ?.takeIf { it.isNotBlank() }
+        // TMDB/addon (already merged into the enriched meta) before metahub, whose logos ignore
+        // language; see the lightweight path.
+        val enrichedLogo = moreLikeThisEnrichedMeta.logo?.takeIf { it.isNotBlank() }
+        val resolvedLogo = (
+            tvdbResult?.logo
+                ?: enrichedLogo?.takeUnless(::isMetahubUrl)
+                ?: explicitMetahubLogo
+                ?: enrichedLogo
+            )?.takeIf { it.isNotBlank() }
 
         // Every source above can come up empty for reasons unrelated to the title actually lacking
         // artwork: TMDB enrichment dropped by its 5s timeout or by the artwork toggle, or an addon
@@ -1128,7 +1199,7 @@ object MetaDetailsRepository {
         log.d {
             val source = when {
                 tvdbResult?.logo != null -> "tvdb"
-                explicitMetahubLogo != null -> "metahub"
+                resolvedLogo != null && resolvedLogo == explicitMetahubLogo -> "metahub"
                 resolvedLogo != null -> "addon/tmdb"
                 fallbackLogo != null -> "lightweight-fallback"
                 else -> "none"
@@ -1379,3 +1450,7 @@ object MetaDetailsRepository {
         return emptyList()
     }
 }
+
+private fun isMetahubUrl(url: String): Boolean = url.contains("metahub.space")
+
+private const val LIGHTWEIGHT_MERGE_VERSION = 2

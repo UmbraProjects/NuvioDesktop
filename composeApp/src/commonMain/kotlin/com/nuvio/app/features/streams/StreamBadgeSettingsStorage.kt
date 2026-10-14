@@ -15,6 +15,11 @@ internal expect object StreamBadgeSettingsStorage {
     fun saveStreamListSortOrder(order: String)
     fun loadStreamListCachedFirst(): Boolean?
     fun saveStreamListCachedFirst(enabled: Boolean)
+    fun loadStreamListTwoColumns(): Boolean?
+    fun saveStreamListTwoColumns(enabled: Boolean)
+    /** The user-resized modal picker, "widthFraction,heightFraction" of the window; null = default. */
+    fun loadStreamPickerModalSize(): String?
+    fun saveStreamPickerModalSize(size: String?)
     fun loadLegacyDebridStreamBadgeRules(): String?
     fun clearLegacyDebridStreamBadgeRules()
     fun exportToSyncPayload(): JsonObject

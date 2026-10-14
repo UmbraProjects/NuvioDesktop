@@ -134,6 +134,13 @@ data class PlayerSettingsUiState(
     val decoderPriority: Int = 1,
     val nvidiaRtxSuperResolutionEnabled: Boolean = false,
     val nvidiaRtxHdrEnabled: Boolean = false,
+    val nvidiaRtxHdrAnimeEnabled: Boolean = false,
+    /**
+     * True HDR also while Anime4K or a custom shader runs (never SVP: a CPU filter cannot feed the
+     * GPU video processor). Off by default; it was held back as likely to look poor, and is here
+     * because people asked to judge that for themselves.
+     */
+    val nvidiaRtxHdrAnimeShadersEnabled: Boolean = false,
     val mapDV7ToHevc: Boolean = false,
     val tunnelingEnabled: Boolean = false,
     val streamAutoPlayMode: StreamAutoPlayMode = StreamAutoPlayMode.MANUAL,
@@ -306,6 +313,8 @@ object PlayerSettingsRepository {
     private var decoderPriority = 1
     private var nvidiaRtxSuperResolutionEnabled = false
     private var nvidiaRtxHdrEnabled = false
+    private var nvidiaRtxHdrAnimeEnabled = false
+    private var nvidiaRtxHdrAnimeShadersEnabled = false
     private var mapDV7ToHevc = false
     private var tunnelingEnabled = false
     private var streamAutoPlayMode = StreamAutoPlayMode.MANUAL
@@ -449,6 +458,8 @@ object PlayerSettingsRepository {
         decoderPriority = 1
         nvidiaRtxSuperResolutionEnabled = false
         nvidiaRtxHdrEnabled = false
+        nvidiaRtxHdrAnimeEnabled = false
+        nvidiaRtxHdrAnimeShadersEnabled = false
         mapDV7ToHevc = false
         tunnelingEnabled = false
         streamAutoPlayMode = StreamAutoPlayMode.MANUAL
@@ -659,7 +670,8 @@ object PlayerSettingsRepository {
         decoderPriority = PlayerSettingsStorage.loadDecoderPriority() ?: 1
         nvidiaRtxSuperResolutionEnabled = PlayerSettingsStorage.loadNvidiaRtxSuperResolutionEnabled() ?: false
         nvidiaRtxHdrEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrEnabled() ?: false
-        nvidiaRtxHdrEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrEnabled() ?: false
+        nvidiaRtxHdrAnimeEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrAnimeEnabled() ?: false
+        nvidiaRtxHdrAnimeShadersEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrAnimeShadersEnabled() ?: false
         mapDV7ToHevc = PlayerSettingsStorage.loadMapDV7ToHevc() ?: false
         tunnelingEnabled = PlayerSettingsStorage.loadTunnelingEnabled() ?: false
         streamAutoPlayMode = PlayerSettingsStorage.loadStreamAutoPlayMode()
@@ -794,12 +806,16 @@ object PlayerSettingsRepository {
         desktopCustomShaderPaths = PlayerSettingsStorage.loadDesktopCustomShaderPaths().orEmpty()
         desktopCustomShaderSelectedPath = PlayerSettingsStorage.loadDesktopCustomShaderSelectedPath().orEmpty()
         val legacyCustomShadersEnabled = PlayerSettingsStorage.loadDesktopCustomShadersEnabled() ?: false
-        if (legacyCustomShadersEnabled &&
-            desktopCustomShaderPaths.isNotBlank() &&
-            desktopAnimeMode != DesktopAnimeMode.CustomShader
-        ) {
-            desktopAnimeMode = DesktopAnimeMode.CustomShader
-            PlayerSettingsStorage.saveDesktopAnimeMode(DesktopAnimeMode.CustomShader.name)
+        if (legacyCustomShadersEnabled) {
+            if (desktopCustomShaderPaths.isNotBlank() &&
+                desktopAnimeMode != DesktopAnimeMode.CustomShader
+            ) {
+                desktopAnimeMode = DesktopAnimeMode.CustomShader
+                PlayerSettingsStorage.saveDesktopAnimeMode(DesktopAnimeMode.CustomShader.name)
+            }
+            // One-shot: the old flag was never cleared, so this forced the mode back to
+            // CustomShader on every launch and undid any later choice of Off or a preset.
+            PlayerSettingsStorage.saveDesktopCustomShadersEnabled(false)
         }
         desktopAudioPassthroughEnabled = PlayerSettingsStorage.loadDesktopAudioPassthroughEnabled() ?: false
         desktopSeekThumbnailMode = PlayerSettingsStorage.loadDesktopSeekThumbnailMode()
@@ -1262,6 +1278,22 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveNvidiaRtxHdrEnabled(enabled)
     }
 
+    fun setNvidiaRtxHdrAnimeEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (nvidiaRtxHdrAnimeEnabled == enabled) return
+        nvidiaRtxHdrAnimeEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveNvidiaRtxHdrAnimeEnabled(enabled)
+    }
+
+    fun setNvidiaRtxHdrAnimeShadersEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (nvidiaRtxHdrAnimeShadersEnabled == enabled) return
+        nvidiaRtxHdrAnimeShadersEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveNvidiaRtxHdrAnimeShadersEnabled(enabled)
+    }
+
     fun setMapDV7ToHevc(enabled: Boolean) {
         ensureLoaded()
         if (mapDV7ToHevc == enabled) return
@@ -1718,6 +1750,8 @@ object PlayerSettingsRepository {
             decoderPriority = decoderPriority,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
+            nvidiaRtxHdrAnimeEnabled = nvidiaRtxHdrAnimeEnabled,
+            nvidiaRtxHdrAnimeShadersEnabled = nvidiaRtxHdrAnimeShadersEnabled,
             mapDV7ToHevc = mapDV7ToHevc,
             tunnelingEnabled = tunnelingEnabled,
             streamAutoPlayMode = streamAutoPlayMode,

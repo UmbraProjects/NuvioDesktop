@@ -1,6 +1,7 @@
 package com.nuvio.app.features.mdblist
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.trakt.parseTraktIsoDateTimeToEpochMs
@@ -60,6 +61,7 @@ internal object MdbListProgressRepository {
     }
 
     suspend fun refreshNow() {
+        PerfTelemetry.count("MdbListProgressRepository.refreshNow")
         val apiKey = MdbListSettingsRepository.trackingApiKey()
         if (apiKey == null) {
             _uiState.value = MdbListProgressUiState(hasLoaded = true)

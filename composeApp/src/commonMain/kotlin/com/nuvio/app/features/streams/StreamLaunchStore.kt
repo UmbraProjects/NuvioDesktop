@@ -31,25 +31,3 @@ data class StreamLaunch(
     val autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
     val sourceAffinity: PlayerSourceAffinity = PlayerSourceAffinity.Stream,
 )
-
-object StreamLaunchStore {
-    private var nextLaunchId = 1L
-    private val launches = mutableMapOf<Long, StreamLaunch>()
-
-    fun put(launch: StreamLaunch): Long {
-        val launchId = nextLaunchId++
-        launches[launchId] = launch
-        return launchId
-    }
-
-    fun get(launchId: Long): StreamLaunch? = launches[launchId]
-
-    fun remove(launchId: Long) {
-        launches.remove(launchId)
-    }
-
-    fun clear() {
-        nextLaunchId = 1L
-        launches.clear()
-    }
-}
