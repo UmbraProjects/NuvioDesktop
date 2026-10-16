@@ -3830,7 +3830,8 @@ private:
                 setMpvOptionStringLocked("d3d11-adapter", "NVIDIA");
             }
 
-            // NVIDIA RTX Video True HDR (opt-in, requires RTX GPU + Windows HDR enabled).
+            // NVIDIA RTX Video True HDR (opt-in, requires RTX GPU + Windows HDR enabled; the
+            // filter itself is only installed when FILE_LOADED finds the display in HDR).
             // When enabled, d3d11vpp (the NVIDIA video processor) converts SDR → HDR using the
             // driver's AI-based tone mapping. This requires mpv master ≥ Feb 19 2026 which:
             //   (1) automatically sets IMGFMT_X2BGR10 output on the VP (10-bit BT.2020+PQ RGB),
@@ -4774,7 +4775,8 @@ private:
 
                 // Re-read per file rather than once per session: the user can flip the Windows HDR
                 // toggle (or drag the app to another display) between titles.
-                sendPlayerEvent("displayHdr", isDisplayHdrEnabled(containerHwnd) ? 1.0 : 0.0);
+                const bool displayHdr = isDisplayHdrEnabled(containerHwnd);
+                sendPlayerEvent("displayHdr", displayHdr ? 1.0 : 0.0);
 
                 int64_t videoWidth = int64Property("video-params/w", 0);
                 int64_t videoHeight = int64Property("video-params/h", 0);
@@ -4812,7 +4814,10 @@ private:
                     // HDR remains on gpu-next's normal colour-managed path.
                     const bool vsrActive = initialRtxSuperResolutionEnabled &&
                         !resolvedHdr && vsrScale > 1.01;
-                    const bool trueHdrActive = initialRtxHdrEnabled && !resolvedHdr &&
+                    // True HDR outputs BT.2020/PQ; on an SDR desktop that signal has nowhere to
+                    // go and the picture comes out with broken colours. Must match
+                    // shouldEnableDesktopRtxTrueHdr in Kotlin, or its refresh rebuilds vf.
+                    const bool trueHdrActive = initialRtxHdrEnabled && displayHdr && !resolvedHdr &&
                         (!initialAnimeContent || initialAnimeTrueHdr);
                     std::string initialRtxFilters;
                     if (vsrActive || trueHdrActive) {

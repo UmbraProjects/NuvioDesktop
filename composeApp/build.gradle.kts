@@ -1,5 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.api.DefaultTask
+import java.util.concurrent.TimeUnit
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
@@ -1342,6 +1343,162 @@ fun trimOnnxRuntimeJar(appDir: File, logger: org.gradle.api.logging.Logger) {
     )
 }
 
+// Opts Nuvio.exe into the Windows Segment Heap (Windows 10 2004+; older builds ignore the element).
+// Every malloc in the process — the JVM's own, Skia's decoded artwork, libmpv/ffmpeg — lands in the
+// process heap, and on the default NT heap a 2026-10-15 dump on Home showed 149 MB of its 436 MB
+// committed segment sitting in free blocks (34% external fragmentation) that it never decommits.
+// The launcher's jpackage manifest (DPI awareness, supportedOS) is kept; only <heapType> is added.
+// Perf-only, so a missing SDK tool warns instead of failing the build.
+fun enableSegmentHeap(exe: File, logger: org.gradle.api.logging.Logger) {
+    val mt = File("C:/Program Files (x86)/Windows Kits/10/bin").listFiles()
+        ?.filter { it.isDirectory && it.name.startsWith("10.") }
+        ?.sortedByDescending { it.name }
+        ?.map { it.resolve("x64/mt.exe") }
+        ?.firstOrNull(File::isFile)
+    if (mt == null || !exe.isFile) {
+        logger.warn("Segment Heap not enabled: ${if (mt == null) "mt.exe (Windows SDK) not found" else "$exe missing"}")
+        return
+    }
+    fun run(vararg args: String) {
+        val process = ProcessBuilder(mt.absolutePath, "-nologo", *args).redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText()
+        check(process.waitFor() == 0) { "mt.exe ${args.joinToString(" ")} failed: $output" }
+    }
+    val manifest = File(exe.parentFile, "${exe.name}.manifest.tmp")
+    try {
+        run("-inputresource:${exe.absolutePath};#1", "-out:${manifest.absolutePath}")
+        val original = manifest.readText()
+        if ("SegmentHeap" in original) return
+        val closing = "</asmv3:windowsSettings>"
+        if (closing !in original) {
+            logger.warn("Segment Heap not enabled: launcher manifest has no $closing to extend")
+            return
+        }
+        manifest.writeText(
+            original.replace(
+                closing,
+                "<heapType xmlns=\"http://schemas.microsoft.com/SMI/2020/WindowsSettings\">SegmentHeap</heapType>$closing",
+            ),
+        )
+        // jpackage leaves the launcher read-only, which UpdateResource reports as "Access is denied".
+        val wasReadOnly = !exe.canWrite()
+        exe.setWritable(true)
+        try {
+            run("-manifest", manifest.absolutePath, "-outputresource:${exe.absolutePath};#1")
+        } finally {
+            if (wasReadOnly) exe.setReadOnly()
+        }
+        logger.lifecycle("Enabled Segment Heap in ${exe.name}")
+    } finally {
+        manifest.delete()
+    }
+}
+
+// Gives the bundled runtime the default CDS archive (bin/server/classes.jsa) a stock JDK ships
+// with and jlink leaves out. Without it every launch parses and verifies the ~1,300 JDK classes
+// the JVM needs before main() from lib/modules; with it they are mapped in from the archive. The
+// runtime keeps no java.exe (jpackage strips native commands), so the build JDK's launcher is
+// copied in for the dump and removed again — valid only because the runtime's jvm.dll is that
+// JDK's byte for byte, which is checked first. Startup-only, so any failure warns and skips.
+fun generateBaseCdsArchive(runtimeDir: File, logger: org.gradle.api.logging.Logger) {
+    val jdk = File(System.getProperty("java.home"))
+    val runtimeJvm = runtimeDir.resolve("bin/server/jvm.dll")
+    val jdkJvm = jdk.resolve("bin/server/jvm.dll")
+    val jdkJava = jdk.resolve("bin/java.exe")
+    if (!runtimeJvm.isFile || !jdkJvm.isFile || !jdkJava.isFile ||
+        !runtimeJvm.readBytes().contentEquals(jdkJvm.readBytes())
+    ) {
+        logger.warn("Base CDS archive not generated: the runtime's jvm.dll is not the build JDK's ($jdk)")
+        return
+    }
+    val java = runtimeDir.resolve("bin/java.exe")
+    val archive = runtimeDir.resolve("bin/server/classes.jsa")
+    try {
+        jdkJava.copyTo(java, overwrite = true)
+        val process = ProcessBuilder(java.absolutePath, "-Xshare:dump").redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText()
+        if (process.waitFor() != 0 || !archive.isFile) {
+            logger.warn("Base CDS archive not generated: java -Xshare:dump failed:\n$output")
+            archive.delete()
+            return
+        }
+        logger.lifecycle("Generated base CDS archive ${archive.name} (${archive.length() / 1024 / 1024} MB)")
+    } finally {
+        java.delete()
+    }
+}
+
+// Ships startup-classes.lst beside the jars, keyed to this image, so StartupClassPreloader replays
+// it on the first launch after an update instead of running its JFR learning pass (no preload plus
+// a recording: the slowest, jankiest launch a user saw). The runtime accepts it without a key
+// check — sitting beside these jars is what ties it to this build — so the header is informational.
+fun bundleStartupClassList(appDir: File, source: File, logger: org.gradle.api.logging.Logger) {
+    syncLearnedStartupClassList(source, logger)
+    if (!source.isFile) {
+        logger.warn("Startup class list not bundled: $source missing")
+        return
+    }
+    val body = source.readText()
+    appDir.resolve("startup-classes.lst").writeText("# nuvio-startup-classes bundled\n$body")
+    logger.lifecycle("Bundled startup class list (${body.lines().count { it.isNotBlank() }} lines)")
+}
+
+// Keeps the shipped list fresh without a manual step: when this machine has learned a list newer
+// than composeApp/startup-classes.lst (the app relearns on its own once the bundled list goes
+// stale), its body replaces the repo copy before bundling, ready to commit with the release.
+fun syncLearnedStartupClassList(target: File, logger: org.gradle.api.logging.Logger) {
+    val learned = File(System.getenv("LOCALAPPDATA").orEmpty(), "NuvioHTPC/startup-classes.lst")
+    if (!learned.isFile || (target.isFile && learned.lastModified() <= target.lastModified())) return
+    val lines = learned.readLines()
+    if (lines.firstOrNull()?.startsWith("# nuvio-startup-classes ") != true || lines.size < 1_000) return
+    target.writeText(lines.drop(1).joinToString("\n", postfix = "\n"))
+    logger.lifecycle("Updated ${target.name} from this machine's learned list ($learned, ${lines.size - 1} lines)")
+}
+
+// On by default; -Pnuvio.trainClassArchive=false skips it for a quick iteration loop (the first
+// launch of that build then trains instead, behind its "Preparing Nuvio…" window).
+val trainClassArchive = providers.gradleProperty("nuvio.trainClassArchive").orNull?.toBooleanStrictOrNull() ?: true
+
+// Builds the dev image's app class archive now, so its first launch is already a fast one rather
+// than the training launch (AppClassArchiveTraining). Runs the packaged app with
+// --build-class-archive: no window and none of the app's startup, it loads the startup class list
+// and exits, which is when the JVM writes the archive. Startup-only, so a failure warns.
+fun trainClassArchive(imageDir: File, logFile: File, logger: org.gradle.api.logging.Logger) {
+    val exe = imageDir.resolve("Nuvio.exe")
+    val archive = imageDir.resolve("app/nuvio-app.jsa")
+    if (!exe.isFile) return
+    archive.delete()
+    logFile.parentFile.mkdirs()
+    val startedAt = System.currentTimeMillis()
+    val process = ProcessBuilder(exe.absolutePath, "--build-class-archive")
+        .directory(imageDir)
+        .redirectErrorStream(true)
+        .redirectOutput(logFile)
+        .start()
+    if (!process.waitFor(3, TimeUnit.MINUTES)) {
+        process.descendants().forEach { it.destroyForcibly() }
+        process.destroyForcibly()
+        logger.warn("Class archive training timed out; the first launch will train instead. See $logFile")
+        return
+    }
+    // The launcher may hand off to a child JVM; the archive is written while that one exits.
+    val exePath = exe.canonicalPath
+    val deadline = System.currentTimeMillis() + 60_000
+    while (System.currentTimeMillis() < deadline &&
+        ProcessHandle.allProcesses().anyMatch { handle ->
+            handle.info().command().map { it.equals(exePath, ignoreCase = true) }.orElse(false)
+        }
+    ) {
+        Thread.sleep(200)
+    }
+    val seconds = (System.currentTimeMillis() - startedAt) / 1000.0
+    if (archive.isFile) {
+        logger.lifecycle("Trained app class archive ${archive.name} (${archive.length() / 1024 / 1024} MB) in ${"%.1f".format(seconds)}s")
+    } else {
+        logger.warn("Class archive training wrote no archive (exit ${process.exitValue()}); the first launch will train instead. See $logFile")
+    }
+}
+
 val repoRootDir = rootProject.layout.projectDirectory.asFile
 
 mapOf(
@@ -1350,6 +1507,7 @@ mapOf(
 ).forEach { (taskName, imageFlavor) ->
     tasks.matching { it.name == taskName }.configureEach {
         notCompatibleWithConfigurationCache("Rewrites the packaged material-icons-extended and onnxruntime jars in the app image.")
+        inputs.file(layout.projectDirectory.file("startup-classes.lst")).optional()
         doLast {
             val binariesDir = layout.buildDirectory.dir("compose/binaries/$imageFlavor/app").get().asFile
             val appDir = listOf("Nuvio/app", "Nuvio.app/Contents/app", "nuvio/lib/app")
@@ -1358,6 +1516,12 @@ mapOf(
             check(appDir != null) { "No packaged app directory found under $binariesDir" }
             trimMaterialIconsExtendedJar(appDir, logger)
             trimOnnxRuntimeJar(appDir, logger)
+            // After the jar trims above: the key covers jar sizes, which they change.
+            bundleStartupClassList(appDir, layout.projectDirectory.file("startup-classes.lst").asFile, logger)
+            if (isWindowsHost) {
+                enableSegmentHeap(appDir.parentFile.resolve("Nuvio.exe"), logger)
+                generateBaseCdsArchive(appDir.parentFile.resolve("runtime"), logger)
+            }
             writeAppImageBuildInfo(
                 appDir = appDir,
                 versionName = desktopReleaseVersionName,
@@ -1366,6 +1530,12 @@ mapOf(
                 repoRoot = repoRootDir,
                 logger = logger,
             )
+            // Last: the archive is validated against the exact jars, so nothing may change them
+            // after it is written. Dev images only — a release zip must not carry a 100 MB archive
+            // tied to this machine's files; installs train their own on first launch.
+            if (isWindowsHost && imageFlavor == "main" && trainClassArchive) {
+                trainClassArchive(appDir.parentFile, layout.buildDirectory.file("tmp/class-archive-training.log").get().asFile, logger)
+            }
         }
     }
 }
@@ -1499,6 +1669,21 @@ compose.desktop {
         jvmArgs += listOfNotNull(
             "-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua",
             "-Dskiko.renderApi=$skikoRenderApi",
+            // Java2D's own Direct3D 9 pipeline. Compose draws through Skiko (D3D12/OpenGL) and mpv
+            // through D3D11, so Java2D only paints the tray-menu dialog and the empty SwingPanel
+            // hosts — not worth a third GPU device (and its driver memory) in the process. GDI
+            // draws those few Swing pieces instead.
+            "-Dsun.java2d.d3d=false",
+            // App class-data sharing (JDK 19+). The JVM maps Nuvio's and its libraries' classes
+            // pre-parsed and pre-verified from this archive instead of loading them out of the jars,
+            // which was most of startup. Missing or stale (an update, a new JDK), the launch runs
+            // normally and the JVM writes a fresh one at exit. It sits on the base archive that
+            // generateBaseCdsArchive adds to the runtime. Never shipped: it is built on each machine.
+            if (isWindowsHost) "-XX:+AutoCreateSharedArchive" else null,
+            if (isWindowsHost) "-XX:SharedArchiveFile=\$APPDIR/nuvio-app.jsa" else null,
+            // Lets AppClassArchive ask the JDK whether this launch is building the archive
+            // (jdk.internal.misc.CDS.isDumpingArchive), which decides AppClassArchiveTraining.
+            if (isWindowsHost) "--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED" else null,
             "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",

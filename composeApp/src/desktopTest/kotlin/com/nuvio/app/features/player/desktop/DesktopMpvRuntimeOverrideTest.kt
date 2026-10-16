@@ -207,29 +207,47 @@ class DesktopMpvRuntimeOverrideTest {
     fun rtxTrueHdrOnAnimeNeedsOptInAndNoAnimeLayer() {
         assertTrue(
             shouldEnableDesktopRtxTrueHdr(
-                enabled = true, isHdr = false, isEffectivelyAnime = false,
+                enabled = true, isHdr = false, displayHdr = true, isEffectivelyAnime = false,
                 animeOptIn = false, animeLayerActive = false,
             ),
         )
         assertFalse(
             shouldEnableDesktopRtxTrueHdr(
-                enabled = true, isHdr = false, isEffectivelyAnime = true,
+                enabled = true, isHdr = false, displayHdr = true, isEffectivelyAnime = true,
                 animeOptIn = false, animeLayerActive = false,
             ),
             "Detected anime stays off True HDR without the opt-in",
         )
         assertTrue(
             shouldEnableDesktopRtxTrueHdr(
-                enabled = true, isHdr = false, isEffectivelyAnime = true,
+                enabled = true, isHdr = false, displayHdr = true, isEffectivelyAnime = true,
                 animeOptIn = true, animeLayerActive = false,
             ),
         )
         assertFalse(
             shouldEnableDesktopRtxTrueHdr(
-                enabled = true, isHdr = false, isEffectivelyAnime = true,
+                enabled = true, isHdr = false, displayHdr = true, isEffectivelyAnime = true,
                 animeOptIn = true, animeLayerActive = true,
             ),
             "The opt-in never stacks True HDR on SVP",
+        )
+    }
+
+    @Test
+    fun rtxTrueHdrNeedsWindowsHdrOnTheDisplay() {
+        assertFalse(
+            shouldEnableDesktopRtxTrueHdr(
+                enabled = true, isHdr = false, displayHdr = false, isEffectivelyAnime = false,
+                animeOptIn = false, animeLayerActive = false,
+            ),
+            "An SDR desktop has nowhere to send True HDR's PQ output",
+        )
+        assertFalse(
+            shouldEnableDesktopRtxTrueHdr(
+                enabled = true, isHdr = false, displayHdr = null, isEffectivelyAnime = false,
+                animeOptIn = false, animeLayerActive = false,
+            ),
+            "An unreported display state counts as SDR",
         )
     }
 }

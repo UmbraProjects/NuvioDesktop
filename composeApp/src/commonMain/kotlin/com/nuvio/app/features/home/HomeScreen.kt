@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -447,7 +448,13 @@ fun HomeScreen(
             LibraryTitleFactsRepository.ensureFor(libraryUiState.sections.flatMap { it.items })
         }
     }
-    val libraryWatchedByTitle = remember(watchedUiState.items) { buildWatchedByTitle(watchedUiState.items) }
+    // Off the UI thread: it groups the whole watched history (13k+ items is ordinary), was built on
+    // every Home composition whatever the mode, and showed up in the launch stall samples. Only
+    // Library mode reads it; until the first pass lands it is empty, as it is with no history.
+    val watchedItemsForIndex = watchedUiState.items
+    val libraryWatchedByTitle by produceState(emptyMap<String, List<WatchedItem>>(), watchedItemsForIndex) {
+        value = withContext(Dispatchers.Default) { buildWatchedByTitle(watchedItemsForIndex) }
+    }
     val libraryInProgress = remember(libraryProgressState.entries) { buildInProgressTitles(libraryProgressState.entries) }
     val filteredLibrarySections = remember(
         libraryUiState.sections,
@@ -1245,49 +1252,74 @@ fun HomeScreen(
         )
     }
 
-    val allNextUpSeedCandidates = remember(
+    // Off the UI thread: seeding walks the whole watched history (13k+ items is ordinary) and
+    // reruns on every progress or history change; at launch it sat in Home's first composition in
+    // the stall samples. Null until the first pass lands, so the launch overlay can wait for it
+    // (see hasLocalContinueWatchingRow) instead of Next Up popping into a row already on screen;
+    // afterwards a rerun keeps showing the previous seeds until the new ones are ready.
+    val nextUpSeedCandidatesOrNull by produceState<List<CompletedSeriesCandidate>?>(
+        null,
         watchProgressUiState.entries,
         watchedUiState.items,
+        watchedUiState.sourceHistoryKeys,
         isTraktProgressActive,
         continueWatchingPreferences.upNextFromFurthestEpisode,
         continueWatchingPreferences.seedNextUpFromNuvioSync,
         continueWatchingRemoteSourceActive,
+        continueWatchingSource,
     ) {
-        val filteredEntries = if (isTraktProgressActive) {
-            watchProgressUiState.entries.filter { !WatchProgressRepository.isDroppedShow(it.parentMetaId) }
-        } else {
-            watchProgressUiState.entries
+        // Read on the UI thread, where the keys were, then handed to the background as plain values.
+        val progressEntries = watchProgressUiState.entries
+        val watchedState = watchedUiState
+        val traktProgressActive = isTraktProgressActive
+        val remoteSourceActive = continueWatchingRemoteSourceActive
+        val source = continueWatchingSource
+        val seedFromNuvioSync = continueWatchingPreferences.seedNextUpFromNuvioSync
+        val fromFurthestEpisode = continueWatchingPreferences.upNextFromFurthestEpisode
+        value = withContext(Dispatchers.Default) {
+            val filteredEntries = if (traktProgressActive) {
+                progressEntries.filter { !WatchProgressRepository.isDroppedShow(it.parentMetaId) }
+            } else {
+                progressEntries
+            }
+            // The watched store is its own subsystem, not scoped to the Continue Watching source, so
+            // seeding Up Next from all of it while a remote source is selected mixes that source's rows
+            // with the whole local history — opt-in. The source's own imported history always seeds:
+            // discarding it too left MDBList, which supplies only paused sessions, with no next-up rows.
+            val watchedSeedItems = when {
+                !remoteSourceActive -> watchedState.items
+                seedFromNuvioSync -> watchedState.items
+                else -> com.nuvio.app.features.watched.sourceProviderWatchedItems(
+                    items = watchedState.items,
+                    providerStorageId = source.providerId?.storageId,
+                    sourceHistoryProvider = watchedState.sourceHistoryProvider,
+                    sourceHistoryKeys = watchedState.sourceHistoryKeys,
+                )
+            }
+            val filteredWatchedItems = if (traktProgressActive) {
+                watchedSeedItems.filter { !WatchProgressRepository.isDroppedShow(it.id) }
+            } else {
+                watchedSeedItems
+            }
+            com.nuvio.app.features.watchprogress.NextUpDiagnostics.logSourceGate(
+                continueWatchingSource = source.name,
+                remoteSourceActive = remoteSourceActive,
+                seedFromNuvioSyncEnabled = seedFromNuvioSync,
+                progressEntryCount = filteredEntries.size,
+                watchedItemCount = watchedState.items.size,
+                watchedSeedCount = filteredWatchedItems.size,
+            )
+            buildHomeNextUpSeedCandidates(
+                progressEntries = filteredEntries,
+                watchedItems = filteredWatchedItems,
+                isTraktProgressActive = traktProgressActive,
+                preferFurthestEpisode = fromFurthestEpisode,
+                nowEpochMs = WatchProgressClock.nowEpochMs(),
+            )
         }
-        // The watched store is its own subsystem, not scoped to the Continue Watching source, so
-        // seeding Up Next from it while a remote source is selected mixes that source's rows with
-        // the whole local history. Opt-in, because for a source that supplies no completed seeds of
-        // its own it is the difference between a next-up row and none.
-        val watchedSeedItems = when {
-            !continueWatchingRemoteSourceActive -> watchedUiState.items
-            continueWatchingPreferences.seedNextUpFromNuvioSync -> watchedUiState.items
-            else -> emptyList()
-        }
-        val filteredWatchedItems = if (isTraktProgressActive) {
-            watchedSeedItems.filter { !WatchProgressRepository.isDroppedShow(it.id) }
-        } else {
-            watchedSeedItems
-        }
-        com.nuvio.app.features.watchprogress.NextUpDiagnostics.logSourceGate(
-            continueWatchingSource = continueWatchingSource.name,
-            remoteSourceActive = continueWatchingRemoteSourceActive,
-            seedFromNuvioSyncEnabled = continueWatchingPreferences.seedNextUpFromNuvioSync,
-            progressEntryCount = filteredEntries.size,
-            watchedItemCount = watchedUiState.items.size,
-            watchedSeedCount = filteredWatchedItems.size,
-        )
-        buildHomeNextUpSeedCandidates(
-            progressEntries = filteredEntries,
-            watchedItems = filteredWatchedItems,
-            isTraktProgressActive = isTraktProgressActive,
-            preferFurthestEpisode = continueWatchingPreferences.upNextFromFurthestEpisode,
-            nowEpochMs = WatchProgressClock.nowEpochMs(),
-        )
     }
+    val allNextUpSeedCandidates = nextUpSeedCandidatesOrNull.orEmpty()
+    val nextUpSeedsReady = nextUpSeedCandidatesOrNull != null
 
     // Trakt seeds come from /sync/watched/shows, which says nothing about the next episode, so
     // the window reads its air date from the Trakt calendar. Loaded only while the window is on:
@@ -1371,20 +1403,20 @@ fun HomeScreen(
         }
     }
 
-    val latestCompletedAtBySeries = remember(allNextUpSeedCandidates) {
+    val latestCompletedSeedBySeries = remember(allNextUpSeedCandidates) {
         allNextUpSeedCandidates
             .groupBy { candidate -> candidate.content.id }
-            .mapValues { (_, candidates) -> candidates.maxOfOrNull { candidate -> candidate.markedAtEpochMs } ?: Long.MIN_VALUE }
+            .mapValues { (_, candidates) -> candidates.maxBy { candidate -> candidate.markedAtEpochMs } }
     }
 
-    val nextUpSuppressedSeriesIds = remember(visibleContinueWatchingEntries, latestCompletedAtBySeries) {
+    val nextUpSuppressedSeriesIds = remember(visibleContinueWatchingEntries, latestCompletedSeedBySeries) {
         visibleContinueWatchingEntries
             .asSequence()
             .filter { entry -> entry.parentMetaType.isSeriesTypeForContinueWatching() }
             .filter { entry ->
                 shouldTreatAsActiveInProgressForNextUpSuppression(
                     progress = entry,
-                    latestCompletedAt = latestCompletedAtBySeries[entry.parentMetaId],
+                    latestCompletedSeed = latestCompletedSeedBySeries[entry.parentMetaId],
                 )
             }
             .map { entry -> entry.parentMetaId }
@@ -1899,8 +1931,15 @@ fun HomeScreen(
     var basicHeroActiveItem by remember { mutableStateOf<MetaPreview?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
 
-    LaunchedEffect(effectiveSections.firstOrNull()?.key, onFirstCatalogRendered) {
-        if (firstCatalogReported || effectiveSections.isEmpty()) return@LaunchedEffect
+    // Home is ready to show once it has any row to show. Continue Watching, Next Up and Upcoming
+    // come from the local watch history (and its enrichment cache) well before the first catalog
+    // request returns, so a launch with history no longer waits on the network to lift the overlay.
+    // Waits for the Next Up seeds too (computed off the UI thread), so the overlay does not lift on
+    // in-progress cards alone and have Next Up arrive into the row a moment later.
+    val hasLocalContinueWatchingRow =
+        continueWatchingPreferences.isVisible && nextUpSeedsReady && continueWatchingItems.isNotEmpty()
+    LaunchedEffect(effectiveSections.firstOrNull()?.key, hasLocalContinueWatchingRow, onFirstCatalogRendered) {
+        if (firstCatalogReported || (effectiveSections.isEmpty() && !hasLocalContinueWatchingRow)) return@LaunchedEffect
         firstCatalogReported = true
         onFirstCatalogRendered?.invoke()
     }
@@ -5145,13 +5184,27 @@ private fun shouldUseAsTraktNextUpSeed(
     return ageMs in 0..OPTIMISTIC_NEXT_UP_SEED_WINDOW_MS
 }
 
-private fun shouldTreatAsActiveInProgressForNextUpSuppression(
+/**
+ * A partly watched episode hides the series' Up Next card only when it was touched after the
+ * latest completion **and** sits at or after that seed's season/episode. An older episode left
+ * half-watched (S17E3 while the seed is S29E2) keeps its Continue Watching card without blocking
+ * the next new episode. Entries with no episode coordinates keep the time-only rule.
+ */
+internal fun shouldTreatAsActiveInProgressForNextUpSuppression(
     progress: WatchProgressEntry,
-    latestCompletedAt: Long?,
+    latestCompletedSeed: CompletedSeriesCandidate?,
 ): Boolean {
     if (!progress.shouldTreatAsInProgressForContinueWatching()) return false
-    if (latestCompletedAt == null || latestCompletedAt == Long.MIN_VALUE) return true
-    return progress.lastUpdatedEpochMs >= latestCompletedAt
+    if (latestCompletedSeed == null) return true
+    if (progress.lastUpdatedEpochMs < latestCompletedSeed.markedAtEpochMs) return false
+    val season = progress.seasonNumber ?: return true
+    val episode = progress.episodeNumber ?: return true
+    return compareValuesBy(
+        season to episode,
+        latestCompletedSeed.seasonNumber to latestCompletedSeed.episodeNumber,
+        { it.first },
+        { it.second },
+    ) >= 0
 }
 
 private fun heroMobileBelowSectionHeightHint(

@@ -77,7 +77,21 @@ suspend fun fetchCatalogPage(
         search = search,
         skip = skip,
     )
-    val payload = deduplicatedHttpGetText(url)
+    return catalogPageFromPayload(payload = fetchCatalogPayload(url), skip = skip, maxItems = maxItems)
+}
+
+/** The raw response behind [fetchCatalogPage], for a caller that keeps it (Home's catalog cache). */
+internal suspend fun fetchCatalogPayload(url: String): String = deduplicatedHttpGetText(url)
+
+/**
+ * Turns a catalog response into a page exactly as [fetchCatalogPage] does, so a response replayed
+ * from disk yields the same row a live fetch would.
+ */
+internal suspend fun catalogPageFromPayload(
+    payload: String,
+    skip: Int? = null,
+    maxItems: Int? = null,
+): CatalogPage {
     val parsed = HomeCatalogParser.parseCatalogResponse(
         payload = payload,
         maxItems = maxItems,

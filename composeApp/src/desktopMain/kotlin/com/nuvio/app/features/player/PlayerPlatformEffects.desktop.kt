@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.unit.IntSize
+import com.nuvio.app.features.player.desktop.DesktopIdleHeapTrim
 import com.nuvio.app.features.player.desktop.setDesktopPictureInPicture
 import com.nuvio.app.features.player.desktop.desktopPictureInPictureState
 
@@ -20,6 +21,7 @@ actual fun EnterImmersivePlayerMode(keepScreenAwake: Boolean) {
     LaunchedEffect(Unit) {
         delay(5_000)
         val session = DesktopArtworkCaches.beginPlayback()
+        DesktopIdleHeapTrim.onPlaybackStarted()
         try {
             awaitCancellation()
         } finally {

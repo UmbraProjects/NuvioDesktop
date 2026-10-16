@@ -9,20 +9,25 @@ import io.ktor.http.Url
  * disk, or an http server on this PC / the home network (a NAS, Jellyfin, a local share). Torrents
  * never do, even though the engine serves them from 127.0.0.1 — every preview would pull pieces
  * from the swarm, competing with playback.
+ *
+ * [seekrServiceOff]: Seekr has switched sprites off for everyone, so Local + Seekr's internet
+ * streams fall back to the native decoder rather than lose previews entirely. Torrents still don't.
  */
 internal fun seekThumbnailsAllowed(
     mode: DesktopSeekThumbnailMode,
     bufferPreset: DesktopBufferPreset,
     sourceUrl: String,
     isTorrent: Boolean,
+    seekrServiceOff: Boolean = false,
 ): Boolean {
     if (bufferPreset == DesktopBufferPreset.Metered) return false
     return when (mode) {
         DesktopSeekThumbnailMode.Off -> false
         DesktopSeekThumbnailMode.Streaming -> true
-        // Local + Seekr's streams are Seekr's alone: the native decoder never opens them.
-        DesktopSeekThumbnailMode.Local,
-        DesktopSeekThumbnailMode.LocalAndSeekr -> !isTorrent && isUserControlledSource(sourceUrl)
+        DesktopSeekThumbnailMode.Local -> !isTorrent && isUserControlledSource(sourceUrl)
+        // Local + Seekr's streams are Seekr's alone while Seekr is serving: the native decoder
+        // never opens them.
+        DesktopSeekThumbnailMode.LocalAndSeekr -> !isTorrent && (seekrServiceOff || isUserControlledSource(sourceUrl))
     }
 }
 
@@ -39,8 +44,9 @@ internal fun seekrPreviewsEligible(
     sourceUrl: String,
     isTorrent: Boolean,
     apiKey: String,
+    seekrServiceOff: Boolean = false,
 ): Boolean {
-    if (apiKey.isBlank()) return false
+    if (apiKey.isBlank() || seekrServiceOff) return false
     if (mode != DesktopSeekThumbnailMode.LocalAndSeekr && mode != DesktopSeekThumbnailMode.Streaming) return false
     if (bufferPreset == DesktopBufferPreset.Metered) return false
     // The torrent engine serves from 127.0.0.1, which would otherwise pass as user-controlled.

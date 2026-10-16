@@ -407,6 +407,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             bufferPreset = playerSettingsUiState.desktopBufferPreset,
             sourceUrl = activeSourceUrl,
             isTorrent = activeTorrentInfoHash != null,
+            seekrServiceOff = SeekrPreviews.serviceDisabled,
         ),
         seekrVttUrl = seekrTrack?.vttUrl.orEmpty(),
         seekrScale = seekrTrack?.scale ?: 1.0,

@@ -9,8 +9,12 @@ import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.catalog.CATALOG_PAGE_SIZE
+import com.nuvio.app.features.catalog.CatalogPage
 import com.nuvio.app.features.catalog.CatalogTarget
+import com.nuvio.app.features.catalog.buildCatalogUrl
+import com.nuvio.app.features.catalog.catalogPageFromPayload
 import com.nuvio.app.features.catalog.fetchCatalogPage
+import com.nuvio.app.features.catalog.fetchCatalogPayload
 import com.nuvio.app.features.catalog.mergeCatalogItems
 import com.nuvio.app.features.catalog.nextCatalogPaginationState
 import com.nuvio.app.features.collection.Collection
@@ -29,6 +33,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -98,6 +104,14 @@ object HomeRepository {
     private var collectionHeroRequestKey: String? = null
     private var lastPublishedCatalogHeroEmpty: Boolean = true
     private var lastErrorMessage: String? = null
+    // Disk restore (HomeCatalogDiskCache) runs once per profile session, on the first refresh.
+    // Rows it restored are shown at once but are refetched by that refresh regardless of `force`;
+    // a key leaves this set when its refetch has finished, whichever way.
+    private var diskRestoreDone = false
+    private val revalidateKeys = mutableSetOf<String>()
+    private var diskRestoreJob: Job? = null
+    // The row list the restore worked from, for rows whose addon is still loading (see refresh).
+    private var restoredDefinitions: List<HomeCatalogDefinition> = emptyList()
 
     init {
         // "Hide watched content" is applied at publish time from the cached rows, so a title that
@@ -121,9 +135,18 @@ object HomeRepository {
         PerfTelemetry.count("HomeRepository.refresh")
         val activeAddons = addons.enabledAddons()
         val requests = buildHomeCatalogDefinitions(activeAddons)
-        currentDefinitions = requests
+        // Rows restored from disk whose addon has not answered with its manifest yet: kept on Home
+        // until it does, instead of vanishing on every early refresh and returning a second later.
+        // Once the manifest is in they are ordinary requests again, or gone if the addon dropped them.
+        val awaitingManifest = restoredDefinitions.filter { definition ->
+            definition.key in revalidateKeys &&
+                requests.none { it.key == definition.key } &&
+                activeAddons.any { it.manifestUrl == definition.manifestUrl && it.manifest == null }
+        }
+        currentDefinitions = requests + awaitingManifest
         val requestKeys = requests.mapTo(mutableSetOf(), HomeCatalogDefinition::key)
-        cachedSections = cachedSections.filterKeys(requestKeys::contains)
+        val keptKeys = requestKeys + awaitingManifest.map(HomeCatalogDefinition::key)
+        cachedSections = cachedSections.filterKeys(keptKeys::contains)
         // Drop infinite-scroll state for catalogs that are no longer present.
         (loadMoreJobs.keys - requestKeys).toList().forEach { key ->
             val job = loadMoreJobs.remove(key)
@@ -135,23 +158,20 @@ object HomeRepository {
         }
         // Shuffled orders are pruned on the same boundary as paging state: a row that has left the
         // active set must not come back still holding a permutation from an earlier session.
-        HomeRowShuffleState.retain(requestKeys)
+        HomeRowShuffleState.retain(keptKeys)
         if (force) sectionDuplicatePageCounts.clear()
-        val requestKey = requests.joinToString(separator = "|") { request ->
-            "${request.manifestUrl}:${request.type}:${request.catalogId}:${request.genre.orEmpty()}"
-        }
+        val requestKey = homeRequestKey(requests)
 
         if (!force && activeRequestKey == requestKey && _uiState.value.isLoading) return
 
         val snapshot = HomeCatalogSettingsRepository.snapshot()
-        fun HomeCatalogDefinition.isActiveInHome(): Boolean {
-            val preference = snapshot.preferences[key] ?: return true
-            return preference.enabled || (snapshot.heroEnabled && preference.heroSourceEnabled)
-        }
+        fun HomeCatalogDefinition.isActiveInHome(): Boolean = isActiveInHome(snapshot)
         val activeRequestKeys = requests
             .filter(HomeCatalogDefinition::isActiveInHome)
             .mapTo(mutableSetOf(), HomeCatalogDefinition::key)
-        val allActiveCatalogsFetched = activeRequestKeys.all(cachedSections::containsKey)
+        // A row restored from disk is cached but not yet fetched this session.
+        val allActiveCatalogsFetched = activeRequestKeys.all(cachedSections::containsKey) &&
+            activeRequestKeys.none(revalidateKeys::contains)
         if (!force && requestKey == lastRequestKey && allActiveCatalogsFetched) {
             if (_uiState.value.sections.isEmpty() || _uiState.value.heroItems.isEmpty()) {
                 applyCurrentSettings()
@@ -161,6 +181,11 @@ object HomeRepository {
         lastRequestKey = requestKey
         activeRequestKey = requestKey
 
+        if (requests.isEmpty() && awaitingManifest.isNotEmpty()) {
+            // Nothing fetchable yet, only restored rows: show them and wait for the manifests.
+            publishCurrentState(isLoading = true, requestKey = requestKey)
+            return
+        }
         if (requests.isEmpty()) {
             activeJob?.cancel()
             activeJob = null
@@ -187,8 +212,16 @@ object HomeRepository {
                 definitions = requests.filter(HomeCatalogDefinition::isActiveInHome),
                 snapshot = snapshot,
             )
+            val profileId = ProfileRepository.activeProfileId
+            // Started at profile warm-up (restoreFromDiskInBackground); usually finished by now.
+            diskRestoreJob?.join()
+            if (!diskRestoreDone) {
+                restoreRowsFromDisk(prioritizedRequests, profileId, requestKey)
+                // Only once it has run to the end: a refresh cancelled mid-restore leaves it to the next.
+                diskRestoreDone = true
+            }
             val pendingRequests = prioritizedRequests.filter { definition ->
-                shouldFetchHomeCatalog(
+                definition.key in revalidateKeys || shouldFetchHomeCatalog(
                     force = force,
                     cachedSection = cachedSections[definition.key],
                 )
@@ -222,7 +255,7 @@ object HomeRepository {
                 launch {
                     gate.withPermit {
                         val startedAt = System.currentTimeMillis()
-                        val result = runCatching { request.toSection() }
+                        val result = runCatching { request.toSection(profileId) }
                         val elapsedMs = System.currentTimeMillis() - startedAt
                         if (elapsedMs >= HOME_CATALOG_SLOW_LOG_MS) {
                             log.i { "Slow catalog: ${request.addonName} / ${request.catalogId} took ${elapsedMs}ms" }
@@ -245,6 +278,8 @@ object HomeRepository {
                     cancel()
                     return@launch
                 }
+                // A failed refetch keeps the restored row: last launch's row beats an empty one.
+                revalidateKeys.remove(pendingRequests[index].key)
                 result.getOrNull()?.let { section -> loadedSections[section.key] = section }
                 result.exceptionOrNull()?.let { error ->
                     val request = pendingRequests[index]
@@ -289,6 +324,12 @@ object HomeRepository {
                 "Home refresh completed: loaded=${loadedSections.size}, pending=${pendingRequests.size}, " +
                     "elapsed=${System.currentTimeMillis() - refreshStartedAt}ms"
             }
+            // The row list the next launch restores from. Only once no addon is still loading its
+            // manifest, or a launch would remember a Home missing that addon's rows.
+            if (activeAddons.none { it.isRefreshing }) {
+                restoredDefinitions = requests
+                HomeCatalogDiskCache.writeDefinitions(profileId, requests)
+            }
             ensureCollectionHeroFallback(
                 addons = activeAddons,
                 force = force,
@@ -322,6 +363,12 @@ object HomeRepository {
         collectionHeroRequestKey = null
         lastPublishedCatalogHeroEmpty = true
         lastErrorMessage = null
+        // The next profile restores its own rows.
+        diskRestoreJob?.cancel()
+        diskRestoreJob = null
+        diskRestoreDone = false
+        revalidateKeys.clear()
+        restoredDefinitions = emptyList()
         _uiState.value = HomeUiState()
     }
 
@@ -405,16 +452,96 @@ object HomeRepository {
         )
     }
 
-    private suspend fun HomeCatalogDefinition.toSection(): HomeCatalogSection {
+    private fun homeRequestKey(definitions: List<HomeCatalogDefinition>): String =
+        definitions.joinToString(separator = "|") { request ->
+            "${request.manifestUrl}:${request.type}:${request.catalogId}:${request.genre.orEmpty()}"
+        }
+
+    private fun HomeCatalogDefinition.isActiveInHome(snapshot: HomeCatalogSettingsSnapshot): Boolean {
+        val preference = snapshot.preferences[key] ?: return true
+        return preference.enabled || (snapshot.heroEnabled && preference.heroSourceEnabled)
+    }
+
+    /**
+     * Restores last launch's rows while the profile is still being warmed, so they are parsed and
+     * published before Home first composes rather than after its first refresh starts. Works from
+     * the stored row list, because the addon manifests that define the rows are still on their way
+     * over the network at this point. Non-blocking; the first refresh joins it.
+     */
+    fun restoreFromDiskInBackground() {
+        if (diskRestoreDone || diskRestoreJob != null) return
+        if (HomeCatalogDiskCache.lifetimeMs() <= 0L) return
+        val profileId = ProfileRepository.activeProfileId
+        diskRestoreJob = scope.launch {
+            val definitions = HomeCatalogDiskCache.readDefinitions(profileId)
+            if (definitions.isNullOrEmpty()) return@launch
+            val snapshot = HomeCatalogSettingsRepository.snapshot()
+            restoredDefinitions = definitions
+            if (currentDefinitions.isEmpty()) currentDefinitions = definitions
+            restoreRowsFromDisk(
+                definitions = prioritizeDefinitions(
+                    definitions = definitions.filter { it.isActiveInHome(snapshot) },
+                    snapshot = snapshot,
+                ),
+                profileId = profileId,
+                requestKey = homeRequestKey(definitions),
+            )
+            diskRestoreDone = true
+        }
+    }
+
+    /**
+     * Seeds the session with the rows a previous launch fetched (see HomeCatalogDiskCache) and
+     * publishes them, so Home opens on last time's rows while this refresh fetches today's.
+     */
+    private suspend fun restoreRowsFromDisk(
+        definitions: List<HomeCatalogDefinition>,
+        profileId: Int,
+        requestKey: String,
+    ) {
+        if (HomeCatalogDiskCache.lifetimeMs() <= 0L) return
+        val startedAt = System.currentTimeMillis()
+        val restored = coroutineScope {
+            definitions
+                .filter { definition -> cachedSections[definition.key] == null }
+                .map { definition -> async { definition.key to definition.restoredSection(profileId) } }
+                .awaitAll()
+        }.mapNotNull { (key, section) -> section?.let { key to it } }.toMap()
+        if (restored.isEmpty()) return
+        cachedSections = restored + cachedSections
+        revalidateKeys += restored.keys
+        publishCurrentState(isLoading = true, requestKey = requestKey)
+        log.i { "Home restored ${restored.size} rows from disk in ${System.currentTimeMillis() - startedAt}ms" }
+    }
+
+    private fun HomeCatalogDefinition.firstPageUrl(): String = buildCatalogUrl(
+        manifestUrl = manifestUrl,
+        type = type,
+        catalogId = catalogId,
+        genre = genre,
+        search = null,
+        skip = null,
+    )
+
+    private suspend fun HomeCatalogDefinition.toSection(profileId: Int): HomeCatalogSection {
         // The whole first page is parsed even for a catalog the manifest calls non-paginating:
         // whether it pages is only known once the response is in hand (below), and a row that
         // turns out to page keeps its full page so the next skip stays page-aligned.
-        val page = fetchCatalogPage(
-            manifestUrl = manifestUrl,
-            type = type,
-            catalogId = catalogId,
-            genre = genre,
-        )
+        val url = firstPageUrl()
+        val payload = fetchCatalogPayload(url)
+        // Off the fetch path: the row is published without waiting on the disk.
+        scope.launch { HomeCatalogDiskCache.write(profileId, key, url, payload) }
+        return sectionFromPage(catalogPageFromPayload(payload))
+    }
+
+    /** The row a previous launch fetched, replayed from disk; null when there is none fit to show. */
+    private suspend fun HomeCatalogDefinition.restoredSection(profileId: Int): HomeCatalogSection? {
+        val url = firstPageUrl()
+        val stored = HomeCatalogDiskCache.read(profileId, key, url) ?: return null
+        return runCatching { sectionFromPage(catalogPageFromPayload(stored.payload)) }.getOrNull()
+    }
+
+    private suspend fun HomeCatalogDefinition.sectionFromPage(page: CatalogPage): HomeCatalogSection {
         // Cache load only, no lookups: Home's rows are on the startup path.
         WatchedContentFilter.prepareForLoad(page.items)
         // Same rule as the catalog screen and the Discover feed: a catalog that fills a whole page

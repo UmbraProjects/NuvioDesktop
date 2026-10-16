@@ -871,6 +871,8 @@
     <string name="settings_advanced_metadata_cache_hours">%1$d hours</string>
     <string name="settings_advanced_metadata_cache_days">%1$d days</string>
     <string name="settings_advanced_metadata_cache_one_day">1 day</string>
+    <string name="settings_advanced_home_catalog_cache">Home Catalog Cache</string>
+    <string name="settings_advanced_home_catalog_cache_description">Shows Home\'s catalog rows from the last launch straight away while they refresh in the background, as long as they are no older than this. Continue Watching, Next Up and Upcoming always come from your own watch history.</string>
     <string name="settings_advanced_image_prewarm">Prewarm Artwork</string>
     <string name="settings_advanced_image_prewarm_description">Download artwork for the hero, Continue Watching, every Home row and your Library in the background, so it is on disk before you scroll to it. Pauses during playback.</string>
     <string name="settings_advanced_image_prewarm_running">Prewarming… %1$d of %2$d checked.</string>
@@ -3476,7 +3478,7 @@
     <string name="settings_home_hover_preview">Hover preview</string>
     <string name="settings_home_hover_preview_description">Rest the pointer on a poster to open a card with its backdrop, description and quick actions. Remembered separately for each display mode.</string>
     <string name="settings_home_smooth_scrolling">Smooth scrolling</string>
-    <string name="settings_home_smooth_scrolling_description">Ease mouse-wheel scrolling in Basic and Adaptive modes.</string>
+    <string name="settings_home_smooth_scrolling_description">Smooth mouse-wheel scrolling in Basic and Adaptive modes.</string>
     <string name="cd_browse_catalogs">Browse catalogs (Tab)</string>
     <string name="cd_exit_search">Exit search</string>
     <string name="cd_send_to_top">Send to top</string>

@@ -1,5 +1,8 @@
 package com.nuvio.app.features.player
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.player.skip.SkipLookupTarget
 import kotlinx.coroutines.CancellationException
@@ -34,6 +37,8 @@ internal sealed interface SeekrLookupResult {
     data object NotCovered : SeekrLookupResult
     /** Over a quota or rate limit, or the key was refused: try again later or not at all. */
     data object Refused : SeekrLookupResult
+    /** Seekr answered 410 (`sprites_disabled`): sprite serving is switched off for everyone. */
+    data object Disabled : SeekrLookupResult
     data object Failed : SeekrLookupResult
 }
 
@@ -59,6 +64,14 @@ internal object SeekrPreviews {
     private var refusedUntilMs = 0L
     /** A key Seekr answered 401/403 for; not asked again until the user changes it. */
     private var rejectedKey: String? = null
+
+    /**
+     * Seekr has switched sprite serving off (a 410 for any title, any key). Held for the life of
+     * the process: no more lookups, and Local + Seekr hands internet streams back to the native
+     * decoder. Snapshot state, so the player re-decides the moment it flips.
+     */
+    var serviceDisabled by mutableStateOf(false)
+        private set
 
     /** Movie or IMDb-addressed episode only — anime-list ids have nothing Seekr can match. */
     internal fun lookupQuery(target: SkipLookupTarget, durationMs: Long): String? = when (target) {
@@ -92,6 +105,7 @@ internal object SeekrPreviews {
                 found.remove(cacheKey)
             }
             if (cacheKey in notCovered) return SeekrLookupResult.NotCovered
+            if (serviceDisabled) return SeekrLookupResult.Disabled
             if (key == rejectedKey || nowMs < refusedUntilMs) return SeekrLookupResult.Refused
         }
 
@@ -133,6 +147,10 @@ internal object SeekrPreviews {
                 401, 403 -> {
                     rejectedKey = key
                     SeekrLookupResult.Refused
+                }
+                410 -> {
+                    serviceDisabled = true
+                    SeekrLookupResult.Disabled
                 }
                 429 -> {
                     refusedUntilMs = nowMs + retryAfterMs(response.headers)

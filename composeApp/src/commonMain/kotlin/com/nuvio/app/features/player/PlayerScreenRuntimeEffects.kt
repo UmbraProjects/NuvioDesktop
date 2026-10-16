@@ -1207,6 +1207,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         sourceUrl = activeSourceUrl,
         isTorrent = activeTorrentInfoHash != null,
         apiKey = playerSettingsUiState.seekrApiKey,
+        seekrServiceOff = SeekrPreviews.serviceDisabled,
     )
     LaunchedEffect(
         activeVideoId,

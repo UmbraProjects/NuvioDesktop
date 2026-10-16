@@ -14,6 +14,30 @@ import java.io.File
  *
  * Windows-only: mpv's list path separator is `;` here, which also keeps drive letters (`C:\`) intact.
  */
+/**
+ * CAS strength for the saved Sharpen choice ("1.0" Low, "2.0" High — the old mpv `sharpen`
+ * values), or null when sharpening is off.
+ */
+internal fun desktopCasSharpness(value: String?): String? {
+    val level = value?.toDoubleOrNull() ?: return null
+    return when {
+        level <= 0.0 -> null
+        level < 1.5 -> "0.4"
+        else -> "0.8"
+    }
+}
+
+/**
+ * [chain] with the CAS sharpen shader appended when [sharpness] is set, plus the matching
+ * `glsl-shader-opts` value. CAS hooks LUMA, so appending it never reorders a MAIN-stage chain.
+ */
+internal fun desktopShaderChainWithSharpen(chain: String, sharpness: String?): Pair<String, String> {
+    val casPath = sharpness?.let { DesktopAnimeShaders.casSharpenPath() }
+        ?: return chain to ""
+    val combined = listOf(chain, casPath).filter { it.isNotEmpty() }.joinToString(";")
+    return combined to "nuvio_cas_sharpness=$sharpness"
+}
+
 internal object DesktopAnimeShaders {
     private const val resourcePrefix = "/player-shaders/"
 
@@ -118,6 +142,12 @@ internal object DesktopAnimeShaders {
             .mapNotNull { exportedPath(it) }
             .joinToString(";")
     }
+
+    /**
+     * The bundled CAS sharpen shader behind the player's Sharpen menu (mpv's own `sharpen` is
+     * vo=gpu only). Strength is its `nuvio_cas_sharpness` param, set through `glsl-shader-opts`.
+     */
+    fun casSharpenPath(): String? = exportedPath("Nuvio_CAS_Sharpen")
 
     private fun exportedPath(name: String): String? = exportedPaths.getOrPut(name) {
         runCatching {

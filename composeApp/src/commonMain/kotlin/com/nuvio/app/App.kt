@@ -726,6 +726,11 @@ private val appStartupLog = Logger.withTag("AppStartup")
 /** Why a Random Play click landed on the title it did; see [randomPlayPickTrace]. */
 private val randomPlayLog = Logger.withTag("RandomPlay")
 
+/** Startup work that waits for Home (see StartupReadySignal); IO because it is mostly probing. */
+private val deferredStartupScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
+private const val EXTERNAL_PLAYER_DETECTION_DELAY_MS = 5_000L
+
 private inline fun startupWarmStep(
     name: String,
     rethrow: Boolean = true,
@@ -815,7 +820,15 @@ private suspend fun warmProfileStartupRepositories() {
         startupWarmStep("addons local load") { AddonRepository.initialize() }
         startupWarmStep("collections local load") { CollectionRepository.initialize() }
         startupWarmStep("continue watching preferences load") { ContinueWatchingPreferencesRepository.ensureLoaded() }
+        // Home reads it in its first composition; cold, that was a file load and JSON decode on
+        // the UI thread.
+        startupWarmStep("continue watching enrichment cache load") {
+            com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache.warm()
+        }
         startupWarmStep("home catalog settings load") { HomeCatalogSettingsRepository.snapshot() }
+        // Background: parses last launch's rows while the rest of the warm-up and the gate run, so
+        // Home opens with them in place. Needs the catalog settings above to know which rows show.
+        startupWarmStep("home rows disk restore start") { HomeRepository.restoreFromDiskInBackground() }
         startupWarmStep("player settings load") { PlayerSettingsRepository.ensureLoaded() }
         startupWarmStep("p2p settings load") { P2pSettingsRepository.ensureLoaded() }
         startupWarmStep("trakt settings load") { TraktSettingsRepository.ensureLoaded() }
@@ -862,8 +875,18 @@ private suspend fun warmProfileDeferredRepositories() {
         // The Playback settings page lists external players while composing. The first lookup
         // spawns reg.exe for the default media association and probes known install paths and
         // PATH for each player — on the UI thread, as a stall on opening that page. Cached after.
-        startupWarmStep("external player detection", rethrow = false) {
-            withContext(Dispatchers.IO) { com.nuvio.app.features.player.ExternalPlayerPlatform.availablePlayers() }
+        // Warmed, but not now: it is 16 reg.exe launches, and here they landed in the middle of
+        // Home's first composition (a startup profile caught them there). A few seconds after Home
+        // is up is still long before anyone reaches the Playback page.
+        startupWarmStep("external player detection scheduled", rethrow = false) {
+            com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
+                deferredStartupScope.launch {
+                    delay(EXTERNAL_PLAYER_DETECTION_DELAY_MS)
+                    startupWarmStep("external player detection", rethrow = false) {
+                        com.nuvio.app.features.player.ExternalPlayerPlatform.availablePlayers()
+                    }
+                }
+            }
         }
         // The first initialize() reads every scraper's source out of nuvio_plugin_code (MBs of
         // JS; the open alone measured ~2.9 s, likely AV scanning it). Left to first use, that

@@ -16,6 +16,8 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.features.profiles.ProfileRepository
+import kotlinx.coroutines.launch
 import com.nuvio.app.features.discover.CUSTOM_DISCOVER_REF_LIMIT
 import com.nuvio.app.features.discover.CUSTOM_DISCOVER_ROW_LIMIT
 import com.nuvio.app.features.discover.CustomDiscoverRow
@@ -657,6 +659,8 @@ object HomeCatalogSettingsRepository {
     private var randomPlayAction = RandomPlayAction.Details
 
     fun onProfileChanged() {
+        // The outgoing profile's last change lands before anything reloads from the store.
+        flushPendingPersist()
         hasLoaded = false
         preferences.clear()
         heroEnabled = true
@@ -1969,9 +1973,18 @@ object HomeCatalogSettingsRepository {
         return true
     }
 
+    /**
+     * Snapshots the settings on the caller's thread and writes them on [persistScope].
+     *
+     * Every mutation persists, and Home's own startup effects (syncCatalogs, syncCollections) do
+     * too — on the UI thread, where encoding the whole payload (every row preference, the Discover
+     * layout, Random Play...) sat inside Home's first-composition freeze in a startup profile. The
+     * snapshot below is cheap and copies the one mutable field ([preferences]); the encode and the
+     * store write happen off the caller. Writes stay in order on a single-file writer, and a burst
+     * of changes collapses into one write of the newest snapshot.
+     */
     private fun persist() {
-        HomeCatalogSettingsStorage.savePayload(
-            json.encodeToString(
+        val payload =
                 StoredHomeCatalogSettingsPayload(
                     heroEnabled = heroEnabled,
                     heroInfoLines = heroInfoLines,
@@ -2028,10 +2041,29 @@ object HomeCatalogSettingsRepository {
                     randomPlayMinimumImdbRating = randomPlayMinimumImdbRating,
                     randomPlayAction = randomPlayAction,
                     items = preferences.values.sortedBy { it.order },
-                ),
-            ),
-        )
+                )
+        // The profile is fixed now, not at write time: a write landing after a profile switch must
+        // still go to the profile the settings belong to.
+        if (pendingPersist.getAndSet(ProfileRepository.activeProfileId to payload) == null) {
+            persistScope.launch { writePendingPersist() }
+        }
     }
+
+    private val pendingPersist =
+        java.util.concurrent.atomic.AtomicReference<Pair<Int, StoredHomeCatalogSettingsPayload>?>(null)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val persistScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default.limitedParallelism(1),
+    )
+
+    private fun writePendingPersist() {
+        val (profileId, payload) = pendingPersist.getAndSet(null) ?: return
+        HomeCatalogSettingsStorage.savePayload(json.encodeToString(payload), profileId)
+    }
+
+    /** Writes a pending snapshot now, on the caller. For tests and the exit path. */
+    internal fun flushPendingPersist() = writePendingPersist()
 
     private fun updatePreference(
         key: String,

@@ -32,6 +32,11 @@ data class ImageCacheSettings(
      * disk between launches; 0 keeps it for the session only. See LightweightMetaDiskCache.
      */
     val metadataCacheHours: Int = DefaultMetadataCacheHours,
+    /**
+     * How old a Home catalog row kept from a previous launch may be and still be shown while that
+     * launch refetches it; 0 keeps nothing between launches. See HomeCatalogDiskCache.
+     */
+    val homeCatalogCacheHours: Int = DefaultHomeCatalogCacheHours,
 ) {
     val prewarmsAnything: Boolean
         get() = prewarmEnabled && (prewarmPosters || prewarmLogos || prewarmBackdrops)
@@ -41,6 +46,8 @@ data class ImageCacheSettings(
         val DiskCacheGbChoices = listOf(2, 5, 10, 20, 50)
         const val DefaultMetadataCacheHours = 24
         val MetadataCacheHoursChoices = listOf(0, 6, 24, 72, 168)
+        const val DefaultHomeCatalogCacheHours = 24
+        val HomeCatalogCacheHoursChoices = MetadataCacheHoursChoices
     }
 }
 
@@ -78,6 +85,8 @@ internal expect object ImageCacheSettingsStorage {
     fun savePrewarmCollectionContents(value: Boolean)
     fun loadMetadataCacheHours(): Int?
     fun saveMetadataCacheHours(value: Int)
+    fun loadHomeCatalogCacheHours(): Int?
+    fun saveHomeCatalogCacheHours(value: Int)
 
     /** Bytes the artwork cache currently holds on disk, or null before it has been opened. */
     fun usedBytes(): Long?
@@ -109,6 +118,9 @@ object ImageCacheSettingsRepository {
             metadataCacheHours = ImageCacheSettingsStorage.loadMetadataCacheHours()
                 ?.takeIf { it in ImageCacheSettings.MetadataCacheHoursChoices }
                 ?: defaults.metadataCacheHours,
+            homeCatalogCacheHours = ImageCacheSettingsStorage.loadHomeCatalogCacheHours()
+                ?.takeIf { it in ImageCacheSettings.HomeCatalogCacheHoursChoices }
+                ?: defaults.homeCatalogCacheHours,
         )
     }
 
@@ -159,6 +171,13 @@ object ImageCacheSettingsRepository {
         if (value !in ImageCacheSettings.MetadataCacheHoursChoices || _settings.value.metadataCacheHours == value) return
         _settings.value = _settings.value.copy(metadataCacheHours = value)
         ImageCacheSettingsStorage.saveMetadataCacheHours(value)
+    }
+
+    fun setHomeCatalogCacheHours(value: Int) {
+        ensureLoaded()
+        if (value !in ImageCacheSettings.HomeCatalogCacheHoursChoices || _settings.value.homeCatalogCacheHours == value) return
+        _settings.value = _settings.value.copy(homeCatalogCacheHours = value)
+        ImageCacheSettingsStorage.saveHomeCatalogCacheHours(value)
     }
 
     internal fun publishPrewarmStatus(status: ImageCachePrewarmStatus) {

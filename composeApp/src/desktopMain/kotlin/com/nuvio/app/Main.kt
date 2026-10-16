@@ -370,6 +370,11 @@ private inline fun desktopStartupStep(name: String, block: () -> Unit) {
 }
 
 fun main(args: Array<String>) {
+    // Build-time archive training (createDistributable): before anything else, so it touches no
+    // store, lock or log of the user's. Never returns.
+    if (com.nuvio.app.core.build.AppClassArchiveTraining.BuildArgument in args) {
+        com.nuvio.app.core.build.AppClassArchiveTraining.runForBuild()
+    }
     // A nuvio:// link the OS launched us with (see DesktopUrlScheme): handed to the running copy
     // if there is one, else opened here once the app is up.
     val launchUrl = args.map(String::trim).firstOrNull { it.startsWith("nuvio://", ignoreCase = true) }
@@ -418,15 +423,17 @@ fun main(args: Array<String>) {
     )
     val desktopStartupStartedAt = System.currentTimeMillis()
     System.out.println("Info: (DesktopStartup) main entered")
-    // Before any window exists: Windows caches the process AppUserModelID early, and the media
+    // A launch without a usable class archive builds one in a short UI-less run and restarts,
+    // instead of being the user's slow session; see AppClassArchiveTraining. Returns at once
+    // otherwise.
+    com.nuvio.app.core.build.AppClassArchiveTraining.runIfNeeded()    // Before any window exists: Windows caches the process AppUserModelID early, and the media
     // session created later is labelled "Unknown app" without it.
     desktopStartupStep("app identity") {
         runCatching { com.nuvio.app.features.player.desktop.registerDesktopAppIdentity() }
     }
     // Immediately after: every millisecond of head start is a class the UI thread will not have
     // to load itself when Home first composes. Non-blocking; see StartupClassPreloader.
-    desktopStartupStep("startup class preload") { com.nuvio.app.core.build.StartupClassPreloader.start() }
-    // Same idea for the one native library Home's first composition loads: see warmPhysicalMemoryProbe.
+    desktopStartupStep("startup class preload") { com.nuvio.app.core.build.StartupClassPreloader.start() }    // Same idea for the one native library Home's first composition loads: see warmPhysicalMemoryProbe.
     desktopStartupStep("memory probe warm") { com.nuvio.app.core.ui.warmPhysicalMemoryProbe() }
     desktopStartupStep("configure renderer") { configureDesktopRenderer() }
     // Before the first Skia layer exists: the vsync properties this flips are read at layer
@@ -976,6 +983,9 @@ fun main(args: Array<String>) {
             runCatching { com.nuvio.app.features.details.LightweightMetaDiskCache.flushPendingWrites() }
         }
     }
+    // Home settings are encoded off the UI thread now; a change made just before exit is written
+    // here, before the stores flush below.
+    runCatching { com.nuvio.app.features.home.HomeCatalogSettingsRepository.flushPendingPersist() }
     // Every store coalesces its writes (DesktopStorage.flushAll), including the two caches just
     // flushed above. A shutdown hook does the same for exit paths that skip this function.
     runCatching { com.nuvio.app.core.storage.DesktopStorage.flushAll() }

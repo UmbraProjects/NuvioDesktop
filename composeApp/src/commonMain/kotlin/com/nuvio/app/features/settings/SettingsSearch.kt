@@ -1029,6 +1029,16 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.Advanced,
+            key = "home-catalog-cache",
+            title = resolve(Res.string.settings_advanced_home_catalog_cache),
+            description = resolve(Res.string.settings_advanced_home_catalog_cache_description),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
+        )
+        addRow(
+            page = SettingsPage.Advanced,
             key = "image-prewarm",
             title = resolve(Res.string.settings_advanced_image_prewarm),
             description = resolve(Res.string.settings_advanced_image_prewarm_description),

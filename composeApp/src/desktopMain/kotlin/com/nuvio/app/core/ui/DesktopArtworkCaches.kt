@@ -62,6 +62,7 @@ internal const val PlaybackScaledCacheBytes = 8L * 1024 * 1024
 internal class DesktopArtworkCacheCoordinator(
     private val limitAnimations: (Boolean) -> Unit,
     private val limitScaledBitmaps: (Boolean) -> Unit,
+    private val limitGpuResources: (Boolean) -> Unit = {},
 ) {
     private var memoryCache: MemoryCache? = null
     private var browsingMaxBytes = 0L
@@ -114,6 +115,7 @@ internal class DesktopArtworkCacheCoordinator(
         applyMemoryBudget()
         limitAnimations(restricted)
         limitScaledBitmaps(restricted)
+        limitGpuResources(restricted)
     }
 
     private fun applyMemoryBudget() {
@@ -126,4 +128,5 @@ internal class DesktopArtworkCacheCoordinator(
 internal val DesktopArtworkCaches = DesktopArtworkCacheCoordinator(
     limitAnimations = ::limitDecodedAnimationCache,
     limitScaledBitmaps = ScaledBitmapCache::setBackgroundMode,
+    limitGpuResources = SkiaGpuResourceTrim::setBackgroundMode,
 )
