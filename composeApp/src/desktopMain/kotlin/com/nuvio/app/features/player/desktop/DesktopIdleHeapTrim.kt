@@ -52,8 +52,10 @@ internal object DesktopIdleHeapTrim {
         trimmedWhileHidden = true
         // Native frames went first, in the artwork-cache call above: that is the bigger reclaim,
         // and unlike the heap it is unaffected by whether this collection decides to uncommit
-        // anything at all.
-        System.gc()
+        // anything at all. Off the event thread: a concurrent explicit GC blocks its caller.
+        thread(isDaemon = true, name = "nuvio-hidden-heap-trim") {
+            com.nuvio.app.core.ui.MemoryTrimLog.trim(reason = "window hidden") { System.gc() }
+        }
     }
 
     /**
@@ -69,6 +71,8 @@ internal object DesktopIdleHeapTrim {
      * completes, and this is called from the UI's coroutine.
      */
     fun onPlaybackStarted() {
-        thread(isDaemon = true, name = "nuvio-playback-heap-trim") { System.gc() }
+        thread(isDaemon = true, name = "nuvio-playback-heap-trim") {
+            com.nuvio.app.core.ui.MemoryTrimLog.trim(reason = "playback started") { System.gc() }
+        }
     }
 }

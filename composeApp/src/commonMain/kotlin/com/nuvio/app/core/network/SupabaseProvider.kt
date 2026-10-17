@@ -4,6 +4,7 @@ import com.nuvio.app.core.build.AppVersionConfig
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.annotations.SupabaseInternal
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.MemorySessionManager
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.postgrest.Postgrest
@@ -29,6 +30,14 @@ object SupabaseProvider {
     /** SupabaseClient.close() is suspend, but [client] is not - discarded clients close here. */
     private val disposalScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * Set before the first [client] read by the desktop native smoke test. The session then lives
+     * in memory only, so a smoke launch starts signed out. The default session store is
+     * machine-wide (Java preferences), not the data directory, so a throwaway profile otherwise
+     * came up signed in to the user's account with sync running (2026-10-17).
+     */
+    var memoryOnlySession: Boolean = false
+
     val client: SupabaseClient
         get() {
             cachedClient.load()?.let { return it }
@@ -53,7 +62,9 @@ object SupabaseProvider {
                 }
                 install(com.nuvio.app.core.perf.perfTelemetryPlugin("supabase"))
             }
-            install(Auth)
+            install(Auth) {
+                if (memoryOnlySession) sessionManager = MemorySessionManager()
+            }
             install(Postgrest)
             install(Functions)
         }

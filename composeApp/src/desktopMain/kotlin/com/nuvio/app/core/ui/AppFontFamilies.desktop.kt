@@ -27,6 +27,10 @@ private val installedFontFamilies: List<String> by lazy {
             .distinct()
             .sortedBy { it.lowercase() }
             .toList()
+    }.onFailure { error ->
+        // Never silent: a failure here is usually FontMgr's static initialiser, which then fails
+        // every later Compose text use with an uninformative "Could not initialize class".
+        co.touchlab.kermit.Logger.withTag("AppFonts").e(error) { "Skia font enumeration failed" }
     }.getOrDefault(emptyList())
 }
 

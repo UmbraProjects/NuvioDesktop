@@ -239,6 +239,9 @@ actual object AppUpdaterPlatform {
 
 private const val launcherExeName = "Nuvio.exe"
 
+/** Beside the exe of a build folder; see [inPlaceTarget]. Kept in step with build.gradle.kts. */
+private const val devBuildMarkerName = "dev-build"
+
 /**
  * Stages the verified archive and launches a detached [cmd] + [robocopy] helper that swaps the
  * new build in once this process exits, then relaunches. Returns false (without side effects that
@@ -268,6 +271,13 @@ private class InPlaceTarget(val installRoot: File, val updatesDir: File)
 
 private fun inPlaceTarget(): InPlaceTarget? {
     val installRoot = resolveInstallRoot() ?: return null
+    // A build folder (gradlew createNativeDistributable writes this marker; the release zip leaves
+    // it out) is never swapped for a downloaded release: it is a stamped nightly, so it is offered
+    // updates like any install, and the swap would replace the build under test.
+    if (File(installRoot, devBuildMarkerName).isFile) {
+        updaterLog.i { "In-place update skipped: ${installRoot.absolutePath} is a development build" }
+        return null
+    }
     val updatesDir = portableUpdatesDirectory()
 
     // The helper is an ANSI .bat with the paths baked in; non-ASCII paths (e.g. a localized user
@@ -374,28 +384,46 @@ private fun applyDeltaUpdateInPlace(marker: File): Boolean {
     return true
 }
 
-private const val installManifestName = "install-manifest.txt"
+internal const val installManifestName = "install-manifest.txt"
 
 /**
  * Records every file of the new build in [installManifestName] (copied into the install folder with
- * the rest) and returns the files the *previous* manifest listed that the new build no longer
- * ships. Only files a manifest put there are ever deleted, never a blind mirror, so anything the
- * user keeps in the install folder survives. The first update from a build without a manifest
- * removes nothing.
+ * the rest) and returns the files to delete: those the *previous* manifest listed, plus the
+ * build-owned leftovers in `app\` and `runtime\` (see [buildOwnedLeftovers]), that the new build no
+ * longer ships. Never a blind mirror, so anything the user keeps in the install folder survives.
  */
-private fun writeInstallManifest(sourceRoot: File, installRoot: File, newFiles: List<String>): List<String> {
+internal fun writeInstallManifest(sourceRoot: File, installRoot: File, newFiles: List<String>): List<String> {
     val newFiles = newFiles
         .filterNot { it.equals(installManifestName, ignoreCase = true) }
         .toSortedSet(String.CASE_INSENSITIVE_ORDER)
     File(sourceRoot, installManifestName).writeText(newFiles.joinToString("\r\n"), Charsets.UTF_8)
     val previous = File(installRoot, installManifestName).takeIf(File::isFile)
         ?.readLines(Charsets.UTF_8)
-        ?: return emptyList()
-    return previous
-        .map(String::trim)
+        .orEmpty()
+    return (previous.map(String::trim) + buildOwnedLeftovers(installRoot))
         .filter { it.isNotEmpty() && it !in newFiles }
         // Relative paths inside the install folder only, and nothing the batch loop could misread.
         .filter { it.isBatchSafe() && !it.startsWith("\\") && ':' !in it && ".." !in it.split('\\') }
+        .distinctBy { it.lowercase() }
+}
+
+/**
+ * Files in places only the build ever writes: `app\*.jar`, `app\*.jsa` and everything under
+ * `runtime\`. Whatever of these the new build does not ship goes, manifest or not. Jar names carry
+ * a content hash, so every update unzipped by hand before the manifest existed left the previous
+ * jars behind, and no manifest ever named them: one user's `app` folder had grown to 1.4 GB
+ * (2026-10-17). The move to the native build would otherwise also keep the whole JVM runtime of an
+ * install that never had a manifest.
+ */
+private fun buildOwnedLeftovers(installRoot: File): List<String> {
+    fun relative(file: File) = file.relativeTo(installRoot).path.replace('/', '\\')
+    val appArchives = File(installRoot, "app").listFiles { file ->
+        file.isFile && (file.extension.equals("jar", ignoreCase = true) || file.extension.equals("jsa", ignoreCase = true))
+    }.orEmpty().map(::relative)
+    val runtimeFiles = File(installRoot, "runtime").takeIf(File::isDirectory)
+        ?.walkTopDown()?.filter(File::isFile)?.map(::relative)?.toList()
+        .orEmpty()
+    return appArchives + runtimeFiles
 }
 
 /** The portable app-image root that holds Nuvio.exe, or null when this isn't a packaged run. */

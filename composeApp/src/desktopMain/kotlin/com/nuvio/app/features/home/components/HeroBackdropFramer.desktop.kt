@@ -47,6 +47,9 @@ internal actual object HeroBackdropFramer {
 
     actual fun peek(key: String): HeroBackdropFramingProfile? = synchronized(memory) { memory[key] }
 
+    /** Loads onnxruntime and both models (once; the result is cached). For the native self-test. */
+    fun modelsAvailable(): Boolean = FramingModels.get() != null
+
     actual suspend fun profile(key: String, image: Image?): HeroBackdropFramingProfile? {
         peek(key)?.let { return it }
         withContext(Dispatchers.IO) { FramingDiskCache.read(key) }?.let { stored ->

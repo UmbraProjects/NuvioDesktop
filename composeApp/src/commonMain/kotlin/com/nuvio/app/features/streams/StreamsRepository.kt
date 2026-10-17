@@ -760,6 +760,9 @@ object StreamsRepository {
                                 )
                             },
                             onFailure = { error ->
+                                // Logged, not only shown: every plugin failing on the native build
+                                // (a missing JNI registration, 2026-10-17) left no trace in the log.
+                                log.w(error) { "plugin scraper failed: ${scraper.name}" }
                                 StreamLoadCompletion.PluginScraper(
                                     addonId = providerGroup.addonId,
                                     streams = emptyList(),

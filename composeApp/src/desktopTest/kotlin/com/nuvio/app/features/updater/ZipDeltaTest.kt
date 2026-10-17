@@ -150,6 +150,36 @@ class ZipDeltaTest {
         assertEquals(listOf("Nuvio.exe"), index.entries.map { it.name })
     }
 
+    @Test
+    fun aDroppedConnectionResumesTheEntryInsteadOfFailingTheDelta() {
+        // Incompressible, so the big entry is one long span like the native exe.
+        val exe = Random(6).nextBytes(2_000_000)
+        val zip = zipOf("Nuvio/Nuvio.exe" to exe, "Nuvio/app/small.txt" to "small".toByteArray())
+        val install = tempDir()
+        val index = ZipDelta.readIndex(CountingSource(zip))
+        val plan = assertNotNull(ZipDelta.plan(index.entries, install, "Nuvio.exe"))
+        val source = DroppingSource(zip, dropAfterBytes = 700_000, drops = 2)
+        val staging = tempDir()
+
+        ZipDelta.fetchChanged(source, index, plan, staging) { _, _ -> }
+
+        assertContentEquals(exe, File(staging, "Nuvio.exe").readBytes())
+        assertEquals(2, source.dropped)
+        // Each resume asks only for what was left, not the whole range again.
+        assertTrue(source.reopenStarts.all { it > 0 }, "reopened at ${source.reopenStarts}")
+    }
+
+    @Test
+    fun aConnectionThatKeepsDroppingStillFails() {
+        val exe = Random(7).nextBytes(500_000)
+        val zip = zipOf("Nuvio.exe" to exe)
+        val index = ZipDelta.readIndex(CountingSource(zip))
+        val plan = assertNotNull(ZipDelta.plan(index.entries, tempDir(), "Nuvio.exe"))
+        assertFailsWith<java.io.IOException> {
+            ZipDelta.fetchChanged(DroppingSource(zip, dropAfterBytes = 50_000, drops = 100), index, plan, tempDir()) { _, _ -> }
+        }
+    }
+
     private fun zipOf(vararg entries: Pair<String, ByteArray?>, stored: Set<String> = emptySet()): ByteArray {
         val output = ByteArrayOutputStream()
         ZipOutputStream(output).use { zip ->
@@ -173,6 +203,36 @@ class ZipDeltaTest {
 
     private fun File.write(relative: String, bytes: ByteArray) {
         File(this, relative).apply { parentFile.mkdirs() }.writeBytes(bytes)
+    }
+
+    /** Each of the first [drops] opened ranges throws after serving [dropAfterBytes]. */
+    private class DroppingSource(
+        private val bytes: ByteArray,
+        private val dropAfterBytes: Int,
+        private val drops: Int,
+    ) : ZipRangeSource {
+        var dropped = 0
+        val reopenStarts = mutableListOf<Long>()
+        private var opened = 0
+        override val length: Long get() = bytes.size.toLong()
+        override fun open(start: Long, endExclusive: Long): InputStream {
+            if (opened++ > 0) reopenStarts += start
+            val body = ByteArrayInputStream(bytes, start.toInt(), (endExclusive - start).toInt())
+            if (dropped >= drops) return body
+            return object : InputStream() {
+                private var served = 0
+                override fun read(): Int = throw UnsupportedOperationException()
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    if (served >= dropAfterBytes) {
+                        dropped++
+                        throw java.io.IOException("connection reset (test)")
+                    }
+                    val read = body.read(buffer, offset, minOf(length, dropAfterBytes - served))
+                    if (read > 0) served += read
+                    return read
+                }
+            }
+        }
     }
 
     private class CountingSource(private val bytes: ByteArray) : ZipRangeSource {

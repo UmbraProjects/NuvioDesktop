@@ -1,11 +1,16 @@
 package com.nuvio.app.features.details
 
-import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.core.storage.DesktopBlobFile
 
 internal actual object LightweightMetaCacheStorage {
-    private val store = DesktopStorage.store("nuvio_lightweight_meta_cache")
+    // A blob file, not a store: a store would hold the whole JSON in memory all session.
+    private val blob = DesktopBlobFile(
+        name = "nuvio_lightweight_meta_cache",
+        legacyStoreName = "nuvio_lightweight_meta_cache",
+        legacyKey = "entries",
+    )
 
-    actual fun load(): String? = store.getString("entries")
-    actual fun save(payload: String) = store.putString("entries", payload)
-    actual fun clear() = store.deleteAll()
+    actual fun load(): String? = blob.read()
+    actual fun save(payload: String) = blob.write(payload)
+    actual fun clear() = blob.delete()
 }

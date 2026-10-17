@@ -5,6 +5,7 @@ import java.awt.Image
 import java.awt.RenderingHints
 import java.awt.image.BaseMultiResolutionImage
 import java.awt.image.BufferedImage
+import java.lang.ref.WeakReference
 import java.net.URL
 import javax.imageio.ImageIO
 
@@ -58,16 +59,17 @@ internal fun loadDesktopWindowIconImages(url: URL): List<Image> {
 }
 
 // The tray and the window both start from the same decode + crop, which is the expensive part;
-// the second caller gets it for free.
+// the second caller gets it for free. Weakly held: the ~1,000 px master is 3.65 MB, and a strong
+// reference kept it for the whole session after both callers were done (heap dump, 2026-10-16).
 private val croppedMasterLock = Any()
-private var croppedMaster: Pair<URL, BufferedImage>? = null
+private var croppedMaster: Pair<URL, WeakReference<BufferedImage>>? = null
 
 private fun loadCroppedIconMaster(url: URL): BufferedImage? {
     synchronized(croppedMasterLock) {
-        croppedMaster?.takeIf { it.first == url }?.let { return it.second }
+        croppedMaster?.takeIf { it.first == url }?.second?.get()?.let { return it }
         val source = runCatching { ImageIO.read(url) }.getOrNull() ?: return null
         val cropped = cropToContent(source)
-        croppedMaster = url to cropped
+        croppedMaster = url to WeakReference(cropped)
         return cropped
     }
 }

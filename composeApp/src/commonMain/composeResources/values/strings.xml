@@ -867,6 +867,11 @@
     <string name="settings_advanced_image_cache_size_description_unknown">Disk space for posters, logos and backdrops. A change applies after restart.</string>
     <string name="settings_advanced_metadata_cache">Metadata Cache</string>
     <string name="settings_advanced_metadata_cache_description">How long titles looked up for rows, the hero and artwork prewarm are kept between launches, so a restart does not fetch them all again. Changing metadata language, artwork source or addons refreshes them automatically.</string>
+    <string name="settings_advanced_memory_use">Memory Use</string>
+    <string name="settings_advanced_memory_use_description">Lean frees memory more eagerly while you are not using the app and keeps fewer full-size backdrops ready. Generous keeps more backdrops ready, so going back over titles is instant, at up to ~130 MB more. Applies straight away.</string>
+    <string name="settings_advanced_memory_use_lean">Lean</string>
+    <string name="settings_advanced_memory_use_balanced">Balanced</string>
+    <string name="settings_advanced_memory_use_generous">Generous</string>
     <string name="settings_advanced_metadata_cache_off">Off</string>
     <string name="settings_advanced_metadata_cache_hours">%1$d hours</string>
     <string name="settings_advanced_metadata_cache_days">%1$d days</string>

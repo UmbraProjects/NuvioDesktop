@@ -49,6 +49,16 @@ internal object SkiaGpuResourceTrim {
             runCatching {
                 val browsing = browsingLimits.getOrPut(context) { context.resourceCacheLimit }
                 val target = if (restricted) minOf(browsing, BackgroundCacheLimitBytes) else browsing
+                if (restricted) {
+                    // Lowering the limit alone left one 256 MB write-combined upload chunk
+                    // committed for the whole of playback (memory map, 2026-10-16). Skiko has no
+                    // freeGpuResources(), so: purge everything unlocked (limit 0), then flush and
+                    // submit with a CPU sync so the GPU is done with the staging/upload buffers and
+                    // Skia can release them. One short stall, while the player covers the window.
+                    context.resourceCacheLimit = 0
+                    context.flush()
+                    context.submit(true)
+                }
                 context.resourceCacheLimit = target
                 log.i { "resource cache limit ${target / MB}MB (browsing=${browsing / MB}MB restricted=$restricted)" }
             }.onFailure { log.i { "resource cache limit change failed: ${it.message}" } }

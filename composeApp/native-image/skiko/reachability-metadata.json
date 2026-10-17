@@ -1,0 +1,9 @@
+{
+  "reflection": [
+    {
+      "type": "org.jetbrains.skiko.FrameWatcher",
+      "allPublicMethods": true,
+      "allPublicFields": true
+    }
+  ]
+}

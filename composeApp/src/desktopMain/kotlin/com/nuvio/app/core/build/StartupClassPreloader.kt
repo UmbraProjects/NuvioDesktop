@@ -82,6 +82,10 @@ internal object StartupClassPreloader {
 
     /** Non-blocking; call once, as early in `main` as possible. */
     fun start() {
+        if (NativeImageSupport.inImage || NativeImageSupport.tracing) {
+            log.i { "native image (or its tracing run); preload skipped" }
+            return
+        }
         val fingerprint = classPathFingerprint()
         val forced = !System.getenv("NUVIO_LEARN_STARTUP_CLASSES").isNullOrBlank() ||
             Files.exists(learnMarker)

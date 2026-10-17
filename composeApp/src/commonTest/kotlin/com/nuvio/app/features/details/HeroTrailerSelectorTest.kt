@@ -63,6 +63,27 @@ class HeroTrailerSelectorTest {
     }
 
     @Test
+    fun `prefers the metadata language over a newer trailer in another language`() {
+        val trailers = listOf(
+            trailer(id = "german", official = true, publishedAt = "2026-05-01", language = "de"),
+            trailer(id = "english", official = true, publishedAt = "2026-01-01", language = "en"),
+        )
+
+        assertEquals("english", selectHeroTrailer(trailers, preferredLanguage = "en-US")?.id)
+        assertEquals("german", selectHeroTrailer(trailers, preferredLanguage = "de")?.id)
+    }
+
+    @Test
+    fun `an unknown language ranks between a match and another language`() {
+        val trailers = listOf(
+            trailer(id = "french", official = true, publishedAt = "2026-05-01", language = "fr"),
+            trailer(id = "unknown", official = true, publishedAt = "2026-01-01"),
+        )
+
+        assertEquals("unknown", selectHeroTrailer(trailers, preferredLanguage = "en")?.id)
+    }
+
+    @Test
     fun `returns null for empty or unsupported trailer lists`() {
         assertNull(selectHeroTrailer(emptyList()))
         assertNull(selectHeroTrailer(listOf(trailer(id = "blank", key = ""))))
@@ -78,6 +99,7 @@ class HeroTrailerSelectorTest {
         official: Boolean = false,
         publishedAt: String? = null,
         seasonNumber: Int? = null,
+        language: String? = null,
     ): MetaTrailer =
         MetaTrailer(
             id = id,
@@ -88,5 +110,6 @@ class HeroTrailerSelectorTest {
             official = official,
             publishedAt = publishedAt,
             seasonNumber = seasonNumber,
+            language = language,
         )
 }

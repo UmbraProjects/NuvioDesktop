@@ -111,6 +111,8 @@ data class MetaTrailer(
     val publishedAt: String? = null,
     val seasonNumber: Int? = null,
     val displayName: String? = null,
+    /** ISO 639-1 language of the video (TMDB `iso_639_1`), when the source says. */
+    val language: String? = null,
 )
 
 data class MetaPerson(

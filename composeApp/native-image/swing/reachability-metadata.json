@@ -1,0 +1,684 @@
+{
+  "resources": [
+    {
+      "module": "java.desktop",
+      "bundle": "com.sun.swing.internal.plaf.basic.resources.basic"
+    },
+    {
+      "module": "java.desktop",
+      "bundle": "com.sun.swing.internal.plaf.metal.resources.metal"
+    },
+    {
+      "module": "java.desktop",
+      "bundle": "com.sun.java.swing.plaf.windows.resources.windows"
+    },
+    {
+      "module": "java.desktop",
+      "bundle": "sun.awt.resources.awt"
+    }
+  ],
+  "reflection": [
+    {
+      "type": "com.sun.java.swing.plaf.windows.AnimationController",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.TMSchema",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsBorders",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsButtonUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsCheckBoxMenuItemUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsCheckBoxUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsClassicLookAndFeel",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsComboBoxUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsDesktopIconUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsDesktopManager",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsDesktopPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsDesktopProperty",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsEditorPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsFileChooserUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsGraphicsUtils",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsIconFactory",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsInternalFrameTitlePane",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsInternalFrameUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsLabelUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsLookAndFeel",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsMenuBarUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsMenuItemUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsMenuItemUIAccessor",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsMenuUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsOptionPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsPasswordFieldUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsPopupMenuSeparatorUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsPopupMenuUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsPopupWindow",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true,
+      "jniAccessible": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsProgressBarUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsRadioButtonMenuItemUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsRadioButtonUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsRootPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsScrollBarUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsScrollPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsSeparatorUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsSliderUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsSpinnerUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsSplitPaneDivider",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsSplitPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsTabbedPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsTableHeaderUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsTextAreaUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsTextFieldUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsTextPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsTextUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsToggleButtonUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsToolBarSeparatorUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsToolBarUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsTreeUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.XPStyle",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.Popup",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.Popup$DefaultFrame",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.Popup$HeavyWeightWindow",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory$1",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory$ContainerPopup",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory$HeadlessPopup",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory$HeavyWeightPopup",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory$HeavyWeightPopup$1",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory$LightWeightPopup",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory$MediumWeightPopup",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.PopupFactory$MediumWeightPopup$MediumWeightComponent",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicButtonUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicCheckBoxMenuItemUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicCheckBoxUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicColorChooserUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicComboBoxUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicDesktopIconUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicDesktopPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicEditorPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicFileChooserUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicFormattedTextFieldUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicInternalFrameUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicLabelUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicListUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicLookAndFeel",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicMenuBarUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicMenuItemUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicMenuUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicOptionPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicPanelUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicPasswordFieldUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicPopupMenuSeparatorUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicPopupMenuUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicProgressBarUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicRadioButtonMenuItemUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicRadioButtonUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicRootPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicScrollBarUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicScrollPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicSeparatorUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicSliderUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicSpinnerUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicSplitPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicTabbedPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicTableHeaderUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicTableUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicTextAreaUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicTextFieldUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicTextPaneUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicTextUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicToggleButtonUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicToolBarSeparatorUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicToolBarUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicToolTipUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicTreeUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "javax.swing.plaf.basic.BasicViewportUI",
+      "allDeclaredConstructors": true,
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    }
+  ]
+}

@@ -268,6 +268,9 @@ val desktopChannelOverride = (
 require(desktopChannelOverride == null || desktopChannelOverride == "stable" || desktopChannelOverride == "nightly") {
     "Desktop release channel must be either stable or nightly: $desktopChannelOverride"
 }
+// The publisher Windows shows for Nuvio.exe (Explorer's Company, the jpackage vendor). This app is
+// a fork published by Umbra Projects, not an official Nuvio Media release.
+val desktopPublisher = "Umbra Projects"
 val releaseAppVersionName = desktopReleaseVersionName
 val releaseAppVersionCode = desktopReleaseVersionCode
 val desktopReleasePackageVersion = jpackageCompatibleVersion(desktopReleaseVersionName)
@@ -1760,6 +1763,13 @@ compose.desktop {
             "-XX:+ExplicitGCInvokesConcurrent",
             "-XX:MinHeapFreeRatio=10",
             "-XX:MaxHeapFreeRatio=30",
+            // A ceiling, so allocation bursts cannot balloon the young generation. With no -Xmx
+            // the JVM allowed 1/4 of RAM (8 GB on a 32 GB machine), and fast Home scrolling grew
+            // the committed heap to 1,260 MB against a ~380 MB live set, which was the whole
+            // 2.3 GB working-set peak (2026-10-16, Docs/plans/image-memory-plan.md). Live data
+            // peaked ~550 MB in that day's logs, so 1 GB leaves ~2x headroom; if an
+            // OutOfMemoryError ever appears in nuvio.log, raise this rather than remove it.
+            "-Xmx1g",
             smokePlayerUrl?.takeIf { it.isNotBlank() }?.let { "-Dnuvio.desktop.smokePlayerUrl=$it" },
         )
 
@@ -1767,7 +1777,7 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Nuvio"
             packageVersion = desktopReleasePackageVersion
-            vendor = "Nuvio Media"
+            vendor = desktopPublisher
             // Becomes the exe's FileDescription, which is the name Explorer shows for a pin made
             // straight from Nuvio.exe (and the taskbar tooltip). The exe itself stays Nuvio.exe:
             // the in-place updater, taskbar pins and the official app's shortcut-name checks all
@@ -1812,6 +1822,572 @@ compose.desktop {
         buildTypes.release.proguard {
             isEnabled.set(false)
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// GraalVM native image (Docs/plans/native-image-shipping.md, step 2). These replace the spike's
+// tools\ni-spike scripts. None of them runs as part of createDistributable or a normal build:
+//
+//   nativeImageTrace           run the JVM app image on GraalVM's JVM with the tracing agent
+//                              (user-driven; merges into native-image/agent/)
+//   nativeCompile              native-image over createDistributable's jars -> build/native-image/work
+//   createNativeDistributable  lay that out like the jpackage image -> build/native-image/Nuvio
+//   packageNativeReleaseZip    zip it as the release asset -> build/native-image/release/Nuvio.zip
+//
+// GraalVM for JDK 25 comes from -Pnuvio.graalvm.home, GRAALVM_HOME or local.properties. The build
+// takes ~2.5 min and peaks at ~12 GB RSS in its own process; afterwards run `gradlew --stop` and
+// kill leftover java.exe (a Kotlin daemon has been seen at 5 GB).
+// ---------------------------------------------------------------------------------------------
+val nativeImageInputsDir = layout.projectDirectory.dir("native-image")
+val nativeJvmAppImageDir = layout.buildDirectory.dir("compose/binaries/main/app/Nuvio")
+val nativeImageWorkDir = layout.buildDirectory.dir("native-image/work")
+val nativeImageDistDir = layout.buildDirectory.dir("native-image/Nuvio")
+val nativeImageReleaseDir = layout.buildDirectory.dir("native-image/release")
+// -march=native would build for this PC's CPU only (illegal-instruction crash elsewhere);
+// `compatibility` measured the same as `native` on a Ryzen 9 5900X (plan step 2b).
+val nativeImageMarch = providers.gradleProperty("nuvio.native.march").orNull?.trim()
+    ?.takeIf { it.isNotEmpty() } ?: "compatibility"
+// -Pnuvio.native.qa=true: a test build that REPORTS each missing reflection / JNI / resource /
+// serialization registration (with a stack trace) and carries on, instead of failing later at an
+// arbitrary point. Used like a nightly, its native-qa-console.log lists every metadata gap the
+// session hit (plan step 3). Never ship it.
+val nativeImageQa = providers.gradleProperty("nuvio.native.qa").orNull.toBoolean()
+
+fun resolveGraalVmHome(): File {
+    val candidates = listOfNotNull(
+        localOrEnvProperty("nuvio.graalvm.home"),
+        localOrEnvProperty("GRAALVM_HOME"),
+        "C:/Software/Claude/tools/graalvm25/graalvm-community-25.4.4.1.1+1.1",
+    ).map(::File)
+    val home = candidates.firstOrNull { it.resolve("bin/native-image.cmd").isFile }
+        ?: throw GradleException(
+            "GraalVM for JDK 25 was not found. Pass -Pnuvio.graalvm.home=C:/path/to/graalvm or set GRAALVM_HOME.",
+        )
+    val javaVersion = home.resolve("release").takeIf { it.isFile }?.readText()
+        ?.let { Regex("JAVA_VERSION=\"([^\"]+)\"").find(it)?.groupValues?.get(1) }
+    if (javaVersion == null || !javaVersion.startsWith("25")) {
+        // CE 21.0.2 cannot build the app (Kotlin suspend try/catch parser bug), and the metadata
+        // targets the JDK 25 class library.
+        throw GradleException("native-image needs GraalVM for JDK 25; $home is ${javaVersion ?: "an unknown version"}.")
+    }
+    return home
+}
+
+fun resolveWindowsVcvars(): File {
+    windowsVcvarsPath?.let { path ->
+        return File(path).takeIf { it.isFile }
+            ?: throw GradleException("-Pnuvio.windows.vcvars.path points at a missing file: $path")
+    }
+    if (windowsVsWhere.isFile) {
+        val found = ProcessBuilder(
+            windowsVsWhere.absolutePath, "-latest", "-products", "*",
+            "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-find", windowsVcvarsRelativePath,
+        ).redirectErrorStream(true).start().inputStream.bufferedReader().readText()
+            .lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
+        if (found != null && File(found).isFile) return File(found)
+    }
+    throw GradleException(
+        "Visual Studio C++ toolchain was not found. Install MSVC or pass -Pnuvio.windows.vcvars.path=C:\\path\\to\\vcvars64.bat.",
+    )
+}
+
+/** What jpackage's Nuvio.cfg says about the app: classpath, main class, JVM options. */
+class NativeAppImageConfig(val classpath: List<String>, val mainClass: String, val javaOptions: List<String>)
+
+fun readNativeAppImageConfig(appDir: File): NativeAppImageConfig {
+    val lines = appDir.resolve("Nuvio.cfg").readLines()
+    fun values(key: String) = lines.filter { it.startsWith("$key=") }
+        .map { it.substringAfter('=').replace("\$APPDIR", appDir.absolutePath) }
+    return NativeAppImageConfig(
+        classpath = values("app.classpath"),
+        mainClass = values("app.mainclass").single(),
+        javaOptions = values("java-options"),
+    )
+}
+
+fun isRunningFrom(exe: File): Boolean {
+    val target = exe.absoluteFile.normalize()
+    return ProcessHandle.allProcesses().anyMatch { process ->
+        process.info().command().map { File(it).absoluteFile.normalize() == target }.orElse(false)
+    }
+}
+
+// ---- Generated metadata (plan step 4) --------------------------------------------------------
+// Entries that follow a rule are derived at build time, so a new @Serializable class or a new JNI
+// lookup in the app's C++ can never be the one somebody forgot to list.
+val nativeImageGeneratedDir = layout.buildDirectory.dir("native-image/generated")
+val nativeJniSources = fileTree("src/desktopMain/native") {
+    include("windows/**/*.cpp", "windows/**/*.c", "nuvio-engine/**/*.cpp", "nuvio-engine/**/*.c")
+}
+
+/** One `reflection` entry of a reachability-metadata.json. */
+class NativeMetadataEntry(val type: String) {
+    var allDeclared = false
+    var jniAccessible = false
+    val methods = sortedMapOf<String, List<String>>()
+    val fields = sortedSetOf<String>()
+
+    fun toMap(): Map<String, Any> = buildMap {
+        put("type", type)
+        if (jniAccessible) put("jniAccessible", true)
+        if (allDeclared) {
+            put("allDeclaredConstructors", true)
+            put("allDeclaredMethods", true)
+            put("allDeclaredFields", true)
+        }
+        if (methods.isNotEmpty()) {
+            put("methods", methods.map { (key, params) -> mapOf("name" to key.substringBefore('('), "parameterTypes" to params) })
+        }
+        if (fields.isNotEmpty()) put("fields", fields.map { mapOf("name" to it) })
+    }
+}
+
+/**
+ * Serializers: every `X$$serializer` in the app's jars registers `X`, `X$Companion` (when it
+ * exists) and `X$$serializer`, plus every named class of `kotlinx.serialization.json`. Native
+ * sign-in once failed with "Serializer for class 'JsonLiteral' is not found" because one of these
+ * was missing; the spike listed ~1,900 of them by hand.
+ */
+fun collectSerializerTypes(jars: Collection<File>): Set<String> {
+    val classes = HashSet<String>()
+    jars.forEach { jar ->
+        ZipFile(jar).use { zip ->
+            zip.entries().asSequence()
+                .map { it.name }
+                .filter { it.endsWith(".class") && !it.startsWith("META-INF/") }
+                .mapTo(classes) { it.removeSuffix(".class").replace('/', '.') }
+        }
+    }
+    val anonymous = Regex("""\$\d""")
+    return buildSet {
+        classes.filter { it.endsWith("\$\$serializer") }.forEach { serializer ->
+            val owner = serializer.removeSuffix("\$\$serializer")
+            add(owner)
+            add(serializer)
+            "$owner\$Companion".takeIf { it in classes }?.let(::add)
+        }
+        classes.filter { name ->
+            name.startsWith("kotlinx.serialization.json.") &&
+                '.' !in name.removePrefix("kotlinx.serialization.json.") &&
+                !anonymous.containsMatchIn(name)
+        }.forEach(::add)
+    }
+}
+
+/** `(Ljava/lang/String;[BJ)V` -> `["java.lang.String", "byte[]", "long"]`. */
+fun jniParameterTypes(signature: String): List<String> {
+    val params = signature.substringAfter('(').substringBefore(')')
+    val primitives = mapOf('Z' to "boolean", 'B' to "byte", 'C' to "char", 'S' to "short", 'I' to "int", 'J' to "long", 'F' to "float", 'D' to "double")
+    val result = mutableListOf<String>()
+    var i = 0
+    while (i < params.length) {
+        var dims = 0
+        while (params[i] == '[') { dims++; i++ }
+        val base = if (params[i] == 'L') {
+            val end = params.indexOf(';', i)
+            params.substring(i + 1, end).replace('/', '.').also { i = end + 1 }
+        } else {
+            (primitives[params[i]] ?: throw GradleException("Unknown JNI type '${params[i]}' in $signature")).also { i++ }
+        }
+        result += base + "[]".repeat(dims)
+    }
+    return result
+}
+
+/**
+ * Bridge JNI: the `FindClass` / `Get[Static]MethodID` / `Get[Static]FieldID` / `ThrowNew` literals
+ * in the app's own C++. A playback failover loop once came from an unregistered sink class. Each
+ * member lookup must name its class through a variable assigned from `FindClass("…")`; anything
+ * else (`GetObjectClass`, an inline expression) fails the build here rather than at run time.
+ */
+fun collectJniEntries(sources: Collection<File>, into: MutableMap<String, NativeMetadataEntry>) {
+    val call = """(?:env->|\(\*env\)->)"""
+    val envArg = """(?:env\s*,\s*)?"""
+    val token = Regex(
+        """(\w+)\s*=\s*$call""" + """FindClass\(\s*$envArg"([^"]+)"\s*\)""" + // 1 var, 2 class
+            """|${call}FindClass\(\s*$envArg"([^"]+)"""" + // 3 class
+            """|${call}Get(?:Static)?MethodID\(\s*$envArg(\w+)\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"""" + // 4 var, 5 name, 6 sig
+            """|${call}Get(?:Static)?FieldID\(\s*$envArg(\w+)\s*,\s*"([^"]+)"""" + // 7 var, 8 name
+            """|${call}ThrowNew\(\s*$envArg(\w+)""" + // 9 var
+            """|${call}(GetObjectClass|Get(?:Static)?(?:Method|Field)ID)\(""", // 10 anything unparsed
+    )
+    sources.sortedBy { it.path }.forEach { source ->
+        val text = source.readText()
+        val classOf = mutableMapOf<String, String>()
+        fun entry(jniName: String) = into.getOrPut(jniName.replace('/', '.')) { NativeMetadataEntry(jniName.replace('/', '.')) }
+            .apply { jniAccessible = true }
+        fun owner(variable: String, at: Int): NativeMetadataEntry {
+            val name = classOf[variable] ?: throw GradleException(
+                "${source.name}:${text.take(at).count { it == '\n' } + 1}: JNI lookup on '$variable', which is not assigned " +
+                    "from FindClass(\"…\") in this file, so its native-image metadata cannot be generated.",
+            )
+            return entry(name)
+        }
+        token.findAll(text).forEach { match ->
+            val g = match.groupValues
+            when {
+                g[1].isNotEmpty() -> { classOf[g[1]] = g[2]; entry(g[2]) }
+                g[3].isNotEmpty() -> entry(g[3])
+                g[4].isNotEmpty() -> owner(g[4], match.range.first).methods["${g[5]}${g[6]}"] = jniParameterTypes(g[6])
+                g[7].isNotEmpty() -> owner(g[7], match.range.first).fields += g[8]
+                g[9].isNotEmpty() -> owner(g[9], match.range.first).methods["<init>(Ljava/lang/String;)V"] = listOf("java.lang.String")
+                else -> throw GradleException(
+                    "${source.name}:${text.take(match.range.first).count { it == '\n' } + 1}: ${g[10]} call the native-image " +
+                        "metadata generator cannot resolve; look classes up with FindClass(\"literal\") into a variable.",
+                )
+            }
+        }
+    }
+}
+
+val generateNativeMetadata = tasks.register("generateNativeMetadata") {
+    group = "native image"
+    description = "Generates the rule-based native-image metadata (serializers, bridge JNI) into build/native-image/generated."
+    notCompatibleWithConfigurationCache("Uses the script-level metadata generator functions.")
+    dependsOn("createDistributable")
+    val jars = nativeJvmAppImageDir.map { image -> fileTree(image.dir("app")) { include("*.jar") } }
+    inputs.files(jars)
+    inputs.files(nativeJniSources)
+    outputs.dir(nativeImageGeneratedDir)
+    doLast {
+        val entries = sortedMapOf<String, NativeMetadataEntry>()
+        collectSerializerTypes(jars.get().files).forEach { type ->
+            entries.getOrPut(type) { NativeMetadataEntry(type) }.allDeclared = true
+        }
+        val serializerCount = entries.size
+        collectJniEntries(nativeJniSources.files, entries)
+        val out = nativeImageGeneratedDir.get().asFile.apply { deleteRecursively(); mkdirs() }
+        val json = groovy.json.JsonOutput.prettyPrint(
+            groovy.json.JsonOutput.toJson(mapOf("reflection" to entries.values.map { it.toMap() })),
+        )
+        // UTF-8 without a BOM: native-image refuses a BOM (see native-image/README.md).
+        out.resolve("reachability-metadata.json").writeText(json + "\n", Charsets.UTF_8)
+        logger.lifecycle("Generated native-image metadata: $serializerCount serializer types, ${entries.size - serializerCount} more from bridge JNI -> $out")
+    }
+}
+
+val nativeCompile = tasks.register<Exec>("nativeCompile") {
+    group = "native image"
+    description = "Compiles createDistributable's jars into a native Nuvio.exe with GraalVM native-image."
+    notCompatibleWithConfigurationCache("Runs GraalVM native-image inside a host-local MSVC environment.")
+    enabled = isWindowsHost
+    dependsOn("createDistributable", generateNativeMetadata)
+    inputs.dir(nativeImageInputsDir)
+    inputs.dir(nativeImageGeneratedDir)
+    inputs.files(nativeJvmAppImageDir.map { image -> fileTree(image.dir("app")) { include("*.jar", "Nuvio.cfg") } })
+    inputs.property("march", nativeImageMarch)
+    inputs.property("qa", nativeImageQa)
+    inputs.property("version", desktopReleaseVersionName)
+    outputs.dir(nativeImageWorkDir)
+    isIgnoreExitValue = true
+    doFirst {
+        val graal = resolveGraalVmHome()
+        val vcvars = resolveWindowsVcvars()
+        val work = nativeImageWorkDir.get().asFile.apply { deleteRecursively(); mkdirs() }
+        val appDir = nativeJvmAppImageDir.get().asFile.resolve("app")
+        val cfg = readNativeAppImageConfig(appDir)
+        val metadataRoot = nativeImageInputsDir.asFile
+        val metadataDirs = listOf(metadataRoot.resolve("agent")) +
+            metadataRoot.listFiles { file -> file.isDirectory && file.name != "agent" }.orEmpty().sortedBy { it.name } +
+            nativeImageGeneratedDir.get().asFile
+        fun slashes(file: File) = file.absolutePath.replace('\\', '/')
+
+        // Look like an app, not a console tool: native-image links a console program by default
+        // (a terminal opened before the start screen) with no icon or version details.
+        val rcFile = work.resolve("nuvio-native.rc")
+        val resFile = work.resolve("nuvio-native.res")
+        val numericVersion = (desktopReleasePackageVersion.split('.').map { part -> part.filter(Char::isDigit).ifEmpty { "0" } } +
+            listOf("0", "0", "0", "0")).take(4).joinToString(",")
+        val icon = project.file("src/desktopMain/resources/icons/nuvio-app-icon.ico")
+        val year = ZonedDateTime.now(ZoneOffset.UTC).year
+        rcFile.writeText(
+            """
+            1 ICON "${slashes(icon)}"
+            1 VERSIONINFO
+            FILEVERSION $numericVersion
+            PRODUCTVERSION $numericVersion
+            FILEOS 0x40004
+            FILETYPE 0x1
+            BEGIN
+              BLOCK "StringFileInfo"
+              BEGIN
+                BLOCK "040904B0"
+                BEGIN
+                  VALUE "CompanyName", "$desktopPublisher"
+                  VALUE "FileDescription", "Nuvio HTPC"
+                  VALUE "FileVersion", "$desktopReleaseVersionName"
+                  VALUE "InternalName", "Nuvio"
+                  VALUE "LegalCopyright", "Copyright (C) $year"
+                  VALUE "OriginalFilename", "Nuvio.exe"
+                  VALUE "ProductName", "Nuvio"
+                  VALUE "ProductVersion", "$desktopReleaseVersionName"
+                END
+              END
+              BLOCK "VarFileInfo"
+              BEGIN
+                VALUE "Translation", 0x409, 1200
+              END
+            END
+            """.trimIndent() + "\n",
+            Charsets.US_ASCII,
+        )
+
+        val args = buildList {
+            add("-H:ConfigurationFileDirectories=" + metadataDirs.joinToString(",") { slashes(it) })
+            add("-H:+ReportExceptionStackTraces")
+            add("-H:+UnlockExperimentalVMOptions")
+            // Build-time -D values; NativeImageSupport re-applies Nuvio.cfg's at run time.
+            add("-Djava.awt.headless=false")
+            add("-Dskiko.renderApi=DIRECT3D")
+            add("-Dsun.java2d.d3d=false")
+            add("-Dcompose.application.configure.swing.globals=true")
+            add("-Djpackage.app-version=$desktopReleasePackageVersion")
+            add("-march=$nativeImageMarch")
+            if (nativeImageQa) {
+                add("--exact-reachability-metadata")
+                add("-H:MissingRegistrationReportingMode=Warn")
+                // Never -H:+JNIVerboseLookupErrors: on every failed JNI class lookup it dumps the
+                // whole JNI dictionary to raw native stderr, and a windowed exe started normally
+                // has none, so the write was fatal and SVM called abort(). quickjs-kt probes
+                // FindClass("Error") on every JS error, so plugins crashed every double-clicked
+                // QA build (2026-10-17). (-H:+PrintJNIMethods only listed native linkages.)
+            }
+            add("-H:NativeLinkerOption=/SUBSYSTEM:WINDOWS")
+            add("-H:NativeLinkerOption=/ENTRY:mainCRTStartup")
+            add("-H:NativeLinkerOption=${slashes(resFile)}")
+            // The JVM build's -Xmx1g equivalent. MaxNewSize 512m was tried (2026-10-16): peak
+            // private memory 1.5 -> 2.2 GB and no fewer stalls of 200 ms or more, so 192m.
+            // -H:-RemoveLoopSafepoints was tried too and made no difference.
+            add("-R:MaxHeapSize=1g")
+            add("-R:MaxNewSize=192m")
+            add("-o")
+            add(slashes(work.resolve("Nuvio")))
+            add("-cp")
+            add("\"" + cfg.classpath.joinToString(";") { it.replace('\\', '/') } + "\"")
+            // --add-opens/--add-exports only take effect at build time (Component.peer for the HWND).
+            addAll(
+                cfg.javaOptions.filter { it.startsWith("--add-opens=") || it.startsWith("--add-exports=") }
+                    .filterNot { "lwawt" in it },
+            )
+            add(cfg.mainClass)
+        }
+        val argFile = work.resolve("ni-args.txt").apply { writeText(args.joinToString("\r\n") + "\r\n", Charsets.US_ASCII) }
+        val manifest = metadataRoot.resolve("nuvio-launcher.manifest")
+        val exe = work.resolve("Nuvio.exe")
+        val log = work.resolve("build.log")
+        val bat = work.resolve("native-compile.cmd")
+        bat.writeText(
+            listOf(
+                "@echo off",
+                "call ${cmdQuote(vcvars.absolutePath)} >nul",
+                "if errorlevel 1 exit /b %errorlevel%",
+                "set \"JAVA_HOME=${graal.absolutePath}\"",
+                "rc.exe /nologo /fo ${cmdQuote(resFile.absolutePath)} ${cmdQuote(rcFile.absolutePath)} > ${cmdQuote(log.absolutePath)} 2>&1",
+                "if errorlevel 1 exit /b %errorlevel%",
+                "call ${cmdQuote(graal.resolve("bin/native-image.cmd").absolutePath)} @${cmdQuote(argFile.absolutePath)} >> ${cmdQuote(log.absolutePath)} 2>&1",
+                "if errorlevel 1 exit /b %errorlevel%",
+                // The image has no manifest; without the launcher's PerMonitorV2 one Windows
+                // DPI-virtualises the window.
+                "mt.exe -nologo -manifest ${cmdQuote(manifest.absolutePath)} -outputresource:${cmdQuote(exe.absolutePath)};#1 >> ${cmdQuote(log.absolutePath)} 2>&1",
+                "exit /b %ERRORLEVEL%",
+            ).joinToString("\r\n") + "\r\n",
+            Charsets.US_ASCII,
+        )
+        logger.lifecycle(
+            "native-image: GraalVM ${graal.name}, -march=$nativeImageMarch${if (nativeImageQa) ", QA (reports missing registrations)" else ""}, " +
+                "${metadataDirs.size} metadata dirs; log in $log",
+        )
+        commandLine("cmd", "/d", "/c", bat.absolutePath)
+    }
+    doLast {
+        val work = nativeImageWorkDir.get().asFile
+        val log = work.resolve("build.log")
+        if (executionResult.get().exitValue != 0 || !work.resolve("Nuvio.exe").isFile) {
+            log.takeIf { it.isFile }?.readLines()?.takeLast(40)?.forEach { logger.error(it) }
+            throw GradleException("native-image failed; full log: $log")
+        }
+        log.readLines().filter { "registered for" in it || "Finished generating" in it }.forEach { logger.lifecycle(it.trim()) }
+    }
+}
+
+val createNativeDistributable = tasks.register("createNativeDistributable") {
+    group = "native image"
+    description = "Lays out the native Nuvio.exe like the jpackage image, in build/native-image/Nuvio."
+    notCompatibleWithConfigurationCache("Copies host-local GraalVM and MSVC runtime files.")
+    enabled = isWindowsHost
+    dependsOn(nativeCompile)
+    // Real inputs, or Gradle treats a task with outputs and no inputs as up to date whenever the
+    // output folder is unchanged, and skips laying out a freshly compiled exe (2026-10-17).
+    inputs.dir(nativeImageWorkDir)
+    inputs.files(nativeJvmAppImageDir.map { image -> fileTree(image) { exclude("app/*.jar", "app/*.jsa", "runtime/**", "runtime-graal/**") } })
+    inputs.property("qa", nativeImageQa)
+    outputs.dir(nativeImageDistDir)
+    doLast {
+        val root = nativeJvmAppImageDir.get().asFile
+        val work = nativeImageWorkDir.get().asFile
+        val dist = nativeImageDistDir.get().asFile
+        if (isRunningFrom(dist.resolve("Nuvio.exe"))) {
+            throw GradleException("Nuvio is running from $dist; quit it first (this task replaces that folder).")
+        }
+        dist.deleteRecursively()
+        dist.resolve("runtime/bin").mkdirs()
+        dist.resolve("runtime/lib").mkdirs()
+        dist.resolve("app").mkdirs()
+        // Everything beside jpackage's launcher (mpv, player bridge, engine, resources\, ...).
+        root.listFiles().orEmpty().forEach { entry ->
+            when {
+                entry.isFile && entry.name != "Nuvio.exe" -> entry.copyTo(dist.resolve(entry.name))
+                entry.isDirectory && entry.name !in setOf("app", "runtime", "runtime-graal") ->
+                    entry.copyRecursively(dist.resolve(entry.name))
+            }
+        }
+        // app\ without the jars (compiled into the exe), the class archives, or the startup class
+        // list (StartupClassPreloader is skipped natively).
+        root.resolve("app").listFiles().orEmpty()
+            .filterNot { it.extension == "jar" || it.extension == "jsa" || it.name == "startup-classes.lst" }
+            .forEach { entry -> entry.copyRecursively(dist.resolve("app/${entry.name}")) }
+        work.resolve("Nuvio.exe").copyTo(dist.resolve("Nuvio.exe"))
+        // The JDK libraries native-image emits (awt, jawt, fontmanager, ...): beside the exe, where
+        // the image loads them, and in runtime\bin, where skiko opens jawt via java.home.
+        work.listFiles { file -> file.extension == "dll" }.orEmpty().forEach { dll ->
+            dll.copyTo(dist.resolve(dll.name))
+            dll.copyTo(dist.resolve("runtime/bin/${dll.name}"))
+        }
+        // AWT's font manager reads %java.home%\lib\fontconfig.bfc.
+        resolveGraalVmHome().resolve("lib").listFiles { file ->
+            file.isFile && (file.name.startsWith("fontconfig") || file.name.startsWith("psfont"))
+        }.orEmpty().forEach { it.copyTo(dist.resolve("runtime/lib/${it.name}")) }
+        // The MSVC runtime the backdrop framer preloads from runtime\bin.
+        root.resolve("runtime/bin").listFiles { file ->
+            file.name.startsWith("vcruntime") || file.name.startsWith("msvcp")
+        }.orEmpty().forEach { it.copyTo(dist.resolve("runtime/bin/${it.name}")) }
+        // QA builds: the marker makes NativeImageSupport copy the console (where the image reports
+        // missing registrations) into native-qa-console.log beside the exe.
+        if (nativeImageQa) {
+            dist.resolve("native-qa").writeText("QA build: reports missing native-image registrations. Never ship.\n")
+            logger.lifecycle("QA build: missing registrations will be logged to ${dist.resolve("native-qa-console.log")}")
+            // A windowed exe has no stderr, so whatever a native crash prints first (an SVM fatal
+            // error, a QuickJS assert before abort()) was lost. Started through this, the process
+            // inherits a redirected stdout/stderr and that text lands in native-qa-stdio.log.
+            dist.resolve("Nuvio-qa.cmd").writeText(
+                "@echo off\r\n" +
+                    "rem QA build: runs Nuvio with native stdout/stderr captured in native-qa-stdio.log.\r\n" +
+                    "\"%~dp0Nuvio.exe\" %* 1>\"%~dp0native-qa-stdio.log\" 2>&1\r\n",
+            )
+        }
+        // The updater never swaps a folder carrying this for a downloaded release (plan step 6):
+        // this build is a stamped nightly, so it is offered updates. packageNativeReleaseZip leaves it out.
+        dist.resolve("dev-build").writeText("Development build: the in-place updater leaves this folder alone.\n")
+        val totalMb = dist.walkTopDown().filter { it.isFile }.sumOf { it.length() } / (1024 * 1024)
+        logger.lifecycle("Native image laid out in $dist ($totalMb MB, exe ${dist.resolve("Nuvio.exe").length() / (1024 * 1024)} MB)")
+    }
+}
+
+// -Pnuvio.native.skipSmoke=true: zip without the smoke gate. Local iteration only, never a release.
+val nativeSkipSmoke = providers.gradleProperty("nuvio.native.skipSmoke").orNull.toBoolean()
+
+// Plan step 5: launches the laid-out exe 15 times (plus once as the player smoke harness) against
+// a throwaway data directory and fails on an early exit, a missing start-screen / self-test marker,
+// a DPI-virtualised window or a native failure in the log. The gate before every nightly upload;
+// no CI can build a 1:1 release (the SVP DLLs are not in the repo). Opens real windows for ~2 min.
+val nativeSmoke = tasks.register<Exec>("nativeSmoke") {
+    group = "native image"
+    description = "Launches the native build repeatedly with its self-test and fails on any native failure (plan step 5)."
+    notCompatibleWithConfigurationCache("Launches the host-local native image.")
+    enabled = isWindowsHost
+    dependsOn(createNativeDistributable)
+    val runs = providers.gradleProperty("nuvio.native.smokeRuns").orNull ?: "15"
+    commandLine(
+        "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", project.file("scripts/native-smoke.ps1").absolutePath,
+        "-Exe", nativeImageDistDir.get().asFile.resolve("Nuvio.exe").absolutePath,
+        "-Runs", runs,
+        "-WorkDir", layout.buildDirectory.dir("native-image/smoke").get().asFile.absolutePath,
+    )
+}
+
+tasks.register<Zip>("packageNativeReleaseZip") {
+    group = "native image"
+    description = "Zips build/native-image/Nuvio as the release asset Nuvio.zip."
+    notCompatibleWithConfigurationCache("Packages the host-local native image.")
+    enabled = isWindowsHost
+    dependsOn(createNativeDistributable)
+    if (!nativeSkipSmoke) dependsOn(nativeSmoke)
+    doFirst {
+        if (nativeImageDistDir.get().asFile.resolve("native-qa").isFile) {
+            throw GradleException(
+                "build/native-image/Nuvio is a QA build (-Pnuvio.native.qa=true); rebuild without it before packaging a release.",
+            )
+        }
+    }
+    from(nativeImageDistDir) {
+        into("Nuvio")
+        // Build-folder only: the dev marker (it would stop every user's in-place updates), QA
+        // files, and what a run of the build left behind (portable-mode data, logs).
+        exclude("dev-build", "native-qa", "native-qa-console.log", "native-qa-stdio.log", "Nuvio-qa.cmd")
+        exclude("data/**", "portable", "install-manifest.txt")
+    }
+    archiveFileName.set("Nuvio.zip")
+    destinationDirectory.set(nativeImageReleaseDir)
+}
+
+tasks.register<Exec>("nativeImageTrace") {
+    group = "native image"
+    description = "Runs the JVM app image on GraalVM's JVM with the tracing agent (user-driven; merges into native-image/agent)."
+    notCompatibleWithConfigurationCache("Launches the host-local app for an interactive tracing session.")
+    enabled = isWindowsHost
+    dependsOn("createDistributable")
+    doFirst {
+        if (ProcessHandle.allProcesses().anyMatch { process ->
+                process.info().command().map { File(it).name.equals("Nuvio.exe", ignoreCase = true) }.orElse(false)
+            }
+        ) {
+            throw GradleException("Close Nuvio first (it is single-instance).")
+        }
+        val root = nativeJvmAppImageDir.get().asFile
+        val appDir = root.resolve("app")
+        // Nuvio takes java.home's PARENT as its install folder (player bridge, engine, updater), so
+        // GraalVM runs from a copy inside the app image. A copy, not a junction: deleting the build
+        // folder could follow a junction and wipe the real GraalVM.
+        val graalCopy = root.resolve("runtime-graal")
+        val wantedRelease = resolveGraalVmHome().resolve("release").readText()
+        if (graalCopy.resolve("release").takeIf { it.isFile }?.readText() != wantedRelease) {
+            graalCopy.deleteRecursively()
+            logger.lifecycle("Copying GraalVM into the app image (once per build)...")
+            resolveGraalVmHome().copyRecursively(graalCopy)
+        }
+        val agentDir = nativeImageInputsDir.asFile.resolve("agent").apply { mkdirs() }
+        val cfg = readNativeAppImageConfig(appDir)
+        // The argfile carries local paths, so it stays in build/, not beside the agent output.
+        val argFile = layout.buildDirectory.file("native-image/trace-args.txt").get().asFile.apply { parentFile.mkdirs() }
+        // -Pnuvio.trace.freshProfile=true: a new, empty data folder for this run, so first-run paths
+        // (setup wizard, empty Home) get traced too. The sign-in token is in the Windows registry
+        // (Java Preferences), not in that folder, so the account stays signed in; sign out and back
+        // in during that session to trace the sign-in screens.
+        val freshProfile = providers.gradleProperty("nuvio.trace.freshProfile").orNull.toBoolean()
+        val freshProfileDir = layout.buildDirectory.dir("native-image/trace-profile").get().asFile
+        if (freshProfile) {
+            freshProfileDir.deleteRecursively()
+            freshProfileDir.mkdirs()
+            logger.lifecycle("Fresh profile: data folder $freshProfileDir")
+        }
+        val lines = buildList {
+            add("-agentlib:native-image-agent=config-merge-dir=${agentDir.absolutePath},config-write-period-secs=30,config-write-initial-delay-secs=20")
+            addAll(cfg.javaOptions.filterNot { "SharedArchive" in it })
+            add("-Djava.library.path=${appDir.absolutePath}")
+            add("-Dnuvio.nativeImageTracing=1")
+            if (freshProfile) add("-Dnuvio.desktop.dataDir=${freshProfileDir.absolutePath}")
+            add("-cp")
+            add("\"" + cfg.classpath.joinToString(";") + "\"")
+            add(cfg.mainClass)
+        }
+        // Java argfiles treat backslash as an escape: forward slashes throughout.
+        argFile.writeText(lines.joinToString("\r\n") { it.replace('\\', '/') } + "\r\n", Charsets.US_ASCII)
+        logger.lifecycle("Tracing Nuvio on GraalVM. Use the app (Docs/Native-Spike-Test-Checklist.md), then quit from the tray.")
+        logger.lifecycle("Agent output merges into $agentDir.")
+        commandLine(graalCopy.resolve("bin/java.exe").absolutePath, "@${argFile.absolutePath}")
     }
 }
 

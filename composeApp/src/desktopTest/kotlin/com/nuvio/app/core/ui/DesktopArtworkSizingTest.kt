@@ -92,6 +92,53 @@ class DesktopArtworkSizingTest {
     }
 
     @Test
+    fun `only hero-size artwork shrinking by under 2x is left for the GPU to scale`() {
+        // A 4K TMDB original into a 3264 px hero slot.
+        assertTrue(keepsSourceSizeForGpu(3840, 2160, 3264, 1836))
+        // 2x or more still reduces on the CPU: the GPU's bilinear would skip source pixels.
+        assertTrue(!keepsSourceSizeForGpu(9504, 6336, 3264, 2176))
+        // A poster-size target always reduces, however mild.
+        assertTrue(!keepsSourceSizeForGpu(500, 750, 414, 621))
+    }
+
+    @Test
+    fun `the JPEG decode scale is the smallest eighth that still covers the slot`() {
+        // 4K into a 3264x1836 slot: 7/8 is 3360x1890.
+        assertEquals(7, jpegEighthsScale(3840, 2160, 3264, 1836))
+        // A 9504 px original: 3/8 is 3564x2376.
+        assertEquals(3, jpegEighthsScale(9504, 6336, 3264, 1836))
+        // Nothing smaller covers an exact fit.
+        assertEquals(8, jpegEighthsScale(3264, 1836, 3264, 1836))
+        // Rounds up the way libjpeg-turbo does: 7/8 of 3731 is 3264.6, so 3265 covers 3265.
+        assertEquals(7, jpegEighthsScale(3731, 2099, 3265, 1836))
+    }
+
+    @Test
+    fun `a hero-size JPEG decodes at the scale that covers its slot`() = runBlocking {
+        val file = Files.createTempFile("nuvio-hero-jpeg", ".jpg").toFile()
+        ImageIO.write(BufferedImage(3840, 2160, BufferedImage.TYPE_INT_RGB), "jpg", file)
+        val loader = ImageLoader.Builder(PlatformContext.INSTANCE)
+            .components { add(HighQualityBitmapDecoder.Factory()) }
+            .build()
+        try {
+            val result = loader.execute(
+                ImageRequest.Builder(PlatformContext.INSTANCE)
+                    .data(file)
+                    .size(3264, 1836)
+                    .precision(coil3.size.Precision.INEXACT)
+                    .scale(coil3.size.Scale.FILL)
+                    .build(),
+            )
+            val image = (result as SuccessResult).image
+            assertEquals(3360, image.width)
+            assertEquals(1890, image.height)
+        } finally {
+            loader.shutdown()
+            file.delete()
+        }
+    }
+
+    @Test
     fun `small artwork decodes separately from a large cached source and reuses its own entry`() = runBlocking {
         val file = Files.createTempFile("nuvio-artwork-test", ".png").toFile()
         ImageIO.write(BufferedImage(800, 1200, BufferedImage.TYPE_INT_RGB), "png", file)

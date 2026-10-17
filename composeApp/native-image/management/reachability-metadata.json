@@ -1,0 +1,69 @@
+{
+  "reflection": [
+    {
+      "type": "com.oracle.svm.core.code.CodeCacheManagerMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.code.CodeCachePoolMXBean$CodeAndDataPool",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.code.CodeCachePoolMXBean$NativeMetadataPool",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.genscavenge.CompleteGarbageCollectorMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.genscavenge.GenScavengeMemoryPoolMXBeans$EdenMemoryPoolMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.genscavenge.GenScavengeMemoryPoolMXBeans$OldGenerationMemoryPoolMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.genscavenge.GenScavengeMemoryPoolMXBeans$SurvivorMemoryPoolMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.genscavenge.HeapImplMemoryMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.genscavenge.IncrementalGarbageCollectorMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.jdk.management.SubstrateClassLoadingMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.jdk.management.SubstrateCompilationMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.jdk.management.SubstrateRuntimeMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.oracle.svm.core.jdk.management.SubstrateThreadMXBean",
+      "allPublicMethods": true,
+      "allDeclaredMethods": true
+    }
+  ]
+}

@@ -1,7 +1,11 @@
 package com.nuvio.app.core.ui
 
 import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.ImageInfo
+import org.jetbrains.skia.impl.BufferUtil
+import java.nio.ByteBuffer
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -27,25 +31,41 @@ private const val N32AlphaByte = 3
  *
  * Works on premultiplied N32 pixels (the correct space to filter in); the negative lobes can
  * overshoot, so each channel is clamped to [0, alpha]. Runs on the decode dispatcher, never in draw.
+ *
+ * Streams instead of materialising: source rows are read in place from the bitmap's native pixels,
+ * each is resampled horizontally once into a ring holding only the rows the vertical kernel needs at
+ * the moment, and output rows go straight into the destination's pixels. The first version copied
+ * the whole source into a `byte[]`, kept a float buffer with one row per SOURCE row and built the
+ * output in another `byte[]` - ~17 MB of short-lived Java arrays per poster, 62% of everything the
+ * app allocated while scrolling Home (JFR, 2026-10-16), which on the native build's Serial GC meant
+ * a 200+ ms full collection every 10-20 s. The arithmetic and its order are unchanged, so the output
+ * is identical.
  */
 internal fun Bitmap.lanczosResampleTo(targetWidth: Int, targetHeight: Int): Bitmap {
     val srcWidth = width
     val srcHeight = height
-    val srcInfo = ImageInfo.makeN32Premul(srcWidth, srcHeight)
-    val src = readPixels(srcInfo, srcWidth * 4, 0, 0)
-        ?: error("Could not read ${srcWidth}x$srcHeight pixels for resampling")
+    val source = nativeN32PremulRows() ?: return copiedForResampling().use { it.lanczosResampleTo(targetWidth, targetHeight) }
+    val (srcPixels, srcRowBytes) = source
 
-    // Horizontal pass: srcHeight rows of targetWidth, kept in float so the second pass sees no
-    // intermediate rounding. Each source row is widened to float once, then every tap is a
-    // contiguous 4-float read.
     val xTaps = LanczosTaps(srcWidth, targetWidth)
+    val yTaps = LanczosTaps(srcHeight, targetHeight)
     val rowWidth = targetWidth * 4
-    val mid = FloatArray(rowWidth * srcHeight)
+
+    // Horizontally resampled source rows, kept in float so the vertical pass sees no intermediate
+    // rounding. Output rows need increasing, at most maxTaps-long windows of source rows, so a ring
+    // of maxTaps slots indexed by row never evicts a row that is still needed.
+    val ringSize = yTaps.maxTaps
+    val ring = Array(ringSize) { FloatArray(rowWidth) }
+    val ringRow = IntArray(ringSize) { -1 }
+    val srcBytes = ByteArray(srcWidth * 4)
     val srcRow = FloatArray(srcWidth * 4)
-    for (y in 0 until srcHeight) {
-        val rowIn = y * srcWidth * 4
-        for (k in srcRow.indices) srcRow[k] = (src[rowIn + k].toInt() and 0xFF).toFloat()
-        val rowOut = y * rowWidth
+
+    fun horizontalRow(sy: Int): FloatArray {
+        val slot = sy % ringSize
+        val out = ring[slot]
+        if (ringRow[slot] == sy) return out
+        srcPixels.get(sy * srcRowBytes, srcBytes)
+        for (k in srcRow.indices) srcRow[k] = (srcBytes[k].toInt() and 0xFF).toFloat()
         for (x in 0 until targetWidth) {
             var c0 = 0f; var c1 = 0f; var c2 = 0f; var c3 = 0f
             var i = xTaps.start[x] * 4
@@ -57,40 +77,79 @@ internal fun Bitmap.lanczosResampleTo(targetWidth: Int, targetHeight: Int): Bitm
                 c2 += weight * srcRow[i + 2]; c3 += weight * srcRow[i + 3]
                 i += 4; w++
             }
-            val o = rowOut + x * 4
-            mid[o] = c0; mid[o + 1] = c1; mid[o + 2] = c2; mid[o + 3] = c3
+            val o = x * 4
+            out[o] = c0; out[o + 1] = c1; out[o + 2] = c2; out[o + 3] = c3
         }
+        ringRow[slot] = sy
+        return out
     }
 
-    // Vertical pass, a whole output row at a time: each tap adds one contiguous source row, which
-    // the JIT vectorises, instead of striding down a column per pixel.
-    val yTaps = LanczosTaps(srcHeight, targetHeight)
-    val out = ByteArray(rowWidth * targetHeight)
+    val outInfo = ImageInfo.makeN32Premul(targetWidth, targetHeight)
+    val result = Bitmap()
+    check(result.allocPixels(outInfo)) { "Could not allocate ${targetWidth}x$targetHeight bitmap" }
+    val outTarget = result.nativeN32PremulRows()
+    val fallbackOut = if (outTarget == null) ByteArray(rowWidth * targetHeight) else null
+
+    // Vertical pass, a whole output row at a time: each tap adds one contiguous row, which the
+    // compiler vectorises, instead of striding down a column per pixel.
     val acc = FloatArray(rowWidth)
+    val outBytes = ByteArray(rowWidth)
     for (y in 0 until targetHeight) {
         acc.fill(0f)
         val wBase = y * yTaps.maxTaps
         for (t in 0 until yTaps.count[y]) {
             val weight = yTaps.weights[wBase + t]
-            val rowIn = (yTaps.start[y] + t) * rowWidth
-            for (k in 0 until rowWidth) acc[k] += weight * mid[rowIn + k]
+            val row = horizontalRow(yTaps.start[y] + t)
+            for (k in 0 until rowWidth) acc[k] += weight * row[k]
         }
-        val rowOut = y * rowWidth
         var k = 0
         while (k < rowWidth) {
             val alpha = acc[k + N32AlphaByte].roundToInt().coerceIn(0, 255)
             for (c in 0 until 4) {
                 val value = if (c == N32AlphaByte) alpha else acc[k + c].roundToInt().coerceIn(0, alpha)
-                out[rowOut + k + c] = value.toByte()
+                outBytes[k + c] = value.toByte()
             }
             k += 4
         }
+        if (outTarget != null) {
+            outTarget.first.put(y * outTarget.second, outBytes)
+        } else {
+            System.arraycopy(outBytes, 0, fallbackOut!!, y * rowWidth, rowWidth)
+        }
     }
+    if (fallbackOut != null) {
+        check(result.installPixels(outInfo, fallbackOut, rowWidth)) { "Could not install resampled pixels" }
+    } else {
+        result.notifyPixelsChanged()
+    }
+    return result
+}
 
-    val outInfo = ImageInfo.makeN32Premul(targetWidth, targetHeight)
+/**
+ * The bitmap's own pixels as a buffer over native memory, plus their row stride, when they are N32
+ * premultiplied in memory; null otherwise. No copy: valid only while this bitmap is alive and
+ * unchanged, which holds for the duration of a resample.
+ */
+private fun Bitmap.nativeN32PremulRows(): Pair<ByteBuffer, Int>? {
+    if (colorType != ColorType.N32 || alphaType != ColorAlphaType.PREMUL) return null
+    val pixmap = peekPixels() ?: return null
+    val address = pixmap.addr
+    if (address == 0L) return null
+    val size = pixmap.computeByteSize()
+    // A JNI call into skiko; should it ever be unavailable (the native image links it at run time),
+    // the caller copies instead of failing the decode.
+    return runCatching { BufferUtil.getByteBufferFromPointer(address, size) }.getOrNull()
+        ?.let { it to pixmap.rowBytes }
+}
+
+/** A premultiplied N32 copy, for the rare source in another format. */
+private fun Bitmap.copiedForResampling(): Bitmap {
+    val info = ImageInfo.makeN32Premul(width, height)
+    val pixels = readPixels(info, width * 4, 0, 0)
+        ?: error("Could not read ${width}x$height pixels for resampling")
     return Bitmap().apply {
-        check(allocPixels(outInfo)) { "Could not allocate ${targetWidth}x$targetHeight bitmap" }
-        check(installPixels(outInfo, out, targetWidth * 4)) { "Could not install resampled pixels" }
+        check(allocPixels(info)) { "Could not allocate ${width}x$height bitmap" }
+        check(installPixels(info, pixels, width * 4)) { "Could not install pixels for resampling" }
     }
 }
 

@@ -121,6 +121,8 @@ import com.nuvio.app.features.library.filterLibrarySections
 import com.nuvio.app.features.library.needsFacts
 import com.nuvio.app.core.ui.LocalNuvioShelfTitleContentMaxWidth
 import com.nuvio.app.features.home.components.homeTvRowDotStripStart
+import com.nuvio.app.features.home.components.HeroBackdropPrefetcher
+import com.nuvio.app.features.home.components.heroBackdropModel
 import com.nuvio.app.features.discover.discoverRowProvenance
 import com.nuvio.app.features.cloud.CloudLibraryContentType
 import com.nuvio.app.features.playlist.PlaylistLibraryRowKey
@@ -262,13 +264,34 @@ private object HomeScrollMemory {
     var immersiveItemIndex: Int = 0
     // Distinguishes a real selection of row 0/item 0 from the untouched fresh-launch defaults.
     var hasImmersivePosition: Boolean = false
-    val continueWatchingRowState = LazyListState()
     var continueWatchingStartupResetApplied: Boolean = false
-    val nextUpRowState = LazyListState()
     var nextUpStartupResetApplied: Boolean = false
-    val upcomingRowState = LazyListState()
     var upcomingStartupResetApplied: Boolean = false
-    val immersiveRowStates = mutableMapOf<String, LazyListState>()
+
+    /**
+     * Each row's horizontal position (first visible item, its offset), keyed per row.
+     *
+     * Positions, not [LazyListState]s. A state keeps its last measure result, which references the
+     * row's laid-out cards; held here after the row left composition, it kept that whole subtree
+     * alive, painters and decoded posters included. Measured 2026-10-16: 27 MB of Java heap held
+     * this way, plus the native pixels of every poster those painters held.
+     */
+    val rowPositions = mutableMapOf<String, Pair<Int, Int>>()
+}
+
+/** A row's [LazyListState], starting where [HomeScrollMemory] last saw it and saving on dispose. */
+@Composable
+private fun rememberRememberedRowState(key: String): LazyListState {
+    val state = remember(key) {
+        val (index, offset) = HomeScrollMemory.rowPositions[key] ?: (0 to 0)
+        LazyListState(index, offset)
+    }
+    DisposableEffect(key, state) {
+        onDispose {
+            HomeScrollMemory.rowPositions[key] = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset
+        }
+    }
+    return state
 }
 
 /**
@@ -895,13 +918,7 @@ fun HomeScreen(
         // scrolling is not slowed.
         if (!heroBatchEnrichmentStartupGraceUsed) {
             heroBatchEnrichmentStartupGraceUsed = true
-            co.touchlab.kermit.Logger.withTag("HeroLogoRace").d {
-                "t=${heroProbeMs()} BATCH grace start (${HERO_BATCH_ENRICHMENT_STARTUP_GRACE_MS}ms, ${baseHeroItems.size} items)"
-            }
             delay(HERO_BATCH_ENRICHMENT_STARTUP_GRACE_MS)
-        }
-        co.touchlab.kermit.Logger.withTag("HeroLogoRace").d {
-            "t=${heroProbeMs()} BATCH dispatch ${baseHeroItems.size} items"
         }
         if (!heroMetadataStartupGraceUsed) {
             heroMetadataStartupGraceUsed = true
@@ -948,7 +965,7 @@ fun HomeScreen(
                 )
             }
             enriched.also {
-                publishHeroEnrichment(heroEnrichmentMap, enriched, "baseHeroEnrich")
+                publishHeroEnrichment(heroEnrichmentMap, enriched)
             }
         }
         if (effectiveHeroItems.map { canonicalHeroKey(it.type, it.id) } == newKeys &&
@@ -1050,7 +1067,7 @@ fun HomeScreen(
                                 now.logo ?: fetchedMeta.logo,
                         )
                     }
-                    publishHeroEnrichment(heroEnrichmentMap, enriched, "batchHeroEnrich")
+                    publishHeroEnrichment(heroEnrichmentMap, enriched)
                     idx to enriched
                 }
             }
@@ -1992,9 +2009,9 @@ fun HomeScreen(
         } else {
             null
         }
-    val continueWatchingRowState = remember { HomeScrollMemory.continueWatchingRowState }
-    val nextUpRowState = remember { HomeScrollMemory.nextUpRowState }
-    val upcomingRowState = remember { HomeScrollMemory.upcomingRowState }
+    val continueWatchingRowState = rememberRememberedRowState("continueWatching")
+    val nextUpRowState = rememberRememberedRowState("nextUp")
+    val upcomingRowState = rememberRememberedRowState("upcoming")
     LaunchedEffect(isShowingHomeContent, continueWatchingRowItems.isNotEmpty()) {
         if (
             isShowingHomeContent &&
@@ -3046,42 +3063,42 @@ fun HomeScreen(
                 // this race because the batch pass publishes every other hero key first, and
                 // giving up here left it unenriched until it was re-focused, which re-ran this
                 // effect and read the by-then-populated map.
-                logHeroPick("upgradeTimedOut", raw)
                 if (raw.heroMetadataPending) {
                     displayedFocusedItem = raw.copy(heroMetadataPending = false)
                 }
                 val late = snapshotFlow { heroEnrichmentMap[key] }
                     .filterNotNull()
                     .first()
-                logHeroPick("upgradeArrivedLate", late)
                 displayedFocusedItem = late
                 return
             }
-            logHeroPick("upgradeWhenTextArrives", enriched)
             displayedFocusedItem = enriched
         }
+        // Already enriched: never step back to the raw row item (see tvFocusedHeroItem below).
+        val knownEnriched = tvFocusedHeroItemRaw?.let { heroEnrichmentMap[canonicalHeroKey(it.type, it.id)] }
         if (!isEnrichedMode) {
-            logHeroPick("notEnrichedMode", tvFocusedHeroItemRaw)
-            displayedFocusedItem = tvFocusedHeroItemRaw
-            tvFocusedHeroItemRaw?.let { upgradeWhenTextArrives(it) }
+            displayedFocusedItem = knownEnriched ?: tvFocusedHeroItemRaw
+            if (knownEnriched == null) tvFocusedHeroItemRaw?.let { upgradeWhenTextArrives(it) }
             return@LaunchedEffect
         }
         val raw = tvFocusedHeroItemRaw
         if (raw == null) {
-            logHeroPick("rawNull", null)
             displayedFocusedItem = null
             return@LaunchedEffect
         }
         // A row already carrying provider-quality *backdrop* art has nothing to wait for — the pass
         // would only reproduce it. Deliberately not a poster check: a poster is not a backdrop, and
         // treating one as "already resolved" is what put a stretched poster behind the hero.
-        if (raw.banner.isMetadataProviderArtUrl()) {
+        if (knownEnriched != null) {
+            displayedFocusedItem = knownEnriched
+            return@LaunchedEffect
+        }
+        if (raw.hasFinalHeroBackdrop(tmdbSettingsUiState.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows)) {
             // The backdrop is already provider-quality so this copy shows at once, but a row with
             // no logo of its own is about to receive one from the enrichment below. Mark the logo
             // unresolved so the slot stays empty rather than painting the title text and replacing
             // it a moment later; upgradeWhenTextArrives clears the marker either way.
             val pending = raw.withPendingLogoSlot()
-            logHeroPick("providerArtRaw", pending)
             displayedFocusedItem = pending
             upgradeWhenTextArrives(pending)
             return@LaunchedEffect
@@ -3089,7 +3106,6 @@ fun HomeScreen(
         val key = canonicalHeroKey(raw.type, raw.id)
         if (normalHomeFocusedFallback) {
             heroEnrichmentMap[key]?.let { enriched ->
-                logHeroPick("normalFallbackCached", enriched)
                 displayedFocusedItem = enriched
                 return@LaunchedEffect
             }
@@ -3101,7 +3117,6 @@ fun HomeScreen(
                 .filterNotNull()
                 .first()
         }
-        logHeroPick(if (enriched != null) "boundedHoldEnriched" else "boundedHoldTimedOut", enriched ?: raw)
         displayedFocusedItem = enriched ?: raw
     }
     // displayedFocusedItem is only ever written from the effect above, which runs after the
@@ -3117,6 +3132,12 @@ fun HomeScreen(
             val raw = tvFocusedHeroItemRaw
             raw != null && canonicalHeroKey(held.type, held.id) == canonicalHeroKey(raw.type, raw.id)
         }
+        // A title enriched before (any earlier focus, or the prewarm) is shown enriched from this
+        // first frame. Falling back to the raw row item here drew the addon's metahub background
+        // for a frame and then swapped to the enriched TMDB/TVDB backdrop - two decodes, and the
+        // crossfade blended both with the outgoing title as "ghost" images (2026-10-16: 87
+        // same-title swaps in one short session, repeating on every revisit).
+            ?: tvFocusedHeroItemRaw?.let { raw -> heroEnrichmentMap[canonicalHeroKey(raw.type, raw.id)] }
         // The same pending-logo marker the effect applies. This branch renders a frame or more
         // before the effect catches up, so without it the slot would paint the title text here and
         // then blank it once the effect's marked copy lands - turning one swap into two.
@@ -3138,6 +3159,116 @@ fun HomeScreen(
         LaunchedEffect(focusRows) { HomeHeroSnapshot.publishFocusRows(focusRows) }
     }
     val heroFocusedItem = if (heroFollowsFocusedItem) tvFocusedHeroItem else null
+
+    // Resolve every focus row's hero enrichment before it is focused. The focused pass above runs in
+    // a LaunchedEffect, a frame after the composition that first draws the card, so even a cache hit
+    // drew the row's metahub backdrop for a few frames before the TMDB/TVDB one replaced it
+    // (2026-10-16 18:46 recording, The Rookie: enrichment published in the same millisecond, swap
+    // logged, every first focus of a title in the session). The artwork prewarm has already looked
+    // these titles up, so this is mostly cache hits; it uses the same resolver as the focused pass so
+    // the result, and therefore the backdrop, is identical. Nearest rows first, published one row at
+    // a time so the map changes in a few large steps rather than ~1,000 small ones. Portrait only:
+    // landscape cards draw the enriched banner and logo themselves and have their own pass.
+    //
+    // Other pages whose hero follows focus (Discover, Search, Library, browse pages) get the same,
+    // with their own resolver, but only for the focused row and the rows either side, re-aimed when
+    // the focused row changes: their titles were never prewarmed, so a whole-page pass would be
+    // hundreds of lookups at once. Without it a show's TMDB backdrop was swapped for TVDB's on every
+    // first focus there (2026-10-16).
+    val focusRowKeys = remember(tvRows) {
+        tvRows.map { row -> row.metaItems.orEmpty().map { canonicalHeroKey(it.type, it.id) } }
+    }
+    val aheadHomeMode = displayMode is HomeContentMode.Normal
+    val aheadRowWindow = if (aheadHomeMode) -1 else tvFocusedRowIndex
+    if (heroFollowsFocusedItem && !posterCardStyle.catalogLandscapeModeEnabled) {
+        LaunchedEffect(focusRowKeys, enabledAddonCount, tmdbSettingsUiState.heroImageSource, aheadHomeMode, aheadRowWindow) {
+            val rows = tvRows
+            val nearestFirst = rows.indices
+                .filter { aheadHomeMode || kotlin.math.abs(it - aheadRowWindow) <= 1 }
+                .sortedBy { kotlin.math.abs(it - tvFocusedRowIndex.coerceAtLeast(0)) }
+            val tvdbForShows = tmdbSettingsUiState.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows
+            val permits = Semaphore(4)
+            for (rowIndex in nearestFirst) {
+                val pending = rows[rowIndex].metaItems.orEmpty()
+                    .map { it.withNormalizedHeroBackdrop() }
+                    .distinctBy { canonicalHeroKey(it.type, it.id) }
+                    .filter { raw ->
+                        val key = canonicalHeroKey(raw.type, raw.id)
+                        val known = heroEnrichmentMap[key]
+                        (known == null || known.needsHeroTextEnrichment()) &&
+                            key !in pendingHeroEnrichments &&
+                            raw.heroNeedsMetadataFetch(
+                                normalHomeMode = aheadHomeMode,
+                                searchLibraryBackdropEnrichmentEnabled = searchLibraryBackdropEnrichmentEnabled,
+                            )
+                    }
+                if (pending.isEmpty()) continue
+                val resolved = pending.map { raw ->
+                    async {
+                        permits.withPermit {
+                            runCatching { resolveFocusedHeroItem(raw, normalHomeMode = aheadHomeMode, tvdbForShows = tvdbForShows) }
+                                .onFailure { if (it is CancellationException) throw it }
+                                .getOrNull()
+                        }
+                    }
+                }.awaitAll()
+                resolved.filterNotNull().forEach { (enriched, _) ->
+                    // The focused pass may have landed first; never replace a fuller answer.
+                    val known = heroEnrichmentMap[canonicalHeroKey(enriched.type, enriched.id)]
+                    if (known == null || known.needsHeroTextEnrichment()) {
+                        publishHeroEnrichment(heroEnrichmentMap, enriched)
+                    }
+                }
+            }
+        }
+    }
+
+    // Decode ahead the backdrops of every card one key press away: either side of the focused card,
+    // and the cards Up/Down land on (same column, clamped to the row - withCarriedTvItemIndex). The
+    // direction last travelled goes first on each axis, so moving focus finds them in memory instead
+    // of paying a ~110 ms decode (see HeroBackdropPrefetcher). The same item the hero would draw:
+    // enriched if known, else the row's normalised copy. Every mode whose hero follows focus, not
+    // just Home: Discover served 24% of backdrops from memory against Home's 88% before this
+    // (2026-10-16). Outside Home the hero can hold a row's own art until enrichment replaces it,
+    // so there only a backdrop that is already final is decoded: an enriched one, or provider art.
+    if (heroFollowsFocusedItem && tvFocusedRowIndex >= 0) {
+        val isHomeMode = displayMode is HomeContentMode.Normal
+        val focusedIndex = tvFocus.itemIndex
+        val lastFocus = remember { intArrayOf(-1, -1, 1, 1) } // row, item, row step, item step
+        LaunchedEffect(tvFocusedRowIndex, focusedIndex, tvRows) {
+            if (lastFocus[0] == tvFocusedRowIndex) {
+                if (focusedIndex != lastFocus[1]) lastFocus[3] = if (focusedIndex < lastFocus[1]) -1 else 1
+            } else if (lastFocus[0] >= 0) {
+                lastFocus[2] = if (tvFocusedRowIndex < lastFocus[0]) -1 else 1
+            }
+            lastFocus[0] = tvFocusedRowIndex
+            lastFocus[1] = focusedIndex
+            val rowStep = lastFocus[2]
+            val itemStep = lastFocus[3]
+            fun landingCard(row: Int): MetaPreview? {
+                val items = tvRows.getOrNull(row)?.metaItems.orEmpty()
+                return items.getOrNull(focusedIndex.coerceAtMost(items.size - 1))
+            }
+            val sameRow = tvRows.getOrNull(tvFocusedRowIndex)?.metaItems.orEmpty()
+            val models = listOfNotNull(
+                sameRow.getOrNull(focusedIndex + itemStep),
+                landingCard(tvFocusedRowIndex + rowStep),
+                sameRow.getOrNull(focusedIndex - itemStep),
+                landingCard(tvFocusedRowIndex - rowStep),
+            ).mapNotNull { raw ->
+                val enriched = heroEnrichmentMap[canonicalHeroKey(raw.type, raw.id)]
+                val normalized = raw.withNormalizedHeroBackdrop()
+                when {
+                    enriched != null -> heroBackdropModel(enriched)
+                    isHomeMode || normalized.hasFinalHeroBackdrop(
+                        tmdbSettingsUiState.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows,
+                    ) -> heroBackdropModel(normalized)
+                    else -> null
+                }
+            }.distinct()
+            HeroBackdropPrefetcher.request(platformContext, imageLoader, models)
+        }
+    }
 
     // Resolve which resume affordance (if any) the hero should show. Launch crash-recovery takes
     // priority and replaces the whole hero. A focused Continue Watching card gets the Resume action
@@ -3273,8 +3404,8 @@ fun HomeScreen(
         val isTvForTvdb = tmdbSettingsUiState.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows
 
         suspend fun fetchEnrichment(raw: MetaPreview) {
-            val (enriched, source) = resolveFocusedHeroItem(raw, normalHomeMode, tvdbForShows = isTvForTvdb)
-            publishHeroEnrichment(heroEnrichmentMap, enriched, source)
+            val (enriched, _) = resolveFocusedHeroItem(raw, normalHomeMode, tvdbForShows = isTvForTvdb)
+            publishHeroEnrichment(heroEnrichmentMap, enriched)
         }
 
         fun enrich(raw: MetaPreview) = launch {
@@ -3288,16 +3419,10 @@ fun HomeScreen(
             val cached = heroEnrichmentMap[mapKey]
             if (cached != null && !cached.needsHeroTextEnrichment()) return@launch
             pendingHeroEnrichments[mapKey] = Unit
-            co.touchlab.kermit.Logger.withTag("HeroLogoRace").d {
-                "t=${heroProbeMs()} FOCUSED enrich start key=$mapKey"
-            }
             try {
                 fetchEnrichment(raw)
             } finally {
                 pendingHeroEnrichments.remove(mapKey)
-                co.touchlab.kermit.Logger.withTag("HeroLogoRace").d {
-                    "t=${heroProbeMs()} FOCUSED enrich done key=$mapKey"
-                }
             }
         }
 
@@ -4433,9 +4558,7 @@ fun HomeScreen(
                                             basePosterWidthDpOverride = immersivePosterBaseWidthDp,
                                             animateGifs = animateCollectionGifs,
                                             focusedItemIndex = tvFocus.itemIndex,
-                                            rowState = remember(collection.id) {
-                                                HomeScrollMemory.immersiveRowStates.getOrPut("collection:${collection.id}") { LazyListState() }
-                                            },
+                                            rowState = rememberRememberedRowState("collection:${collection.id}"),
                                             isKeyboardNavigation = !mouseActivity.isMouseActive,
                                             rowNumber = catalogRowNumbers[activeSettingsItem?.key],
                                             headerTrailingContent = tvRowDotsContent,
@@ -4477,9 +4600,7 @@ fun HomeScreen(
                                                     sectionPadding = homeSectionPadding,
                                                     basePosterWidthDpOverride = immersivePosterBaseWidthDp,
                                                     focusedItemIndex = tvFocus.itemIndex,
-                                                    rowState = remember(section.key) {
-                                                        HomeScrollMemory.immersiveRowStates.getOrPut("catalog:${section.key}") { LazyListState() }
-                                                    },
+                                                    rowState = rememberRememberedRowState("catalog:${section.key}"),
                                                     isKeyboardNavigation = !mouseActivity.isMouseActive,
                                                     onHoverItem = ::selectHoveredImmersiveItem,
                                                     onLoadMore = when {
@@ -4706,6 +4827,19 @@ internal fun mergeSearchLibraryCardEnrichment(
  */
 private fun MetaPreview.hasResolvedProviderArtwork(): Boolean =
     listOf(banner, poster, posterFallback).any { it.isMetadataProviderArtUrl() }
+
+/**
+ * Whether this row's own backdrop is what its enrichment would settle on, so the hero can show it at
+ * once without a later swap. Provider art is, except a TMDB backdrop on a show while shows take TVDB
+ * art: enrichment replaces that one (Discover, 2026-10-16: TMDB → TVDB swaps on every first focus of
+ * a series).
+ */
+private fun MetaPreview.hasFinalHeroBackdrop(tvdbForShows: Boolean): Boolean {
+    if (!banner.isMetadataProviderArtUrl()) return false
+    val show = type.equals("series", ignoreCase = true) || type.equals("anime", ignoreCase = true)
+    if (!tvdbForShows || !show) return true
+    return banner?.contains("artworks.thetvdb.com", ignoreCase = true) == true || banner.isAnimeSeasonArtUrl()
+}
 
 private fun String?.isMetadataProviderArtUrl(): Boolean {
     val url = this ?: return false
@@ -5962,44 +6096,11 @@ private fun MetaPreview.withPendingLogoSlot(): MetaPreview =
 private fun MetaPreview.asResolvedHeroEnrichment(): MetaPreview =
     if (heroMetadataPending) copy(heroMetadataPending = false) else this
 
-// TEMPORARY (hero race diagnosis) - elapsed milliseconds since the first probe call. The log shows
-// ordering but carries no timestamps of its own, so without this the one thing that actually
-// matters here - how long the hero sits blank, and where that time goes - is unmeasurable.
-private val heroProbeClock = kotlin.time.TimeSource.Monotonic.markNow()
-
-internal fun heroProbeMs(): Long = heroProbeClock.elapsedNow().inWholeMilliseconds
-
-// TEMPORARY (hero race diagnosis) - remove with the other probes. Records every write to
-// displayedFocusedItem so a repro log shows which writer set the hero item and how complete it was.
-internal fun logHeroPick(site: String, item: MetaPreview?) {
-    co.touchlab.kermit.Logger.withTag("HeroLogoRace").d {
-        if (item == null) {
-            "t=${heroProbeMs()} site=$site item=null"
-        } else {
-            "t=${heroProbeMs()} site=$site key=${canonicalHeroKey(item.type, item.id)} " +
-                "logo=${item.logo?.takeLast(26) ?: "NONE"} pending=${item.heroMetadataPending} " +
-                "genres=${item.genres.size} hasDescr=${!item.description.isNullOrBlank()} " +
-                "needsText=${item.needsHeroTextEnrichment()}"
-        }
-    }
-}
-
-// TEMPORARY (hero race diagnosis) - records every publish into the hero enrichment map with its
-// completeness, so a partial entry landing first and a fuller one landing after it shows up as two
-// PUBLISH lines for one key.
 internal fun publishHeroEnrichment(
     map: MutableMap<String, MetaPreview>,
     item: MetaPreview,
-    site: String,
 ) {
-    val key = canonicalHeroKey(item.type, item.id)
-    val previous = map[key]
-    co.touchlab.kermit.Logger.withTag("HeroLogoRace").d {
-        "t=${heroProbeMs()} PUBLISH site=$site key=$key logo=${item.logo?.takeLast(24) ?: "NONE"} " +
-            "genres=${item.genres.size} hasDescr=${!item.description.isNullOrBlank()} " +
-            "replaces=${previous?.let { "genres=" + it.genres.size + ",logo=" + (it.logo != null) } ?: "nothing"}"
-    }
-    map[key] = item.asResolvedHeroEnrichment()
+    map[canonicalHeroKey(item.type, item.id)] = item.asResolvedHeroEnrichment()
 }
 
 /**

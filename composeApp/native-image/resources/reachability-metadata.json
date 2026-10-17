@@ -1,0 +1,34 @@
+{
+  "resources": [
+    {
+      "glob": "composeResources/**"
+    },
+    {
+      "glob": "native/**"
+    },
+    {
+      "glob": "player-shaders/**"
+    },
+    {
+      "glob": "player-ui/**"
+    },
+    {
+      "glob": "player-scripts/**"
+    },
+    {
+      "glob": "icons/**"
+    },
+    {
+      "glob": "hero_discovery.json"
+    },
+    {
+      "glob": "META-INF/services/**"
+    },
+    {
+      "glob": "jni/windows_x64/**"
+    },
+    {
+      "glob": "ai/onnxruntime/native/win-x64/**"
+    }
+  ]
+}

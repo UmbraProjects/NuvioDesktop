@@ -9,6 +9,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 private const val SLOW_ENDPOINT_DELAY_MS = 300L
 
@@ -76,6 +77,59 @@ class PluginRuntimeDesktopTest {
         assertEquals("https://example.test/movie.mp4", results.single().url)
         assertEquals("1080p", results.single().quality)
         assertEquals("Desktop Test", results.single().provider)
+    }
+
+    /**
+     * Plugins log objects, arrays, errors and functions freely. The polyfill turns them into text
+     * before they reach the host console, because the native build cannot convert them to Java
+     * collections; logging must never be what fails a scrape.
+     */
+    @Test
+    fun `logging objects does not fail the scrape`() = runBlocking {
+        val results = PluginRuntime.executePlugin(
+            code = """
+                module.exports.getStreams = async function() {
+                    var cyclic = { name: "loop" };
+                    cyclic.self = cyclic;
+                    console.log("config", { a: 1, nested: [1, 2] }, [3, 4], null, undefined, 5, true);
+                    console.warn(cyclic, function named() {});
+                    console.error(new Error("boom"));
+                    return [{ title: "Logged", url: "https://example.test/logged.mp4" }];
+                };
+            """.trimIndent(),
+            tmdbId = "603",
+            mediaType = "movie",
+            season = null,
+            episode = null,
+            scraperId = "desktop-console-test",
+        )
+
+        assertEquals("Logged", results.single().title)
+    }
+
+    /**
+     * Unbounded recursion must end as a catchable JS "stack overflow", never as the thread running
+     * off its real stack (which aborted the native build). The plugin catches it and still reports.
+     */
+    @Test
+    fun `runaway recursion is a JS error, not a crash`() = runBlocking {
+        val results = PluginRuntime.executePlugin(
+            code = """
+                function dive(depth) { return dive(depth + 1) + 1; }
+                module.exports.getStreams = async function() {
+                    var message = "none";
+                    try { dive(0); } catch (e) { message = String(e); }
+                    return [{ title: message, url: "https://example.test/deep.mp4" }];
+                };
+            """.trimIndent(),
+            tmdbId = "603",
+            mediaType = "movie",
+            season = null,
+            episode = null,
+            scraperId = "desktop-recursion-test",
+        )
+
+        assertTrue(results.single().title.contains("stack overflow", ignoreCase = true), results.single().title)
     }
 
     /**
@@ -148,6 +202,52 @@ class PluginRuntimeDesktopTest {
         // includes creating the runtime and evaluating the polyfill, which dwarfs the requests on
         // a cold JVM and would make this flaky.
         assertEquals(5, peakConcurrentRequests, "plugin fetches were not in flight at the same time")
+    }
+
+    /**
+     * Scrapers like VegaMovies wrap their fetches in setTimeout-based delays and timeouts; without
+     * the globals they threw `'setTimeout' is not defined` and returned nothing. Also covers the
+     * two ways a timer could hold the runtime slot: a cleared timer still waiting out its delay,
+     * and a timer left pending when getStreams returns (the losing side of a Promise.race).
+     */
+    @Test
+    fun `plugin timers fire in order, clear, and never outlive the run`() = runBlocking {
+        val startedAt = System.nanoTime()
+        val results = PluginRuntime.executePlugin(
+            code = """
+                function sleep(ms, value) {
+                    return new Promise(function(resolve) { setTimeout(resolve, ms, value); });
+                }
+                module.exports.getStreams = async function() {
+                    var events = [];
+                    setTimeout(function() { events.push("late"); }, 60);
+                    setTimeout(function(tag) { events.push(tag); }, 10, "early");
+                    var cleared = setTimeout(function() { events.push("cleared"); }, 20000);
+                    clearTimeout(cleared);
+                    var ticks = 0;
+                    var interval = setInterval(function() {
+                        ticks++;
+                        if (ticks === 3) clearInterval(interval);
+                    }, 5);
+                    var raced = await Promise.race([
+                        sleep(30, "fast"),
+                        new Promise(function(resolve) { setTimeout(resolve, 30000, "timeout"); }),
+                    ]);
+                    await sleep(100);
+                    events.push(raced, "ticks=" + ticks);
+                    return [{ title: events.join(","), url: "https://example.test/timers.mp4" }];
+                };
+            """.trimIndent(),
+            tmdbId = "603",
+            mediaType = "movie",
+            season = null,
+            episode = null,
+            scraperId = "timer-test",
+        )
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+
+        assertEquals("early,late,fast,ticks=3", results.single().title)
+        assertTrue(elapsedMs < 10_000, "a cleared or abandoned timer held the run for $elapsedMs ms")
     }
 
     /** Runs [block] against a local server that holds each request open, and reports the peak

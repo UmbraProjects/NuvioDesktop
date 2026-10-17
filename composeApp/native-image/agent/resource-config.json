@@ -1,0 +1,118 @@
+{
+  "resources":{
+  "includes":[{
+    "pattern":"\\QMETA-INF/services/coil3.util.DecoderServiceLoaderTarget\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/coil3.util.FetcherServiceLoaderTarget\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/io.ktor.client.HttpClientEngineContainer\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/io.ktor.serialization.kotlinx.KotlinxSerializationExtensionProvider\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.awt.im.spi.InputMethodDescriptor\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.lang.System$LoggerFinder\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.net.spi.InetAddressResolverProvider\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.net.spi.URLStreamHandlerProvider\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.nio.channels.spi.SelectorProvider\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.time.zone.ZoneRulesProvider\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.util.prefs.PreferencesFactory\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/javax.imageio.spi.ImageInputStreamSpi\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/javax.imageio.spi.ImageOutputStreamSpi\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/javax.imageio.spi.ImageReaderSpi\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/javax.imageio.spi.ImageTranscoderSpi\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/javax.imageio.spi.ImageWriterSpi\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/javax.xml.parsers.DocumentBuilderFactory\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/kotlin.reflect.jvm.internal.impl.km.internal.extensions.MetadataExtensions\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/kotlin.reflect.jvm.internal.impl.resolve.ExternalOverridabilityCondition\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/kotlin.reflect.jvm.internal.impl.util.ModuleVisibilityHelper\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/kotlinx.coroutines.internal.MainDispatcherFactory\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/org.slf4j.spi.SLF4JServiceProvider\\E"
+  }, {
+    "pattern":"\\Qanime-list-mini.json\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/app_wordmark_text.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/hero_badge_globe_nom.svg\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/hero_badge_new_release.svg\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/hero_badge_stinger.svg\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_audience_score.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_audience_verified_hot.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_imdb.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_letterboxd.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_metacritic.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_rotten_tomatoes_certified.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_rotten_tomatoes_rotten.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_tmdb.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/rating_trakt.png\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/sidebar_library.xml\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/drawable/sidebar_search.xml\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/font/jetbrains_sans_bold.ttf\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/font/jetbrains_sans_regular.ttf\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/font/jetbrains_sans_semibold.ttf\\E"
+  }, {
+    "pattern":"\\QcomposeResources/nuvio.composeapp.generated.resources/values/strings.commonMain.cvr\\E"
+  }, {
+    "pattern":"\\Qhero_discovery.json\\E"
+  }, {
+    "pattern":"\\Qicons/nuvio-app-icon.png\\E"
+  }, {
+    "pattern":"\\Qkotlin/collections/collections.kotlin_builtins\\E"
+  }, {
+    "pattern":"\\Qkotlin/kotlin.kotlin_builtins\\E"
+  }, {
+    "pattern":"\\Qnative/windows/runtime-files.txt\\E"
+  }, {
+    "pattern":"\\Qorg/slf4j/impl/StaticLoggerBinder.class\\E"
+  }, {
+    "pattern":"java.base:\\Qjdk/internal/icu/impl/data/icudt72b/nfkc.nrm\\E"
+  }, {
+    "pattern":"java.base:\\Qjdk/internal/icu/impl/data/icudt72b/uprops.icu\\E"
+  }, {
+    "pattern":"java.base:\\Qsun/net/idn/uidna.spp\\E"
+  }, {
+    "pattern":"jdk.jfr:\\Qjdk/jfr/internal/query/view.ini\\E"
+  }]},
+  "bundles":[{
+    "name":"com.sun.swing.internal.plaf.basic.resources.basic",
+    "classNames":["com.sun.swing.internal.plaf.basic.resources.basic"]
+  }, {
+    "name":"com.sun.swing.internal.plaf.metal.resources.metal",
+    "classNames":["com.sun.swing.internal.plaf.metal.resources.metal"]
+  }, {
+    "name":"sun.awt.resources.awt",
+    "classNames":["sun.awt.resources.awt"]
+  }]
+}

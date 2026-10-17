@@ -3223,17 +3223,7 @@ private fun MainAppContent(
                         },
                         onOpenMeta = { preview ->
                             coroutineScope.launch {
-                                val resolvedId = if (preview.id.startsWith("tmdb:")) {
-                                    val tmdbId = preview.id.removePrefix("tmdb:").toIntOrNull()
-                                    tmdbId?.let {
-                                        TmdbService.tmdbToImdb(
-                                            tmdbId = it,
-                                            mediaType = preview.type,
-                                        )
-                                    } ?: preview.id
-                                } else {
-                                    preview.id
-                                }
+                                val resolvedId = detailRouteIdFor(preview)
                                 navController.navigateIfResumed(
                                     DetailRoute(
                                         type = preview.type,
@@ -3294,17 +3284,7 @@ private fun MainAppContent(
                         onBack = { navController.popBackStack() },
                         onOpenMeta = { preview ->
                             coroutineScope.launch {
-                                val resolvedId = if (preview.id.startsWith("tmdb:")) {
-                                    val tmdbId = preview.id.removePrefix("tmdb:").toIntOrNull()
-                                    tmdbId?.let {
-                                        TmdbService.tmdbToImdb(
-                                            tmdbId = it,
-                                            mediaType = preview.type,
-                                        )
-                                    } ?: preview.id
-                                } else {
-                                    preview.id
-                                }
+                                val resolvedId = detailRouteIdFor(preview)
                                 navController.navigateIfResumed(
                                     DetailRoute(
                                         type = preview.type,
@@ -3328,17 +3308,7 @@ private fun MainAppContent(
                         onBack = { navController.popBackStack() },
                         onOpenMeta = { preview ->
                             coroutineScope.launch {
-                                val resolvedId = if (preview.id.startsWith("tmdb:")) {
-                                    val tmdbId = preview.id.removePrefix("tmdb:").toIntOrNull()
-                                    tmdbId?.let {
-                                        TmdbService.tmdbToImdb(
-                                            tmdbId = it,
-                                            mediaType = preview.type,
-                                        )
-                                    } ?: preview.id
-                                } else {
-                                    preview.id
-                                }
+                                val resolvedId = detailRouteIdFor(preview)
                                 navController.navigateIfResumed(
                                     DetailRoute(
                                         type = preview.type,
@@ -3346,6 +3316,12 @@ private fun MainAppContent(
                                     ),
                                 )
                             }
+                        },
+                        onPosterLongClick = { meta ->
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            selectedPosterAnchor = PosterZoomAnchorHolder.consume()
+                            selectedPosterMenuPosition = ContextMenuInvocation.consume()
+                            selectedPosterActionTarget = PosterActionTarget(preview = meta)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -3365,17 +3341,7 @@ private fun MainAppContent(
                         onBack = { navController.popBackStack() },
                         onOpenMeta = { preview ->
                             coroutineScope.launch {
-                                val resolvedId = if (preview.id.startsWith("tmdb:")) {
-                                    val tmdbId = preview.id.removePrefix("tmdb:").toIntOrNull()
-                                    tmdbId?.let {
-                                        TmdbService.tmdbToImdb(
-                                            tmdbId = it,
-                                            mediaType = preview.type,
-                                        )
-                                    } ?: preview.id
-                                } else {
-                                    preview.id
-                                }
+                                val resolvedId = detailRouteIdFor(preview)
                                 navController.navigateIfResumed(
                                     DetailRoute(
                                         type = preview.type,
@@ -3383,6 +3349,12 @@ private fun MainAppContent(
                                     ),
                                 )
                             }
+                        },
+                        onPosterLongClick = { meta ->
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            selectedPosterAnchor = PosterZoomAnchorHolder.consume()
+                            selectedPosterMenuPosition = ContextMenuInvocation.consume()
+                            selectedPosterActionTarget = PosterActionTarget(preview = meta)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -5026,6 +4998,26 @@ private fun BindDiscordBrowsingPresence(
         }
     }
 }
+
+/**
+ * The id a details route opens with for a TMDB-sourced card (cast page, company / badge browse).
+ * The IMDb id when it is known within [DETAIL_ID_LOOKUP_BUDGET_MS] - instantly when cached - else the
+ * `tmdb:` id as is, which the details page resolves itself (MetaDetailsRepository.resolveMetaLookupId,
+ * same cached lookup) the way Home and Discover cards already open. These screens used to await the
+ * TMDB external-ids request before navigating at all, so an uncached title sat on the old screen for
+ * a full round trip before anything moved.
+ */
+private suspend fun detailRouteIdFor(preview: MetaPreview): String {
+    val tmdbId = preview.id.takeIf { it.startsWith("tmdb:") }
+        ?.removePrefix("tmdb:")
+        ?.toIntOrNull()
+        ?: return preview.id
+    return withTimeoutOrNull(DETAIL_ID_LOOKUP_BUDGET_MS) {
+        TmdbService.tmdbToImdb(tmdbId = tmdbId, mediaType = preview.type)
+    } ?: preview.id
+}
+
+private const val DETAIL_ID_LOOKUP_BUDGET_MS = 150L
 
 private fun NavBackStackEntry.toDiscordBrowsingActivity(
     selectedTab: AppScreenTab,

@@ -247,7 +247,8 @@ internal object MetaDetailsParser {
             group.forEach { person ->
                 val normalizedName = person.name.trim()
                 if (normalizedName.isBlank()) return@forEach
-                val key = normalizedName.lowercase()
+                // Accent- and punctuation-blind: see personNameKey.
+                val key = personNameKey(normalizedName).ifBlank { normalizedName.lowercase() }
                 val existing = merged[key]
                 merged[key] = if (existing == null) {
                     person.copy(name = normalizedName)
@@ -305,6 +306,8 @@ internal object MetaDetailsParser {
                 publishedAt = trailer.string("published_at") ?: trailer.string("publishedAt"),
                 seasonNumber = trailer.int("seasonNumber") ?: trailer.int("season_number"),
                 displayName = trailer.string("displayName")?.takeIf(String::isNotBlank),
+                language = (trailer.string("iso_639_1") ?: trailer.string("lang") ?: trailer.string("language"))
+                    ?.trim()?.takeIf(String::isNotBlank),
             )
         }
 

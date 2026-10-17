@@ -2335,8 +2335,9 @@ private fun List<MetaPerson>.dedupePeople(): List<MetaPerson> {
     return merged.values.toList()
 }
 
+// Accent- and punctuation-blind, so an addon's "Lauren Velez" and TMDB's "Lauren Vélez" merge.
 private fun String.normalizedPersonName(): String =
-    trim().lowercase()
+    com.nuvio.app.features.details.personNameKey(this).ifBlank { trim().lowercase() }
 
 private fun buildImageUrl(path: String?, size: String): String? {
     val clean = path?.trim()?.takeIf(String::isNotBlank) ?: return null
@@ -2486,6 +2487,7 @@ private data class TmdbVideoResult(
     val type: String? = null,
     val official: Boolean? = null,
     @SerialName("published_at") val publishedAt: String? = null,
+    @SerialName("iso_639_1") val iso6391: String? = null,
 )
 
 private fun TmdbVideoResult.toMetaTrailer(
@@ -2506,6 +2508,7 @@ private fun TmdbVideoResult.toMetaTrailer(
         publishedAt = publishedAt,
         seasonNumber = seasonNumber,
         displayName = displayName,
+        language = iso6391?.trim()?.takeIf(String::isNotBlank),
     )
 }
 

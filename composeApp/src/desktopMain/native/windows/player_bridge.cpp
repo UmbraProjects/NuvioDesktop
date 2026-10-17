@@ -76,6 +76,26 @@ typedef ABI::Windows::Foundation::ITypedEventHandler<
 // consuming the message stops it reaching the shell, so SMTC can't also fire for the same press.
 constexpr UINT_PTR kMediaKeySubclassId = 1;
 
+// SetWindowSubclass/RemoveWindowSubclass only work from the thread that owns the window, and the
+// top-level window belongs to AWT's toolkit thread while the player runs on its own UI thread —
+// so called directly they failed on every playback and the layer above never existed. The
+// request is instead run on the owning thread: a short-lived WH_CALLWNDPROC hook on that thread
+// picks up a private message sent to the window. The request lives in a sequence-numbered slot
+// so a send that timed out can't be acted on late.
+struct MediaKeySubclassRequest {
+    UINT64 sequence = 0;
+    bool install = false;
+    HWND window = nullptr;
+    DWORD_PTR refData = 0;
+    bool done = false;
+    BOOL result = FALSE;
+    DWORD error = 0;
+};
+std::mutex gMediaKeySubclassCallMutex;
+std::mutex gMediaKeySubclassRequestMutex;
+MediaKeySubclassRequest gMediaKeySubclassRequest;
+UINT64 gMediaKeySubclassSequence = 0;
+
 // ISystemMediaTransportControlsInterop::GetForWindow returns a per-window SINGLETON, and the
 // WM_APPCOMMAND subclass is likewise keyed by (window, id). Source failover and binge autoplay
 // tear down and recreate players every few seconds against the same top-level window, so a
@@ -1061,6 +1081,104 @@ LRESULT CALLBACK mediaKeyRootSubclassProc(
     UINT_PTR idSubclass,
     DWORD_PTR refData
 );
+
+// Runs on the window's owning thread. Only acts on the request the sender is still waiting for.
+void runMediaKeySubclassRequest(UINT64 sequence) {
+    std::lock_guard<std::mutex> lock(gMediaKeySubclassRequestMutex);
+    MediaKeySubclassRequest &request = gMediaKeySubclassRequest;
+    if (request.sequence != sequence || request.done) return;
+    SetLastError(0);
+    request.result = request.install
+        ? SetWindowSubclass(request.window, mediaKeyRootSubclassProc, kMediaKeySubclassId, request.refData)
+        : RemoveWindowSubclass(request.window, mediaKeyRootSubclassProc, kMediaKeySubclassId);
+    request.error = request.result ? 0 : GetLastError();
+    request.done = true;
+}
+
+UINT mediaKeySubclassMessage() {
+    static const UINT message = RegisterWindowMessageW(L"NuvioMediaKeySubclassRequest");
+    return message;
+}
+
+LRESULT CALLBACK mediaKeySubclassMarshalHook(int code, WPARAM wParam, LPARAM lParam) {
+    if (code == HC_ACTION && lParam) {
+        const auto *sent = reinterpret_cast<const CWPSTRUCT *>(lParam);
+        if (sent->message != 0 && sent->message == mediaKeySubclassMessage()) {
+            runMediaKeySubclassRequest(static_cast<UINT64>(sent->lParam));
+        }
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
+// Installs or removes the media-key subclass on `window` from its owning thread. Returns the
+// SetWindowSubclass/RemoveWindowSubclass result; on failure `detail` says which step failed.
+bool applyMediaKeySubclass(HWND window, bool install, DWORD_PTR refData, std::string &detail) {
+    if (!window || !IsWindow(window)) {
+        detail = "window gone";
+        return false;
+    }
+    // One request at a time: the slot below is shared, and players on different UI threads can
+    // overlap during failover. Held for at most the send timeout.
+    std::lock_guard<std::mutex> callLock(gMediaKeySubclassCallMutex);
+    const DWORD ownerThread = GetWindowThreadProcessId(window, nullptr);
+    UINT64 sequence = 0;
+    {
+        std::lock_guard<std::mutex> lock(gMediaKeySubclassRequestMutex);
+        sequence = ++gMediaKeySubclassSequence;
+        gMediaKeySubclassRequest = MediaKeySubclassRequest{};
+        gMediaKeySubclassRequest.sequence = sequence;
+        gMediaKeySubclassRequest.install = install;
+        gMediaKeySubclassRequest.window = window;
+        gMediaKeySubclassRequest.refData = refData;
+    }
+
+    if (ownerThread == GetCurrentThreadId()) {
+        runMediaKeySubclassRequest(sequence);
+    } else {
+        const UINT message = mediaKeySubclassMessage();
+        HHOOK hook = message ? SetWindowsHookExW(WH_CALLWNDPROC, mediaKeySubclassMarshalHook, gModule, ownerThread) : nullptr;
+        if (!hook) {
+            detail = "hook failed, error " + std::to_string(GetLastError()) +
+                " (owner thread " + std::to_string(ownerThread) + ")";
+            std::lock_guard<std::mutex> lock(gMediaKeySubclassRequestMutex);
+            gMediaKeySubclassRequest.sequence = 0;
+            return false;
+        }
+        // Bounded and abort-if-hung: during shutdown the toolkit thread may itself be waiting on
+        // this player, and a missing media-key layer is better than a stalled teardown. The
+        // default (non-SMTO_BLOCK) wait still services messages sent to this thread meanwhile.
+        DWORD_PTR ignored = 0;
+        const LRESULT sent = SendMessageTimeoutW(
+            window,
+            message,
+            0,
+            static_cast<LPARAM>(sequence),
+            SMTO_ABORTIFHUNG,
+            1000,
+            &ignored
+        );
+        const DWORD sendError = sent ? 0 : GetLastError();
+        UnhookWindowsHookEx(hook);
+        if (!sent) {
+            detail = "owner thread did not answer, error " + std::to_string(sendError) +
+                " (owner thread " + std::to_string(ownerThread) + ")";
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(gMediaKeySubclassRequestMutex);
+    const MediaKeySubclassRequest request = gMediaKeySubclassRequest;
+    // Invalidate, so a late delivery of a timed-out send is a no-op.
+    gMediaKeySubclassRequest.sequence = 0;
+    if (!request.done) {
+        if (detail.empty()) detail = "request never ran (owner thread " + std::to_string(ownerThread) + ")";
+        return false;
+    }
+    if (!request.result) {
+        detail = "error " + std::to_string(request.error) + " (owner thread " + std::to_string(ownerThread) + ")";
+        return false;
+    }
+    return true;
+}
 
 std::wstring currentExecutablePath() {
     wchar_t buffer[32768] = {};
@@ -4974,15 +5092,12 @@ private:
 
         // Focus-path handler. Installed even if the SMTC session below fails, since this alone
         // is enough to make the keys work whenever Nuvio is the foreground window.
-        if (SetWindowSubclass(
-                sessionWindow,
-                mediaKeyRootSubclassProc,
-                kMediaKeySubclassId,
-                reinterpret_cast<DWORD_PTR>(this)
-            )) {
+        std::string subclassDetail;
+        if (applyMediaKeySubclass(sessionWindow, true, reinterpret_cast<DWORD_PTR>(this), subclassDetail)) {
             mediaKeySubclassInstalled = true;
+            nuvioBridgeLog("smtc WM_APPCOMMAND subclass installed");
         } else {
-            nuvioBridgeLog("smtc WM_APPCOMMAND subclass failed");
+            nuvioBridgeLog("smtc WM_APPCOMMAND subclass failed: " + subclassDetail);
         }
 
         ComPtr<ISystemMediaTransportControlsInterop> interop;
@@ -5185,7 +5300,12 @@ private:
         }
 
         if (mediaKeySubclassInstalled && mediaSessionWindow) {
-            RemoveWindowSubclass(mediaSessionWindow, mediaKeyRootSubclassProc, kMediaKeySubclassId);
+            std::string subclassDetail;
+            if (!applyMediaKeySubclass(mediaSessionWindow, false, 0, subclassDetail)) {
+                // Harmless if it stays: the proc ignores a player that no longer owns the
+                // session, and WM_NCDESTROY unhooks it with the window.
+                nuvioBridgeLog("cleanup smtc WM_APPCOMMAND subclass removal failed: " + subclassDetail);
+            }
         }
         mediaKeySubclassInstalled = false;
         mediaSessionWindow = nullptr;
@@ -5709,10 +5829,16 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jmethodID eventMethod = nullptr;
     if (eventSink) {
         eventSinkRef = env->NewGlobalRef(eventSink);
-        jclass eventSinkClass = env->GetObjectClass(eventSink);
-        eventMethod = env->GetMethodID(eventSinkClass, "onPlayerEvent", "(Ljava/lang/String;D)V");
-        env->DeleteLocalRef(eventSinkClass);
+        // The interface, not GetObjectClass(eventSink): the sink is a Kotlin lambda whose generated
+        // class name the native-image metadata generator cannot know, while a literal it can
+        // (composeApp/native-image/README.md, "generated"). The call still dispatches to the lambda.
+        jclass eventSinkClass = env->FindClass("com/nuvio/app/features/player/desktop/NativePlayerEventSink");
+        eventMethod = eventSinkClass
+            ? env->GetMethodID(eventSinkClass, "onPlayerEvent", "(Ljava/lang/String;D)V")
+            : nullptr;
+        if (eventSinkClass) env->DeleteLocalRef(eventSinkClass);
         if (!eventMethod) {
+            env->ExceptionClear();
             if (eventSinkRef) env->DeleteGlobalRef(eventSinkRef);
             throwJavaError(env, "Native player event sink is missing onPlayerEvent(String, Double).");
             return 0;

@@ -58,6 +58,7 @@ internal fun ComponentRegistry.Builder.addDesktopArtworkComponents() {
     // Coil appends its own defaults after these. Animation is offered the source first; whatever
     // it declines falls to the high-quality still decoder, which would otherwise have gone to
     // Coil's own - the one that reduces with nearest-neighbour.
+    add(HeroBackdropPrefetchJoinInterceptor())
     add(DesktopArtworkSizeInterceptor())
     // After the size interceptor, so a stale-copy retry keeps the memory key it was sized under.
     add(ImageStaleIfErrorInterceptor())

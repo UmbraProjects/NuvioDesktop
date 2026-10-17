@@ -53,6 +53,41 @@ private fun logState(state: String) {
 }
 
 /**
+ * One `(FrameStall)` line per frame gap over [StallNanos] while steady pacing renders every refresh,
+ * with the collections that ran inside that gap. Steady pacing already wakes on every vsync, so
+ * watching the gaps costs nothing extra; without it the app draws only on change and a long gap
+ * means nothing. The GC counters are read every frame (a few native calls) so a stall can be
+ * matched to exactly the collections that ran inside it, which answers "was that hitch the GC?".
+ */
+private object FrameStallLog {
+    private const val StallNanos = 34_000_000L
+    private val log = Logger.withTag("FrameStall")
+    private val collectors = runCatching { java.lang.management.ManagementFactory.getGarbageCollectorMXBeans() }
+        .getOrDefault(emptyList())
+    private val counts = LongArray(collectors.size)
+    private val times = LongArray(collectors.size)
+
+    fun onFrame(gapNanos: Long) {
+        val stalled = gapNanos > StallNanos
+        val gc = if (stalled) StringBuilder() else null
+        collectors.forEachIndexed { index, bean ->
+            val count = bean.collectionCount
+            val time = bean.collectionTime
+            if (gc != null && count > counts[index] && counts[index] > 0) {
+                gc.append(" ${bean.name} +${count - counts[index]} (${time - times[index]}ms)")
+            }
+            counts[index] = count
+            times[index] = time
+        }
+        if (gc == null) return
+        val heapMb = Runtime.getRuntime().let { (it.totalMemory() - it.freeMemory()) / (1024 * 1024) }
+        log.i {
+            "${gapNanos / 1_000_000}ms gap; gc:" + gc.ifEmpty { " none" } + "; heap ${heapMb}MB"
+        }
+    }
+}
+
+/**
  * Optional fix for VRR (G-Sync / FreeSync) flicker in the interface.
  *
  * Compose draws only when something changes, so the window presents frames irregularly: nothing at
@@ -109,6 +144,7 @@ internal fun SteadyFramePacingEffect(window: Window) {
             logState("paused: window not focused")
             return@LaunchedEffect
         }
+        var lastFrameNanos = 0L
         while (isActive) {
             val idle = System.currentTimeMillis() - lastInputAtMs >= IDLE_STOP_MS
             val inPlayer = DesktopScreensaver.playerActive
@@ -123,8 +159,11 @@ internal fun SteadyFramePacingEffect(window: Window) {
             if (running) {
                 // An empty frame wait is the whole mechanism: a pending awaiter makes the Recomposer
                 // schedule the next frame, so the window draws and presents on every vsync.
-                withFrameNanos { }
+                val frameNanos = withFrameNanos { it }
+                if (lastFrameNanos != 0L) FrameStallLog.onFrame(frameNanos - lastFrameNanos)
+                lastFrameNanos = frameNanos
             } else {
+                lastFrameNanos = 0L
                 delay(PAUSED_RECHECK_MS)
             }
         }

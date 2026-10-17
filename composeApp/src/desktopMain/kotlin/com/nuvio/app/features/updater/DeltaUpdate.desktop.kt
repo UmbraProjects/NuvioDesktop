@@ -188,7 +188,7 @@ internal object ZipDelta {
         coalesce(plan.changed.sortedBy { it.localHeaderOffset }, ::spanEnd).forEach { group ->
             val groupStart = group.first().localHeaderOffset
             val groupEnd = spanEnd(group.last())
-            source.open(groupStart, groupEnd).use { input ->
+            ResumingRangeStream(source, groupStart, groupEnd).use { input ->
                 var position = groupStart
                 group.forEach { entry ->
                     input.skipExactly(entry.localHeaderOffset - position)
@@ -324,6 +324,75 @@ internal object ZipDelta {
 
     private fun ByteBuffer.u16(index: Int): Int = getShort(index).toInt() and 0xFFFF
     private fun ByteBuffer.u32(index: Int): Long = getInt(index).toLong() and 0xFFFFFFFFL
+}
+
+/**
+ * Bytes `[start, endExclusive)` of [source] that survive a dropped connection: when a read fails
+ * part-way, the remaining range is requested again (up to [maxResumes] times) and reading carries on
+ * where it stopped. On the native build every update fetches the whole ~86 MB compressed exe as one
+ * entry, and without this one dropped connection threw the delta away for the even bigger full zip.
+ * The entry's CRC32 is still checked against the central directory after a resume.
+ */
+internal class ResumingRangeStream(
+    private val source: ZipRangeSource,
+    start: Long,
+    private val endExclusive: Long,
+    private val maxResumes: Int = 3,
+) : InputStream() {
+    private var position = start
+    private var resumes = 0
+    private var current: InputStream? = source.open(start, endExclusive)
+
+    override fun read(): Int {
+        val one = ByteArray(1)
+        val read = read(one, 0, 1)
+        return if (read < 0) -1 else one[0].toInt() and 0xFF
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (length == 0) return 0
+        if (position >= endExclusive) return -1
+        while (true) {
+            val stream = current ?: source.open(position, endExclusive).also { current = it }
+            val read = try {
+                stream.read(buffer, offset, minOf(length.toLong(), endExclusive - position).toInt())
+            } catch (error: java.io.IOException) {
+                if (resumes >= maxResumes) throw error
+                resumes++
+                runCatching { stream.close() }
+                current = null
+                continue
+            }
+            if (read < 0) {
+                // The connection ended before the range did: same as a dropped read.
+                if (resumes >= maxResumes) throw EOFException("Range ended at $position of $endExclusive")
+                resumes++
+                runCatching { stream.close() }
+                current = null
+                continue
+            }
+            position += read
+            return read
+        }
+    }
+
+    override fun skip(count: Long): Long {
+        // Skipping by reading keeps [position] right for a resume; skipped spans are small (the
+        // gaps between coalesced entries and their local headers).
+        val scratch = ByteArray(minOf(count, 64L * 1024).toInt().coerceAtLeast(1))
+        var skipped = 0L
+        while (skipped < count) {
+            val read = read(scratch, 0, minOf(scratch.size.toLong(), count - skipped).toInt())
+            if (read < 0) break
+            skipped += read
+        }
+        return skipped
+    }
+
+    override fun close() {
+        current?.close()
+        current = null
+    }
 }
 
 /** A zip served over HTTPS with byte-range support (GitHub release assets are). */

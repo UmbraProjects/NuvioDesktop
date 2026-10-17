@@ -12,6 +12,7 @@ private const val MaxDrawSamples = 4_096
 
 /** What the request pin used to be, kept here only as the "was this worth doing" reference point. */
 private const val LegacyPinPx = 1536
+private const val LargeExampleCount = 6
 
 /** Above this a decode is a hero backdrop, not a card. */
 private const val LargeImageBytes = 4L * 1024 * 1024
@@ -36,6 +37,9 @@ internal object DesktopArtworkTelemetry {
     private var sourceBytes = 0L
     private var legacyPinBytes = 0L
     private var aboveLegacyPin = 0
+
+    /** The first few above-1536 decodes of the window, with what asked for them; see recordDecode. */
+    private val largeExamples = mutableListOf<String>()
 
     // Split, because the two halves answer different questions and moved in opposite directions.
     // Sized: artwork the destination sizing governs, where the 1536 px pin is the honest baseline.
@@ -71,8 +75,18 @@ internal object DesktopArtworkTelemetry {
         outWidth: Int,
         outHeight: Int,
         destinationSized: Boolean,
+        // Which image, and the size the request asked for: `above1536` alone cannot say whether a
+        // large decode is a hero backdrop or something else (2026-10-16: 59 in 31 s of scrolling
+        // with the hero settle in place, so not the hero).
+        sourceKey: String? = null,
+        requested: String? = null,
     ) {
         val outBytes = argbBytes(outWidth, outHeight)
+        if (maxOf(outWidth, outHeight) > LegacyPinPx && largeExamples.size < LargeExampleCount) {
+            largeExamples += "${outWidth}x$outHeight req=${requested ?: "?"} " +
+                (sourceKey?.let(ImageFetchTimingListener::describeData) ?: "?")
+        }
+        ArtworkChurnTrim.onDecoded(outBytes)
         // What the same source would have cost under the old unconditional 1536 px pin. That is the
         // baseline this change has to beat for destination-sized artwork - and the one it must NOT
         // be credited against for the hero paths, which the pin never governed.
@@ -195,7 +209,8 @@ internal object DesktopArtworkTelemetry {
                 "sized=$sizedDecodes/${mb(sizedBytes)} vsPin=${mb(sizedPinBytes)} " +
                 "savedVsPin=${percentSaved(sizedBytes, sizedPinBytes)} " +
                 "unsized=$unsizedDecodes/${mb(unsizedBytes)} above1536=$aboveLegacyPin " +
-                "largest=${mb(largestBytes)}($largestDetail)"
+                "largest=${mb(largestBytes)}($largestDetail)" +
+                (if (largeExamples.isEmpty()) "" else " large=[${largeExamples.joinToString(" | ")}]")
         }
         val drawLine = if (draws == 0) "draws=0" else {
             "draws=$draws supplied=${mb(suppliedBytes)} drawn=${mb(drawnBytes)} " +
@@ -220,6 +235,7 @@ internal object DesktopArtworkTelemetry {
         sourceBytes = 0L
         legacyPinBytes = 0L
         aboveLegacyPin = 0
+        largeExamples.clear()
         sizedDecodes = 0
         sizedBytes = 0L
         sizedPinBytes = 0L

@@ -1,0 +1,12 @@
+{
+  "reflection": [
+    {
+      "type": "java.util.LinkedHashMap",
+      "jniAccessible": true,
+      "allDeclaredConstructors": true,
+      "allPublicConstructors": true,
+      "allDeclaredMethods": true,
+      "allPublicMethods": true
+    }
+  ]
+}

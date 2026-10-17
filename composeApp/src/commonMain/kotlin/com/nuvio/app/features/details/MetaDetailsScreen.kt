@@ -91,6 +91,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import com.nuvio.app.features.games.GameModeController
 import com.nuvio.app.features.streams.StreamPrefetchService
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
@@ -1814,7 +1817,14 @@ fun MetaDetailsScreen(
                 // the native child to 1px (see HeroTrailerPlayerSurface.desktop.kt), and closing the
                 // modal resumes in place — the same park/resume the scroll gate below already uses,
                 // so the surface is never torn down and never comes back on a black frame.
-                val heroTrailerModalVisible = showLibraryListPicker ||
+                // Another screen is opening over this one (a cast member, a related title, a browse
+                // page). The outgoing entry drops out of RESUMED as the navigation starts, but stays
+                // composed through the transition, so without this the native trailer kept painting
+                // over the incoming page for several frames. Back is covered by isLeavingDetails.
+                val detailsLifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+                val detailsCovered = !detailsLifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+                val heroTrailerModalVisible = detailsCovered ||
+                    showLibraryListPicker ||
                     showRatingDialog ||
                     showMonitorDialog ||
                     selectedEpisodeForActions != null ||

@@ -1,17 +1,34 @@
 package com.nuvio.app.features.details
 
-internal fun selectHeroTrailer(trailers: List<MetaTrailer>): MetaTrailer? =
-    trailers
+/**
+ * The trailer the hero plays by itself. Language first: the list can hold every language TMDB has
+ * (48 and 56 entries for two films, 2026-10-16), and ranking by "official, then newest" alone put a
+ * newer foreign-language trailer ahead of the English one for an English title. A trailer in
+ * [preferredLanguage] wins, one whose language is unknown comes next, any other language last.
+ */
+internal fun selectHeroTrailer(
+    trailers: List<MetaTrailer>,
+    preferredLanguage: String? = com.nuvio.app.features.tmdb.TmdbSettingsRepository.snapshot().language,
+): MetaTrailer? {
+    val wanted = preferredLanguage?.substringBefore('-')?.lowercase()?.takeIf(String::isNotBlank)
+    return trailers
         .asSequence()
         .filter { it.isPlayableYouTubeTrailerCandidate() }
         .maxWithOrNull(
             compareBy<MetaTrailer>(
+                { it.languageRank(wanted) },
                 { it.heroTrailerPriority() },
                 { it.publishedAt.orEmpty() },
                 { it.size ?: 0 },
                 { it.name },
             ),
         )
+}
+
+private fun MetaTrailer.languageRank(wanted: String?): Int {
+    val own = language?.substringBefore('-')?.lowercase()?.takeIf(String::isNotBlank) ?: return 1
+    return if (wanted == null || own == wanted) 2 else 0
+}
 
 internal fun MetaTrailer.youtubePlaybackUrl(): String =
     key.takeIf { it.startsWith("http://") || it.startsWith("https://") }
