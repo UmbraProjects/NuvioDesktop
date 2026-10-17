@@ -9,6 +9,7 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_header
+import nuvio.composeapp.generated.resources.party_title
 import nuvio.composeapp.generated.resources.compose_settings_category_about
 import nuvio.composeapp.generated.resources.compose_settings_category_general
 import nuvio.composeapp.generated.resources.compose_settings_page_account
@@ -83,6 +84,11 @@ internal enum class SettingsPage(
     LicensesAttributions(
         titleRes = Res.string.compose_settings_page_licenses_attributions,
         category = SettingsCategory.About,
+        parentPage = Root,
+    ),
+    WatchParty(
+        titleRes = Res.string.party_title,
+        category = SettingsCategory.Account,
         parentPage = Root,
     ),
     Playback(

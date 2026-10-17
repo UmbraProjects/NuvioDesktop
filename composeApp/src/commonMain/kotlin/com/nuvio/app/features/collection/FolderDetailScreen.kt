@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -107,11 +110,17 @@ import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.PosterShape
 import com.nuvio.app.features.home.canOpenCatalog
 import com.nuvio.app.features.home.usesInfiniteHomeRow
+import com.nuvio.app.features.home.heroNeedsMetadataFetch
+import com.nuvio.app.features.home.resolveFocusedHeroItem
 import com.nuvio.app.features.home.stableKey
+import com.nuvio.app.features.home.withNormalizedHeroBackdrop
+import com.nuvio.app.features.tmdb.HeroImageSource
+import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.home.components.immersiveShelfScrimStops
 import com.nuvio.app.features.home.components.PAGE_ITEM_STEP
 import com.nuvio.app.features.home.components.PAGE_SECTION_STEP
 import com.nuvio.app.features.home.components.HomeCatalogRowSection
+import com.nuvio.app.features.home.components.homeHeroLayout
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
 import com.nuvio.app.features.home.immersiveCatalogPosterBaseWidthDp
 import com.nuvio.app.features.home.immersiveShelfHeightDp
@@ -127,17 +136,25 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_folder_empty_items
 import nuvio.composeapp.generated.resources.collections_folder_not_found
+import nuvio.composeapp.generated.resources.collections_folder_sources_failed
+import nuvio.composeapp.generated.resources.collections_folder_sources_failed_more
 import nuvio.composeapp.generated.resources.collections_tab_all
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.abs
 
 private val FolderCoverHeight = 176.dp
-private val FolderAdaptiveHeroHeightFallback = 440.dp
+private const val FolderBackdropBannerWidthFraction = 0.22f
+private val FolderBackdropBannerMaxHeight = 320.dp
 private const val FolderAdaptiveHeroItemLimit = 8
 private const val FolderCatalogPreviewLimit = 18
 
@@ -268,7 +285,7 @@ private fun FolderDetailScreenContent(
         WatchedRepository.uiState
     }.collectAsState()
     val folder = uiState.folder
-    val collectionSections = remember(uiState.tabs) {
+    val collectionSections = remember(uiState.tabs, uiState.rowOrderHoldExpired) {
         FolderDetailRepository.getCatalogSectionsForRows()
     }
     val showImmersiveCollection = isDesktop &&
@@ -288,11 +305,16 @@ private fun FolderDetailScreenContent(
     // in that case; real Default mode (hero/adaptive/TV all off) is unaffected.
     val suppressFallbackCoverBanner = homeSettings.heroEnabled &&
         (homeSettings.adaptiveHeroEnabled || homeSettings.tvModeEnabled)
+    // The folder's hero backdrop when it has one: the cover is a small tile with its title baked
+    // in, which a full-width crop slices through. The backdrop is made for this shape and comes
+    // with a separate title logo to lay over it.
+    val bannerBackdropUrl = folder?.heroBackdropUrl?.takeIf { it.isNotBlank() }
     val coverImageUrl = if (suppressFallbackCoverBanner) {
         null
     } else {
-        folder?.coverImageUrl?.takeIf { it.isNotBlank() }
+        bannerBackdropUrl ?: folder?.coverImageUrl?.takeIf { it.isNotBlank() }
     }
+    val bannerLogoUrl = folder?.titleLogoUrl?.takeIf { it.isNotBlank() && bannerBackdropUrl != null }
 
     val isFreshEntry = remember(entryKey) { FolderScrollMemory.markComposed(entryKey) }
 
@@ -315,6 +337,7 @@ private fun FolderDetailScreenContent(
         AdaptiveCollectionContent(
             sessionKey = entryKey,
             sections = collectionSections,
+            failedSources = uiState.failedSources,
             watchedKeys = watchedUiState.watchedKeys,
             onBack = onBack,
             onCatalogClick = onCatalogClick,
@@ -326,117 +349,138 @@ private fun FolderDetailScreenContent(
         return
     }
 
-    val density = LocalDensity.current
-    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val maxHeroHeightPx = with(density) { FolderCoverHeight.toPx() }
-    var heroHeightPx by remember(coverImageUrl, maxHeroHeightPx) {
-        mutableFloatStateOf(if (coverImageUrl != null) maxHeroHeightPx else 0f)
-    }
-
-    val heroScrollConnection = remember(coverImageUrl, maxHeroHeightPx) {
-        object : NestedScrollConnection {
-            fun consumeHeroDelta(deltaY: Float): Float {
-                if (coverImageUrl == null || deltaY == 0f) return 0f
-                val previousHeight = heroHeightPx
-                val nextHeight = (previousHeight + deltaY).coerceIn(0f, maxHeroHeightPx)
-                heroHeightPx = nextHeight
-                return nextHeight - previousHeight
-            }
-
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y >= 0f) return Offset.Zero
-                return Offset(x = 0f, y = consumeHeroDelta(available.y))
-            }
-
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (available.y <= 0f) return Offset.Zero
-                return Offset(x = 0f, y = consumeHeroDelta(available.y))
-            }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        // A backdrop is a wide image meant to be seen, so it gets a banner that grows with the
+        // window; the cover-tile fallback keeps the thin strip it always had.
+        val bannerHeight = if (bannerBackdropUrl != null) {
+            (maxWidth * FolderBackdropBannerWidthFraction).coerceIn(FolderCoverHeight, FolderBackdropBannerMaxHeight)
+        } else {
+            FolderCoverHeight
         }
-    }
-
-    val heroHeight = with(density) { heroHeightPx.toDp() }
-    val heroCollapseFraction = if (coverImageUrl == null || maxHeroHeightPx == 0f) {
-        1f
-    } else {
-        1f - (heroHeightPx / maxHeroHeightPx)
-    }
-    val contentModifier = if (coverImageUrl != null) {
-        Modifier.nestedScroll(heroScrollConnection)
-    } else {
-        Modifier
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        if (coverImageUrl != null && heroHeight > 0.dp) {
-            FolderCoverImage(
-                imageUrl = coverImageUrl,
-                title = folder?.title.orEmpty(),
-                modifier = Modifier.height(heroHeight),
-            )
+        val maxHeroHeightPx = with(density) { bannerHeight.toPx() }
+        var heroHeightPx by remember(coverImageUrl, maxHeroHeightPx) {
+            mutableFloatStateOf(if (coverImageUrl != null) maxHeroHeightPx else 0f)
         }
 
-        NuvioScreenHeader(
-            title = folder?.title ?: uiState.collectionTitle,
-            modifier = Modifier.padding(horizontal = 16.dp),
-            includeStatusBarPadding = coverImageUrl == null,
-            topPadding = if (coverImageUrl != null) {
-                statusBarTop * heroCollapseFraction
-            } else {
-                null
-            },
-            onBack = onBack,
-        )
+        val heroScrollConnection = remember(coverImageUrl, maxHeroHeightPx) {
+            object : NestedScrollConnection {
+                fun consumeHeroDelta(deltaY: Float): Float {
+                    if (coverImageUrl == null || deltaY == 0f) return 0f
+                    val previousHeight = heroHeightPx
+                    val nextHeight = (previousHeight + deltaY).coerceIn(0f, maxHeroHeightPx)
+                    heroHeightPx = nextHeight
+                    return nextHeight - previousHeight
+                }
 
-        if (folder == null && !uiState.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(Res.string.collections_folder_not_found),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    if (available.y >= 0f) return Offset.Zero
+                    return Offset(x = 0f, y = consumeHeroDelta(available.y))
+                }
+
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    if (available.y <= 0f) return Offset.Zero
+                    return Offset(x = 0f, y = consumeHeroDelta(available.y))
+                }
+            }
+        }
+
+        val heroHeight = with(density) { heroHeightPx.toDp() }
+        val heroCollapseFraction = if (coverImageUrl == null || maxHeroHeightPx == 0f) {
+            1f
+        } else {
+            1f - (heroHeightPx / maxHeroHeightPx)
+        }
+        val contentModifier = if (coverImageUrl != null) {
+            Modifier.nestedScroll(heroScrollConnection)
+        } else {
+            Modifier
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+        ) {
+            if (coverImageUrl != null && heroHeight > 0.dp) {
+                FolderCoverImage(
+                    imageUrl = coverImageUrl,
+                    logoUrl = bannerLogoUrl,
+                    title = folder?.title.orEmpty(),
+                    fullHeight = bannerHeight,
+                    fadeIntoBackground = bannerBackdropUrl != null,
+                    modifier = Modifier.height(heroHeight),
                 )
             }
-            return@Column
-        }
 
-        when (uiState.viewMode) {
-            FolderViewMode.TABBED_GRID -> TabbedGridContent(
-                sessionKey = entryKey,
-                resetToTop = isFreshEntry,
-                uiState = uiState,
-                watchedKeys = watchedUiState.watchedKeys,
-                modifier = Modifier.weight(1f).then(contentModifier),
-                onTabSelected = { FolderDetailRepository.selectTab(it) },
-                onPosterClick = onPosterClick,
-                onPosterLongClick = onPosterLongClick,
+            NuvioScreenHeader(
+                title = folder?.title ?: uiState.collectionTitle,
+                modifier = Modifier.padding(horizontal = 16.dp),
+                includeStatusBarPadding = coverImageUrl == null,
+                topPadding = if (coverImageUrl != null) {
+                    statusBarTop * heroCollapseFraction
+                } else {
+                    null
+                },
+                onBack = onBack,
             )
-            FolderViewMode.ROWS -> RowsContent(
-                sessionKey = entryKey,
-                resetToTop = isFreshEntry,
-                uiState = uiState,
-                watchedKeys = watchedUiState.watchedKeys,
-                modifier = Modifier.weight(1f).then(contentModifier),
-                onCatalogClick = onCatalogClick,
-                onPosterClick = onPosterClick,
-                onPosterLongClick = onPosterLongClick,
-            )
-            FolderViewMode.FOLLOW_LAYOUT -> RowsContent(
-                sessionKey = entryKey,
-                resetToTop = isFreshEntry,
-                uiState = uiState,
-                watchedKeys = watchedUiState.watchedKeys,
-                modifier = Modifier.weight(1f).then(contentModifier),
-                onCatalogClick = onCatalogClick,
-                onPosterClick = onPosterClick,
-                onPosterLongClick = onPosterLongClick,
-            )
+
+            if (folder == null && !uiState.isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.collections_folder_not_found),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                return@Column
+            }
+
+            // The grid shows a failed source's error in its own tab already; the notice is for the
+            // views that drop failed sources (the rows, and the grid's All tab).
+            if (uiState.viewMode != FolderViewMode.TABBED_GRID || uiState.selectedTab?.isAllTab == true) {
+                FolderSourceFailuresNotice(
+                    failedSources = uiState.failedSources,
+                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                )
+            }
+
+            when (uiState.viewMode) {
+                FolderViewMode.TABBED_GRID -> TabbedGridContent(
+                    sessionKey = entryKey,
+                    resetToTop = isFreshEntry,
+                    uiState = uiState,
+                    watchedKeys = watchedUiState.watchedKeys,
+                    modifier = Modifier.weight(1f).then(contentModifier),
+                    onTabSelected = { FolderDetailRepository.selectTab(it) },
+                    onPosterClick = onPosterClick,
+                    onPosterLongClick = onPosterLongClick,
+                )
+                FolderViewMode.ROWS -> RowsContent(
+                    sessionKey = entryKey,
+                    resetToTop = isFreshEntry,
+                    uiState = uiState,
+                    watchedKeys = watchedUiState.watchedKeys,
+                    modifier = Modifier.weight(1f).then(contentModifier),
+                    onCatalogClick = onCatalogClick,
+                    onPosterClick = onPosterClick,
+                    onPosterLongClick = onPosterLongClick,
+                )
+                FolderViewMode.FOLLOW_LAYOUT -> RowsContent(
+                    sessionKey = entryKey,
+                    resetToTop = isFreshEntry,
+                    uiState = uiState,
+                    watchedKeys = watchedUiState.watchedKeys,
+                    modifier = Modifier.weight(1f).then(contentModifier),
+                    onCatalogClick = onCatalogClick,
+                    onPosterClick = onPosterClick,
+                    onPosterLongClick = onPosterLongClick,
+                )
+            }
         }
     }
 }
@@ -566,6 +610,8 @@ private fun ImmersiveCollectionContent(
     // must still resolve to a real item instead of going null and freezing the hero on
     // whatever the pager last showed.
     val focusedItem = activeRowEntries.getOrNull(activeItemIndex)
+    val heroEnrichment = rememberFolderHeroEnrichment(sessionKey, activeRowEntries, activeItemIndex)
+    val heroFocusedItem = focusedItem?.withFolderHeroEnrichment(heroEnrichment)
     val selectHold = rememberHoldToSelectState()
 
     // Mirrors HomeScreen's handleHomeTvKey: a shared handler so the same navigation works
@@ -734,8 +780,8 @@ private fun ImmersiveCollectionContent(
                 )
             }
             HomeHeroSection(
-                items = activeEntries.take(FolderAdaptiveHeroItemLimit),
-                focusedItem = focusedItem,
+                items = activeEntries.take(FolderAdaptiveHeroItemLimit).map { it.withFolderHeroEnrichment(heroEnrichment) },
+                focusedItem = heroFocusedItem,
                 metadataPrefetchItems = metadataPrefetchItems,
                 heightOverride = maxHeight,
                 roundedBottomCorners = false,
@@ -875,6 +921,7 @@ private fun ImmersiveCollectionContent(
 private fun AdaptiveCollectionContent(
     sessionKey: String,
     sections: List<HomeCatalogSection>,
+    failedSources: List<FolderTab>,
     watchedKeys: Set<String>,
     onBack: () -> Unit,
     onCatalogClick: (HomeCatalogSection) -> Unit,
@@ -965,6 +1012,8 @@ private fun AdaptiveCollectionContent(
     // must still resolve to a real item instead of going null and freezing the hero on
     // whatever the pager last showed.
     val focusedItem = activeRowEntries.getOrNull(activeItemIndex)
+    val heroEnrichment = rememberFolderHeroEnrichment(sessionKey, activeRowEntries, activeItemIndex)
+    val heroFocusedItem = focusedItem?.withFolderHeroEnrichment(heroEnrichment)
     val selectHold = rememberHoldToSelectState()
 
     // Mirrors HomeScreen's handleHomeTvKey: a shared handler so the same navigation works
@@ -1100,81 +1149,104 @@ private fun AdaptiveCollectionContent(
             )
         }
 
-        Column(modifier = Modifier.fillMaxSize()) {
-            Box {
-                HomeHeroSection(
-                    items = activeEntries.take(FolderAdaptiveHeroItemLimit),
-                    focusedItem = focusedItem,
-                    metadataPrefetchItems = metadataPrefetchItems,
-                    viewportHeight = FolderAdaptiveHeroHeightFallback,
-                    roundedBottomCorners = false,
-                    adaptiveHeroMode = true,
-                    heroInfoLines = homeSettings.heroInfoLines,
-                    heroInfoPriority = homeSettings.heroInfoPriority,
-                    heroBadgePlacement = homeSettings.heroBadgePlacement,
-                    heroReleaseStatusUnavailableOnly = homeSettings.heroReleaseStatusUnavailableOnly,
-                    onActiveItemChanged = { item ->
-                        activeHeroBackdrop = item.banner ?: item.poster
-                    },
-                    onCastClick = onCastClick,
-                    onBadgeClick = onBadgeClick,
-                    onItemClick = onPosterClick,
-                )
-                NuvioBackButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 20.dp, top = 20.dp)
-                        .size(40.dp)
-                        .onPointerEvent(PointerEventType.Enter) { backButtonHovered = true }
-                        .onPointerEvent(PointerEventType.Exit) { backButtonHovered = false },
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f * backButtonAlpha),
-                    contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = backButtonAlpha),
-                    iconSize = 24.dp,
-                )
-            }
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            // Sized, padded and faded exactly as Home's Adaptive hero, so opening a collection keeps
+            // the hero the user set up there: same height slider, same row-aligned text, and with the
+            // ambient background on it fades into the wash instead of ending on a hard black edge.
+            val heroLayout = homeHeroLayout(
+                maxWidthDp = maxWidth.value,
+                viewportHeightDp = maxHeight.value,
+                preferDesktopLayout = true,
+                heightMultiplier = homeSettings.adaptiveHeroHeightMultiplier,
+            )
+            val sectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value)
+            val viewportHeight = maxHeight
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box {
+                    HomeHeroSection(
+                        items = activeEntries.take(FolderAdaptiveHeroItemLimit).map { it.withFolderHeroEnrichment(heroEnrichment) },
+                        focusedItem = heroFocusedItem,
+                        metadataPrefetchItems = metadataPrefetchItems,
+                        viewportHeight = viewportHeight,
+                        sectionPadding = sectionPadding,
+                        heightOverride = heroLayout.heroHeight,
+                        roundedBottomCorners = !ambientBackgroundEnabled,
+                        adaptiveHeroMode = true,
+                        ambientBackground = ambientBackgroundEnabled,
+                        heroInfoLines = homeSettings.heroInfoLines,
+                        heroInfoPriority = homeSettings.heroInfoPriority,
+                        heroBadgePlacement = homeSettings.heroBadgePlacement,
+                        heroReleaseStatusUnavailableOnly = homeSettings.heroReleaseStatusUnavailableOnly,
+                        onActiveItemChanged = { item ->
+                            activeHeroBackdrop = item.banner ?: item.poster
+                        },
+                        onCastClick = onCastClick,
+                        onBadgeClick = onBadgeClick,
+                        onItemClick = onPosterClick,
+                    )
+                    NuvioBackButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(start = 20.dp, top = 20.dp)
+                            .size(40.dp)
+                            .onPointerEvent(PointerEventType.Enter) { backButtonHovered = true }
+                            .onPointerEvent(PointerEventType.Exit) { backButtonHovered = false },
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f * backButtonAlpha),
+                        contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = backButtonAlpha),
+                        iconSize = 24.dp,
+                    )
+                }
 
-            KeepListAtTopWhileItemsArrive(lazyListState, sections.map { it.key })
-            LazyColumn(state = lazyListState, modifier = Modifier.weight(1f)) {
-                sections.forEachIndexed { rowIndex, section ->
-                    val previewEntries = section.items.take(FolderCatalogPreviewLimit)
-                    val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
-                    val entries = if (usesInfiniteScroll) {
-                        section.items
-                    } else {
-                        previewEntries
-                    }
-                    item(key = section.key) {
-                        HomeCatalogRowSection(
-                            section = section,
-                            entries = entries,
-                            watchedKeys = watchedKeys,
-                            focusedItemIndex = if (rowIndex == activeRowIndex) activeItemIndex else null,
-                            isKeyboardNavigation = !mouseActivity.isMouseActive,
-                            onHoverItem = { itemIndex ->
-                                if (mouseActivity.isMouseActive) {
-                                    activeRowIndex = rowIndex
-                                    activeItemIndex = itemIndex
-                                }
-                            },
-                            onViewAllClick = if (
-                                !usesInfiniteScroll &&
-                                section.canOpenCatalog(FolderCatalogPreviewLimit)
-                            ) {
-                                { onCatalogClick(section) }
-                            } else {
-                                null
-                            },
-                            onLoadMore = if (usesInfiniteScroll) {
-                                { FolderDetailRepository.loadMoreCatalogRow(section) }
-                            } else {
-                                null
-                            },
-                            isLoadingMore = section.isLoadingMore,
-                            rowNumber = rowNumbers[section.key],
-                            onPosterClick = onPosterClick,
-                            onPosterLongClick = onPosterLongClick,
-                        )
+                FolderSourceFailuresNotice(
+                    failedSources = failedSources,
+                    modifier = Modifier.padding(horizontal = sectionPadding).padding(bottom = 8.dp),
+                )
+                KeepListAtTopWhileItemsArrive(lazyListState, sections.map { it.key })
+                LazyColumn(state = lazyListState, modifier = Modifier.weight(1f)) {
+                    sections.forEachIndexed { rowIndex, section ->
+                        val previewEntries = section.items.take(FolderCatalogPreviewLimit)
+                        val usesInfiniteScroll = section.usesInfiniteHomeRow(catalogSeeMoreEnabled)
+                        val entries = if (usesInfiniteScroll) {
+                            section.items
+                        } else {
+                            previewEntries
+                        }
+                        item(key = section.key) {
+                            HomeCatalogRowSection(
+                                section = section,
+                                entries = entries,
+                                watchedKeys = watchedKeys,
+                                // Home's row spacing and edge padding, so a collection reads like Home.
+                                modifier = Modifier.padding(bottom = 12.dp),
+                                sectionPadding = sectionPadding,
+                                focusedItemIndex = if (rowIndex == activeRowIndex) activeItemIndex else null,
+                                isKeyboardNavigation = !mouseActivity.isMouseActive,
+                                onHoverItem = { itemIndex ->
+                                    if (mouseActivity.isMouseActive) {
+                                        activeRowIndex = rowIndex
+                                        activeItemIndex = itemIndex
+                                    }
+                                },
+                                onViewAllClick = if (
+                                    !usesInfiniteScroll &&
+                                    section.canOpenCatalog(FolderCatalogPreviewLimit)
+                                ) {
+                                    { onCatalogClick(section) }
+                                } else {
+                                    null
+                                },
+                                onLoadMore = if (usesInfiniteScroll) {
+                                    { FolderDetailRepository.loadMoreCatalogRow(section) }
+                                } else {
+                                    null
+                                },
+                                isLoadingMore = section.isLoadingMore,
+                                rowNumber = rowNumbers[section.key],
+                                onPosterClick = onPosterClick,
+                                onPosterLongClick = onPosterLongClick,
+                            )
+                        }
                     }
                 }
             }
@@ -1182,20 +1254,124 @@ private fun AdaptiveCollectionContent(
     }
 }
 
+/**
+ * The hero copies of [rowItems] around the focused card, enriched the way Home enriches its own
+ * focused rows (logo, genres, runtime, age rating, TMDB backdrop), keyed by `type:id`.
+ *
+ * Home runs every focused item through [resolveFocusedHeroItem] before the hero sees it; the
+ * collection screens handed the hero the raw row item. That is invisible for an addon catalogue,
+ * whose items arrive complete, but a TMDB or Trakt source yields only a title, poster, backdrop,
+ * synopsis and year, so its hero showed a plain text title and no metadata row.
+ *
+ * The focused card goes first, then its neighbours, so moving along the row finds them resolved.
+ * Results are kept for the screen's lifetime; the lookups themselves are cached app-wide.
+ */
+@Composable
+private fun rememberFolderHeroEnrichment(
+    sessionKey: String,
+    rowItems: List<MetaPreview>,
+    focusedIndex: Int,
+): Map<String, MetaPreview> {
+    val enriched = remember(sessionKey) { mutableStateMapOf<String, MetaPreview>() }
+    val window = remember(rowItems, focusedIndex) {
+        val focus = focusedIndex.coerceIn(0, (rowItems.size - 1).coerceAtLeast(0))
+        rowItems.indices
+            .filter { it in (focus - FolderHeroEnrichBehind)..(focus + FolderHeroEnrichAhead) }
+            .sortedBy { abs(it - focus) }
+            .map(rowItems::get)
+    }
+    LaunchedEffect(window) {
+        val tvdbForShows = TmdbSettingsRepository.snapshot().heroImageSource == HeroImageSource.TmdbMoviesTvdbShows
+        val permits = Semaphore(FolderHeroEnrichConcurrency)
+        coroutineScope {
+            window
+                .map { it.withNormalizedHeroBackdrop() }
+                .filter { raw ->
+                    folderHeroKey(raw) !in enriched &&
+                        raw.heroNeedsMetadataFetch(
+                            normalHomeMode = true,
+                            searchLibraryBackdropEnrichmentEnabled = false,
+                        )
+                }
+                .forEach { raw ->
+                    launch {
+                        val resolved = permits.withPermit {
+                            try {
+                                resolveFocusedHeroItem(raw, normalHomeMode = true, tvdbForShows = tvdbForShows).first
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                null
+                            }
+                        }
+                        if (resolved != null) enriched[folderHeroKey(raw)] = resolved
+                    }
+                }
+        }
+    }
+    return enriched
+}
+
+private fun folderHeroKey(item: MetaPreview): String = "${item.type}:${item.id}"
+
+private fun MetaPreview.withFolderHeroEnrichment(enriched: Map<String, MetaPreview>): MetaPreview =
+    enriched[folderHeroKey(this)] ?: this
+
+private const val FolderHeroEnrichBehind = 1
+private const val FolderHeroEnrichAhead = 3
+private const val FolderHeroEnrichConcurrency = 4
+
 @Composable
 private fun FolderCoverImage(
     imageUrl: String,
+    logoUrl: String?,
     title: String,
+    fullHeight: Dp,
+    fadeIntoBackground: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    AsyncImage(
-        model = imageUrl,
-        contentDescription = title,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(FolderCoverHeight),
-        contentScale = ContentScale.Crop,
-    )
+    val background = MaterialTheme.colorScheme.background
+    // Laid out at full height and clipped as the banner collapses, so the image doesn't rescale
+    // while the user scrolls.
+    Box(modifier = modifier.fillMaxWidth().clipToBounds()) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = title,
+            modifier = Modifier
+                .fillMaxWidth()
+                .requiredHeight(fullHeight)
+                .align(Alignment.TopCenter),
+            contentScale = ContentScale.Crop,
+        )
+        if (fadeIntoBackground) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .requiredHeight(fullHeight)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.55f to Color.Transparent,
+                            1f to background,
+                        ),
+                    ),
+            )
+        }
+        if (logoUrl != null) {
+            AsyncImage(
+                model = logoUrl,
+                contentDescription = title,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 32.dp, top = fullHeight * 0.3f)
+                    .fillMaxWidth(0.32f)
+                    .height(fullHeight * 0.4f),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.CenterStart,
+            )
+        }
+    }
 }
 
 @Composable
@@ -1459,6 +1635,39 @@ private fun LoadingIndicator() {
         )
     }
 }
+
+/**
+ * One line per distinct reason, naming the sources it affected, e.g. "Top 10 Series, Awards and 3
+ * more couldn't load: Missing Trakt credentials. Configure a client ID in Settings." Nothing when
+ * every source loaded. Each reason already says what to do about it.
+ */
+@Composable
+private fun FolderSourceFailuresNotice(
+    failedSources: List<FolderTab>,
+    modifier: Modifier = Modifier,
+) {
+    if (failedSources.isEmpty()) return
+    val byReason = failedSources.groupBy { it.error.orEmpty() }
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        byReason.forEach { (reason, tabs) ->
+            val shown = tabs.take(FolderFailureNamesShown).joinToString(", ") { it.label }
+            val names = if (tabs.size > FolderFailureNamesShown) {
+                stringResource(Res.string.collections_folder_sources_failed_more, shown, tabs.size - FolderFailureNamesShown)
+            } else {
+                shown
+            }
+            Text(
+                text = stringResource(Res.string.collections_folder_sources_failed, names, reason),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private const val FolderFailureNamesShown = 3
 
 @Composable
 private fun ErrorMessage(error: String) {

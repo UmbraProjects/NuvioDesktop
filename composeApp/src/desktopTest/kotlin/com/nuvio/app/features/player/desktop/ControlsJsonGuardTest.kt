@@ -1,6 +1,14 @@
 package com.nuvio.app.features.player.desktop
 
+import com.nuvio.app.features.player.PlayerControlPartyMember
+import com.nuvio.app.features.player.PlayerControlPartyState
+import com.nuvio.app.features.player.PlayerControlsState
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertContains
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -61,5 +69,46 @@ class ControlsJsonGuardTest {
         val excerpt = payloadExcerptAroundFailure(missingSeparator, "no offset here")
         assertTrue(excerpt.isNotEmpty())
         assertContains(excerpt, "title")
+    }
+
+    /** The party block is a nested object with its own separators, so check a real payload. */
+    @Test
+    fun `a payload with a watch party is well formed and keeps its members and labels`() {
+        val state = PlayerControlsState(
+            title = "Severance",
+            party = PlayerControlPartyState(
+                available = true,
+                active = true,
+                code = "K7Q-4MX",
+                pillMessage = "Waiting for \"Sam\"",
+                members = listOf(
+                    PlayerControlPartyMember(0, "Jordan", "J", "#1E88E5", "", "Watching", "watching", true, true, false),
+                    PlayerControlPartyMember(1, "Sam", "S", "", "https://x/a.png", "Buffering", "busy", false, false, true),
+                ),
+                labels = mapOf("title" to "Watch party", "removeTitle" to "Remove {name}?"),
+            ),
+        )
+
+        val payload = state.toControlsJson(
+            appFullscreenKeyCode = 122,
+            playerShortcutKeyCodes = emptyMap(),
+            skipIntervalKeyLabel = "S",
+        )
+
+        assertTrue(controlsJsonIsWellFormed(payload))
+        val party = Json.parseToJsonElement(payload).jsonObject.getValue("party").jsonObject
+        assertEquals("Waiting for \"Sam\"", party.getValue("pillMessage").jsonPrimitive.content)
+        assertEquals(2, party.getValue("members").jsonArray.size)
+        assertEquals("Remove {name}?", party.getValue("labels").jsonObject.getValue("removeTitle").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a payload without a party is still well formed`() {
+        val payload = PlayerControlsState().toControlsJson(
+            appFullscreenKeyCode = 122,
+            playerShortcutKeyCodes = emptyMap(),
+            skipIntervalKeyLabel = "S",
+        )
+        assertTrue(controlsJsonIsWellFormed(payload))
     }
 }

@@ -5,6 +5,7 @@ import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import coil3.size.Scale
+import com.nuvio.app.core.ui.rememberHeroLogoModel
 import com.nuvio.app.core.ui.nuvioDitheredVerticalGradient
 import com.nuvio.app.core.ui.HdrFadeCorrected
 import com.nuvio.app.core.ui.RecompositionProbe
@@ -2364,17 +2365,24 @@ private fun DesktopHeroContentBlock(
             }
 
             if (logoUrl != null) {
+                // Adaptive and Basic centre the logo in the space above the cast row, so a wide,
+                // short logo no longer sits on the cast with the space above it empty, and a tall
+                // one grows evenly both ways. TV Mode keeps it on the cast row: its slot is a
+                // weighted remainder whose height varies with the rows below, and a centred logo
+                // would drift with it. The margins are trimmed first (rememberHeroLogoModel), or
+                // a logo's baked-in padding would decide its position instead.
+                val logoAlignment = if (immersiveBudget != null) Alignment.BottomStart else Alignment.CenterStart
                 Box(
                     modifier = logoSlotModifier,
-                    contentAlignment = Alignment.BottomStart,
+                    contentAlignment = logoAlignment,
                 ) {
                     AsyncImage(
-                        model = logoUrl,
+                        model = rememberHeroLogoModel(logoUrl),
                         contentDescription = item.name,
                         modifier = Modifier
                             .fillMaxWidth(desktopHeroLogoWidthFraction(layout))
                             .fillMaxHeight(),
-                        alignment = Alignment.BottomStart,
+                        alignment = logoAlignment,
                         contentScale = ContentScale.Fit,
                         clipToBounds = false,
                         onError = { state ->
@@ -3268,7 +3276,7 @@ private fun compactHeroMetaParts(item: MetaPreview): List<String> =
         }
         item.genres.firstOrNull()
             ?.takeIf(String::isNotBlank)
-            ?.let(::add)
+            ?.let { add(heroGenreDisplayText(it)) }
         item.releaseInfo
             ?.takeIf(String::isNotBlank)
             ?.let(::formatReleaseDateForDisplay)
@@ -3283,6 +3291,23 @@ private fun desktopHeroGenreText(
     includeAgeRating: Boolean = true,
 ): String = desktopHeroGenreParts(item, showExtendedMetadata, showReleaseMetadata, includeAgeRating)
     .joinToString(" • ") { it.text }
+
+/**
+ * A genre as the hero shows it: each word capitalised. Some sources send genres in lower case
+ * ("action", "science fiction"), which read as a typo beside the year and runtime. Only first
+ * letters are raised, so names already styled ("Sci-Fi & Fantasy", "TV Movie") come through
+ * unchanged. Display only: the genre itself, which hover cards and filters match on, is untouched.
+ */
+internal fun heroGenreDisplayText(genre: String): String {
+    val text = genre.trim()
+    return buildString(text.length) {
+        var startOfWord = true
+        for (character in text) {
+            append(if (startOfWord && character.isLetter()) character.uppercaseChar() else character)
+            startOfWord = character == ' ' || character == '-' || character == '/' || character == '&'
+        }
+    }
+}
 
 /** One entry of the hero's genre line; [genre] is set on the entries that are genres. */
 private data class HeroGenrePart(val text: String, val genre: String? = null)
@@ -3300,7 +3325,7 @@ private fun desktopHeroGenreParts(
     includeAgeRating: Boolean = true,
 ): List<HeroGenrePart> {
     val values = buildList {
-        item.genres.take(3).filter(String::isNotBlank).forEach { add(HeroGenrePart(it, genre = it)) }
+        item.genres.take(3).filter(String::isNotBlank).forEach { add(HeroGenrePart(heroGenreDisplayText(it), genre = it)) }
         if (showReleaseMetadata) {
             item.releaseInfo
                 ?.takeIf(String::isNotBlank)

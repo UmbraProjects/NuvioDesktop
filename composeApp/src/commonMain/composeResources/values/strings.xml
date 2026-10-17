@@ -311,6 +311,8 @@
     <string name="collections_folder_count">%1$d folder(s)</string>
     <string name="collections_folder_empty_items">No items found</string>
     <string name="collections_folder_not_found">Folder not found</string>
+    <string name="collections_folder_sources_failed">%1$s couldn't load: %2$s</string>
+    <string name="collections_folder_sources_failed_more">%1$s and %2$d more</string>
     <string name="collections_header">Collections</string>
     <string name="collections_import_header">Import Collections</string>
     <string name="collections_import_json_placeholder">JSON</string>
@@ -2116,6 +2118,11 @@
     <string name="settings_tmdb_enable_enrichment">Enable TMDB Enrichment</string>
     <string name="settings_tmdb_enable_enrichment_description">Use TMDB as a metadata source to enhance addon data</string>
     <string name="settings_tmdb_enter_api_key">Enter your TMDB v3 API key.</string>
+    <string name="settings_tmdb_key_check_checking">Checking this key with TMDB…</string>
+    <string name="settings_tmdb_key_check_rejected">TMDB rejected this key. Check it was copied in full. Nuvio needs the &quot;API Key&quot; from TMDB's API settings page: a 32-character code, not the much longer &quot;API Read Access Token&quot;.</string>
+    <string name="settings_tmdb_key_check_unreachable">Couldn't reach TMDB to check this key. It's saved and will be used once TMDB is reachable.</string>
+    <string name="settings_tmdb_key_check_valid">TMDB accepted this key.</string>
+    <string name="settings_tmdb_key_check_wrong_type">This is TMDB's &quot;API Read Access Token&quot; (v4), which Nuvio can't use. On TMDB's API settings page, copy the &quot;API Key&quot; (v3) instead: the 32-character code above the token.</string>
     <string name="settings_tmdb_language_code_label">Language code</string>
     <string name="settings_tmdb_module_artwork">Artwork</string>
     <string name="settings_tmdb_module_artwork_description">Logo and backdrop images from TMDB</string>

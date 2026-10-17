@@ -142,6 +142,7 @@ import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.auth.ReauthenticationTrigger
+import com.nuvio.app.features.party.matches
 import com.nuvio.app.core.deeplink.AppDeepLink
 import com.nuvio.app.core.deeplink.AppDeepLinkRepository
 import com.nuvio.app.core.network.NetworkCondition
@@ -419,6 +420,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
@@ -1903,7 +1905,9 @@ private fun MainAppContent(
         }
         if (resumePromptItem != null) return@LaunchedEffect
         if (continueWatchingPreferencesUiState.showResumePromptOnLaunch) {
-            resumePromptItem = ResumePromptRepository.consumeResumePrompt()
+            if (com.nuvio.app.features.party.PartyInvites.latest.value == null) {
+                resumePromptItem = ResumePromptRepository.consumeResumePrompt()
+            }
         }
     }
 
@@ -1936,6 +1940,14 @@ private fun MainAppContent(
                             requestedSettingsPageName = "Downloads"
                             selectedTab = AppScreenTab.Settings
                         }
+                        AppDeepLinkRepository.markConsumed(deepLink)
+                    }
+
+                    is AppDeepLink.Party -> {
+                        // Upstream has a party route; here the page lives in Settings.
+                        com.nuvio.app.features.party.PartyInvites.open(deepLink.code)
+                        requestedSettingsPageName = "WatchParty"
+                        selectedTab = AppScreenTab.Settings
                         AppDeepLinkRepository.markConsumed(deepLink)
                     }
 
@@ -2130,6 +2142,9 @@ private fun MainAppContent(
             // A playlist's own "Prefer local files": true plays a local copy when there is one,
             // false ignores local copies and searches streams. Null follows the app-wide setting.
             preferLocalOverride: Boolean? = null,
+            // Watch party: always open the source picker (which marks the party's source) rather
+            // than auto-playing a stream or a downloaded copy that may be a different cut.
+            forceManualSelection: Boolean = false,
         ) {
             val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
             val targetResumeProgressFraction = if (startFromBeginning) null else resumeProgressFraction
@@ -2179,14 +2194,14 @@ private fun MainAppContent(
                     hasLocalLibraryStream = hasLocalLibraryStream,
                 )
                 val prefersLocalStreams = localRouting.preferLocalStreams
-                val manualSelection = localRouting.manualSelection
+                val manualSelection = localRouting.manualSelection || forceManualSelection
                 PlaybackStartTrace.markPending(
                     "localRoute configured=$configuredBehavior requested=${localRouting.requestedBehavior} " +
                         "downloaded=${!localSourceUrl.isNullOrBlank()} scanned=$hasLocalLibraryStream " +
                         "manual=$manualSelection",
                 )
 
-                if (localRouting.playDownloadedFileDirectly && downloadedItem != null) {
+                if (localRouting.playDownloadedFileDirectly && downloadedItem != null && !forceManualSelection) {
                     if (!localSourceUrl.isNullOrBlank()) {
                         val downloadedLabels = downloadedItem.playbackLabels(
                             localPath = localSourceUrl,
@@ -2264,6 +2279,67 @@ private fun MainAppContent(
                     ownerEntryId = navController.currentBackStackEntry?.id,
                 )
                 PlaybackStartTrace.markPending("open:streamPicker")
+            }
+        }
+
+        /**
+         * Watch party: open what the party is watching, starting where the party is now. Called
+         * from the Watch party page and from the player when the party moves to another title.
+         */
+        fun openPartyMedia(media: com.nuvio.app.features.party.PartyMedia) {
+            if (navController.currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true) {
+                navController.popBackStack()
+            }
+            val resumePositionMs = com.nuvio.app.features.party.PartyRepository.playback.value
+                ?.takeIf { it.mediaKey == null || it.mediaKey == media.key }
+                ?.let {
+                    com.nuvio.app.features.party.PartySync.expectedPositionMs(
+                        it,
+                        com.nuvio.app.features.party.PartyRepository.nowMs(),
+                    )
+                }
+            launchPlaybackWithDownloadPreference(
+                type = media.type,
+                videoId = media.videoId ?: media.metaId,
+                parentMetaId = media.metaId,
+                parentMetaType = media.metaType,
+                title = media.title,
+                logo = media.logo,
+                poster = media.poster,
+                background = media.background,
+                seasonNumber = media.season,
+                episodeNumber = media.episode,
+                episodeTitle = media.episodeTitle,
+                episodeThumbnail = null,
+                pauseDescription = media.description,
+                resumePositionMs = resumePositionMs,
+                resumeProgressFraction = null,
+                useAlternateBehavior = false,
+                startFromBeginning = resumePositionMs == null,
+                forceManualSelection = true,
+            )
+        }
+
+        // Party notices for whoever is not in the player (which shows its own in the HUD).
+        LaunchedEffect(Unit) {
+            com.nuvio.app.features.party.PartyRepository.events.collect { event ->
+                if (navController.currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true) {
+                    return@collect
+                }
+                val message = when (event) {
+                    is com.nuvio.app.features.party.PartyEvent.MemberJoined ->
+                        getString(Res.string.party_member_joined, event.name)
+                    is com.nuvio.app.features.party.PartyEvent.MemberLeft ->
+                        getString(Res.string.party_member_left, event.name)
+                    com.nuvio.app.features.party.PartyEvent.Removed -> getString(Res.string.party_removed)
+                    com.nuvio.app.features.party.PartyEvent.Ended -> getString(Res.string.party_ended)
+                    is com.nuvio.app.features.party.PartyEvent.MediaChanged ->
+                        getString(Res.string.party_media_changed, event.media.title)
+                    is com.nuvio.app.features.party.PartyEvent.ControlChanged -> getString(
+                        if (event.hostOnly) Res.string.party_control_host_only else Res.string.party_control_everyone,
+                    )
+                }
+                NuvioToastController.show(message)
             }
         }
 
@@ -3076,6 +3152,7 @@ private fun MainAppContent(
                                         onMetaScreenSettingsClick = { navController.navigate(MetaScreenSettingsRoute) },
                                         onContinueWatchingSettingsClick = { navController.navigate(ContinueWatchingSettingsRoute) },
                                         onOpenDownload = onOpenDownloadedItem,
+                                        onOpenPartyMedia = ::openPartyMedia,
                                         onAddonsSettingsClick = { navController.navigate(AddonsSettingsRoute) },
                                         onPluginsSettingsClick = {
                                             if (AppFeaturePolicy.pluginsEnabled) {
@@ -3132,6 +3209,14 @@ private fun MainAppContent(
                                         onAddProfileRequested = onSwitchProfile,
                                     )
                                 }
+                                val homeHeroPickerDocked by remember {
+                                    combine(
+                                        StreamPickerController.request,
+                                        StreamPickerController.dock,
+                                    ) { request, dock ->
+                                        request != null && dock?.ownerKey == StreamPickerDock.HOME
+                                    }.distinctUntilChanged()
+                                }.collectAsStateWithLifecycle(initialValue = false)
                                 if (
                                     (useFloatingTopBar && selectedTab != AppScreenTab.Settings) ||
                                     selectedTab == AppScreenTab.Search ||
@@ -3142,6 +3227,9 @@ private fun MainAppContent(
                                         onTabSelected = ::handleRootTabClick,
                                         onProfileSelected = onProfileSelected,
                                         onAddProfileRequested = onSwitchProfile,
+                                        // TV mode docks the source picker into the home hero, right where
+                                        // the bar sits; the bar has nothing to offer there, pinned or not.
+                                        hidden = homeHeroPickerDocked && !searchOverlayActive,
                                         // Pinning the bar is a content-screen preference: Settings
                                         // draws its own chrome, so it keeps the fade regardless.
                                         dimUntilHovered = (
@@ -3452,6 +3540,8 @@ private fun MainAppContent(
                         } else {
                             null
                         },
+                        onOpenPartyMedia = ::openPartyMedia,
+                        stream = launch.stream,
                         onBack = onBackFromPlayer,
                         onPlaybackCompleted = completed@{
                             lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
@@ -4266,6 +4356,7 @@ private fun MainAppContent(
                         initialProgressFraction = resolvedResumeProgressFraction,
                         disableProgressTracking = launch.disableProgressTracking,
                         autoPlayMode = launch.autoPlayMode,
+                        stream = stream,
                     )
 
                     StreamsRepository.cancelLoading()
@@ -4387,6 +4478,18 @@ private fun MainAppContent(
                                 initialProgressFraction = launch.resumeProgressFraction,
                                 disableProgressTracking = launch.disableProgressTracking,
                                 autoPlayMode = launch.autoPlayMode,
+                                stream = StreamItem(
+                                    name = cached.streamName,
+                                    url = cached.url,
+                                    addonName = cached.addonName,
+                                    addonId = cached.addonId,
+                                    streamType = cached.streamType,
+                                    behaviorHints = StreamBehaviorHints(
+                                        filename = cached.filename,
+                                        videoSize = cached.videoSize,
+                                        bingeGroup = cached.bingeGroup,
+                                    ),
+                                ),
                             )
                         if (playerSettings.externalPlayerEnabled) {
                             openExternalPlayback(playerLaunch)
@@ -4534,6 +4637,7 @@ private fun MainAppContent(
                             initialProgressFraction = launch.resumeProgressFraction,
                             disableProgressTracking = launch.disableProgressTracking,
                             autoPlayMode = launch.autoPlayMode,
+                            stream = stream,
                         )
                     if (playerSettings.externalPlayerEnabled) {
                         openExternalPlayback(playerLaunch)
@@ -4592,6 +4696,9 @@ private fun MainAppContent(
                     forceExternal: Boolean,
                     forceInternal: Boolean,
                     sourceIdentityKey: String? = stream.playerSourceIdentityKey(),
+                    // False for a watch-party host's shared link: it can carry their debrid key,
+                    // so it must not end up in this user's "reuse last link" cache.
+                    saveForReuse: Boolean = true,
                 ) {
                     if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
                         if (resolvingDebridStream) return
@@ -4643,7 +4750,7 @@ private fun MainAppContent(
                         return
                     }
                     val sourceUrl = stream.playableDirectUrl ?: return
-                    if (playerSettings.streamReuseLastLinkEnabled) {
+                    if (playerSettings.streamReuseLastLinkEnabled && saveForReuse) {
                         val cacheKey = StreamLinkCacheRepository.contentKey(
                             type = launch.type,
                             videoId = effectiveStreamVideoId,
@@ -4701,6 +4808,7 @@ private fun MainAppContent(
                         initialProgressFraction = resolvedResumeProgressFraction,
                         disableProgressTracking = launch.disableProgressTracking,
                         autoPlayMode = launch.autoPlayMode,
+                        stream = stream,
                     )
 
                     if (!forceInternal && (forceExternal || playerSettings.externalPlayerEnabled)) {
@@ -4725,7 +4833,38 @@ private fun MainAppContent(
 
                 val streamsOnBack: () -> Unit = { StreamPickerController.close() }
                 if (streamPickerHidden) return@session
+                // Watch party: mark the party's source and offer the host's shared stream when the
+                // party is watching what this picker is for.
+                val partyState by com.nuvio.app.features.party.PartyRepository.state.collectAsStateWithLifecycle()
+                val partyStream by com.nuvio.app.features.party.PartyRepository.sharedStream.collectAsStateWithLifecycle()
+                val party = partyState.party
+                val partyContentKey = com.nuvio.app.features.party.partyMediaKey(
+                    metaType = launch.parentMetaType ?: launch.type,
+                    metaId = launch.parentMetaId ?: effectiveVideoId,
+                    season = canonicalSeasonNumber,
+                    episode = canonicalEpisodeNumber,
+                )
+                val partySource = party?.media?.takeIf { it.key == partyContentKey }?.source
+                val partySourceLabel = stringResource(Res.string.party_source)
+                val streamHighlight: (StreamItem) -> String? = remember(partySource, partySourceLabel) {
+                    { stream ->
+                        partySourceLabel.takeIf { partySource?.matches(stream) == true }
+                    }
+                }
+                val sharedByLabel = stringResource(
+                    Res.string.party_shared_by,
+                    party?.member(party.hostMemberId)?.displayName.orEmpty(),
+                )
+                val partySharedStream = remember(partyStream, sharedByLabel, party?.isHost, partyContentKey) {
+                    partyStream
+                        ?.takeIf { party?.isHost == false && it.mediaKey == partyContentKey }
+                        ?.let { com.nuvio.app.features.streams.SharedStream(label = sharedByLabel, stream = it.toStreamItem()) }
+                }
                 Box(modifier = Modifier.fillMaxSize()) {
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        com.nuvio.app.features.streams.LocalStreamHighlight provides streamHighlight,
+                        com.nuvio.app.features.streams.LocalSharedStream provides partySharedStream,
+                    ) {
                     StreamPickerFrame(
                         placement = streamPickerPlacement,
                         onDismiss = streamsOnBack,
@@ -4757,6 +4896,7 @@ private fun MainAppContent(
                                     resolvedResumeProgressFraction = resolvedResumeProgressFraction,
                                     forceExternal = false,
                                     forceInternal = false,
+                                    saveForReuse = stream !== partySharedStream?.stream,
                                 )
                             },
                             onStreamActionOpen = { stream, openExternally, resolvedResumePositionMs, resolvedResumeProgressFraction ->
@@ -4792,6 +4932,7 @@ private fun MainAppContent(
                                 ?: true,
                             modifier = Modifier.fillMaxSize(),
                         )
+                    }
                     }
                     pendingP2pStreamOpen?.let { pending ->
                         P2pConsentDialog(
@@ -5177,6 +5318,7 @@ private fun AppTabHost(
     onMetaScreenSettingsClick: () -> Unit = {},
     onContinueWatchingSettingsClick: () -> Unit = {},
     onOpenDownload: (DownloadItem) -> Unit = {},
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit = {},
     onAddonsSettingsClick: () -> Unit = {},
     onPluginsSettingsClick: () -> Unit = {},
     onAccountSettingsClick: () -> Unit = {},
@@ -5307,6 +5449,7 @@ private fun AppTabHost(
                         onMetaScreenClick = onMetaScreenSettingsClick,
                         onContinueWatchingClick = onContinueWatchingSettingsClick,
                         onOpenDownload = onOpenDownload,
+                        onOpenPartyMedia = onOpenPartyMedia,
                         onAddonsClick = onAddonsSettingsClick,
                         onPluginsClick = onPluginsSettingsClick,
                         onAccountClick = onAccountSettingsClick,
@@ -5668,6 +5811,7 @@ private fun TabletFloatingTopBar(
     onAddProfileRequested: () -> Unit,
     modifier: Modifier = Modifier,
     dimUntilHovered: Boolean = false,
+    hidden: Boolean = false,
     searchOverlayActive: Boolean = false,
     onSearchOverlayOpen: () -> Unit = {},
     onSearchOverlayDismiss: () -> Unit = {},
@@ -5696,9 +5840,15 @@ private fun TabletFloatingTopBar(
     val barAlpha by animateFloatAsState(
         // The menu is a popup, so it isn't covered by this alpha: let the bar dim out from under
         // it and the menu is left floating over nothing.
-        targetValue = if (dimUntilHovered && !isSearchActive && !activationZoneHovered && !libraryMenuVisible) 0f else 1f,
+        targetValue = when {
+            hidden -> 0f
+            dimUntilHovered && !isSearchActive && !activationZoneHovered && !libraryMenuVisible -> 0f
+            else -> 1f
+        },
         animationSpec = tween(durationMillis = 200),
     )
+    // Faded out it would still take clicks meant for whatever is underneath.
+    if (hidden && barAlpha == 0f) return
 
     var searchFieldState by remember(isSearchActive) {
         mutableStateOf(TextFieldValue(searchQuery))

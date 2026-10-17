@@ -23,6 +23,7 @@ import com.nuvio.app.features.watchprogress.WatchProgressUiState
 import com.nuvio.app.features.watchprogress.isLiveEventContentType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlin.time.TimeMark
 
 internal class PlayerScreenRuntime(
     args: PlayerScreenArgs,
@@ -147,6 +148,8 @@ internal class PlayerScreenRuntime(
     var activeStreamSubtitle by mutableStateOf(streamSubtitle)
     var activeProviderName by mutableStateOf(providerName)
     var activeProviderAddonId by mutableStateOf(providerAddonId)
+    /** The stream on screen, when known; a watch-party host shares it (PlayerScreenRuntimeParty). */
+    var activeStream by mutableStateOf(args.stream)
     var activeWatchProgressSource by mutableStateOf(watchProgressSource)
     var currentStreamBingeGroup by mutableStateOf(initialBingeGroup)
     var activeSeasonNumber by mutableStateOf(seasonNumber)
@@ -240,6 +243,17 @@ internal class PlayerScreenRuntime(
     var pendingScrobbleStartAfterSeek by mutableStateOf(false)
     var hasSentCompletionScrobbleForCurrentItem by mutableStateOf(false)
     var currentTrackingScrobbleMedia by mutableStateOf<TrackingMediaReference?>(null)
+
+    // Watch party (PlayerScreenRuntimeParty.kt). showPartyPanel mirrors the HUD's party modal.
+    var showPartyPanel by mutableStateOf(false)
+    var partyPanelOpenToken by mutableStateOf(0)
+    var partyBehind by mutableStateOf(false)
+    var partyBehindMs by mutableStateOf<Long?>(null)
+    var partyRateNudge: Float? = null
+    var partyPreviousKey: String? = null
+    var partyAppInBackground = false
+    var playbackSnapshotMark: TimeMark? = null
+    var pendingSeekTarget: Pair<Long, TimeMark>? = null
 
     var showSourcesPanel by mutableStateOf(false)
     var showEpisodesPanel by mutableStateOf(false)

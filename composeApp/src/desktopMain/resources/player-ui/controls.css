@@ -5931,3 +5931,321 @@ svg {
 }
 
 .player.chrome-hidden .playlist-peek { display: none; }
+
+/* --- Watch party --------------------------------------------------------------------------- */
+/* Status pill, top centre in the gap between the title block and the clock. It shows with the
+   chrome, and on its own whenever the party is waiting on someone or reconnecting. */
+.party-pill {
+  position: absolute;
+  top: calc(var(--user-scale) * 22px);
+  left: 50%;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--user-scale) * 10px);
+  max-width: min(70vw, 640px);
+  padding: calc(var(--user-scale) * 6px);
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 999px;
+  background: rgba(20, 20, 23, .62);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -6px);
+  transition: opacity 200ms ease, transform 200ms var(--ease-out);
+}
+
+.party-pill.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+
+.party-pill:hover { background: rgba(32, 32, 36, .78); }
+
+.party-pill-text {
+  min-width: 0;
+  padding-right: calc(var(--user-scale) * 10px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(var(--user-scale) * 14px);
+  font-weight: 600;
+}
+
+.party-avatars {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.party-avatars .party-avatar + .party-avatar {
+  margin-left: calc(var(--user-scale) * -8px);
+}
+
+.party-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #2a2c35;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px #16171d;
+}
+
+.party-avatar.small {
+  width: calc(var(--user-scale) * 28px);
+  height: calc(var(--user-scale) * 28px);
+  font-size: calc(var(--user-scale) * 11px);
+  box-shadow: 0 0 0 2px rgba(20, 20, 23, .9);
+}
+
+.party-avatar-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.party-avatar-more {
+  background: rgba(255, 255, 255, .16);
+}
+
+.party-presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #16171d;
+  background: rgba(255, 255, 255, .35);
+}
+
+.party-presence.watching { background: #4cd964; }
+.party-presence.busy { background: #ffcc00; }
+.party-presence.away { background: rgba(255, 255, 255, .55); }
+.party-presence.offline { background: rgba(255, 255, 255, .2); }
+
+/* Panel */
+.track-panel.party-panel {
+  width: min(92vw, 460px);
+  max-height: min(90vh, 720px);
+}
+
+.party-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: auto;
+  padding: 0 20px 20px;
+}
+
+.party-hero,
+.party-section,
+.party-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.party-start-title {
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.party-text {
+  color: rgba(255, 255, 255, .74);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.party-text.strong {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.party-section-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.party-note {
+  color: rgba(255, 255, 255, .5);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.panel-button.party-wide {
+  width: 100%;
+  min-height: 40px;
+  font-size: 13px;
+}
+
+.panel-button.danger {
+  color: #ff8a8a;
+}
+
+.panel-button.primary.danger {
+  background: #c9393f;
+  color: #fff;
+}
+
+.panel-button.primary.danger:hover:not(:disabled) {
+  background: #db4248;
+}
+
+.party-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.party-code-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.party-code {
+  font-size: 26px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: .12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.party-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.party-member-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.party-member-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.party-member-name > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-member-status {
+  color: rgba(255, 255, 255, .55);
+  font-size: 12px;
+}
+
+.party-chip {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--theme-accent-fill);
+  color: var(--theme-on-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.party-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .04);
+  color: #fff;
+  text-align: left;
+}
+
+.party-switch-row:hover { background: rgba(255, 255, 255, .08); }
+
+.party-switch-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.party-switch-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.party-switch-description {
+  color: rgba(255, 255, 255, .6);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.party-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .2);
+  transition: background 160ms ease;
+}
+
+.party-switch.on { background: var(--theme-accent-fill); }
+
+.party-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 160ms var(--ease-out);
+}
+
+.party-switch.on .party-switch-thumb { transform: translateX(16px); }
+
+.party-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.party-actions .panel-button {
+  flex: 1 1 0;
+  min-height: 38px;
+}
+
+.player.pip-active .party-pill,
+.player.locked .party-pill { display: none; }

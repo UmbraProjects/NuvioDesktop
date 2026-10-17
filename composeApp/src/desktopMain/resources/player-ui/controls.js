@@ -703,6 +703,7 @@ const chromeInteractionSelector = [
   ".modal-layer",
   ".skip-prompt",
   ".next-episode-card",
+  ".party-pill",
   "#heroTrailerChrome",
 ].join(",");
 
@@ -1552,6 +1553,313 @@ subtitleHexModal.addEventListener("click", event => {
   if (event.target === subtitleHexModal) closeSubtitleHexPrompt();
 });
 
+// --- Watch party -------------------------------------------------------------------------------
+// The party pill and panel. Kotlin sends `state.party` (PlayerControlPartyState) with every label
+// already localized, and hears clicks as `party*` events (handlePartyControlsEvent). The panel is
+// rebuilt only when its data changes, because render() runs on every position tick.
+const partyButton = document.getElementById("partyButton");
+const partyButtonLabel = document.getElementById("partyButtonLabel");
+const partyPill = document.getElementById("partyPill");
+const partyPillAvatars = document.getElementById("partyPillAvatars");
+const partyPillText = document.getElementById("partyPillText");
+const partyModal = document.getElementById("partyModal");
+const partyPanelTitle = document.getElementById("partyPanelTitle");
+const partyCloseButton = document.getElementById("partyCloseButton");
+const partyBody = document.getElementById("partyBody");
+const PartyPillMaxAvatars = 4;
+// "" | "end" | "remove:<member index>": the inline confirmation the panel is showing.
+let partyConfirm = "";
+let partyPillSignature = "";
+let partyPanelSignature = "";
+
+const currentParty = () => (state.party && typeof state.party === "object" ? state.party : {});
+const partyLabel = (key, fallback = "") => {
+  const labels = currentParty().labels || {};
+  return labels[key] || fallback;
+};
+
+const partyElement = (tag, className, text) => {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text != null) element.textContent = text;
+  return element;
+};
+
+const partyButtonElement = (label, className, onClick, disabled = false) => {
+  const button = partyElement("button", `panel-button ${className || ""}`.trim(), label);
+  button.type = "button";
+  button.disabled = disabled;
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    button.blur();
+    onClick();
+  });
+  return button;
+};
+
+const partyAvatarElement = (member, className = "") => {
+  const avatar = partyElement("span", `party-avatar ${className}`.trim());
+  if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(member.color || "")) avatar.style.background = member.color;
+  avatar.appendChild(partyElement("span", "party-avatar-initials", member.initials || "?"));
+  if (/^https:\/\//i.test(member.avatarUrl || "")) {
+    const image = new Image();
+    image.className = "party-avatar-image";
+    image.alt = "";
+    image.referrerPolicy = "no-referrer";
+    image.addEventListener("error", () => image.remove());
+    image.src = member.avatarUrl;
+    avatar.appendChild(image);
+  }
+  return avatar;
+};
+
+const renderPartyChrome = (isChromeHidden, pictureInPictureActive) => {
+  const party = currentParty();
+  const partyTitle = partyLabel("title", "Watch party");
+  setVisible(partyButton, Boolean(party.available) && !state.heroTrailerMode);
+  partyButton.classList.toggle("selected", Boolean(party.active));
+  partyButtonLabel.textContent = partyTitle;
+  if (partyButton.dataset.tooltip !== partyTitle) {
+    partyButton.dataset.tooltip = partyTitle;
+    partyButton.setAttribute("aria-label", partyTitle);
+  }
+
+  const message = party.pillMessage || "";
+  const visible = Boolean(party.active) &&
+    !pictureInPictureActive &&
+    !state.isLocked &&
+    !state.heroTrailerMode &&
+    activeModal !== "party" &&
+    (Boolean(message) || !isChromeHidden);
+  partyPill.classList.toggle("visible", visible);
+  partyPill.setAttribute("aria-hidden", visible ? "false" : "true");
+  partyPill.tabIndex = visible ? 0 : -1;
+
+  const members = Array.isArray(party.members) ? party.members : [];
+  const signature = JSON.stringify([members.map(m => [m.name, m.avatarUrl, m.color, m.presence]), message]);
+  if (signature === partyPillSignature) return;
+  partyPillSignature = signature;
+  partyPillAvatars.replaceChildren();
+  members.slice(0, PartyPillMaxAvatars).forEach(member => {
+    partyPillAvatars.appendChild(partyAvatarElement(member, "small"));
+  });
+  if (members.length > PartyPillMaxAvatars) {
+    partyPillAvatars.appendChild(partyElement("span", "party-avatar small party-avatar-more", `+${members.length - PartyPillMaxAvatars}`));
+  }
+  partyPillText.textContent = message;
+  partyPillText.hidden = !message;
+};
+
+const partySwitchRow = (title, description, checked, eventType, note = "") => {
+  const row = partyElement("button", "party-switch-row");
+  row.type = "button";
+  row.setAttribute("role", "switch");
+  row.setAttribute("aria-checked", checked ? "true" : "false");
+  const text = partyElement("span", "party-switch-text");
+  text.appendChild(partyElement("span", "party-switch-title", title));
+  text.appendChild(partyElement("span", "party-switch-description", description));
+  if (note) text.appendChild(partyElement("span", "party-note", note));
+  row.appendChild(text);
+  const track = partyElement("span", `party-switch${checked ? " on" : ""}`);
+  track.appendChild(partyElement("span", "party-switch-thumb"));
+  row.appendChild(track);
+  row.addEventListener("click", event => {
+    event.stopPropagation();
+    row.blur();
+    send(eventType, checked ? 0 : 1);
+  });
+  return row;
+};
+
+const partyConfirmBlock = (title, message, confirmLabel, onConfirm) => {
+  const block = partyElement("div", "party-confirm");
+  block.appendChild(partyElement("div", "party-section-title", title));
+  if (message) block.appendChild(partyElement("div", "party-text", message));
+  const actions = partyElement("div", "modal-actions");
+  actions.appendChild(partyButtonElement(partyLabel("cancel", "Cancel"), "", () => {
+    partyConfirm = "";
+    renderPartyModal();
+  }));
+  actions.appendChild(partyButtonElement(confirmLabel, "primary danger", () => {
+    partyConfirm = "";
+    onConfirm();
+  }));
+  block.appendChild(actions);
+  return block;
+};
+
+const renderPartyStart = (party, body) => {
+  const hero = partyElement("div", "party-hero");
+  hero.appendChild(partyElement("div", "party-start-title", partyLabel("startTitle", "Watch together")));
+  hero.appendChild(partyElement("div", "party-text", partyLabel("startDescription")));
+  body.appendChild(hero);
+  if (party.startNote) {
+    body.appendChild(partyElement("div", "party-note", party.startNote));
+  } else {
+    body.appendChild(partyButtonElement(
+      partyLabel("startAction", "Start watch party"),
+      "primary party-wide",
+      () => send("partyStart", 0),
+      Boolean(party.busy),
+    ));
+  }
+  body.appendChild(partyElement("div", "party-note", partyLabel("experimental")));
+};
+
+const renderPartyMembers = (party, body) => {
+  const members = Array.isArray(party.members) ? party.members : [];
+  const section = partyElement("div", "party-section");
+  section.appendChild(partyElement("div", "form-label", partyLabel("seats")));
+  members.forEach(member => {
+    if (partyConfirm === `remove:${member.index}`) {
+      section.appendChild(partyConfirmBlock(
+        partyLabel("removeTitle", "Remove {name}?").replace("{name}", member.name),
+        partyLabel("removeMessage"),
+        partyLabel("remove", "Remove"),
+        () => send("partyRemoveMember", Number(member.index)),
+      ));
+      return;
+    }
+    const row = partyElement("div", "party-member");
+    const avatar = partyAvatarElement(member);
+    avatar.appendChild(partyElement("span", `party-presence ${member.presence || "offline"}`));
+    row.appendChild(avatar);
+    const text = partyElement("div", "party-member-text");
+    const nameRow = partyElement("div", "party-member-name");
+    nameRow.appendChild(partyElement("span", "", member.isSelf ? `${member.name} (${partyLabel("you", "You")})` : member.name));
+    if (member.isHost) nameRow.appendChild(partyElement("span", "party-chip", partyLabel("host", "Host")));
+    text.appendChild(nameRow);
+    text.appendChild(partyElement("div", "party-member-status", member.status || ""));
+    row.appendChild(text);
+    if (member.canRemove) {
+      row.appendChild(partyButtonElement(partyLabel("remove", "Remove"), "", () => {
+        partyConfirm = `remove:${member.index}`;
+        renderPartyModal();
+      }));
+    }
+    section.appendChild(row);
+  });
+  body.appendChild(section);
+};
+
+const renderPartyActive = (party, body) => {
+  if (party.behindTitle) {
+    const behind = partyElement("div", "party-section");
+    behind.appendChild(partyElement("div", "party-text strong", party.behindTitle));
+    behind.appendChild(partyButtonElement(partyLabel("catchUp", "Catch up"), "primary party-wide", () => {
+      send("partyCatchUp", 0);
+      closePlayerModal();
+    }));
+    body.appendChild(behind);
+  }
+
+  const code = partyElement("div", "party-code-row");
+  const codeText = partyElement("div", "party-code-text");
+  codeText.appendChild(partyElement("div", "form-label", partyLabel("codeLabel", "Party code")));
+  codeText.appendChild(partyElement("div", "party-code", party.code || ""));
+  if (!party.connected) codeText.appendChild(partyElement("div", "party-note", partyLabel("reconnecting", "")));
+  code.appendChild(codeText);
+  code.appendChild(partyButtonElement(partyLabel("copyInvite", "Copy invite"), "", () => send("partyCopyInvite", 0)));
+  body.appendChild(code);
+
+  renderPartyMembers(party, body);
+
+  if (party.isHost) {
+    const settings = partyElement("div", "party-section");
+    settings.appendChild(partySwitchRow(
+      partyLabel("hostOnlyTitle"),
+      partyLabel("hostOnlyDescription"),
+      Boolean(party.hostOnly),
+      "partyHostOnly",
+    ));
+    settings.appendChild(partySwitchRow(
+      partyLabel("shareTitle"),
+      partyLabel("shareDescription"),
+      Boolean(party.sharing),
+      "partySharing",
+      party.sharing && !party.canShareStream ? partyLabel("shareUnavailable") : "",
+    ));
+    body.appendChild(settings);
+  } else if (party.hostOnly) {
+    body.appendChild(partyElement("div", "party-note", partyLabel("hostOnlyNote")));
+  }
+
+  if (!party.sameMedia && party.elsewhereTitle) {
+    const elsewhere = partyElement("div", "party-section");
+    elsewhere.appendChild(partyElement("div", "party-text strong", party.elsewhereTitle));
+    elsewhere.appendChild(partyButtonElement(partyLabel("watchWithParty", "Watch with the party"), "primary party-wide", () => {
+      closePlayerModal();
+      send("partyWatchWithParty", 0);
+    }));
+    if (party.canControl) {
+      elsewhere.appendChild(partyButtonElement(partyLabel("playForEveryone", "Play this for everyone"), "party-wide", () => {
+        send("partyPlayForEveryone", 0);
+      }));
+    }
+    body.appendChild(elsewhere);
+  }
+
+  if (partyConfirm === "end") {
+    body.appendChild(partyConfirmBlock(
+      partyLabel("endTitle", "End the watch party?"),
+      partyLabel("endMessage"),
+      partyLabel("end", "End for everyone"),
+      () => {
+        send("partyEnd", 0);
+        closePlayerModal();
+      },
+    ));
+    return;
+  }
+  const actions = partyElement("div", "party-actions");
+  actions.appendChild(partyButtonElement(partyLabel("leave", "Leave party"), "", () => {
+    send("partyLeave", 0);
+    closePlayerModal();
+  }));
+  if (party.isHost) {
+    actions.appendChild(partyButtonElement(partyLabel("end", "End for everyone"), "danger", () => {
+      partyConfirm = "end";
+      renderPartyModal();
+    }));
+  }
+  body.appendChild(actions);
+};
+
+const renderPartyModal = () => {
+  const party = currentParty();
+  if (!party.active && partyConfirm) partyConfirm = "";
+  const signature = JSON.stringify([party, partyConfirm]);
+  if (signature === partyPanelSignature) return;
+  partyPanelSignature = signature;
+  partyPanelTitle.textContent = partyLabel("title", "Watch party");
+  partyCloseButton.textContent = partyLabel("close", "Close");
+  const scrollTop = partyBody.scrollTop;
+  partyBody.replaceChildren();
+  if (party.active) {
+    renderPartyActive(party, partyBody);
+  } else {
+    renderPartyStart(party, partyBody);
+  }
+  partyBody.scrollTop = scrollTop;
+};
+
+const openPartyModal = () => {
+  partyConfirm = "";
+  partyPanelSignature = "";
+  openPlayerModal("party");
+  send("partyPanelOpened", 0);
+};
+
+partyPill.addEventListener("click", event => {
+  event.stopPropagation();
+  partyPill.blur();
+  openPartyModal();
+});
+partyCloseButton.addEventListener("click", event => {
+  event.stopPropagation();
+  closePlayerModal();
+});
+
 const modalByName = {
   audio: audioModal,
   subtitles: subtitleModal,
@@ -1559,6 +1867,7 @@ const modalByName = {
   episodes: episodesModal,
   submitIntro: submitIntroModal,
   p2pConsent: p2pConsentModal,
+  party: partyModal,
 };
 const modalElements = Object.values(modalByName);
 const modalCloseTimers = new Map();
@@ -1615,6 +1924,10 @@ const closePlayerModal = (notifyDismiss = false, animated = true) => {
   // used for the playing item.
   if (closingModal === "sources") {
     send("sourcesPanelClosed", 0);
+  }
+  if (closingModal === "party") {
+    partyConfirm = "";
+    send("partyPanelClosed", 0);
   }
   if (keyboardPanelMode && closingModal === keyboardPanelMode) {
     keyboardPanelMode = "";
@@ -4100,6 +4413,7 @@ const renderActiveModal = () => {
   if (activeModal === "episodes") renderEpisodesModal();
   if (activeModal === "submitIntro") renderSubmitIntroModal();
   if (activeModal === "p2pConsent") renderP2pConsentModal();
+  if (activeModal === "party") renderPartyModal();
 };
 
 window.nuvioNativeViewportChanged = () => {
@@ -4601,6 +4915,7 @@ const renderChrome = () => {
   setVisible(sourcesButton, Boolean(state.showSources));
   setVisible(episodesButton, Boolean(state.showEpisodes));
   setVisible(episodeNotch, Boolean(state.showEpisodes));
+  renderPartyChrome(isChromeHidden, pictureInPictureActive);
   const sourceNotchPosition = ["left", "hidden"].includes(state.sourceNotchPosition)
     ? state.sourceNotchPosition
     : "right";
@@ -5567,6 +5882,10 @@ document.querySelectorAll("[data-command]").forEach(button => {
       openPlayerModal("submitIntro");
       return;
     }
+    if (command === "party") {
+      openPartyModal();
+      return;
+    }
     send(command, 0);
   });
 });
@@ -6208,6 +6527,7 @@ window.playerUpdate = update => {
 
 window.playerControls = nextState => {
   const previousCloseToken = Number(state.closeModalsToken) || 0;
+  const previousPartyPanelToken = Number(currentParty().openPanelToken) || 0;
   const previousOpenSourcesToken = Number(state.openSourcesToken) || 0;
   state = { ...state, ...nextState };
   applyUiFontFamily(state.uiFontFamily);
@@ -6243,6 +6563,12 @@ window.playerControls = nextState => {
   if (openSourcesToken !== previousOpenSourcesToken) {
     sourceFilterId = "";
     openPlayerModal("sources");
+  }
+  // Kotlin asking for the party panel (the party moved to something this player cannot follow by
+  // itself). A token for the same reason as openSourcesToken.
+  const partyPanelToken = Number(currentParty().openPanelToken) || 0;
+  if (!isFirstPlayerControls && partyPanelToken !== previousPartyPanelToken && activeModal !== "party") {
+    openPartyModal();
   }
   // A stream swap rebuilds the native bridge and with it this whole HUD, so a Sources sheet that
   // was open when the user picked a stream is gone by the time the new stream opens. Kotlin keeps

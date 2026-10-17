@@ -121,6 +121,18 @@ internal fun LazyListScope.tmdbSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-api-key")),
                     onApiKeyCommitted = TmdbSettingsRepository::setApiKey,
                 )
+                if (settings.hasApiKey) {
+                    TmdbApiKeyStatusLine(
+                        apiKey = settings.apiKey,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = if (isTablet) 20.dp else 16.dp,
+                                end = if (isTablet) 20.dp else 16.dp,
+                                bottom = if (isTablet) 14.dp else 12.dp,
+                            ),
+                    )
+                }
             }
         }
     }

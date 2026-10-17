@@ -6,7 +6,7 @@ import com.nuvio.app.features.addons.AddonManifest
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.enabledAddons
-import com.nuvio.app.features.addons.httpGetText
+import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.WatchedContentFilter
@@ -496,6 +496,9 @@ object MetaDetailsRepository {
 
     // Separate lightweight cache: survives LaunchedEffect restarts without polluting the
     // main detail-page cache (which the full fetch() path writes to).
+    /** Addon meta URLs that answered 404 this session; see [tryFetchMeta]. */
+    private val metaNotFoundUrls = mutableSetOf<String>()
+    private val metaNotFoundMutex = Mutex()
     private val lightweightMetaCache = mutableMapOf<String, MetaDetails>()
 
     // Guards lightweightMetaCache and inFlightLightweightMeta. Unlike cachedMetaByRequestKey,
@@ -860,6 +863,8 @@ object MetaDetailsRepository {
     private const val HERO_TRAILER_SEASON = 1
 
     private const val FETCH_TIMEOUT_MS = 12_000L
+    private const val HTTP_NOT_FOUND = 404
+    private const val META_NOT_FOUND_CACHE_LIMIT = 5_000
     private const val TMDB_ENRICH_TIMEOUT_MS = 5_000L
     private const val TVDB_AIR_TIME_TIMEOUT_MS = 4_000L
 
@@ -932,11 +937,35 @@ object MetaDetailsRepository {
             type = type,
             id = id,
         )
+        if (metaNotFoundMutex.withLock { url in metaNotFoundUrls }) return null
 
         return try {
             TmdbSettingsRepository.ensureLoaded()
             log.d { "Fetching meta from: ${com.nuvio.app.core.network.redactAddonUrl(url)} [origin=$origin]" }
-            val payload = httpGetText(url)
+            val response = httpRequestRaw(
+                method = "GET",
+                url = url,
+                headers = mapOf("Accept" to "application/json"),
+                body = "",
+                allowLargeResponse = true,
+            )
+            if (response.status == HTTP_NOT_FOUND) {
+                // The addon declares meta for this id prefix but doesn't have this title: an
+                // answer, not a failure. Addons such as provider catalogues claim every `tt` id,
+                // so one user's log held 1,626 of these as stack-traced errors, from 378 URLs each
+                // requested about four times. One line, and the URL is not asked again this session.
+                metaNotFoundMutex.withLock {
+                    if (metaNotFoundUrls.size >= META_NOT_FOUND_CACHE_LIMIT) metaNotFoundUrls.clear()
+                    metaNotFoundUrls += url
+                }
+                log.i { "No meta for $type/$id at ${com.nuvio.app.core.network.redactAddonUrl(manifest.transportUrl)} (HTTP 404)" }
+                return null
+            }
+            if (response.status !in 200..299) {
+                error(getString(Res.string.network_request_failed_http, response.status))
+            }
+            val payload = response.body.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException(getString(Res.string.network_empty_response_body))
             log.d { "Raw payload length=${payload.length}" }
             val parsed = MetaDetailsParser.parse(payload)
             // Before TMDB enrichment: preferPreciseReleaseDate keeps a timestamped addon value

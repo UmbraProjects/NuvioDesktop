@@ -213,6 +213,7 @@ internal fun PlayerScreenRuntime.switchToP2pSourceStream(
     activeSourceIdentityKey = stream.playerSourceIdentityKey()
     activeStreamTitle = stream.streamLabel
     activeStreamFilename = stream.mediaFilename
+    activeStream = stream
     activeStreamSubtitle = stream.streamSubtitle
     activeProviderName = stream.addonName
     activeProviderAddonId = stream.addonId
@@ -324,6 +325,7 @@ internal fun PlayerScreenRuntime.switchToSource(
     activeSourceIdentityKey = sourceIdentityKey
     activeStreamTitle = stream.streamLabel
     activeStreamFilename = stream.mediaFilename
+    activeStream = stream
     activeStreamSubtitle = stream.streamSubtitle
     activeProviderName = stream.addonName
     activeProviderAddonId = stream.addonId
@@ -441,6 +443,7 @@ internal fun PlayerScreenRuntime.switchToDownloadedEpisode(downloadItem: Downloa
     )
     activeStreamTitle = labels.streamTitle
     activeStreamFilename = null
+    activeStream = null
     activeStreamSubtitle = labels.streamSubtitle
     activeProviderName = labels.providerName
     activeProviderAddonId = downloadItem.providerAddonId
@@ -916,6 +919,9 @@ internal fun PlayerScreenRuntime.advancePlaylist() {
 }
 
 internal fun PlayerScreenRuntime.playNextEpisode() {
+    // Watch party with host-only control: the host decides when the party moves on. Following the
+    // host is not blocked, because by then the party's media is no longer this episode.
+    if (partyBlocksControl()) return
     // Mirror launchPlayerNextEpisodeAutoPlay's own early-exit checks: when there's clearly no
     // episode to advance to, bail out before engaging the latch at all. Engaging it here and
     // relying on that function's early `return null` to release it doesn't work — those returns
@@ -1112,6 +1118,7 @@ private fun PlayerScreenRuntime.applyEpisodeStreamMetadata(
     activeSourceIdentityKey = sourceIdentityKey
     activeStreamTitle = stream.streamLabel
     activeStreamFilename = stream.mediaFilename
+    activeStream = stream
     activeStreamSubtitle = stream.streamSubtitle
     activeProviderName = stream.addonName
     activeProviderAddonId = stream.addonId

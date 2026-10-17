@@ -1611,6 +1611,7 @@ kotlin {
             implementation(libs.supabase.postgrest)
             implementation(libs.supabase.auth)
             implementation(libs.supabase.functions)
+            implementation(libs.supabase.realtime)
             implementation(libs.reorderable)
         }
         commonTest.dependencies {
@@ -2145,6 +2146,11 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
             add("-Dcompose.application.configure.swing.globals=true")
             add("-Djpackage.app-version=$desktopReleasePackageVersion")
             add("-march=$nativeImageMarch")
+            // native-image enables only file: and resource: URLs by default; without this every
+            // java.net.URL http(s) connection throws (OkHttp is unaffected). The Discord artwork
+            // probe read that as "proxy down" and sent posters un-letterboxed, so they rendered
+            // squashed; NuvioEngine's localhost probe uses http: too.
+            add("--enable-url-protocols=http,https")
             if (nativeImageQa) {
                 add("--exact-reachability-metadata")
                 add("-H:MissingRegistrationReportingMode=Warn")

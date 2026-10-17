@@ -49,4 +49,7 @@ internal data class PlayerScreenArgs(
     val onPlaylistHandoff: ((com.nuvio.app.features.playlist.PlaylistHandoff) -> Unit)? = null,
     /** Playlist mode: the viewer picked another entry from the HUD's playlist peek. */
     val onPlaylistJump: ((entryId: String) -> Unit)? = null,
+    /** Watch party: the party moved to another title; open it the way the app launches playback. */
+    val onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit = {},
+    val stream: com.nuvio.app.features.streams.StreamItem? = null,
 )

@@ -224,6 +224,19 @@ class ArtworkPrewarmTargetsTest {
         )
     }
 
+    @Test
+    fun `folders are capped across collections in home order`() {
+        val on = all.copy(prewarmCollectionContents = true)
+        val collections = (1..3).map { c ->
+            collection("c$c", *(1..4).map { f -> CollectionFolder(id = "c$c-f$f", title = "f$f") }.toTypedArray())
+        }
+        val folders = prewarmCollectionFolders(collections, on, perCollectionLimit = 3, totalLimit = 5)
+        assertEquals(
+            listOf("c1-f1", "c1-f2", "c1-f3", "c2-f1", "c2-f2"),
+            folders.map { it.folder.id },
+        )
+    }
+
     private fun collection(id: String, vararg folders: CollectionFolder) =
         Collection(id = id, title = id, folders = folders.toList())
 

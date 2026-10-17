@@ -286,6 +286,8 @@ data class PlayerControlsState(
     // Playlist mode: hovering the title shows a short window of the playlist around this entry.
     val playlistPeekTitle: String = "",
     val playlistPeekItems: List<PlayerControlPlaylistItem> = emptyList(),
+    // Watch party: the HUD's party button, top status pill and party panel.
+    val party: PlayerControlPartyState = PlayerControlPartyState(),
     val showSubmitIntro: Boolean = false,
     val showVideoSettings: Boolean = false,
     val showSources: Boolean = false,
@@ -421,6 +423,48 @@ private fun String?.cleanMpvMediaTitlePart(): String? =
         ?.takeIf(String::isNotBlank)
 
 /** One row of the HUD's playlist peek. [state] is "played", "current", "next" or "upcoming". */
+/**
+ * Everything the HUD shows for a watch party, with its labels already localized (the HUD has no
+ * string resources). Built by `rememberPartyControlsState` in PlayerScreenRuntimeParty.kt.
+ */
+data class PlayerControlPartyState(
+    /** Watch parties exist on this server: show the party button. */
+    val available: Boolean = false,
+    val active: Boolean = false,
+    /** Bumped by Kotlin to open the party panel (a token, so a closed panel stays closed). */
+    val openPanelToken: Int = 0,
+    val busy: Boolean = false,
+    val connected: Boolean = true,
+    val isHost: Boolean = false,
+    val canControl: Boolean = true,
+    val hostOnly: Boolean = false,
+    val sharing: Boolean = false,
+    val canShareStream: Boolean = false,
+    /** True when the player shows what the party is watching. */
+    val sameMedia: Boolean = true,
+    val code: String = "",
+    val pillMessage: String = "",
+    val behindTitle: String = "",
+    val elsewhereTitle: String = "",
+    val startNote: String = "",
+    val members: List<PlayerControlPartyMember> = emptyList(),
+    val labels: Map<String, String> = emptyMap(),
+)
+
+data class PlayerControlPartyMember(
+    val index: Int,
+    val name: String,
+    val initials: String,
+    val color: String,
+    val avatarUrl: String,
+    val status: String,
+    /** "watching", "busy", "away" or "offline": the presence dot's colour. */
+    val presence: String,
+    val isHost: Boolean,
+    val isSelf: Boolean,
+    val canRemove: Boolean,
+)
+
 data class PlayerControlPlaylistItem(
     val position: Int,
     val title: String,

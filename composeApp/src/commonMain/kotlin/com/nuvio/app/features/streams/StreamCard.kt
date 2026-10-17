@@ -76,6 +76,20 @@ internal object StreamGlass {
     val Edge = Color.White.copy(alpha = 0.7f)
 }
 
+/**
+ * Watch party: a label for streams to mark like the playing one ("Party's source"), or null. Set
+ * by the picker session while the party watches the title being picked for.
+ */
+internal val LocalStreamHighlight = staticCompositionLocalOf<(StreamItem) -> String?> { { null } }
+
+/** Watch party: the host's shared stream, offered above the list (see [LocalSharedStream]). */
+internal data class SharedStream(
+    val label: String,
+    val stream: StreamItem,
+)
+
+internal val LocalSharedStream = staticCompositionLocalOf<SharedStream?> { null }
+
 @Composable
 internal fun StreamCard(
     stream: StreamItem,
@@ -92,6 +106,9 @@ internal fun StreamCard(
     focused: Boolean = false,
     scoreContext: StreamScoreContext,
 ) {
+    val highlightLabel = if (isCurrent) null else LocalStreamHighlight.current(stream)
+    val marked = isCurrent || highlightLabel != null
+    val markedLabel = if (isCurrent) currentLabel else highlightLabel
     val cardShape = RoundedCornerShape(12.dp)
     // Diagnostic overlay, opt-in from the scoring settings page. Computed here rather than passed
     // in so all three source lists (picker, player sources, player episodes) get it for free.
@@ -155,14 +172,14 @@ internal fun StreamCard(
                 },
             )
             .then(
-                if (isCurrent) {
+                if (marked) {
                     Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
                 } else {
                     Modifier
                 },
             )
             .then(
-                if (isCurrent) {
+                if (marked) {
                     Modifier.border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.52f),
@@ -212,9 +229,9 @@ internal fun StreamCard(
                 stream = stream,
                 appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
             ) {
-                if (isCurrent && !currentLabel.isNullOrBlank()) {
+                if (marked && !markedLabel.isNullOrBlank()) {
                     Spacer(modifier = Modifier.width(8.dp))
-                    CurrentStreamBadge(label = currentLabel)
+                    CurrentStreamBadge(label = markedLabel)
                 }
             }
 

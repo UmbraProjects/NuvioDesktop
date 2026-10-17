@@ -584,7 +584,11 @@ internal fun isResumeReached(
  * and the auto-accept setting), so all three leave the player in the same state.
  */
 internal fun PlayerScreenRuntime.acceptSkipInterval(interval: SkipInterval) {
-    playerController?.seekTo(activeSkipLanding(interval).targetMs)
+    val requestedMs = activeSkipLanding(interval).targetMs
+    // In a host-only party a member may only skip backwards (falling behind), never ahead.
+    val targetMs = if (isPartyControlLocked) ownSeekTarget(requestedMs) ?: return else requestedMs
+    playerController?.seekTo(targetMs)
+    publishPartyPlayback(positionMs = targetMs)
     scheduleProgressSyncAfterSeek()
     skipIntervalDismissed = true
     offerSkipSubmissionAfterSkip(interval)

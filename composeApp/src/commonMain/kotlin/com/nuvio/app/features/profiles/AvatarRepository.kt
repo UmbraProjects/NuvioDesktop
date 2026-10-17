@@ -1,6 +1,7 @@
 package com.nuvio.app.features.profiles
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.network.ServerConfigurationRepository
 import com.nuvio.app.core.network.SupabaseProvider
 import com.nuvio.app.core.perf.PerfTelemetry
 import io.github.jan.supabase.postgrest.postgrest
@@ -31,6 +32,18 @@ object AvatarRepository {
 
     /** Wall-clock time of the last catalogue fetch that succeeded this session; 0 = none yet. */
     private var lastFetchedAtMs = 0L
+
+    /**
+     * The profile picture as a URL other watch-party members can load: a custom URL only when it
+     * points into this server's storage, else the catalogue avatar's public URL. Upstream also signs
+     * supporter-only avatars here; this fork has none.
+     */
+    fun shareableImageUrl(profile: NuvioProfile): String? {
+        val storage = "${ServerConfigurationRepository.active.value.backendUrl}/storage/v1/object/"
+        normalizedAvatarUrl(profile.avatarUrl)?.let { url -> return url.takeIf { it.startsWith(storage) } }
+        val avatar = profile.avatarId?.let { id -> avatars.value.firstOrNull { it.id == id } } ?: return null
+        return avatar.storagePath.takeIf { it.isNotBlank() }?.let(::avatarStorageUrl)
+    }
 
     suspend fun fetchAvatars() {
         hydrateFromCacheIfNeeded()

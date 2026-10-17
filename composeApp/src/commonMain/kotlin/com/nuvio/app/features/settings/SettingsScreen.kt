@@ -61,6 +61,7 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material.icons.rounded.WidthFull
 import androidx.compose.material3.Icon
@@ -254,6 +255,7 @@ fun SettingsScreen(
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
     onOpenDownload: (DownloadItem) -> Unit = {},
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
@@ -602,6 +604,7 @@ fun SettingsScreen(
                 selectedDownloadsShowId = selectedDownloadsShowId,
                 onSelectedDownloadsShowChange = { selectedDownloadsShowId = it },
                 onOpenDownload = onOpenDownload,
+                onOpenPartyMedia = onOpenPartyMedia,
                 onDownloadsDeleteTarget = { pendingDownloadsDelete = it },
                 onSupportersContributorsClick = onSupportersContributorsClick,
                 onLicensesAttributionsClick = onLicensesAttributionsClick,
@@ -695,6 +698,7 @@ fun SettingsScreen(
                 selectedDownloadsShowId = selectedDownloadsShowId,
                 onSelectedDownloadsShowChange = { selectedDownloadsShowId = it },
                 onOpenDownload = onOpenDownload,
+                onOpenPartyMedia = onOpenPartyMedia,
                 onDownloadsDeleteTarget = { pendingDownloadsDelete = it },
                 onAccountClick = onAccountClick,
                 onSupportersContributorsClick = onSupportersContributorsClick,
@@ -786,6 +790,7 @@ private fun MobileSettingsScreen(
     selectedDownloadsShowId: String?,
     onSelectedDownloadsShowChange: (String?) -> Unit,
     onOpenDownload: (DownloadItem) -> Unit,
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit,
     onDownloadsDeleteTarget: (DownloadsSettingsDeleteTarget) -> Unit,
     onSwitchProfile: (() -> Unit)? = null,
     onHomescreenClick: () -> Unit = {},
@@ -1022,6 +1027,7 @@ private fun MobileSettingsScreen(
                     onOpenDownload = onOpenDownload,
                     onDeleteTarget = onDownloadsDeleteTarget,
                 )
+                SettingsPage.WatchParty -> watchPartySettingsContent(onOpenPartyMedia)
                 SettingsPage.StreamScoring -> streamScoringSection(isTablet = false)
                 SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
                     isTablet = false,
@@ -1324,6 +1330,7 @@ private fun TabletSettingsScreen(
     selectedDownloadsShowId: String?,
     onSelectedDownloadsShowChange: (String?) -> Unit,
     onOpenDownload: (DownloadItem) -> Unit,
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit,
     onDownloadsDeleteTarget: (DownloadsSettingsDeleteTarget) -> Unit,
     profileAvatars: List<AvatarCatalogItem>,
     onSwitchProfile: (() -> Unit)? = null,
@@ -1755,6 +1762,7 @@ private fun TabletSettingsScreen(
                         onOpenDownload = onOpenDownload,
                         onDeleteTarget = onDownloadsDeleteTarget,
                     )
+                SettingsPage.WatchParty -> watchPartySettingsContent(onOpenPartyMedia)
                 SettingsPage.StreamScoring -> streamScoringSection(isTablet = true)
                     SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
                         isTablet = true,
@@ -1996,6 +2004,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Account,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.party_title),
+        icon = Icons.Rounded.Groups,
+        page = SettingsPage.WatchParty,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_appearance),
         icon = Icons.Rounded.Palette,
         page = SettingsPage.Appearance,
@@ -2092,6 +2105,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.KeyboardShortcuts -> SettingsPage.KeyboardShortcuts
     SettingsPage.LicensesAttributions -> SettingsPage.LicensesAttributions
     SettingsPage.Account -> SettingsPage.Account
+    SettingsPage.WatchParty -> SettingsPage.WatchParty
     SettingsPage.TraktAuthentication,
     SettingsPage.SimklAuthentication -> SettingsPage.Integrations
     SettingsPage.YamtrackAuthentication,
@@ -2902,3 +2916,21 @@ private fun DesktopActionRow(
 private fun enabledLabel(enabled: Boolean): String = if (enabled) "Enabled" else "Disabled"
 
 private fun connectedLabel(connected: Boolean): String = if (connected) "Connected" else "Not connected"
+
+/**
+ * The Watch party page: join with a code or an invite link, or manage the party you are in.
+ * Upstream's PartyScreen route, shown inside Settings here (see PartyInvites for invite links).
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.watchPartySettingsContent(
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit,
+) {
+    item(key = "watch_party_page") {
+        val invite by com.nuvio.app.features.party.PartyInvites.latest.collectAsStateWithLifecycle()
+        androidx.compose.runtime.key(invite?.id) {
+            com.nuvio.app.features.party.PartyPage(
+                initialCode = invite?.code.orEmpty(),
+                onWatch = onOpenPartyMedia,
+            )
+        }
+    }
+}

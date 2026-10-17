@@ -34,6 +34,8 @@ import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerEngineController
 import com.nuvio.app.features.player.PlayerChapter
 import com.nuvio.app.features.player.PlayerControlPlaylistItem
+import com.nuvio.app.features.player.PlayerControlPartyMember
+import com.nuvio.app.features.player.PlayerControlPartyState
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.PlayerResizeMode
 import com.nuvio.app.features.player.PlayerShortcutAction
@@ -2129,7 +2131,8 @@ internal fun payloadExcerptAroundFailure(payload: String, message: String): Stri
     )
 }
 
-private fun PlayerControlsState.toControlsJson(
+// internal (not private) so ControlsJsonGuardTest can check whole payloads, not just samples.
+internal fun PlayerControlsState.toControlsJson(
     appFullscreenKeyCode: Int,
     playerShortcutKeyCodes: Map<String, Int>,
     skipIntervalKeyLabel: String,
@@ -2496,6 +2499,8 @@ private fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonArrayField("playlistPeekItems", playlistPeekItems) { appendPlaylistPeekItemJson(it) }
         append(',')
+        appendJsonPartyField("party", party)
+        append(',')
         appendJsonField("showSubmitIntro", showSubmitIntro)
         append(',')
         appendJsonField("showVideoSettings", showVideoSettings)
@@ -2649,6 +2654,74 @@ private fun StringBuilder.appendJsonField(name: String, value: Double) {
 
 private fun StringBuilder.appendJsonField(name: String, value: Long) {
     append('"').append(name).append("\":").append(value)
+}
+
+private fun StringBuilder.appendJsonPartyField(name: String, party: PlayerControlPartyState) {
+    append('"').append(name).append("\":{")
+    appendJsonField("available", party.available)
+    append(',')
+    appendJsonField("active", party.active)
+    append(',')
+    appendJsonField("openPanelToken", party.openPanelToken)
+    append(',')
+    appendJsonField("busy", party.busy)
+    append(',')
+    appendJsonField("connected", party.connected)
+    append(',')
+    appendJsonField("isHost", party.isHost)
+    append(',')
+    appendJsonField("canControl", party.canControl)
+    append(',')
+    appendJsonField("hostOnly", party.hostOnly)
+    append(',')
+    appendJsonField("sharing", party.sharing)
+    append(',')
+    appendJsonField("canShareStream", party.canShareStream)
+    append(',')
+    appendJsonField("sameMedia", party.sameMedia)
+    append(',')
+    appendJsonField("code", party.code)
+    append(',')
+    appendJsonField("pillMessage", party.pillMessage)
+    append(',')
+    appendJsonField("behindTitle", party.behindTitle)
+    append(',')
+    appendJsonField("elsewhereTitle", party.elsewhereTitle)
+    append(',')
+    appendJsonField("startNote", party.startNote)
+    append(',')
+    appendJsonArrayField("members", party.members) { appendPartyMemberJson(it) }
+    append(',')
+    append("\"labels\":{")
+    party.labels.entries.forEachIndexed { index, (key, value) ->
+        if (index > 0) append(',')
+        appendJsonField(key, value)
+    }
+    append("}}")
+}
+
+private fun StringBuilder.appendPartyMemberJson(member: PlayerControlPartyMember) {
+    append('{')
+    appendJsonField("index", member.index)
+    append(',')
+    appendJsonField("name", member.name)
+    append(',')
+    appendJsonField("initials", member.initials)
+    append(',')
+    appendJsonField("color", member.color)
+    append(',')
+    appendJsonField("avatarUrl", member.avatarUrl)
+    append(',')
+    appendJsonField("status", member.status)
+    append(',')
+    appendJsonField("presence", member.presence)
+    append(',')
+    appendJsonField("isHost", member.isHost)
+    append(',')
+    appendJsonField("isSelf", member.isSelf)
+    append(',')
+    appendJsonField("canRemove", member.canRemove)
+    append('}')
 }
 
 private fun StringBuilder.appendPlaylistPeekItemJson(item: PlayerControlPlaylistItem) {

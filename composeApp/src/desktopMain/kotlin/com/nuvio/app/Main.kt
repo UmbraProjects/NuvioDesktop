@@ -871,6 +871,16 @@ fun main(args: Array<String>) {
                                     Toolkit.getDefaultToolkit().systemClipboard
                                         .getData(DataFlavor.stringFlavor) as? String
                                 }.getOrNull()?.trim().orEmpty()
+                                // A watch-party invite (the link alone, or the whole "join my
+                                // party" message) opens the Watch party page, not a stream.
+                                val partyInvite = clipboardText.split(Regex("\\s+")).firstOrNull { word ->
+                                    com.nuvio.app.core.deeplink.parseAppDeepLink(word) is
+                                        com.nuvio.app.core.deeplink.AppDeepLink.Party
+                                }
+                                if (partyInvite != null) {
+                                    com.nuvio.app.core.deeplink.handleAppUrl(partyInvite)
+                                    return@onKeyEvent true
+                                }
                                 val webStream = clipboardText.takeIf {
                                     it.startsWith("https://", ignoreCase = true) ||
                                         it.startsWith("http://", ignoreCase = true)

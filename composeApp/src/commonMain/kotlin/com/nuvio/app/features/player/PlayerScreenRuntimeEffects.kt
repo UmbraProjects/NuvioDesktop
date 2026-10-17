@@ -447,6 +447,11 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             initialSeekApplied = true
             return@LaunchedEffect
         }
+        // A watch party with a running clock positions the player itself (BindPartyEffects).
+        if (isPartySynced && com.nuvio.app.features.party.PartyRepository.playback.value != null) {
+            initialSeekApplied = true
+            return@LaunchedEffect
+        }
         // Desktop mpv applies both absolute and percentage resume positions in its loadfile
         // command, before the first frame. Mobile engines still need this duration-based seek.
         if (isDesktop && (activeInitialPositionMs > 0L || progressFraction != null)) {
@@ -460,6 +465,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
 
     BindPlayerUiVisibilityEffects()
     BindPlayerMetadataAndSkipEffects()
+    BindPartyEffects()
     BindDiscordRichPresenceEffect()
     BindLightsEffect()
     BindStreamFailoverWatchdogEffect()
@@ -1423,6 +1429,8 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         if (!acceptsCreditsToScene && !playerSettingsUiState.skipAutoAcceptMode.accepts(interval)) {
             return@LaunchedEffect
         }
+        // A host-only party member follows the host's skips instead of making their own.
+        if (isPartyControlLocked) return@LaunchedEffect
         if (!autoAcceptedSkipIntervals.add(interval.identityKey())) return@LaunchedEffect
         acceptSkipInterval(interval)
     }
@@ -2003,6 +2011,7 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
         activeSourceIdentityKey = stream.playerSourceIdentityKey()
         activeStreamTitle = stream.streamLabel
         activeStreamFilename = stream.mediaFilename
+        activeStream = stream
         activeStreamSubtitle = stream.streamSubtitle
         activeProviderName = stream.addonName
         activeProviderAddonId = stream.addonId

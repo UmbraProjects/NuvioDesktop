@@ -2003,6 +2003,7 @@ internal fun StreamList(
     KeepListAtTopWhileItemsArrive(listState, entries)
 
     val formatStreamSize = rememberStreamSizeLabelFormat()
+    val sharedStream = LocalSharedStream.current
     val streamCard: @Composable (StreamItem, Modifier) -> Unit = { stream, cardModifier ->
         StreamRowContextMenu(
             stream = stream,
@@ -2042,6 +2043,25 @@ internal fun StreamList(
         ),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
+        // Watch party: the host's own stream, so a member can play exactly what the host plays.
+        sharedStream?.let { shared ->
+            item(key = "party_shared_stream") {
+                Column(modifier = Modifier.padding(bottom = 10.dp)) {
+                    StreamSectionHeader(addonName = shared.label, isLoading = false)
+                    StreamCard(
+                        stream = shared.stream,
+                        enabled = true,
+                        appendInstantServiceToDefaultName = false,
+                        showFileSizeBadges = streamBadgeSettings.showFileSizeBadges,
+                        showAddonLogo = streamBadgeSettings.showAddonLogo,
+                        badgePlacement = streamBadgeSettings.badgePlacement,
+                        scoreContext = rowScoreContext,
+                        onClick = { onStreamSelected(shared.stream, resumePositionMs, resumeProgressFraction) },
+                        isCurrent = true,
+                    )
+                }
+            }
+        }
         when {
             hasGroups && anyLoading && !hasAnyStreams -> {
                 item(key = "state_loading") {

@@ -68,6 +68,8 @@ data class PlayerLaunch(
     val initialProgressFraction: Float? = null,
     val disableProgressTracking: Boolean = false,
     val autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
+    /** The stream being played, when the launch came from one; a watch-party host can share it. */
+    val stream: com.nuvio.app.features.streams.StreamItem? = null,
 )
 
 enum class PlayerAutoPlayMode {

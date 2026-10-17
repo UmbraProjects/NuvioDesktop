@@ -8,14 +8,20 @@ import io.github.jan.supabase.auth.MemorySessionManager
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.realtime.websocket.KtorRealtimeWebsocketFactory
+import io.github.jan.supabase.supabaseJson
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.http.HttpHeaders
+import io.ktor.serialization.kotlinx.KotlinxWebsocketSerializationConverter
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalAtomicApi::class)
 object SupabaseProvider {
@@ -52,7 +58,8 @@ object SupabaseProvider {
     private fun createClient(): SupabaseClient {
         val configuration = ServerConfigurationRepository.active.value
         val userAgent = "NuvioMobile/${AppVersionConfig.VERSION_NAME.ifBlank { "dev" }}"
-        return createSupabaseClient(
+        lateinit var client: SupabaseClient
+        client = createSupabaseClient(
             supabaseUrl = configuration.backendUrl,
             supabaseKey = configuration.publishableKey,
         ) {
@@ -61,13 +68,40 @@ object SupabaseProvider {
                     headers.append(HttpHeaders.UserAgent, userAgent)
                 }
                 install(com.nuvio.app.core.perf.perfTelemetryPlugin("supabase"))
+                install(WebSockets) {
+                    contentConverter = KotlinxWebsocketSerializationConverter(supabaseJson)
+                }
             }
             install(Auth) {
                 if (memoryOnlySession) sessionManager = MemorySessionManager()
             }
             install(Postgrest)
             install(Functions)
+            // Watch parties only (features/party). The socket opens on the first channel
+            // subscribe, so nothing connects until someone starts or joins a party.
+            install(Realtime) {
+                customUrl = realtimeUrl(configuration.backendUrl)
+                reconnectDelay = 3.seconds
+                websocketFactory = RealtimeSocketFactory { url ->
+                    KtorRealtimeWebsocketFactory(client.httpClient.httpClient).create(url)
+                }
+            }
         }
+        return client
+    }
+
+    /**
+     * Upstream keeps this in SupabaseEndpointConfig, which this fork does not have. The query
+     * marker matches upstream so the backend can tell party sockets apart.
+     */
+    private fun realtimeUrl(backendUrl: String): String {
+        val base = backendUrl.trim().trimEnd('/')
+        val socketBase = when {
+            base.startsWith("https://", ignoreCase = true) -> "wss://" + base.substring("https://".length)
+            base.startsWith("http://", ignoreCase = true) -> "ws://" + base.substring("http://".length)
+            else -> base
+        }
+        return "$socketBase/realtime/v1?nuvio_realtime=1"
     }
 
     /**

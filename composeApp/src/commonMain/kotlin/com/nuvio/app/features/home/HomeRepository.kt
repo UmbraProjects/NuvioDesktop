@@ -23,6 +23,8 @@ import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.CollectionSource
 import com.nuvio.app.features.collection.TmdbCollectionSourceResolver
 import com.nuvio.app.features.collection.catalogRouteKey
+import com.nuvio.app.features.collection.fallbackCatalogId
+import com.nuvio.app.features.collection.fetchCollectionCatalogPage
 import com.nuvio.app.features.collection.findCollectionCatalog
 import com.nuvio.app.features.trakt.TraktPublicListSourceResolver
 import com.nuvio.app.features.watched.WatchedRepository
@@ -862,13 +864,14 @@ object HomeRepository {
             else -> {
                 val catalogSource = addonCatalogSource() ?: return emptyList()
                 val resolvedCatalog = addons.findCollectionCatalog(catalogSource) ?: return emptyList()
-                fetchCatalogPage(
+                fetchCollectionCatalogPage(
                     manifestUrl = resolvedCatalog.addon.manifestUrl,
                     type = catalogSource.type,
                     catalogId = catalogSource.catalogId,
+                    fallbackCatalogId = resolvedCatalog.fallbackCatalogId(catalogSource),
                     genre = catalogSource.genre,
                     maxItems = HOME_COLLECTION_HERO_SOURCE_ITEM_LIMIT,
-                )
+                ).page
             }
         }
         WatchedContentFilter.prepareForLoad(page.items)

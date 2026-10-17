@@ -5,13 +5,14 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.catalog.CatalogTarget
-import com.nuvio.app.features.catalog.fetchCatalogPage
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionFolder
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.CollectionSource
 import com.nuvio.app.features.collection.TmdbCollectionSourceResolver
 import com.nuvio.app.features.collection.catalogRouteKey
+import com.nuvio.app.features.collection.fallbackCatalogId
+import com.nuvio.app.features.collection.fetchCollectionCatalogPage
 import com.nuvio.app.features.collection.findCollectionCatalog
 import com.nuvio.app.features.trakt.TraktPublicListSourceResolver
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
@@ -244,13 +245,15 @@ object RandomPlayCollectionPool {
 
         val catalogSource = source.addonCatalogSource() ?: return null
         val resolved = addons.findCollectionCatalog(catalogSource) ?: return null
-        val page = fetchCatalogPage(
+        val fetched = fetchCollectionCatalogPage(
             manifestUrl = resolved.addon.manifestUrl,
             type = catalogSource.type,
             catalogId = catalogSource.catalogId,
+            fallbackCatalogId = resolved.fallbackCatalogId(catalogSource),
             genre = catalogSource.genre,
             maxItems = RANDOM_PLAY_COLLECTION_SOURCE_ITEM_LIMIT,
         )
+        val page = fetched.page
         return HomeCatalogSection(
             key = key,
             title = resolved.catalog.name,
@@ -261,7 +264,7 @@ object RandomPlayCollectionPool {
             target = CatalogTarget.Addon(
                 manifestUrl = resolved.addon.manifestUrl,
                 contentType = catalogSource.type,
-                catalogId = catalogSource.catalogId,
+                catalogId = fetched.catalogId,
                 genre = catalogSource.genre,
             ),
             items = page.items.filtered(),

@@ -531,20 +531,33 @@ object TmdbService {
         }
     }
 
-    private suspend fun imdbToTmdb(imdbId: String, mediaType: String, apiKey: String): String? {
+    private suspend fun imdbToTmdb(imdbId: String, mediaType: String, apiKey: String): String? =
+        (lookupImdbToTmdb(imdbId, mediaType, apiKey) as? ImdbToTmdbLookup.Found)?.tmdbId
+
+    /**
+     * [imdbToTmdb] with the miss explained: TMDB answering "no such title" is a fact a caller can
+     * rely on, a failed request is not. The hide-watched index needs the difference to know when it
+     * has covered the whole history.
+     */
+    internal suspend fun lookupImdbToTmdb(imdbId: String, mediaType: String): ImdbToTmdbLookup {
+        val apiKey = currentApiKey() ?: return ImdbToTmdbLookup.Unavailable
+        return lookupImdbToTmdb(imdbId, mediaType, apiKey)
+    }
+
+    private suspend fun lookupImdbToTmdb(imdbId: String, mediaType: String, apiKey: String): ImdbToTmdbLookup {
         val normalizedType = normalizeMediaType(mediaType)
         val cacheKey = "$imdbId:$normalizedType"
-        cachedTmdbId(cacheKey)?.let { return it }
+        cachedTmdbId(cacheKey)?.let { return ImdbToTmdbLookup.Found(it) }
 
         return withExternalIdLookupLock(cacheKey) {
             // Re-check: whoever held the lock may have resolved this while we queued behind them.
-            cachedTmdbId(cacheKey)?.let { return@withExternalIdLookupLock it }
+            cachedTmdbId(cacheKey)?.let { return@withExternalIdLookupLock ImdbToTmdbLookup.Found(it) }
 
             val body = fetch<TmdbFindResponse>(
                 endpoint = "find/$imdbId",
                 apiKey = apiKey,
                 query = mapOf("external_source" to "imdb_id"),
-            ) ?: return@withExternalIdLookupLock null
+            ) ?: return@withExternalIdLookupLock ImdbToTmdbLookup.Unavailable
 
             val resultId = when (normalizedType) {
                 "movie" -> body.movieResults.firstOrNull()?.id
@@ -553,15 +566,20 @@ object TmdbService {
             }?.takeIf { it > 0 }?.toString()
 
             if (resultId != null) {
-                cacheMutex.withLock {
+                val learned = cacheMutex.withLock {
                     imdbToTmdbCache[cacheKey] = resultId
-                    tmdbToImdbCache["$resultId:$normalizedType"] = imdbId
+                    val isNew = tmdbToImdbCache.put("$resultId:$normalizedType", imdbId) != imdbId
+                    if (isNew) externalIdCacheDirty = true
+                    isNew
                 }
+                // Persisted like the other direction: the stored map is TMDB→IMDb and is read back
+                // into both, so this mapping survives the launch too.
+                if (learned) scheduleExternalIdCacheWrite()
+                ImdbToTmdbLookup.Found(resultId)
             } else {
                 log.d { "No TMDB ID found for $imdbId ($normalizedType)" }
+                ImdbToTmdbLookup.NotFound
             }
-
-            resultId
         }
     }
 
@@ -1067,3 +1085,14 @@ private data class TmdbExternalIdsResponse(
     @SerialName("imdb_id") val imdbId: String? = null,
     @SerialName("tvdb_id") val tvdbId: Int? = null,
 )
+
+/** The outcome of an IMDb→TMDB lookup; see [TmdbService.lookupImdbToTmdb]. */
+internal sealed interface ImdbToTmdbLookup {
+    data class Found(val tmdbId: String) : ImdbToTmdbLookup
+
+    /** TMDB answered and has no title for this IMDb id. */
+    data object NotFound : ImdbToTmdbLookup
+
+    /** No answer: no API key, a failed request, or an unreadable response. */
+    data object Unavailable : ImdbToTmdbLookup
+}

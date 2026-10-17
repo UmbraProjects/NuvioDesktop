@@ -506,14 +506,22 @@ internal object ArtworkPrewarmer {
      * A folder's titles as its screen shows them: its catalogs' first pages, through the
      * Collections poster-service overlay. The catalogs are cached for [FolderItemsTtlMs], because a
      * pass restarts whenever Home changes and would otherwise fetch every folder again each time.
+     * Behind that, the list from an earlier launch ([PrewarmFolderListStore]), so a launch does not
+     * refetch every warmed folder either.
      */
     private suspend fun folderItems(job: PrewarmCollectionFolder): List<MetaPreview> {
         val key = "${job.collectionId}/${job.folder.id}/${job.folder.resolvedSources.hashCode()}"
         val now = System.currentTimeMillis()
         val raw = folderItemsCache[key]?.takeIf { now - it.first < FolderItemsTtlMs }?.second
+            ?: PrewarmFolderListStore.read(key)?.also { stored -> folderItemsCache[key] = stored }?.second
             // An empty answer is usually a failed fetch, so it is retried next pass rather than kept.
-            ?: loadFolderPrewarmItems(job.folder, PrewarmPerRowLimit)
-                .also { if (it.isNotEmpty()) folderItemsCache[key] = now to it }
+            ?: loadFolderPrewarmItems(job.folder, PrewarmPerRowLimit, PrewarmFolderSourceLimit)
+                .also { items ->
+                    if (items.isNotEmpty()) {
+                        folderItemsCache[key] = now to items
+                        PrewarmFolderListStore.write(key, now, items)
+                    }
+                }
         // The poster-service settings are written on Main; read them there too.
         return withContext(Dispatchers.Main) {
             raw.withCachedCustomPosters(
@@ -526,6 +534,13 @@ internal object ArtworkPrewarmer {
     private val folderItemsCache = ConcurrentHashMap<String, Pair<Long, List<MetaPreview>>>()
 
     private const val FolderItemsTtlMs = 30 * 60_000L
+
+    /**
+     * Sources warmed per folder: the rows a folder opens on. A community folder can hold 50 sources
+     * (one TMDB or Trakt request each); the ones past the first screen are reached by scrolling, by
+     * which time their art loads as it would have anyway.
+     */
+    private const val PrewarmFolderSourceLimit = 8
     private const val StartupDelayMs = 15_000L
 
     /** Long enough for Home's rows to finish arriving, so one pass covers them all. */
@@ -648,14 +663,21 @@ internal fun prewarmCollectionFolders(
     collections: List<Collection>,
     settings: ImageCacheSettings,
     perCollectionLimit: Int = COLLECTION_ARTWORK_PREFETCH_LIMIT,
+    totalLimit: Int = PREWARM_COLLECTION_FOLDER_LIMIT,
 ): List<PrewarmCollectionFolder> {
     if (!settings.prewarmsAnything || !settings.prewarmCollectionContents) return emptyList()
     return collections.flatMap { collection ->
         collection.folders.take(perCollectionLimit).map { folder ->
             PrewarmCollectionFolder(collection.id, folder, collection.folderViewMode)
         }
-    }
+    }.take(totalLimit)
 }
+
+/**
+ * Folders warmed per pass across every collection, in Home's order. Per-collection capping alone
+ * let a 21-collection community pack queue 344 folders (40,000 titles, ~3,200 source requests).
+ */
+internal const val PREWARM_COLLECTION_FOLDER_LIMIT = 60
 
 /**
  * What a folder screen draws for [items]: the grid shows every title as a plain poster whatever the

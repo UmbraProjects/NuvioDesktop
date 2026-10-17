@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
@@ -298,6 +299,14 @@ private fun settingsSearchEntries(
         description = resolve(Res.string.compose_settings_root_account_description),
         category = accountCategory,
         icon = Icons.Rounded.AccountCircle,
+    )
+    addPage(
+        page = SettingsPage.WatchParty,
+        key = "watch-party",
+        title = resolve(Res.string.party_title),
+        description = resolve(Res.string.party_settings_description),
+        category = accountCategory,
+        icon = Icons.Rounded.Groups,
     )
     addPage(
         page = SettingsPage.TraktAuthentication,
