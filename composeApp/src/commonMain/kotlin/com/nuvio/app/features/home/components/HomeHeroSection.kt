@@ -12,6 +12,7 @@ import com.nuvio.app.core.ui.RecompositionProbe
 import com.nuvio.app.core.ui.nuvioArtworkRequestSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.watchprogress.WatchProgressClock
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Animatable
@@ -183,6 +184,7 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private const val HERO_AUTO_SCROLL_INTERVAL_MS = 8_000L
 private const val HERO_BACKGROUND_PARALLAX = 0.055f
 private const val HERO_CONTENT_PARALLAX = 0.18f
 private const val HERO_SCROLL_PARALLAX = 0.3f
@@ -226,6 +228,8 @@ private const val HERO_BACKDROP_FADE_FRACTION = 0.35f
 private const val HERO_METADATA_PREFETCH_CONCURRENCY = 4
 private val heroImageLog = Logger.withTag("HomeHeroImages")
 private val heroTrailerLog = Logger.withTag("HomeHeroTrailer")
+private val heroPrefetchLog = Logger.withTag("HeroDiscovery")
+private const val HERO_PREFETCH_SLOW_WAIT_LOG_MS = 400L
 
 /**
  * How long focus must rest on an item before its trailer is extracted from YouTube. Long enough
@@ -360,6 +364,20 @@ fun HomeHeroSection(
     RecompositionProbe("hero")
     val pagerState = rememberPagerState(pageCount = { items.size })
     val coroutineScope = rememberCoroutineScope()
+
+    // Basic's carousel rotates on its own, as upstream's hero does. Keyed on the settled page so a
+    // manual swipe or dot click restarts the interval. It holds while the hero follows focus, while
+    // Home isn't the foreground screen (player, settings, game mode, stream picker) and while a
+    // trailer is playing on it; the last slide wraps back to the first.
+    val heroHomeActive by HomeHeroTrailerGate.homeActive.collectAsState()
+    val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsState()
+    val autoRotate = pagedHero && focusedItem == null && heroHomeActive && !heroTrailerShowing && items.size > 1
+    LaunchedEffect(pagerState.settledPage, items.size, autoRotate) {
+        if (!autoRotate) return@LaunchedEffect
+        delay(HERO_AUTO_SCROLL_INTERVAL_MS)
+        while (pagerState.isScrollInProgress) delay(100L)
+        pagerState.animateScrollToPage((pagerState.currentPage + 1) % items.size)
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -515,7 +533,12 @@ fun HomeHeroSection(
                 }
                 if (!discoveryCache.containsKey(discoveryKey) && target.type != "collection") {
                     launch {
+                        val queuedAtMs = WatchProgressClock.nowEpochMs()
                         prefetchSlots.withPermit {
+                            val waitedMs = WatchProgressClock.nowEpochMs() - queuedAtMs
+                            if (waitedMs >= HERO_PREFETCH_SLOW_WAIT_LOG_MS) {
+                                heroPrefetchLog.i { "Badges for $key waited ${waitedMs}ms for a prefetch slot" }
+                            }
                             discoveryCache[discoveryKey] = HeroDiscoveryMetadataService.fetch(
                                 type = target.metadataType,
                                 id = target.metadataId,
@@ -2394,13 +2417,13 @@ private fun DesktopHeroContentBlock(
                     )
                 }
             } else {
-                // Same fixed-height slot and bottom alignment as the logo branch above (bottom, so
-                // a short logo sits on the cast row rather than floating mid-slot) — otherwise the title's vertical
-                // position shifts depending on whether this item has a logo, dragging everything
-                // below it (cast, genre line, description) along with it.
+                // Same fixed-height slot and the same alignment as the logo branch above (centred in
+                // Adaptive and Basic, on the cast row in TV Mode), so the title sits where a logo
+                // would — otherwise it reads as misplaced next to items that have one, and the
+                // slot height still keeps everything below it (cast, genre line, description) put.
                 Box(
                     modifier = logoSlotModifier,
-                    contentAlignment = Alignment.BottomStart,
+                    contentAlignment = if (immersiveBudget != null) Alignment.BottomStart else Alignment.CenterStart,
                 ) {
                     // Third state: the item is a pre-enrichment copy whose logo has not been decided
                     // yet, so the title would only be painted for the moment it takes the logo to

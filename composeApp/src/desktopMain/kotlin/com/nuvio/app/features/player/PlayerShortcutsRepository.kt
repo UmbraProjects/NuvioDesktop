@@ -57,9 +57,29 @@ object PlayerShortcutsRepository {
     private val _keyLabels = MutableStateFlow(defaults.mapValues { playerShortcutKeyCodeLabel(it.value) })
     val keyLabels: StateFlow<Map<PlayerShortcutAction, String>> = _keyLabels.asStateFlow()
 
+    // Escape in fullscreen playback drops to windowed first instead of leaving the player (Stremio
+    // Kai's behaviour); a second Escape, already windowed, leaves as usual. Off by default.
+    @Volatile
+    private var escWindowedFirst = false
+    private val _escWindowedFirstState = MutableStateFlow(false)
+    val escWindowedFirstState: StateFlow<Boolean> = _escWindowedFirstState.asStateFlow()
+
     fun ensureLoaded() {
         if (hasLoaded) return
         loadFromDisk()
+    }
+
+    /** Read on the AWT event-dispatch thread and from the HUD bridge on every Escape. */
+    fun escWindowedFirst(): Boolean {
+        ensureLoaded()
+        return escWindowedFirst
+    }
+
+    fun setEscWindowedFirst(enabled: Boolean) {
+        ensureLoaded()
+        escWindowedFirst = enabled
+        if (enabled) store.putBoolean(scoped(ESC_WINDOWED_FIRST_KEY), true) else store.remove(scoped(ESC_WINDOWED_FIRST_KEY))
+        _escWindowedFirstState.value = enabled
     }
 
     /** Must be called on profile switch once this repo is reachable from the profile plumbing. */
@@ -70,6 +90,8 @@ object PlayerShortcutsRepository {
         bindings = PlayerShortcutAction.entries.associateWith { action ->
             store.getInt(scoped(action.id)) ?: defaults.getValue(action)
         }
+        escWindowedFirst = store.getBoolean(scoped(ESC_WINDOWED_FIRST_KEY)) ?: false
+        _escWindowedFirstState.value = escWindowedFirst
         publish()
     }
 
@@ -127,6 +149,8 @@ object PlayerShortcutsRepository {
     }
 
     private fun scoped(key: String): String = ProfileScopedKey.of(key)
+
+    private const val ESC_WINDOWED_FIRST_KEY = "esc_windowed_first"
 }
 
 object AppShortcutsRepository {

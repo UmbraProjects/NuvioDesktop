@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.features.details.filler.isSkippableFiller
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -105,6 +106,27 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         if (currentMeta.type == parentMetaType && currentMeta.id == parentMetaId) {
             playerMetaVideos = currentMeta.videos
         }
+    }
+
+    val animeFillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsState()
+    LaunchedEffect(parentMetaType, parentMetaId, playerMetaVideos, animeFillerSettings) {
+        if (!isSeries || playerMetaVideos.isEmpty() ||
+            !com.nuvio.app.features.details.filler.AnimeFillerSettings.lookupWanted()
+        ) {
+            playerFillerKinds = emptyMap()
+            return@LaunchedEffect
+        }
+        val meta = MetaDetailsRepository.peek(parentMetaType, parentMetaId)
+        val trusted = meta?.imdbTmdbIdentityTrusted ?: true
+        playerFillerKinds = com.nuvio.app.features.details.filler.AnimeFillerRepository.episodeKinds(
+            lookup = com.nuvio.app.features.details.filler.AnimeFillerLookup(
+                metaId = parentMetaId,
+                imdbId = meta?.imdbId?.takeIf { trusted },
+                tmdbId = meta?.tmdbId?.takeIf { trusted },
+                malId = meta?.malId,
+            ),
+            videos = playerMetaVideos,
+        )
     }
 
     LaunchedEffect(currentStreamBingeGroup, parentMetaId) {
@@ -1186,6 +1208,7 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
 
 @Composable
 private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
+    val animeFillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsState()
     LaunchedEffect(activeVideoId, activeSeasonNumber, activeEpisodeNumber, parentMetaId, parentMetaType) {
         parentalWarnings = emptyList()
         showParentalGuide = false
@@ -1435,7 +1458,14 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         acceptSkipInterval(interval)
     }
 
-    LaunchedEffect(playerMetaVideos, activeVideoId, activeSeasonNumber, activeEpisodeNumber) {
+    LaunchedEffect(
+        playerMetaVideos,
+        activeVideoId,
+        activeSeasonNumber,
+        activeEpisodeNumber,
+        playerFillerKinds,
+        animeFillerSettings.skipFiller,
+    ) {
         // A playlist decides what plays next, not the show: binge would otherwise carry on into
         // the following episode instead of the playlist's next entry.
         if (!isSeries || playerMetaVideos.isEmpty() || isPlaylistPlayback) {
@@ -1444,6 +1474,8 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         }
         val curSeason = activeSeasonNumber
         val curEpisode = activeEpisodeNumber ?: return@LaunchedEffect
+        val fillerKinds = playerFillerKinds
+        val skipFiller = animeFillerSettings.skipFiller && fillerKinds.isNotEmpty()
         val nextVideo = resolveAutoPlayEpisode(
             videos = playerMetaVideos,
             currentVideoId = activeVideoId,
@@ -1451,6 +1483,11 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             currentSeason = curSeason,
             currentEpisode = curEpisode,
             mode = autoPlayMode,
+            isSkipped = if (skipFiller) {
+                { video -> fillerKinds.isSkippableFiller(video.id) }
+            } else {
+                null
+            },
         )
         val nextEpisode = nextVideo?.playbackEpisodeNumber()
         nextEpisodeInfo = if (nextVideo != null && nextEpisode != null) {
@@ -1878,14 +1915,17 @@ private fun resolveAutoPlayEpisode(
     currentSeason: Int?,
     currentEpisode: Int?,
     mode: PlayerAutoPlayMode,
+    /** Episodes autoplay passes over (skip-filler); null skips nothing. */
+    isSkipped: ((MetaVideo) -> Boolean)? = null,
 ): MetaVideo? {
     if (mode != PlayerAutoPlayMode.RandomEpisode) {
-        return PlayerNextEpisodeRules.resolveNextEpisode(
+        return PlayerNextEpisodeRules.resolveNextEpisodeSkipping(
             videos = videos,
             currentSeason = currentSeason,
             currentEpisode = currentEpisode,
             currentVideoId = currentVideoId,
             parentMetaId = parentMetaId,
+            isSkipped = isSkipped,
         )
     }
 
@@ -1897,7 +1937,8 @@ private fun resolveAutoPlayEpisode(
     val mainSeasonEpisodes = airedEpisodes.filter { video ->
         video.playbackSeasonNumber()?.let { it > 0 } == true
     }
-    val randomPool = mainSeasonEpisodes.ifEmpty { airedEpisodes }
+    val unskipped = mainSeasonEpisodes.ifEmpty { airedEpisodes }
+    val randomPool = isSkipped?.let { skip -> unskipped.filterNot(skip).ifEmpty { unskipped } } ?: unskipped
     val currentVideo = videos.resolveSeriesEpisodePosition(
         parentMetaId = parentMetaId,
         videoId = currentVideoId,

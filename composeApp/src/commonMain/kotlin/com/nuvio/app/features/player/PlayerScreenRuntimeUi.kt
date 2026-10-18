@@ -2056,6 +2056,10 @@ private fun formatPlayerControlsCueTimestamp(timeMs: Long): String {
 @Composable
 private fun PlayerScreenRuntime.buildPlayerControlEpisodeItems(): List<PlayerControlEpisodeItem> {
     val items = mutableListOf<PlayerControlEpisodeItem>()
+    val fillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsState()
+    val fillerKinds = if (fillerSettings.showBadges) playerFillerKinds else emptyMap()
+    val fillerText = stringResource(Res.string.anime_episode_badge_filler)
+    val mixedText = stringResource(Res.string.anime_episode_badge_mixed)
     val current = playerMetaVideos.resolveSeriesEpisodePosition(
         parentMetaId = parentMetaId,
         videoId = activeVideoId,
@@ -2090,10 +2094,20 @@ private fun PlayerScreenRuntime.buildPlayerControlEpisodeItems(): List<PlayerCon
                 episode = episode,
                 isCurrent = current?.video == video,
                 isWatched = isWatched,
-            ),
+            ).withFillerKind(fillerKinds[video.id], fillerText, mixedText),
         )
     }
     return items
+}
+
+private fun PlayerControlEpisodeItem.withFillerKind(
+    kind: com.nuvio.app.features.details.filler.AnimeEpisodeKind?,
+    fillerText: String,
+    mixedText: String,
+): PlayerControlEpisodeItem = when (kind) {
+    com.nuvio.app.features.details.filler.AnimeEpisodeKind.Filler -> copy(fillerKind = "filler", fillerLabel = fillerText)
+    com.nuvio.app.features.details.filler.AnimeEpisodeKind.MixedCanonFiller -> copy(fillerKind = "mixed", fillerLabel = mixedText)
+    else -> this
 }
 
 @Composable

@@ -605,6 +605,15 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.KeyboardShortcuts,
+            key = "esc-windowed-first",
+            title = "Escape goes windowed first",
+            description = "In fullscreen playback, Escape leaves fullscreen before it closes the player.",
+            pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
+            section = "Player · Playback",
+            icon = Icons.Rounded.Keyboard,
+        )
+        addRow(
+            page = SettingsPage.KeyboardShortcuts,
             key = "osk-mouse",
             title = "On-screen keyboard for mouse",
             description = "Click letters to type in search, for a mouse-only couch setup.",
@@ -1707,6 +1716,8 @@ private fun settingsSearchEntries(
         rows = listOf(
             PlaybackSearchRow("auto-play-next", resolve(Res.string.settings_playback_auto_play_next_episode), resolve(Res.string.settings_playback_auto_play_next_episode_description), anchor = SettingsScrollAnchor.BingeMode),
             PlaybackSearchRow("prefer-binge", resolve(Res.string.settings_playback_prefer_binge_group), resolve(Res.string.settings_playback_prefer_binge_group_description)),
+            PlaybackSearchRow("skip-anime-filler", resolve(Res.string.settings_playback_skip_anime_filler), resolve(Res.string.settings_playback_skip_anime_filler_description)),
+            PlaybackSearchRow("show-anime-filler", resolve(Res.string.settings_meta_anime_filler_badges), resolve(Res.string.settings_meta_anime_filler_badges_description)),
             PlaybackSearchRow("threshold-mode", resolve(Res.string.settings_playback_threshold_mode)),
             PlaybackSearchRow("threshold-percent", resolve(Res.string.settings_playback_threshold_percentage), resolve(Res.string.settings_playback_threshold_percentage_description)),
             PlaybackSearchRow("threshold-minutes", resolve(Res.string.settings_playback_minutes_before_end), resolve(Res.string.settings_playback_minutes_before_end_description)),
@@ -2007,6 +2018,7 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("mdb-trakt", resolve(Res.string.source_trakt), "", resolve(Res.string.settings_mdb_section_rating_providers)),
         PlaybackSearchRow("mdb-letterboxd", resolve(Res.string.source_letterboxd), "", resolve(Res.string.settings_mdb_section_rating_providers)),
         PlaybackSearchRow("mdb-audience", resolve(Res.string.source_audience_score), "", resolve(Res.string.settings_mdb_section_rating_providers)),
+        PlaybackSearchRow("mdb-refresh-pace", resolve(Res.string.settings_mdb_refresh_pace), resolve(Res.string.settings_mdb_refresh_pace_description), resolve(Res.string.settings_mdb_section_refresh)),
     ).forEach { row ->
         addRow(
             page = SettingsPage.MdbListRatings,

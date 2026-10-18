@@ -1018,6 +1018,7 @@ fun main(args: Array<String>) {
             runCatching { HeroCastMetadataService.flushPendingWrites() }
             runCatching { MdbListMetadataService.flushPendingWrites() }
             runCatching { com.nuvio.app.features.details.LightweightMetaDiskCache.flushPendingWrites() }
+            runCatching { com.nuvio.app.features.details.filler.AnimeFillerRepository.flushPendingWrites() }
         }
     }
     // Home settings are encoded off the UI thread now; a change made just before exit is written

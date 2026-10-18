@@ -523,6 +523,10 @@ data class PlayerControlEpisodeItem(
     val episode: Int = 0,
     val isCurrent: Boolean = false,
     val isWatched: Boolean = false,
+    /** AnimeFillerList verdict: "filler", "mixed", or blank (canon, unknown, or display turned off). */
+    val fillerKind: String = "",
+    /** Localized label for [fillerKind], appended to the code on the HUD card ("S5E2 · Filler"). */
+    val fillerLabel: String = "",
 )
 
 data class PlayerControlAddonSubtitleItem(

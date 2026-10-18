@@ -193,6 +193,10 @@ internal object AnimeIdMappingRepository {
         return (if (isTv) index.byTmdbTv[tmdbId] else index.byTmdbMovie[tmdbId]).orEmpty()
     }
 
+    /** The anime-list entries carrying [imdbId] (`tt…`), or empty when the list doesn't know it. */
+    fun entriesForImdb(imdbId: String): List<AnimeIdMapping> =
+        loadIndex().byImdb[imdbId.trim().lowercase()].orEmpty()
+
     private fun AnimeIdMapping.hasNativeAnimeId(): Boolean =
         kitsuId != null || malId != null || anilistId != null || anidbId != null
 

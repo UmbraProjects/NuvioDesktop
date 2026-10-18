@@ -301,6 +301,8 @@ internal class PlayerScreenRuntime(
     var parentalGuideHasShown by mutableStateOf(false)
     var playbackStartedForParentalGuide by mutableStateOf(false)
     var nextEpisodeInfo by mutableStateOf<NextEpisodeInfo?>(null)
+    /** AnimeFillerList categories for [playerMetaVideos], by video id; empty for non-anime. */
+    var playerFillerKinds by mutableStateOf<Map<String, com.nuvio.app.features.details.filler.AnimeEpisodeKind>>(emptyMap())
     var showNextEpisodeCard by mutableStateOf(false)
     // Playlist playback replaces next-episode binge with "the next thing in the playlist". The
     // entry is resolved once per player — a playlist edited mid-playback takes effect at the next

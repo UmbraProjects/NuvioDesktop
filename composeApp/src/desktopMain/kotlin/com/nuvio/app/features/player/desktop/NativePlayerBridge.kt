@@ -160,6 +160,12 @@ internal object NativePlayerBridge {
     external fun systemIdleMs(): Long
 
     /**
+     * Holds (or releases) a keep-awake request for the display and system while a video plays.
+     * Leaves [systemIdleMs] alone, so the screensaver's idle clock is unaffected.
+     */
+    external fun setWindowsDisplaySleepInhibited(inhibited: Boolean): Boolean
+
+    /**
      * Whether the foreground window belongs to this process. AWT's `Window.isActive` cannot be
      * trusted for this while focus sits in the WebView2 HUD (a non-AWT child of the frame).
      */

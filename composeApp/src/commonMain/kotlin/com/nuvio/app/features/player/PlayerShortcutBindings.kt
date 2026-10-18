@@ -25,6 +25,10 @@ expect fun resetPlayerShortcuts(actions: Collection<PlayerShortcutAction>)
 /** Reloads bindings for the newly active profile (bindings are profile-scoped). */
 expect fun onPlayerShortcutsProfileChanged()
 
+/** Escape in fullscreen playback goes windowed first instead of leaving the player. */
+expect fun playerEscWindowedFirstState(): StateFlow<Boolean>
+expect fun setPlayerEscWindowedFirst(enabled: Boolean)
+
 expect fun appShortcutKeyLabels(): StateFlow<Map<AppShortcutAction, String>>
 expect fun ensureAppShortcutBindingsLoaded()
 expect fun resetAllAppShortcuts()

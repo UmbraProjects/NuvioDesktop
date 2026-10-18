@@ -10,6 +10,8 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,12 +36,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isOutOfBounds
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -207,6 +216,7 @@ internal fun StreamCard(
                     Modifier
                 },
             )
+            .clickSwallowedByScrollingList(enabled = enabled, onClick = onClick)
             .combinedClickable(
                 enabled = enabled,
                 onClick = onClick,
@@ -507,4 +517,36 @@ private fun StreamItem.instantServiceLabel(): String? {
         .ifBlank { status.providerName.trim() }
         .ifBlank { DebridProviders.displayName(status.providerId) }
     return "- $providerLabel Instant"
+}
+
+/**
+ * A lazy list that is still scrolling (the desktop wheel animates each notch for a few hundred ms)
+ * consumes the next press on the Initial pass to "catch" the fling — before it checks whether a
+ * mouse can drag it at all, which it can't. The card's own clickable then sees a consumed down and
+ * ignores it, so a click made right after scrolling did nothing and needed a second one. This picks
+ * up exactly those presses (already consumed when they reach the card, primary button) and clicks on
+ * release inside the card. A normal press arrives unconsumed and is left to [combinedClickable].
+ */
+private fun Modifier.clickSwallowedByScrollingList(
+    enabled: Boolean,
+    onClick: () -> Unit,
+): Modifier = if (!enabled) this else composed {
+    val currentOnClick by rememberUpdatedState(onClick)
+    pointerInput(Unit) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            if (!down.isConsumed) return@awaitEachGesture
+            if (down.type == PointerType.Mouse && !currentEvent.buttons.isPrimaryPressed) return@awaitEachGesture
+            while (true) {
+                val change = awaitPointerEvent(PointerEventPass.Initial).changes
+                    .firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                if (change.isOutOfBounds(size, extendedTouchPadding)) return@awaitEachGesture
+                if (!change.pressed) {
+                    change.consume()
+                    currentOnClick()
+                    return@awaitEachGesture
+                }
+            }
+        }
+    }
 }

@@ -79,6 +79,12 @@ import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.details.EpisodeRatingsVisibility
+import com.nuvio.app.features.details.filler.AnimeEpisodeKind
+import com.nuvio.app.features.details.filler.AnimeFillerRepository
+import com.nuvio.app.features.details.filler.AnimeFillerSettings
+import com.nuvio.app.features.details.filler.AnimeEpisodeKindLabel
+import com.nuvio.app.features.details.filler.episodeCodeWithKind
+import com.nuvio.app.features.details.filler.label
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaEpisodeCardStyle
 import com.nuvio.app.features.details.MetaTrailer
@@ -171,6 +177,9 @@ fun DetailSeriesContent(
     // episode numbers (no season), and sibling Kitsu/MAL entries can map onto one franchise; a
     // plain season/episode set loses both of those identities and omits the downloaded badge.
     val localLibraryState by LocalLibraryRepository.uiState.collectAsStateWithLifecycle()
+    val fillerSettings by AnimeFillerSettings.state.collectAsStateWithLifecycle()
+    val fillerResults by AnimeFillerRepository.results.collectAsStateWithLifecycle()
+    val fillerKinds = if (fillerSettings.showBadges) fillerResults[meta.id].orEmpty() else emptyMap()
     val downloadedEpisodeVideoIds = remember(localLibraryState.items, meta.id, meta.videos) {
         meta.videos.mapNotNullTo(mutableSetOf()) { episode ->
             val videoId = episode.playbackVideoId(meta.id)
@@ -220,6 +229,7 @@ fun DetailSeriesContent(
                         progressByVideoId = progressByVideoId,
                         episodeRatings = episodeRatings,
                         episodeRatingsVisibility = episodeRatingsVisibility,
+                        fillerKinds = fillerKinds,
                         blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                         downloadedEpisodeVideoIds = downloadedEpisodeVideoIds,
                         focusedEpisodeIndex = focusedEpisodeIndex,
@@ -523,6 +533,7 @@ fun DetailSeriesContent(
                             progressByVideoId = progressByVideoId,
                             episodeRatings = episodeRatings,
                             episodeRatingsVisibility = episodeRatingsVisibility,
+                            fillerKinds = fillerKinds,
                             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                             downloadedEpisodeVideoIds = downloadedEpisodeVideoIds,
                             // Only resume-scroll to the preferred episode on the season the
@@ -561,6 +572,7 @@ fun DetailSeriesContent(
                                         progressEntry = episodeProgressEntry,
                                         imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
                                         episodeRatingsVisibility = episodeRatingsVisibility,
+                                        fillerKind = fillerKinds[episode.id],
                                         isDownloaded = episode.playbackVideoId(meta.id) in downloadedEpisodeVideoIds,
                                         isWatched = episodeProgressEntry?.isEffectivelyCompleted == true ||
                                             WatchingState.isEpisodeWatched(
@@ -1055,6 +1067,8 @@ private fun EpisodeHorizontalRow(
     progressByVideoId: Map<String, WatchProgressEntry>,
     episodeRatings: Map<Pair<Int, Int>, Double>,
     episodeRatingsVisibility: EpisodeRatingsVisibility,
+    /** AnimeFillerList categories by video id; empty for non-anime or with badges off. */
+    fillerKinds: Map<String, AnimeEpisodeKind> = emptyMap(),
     blurUnwatchedEpisodes: Boolean,
     /** Playback video ids that resolve to a file in the local library. */
     downloadedEpisodeVideoIds: Set<String>,
@@ -1145,6 +1159,7 @@ private fun EpisodeHorizontalRow(
                     progressEntry = episodeProgressEntry,
                     imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
                     episodeRatingsVisibility = episodeRatingsVisibility,
+                    fillerKind = fillerKinds[episode.id],
                     isDownloaded = episodeVideoId in downloadedEpisodeVideoIds,
                     isWatched = episodeProgressEntry?.isEffectivelyCompleted == true ||
                         WatchingState.isEpisodeWatched(
@@ -1195,6 +1210,7 @@ private fun EpisodeHorizontalCard(
     progressEntry: WatchProgressEntry?,
     imdbRating: Double?,
     episodeRatingsVisibility: EpisodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL,
+    fillerKind: AnimeEpisodeKind? = null,
     isWatched: Boolean,
     isDownloaded: Boolean,
     blurUnwatchedEpisodes: Boolean,
@@ -1293,6 +1309,7 @@ private fun EpisodeHorizontalCard(
             Spacer(modifier = Modifier.weight(1f))
             CardOverlayBadge(
                 text = video.episodeBadge(),
+                kind = fillerKind.label(),
                 textSize = metrics.badgeTextSize,
                 radius = metrics.badgeRadius,
                 horizontalPadding = metrics.badgeHorizontalPadding,
@@ -2027,9 +2044,11 @@ private fun CardOverlayBadge(
     radius: Dp,
     horizontalPadding: Dp,
     verticalPadding: Dp,
+    kind: AnimeEpisodeKindLabel? = null,
 ) {
     EpisodeCodeBadge(
         text = text,
+        kind = kind,
         textSize = textSize,
         radius = radius,
         horizontalPadding = horizontalPadding,
@@ -2047,7 +2066,10 @@ private fun EpisodeCodeBadge(
     verticalPadding: Dp,
     backgroundAlpha: Float,
     modifier: Modifier = Modifier,
+    /** AnimeFillerList verdict appended to the code: "S5E2 · Filler". */
+    kind: AnimeEpisodeKindLabel? = null,
 ) {
+    val label = remember(text, kind) { episodeCodeWithKind(text, kind) }
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(radius))
@@ -2055,7 +2077,7 @@ private fun EpisodeCodeBadge(
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
     ) {
         Text(
-            text = text,
+            text = label,
             style = MaterialTheme.typography.labelMedium.copy(
                 fontSize = textSize,
                 fontWeight = FontWeight.SemiBold,
@@ -2136,6 +2158,7 @@ private fun EpisodeListCard(
     progressEntry: WatchProgressEntry?,
     imdbRating: Double?,
     episodeRatingsVisibility: EpisodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL,
+    fillerKind: AnimeEpisodeKind? = null,
     isWatched: Boolean,
     isDownloaded: Boolean,
     blurUnwatchedEpisodes: Boolean,
@@ -2210,6 +2233,7 @@ private fun EpisodeListCard(
 
                 EpisodeCodeBadge(
                     text = video.episodeBadge(),
+                    kind = fillerKind.label(),
                     textSize = sizing.badgeTextSize,
                     radius = sizing.badgeRadius,
                     horizontalPadding = sizing.badgeHorizontalPadding,

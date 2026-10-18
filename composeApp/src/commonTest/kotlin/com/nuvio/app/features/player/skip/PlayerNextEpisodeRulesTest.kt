@@ -92,4 +92,42 @@ class PlayerNextEpisodeRulesTest {
 
         assertEquals("s2e1", next?.id)
     }
+
+    private val fillerRun = listOf(
+        MetaVideo(id = "kitsu:11:25", title = "Ep 25", released = "2003-04-02", season = 1, episode = 25),
+        MetaVideo(id = "kitsu:11:26", title = "Ep 26", released = "2003-04-09", season = 1, episode = 26),
+        MetaVideo(id = "kitsu:11:27", title = "Ep 27", released = "2003-04-16", season = 1, episode = 27),
+        MetaVideo(id = "kitsu:11:28", title = "Ep 28", released = "2003-04-23", season = 1, episode = 28),
+        MetaVideo(id = "kitsu:11:29", title = "Ep 29", released = "2099-01-01", season = 1, episode = 29),
+    )
+
+    private fun nextFrom(episode: Int, skipped: Set<String>) = PlayerNextEpisodeRules.resolveNextEpisodeSkipping(
+        videos = fillerRun,
+        currentSeason = 1,
+        currentEpisode = episode,
+        currentVideoId = "kitsu:11:$episode",
+        parentMetaId = "kitsu:11",
+        isSkipped = { it.id in skipped },
+    )
+
+    @Test
+    fun skipFillerPassesOverAFillerRun() {
+        assertEquals("kitsu:11:28", nextFrom(25, setOf("kitsu:11:26", "kitsu:11:27"))?.id)
+    }
+
+    @Test
+    fun skipFillerKeepsTheNextEpisodeWhenItIsNotSkipped() {
+        assertEquals("kitsu:11:26", nextFrom(25, setOf("kitsu:11:27"))?.id)
+    }
+
+    @Test
+    fun skipFillerFallsBackWhenOnlyFillerFollows() {
+        assertEquals("kitsu:11:26", nextFrom(25, setOf("kitsu:11:26", "kitsu:11:27", "kitsu:11:28", "kitsu:11:29"))?.id)
+    }
+
+    @Test
+    fun skipFillerFallsBackWhenTheNextKeptEpisodeHasNotAired() {
+        // A filler arc that is airing now: the canon episode after it is still in the future.
+        assertEquals("kitsu:11:27", nextFrom(26, setOf("kitsu:11:27", "kitsu:11:28"))?.id)
+    }
 }

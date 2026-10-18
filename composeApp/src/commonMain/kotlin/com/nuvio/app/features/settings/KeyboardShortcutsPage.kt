@@ -38,7 +38,9 @@ import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.AppShortcutRebindDialog
 import com.nuvio.app.features.player.PlayerShortcutRebindDialog
 import com.nuvio.app.features.player.ensurePlayerShortcutBindingsLoaded
+import com.nuvio.app.features.player.playerEscWindowedFirstState
 import com.nuvio.app.features.player.playerShortcutKeyLabels
+import com.nuvio.app.features.player.setPlayerEscWindowedFirst
 import com.nuvio.app.features.player.resetPlayerShortcuts
 import com.nuvio.app.features.player.appShortcutKeyLabels
 import com.nuvio.app.features.player.ensureAppShortcutBindingsLoaded
@@ -216,9 +218,10 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
     item(key = "keyboard-shortcuts-player") {
         LaunchedEffect(Unit) { ensurePlayerShortcutBindingsLoaded() }
         val labels by playerShortcutKeyLabels().collectAsState()
+        val escWindowedFirst by playerEscWindowedFirstState().collectAsState()
         var rebinding by remember { mutableStateOf<PlayerShortcutAction?>(null) }
         Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s18)) {
-            playerRowSections.forEach { (title, specs) ->
+            playerRowSections.forEachIndexed { sectionIndex, (title, specs) ->
                 val sectionActions = specs.mapNotNull { it.action }
                 SettingsSection(
                     title = title,
@@ -232,6 +235,16 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
                                 shortcut = spec.toShortcut(labels),
                                 isTablet = isTablet,
                                 onRebind = spec.action?.let { action -> { rebinding = action } },
+                            )
+                        }
+                        if (sectionIndex == 0) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = "Escape goes windowed first",
+                                description = "In fullscreen playback, Escape leaves fullscreen instead of closing the player. Press it again while windowed to close.",
+                                checked = escWindowedFirst,
+                                isTablet = isTablet,
+                                onCheckedChange = ::setPlayerEscWindowedFirst,
                             )
                         }
                     }

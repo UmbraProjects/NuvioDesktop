@@ -448,6 +448,29 @@ fun MetaDetailsScreen(
         )
     }
 
+    val animeFillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsStateWithLifecycle()
+    LaunchedEffect(
+        displayedMeta?.id,
+        displayedMeta?.videos,
+        deferredMetaWorkAllowed,
+        animeFillerSettings,
+    ) {
+        val metaForFiller = displayedMeta ?: return@LaunchedEffect
+        if (!deferredMetaWorkAllowed || metaForFiller.videos.isEmpty()) return@LaunchedEffect
+        if (!com.nuvio.app.features.details.filler.AnimeFillerSettings.lookupWanted()) return@LaunchedEffect
+        // Ids proven to belong to another title would find another show's page.
+        val trusted = metaForFiller.imdbTmdbIdentityTrusted
+        com.nuvio.app.features.details.filler.AnimeFillerRepository.episodeKinds(
+            lookup = com.nuvio.app.features.details.filler.AnimeFillerLookup(
+                metaId = metaForFiller.id,
+                imdbId = metaForFiller.imdbId.takeIf { trusted },
+                tmdbId = metaForFiller.tmdbId.takeIf { trusted },
+                malId = metaForFiller.malId,
+            ),
+            videos = metaForFiller.videos,
+        )
+    }
+
     LaunchedEffect(type, id, displayedMeta, uiState.isLoading, autoLoadAttempted) {
         if (!autoLoadAttempted && displayedMeta == null && !uiState.isLoading) {
             autoLoadAttempted = true

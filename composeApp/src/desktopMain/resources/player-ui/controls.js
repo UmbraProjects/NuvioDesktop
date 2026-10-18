@@ -4075,6 +4075,13 @@ const appendEpisodeRow = (container, item, keyboardIndex) => {
     const code = document.createElement("span");
     code.className = "episode-code";
     code.textContent = item.code;
+    // AnimeFillerList verdict rides on the code pill: "S5E2 · Filler".
+    if (item.fillerKind && item.fillerLabel) {
+      const filler = document.createElement("span");
+      filler.className = `episode-filler ${item.fillerKind === "mixed" ? "mixed" : "filler"}`;
+      filler.textContent = ` · ${item.fillerLabel}`;
+      code.appendChild(filler);
+    }
     top.appendChild(code);
   }
   if (item.isCurrent) {
@@ -6812,7 +6819,8 @@ document.addEventListener("keydown", event => {
   }
   if (event.key === "Escape") {
     event.preventDefault();
-    send("back", 0);
+    // Not "back": Kotlin may turn this into "leave fullscreen" (Escape goes windowed first).
+    send("escapeBack", 0);
     return;
   }
   if (playbackErrorText()) return;

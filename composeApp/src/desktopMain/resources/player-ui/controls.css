@@ -3117,6 +3117,9 @@ button:disabled {
   color: rgba(255, 255, 255, .68);
 }
 
+.episode-filler.filler { color: #e8833a; }
+.episode-filler.mixed { color: #d9bc72; }
+
 .status-chip {
   background: var(--theme-accent-fill);
   color: var(--theme-on-accent);

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.features.details.filler.episodeCodeWithKind
+import com.nuvio.app.features.details.filler.label
 import com.nuvio.app.features.details.episodeGroupKeyFor
 import com.nuvio.app.features.details.episodeGroupSeason
 import com.nuvio.app.features.details.episodeGroupSortKey
@@ -207,6 +209,9 @@ private fun EpisodesListSubView(
     onDismiss: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val fillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsStateWithLifecycle()
+    val fillerResults by com.nuvio.app.features.details.filler.AnimeFillerRepository.results.collectAsStateWithLifecycle()
+    val fillerKinds = if (fillerSettings.showBadges) fillerResults[parentMetaId].orEmpty() else emptyMap()
 
     val currentPosition = remember(episodes, parentMetaId, currentVideoId, currentSeason, currentEpisode) {
         episodes.resolveSeriesEpisodePosition(
@@ -385,6 +390,7 @@ private fun EpisodesListSubView(
                             isCurrent = isCurrent,
                             isWatched = isWatched,
                             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
+                            fillerKind = fillerKinds[episode.id],
                             onClick = { onEpisodeSelected(episode) },
                         )
                     }
@@ -400,6 +406,7 @@ private fun EpisodeRow(
     isCurrent: Boolean,
     isWatched: Boolean,
     blurUnwatchedEpisodes: Boolean,
+    fillerKind: com.nuvio.app.features.details.filler.AnimeEpisodeKind? = null,
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -425,6 +432,7 @@ private fun EpisodeRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
     ) {
+        val fillerLabel = fillerKind.label()
         // Thumbnail
         if (episode.thumbnail != null) {
             AsyncImage(
@@ -459,9 +467,9 @@ private fun EpisodeRow(
                         append(stringResource(Res.string.compose_player_episode_code_episode_only, episodeNumber))
                     }
                 }
-                if (episodeLabel.isNotBlank()) {
+                if (episodeLabel.isNotBlank() || fillerLabel != null) {
                     Text(
-                        text = episodeLabel,
+                        text = episodeCodeWithKind(episodeLabel, fillerLabel),
                         color = tokens.colors.textMuted,
                         fontSize = NuvioTokens.Type.labelXs,
                         fontWeight = FontWeight.SemiBold,

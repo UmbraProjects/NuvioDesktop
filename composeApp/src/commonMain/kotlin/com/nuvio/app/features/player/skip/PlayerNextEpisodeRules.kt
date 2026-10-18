@@ -31,6 +31,41 @@ object PlayerNextEpisodeRules {
             ?.video
     }
 
+    /**
+     * [resolveNextEpisode], passing over episodes [isSkipped] names (skip-filler). Falls back to the
+     * plain next episode when nothing after it is both kept and aired, so a show that ends - or is
+     * still airing - in a filler run keeps going instead of stopping.
+     */
+    fun resolveNextEpisodeSkipping(
+        videos: List<MetaVideo>,
+        currentSeason: Int?,
+        currentEpisode: Int?,
+        currentVideoId: String? = null,
+        parentMetaId: String? = null,
+        isSkipped: ((MetaVideo) -> Boolean)? = null,
+    ): MetaVideo? {
+        val next = resolveNextEpisode(videos, currentSeason, currentEpisode, currentVideoId, parentMetaId)
+            ?: return null
+        if (isSkipped == null || !isSkipped(next)) return next
+        val current = videos.resolveSeriesEpisodePosition(
+            parentMetaId = parentMetaId,
+            videoId = currentVideoId,
+            seasonNumber = currentSeason,
+            episodeNumber = currentEpisode,
+        ) ?: return next
+        val sortedEpisodes = videos.sortedPlaybackEpisodePositions()
+        val currentIndex = sortedEpisodes.indexOfFirst { position -> position.video == current.video }
+        if (currentIndex < 0) return next
+        return sortedEpisodes
+            .drop(currentIndex + 1)
+            .asSequence()
+            .filter { candidate -> current.seasonNumber <= 0 || candidate.seasonNumber > 0 }
+            .map { it.video }
+            .firstOrNull { video -> !isSkipped(video) }
+            ?.takeIf { hasEpisodeAired(it.released) }
+            ?: next
+    }
+
     fun resolvePreviousEpisode(
         videos: List<MetaVideo>,
         currentSeason: Int?,

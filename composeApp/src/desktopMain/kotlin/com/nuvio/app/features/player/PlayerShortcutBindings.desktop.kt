@@ -54,6 +54,13 @@ actual fun onPlayerShortcutsProfileChanged() {
     AppShortcutsRepository.onProfileChanged()
 }
 
+actual fun playerEscWindowedFirstState(): StateFlow<Boolean> {
+    PlayerShortcutsRepository.ensureLoaded()
+    return PlayerShortcutsRepository.escWindowedFirstState
+}
+
+actual fun setPlayerEscWindowedFirst(enabled: Boolean) = PlayerShortcutsRepository.setEscWindowedFirst(enabled)
+
 actual fun appShortcutKeyLabels(): StateFlow<Map<AppShortcutAction, String>> = AppShortcutsRepository.keyLabels
 actual fun ensureAppShortcutBindingsLoaded() = AppShortcutsRepository.ensureLoaded()
 actual fun resetAllAppShortcuts() = AppShortcutsRepository.resetAll()

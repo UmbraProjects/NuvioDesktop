@@ -2753,6 +2753,25 @@ private fun PlaybackSettingsSection(
                         )
                     }
                     SettingsGroupDivider(isTablet = isTablet)
+                    val animeFillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsStateWithLifecycle()
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_skip_anime_filler),
+                        description = stringResource(Res.string.settings_playback_skip_anime_filler_description),
+                        checked = animeFillerSettings.skipFiller,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("skip-anime-filler")),
+                        onCheckedChange = com.nuvio.app.features.details.filler.AnimeFillerSettings::setSkipFiller,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_meta_anime_filler_badges),
+                        description = stringResource(Res.string.settings_meta_anime_filler_badges_description),
+                        checked = animeFillerSettings.showBadges,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("show-anime-filler")),
+                        onCheckedChange = com.nuvio.app.features.details.filler.AnimeFillerSettings::setShowBadges,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
                     SettingsDropdownChoiceRow(
                         title = stringResource(Res.string.settings_playback_threshold_mode),
                         description = stringResource(autoPlayPlayerSettings.nextEpisodeThresholdMode.labelRes),

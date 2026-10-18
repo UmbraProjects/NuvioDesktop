@@ -29,6 +29,10 @@ internal expect object MdbListSettingsStorage {
     fun saveUseAudience(enabled: Boolean)
     fun loadUseMal(): Boolean?
     fun saveUseMal(enabled: Boolean)
+    fun loadRefreshPreset(): String?
+    fun saveRefreshPreset(value: String)
+    fun loadCustomRefreshDays(): String?
+    fun saveCustomRefreshDays(value: String)
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }

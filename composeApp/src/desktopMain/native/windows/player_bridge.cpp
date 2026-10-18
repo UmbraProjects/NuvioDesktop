@@ -6831,6 +6831,82 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_systemIdleMs(JNIEn
     return static_cast<jlong>(idle);
 }
 
+// Keeps the display (and the system) awake during playback, ported from upstream. The
+// ES_CONTINUOUS request belongs to the thread that made it and lapses when that thread exits, so
+// it is held by a parked thread of our own rather than whichever JVM thread happens to call in.
+// GetLastInputInfo is unaffected, so Nuvio's own screensaver (systemIdleMs above) still dims and
+// shuts down on idle exactly as before.
+namespace {
+struct DisplaySleepInhibitRequest {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool stop = false;
+};
+
+std::mutex gDisplaySleepInhibitMutex;
+std::shared_ptr<DisplaySleepInhibitRequest> gDisplaySleepInhibitRequest;
+std::thread *gDisplaySleepInhibitThread = nullptr;
+
+void displaySleepInhibitThreadMain(std::shared_ptr<DisplaySleepInhibitRequest> request) {
+    SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
+
+    std::unique_lock<std::mutex> lock(request->mutex);
+    request->condition.wait(lock, [request] { return request->stop; });
+    lock.unlock();
+
+    SetThreadExecutionState(ES_CONTINUOUS);
+}
+
+bool setDisplaySleepInhibited(bool inhibited) {
+    if (inhibited) {
+        std::lock_guard<std::mutex> stateLock(gDisplaySleepInhibitMutex);
+        if (gDisplaySleepInhibitThread != nullptr) return true;
+
+        auto request = std::make_shared<DisplaySleepInhibitRequest>();
+        try {
+            gDisplaySleepInhibitThread = new std::thread(displaySleepInhibitThreadMain, request);
+            gDisplaySleepInhibitRequest = request;
+            return true;
+        } catch (...) {
+            gDisplaySleepInhibitRequest.reset();
+            return false;
+        }
+    }
+
+    std::shared_ptr<DisplaySleepInhibitRequest> request;
+    std::thread *threadToJoin = nullptr;
+    {
+        std::lock_guard<std::mutex> stateLock(gDisplaySleepInhibitMutex);
+        if (gDisplaySleepInhibitThread == nullptr) return true;
+
+        request = gDisplaySleepInhibitRequest;
+        threadToJoin = gDisplaySleepInhibitThread;
+        gDisplaySleepInhibitThread = nullptr;
+        gDisplaySleepInhibitRequest.reset();
+    }
+
+    if (request) {
+        {
+            std::lock_guard<std::mutex> requestLock(request->mutex);
+            request->stop = true;
+        }
+        request->condition.notify_all();
+    }
+    if (threadToJoin != nullptr) {
+        if (threadToJoin->joinable()) {
+            threadToJoin->join();
+        }
+        delete threadToJoin;
+    }
+    return true;
+}
+} // namespace
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setWindowsDisplaySleepInhibited(JNIEnv *, jobject, jboolean inhibited) {
+    return setDisplaySleepInhibited(inhibited == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
+}
+
 // Whether the monitor [windowHwnd] sits on has Windows HDR switched on. Only that monitor counts:
 // the UI uses this to pre-correct for DWM's SDR-in-HDR conversion, and a false yes darkens it.
 extern "C" JNIEXPORT jboolean JNICALL

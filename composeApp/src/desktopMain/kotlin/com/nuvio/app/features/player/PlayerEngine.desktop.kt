@@ -51,6 +51,7 @@ import com.nuvio.app.features.player.desktop.SeekThumbnailRateLimitGate
 import com.nuvio.app.features.player.desktop.TorBoxNodeHop
 import com.nuvio.app.features.player.desktop.DESKTOP_PLAYBACK_FALLBACK_USER_AGENT
 import com.nuvio.app.features.player.desktop.desktopAppFullscreenState
+import com.nuvio.app.features.player.desktop.toggleDesktopAppFullscreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
@@ -374,6 +375,15 @@ private fun NativePlayerSurface(
             if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) &&
                 controller.dismissSkipSubmitToastIfShown()
             ) {
+                event.consume()
+                return@KeyEventDispatcher true
+            }
+            // Escape reaching AWT (Compose focused, or a pad's B replayed as Escape) would otherwise
+            // fall through to back navigation and leave the player.
+            if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) &&
+                controller.escapeShouldGoWindowed()
+            ) {
+                toggleDesktopAppFullscreen()
                 event.consume()
                 return@KeyEventDispatcher true
             }

@@ -890,6 +890,13 @@ private suspend fun warmProfileDeferredRepositories() {
                 }
             }
         }
+        // MDBList ratings that have come due are refreshed in bulk once Home is up, not one title
+        // at a time as the hero and details pages reach them.
+        startupWarmStep("mdblist stale sweep scheduled", rethrow = false) {
+            com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
+                com.nuvio.app.features.mdblist.MdbListMetadataService.startStaleSweep()
+            }
+        }
         // The first initialize() reads every scraper's source out of nuvio_plugin_code (MBs of
         // JS; the open alone measured ~2.9 s, likely AV scanning it). Left to first use, that
         // was the stream screen, in series with the source list — or the UI thread, from settings.
