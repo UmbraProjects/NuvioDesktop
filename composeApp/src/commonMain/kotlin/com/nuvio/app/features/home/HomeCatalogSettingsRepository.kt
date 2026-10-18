@@ -1,6 +1,7 @@
 package com.nuvio.app.features.home
 
 import com.nuvio.app.core.perf.PerfTelemetry
+import com.nuvio.app.features.collection.FolderRowShuffleState
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.addons.enabledAddons
@@ -1223,7 +1224,7 @@ object HomeCatalogSettingsRepository {
     }
 
     /**
-     * Shows the per-row shuffle control on home catalog rows.
+     * Shows the per-row shuffle control on home and collection folder catalog rows.
      *
      * Local-only: it stays out of [SyncHomeCatalogPayload] because that schema is shared with the
      * TV and mobile clients, which have no such control. Turning it off also drops any shuffles
@@ -1234,7 +1235,10 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         if (catalogRowShuffleEnabled == enabled) return
         catalogRowShuffleEnabled = enabled
-        if (!enabled) HomeRowShuffleState.clearAll()
+        if (!enabled) {
+            HomeRowShuffleState.clearAll()
+            FolderRowShuffleState.clearAll()
+        }
         publish()
         persist()
     }

@@ -103,6 +103,9 @@ import com.nuvio.app.core.ui.rememberMouseActivityState
 import com.nuvio.app.core.ui.nuvioSafeBottomPadding
 import com.nuvio.app.core.ui.withDuplicateSafeLazyKeys
 import com.nuvio.app.features.home.HomeCatalogSection
+import com.nuvio.app.features.home.HomeRowShuffleOrder
+import com.nuvio.app.features.home.canShuffleRow
+import com.nuvio.app.features.home.shuffled
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.HeroDiscoveryFact
@@ -285,8 +288,28 @@ private fun FolderDetailScreenContent(
         WatchedRepository.uiState
     }.collectAsState()
     val folder = uiState.folder
-    val collectionSections = remember(uiState.tabs, uiState.rowOrderHoldExpired) {
+    val publishedSections = remember(uiState.tabs, uiState.rowOrderHoldExpired) {
         FolderDetailRepository.getCatalogSectionsForRows()
+    }
+    // Row shuffle, behind the same setting as Home's. Applied to the sections themselves rather
+    // than only to what a row draws: the immersive and adaptive heroes and their key handlers index
+    // into section.items, and they have to agree with the order on screen.
+    val rowShuffleOrders by FolderRowShuffleState.orders.collectAsStateWithLifecycle()
+    val rowShufflingKeys by FolderRowShuffleState.shuffling.collectAsStateWithLifecycle()
+    val rowShuffle = FolderRowShuffleUi(
+        enabled = homeSettings.catalogRowShuffleEnabled,
+        orders = rowShuffleOrders,
+        shufflingKeys = rowShufflingKeys,
+    )
+    val collectionSections = remember(publishedSections, rowShuffleOrders, rowShuffle.enabled) {
+        if (!rowShuffle.enabled || rowShuffleOrders.isEmpty()) {
+            publishedSections
+        } else {
+            publishedSections.map { section ->
+                val order = rowShuffleOrders[section.key] ?: return@map section
+                section.copy(items = section.shuffled(order))
+            }
+        }
     }
     val showImmersiveCollection = isDesktop &&
         homeSettings.heroEnabled &&
@@ -322,6 +345,7 @@ private fun FolderDetailScreenContent(
         ImmersiveCollectionContent(
             sessionKey = entryKey,
             sections = collectionSections,
+            rowShuffle = rowShuffle,
             watchedKeys = watchedUiState.watchedKeys,
             onBack = onBack,
             onCatalogClick = onCatalogClick,
@@ -337,6 +361,7 @@ private fun FolderDetailScreenContent(
         AdaptiveCollectionContent(
             sessionKey = entryKey,
             sections = collectionSections,
+            rowShuffle = rowShuffle,
             failedSources = uiState.failedSources,
             watchedKeys = watchedUiState.watchedKeys,
             onBack = onBack,
@@ -464,6 +489,8 @@ private fun FolderDetailScreenContent(
                     sessionKey = entryKey,
                     resetToTop = isFreshEntry,
                     uiState = uiState,
+                    sections = collectionSections,
+                    rowShuffle = rowShuffle,
                     watchedKeys = watchedUiState.watchedKeys,
                     modifier = Modifier.weight(1f).then(contentModifier),
                     onCatalogClick = onCatalogClick,
@@ -474,6 +501,8 @@ private fun FolderDetailScreenContent(
                     sessionKey = entryKey,
                     resetToTop = isFreshEntry,
                     uiState = uiState,
+                    sections = collectionSections,
+                    rowShuffle = rowShuffle,
                     watchedKeys = watchedUiState.watchedKeys,
                     modifier = Modifier.weight(1f).then(contentModifier),
                     onCatalogClick = onCatalogClick,
@@ -495,6 +524,25 @@ private fun HomeTvKey.movesTvFocus(): Boolean = when (this) {
 // 1-based position of each rendered collection row, mirroring Home's optional "Trending • 3"
 // header suffix (HomeCatalogSettings.catalogRowNumbersEnabled). Rows that render nothing take no
 // number, so the sequence matches what the user actually sees.
+/** One frame's view of [FolderRowShuffleState], so the three row layouts wire shuffle the same way. */
+private class FolderRowShuffleUi(
+    val enabled: Boolean,
+    private val orders: Map<String, HomeRowShuffleOrder>,
+    private val shufflingKeys: Set<String>,
+) {
+    fun clickFor(section: HomeCatalogSection): (() -> Unit)? =
+        if (enabled && section.canShuffleRow()) {
+            { FolderRowShuffleState.shuffle(section.key) }
+        } else {
+            null
+        }
+
+    fun isShuffling(section: HomeCatalogSection): Boolean = enabled && section.key in shufflingKeys
+
+    fun generation(section: HomeCatalogSection): Int =
+        if (enabled) orders[section.key]?.generation ?: 0 else 0
+}
+
 private fun collectionRowNumbers(sections: List<HomeCatalogSection>): Map<String, Int> =
     buildMap {
         var nextRowNumber = 1
@@ -508,6 +556,7 @@ private fun collectionRowNumbers(sections: List<HomeCatalogSection>): Map<String
 private fun ImmersiveCollectionContent(
     sessionKey: String,
     sections: List<HomeCatalogSection>,
+    rowShuffle: FolderRowShuffleUi,
     watchedKeys: Set<String>,
     onBack: () -> Unit,
     onCatalogClick: (HomeCatalogSection) -> Unit,
@@ -889,6 +938,9 @@ private fun ImmersiveCollectionContent(
                                     null
                                 },
                                 isLoadingMore = section.isLoadingMore,
+                                onShuffleClick = rowShuffle.clickFor(section),
+                                isShuffling = rowShuffle.isShuffling(section),
+                                shuffleGeneration = rowShuffle.generation(section),
                                 rowNumber = rowNumbers[section.key],
                                 headerTrailingContent = rowDotsContent,
                                 bodyModifier = rowBodyModifier,
@@ -921,6 +973,7 @@ private fun ImmersiveCollectionContent(
 private fun AdaptiveCollectionContent(
     sessionKey: String,
     sections: List<HomeCatalogSection>,
+    rowShuffle: FolderRowShuffleUi,
     failedSources: List<FolderTab>,
     watchedKeys: Set<String>,
     onBack: () -> Unit,
@@ -1242,6 +1295,9 @@ private fun AdaptiveCollectionContent(
                                     null
                                 },
                                 isLoadingMore = section.isLoadingMore,
+                                onShuffleClick = rowShuffle.clickFor(section),
+                                isShuffling = rowShuffle.isShuffling(section),
+                                shuffleGeneration = rowShuffle.generation(section),
                                 rowNumber = rowNumbers[section.key],
                                 onPosterClick = onPosterClick,
                                 onPosterLongClick = onPosterLongClick,
@@ -1512,6 +1568,8 @@ private fun RowsContent(
     sessionKey: String,
     resetToTop: Boolean,
     uiState: FolderDetailUiState,
+    sections: List<HomeCatalogSection>,
+    rowShuffle: FolderRowShuffleUi,
     watchedKeys: Set<String>,
     modifier: Modifier = Modifier,
     onCatalogClick: (HomeCatalogSection) -> Unit,
@@ -1530,7 +1588,6 @@ private fun RowsContent(
         }
     }
 
-    val sections = FolderDetailRepository.getCatalogSectionsForRows()
     val rowNumbers = remember(sections) { collectionRowNumbers(sections) }
 
     if (uiState.isLoading && sections.isEmpty()) {
@@ -1588,6 +1645,9 @@ private fun RowsContent(
                     null
                 },
                 isLoadingMore = section.isLoadingMore,
+                                onShuffleClick = rowShuffle.clickFor(section),
+                                isShuffling = rowShuffle.isShuffling(section),
+                                shuffleGeneration = rowShuffle.generation(section),
                 watchedKeys = watchedKeys,
                 rowNumber = rowNumbers[section.key],
                 onPosterClick = { onPosterClick(it) },

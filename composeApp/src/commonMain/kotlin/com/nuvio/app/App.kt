@@ -1360,6 +1360,8 @@ private fun MainAppContent(
         var searchQuery by rememberSaveable { mutableStateOf("") }
         var submittedSearchQuery by rememberSaveable { mutableStateOf("") }
         var searchOverlayActive by rememberSaveable { mutableStateOf(false) }
+        // The confident-match lookup for the latest submit; a newer submit replaces it.
+        val confidentSearchJob = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
         val searchSubmitRequests = remember { MutableSharedFlow<String>(extraBufferCapacity = 1) }
         val homeScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
         val searchScrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
@@ -3254,6 +3256,20 @@ private fun MainAppContent(
                                             searchOverlayActive = false
                                             handleRootTabClick(AppScreenTab.Search)
                                             navigateToContentCount++
+                                            // Results load as usual; if the query can only mean one
+                                            // title, its details open on top once that's known, so
+                                            // Back lands on the full results.
+                                            confidentSearchJob[0]?.cancel()
+                                            confidentSearchJob[0] = coroutineScope.launch {
+                                                val match = com.nuvio.app.features.search.ConfidentSearch.resolve(trimmed)
+                                                    ?: return@launch
+                                                // Not if the user has already opened something or moved on.
+                                                val onResults = navController.currentBackStackEntry
+                                                    ?.destination?.hasRoute<TabsRoute>() == true
+                                                if (onResults && selectedTab == AppScreenTab.Search && submittedSearchQuery == trimmed) {
+                                                    navController.navigateIfResumed(DetailRoute(type = match.type, id = match.id))
+                                                }
+                                            }
                                         },
                                         onNavigateToContent = { navigateToContentCount++ },
                                     )

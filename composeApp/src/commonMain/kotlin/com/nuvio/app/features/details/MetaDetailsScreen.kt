@@ -1386,6 +1386,7 @@ fun MetaDetailsScreen(
                         withSeasonOrEp
                             .sortedWith(metaVideoSeasonEpisodeComparator)
                             .groupBy { normalizeSeasonNumber(it.effectiveSeasonNumber()) }
+                            .withEpisodeRanges()
                     } else if (meta.type != "series" && episodeVideosForTv.isNotEmpty()) {
                         mapOf(normalizeSeasonNumber(null) to episodeVideosForTv)
                     } else {
@@ -1393,12 +1394,10 @@ fun MetaDetailsScreen(
                     }
                 }
                 val seasonsForTv = remember(groupedEpisodesForTv) {
-                    groupedEpisodesForTv.keys.sortedBy(::seasonSortKey)
+                    groupedEpisodesForTv.keys.sortedBy(::episodeGroupSortKey)
                 }
-                val defaultSeasonForTv = remember(seasonsForTv, preferredSeriesSeasonNumber) {
-                    preferredSeriesSeasonNumber
-                        ?.let(::normalizeSeasonNumber)
-                        ?.takeIf { it in groupedEpisodesForTv }
+                val defaultSeasonForTv = remember(seasonsForTv, preferredSeriesSeasonNumber, preferredSeriesEpisodeNumber) {
+                    groupedEpisodesForTv.episodeGroupKeyFor(preferredSeriesSeasonNumber, preferredSeriesEpisodeNumber)
                         ?: seasonsForTv.firstOrNull()
                         ?: SPECIALS_SEASON_NUMBER
                 }

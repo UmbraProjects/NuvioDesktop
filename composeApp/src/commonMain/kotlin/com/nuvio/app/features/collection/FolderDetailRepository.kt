@@ -16,6 +16,7 @@ import com.nuvio.app.core.i18n.localizedMediaTypeLabel
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.RowShuffleController
 import com.nuvio.app.features.home.ensureUniqueKeys
 import com.nuvio.app.features.home.WATCHED_FILTER_RESOLVE_BUDGET_MS
 import com.nuvio.app.features.home.WatchedContentFilter
@@ -346,6 +347,7 @@ object FolderDetailRepository {
         addonRetryJob = null
         activeCollectionId = null
         activeFolderId = null
+        FolderRowShuffleState.clearAll()
         _uiState.value = FolderDetailUiState()
     }
 
@@ -366,11 +368,16 @@ object FolderDetailRepository {
         }
     }
 
-    fun loadMoreCatalogRow(section: HomeCatalogSection) {
+    /**
+     * Appends the next page to the source behind [section]. Returns the job doing the fetch, the
+     * job already in flight for that source, or null when the source cannot page further — so
+     * [deepenRowForShuffle] can wait on it while scroll-driven callers ignore it.
+     */
+    fun loadMoreCatalogRow(section: HomeCatalogSection): Job? {
         val target = section.target
         val current = _uiState.value
         val tabIndex = current.tabs.indexOfFirst { tab ->
-            !tab.isAllTab && tab.canLoadMore && !tab.isLoading && !tab.isLoadingMore &&
+            !tab.isAllTab &&
                 when (target) {
                     is CatalogTarget.CollectionSource -> {
                         tab.sourceKey == target.sourceKey &&
@@ -389,9 +396,36 @@ object FolderDetailRepository {
                     null -> false
                 }
         }
-        if (tabIndex >= 0) {
-            loadTabPage(tabIndex, reset = false)
+        val tab = current.tabs.getOrNull(tabIndex) ?: return null
+        if (tab.isLoading || tab.isLoadingMore) return loadJobs[tabIndex]?.takeIf(Job::isActive)
+        if (!tab.canLoadMore) return null
+        return loadTabPage(tabIndex, reset = false)
+    }
+
+    /**
+     * Pages a folder row until it holds [targetItems] entries, so a shuffle deals from more than
+     * the first page. Same bounds as HomeRepository.deepenRowForShuffle: at most [maxPages]
+     * requests, and it stops the moment a page adds nothing. Returns the item count reached.
+     */
+    suspend fun deepenRowForShuffle(sectionKey: String, targetItems: Int, maxPages: Int): Int {
+        fun section(): HomeCatalogSection? = getCatalogSectionsForRows().firstOrNull { it.key == sectionKey }
+
+        var pages = 0
+        while (pages < maxPages) {
+            val section = section() ?: break
+            if (section.items.size >= targetItems || section.nextSkip == null) break
+            val before = section.items.size
+            val job = loadMoreCatalogRow(section) ?: break
+            job.join()
+            pages++
+            if ((section()?.items?.size ?: 0) <= before) {
+                log.d { "deepen stopped ($sectionKey): page $pages added nothing" }
+                break
+            }
         }
+        val reached = section()?.items?.size ?: 0
+        log.i { "deepen done ($sectionKey) pages=$pages items=$reached target=$targetItems" }
+        return reached
     }
 
     private fun updateTab(index: Int, transform: (FolderTab) -> FolderTab) {
@@ -407,15 +441,15 @@ object FolderDetailRepository {
         )
     }
 
-    private fun loadTabPage(index: Int, reset: Boolean) {
-        val currentTab = _uiState.value.tabs.getOrNull(index) ?: return
-        val requestedSkip = if (reset) 0 else currentTab.nextSkip ?: return
+    private fun loadTabPage(index: Int, reset: Boolean): Job? {
+        val currentTab = _uiState.value.tabs.getOrNull(index) ?: return null
+        val requestedSkip = if (reset) 0 else currentTab.nextSkip ?: return null
         val currentSource = currentTab.source
         if (
             currentSource?.isTmdb != true &&
             currentSource?.isTrakt != true &&
             currentTab.manifestUrl == null
-        ) return
+        ) return null
 
         updateTab(index) { tab ->
             if (reset) {
@@ -550,6 +584,7 @@ object FolderDetailRepository {
             }
         }
         loadJobs[index] = job
+        return job
     }
 
     private fun rebuildAllTab() {
@@ -655,6 +690,16 @@ object FolderDetailRepository {
         }.ensureUniqueKeys()
     }
 }
+
+/**
+ * Shuffle state for the rows of the open collection folder. Cleared with the folder, so an order
+ * never outlives the screen it was rolled on.
+ */
+object FolderRowShuffleState : RowShuffleController(
+    tag = "FolderRowShuffle",
+    publishedSections = FolderDetailRepository::getCatalogSectionsForRows,
+    deepenRow = FolderDetailRepository::deepenRowForShuffle,
+)
 
 /**
  * The first page of each of [folder]'s sources, at most [perSourceLimit] items from each, for the

@@ -16,7 +16,6 @@ import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.player.PlaybackStartTrace
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
-import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginsUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 object StreamsRepository {
@@ -395,6 +395,12 @@ object StreamsRepository {
         )
         activeJob = scope.launch {
             val completions = Channel<StreamLoadCompletion>(capacity = Channel.BUFFERED)
+            // Native anime episodes: TMDB coordinates for plugin scrapers and the addon fallback.
+            val animeTmdbLocation = if (AnimeTmdbEpisodeLocator.appliesTo(resolvedEpisode)) {
+                async { runCatchingUnlessCancelled { AnimeTmdbEpisodeLocator.locate(resolvedEpisode) }.getOrNull() }
+            } else {
+                null
+            }
             val pluginRemainingByAddonId = pluginProviderGroups
                 .associate { it.addonId to it.scrapers.size }
                 .toMutableMap()
@@ -684,7 +690,33 @@ object StreamsRepository {
                         if (removedCount > 0) {
                             log.d { "Filtered $removedCount explicit episode mismatches from $displayName" }
                         }
-                        streams
+                        if (!streams.hasPlayableStream() && AnimeFranchiseEpisodeLocator.appliesTo(resolvedEpisode)) {
+                            animeFranchiseFallbackStreams(
+                                franchiseVideoId = AnimeFranchiseEpisodeLocator.franchiseVideoId(
+                                    identity = resolvedEpisode,
+                                    type = type,
+                                    parentMetaId = parentMetaId,
+                                ),
+                                manifest = addon.manifest,
+                                type = type,
+                                seriesTitle = MetaDetailsRepository.seriesTitleFor(
+                                    type = type,
+                                    id = parentMetaId ?: videoId,
+                                ) ?: title,
+                                fetch = { fallbackUrl -> httpGetTextWithHeaders(fallbackUrl, STREAM_METADATA_REQUEST_HEADERS) },
+                                parse = { fallbackPayload ->
+                                    StreamParser.parse(
+                                        payload = fallbackPayload,
+                                        addonName = displayName,
+                                        addonId = addon.addonId,
+                                        addonLogo = addon.manifest.logoUrl,
+                                    )
+                                },
+                            )?.also { log.d { "Anime IMDb-numbering fallback found ${it.size} streams from $displayName" } }
+                                ?: streams
+                        } else {
+                            streams
+                        }
                     }.fold(
                         onSuccess = { streams ->
                             log.d { "Got ${streams.size} streams from ${displayName}" }
@@ -734,16 +766,13 @@ object StreamsRepository {
                             return@launch
                         }
 
+                        val pluginTarget = resolvedEpisode.pluginEpisodeTarget(animeTmdbLocation?.await())
                         val completion = PluginRepository.executeScraper(
                             scraper = scraper,
-                            tmdbId = pluginContentId(
-                                videoId = effectiveVideoId,
-                                season = effectiveSeason,
-                                episode = effectiveEpisode,
-                            ),
+                            tmdbId = pluginTarget.contentId,
                             mediaType = type,
-                            season = effectiveSeason,
-                            episode = effectiveEpisode,
+                            season = pluginTarget.season,
+                            episode = pluginTarget.episode,
                         ).fold(
                             onSuccess = { results ->
                                 StreamLoadCompletion.PluginScraper(

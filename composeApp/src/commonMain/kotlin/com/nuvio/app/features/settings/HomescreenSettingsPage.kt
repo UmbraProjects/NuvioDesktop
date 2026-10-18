@@ -552,6 +552,9 @@ internal fun LazyListScope.homescreenSettingsContent(
         }
     }
     item {
+        ConfidentSearchSettingsSection(isTablet = isTablet)
+    }
+    item {
         // Catalogs are always eligible; collections qualify only when they or their
         // folders have curated hero art.
         if (heroEnabled && heroEligibleItems.isNotEmpty()) {

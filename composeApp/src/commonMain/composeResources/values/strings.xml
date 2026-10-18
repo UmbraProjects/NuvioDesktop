@@ -1143,7 +1143,7 @@
     <string name="settings_homescreen_hide_catalog_underline">Hide Catalog Underline</string>
     <string name="settings_homescreen_hide_catalog_underline_description">Remove the accent line under catalog and collection titles throughout the app.</string>
     <string name="settings_homescreen_row_shuffle">Shuffle Rows On Title Click</string>
-    <string name="settings_homescreen_row_shuffle_description">Clicking a home catalog row title reshuffles it. Shuffling pulls a few more pages first, so the row deals in titles you have not scrolled to. The order lasts until you restart.</string>
+    <string name="settings_homescreen_row_shuffle_description">Clicking a catalog row title on Home or in a collection reshuffles it. Shuffling pulls a few more pages first, so the row deals in titles you have not scrolled to. On Home the order lasts until you restart; in a collection, until you leave it.</string>
     <string name="settings_homescreen_summary">%1$d of %2$d catalogs visible • %3$d hero sources selected</string>
     <string name="settings_homescreen_summary_hint">Open a catalog only when you need to rename or reorder it.</string>
     <string name="settings_homescreen_visible">Visible</string>
@@ -3703,4 +3703,9 @@
     <string name="server_error_save">Could not save the server configuration.</string>
     <string name="server_error_session_clear">Could not safely clear the current session. The server was not changed.</string>
     <string name="server_error_restart">The server was saved, but the app could not restart automatically. Restart it manually.</string>
+    <string name="settings_homescreen_section_search">Search</string>
+    <string name="settings_confident_search">Open confident matches directly</string>
+    <string name="settings_confident_search_description">Pressing Enter opens the title’s page when the search can only mean one thing. Add a year, “movie”, “tv”, “anime”, a country (us, uk) or a season (s3) to narrow it down, e.g. “carrie 2013” or “shameless us”.</string>
+    <string name="settings_confident_search_threshold">Confidence threshold</string>
+    <string name="settings_confident_search_threshold_description">How far ahead of other titles with the same name a match must be, by popularity. 100% only opens a title with no namesake.</string>
 </resources>

@@ -888,6 +888,51 @@ object TmdbService {
         )
     }
 
+    /** Main-season episode counts by `tmdbId`, for the session; see [fetchSeasonEpisodeCounts]. */
+    private val seasonCountsCache = java.util.concurrent.ConcurrentHashMap<Int, List<TmdbSeasonEpisodeCount>>()
+
+    /** TMDB `episode_number`s of one season, keyed `"<tmdbId>:<season>"`, for the session. */
+    private val seasonEpisodeNumbersCache = java.util.concurrent.ConcurrentHashMap<String, List<Int>>()
+
+    /**
+     * Episode count of every season of a TV show, in season order, specials (season 0) left out.
+     *
+     * Used to place an anime entry's absolute episode inside TMDB's seasons: a single kitsu entry
+     * such as One Piece numbers 1100+ episodes on its own, while TMDB splits the run into arcs.
+     */
+    internal suspend fun fetchSeasonEpisodeCounts(tmdbId: Int): List<TmdbSeasonEpisodeCount>? {
+        if (tmdbId <= 0) return null
+        seasonCountsCache[tmdbId]?.let { return it }
+        val apiKey = currentApiKey() ?: return null
+        val body = fetch<TmdbTvSeasonsResponse>(endpoint = "tv/$tmdbId", apiKey = apiKey) ?: return null
+        val counts = body.seasons
+            .filter { it.seasonNumber > 0 && it.episodeCount > 0 }
+            .sortedBy { it.seasonNumber }
+            .map { TmdbSeasonEpisodeCount(season = it.seasonNumber, episodeCount = it.episodeCount) }
+            .takeIf { it.isNotEmpty() }
+            ?: return null
+        seasonCountsCache[tmdbId] = counts
+        return counts
+    }
+
+    /**
+     * TMDB's own `episode_number` for each episode of a season, in order.
+     *
+     * Usually 1..n, but not always: TMDB numbers One Piece absolutely inside its arc seasons
+     * (season 6 runs 144-195), and its episode endpoints answer only to that number.
+     */
+    suspend fun fetchSeasonEpisodeNumbers(tmdbId: Int, season: Int): List<Int>? {
+        if (tmdbId <= 0 || season < 0) return null
+        val key = "$tmdbId:$season"
+        seasonEpisodeNumbersCache[key]?.let { return it }
+        val apiKey = currentApiKey() ?: return null
+        val body = fetch<TmdbSeasonEpisodesResponse>(endpoint = "tv/$tmdbId/season/$season", apiKey = apiKey)
+            ?: return null
+        val numbers = body.episodes.map { it.episodeNumber }.takeIf { it.isNotEmpty() } ?: return null
+        seasonEpisodeNumbersCache[key] = numbers
+        return numbers
+    }
+
     private fun currentApiKey(): String? =
         TmdbSettingsRepository.snapshot().apiKey.trim().takeIf(String::isNotBlank)
 
@@ -1035,6 +1080,8 @@ data class TmdbSearchResult(
     @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
     @SerialName("vote_average") val voteAverage: Double = 0.0,
     @SerialName("vote_count") val voteCount: Int = 0,
+    /** ISO 3166-1 codes. Tv search results carry it; movie search results don't. */
+    @SerialName("origin_country") val originCountry: List<String> = emptyList(),
 ) {
     val displayTitle: String
         get() = (title ?: name).orEmpty()
@@ -1068,6 +1115,29 @@ internal fun buildTmdbUrl(
         }
     }
 }
+
+internal data class TmdbSeasonEpisodeCount(val season: Int, val episodeCount: Int)
+
+@Serializable
+private data class TmdbTvSeasonsResponse(
+    val seasons: List<TmdbTvSeasonSummary> = emptyList(),
+)
+
+@Serializable
+private data class TmdbTvSeasonSummary(
+    @SerialName("season_number") val seasonNumber: Int = -1,
+    @SerialName("episode_count") val episodeCount: Int = 0,
+)
+
+@Serializable
+private data class TmdbSeasonEpisodesResponse(
+    val episodes: List<TmdbSeasonEpisodeNumber> = emptyList(),
+)
+
+@Serializable
+private data class TmdbSeasonEpisodeNumber(
+    @SerialName("episode_number") val episodeNumber: Int,
+)
 
 @Serializable
 private data class TmdbFindResponse(

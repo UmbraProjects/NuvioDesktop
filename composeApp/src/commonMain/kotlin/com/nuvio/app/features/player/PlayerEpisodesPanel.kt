@@ -1,5 +1,10 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.features.details.episodeGroupKeyFor
+import com.nuvio.app.features.details.episodeGroupSeason
+import com.nuvio.app.features.details.episodeGroupSortKey
+import com.nuvio.app.features.details.episodeRangeLabel
+import com.nuvio.app.features.details.withEpisodeRanges
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -211,18 +216,28 @@ private fun EpisodesListSubView(
             episodeNumber = currentEpisode,
         )
     }
+    // Keys are seasons, or episode ranges for seasons too long to list whole (see EpisodeRangeGroups).
     val groupedEpisodes = remember(episodes) {
         episodes
             .filter { it.playbackEpisodeNumber() != null }
+            .sortedBy { it.playbackEpisodeNumber() ?: 0 }
             .groupBy { it.playbackSeasonNumber()?.coerceAtLeast(0) ?: 0 }
+            .withEpisodeRanges()
     }
     val availableSeasons = remember(groupedEpisodes) {
-        val regular = groupedEpisodes.keys.filter { it > 0 }.sorted()
+        val regular = groupedEpisodes.keys.filter { it > 0 }.sortedBy(::episodeGroupSortKey)
         val specials = groupedEpisodes.keys.filter { it == 0 }
         regular + specials
     }
+    val hasSeveralRealSeasons = remember(availableSeasons) {
+        availableSeasons.mapTo(mutableSetOf()) { it.episodeGroupSeason() }.count { it > 0 } > 1
+    }
     var selectedSeason by remember(currentPosition, currentSeason, availableSeasons) {
-        val resolvedCurrentSeason = currentPosition?.seasonNumber ?: currentSeason
+        val playingGroup = currentPosition?.let { position ->
+            groupedEpisodes.entries.firstOrNull { (_, groupEpisodes) -> position.video in groupEpisodes }?.key
+        }
+        val resolvedCurrentSeason = playingGroup
+            ?: groupedEpisodes.episodeGroupKeyFor(currentPosition?.seasonNumber ?: currentSeason, currentEpisode)
         mutableIntStateOf(
             when {
                 resolvedCurrentSeason != null && resolvedCurrentSeason in availableSeasons -> resolvedCurrentSeason
@@ -255,11 +270,9 @@ private fun EpisodesListSubView(
 
     LaunchedEffect(selectedSeason, seasonEpisodes, currentPosition) {
         if (seasonEpisodes.isEmpty()) return@LaunchedEffect
-        val activeEpisodeIndex = if (selectedSeason == currentPosition?.seasonNumber) {
-            seasonEpisodes.indexOfFirst { episode -> episode == currentPosition.video }
-        } else {
-            -1
-        }
+        val activeEpisodeIndex = currentPosition
+            ?.let { position -> seasonEpisodes.indexOfFirst { episode -> episode == position.video } }
+            ?: -1
         val targetIndex = activeEpisodeIndex.takeIf { it >= 0 } ?: 0
         if (hasPositionedEpisodeList) {
             episodeListState.animateScrollToItem(targetIndex)
@@ -302,17 +315,19 @@ private fun EpisodesListSubView(
                 horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
             ) {
                 items(availableSeasons, key = { season -> season }) { season ->
-                    val label = if (season == 0) {
-                        stringResource(Res.string.episodes_specials)
-                    } else {
-                        stringResource(Res.string.episodes_season, season)
+                    val rangeLabel = groupedEpisodes.episodeRangeLabel(season)
+                    val label = when {
+                        rangeLabel != null && hasSeveralRealSeasons -> "S${season.episodeGroupSeason()} · $rangeLabel"
+                        rangeLabel != null -> rangeLabel
+                        season == 0 -> stringResource(Res.string.episodes_specials)
+                        else -> stringResource(Res.string.episodes_season, season)
                     }
                     AddonFilterChip(
                         label = label,
                         isSelected = selectedSeason == season,
                         onClick = {
                             selectedSeason = season
-                            onSeasonSelected(season)
+                            onSeasonSelected(season.episodeGroupSeason())
                         },
                     )
                 }

@@ -587,6 +587,27 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                 episode = episode,
                 forceRefresh = false,
             )
+            fun pickNext(streams: List<StreamItem>): StreamItem? =
+                nextFailoverStream(
+                    streams = streams,
+                    activeIdentityKey = activeSourceIdentityKey,
+                    triedIdentityKeys = failoverTriedIdentityKeys,
+                    excludeScopeKey = rateLimitScopeKey,
+                    preferredAudioLanguages = resolvePreferredAudioLanguageTargets(
+                        preferredAudioLanguage = playerSettingsUiState.preferredAudioLanguage,
+                        secondaryPreferredAudioLanguage =
+                            playerSettingsUiState.secondaryPreferredAudioLanguage,
+                        deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
+                        originalLanguage = OriginalLanguageCache.languageFor(parentMetaId),
+                    ),
+                    scoreProfile = StreamScoreRepository.profile,
+                    scoreContext = StreamScoreContexts.forPlayback(
+                        isEpisode = activeEpisodeNumber != null,
+                        contentId = parentMetaId,
+                        contentType = contentType ?: parentMetaType,
+                    ),
+                )
+
             var next: StreamItem? = null
             var poll = 0
             while (poll < STREAM_FAILOVER_POLL_COUNT && next == null) {
@@ -599,34 +620,28 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                 // An early provider result can appear before the group containing the current
                 // source. Wait for that match (or load completion) so "next" is based on the
                 // Sources panel order instead of accidentally jumping back to its first item.
-                next = if (activeSourceLoaded || !state.isAnyLoading) {
-                    nextFailoverStream(
-                        streams = streams,
-                        activeIdentityKey = activeKey,
-                        triedIdentityKeys = failoverTriedIdentityKeys,
-                        excludeScopeKey = rateLimitScopeKey,
-                        preferredAudioLanguages = resolvePreferredAudioLanguageTargets(
-                            preferredAudioLanguage = playerSettingsUiState.preferredAudioLanguage,
-                            secondaryPreferredAudioLanguage =
-                                playerSettingsUiState.secondaryPreferredAudioLanguage,
-                            deviceLanguages = DeviceLanguagePreferences.preferredLanguageCodes(),
-                            originalLanguage = OriginalLanguageCache.languageFor(parentMetaId),
-                        ),
-                        scoreProfile = StreamScoreRepository.profile,
-                        scoreContext = StreamScoreContexts.forPlayback(
-                            isEpisode = activeEpisodeNumber != null,
-                            contentId = parentMetaId,
-                            contentType = contentType ?: parentMetaType,
-                        ),
-                    )
-                } else {
-                    null
-                }
+                next = if (activeSourceLoaded || !state.isAnyLoading) pickNext(streams) else null
                 if (next != null || state.emptyStateReason != null || (!state.isAnyLoading && state.groups.isNotEmpty())) {
                     break
                 }
                 delay(STREAM_FAILOVER_POLL_INTERVAL_MS)
                 poll++
+            }
+            // The wait above is only for ordering. A dead source may never reappear in the reloaded
+            // list (its debrid link is minted per request), and slow plugin scrapers can keep the
+            // load open past the window. Giving up then threw away every source already loaded:
+            // One Piece 150, 2026-10-18, "sources_exhausted" with 35 AIOStreams rows waiting. After a
+            // playback error the failed source is dead and already in the tried set, so choose from
+            // what has loaded. A startup timeout keeps its wait: that source may still open.
+            if (next == null && trigger != StreamFailoverTrigger.StartupTimeout) {
+                val loaded = PlayerStreamsRepository.sourceState.value.groups.flatMap { it.streams }
+                next = pickNext(loaded)
+                if (next != null) {
+                    StreamFailoverLog.event("selected_before_load_complete", buildJsonObject {
+                        put("trigger", trigger.wireName)
+                        put("loadedSourceCount", loaded.size)
+                    })
+                }
             }
             if (cancelSupersededFailover()) return@launch
             // Source discovery is asynchronous. A slow stream can finish opening while providers

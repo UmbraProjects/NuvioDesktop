@@ -93,6 +93,12 @@ import com.nuvio.app.features.details.isReleasedBy
 import com.nuvio.app.features.details.metaVideoSeasonEpisodeComparator
 import com.nuvio.app.features.details.matchingEpisodeSearch
 import com.nuvio.app.features.details.normalizeSeasonNumber
+import com.nuvio.app.features.details.episodeGroupKeyFor
+import com.nuvio.app.features.details.episodeGroupSeason
+import com.nuvio.app.features.details.episodeGroupSortKey
+import com.nuvio.app.features.details.episodeRangeLabel
+import com.nuvio.app.features.details.isEpisodeRangeKey
+import com.nuvio.app.features.details.withEpisodeRanges
 import com.nuvio.app.features.details.progressForEpisodeVideo
 import com.nuvio.app.features.details.seasonSortKey
 import com.nuvio.app.features.home.MetaPreview
@@ -260,6 +266,7 @@ fun DetailSeriesContent(
             withSeasonOrEp
                 .sortedWith(metaVideoSeasonEpisodeComparator)
                 .groupBy { normalizeSeasonNumber(it.effectiveSeasonNumber()) }
+                .withEpisodeRanges()
         } else if (meta.type != "series" && meta.videos.isNotEmpty()) {
             // For non-series types (e.g. "other"), show videos without season/episode as a flat list
             mapOf(normalizeSeasonNumber(null) to meta.videos)
@@ -285,7 +292,20 @@ fun DetailSeriesContent(
         return
     }
 
-    val seasons = groupedEpisodes.keys.sortedBy(::seasonSortKey)
+    val seasons = groupedEpisodes.keys.sortedBy(::episodeGroupSortKey)
+    // Range chips name their episodes; with several real seasons they also need the season.
+    val hasSeveralRealSeasons = remember(seasons) {
+        seasons.mapTo(mutableSetOf()) { it.episodeGroupSeason() }.count { it > 0 } > 1
+    }
+    val groupLabel: (Int) -> String = { key ->
+        groupedEpisodes.episodeRangeLabel(key)
+            ?.let { range -> if (hasSeveralRealSeasons) "S${key.episodeGroupSeason()} · $range" else range }
+            ?: key.label(collectionTitle)
+    }
+    // Long-pressing a range acts on its real season (mark watched, recap), as a season chip does.
+    val onGroupLongPress: ((Int) -> Unit)? = onSeasonLongPress?.let { handler ->
+        { key -> handler(key.episodeGroupSeason()) }
+    }
     val effectiveEpisodeCardStyle = if (episodeCardStyle == MetaEpisodeCardStyle.List) {
         MetaEpisodeCardStyle.Horizontal
     } else {
@@ -302,8 +322,7 @@ fun DetailSeriesContent(
         if (mergeMoreLikeThisIntoSelector) add(MORE_LIKE_THIS_SELECTOR_SEASON)
         if (mergeSameCastIntoSelector) add(SAME_CAST_SELECTOR_SEASON)
     }
-    val defaultSeason = preferredSeasonNumber
-        ?.takeIf { it in groupedEpisodes }
+    val defaultSeason = groupedEpisodes.episodeGroupKeyFor(preferredSeasonNumber, preferredEpisodeNumber)
         ?: seasons.first()
     var selectedSeasonOverride by rememberSaveable(meta.id) { mutableStateOf<Int?>(null) }
     val currentSeason = externalSelectedSeason
@@ -334,8 +353,9 @@ fun DetailSeriesContent(
                         sizing = sizing,
                         focusedSeasonIndex = focusedSeasonIndex,
                         collectionTitle = collectionTitle,
+                        groupLabel = groupLabel,
                         onSelect = onSeasonSelect,
-                        onLongPress = onSeasonLongPress?.let { handler ->
+                        onLongPress = onGroupLongPress?.let { handler ->
                             { season ->
                                 if (
                                     season != TRAILER_SELECTOR_SEASON &&
@@ -399,16 +419,18 @@ fun DetailSeriesContent(
                                         currentSeason = currentSeason,
                                         sizing = sizing,
                                         focusedSeasonIndex = focusedSeasonIndex,
+                                        groupLabel = groupLabel,
                                         onSelect = onSeasonSelect,
-                                        onLongPress = onSeasonLongPress,
+                                        onLongPress = onGroupLongPress,
                                     )
                                     SeasonViewMode.Text -> SeasonTextChipScrollRow(
                                         seasons = seasons,
                                         currentSeason = currentSeason,
                                         sizing = sizing,
                                         focusedSeasonIndex = focusedSeasonIndex,
+                                        groupLabel = groupLabel,
                                         onSelect = onSeasonSelect,
-                                        onLongPress = onSeasonLongPress,
+                                        onLongPress = onGroupLongPress,
                                     )
                                 }
                             }
@@ -418,8 +440,9 @@ fun DetailSeriesContent(
                                 currentSeason = currentSeason,
                                 sizing = sizing,
                                 focusedSeasonIndex = focusedSeasonIndex,
+                                groupLabel = groupLabel,
                                 onSelect = onSeasonSelect,
-                                onLongPress = onSeasonLongPress,
+                                onLongPress = onGroupLongPress,
                             )
                         }
                     }
@@ -441,6 +464,8 @@ fun DetailSeriesContent(
             ) { seasonForContent ->
                 val sectionTitle = if (meta.type != "series" && seasons.size == 1 && seasonForContent <= 0) {
                     stringResource(Res.string.details_videos)
+                } else if (seasonForContent.isEpisodeRangeKey()) {
+                    "${stringResource(Res.string.settings_meta_episodes)} ${groupLabel(seasonForContent)}"
                 } else {
                     seasonForContent.label(collectionTitle)
                 }
@@ -507,7 +532,10 @@ fun DetailSeriesContent(
                             // row's own episode-number match decide where to land (otherwise the list
                             // was stuck at episode 1 for those titles).
                             preferredEpisodeNumber = preferredEpisodeNumber
-                                ?.takeIf { preferredSeasonNumber == null || seasonForContent == preferredSeasonNumber },
+                                ?.takeIf {
+                                    preferredSeasonNumber == null ||
+                                        seasonForContent.episodeGroupSeason() == preferredSeasonNumber
+                                },
                             focusedEpisodeIndex = focusedEpisodeIndex,
                             onEpisodeClick = onEpisodeClick,
                             onEpisodeLongPress = onEpisodeLongPress,
@@ -780,6 +808,7 @@ private fun SeasonTextChipScrollRow(
     onLongPress: ((Int) -> Unit)?,
     focusedSeasonIndex: Int? = null,
     collectionTitle: String? = null,
+    groupLabel: (Int) -> String = { it.label(collectionTitle) },
     // True in the fixed-height desktop hero overlay, which never scrolls vertically, so a
     // plain mouse wheel over this row can scroll it horizontally without requiring Shift.
     // False in the regular (tablet/mobile/tab-layout) vertically-scrolling season list, where
@@ -849,7 +878,7 @@ private fun SeasonTextChipScrollRow(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = season.label(collectionTitle),
+                        text = groupLabel(season),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = sizing.seasonChipTextSize,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
@@ -876,6 +905,7 @@ private fun SeasonPosterScrollRow(
     onSelect: (Int) -> Unit,
     onLongPress: ((Int) -> Unit)?,
     focusedSeasonIndex: Int? = null,
+    groupLabel: (Int) -> String = { it.label() },
 ) {
     val seasonListState = rememberLazyListState()
     var hasPositionedSeasonRow by remember(seasons) { mutableStateOf(false) }
@@ -916,7 +946,7 @@ private fun SeasonPosterScrollRow(
         itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
             NuvioShelfItemSlot(focused = index == focusedSeasonIndex) {
                 SeasonPosterButton(
-                    label = season.label(),
+                    label = groupLabel(season),
                     imageUrl = groupedEpisodes[season]
                         .orEmpty()
                         .firstNotNullOfOrNull { episode -> episode.seasonPoster }

@@ -1880,6 +1880,23 @@ private fun settingsSearchEntries(
         )
     }
 
+    val homeSearchSection = resolve(Res.string.settings_homescreen_section_search)
+    listOf(
+        PlaybackSearchRow("search-confident", resolve(Res.string.settings_confident_search), resolve(Res.string.settings_confident_search_description)),
+        PlaybackSearchRow("search-confident-threshold", resolve(Res.string.settings_confident_search_threshold), resolve(Res.string.settings_confident_search_threshold_description)),
+    ).forEach { row ->
+        addRow(
+            page = SettingsPage.Homescreen,
+            key = row.key,
+            title = row.title,
+            description = row.description,
+            pageLabel = homeLayoutPage,
+            section = homeSearchSection,
+            icon = Icons.Rounded.Search,
+            anchor = row.anchor,
+        )
+    }
+
     val detailAppearanceSection = resolve(Res.string.settings_meta_section_appearance)
     listOf(
         PlaybackSearchRow("meta-dominant-background", resolve(Res.string.settings_meta_background_title), resolve(Res.string.settings_meta_background_description)),

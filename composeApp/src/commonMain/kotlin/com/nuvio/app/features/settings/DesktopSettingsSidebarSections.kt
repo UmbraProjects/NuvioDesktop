@@ -73,6 +73,7 @@ internal fun desktopSettingsSidebarSubItems(
             listOf(
                 section(SettingsPage.Homescreen, Res.string.settings_home_display_mode),
                 section(SettingsPage.Homescreen, Res.string.settings_homescreen_section_hero),
+                section(SettingsPage.Homescreen, Res.string.settings_homescreen_section_search),
                 section(SettingsPage.Homescreen, Res.string.settings_homescreen_section_hero_sources),
                 section(SettingsPage.Homescreen, catalogsTitle),
             )

@@ -546,6 +546,18 @@ fun main(args: Array<String>) {
                 )
                 Unit
             }
+            // Compose's default handler only shows a modal "Error" dialog (blank on the native
+            // build) and closes the window; it never logs. Log the stack first so a crash from
+            // an input or effect handler leaves something in nuvio.log, then keep that behaviour.
+            remember(window) {
+                val composeDefault = window.exceptionHandler
+                window.exceptionHandler = androidx.compose.ui.window.WindowExceptionHandler { error ->
+                    System.err.println("Uncaught exception in window '${window.title}' (Compose window handler)")
+                    error.printStackTrace(System.err)
+                    System.err.flush()
+                    composeDefault?.onException(error) ?: throw error
+                }
+            }
             val windowSideEffectLogged = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
             SideEffect {
                 desktopWindow.value = window
@@ -966,7 +978,16 @@ fun main(args: Array<String>) {
                             },
                         ),
                 ) {
-                    App()
+                    // Text fields' right-click menu (Cut/Copy/Paste/Select all) in the app's own
+                    // context-menu style rather than Compose's white desktop popup.
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.foundation.LocalContextMenuRepresentation provides
+                            com.nuvio.app.core.ui.NuvioContextMenuRepresentation,
+                        androidx.compose.foundation.text.LocalTextContextMenu provides
+                            com.nuvio.app.core.ui.NuvioTextContextMenu,
+                    ) {
+                        App()
+                    }
                     // Above the app so it covers whatever screen owns the focused field, and hosted
                     // here rather than inside App() because it is desktop-only.
                     com.nuvio.app.features.input.OnScreenKeyboardOverlay()

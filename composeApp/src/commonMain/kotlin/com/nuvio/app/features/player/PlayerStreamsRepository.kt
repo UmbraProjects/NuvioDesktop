@@ -19,13 +19,17 @@ import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginsUiState
-import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.InstalledStreamAddonTarget
 import com.nuvio.app.features.streams.StreamAutoPlaySelector
 import com.nuvio.app.features.streams.StreamBadgePresentation
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
+import com.nuvio.app.features.streams.AnimeTmdbEpisodeLocator
+import com.nuvio.app.features.streams.AnimeFranchiseEpisodeLocator
+import com.nuvio.app.features.streams.animeFranchiseFallbackStreams
 import com.nuvio.app.features.streams.filterForRequestedEpisode
+import com.nuvio.app.features.streams.hasPlayableStream
+import com.nuvio.app.features.streams.pluginEpisodeTarget
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLoadCompletion
 import com.nuvio.app.features.streams.StreamParser
@@ -505,7 +509,34 @@ object PlayerStreamsRepository {
                                 type = type,
                                 id = parentMetaId ?: videoId,
                             ),
-                        )
+                        ).let { streams ->
+                            if (!streams.hasPlayableStream() && AnimeFranchiseEpisodeLocator.appliesTo(resolvedEpisode)) {
+                                animeFranchiseFallbackStreams(
+                                    franchiseVideoId = AnimeFranchiseEpisodeLocator.franchiseVideoId(
+                                        identity = resolvedEpisode,
+                                        type = type,
+                                        parentMetaId = parentMetaId,
+                                    ),
+                                    manifest = addon.manifest,
+                                    type = type,
+                                    seriesTitle = MetaDetailsRepository.seriesTitleFor(
+                                        type = type,
+                                        id = parentMetaId ?: videoId,
+                                    ),
+                                    fetch = { fallbackUrl -> httpGetText(fallbackUrl) },
+                                    parse = { fallbackPayload ->
+                                        StreamParser.parse(
+                                            payload = fallbackPayload,
+                                            addonName = displayName,
+                                            addonId = addon.addonId,
+                                            addonLogo = addon.manifest.logoUrl,
+                                        )
+                                    },
+                                ) ?: streams
+                            } else {
+                                streams
+                            }
+                        }
                     }.fold(
                         onSuccess = { streams ->
                             log.i {
@@ -558,16 +589,19 @@ object PlayerStreamsRepository {
                             "Plugin provider started group=${providerGroup.addonName} " +
                                 "scraper=${scraper.name} type=$type contentId=$effectiveVideoId"
                         }
+                        val pluginTarget = resolvedEpisode.pluginEpisodeTarget(
+                            if (AnimeTmdbEpisodeLocator.appliesTo(resolvedEpisode)) {
+                                runCatchingUnlessCancelled { AnimeTmdbEpisodeLocator.locate(resolvedEpisode) }.getOrNull()
+                            } else {
+                                null
+                            },
+                        )
                         val completion = PluginRepository.executeScraper(
                             scraper = scraper,
-                            tmdbId = pluginContentId(
-                                videoId = effectiveVideoId,
-                                season = effectiveSeason,
-                                episode = effectiveEpisode,
-                            ),
+                            tmdbId = pluginTarget.contentId,
                             mediaType = type,
-                            season = effectiveSeason,
-                            episode = effectiveEpisode,
+                            season = pluginTarget.season,
+                            episode = pluginTarget.episode,
                         ).fold(
                             onSuccess = { results ->
                                 log.i {
