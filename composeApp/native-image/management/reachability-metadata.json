@@ -64,6 +64,18 @@
       "type": "com.oracle.svm.core.jdk.management.SubstrateThreadMXBean",
       "allPublicMethods": true,
       "allDeclaredMethods": true
+    },
+    {
+      "type": "org.graalvm.nativeimage.VMRuntime",
+      "methods": [
+        {
+          "name": "dumpHeap",
+          "parameterTypes": [
+            "java.lang.String",
+            "boolean"
+          ]
+        }
+      ]
     }
   ]
 }

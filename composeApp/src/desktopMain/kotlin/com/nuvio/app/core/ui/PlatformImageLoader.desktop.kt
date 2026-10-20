@@ -24,6 +24,7 @@ internal actual fun ImageLoader.Builder.configurePlatformImageLoader(): ImageLoa
             .build()
             .let(::DesktopArtworkMemoryCache)
             .also(DesktopArtworkCaches::register)
+            .also { HeroArtworkMemory.cache = it }
     }.diskCache {
         val cacheDir = DesktopStorage.rootDir.resolve(IMAGE_CACHE_DIR_NAME)
         // Before the cache is opened, not after: the purge edits the journal directly, which is

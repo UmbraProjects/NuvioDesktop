@@ -526,6 +526,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         officialHudEnabled = playerSettingsUiState.desktopOfficialHudEnabled,
         seekHandleEnabled = playerSettingsUiState.desktopSeekHandleEnabled,
         hudVignetteEnabled = playerSettingsUiState.desktopHudVignetteEnabled,
+        hiddenHudButtons = playerSettingsUiState.desktopHiddenHudButtons.sorted().joinToString(","),
         alwaysShowClock = playerSettingsUiState.desktopAlwaysShowClockEnabled,
         playbackSpeedFineIncrementsEnabled = playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled,
         playbackSpeedToggleLow = playerSettingsUiState.playbackSpeedToggleLow,

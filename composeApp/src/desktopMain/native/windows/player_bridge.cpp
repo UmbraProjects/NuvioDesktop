@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cwctype>
 #include <deque>
 #include <functional>
@@ -1555,6 +1556,11 @@ public:
         nuvioBridgeLog("initialize complete");
     }
 
+    ~WindowsMpvWebPlayer() {
+        // shutdown() normally stopped it already; never leave a joinable thread behind.
+        stopMpvCalls();
+    }
+
     void shutdown() {
         if (shuttingDown.exchange(true)) {
             return;
@@ -1562,6 +1568,8 @@ public:
 
         nuvioBridgeLog("shutdown begin");
         stopping.store(true);
+        // Before the handle can go away below. A call already running finishes first.
+        stopMpvCalls();
         {
             // Serialize against lazy worker creation so a request cannot create a joinable thread
             // after shutdown has already checked it.
@@ -1727,7 +1735,7 @@ public:
     }
 
     bool isPaused() {
-        return flagProperty("pause", true);
+        return mirroredFlag("pause", true);
     }
 
     // Keep seeks at least this far from the end. With keep-open=yes, landing
@@ -2465,7 +2473,7 @@ public:
     }
 
     double speed() {
-        return doubleProperty("speed", 1.0);
+        return mirroredDouble("speed", 1.0);
     }
 
     void setVolume(double volume) {
@@ -2478,7 +2486,7 @@ public:
     }
 
     double volume() {
-        return doubleProperty("volume", 100.0);
+        return mirroredDouble("volume", 100.0);
     }
 
     void setMute(bool muted) {
@@ -2489,7 +2497,7 @@ public:
     }
 
     bool isMuted() {
-        return flagProperty("mute", false);
+        return mirroredFlag("mute", false);
     }
 
     void setResizeMode(int mode) {
@@ -2513,20 +2521,18 @@ public:
     }
 
     long long durationMs() {
-        return (long long)std::llround(doubleProperty("duration", 0.0) * 1000.0);
+        return (long long)std::llround(mirroredDouble("duration", 0.0) * 1000.0);
     }
 
     long long positionMs() {
-        {
-            // While steps are being coalesced the HUD must track the accumulated target:
-            // time-pos still sits at the pre-burst position until the seek is actually issued,
-            // which would otherwise make a held arrow key look like it had stopped responding.
-            std::lock_guard<std::mutex> lock(mpvMutex);
-            if (deferredSeekTargetSeconds >= 0.0) {
-                return (long long)std::llround(deferredSeekTargetSeconds * 1000.0);
-            }
+        // While steps are being coalesced the HUD must track the accumulated target:
+        // time-pos still sits at the pre-burst position until the seek is actually issued,
+        // which would otherwise make a held arrow key look like it had stopped responding.
+        const double deferredTarget = deferredSeekTargetSeconds.load();
+        if (deferredTarget >= 0.0) {
+            return (long long)std::llround(deferredTarget * 1000.0);
         }
-        return (long long)std::llround(doubleProperty("time-pos", 0.0) * 1000.0);
+        return (long long)std::llround(mirroredDouble("time-pos", 0.0) * 1000.0);
     }
 
 
@@ -2539,10 +2545,10 @@ public:
         if (initialResumeTransactionPending.load()) return true;
         bool paused = isPaused();
         bool eofReached = isEnded();
-        bool idle = flagProperty("core-idle", true);
-        bool seeking = flagProperty("seeking", false);
-        bool bufferingCache = flagProperty("paused-for-cache", false);
-        bool fileReady = doubleProperty("duration", 0.0) > 0.0 || int64Property("track-list/count", 0) > 0;
+        bool idle = mirroredFlag("core-idle", true);
+        bool seeking = mirroredFlag("seeking", false);
+        bool bufferingCache = mirroredFlag("paused-for-cache", false);
+        bool fileReady = mirroredDouble("duration", 0.0) > 0.0 || mirroredDouble("track-list/count", 0.0) > 0.0;
         return !fileReady || (idle && !paused && !eofReached) || seeking || bufferingCache;
     }
 
@@ -2556,18 +2562,47 @@ public:
         if (playbackFailureDetected.load()) return false;
         if (initialResumeTransactionPending.load()) return false;
         if (std::chrono::steady_clock::now() < eofSuppressedUntil.load()) return false;
-        return flagProperty("eof-reached", false);
+        return mirroredFlag("eof-reached", false);
     }
 
     std::string audioTracksJson() {
-        return tracksJsonForType("audio");
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        return sharedAudioTracksJson;
     }
 
     std::string subtitleTracksJson() {
-        return tracksJsonForType("sub");
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        return sharedSubtitleTracksJson;
     }
 
     std::string chaptersJson() {
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        return sharedChaptersJson;
+    }
+
+    // Track and chapter JSON for Java and the HUD. Building it reads every track synchronously,
+    // which waits on the mpv core (131 ms of UI thread at start-up, step 27), so the event thread
+    // rebuilds it whenever mpv reports a track-list, selection or chapter-list change and the
+    // getters above hand out the last copy.
+    // The event thread picks it up within its 0.5 s idle wait; the track-list change that
+    // follows any real track edit wakes it sooner.
+    void markTrackJsonDirty() {
+        trackJsonDirty.store(true);
+    }
+
+    // Event-thread only.
+    void rebuildTrackJsonIfDirty() {
+        if (!trackJsonDirty.exchange(false)) return;
+        std::string audio = tracksJsonForType("audio");
+        std::string subtitles = tracksJsonForType("sub");
+        std::string chapters = buildChaptersJson();
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        sharedAudioTracksJson = std::move(audio);
+        sharedSubtitleTracksJson = std::move(subtitles);
+        sharedChaptersJson = std::move(chapters);
+    }
+
+    std::string buildChaptersJson() {
         long long count = int64Property("chapter-list/count", 0);
         std::ostringstream json;
         json << "[";
@@ -2583,6 +2618,26 @@ public:
         }
         json << "]";
         return json.str();
+    }
+
+    // JNI entry points. Java only needs to know whether a switch was refused (the rate-limit pill),
+    // which the mirror and the 429 block answer without mpv; the switch runs on the call thread,
+    // where selectAudioTrackId re-checks both against mpv itself.
+    bool requestAudioTrackId(int trackId) {
+        if (mirroredString("aid", "") == std::to_string(trackId)) return true;
+        if (std::chrono::steady_clock::now() < audioTrackSwitchBlockedUntil.load()) {
+            nuvioMpvLogAppend("[nuvio] audio track switch deferred after HTTP 429\n");
+            return false;
+        }
+        postMpvCall([this, trackId]() { selectAudioTrackId(trackId); });
+        return true;
+    }
+
+    bool requestSubtitleTrackId(int trackId) {
+        // Suppress the refresh-seek EOF from now, not from when the call thread gets to it.
+        eofSuppressedUntil.store(std::chrono::steady_clock::now() + std::chrono::seconds(2));
+        postMpvCall([this, trackId]() { selectSubtitleTrackId(trackId); });
+        return true;
     }
 
     bool selectAudioTrackId(int trackId) {
@@ -2634,6 +2689,7 @@ public:
             std::lock_guard<std::mutex> lock(appAddedSubtitleUrlsMutex);
             appAddedSubtitleUrls.insert(url);
         }
+        markTrackJsonDirty();
         command({"sub-add", url, "select"});
         refreshSubtitleAssOverrideMode();
     }
@@ -2955,8 +3011,12 @@ public:
             // Trailer playback's D3D11 swapchain only commits dynamic colour changes on
             // a top-level activation transition (the same reason alt-tab makes them show).
             // Reproduce those notifications without moving focus to another application.
+            // Only while Nuvio is the foreground window: a synthetic WA_ACTIVE sent to a
+            // background window makes AWT request focus, which Windows' foreground lock turns
+            // into a flashing taskbar button (seen when a profile refresh lands while paused and
+            // alt-tabbed away). The real activation on returning commits the change anyway.
             HWND topLevel = GetAncestor(self->hostHwnd, GA_ROOT);
-            if (topLevel && IsWindow(topLevel)) {
+            if (topLevel && IsWindow(topLevel) && GetForegroundWindow() == topLevel) {
                 DWORD currentThreadId = GetCurrentThreadId();
                 SendMessageW(topLevel, WM_NCACTIVATE, FALSE, 0);
                 SendMessageW(topLevel, WM_ACTIVATEAPP, FALSE, currentThreadId);
@@ -3188,10 +3248,11 @@ private:
     // high-bitrate remux, so one step means one HTTP range request. Hosts that throttle
     // connection opens — debrid proxies especially — answer a burst of those with 429. Only
     // steps arriving inside the coalesce window are folded into a single trailing seek, so an
-    // isolated press still seeks with no added latency. Guarded by mpvMutex; -1 when idle.
+    // isolated press still seeks with no added latency. Written under mpvMutex; -1 when idle.
+    // Atomic so positionMs() can read it without waiting on the lock.
     static constexpr std::chrono::milliseconds seekCoalesceWindow{350};
     static constexpr std::chrono::milliseconds seekCoalesceMaxWait{1000};
-    double deferredSeekTargetSeconds = -1.0;
+    std::atomic<double> deferredSeekTargetSeconds{-1.0};
     std::chrono::steady_clock::time_point deferredSeekDueAt{};
     std::chrono::steady_clock::time_point deferredSeekStartedAt{};
     std::chrono::steady_clock::time_point lastSeekIssuedAt{};
@@ -3199,13 +3260,6 @@ private:
 
     // Per-message occurrence counts backing shouldWriteMpvLogLine. Event-thread only.
     std::map<std::string, int> mpvLogLineCounts;
-
-    // Cached track-list JSON for the 500ms controls sync. Rebuilding the lists means dozens
-    // of mutex-locked mpv property reads per tick; tracks only change on file load, external
-    // subtitle add/remove, or selection changes, all of which show up in the key below.
-    std::string cachedTracksKey;
-    std::string cachedAudioTracksJson = "[]";
-    std::string cachedSubtitleTracksJson = "[]";
 
     std::string videoParamsPrimaries;
     std::string videoParamsGamma;
@@ -3766,6 +3820,7 @@ private:
             std::lock_guard<std::mutex> lock(appAddedSubtitleUrlsMutex);
             appAddedSubtitleUrls.clear();
         }
+        markTrackJsonDirty();
         startupFailureReported = false;
         audioPassthroughRequested = false;
         audioPassthroughFallbackApplied = false;
@@ -4143,6 +4198,7 @@ private:
             for (const char *property : {"hwdec-current", "paused-for-cache", "audio-params/format", "speed"}) {
                 api.observeProperty(mpv, 0, property, MPV_FORMAT_STRING);
             }
+            observeMirroredProperties(api);
 
             // Up/Down are reserved for app-level volume control; explicitly
             // disable mpv's built-in seek bindings for them so they can't
@@ -4259,8 +4315,10 @@ private:
 
     void syncControls() {
         if (!webView) return;
-        double duration = doubleProperty("duration", 0.0);
-        double position = doubleProperty("time-pos", 0.0);
+        // Mirrored values only: this runs on the native UI thread, and a synchronous mpv read
+        // waits for the mpv core, which a VapourSynth graph build keeps busy for over a second.
+        double duration = mirroredDouble("duration", 0.0);
+        double position = mirroredDouble("time-pos", 0.0);
         // Absolute time (seconds) up to which media is demuxer-cached ahead, so the controls can
         // draw a lighter "buffered" region on the seek bar.
         double buffered = (double)bufferedPositionMs() / 1000.0;
@@ -4269,30 +4327,9 @@ private:
         // Keep the media session's status honest — Windows picks the app it routes media keys
         // to by playback status, so a stale value costs us the keys.
         updateSystemMediaPlaybackStatus(paused);
-        // Track metadata (titles, languages, codecs) is immutable per track; the lists only
-        // change when tracks appear/disappear or the selection moves, so key the cache on
-        // count + selected audio/subtitle ids instead of re-reading every track each tick.
-        const long long trackCount = int64Property("track-list/count", 0);
-        std::string selectedTracksKey;
-        for (long long index = 0; index < trackCount; index++) {
-            const std::string selectedProperty =
-                "track-list/" + std::to_string(index) + "/selected";
-            if (flagProperty(selectedProperty.c_str(), false)) {
-                if (!selectedTracksKey.empty()) selectedTracksKey += ",";
-                selectedTracksKey += std::to_string(index);
-            }
-        }
-        std::string tracksKey = std::to_string(trackCount) +
-            "|" + stringProperty("aid", "") + "|" + stringProperty("sid", "") +
-            "|" + stringProperty("current-tracks/sub/id", "") +
-            "|" + selectedTracksKey;
-        if (tracksKey != cachedTracksKey) {
-            cachedTracksKey = tracksKey;
-            cachedAudioTracksJson = audioTracksJson();
-            cachedSubtitleTracksJson = subtitleTracksJson();
-        }
-        const std::string &audioTracks = cachedAudioTracksJson;
-        const std::string &subtitleTracks = cachedSubtitleTracksJson;
+        // Built on the event thread when the tracks or the selection change.
+        const std::string audioTracks = audioTracksJson();
+        const std::string subtitleTracks = subtitleTracksJson();
 
         std::ostringstream script;
         script << "window.playerUpdate({duration:" << duration
@@ -4643,6 +4680,17 @@ private:
             // the idle 0.5s, which while paused (few spontaneous events) would otherwise let it
             // land hundreds of ms late.
             mpv_event *event = mpvApi().waitEvent(current, (deferredSeekPending() || initialResumeTransactionPending.load() || svpPrerollPending || profileRenderPending.load()) ? 0.05 : 0.5);
+            if (event && event->event_id == MPV_EVENT_PROPERTY_CHANGE &&
+                event->reply_userdata == propertyMirrorReplyId) {
+                if (event->data) updatePropertyMirror(*static_cast<mpv_event_property *>(event->data));
+                rebuildTrackJsonIfDirty();
+                // time-pos alone arrives once per frame. The startup work below polls mpv
+                // synchronously and only needs the cadence it had before the mirror existed.
+                const auto now = std::chrono::steady_clock::now();
+                if (now - lastMirrorTickAt < std::chrono::milliseconds(20)) continue;
+                lastMirrorTickAt = now;
+            }
+            rebuildTrackJsonIfDirty();
             // The deadline is driven by wall clock, not by events, so it must be serviced even on
             // a wait that produced nothing to dispatch.
             flushDeferredSeek();
@@ -4987,6 +5035,9 @@ private:
             if (event->event_id == MPV_EVENT_PROPERTY_CHANGE && event->data) {
                 auto *prop = static_cast<mpv_event_property *>(event->data);
                 if (!prop || !prop->name) continue;
+                // Mirror-only observations were applied above; the handlers below key on the
+                // reply-0 ones.
+                if (event->reply_userdata == propertyMirrorReplyId) continue;
                 std::string propName(prop->name);
                 bool hasValue = prop->format == MPV_FORMAT_STRING && prop->data;
                 std::string propValue = hasValue ? std::string(*static_cast<char **>(prop->data)) : "";
@@ -5334,6 +5385,169 @@ private:
         return true;
     }
 
+public:
+    // Property mirror. A synchronous mpv read or write does not return until the mpv core thread
+    // services it, and that thread runs the video filter chain: building a VapourSynth/SVP graph
+    // (startup, or an SVP restore when the speed drops below the bypass threshold) keeps it busy
+    // for 1-1.5 s. The HUD and Kotlin poll from UI threads, so the values they read come from
+    // these observations, delivered on the event thread, instead of from mpv directly.
+    static constexpr uint64_t propertyMirrorReplyId = 0x4E555649424D4952ULL;
+
+    struct MirroredProperty {
+        bool valid = false;
+        double number = 0.0;
+        std::string text;
+    };
+
+    void observeMirroredProperties(MpvApi &api) {
+        for (const char *name : {"time-pos", "duration", "speed", "volume",
+                                 "demuxer-cache-time", "demuxer-cache-duration"}) {
+            api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_DOUBLE);
+        }
+        for (const char *name : {"pause", "eof-reached", "core-idle", "seeking",
+                                 "paused-for-cache", "mute"}) {
+            api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_FLAG);
+        }
+        api.observeProperty(mpv, propertyMirrorReplyId, "track-list/count", MPV_FORMAT_INT64);
+        for (const char *name : {"aid", "sid", "current-tracks/sub/id"}) {
+            api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_STRING);
+        }
+        // Change notifications only: they trigger rebuildTrackJsonIfDirty.
+        api.observeProperty(mpv, propertyMirrorReplyId, "track-list", MPV_FORMAT_NONE);
+        api.observeProperty(mpv, propertyMirrorReplyId, "chapter-list", MPV_FORMAT_NONE);
+    }
+
+    // Event-thread only.
+    void updatePropertyMirror(const mpv_event_property &property) {
+        if (!property.name) return;
+        const std::string name = property.name;
+        if (name == "track-list" || name == "chapter-list" || name == "aid" || name == "sid" ||
+            name == "current-tracks/sub/id") {
+            trackJsonDirty.store(true);
+        }
+        if (name == "track-list" || name == "chapter-list") return;
+        MirroredProperty value;
+        if (property.data) {
+            switch (property.format) {
+                case MPV_FORMAT_DOUBLE:
+                    value.number = *static_cast<double *>(property.data);
+                    value.valid = std::isfinite(value.number);
+                    break;
+                case MPV_FORMAT_FLAG:
+                    value.number = *static_cast<int *>(property.data) != 0 ? 1.0 : 0.0;
+                    value.valid = true;
+                    break;
+                case MPV_FORMAT_INT64:
+                    value.number = (double)*static_cast<int64_t *>(property.data);
+                    value.valid = true;
+                    break;
+                case MPV_FORMAT_STRING: {
+                    const char *text = *static_cast<char **>(property.data);
+                    value.valid = text != nullptr;
+                    if (text) value.text = text;
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        // MPV_FORMAT_NONE means unavailable: fall back exactly as a failed read would.
+        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+        propertyMirror[name] = std::move(value);
+    }
+
+    // Records a value written through the mpv call queue before mpv reports it, so a read that
+    // immediately follows the write (the volume and speed pills) shows the new value.
+    void setMirroredNumber(const char *name, double number) {
+        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+        MirroredProperty &value = propertyMirror[name];
+        value.valid = true;
+        value.number = number;
+    }
+
+    double mirroredDouble(const char *name, double fallback) {
+        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+        auto it = propertyMirror.find(name);
+        return it != propertyMirror.end() && it->second.valid ? it->second.number : fallback;
+    }
+
+    bool mirroredFlag(const char *name, bool fallback) {
+        return mirroredDouble(name, fallback ? 1.0 : 0.0) != 0.0;
+    }
+
+    std::string mirroredString(const char *name, const std::string &fallback) {
+        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+        auto it = propertyMirror.find(name);
+        return it != propertyMirror.end() && it->second.valid ? it->second.text : fallback;
+    }
+
+    // mpv call queue. Every JNI call that writes to mpv runs here, in the order Java issued it,
+    // instead of on the calling Java thread (usually the UI thread): a synchronous mpv write waits
+    // on the mpv core exactly as a read does (see the property mirror above). The calls keep their
+    // synchronous mpv semantics and mpvMutex discipline, so the SVP graph latch, held vf/hwdec
+    // writes and pre-roll all behave as before; only the caller no longer waits for them.
+    void postMpvCall(std::function<void()> call) {
+        std::lock_guard<std::mutex> lock(mpvCallMutex);
+        if (mpvCallsStopping || shuttingDown.load()) return;
+        mpvCalls.push_back(std::move(call));
+        if (!mpvCallThread.joinable()) {
+            mpvCallThread = std::thread([this]() { runMpvCalls(); });
+        }
+        mpvCallCv.notify_one();
+    }
+
+    void runMpvCalls() {
+        gPlaybackThreadLog = playbackLogPath;
+        while (true) {
+            std::function<void()> call;
+            {
+                std::unique_lock<std::mutex> lock(mpvCallMutex);
+                mpvCallCv.wait(lock, [this]() { return mpvCallsStopping || !mpvCalls.empty(); });
+                if (mpvCallsStopping) return;
+                call = std::move(mpvCalls.front());
+                mpvCalls.pop_front();
+            }
+            try {
+                call();
+            } catch (const std::exception &error) {
+                nuvioBridgeLog(std::string("mpv call failed: ") + error.what());
+            } catch (...) {
+                nuvioBridgeLog("mpv call failed");
+            }
+        }
+    }
+
+    // Drops calls not yet started; the one in progress finishes first. Must run before the mpv
+    // handle is destroyed: queued calls use it.
+    void stopMpvCalls() {
+        std::deque<std::function<void()>> dropped;
+        {
+            std::lock_guard<std::mutex> lock(mpvCallMutex);
+            mpvCallsStopping = true;
+            dropped.swap(mpvCalls);
+        }
+        mpvCallCv.notify_all();
+        if (mpvCallThread.joinable() && mpvCallThread.get_id() != std::this_thread::get_id()) {
+            mpvCallThread.join();
+        }
+    }
+
+    std::mutex propertyMirrorMutex;
+    std::chrono::steady_clock::time_point lastMirrorTickAt{}; // event thread
+    std::unordered_map<std::string, MirroredProperty> propertyMirror; // propertyMirrorMutex
+    std::atomic<bool> trackJsonDirty{true};
+    std::mutex trackJsonMutex;
+    std::string sharedAudioTracksJson = "[]"; // trackJsonMutex
+    std::string sharedSubtitleTracksJson = "[]"; // trackJsonMutex
+    std::string sharedChaptersJson = "[]"; // trackJsonMutex
+
+    std::mutex mpvCallMutex;
+    std::condition_variable mpvCallCv;
+    std::deque<std::function<void()>> mpvCalls; // mpvCallMutex
+    bool mpvCallsStopping = false; // mpvCallMutex
+    std::thread mpvCallThread;
+
+private:
     double doubleProperty(const char *name, double fallback) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return fallback;
@@ -5411,7 +5625,7 @@ private:
     }
 
     double rawPositionSeconds() {
-        double position = doubleProperty("time-pos", 0.0);
+        double position = mirroredDouble("time-pos", 0.0);
         return std::isfinite(position) ? std::max(position, 0.0) : 0.0;
     }
 
@@ -5426,7 +5640,7 @@ private:
 
     double cacheAheadSeconds() {
         double effectivePosition = effectiveCachePositionSeconds();
-        double cacheTime = doubleProperty("demuxer-cache-time", 0.0);
+        double cacheTime = mirroredDouble("demuxer-cache-time", 0.0);
         if (std::isfinite(cacheTime) && cacheTime > 0.0) {
             if (cacheTime >= effectivePosition - 5.0) {
                 return std::max(cacheTime - effectivePosition, 0.0);
@@ -5434,7 +5648,7 @@ private:
             return cacheTime;
         }
 
-        double cacheDuration = doubleProperty("demuxer-cache-duration", 0.0);
+        double cacheDuration = mirroredDouble("demuxer-cache-duration", 0.0);
         if (std::isfinite(cacheDuration) && cacheDuration > 0.0) {
             return cacheDuration;
         }
@@ -5446,6 +5660,7 @@ private:
             std::lock_guard<std::mutex> lock(appAddedSubtitleUrlsMutex);
             appAddedSubtitleUrls.clear();
         }
+        markTrackJsonDirty();
         long long count = int64Property("track-list/count", 0);
         if (count <= 0) return;
         for (long long index = count - 1; index >= 0; index--) {
@@ -5976,25 +6191,27 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_initializeAppIdent
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setPaused(JNIEnv *, jobject, jlong handle, jboolean paused) {
     auto player = playerFromHandle(handle);
-    if (player) player->setPaused(paused == JNI_TRUE);
+    if (player) player->postMpvCall([p = player.get(), paused]() { p->setPaused(paused == JNI_TRUE); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_seekTo(JNIEnv *, jobject, jlong handle, jlong positionMs) {
     auto player = playerFromHandle(handle);
-    if (player) player->seekToMilliseconds(positionMs);
+    if (player) player->postMpvCall([p = player.get(), positionMs]() { p->seekToMilliseconds(positionMs); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_seekBy(JNIEnv *, jobject, jlong handle, jlong offsetMs) {
     auto player = playerFromHandle(handle);
-    if (player) player->seekByMilliseconds(offsetMs);
+    if (player) player->postMpvCall([p = player.get(), offsetMs]() { p->seekByMilliseconds(offsetMs); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSpeed(JNIEnv *, jobject, jlong handle, jfloat speed) {
     auto player = playerFromHandle(handle);
-    if (player) player->setSpeed(speed);
+    if (!player) return;
+    player->setMirroredNumber("speed", std::max(0.25, std::min(4.0, (double)speed)));
+    player->postMpvCall([p = player.get(), speed]() { p->setSpeed(speed); });
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -6042,7 +6259,9 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_speed(JNIEnv *, jo
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setVolume(JNIEnv *, jobject, jlong handle, jfloat volume) {
     auto player = playerFromHandle(handle);
-    if (player) player->setVolume(volume);
+    if (!player) return;
+    player->setMirroredNumber("volume", std::max(0.0, std::min(200.0, (double)volume)));
+    player->postMpvCall([p = player.get(), volume]() { p->setVolume(volume); });
 }
 
 extern "C" JNIEXPORT jfloat JNICALL
@@ -6054,7 +6273,9 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_volume(JNIEnv *, j
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMute(JNIEnv *, jobject, jlong handle, jboolean muted) {
     auto player = playerFromHandle(handle);
-    if (player) player->setMute(muted == JNI_TRUE);
+    if (!player) return;
+    player->setMirroredNumber("mute", muted == JNI_TRUE ? 1.0 : 0.0);
+    player->postMpvCall([p = player.get(), muted]() { p->setMute(muted == JNI_TRUE); });
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -6066,7 +6287,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isMuted(JNIEnv *, 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setResizeMode(JNIEnv *, jobject, jlong handle, jint mode) {
     auto player = playerFromHandle(handle);
-    if (player) player->setResizeMode(mode);
+    if (player) player->postMpvCall([p = player.get(), mode]() { p->setResizeMode(mode); });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -6084,18 +6305,18 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_beginVideoProfile(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
-    if (player) player->beginVideoProfile();
+    if (player) player->postMpvCall([p = player.get()]() { p->beginVideoProfile(); });
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_endVideoProfile(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
-    if (player) player->endVideoProfile();
+    if (player) player->postMpvCall([p = player.get()]() { p->endVideoProfile(); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_completeSvpStartupProfile(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
-    if (player) player->acknowledgeSvpStartupProfile();
+    if (player) player->postMpvCall([p = player.get()]() { p->acknowledgeSvpStartupProfile(); });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -6107,31 +6328,33 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_chaptersJson(JNIEn
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectAudioTrack(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
-    return (player && player->selectAudioTrackId(trackId)) ? JNI_TRUE : JNI_FALSE;
+    return player && player->requestAudioTrackId(trackId) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectSubtitleTrack(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
-    return (player && player->selectSubtitleTrackId(trackId)) ? JNI_TRUE : JNI_FALSE;
+    return player && player->requestSubtitleTrackId(trackId) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_addSubtitleUrl(JNIEnv *env, jobject, jlong handle, jstring url) {
     auto player = playerFromHandle(handle);
-    if (player) player->addSubtitleUrl(jstringToUtf8(env, url));
+    if (!player) return;
+    std::string urlText = jstringToUtf8(env, url);
+    player->postMpvCall([p = player.get(), urlText]() { p->addSubtitleUrl(urlText); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_clearExternalSubtitles(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
-    if (player) player->removeExternalSubtitles();
+    if (player) player->postMpvCall([p = player.get()]() { p->removeExternalSubtitles(); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_clearExternalSubtitlesAndSelect(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
-    if (player) player->removeExternalSubtitlesAndSelect(trackId);
+    if (player) player->postMpvCall([p = player.get(), trackId]() { p->removeExternalSubtitlesAndSelect(trackId); });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6198,13 +6421,14 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleAssStyl
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->setSubtitleAssStyleMode(mode ? jstringToUtf8(env, mode) : std::string("no"), scale);
+    std::string modeText = mode ? jstringToUtf8(env, mode) : std::string("no");
+    player->postMpvCall([p = player.get(), modeText, scale]() { p->setSubtitleAssStyleMode(modeText, scale); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleDelayMs(JNIEnv *, jobject, jlong handle, jint delayMs) {
     auto player = playerFromHandle(handle);
-    if (player) player->setSubtitleDelayMs(delayMs);
+    if (player) player->postMpvCall([p = player.get(), delayMs]() { p->setSubtitleDelayMs(delayMs); });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6223,16 +6447,19 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applySubtitleStyle
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->applySubtitleStyle(
-        jstringToUtf8(env, textColor),
-        jstringToUtf8(env, backgroundColor),
-        jstringToUtf8(env, outlineColor),
+    player->postMpvCall([
+        p = player.get(),
+        text = jstringToUtf8(env, textColor),
+        background = jstringToUtf8(env, backgroundColor),
+        outline = jstringToUtf8(env, outlineColor),
         outlineSize,
-        bold == JNI_TRUE,
+        isBold = bold == JNI_TRUE,
         fontSize,
         subPos,
-        fontName ? jstringToUtf8(env, fontName) : std::string()
-    );
+        font = fontName ? jstringToUtf8(env, fontName) : std::string()
+    ]() {
+        p->applySubtitleStyle(text, background, outline, outlineSize, isBold, fontSize, subPos, font);
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6245,7 +6472,9 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMpvProperty(
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->setMpvPropertyString(jstringToUtf8(env, key), jstringToUtf8(env, value));
+    player->postMpvCall([p = player.get(), keyText = jstringToUtf8(env, key), valueText = jstringToUtf8(env, value)]() {
+        p->setMpvPropertyString(keyText, valueText);
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6256,7 +6485,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_toggleStatsOverlay
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->toggleStatsOverlay();
+    player->postMpvCall([p = player.get()]() { p->toggleStatsOverlay(); });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6267,7 +6496,8 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_forceVideoRedraw(
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->forceVideoRedraw();
+    // Queued so it lands after the property writes it is meant to make visible.
+    player->postMpvCall([p = player.get()]() { p->forceVideoRedraw(); });
 }
 
 // ---------------------------------------------------------------------------

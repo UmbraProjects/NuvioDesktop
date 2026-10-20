@@ -758,6 +758,64 @@ val buildWindowsNuvioEngine = tasks.register("buildWindowsNuvioEngine") {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// quickjs-kt's native library, rebuilt from the vendored, patched sources in
+// src/desktopMain/native/quickjs-kt (README there): every JS -> Kotlin binding call gets its own
+// JNI local frame, so a scraper's page parse no longer grows the thread's handle table and keeps
+// every fetched page alive until its job ends. Same MSYS2 UCRT64 GCC as the engine; one gcc call,
+// no CMake. Best-effort like the engine: without the toolchain the app loads the jar's own
+// (unpatched) copy, and only createDistributable insists on it.
+// ---------------------------------------------------------------------------------------------
+val quickJsSourceDir = layout.projectDirectory.dir("src/desktopMain/native/quickjs-kt")
+val quickJsOutput = layout.buildDirectory.file("native/windows/libquickjs.dll")
+
+val buildWindowsQuickJs = tasks.register("buildWindowsQuickJs") {
+    notCompatibleWithConfigurationCache("Builds the host-local QuickJS DLL with the MSYS2 toolchain.")
+    enabled = isWindowsHost
+    inputs.dir(quickJsSourceDir)
+    outputs.file(quickJsOutput)
+    doLast {
+        val output = quickJsOutput.get().asFile
+        val msysBin = nuvioEngineMsys2Root.resolve("bin")
+        val gcc = msysBin.resolve("gcc.exe")
+        if (!gcc.isFile || !nuvioEngineJniIncludeDir.resolve("jni.h").isFile) {
+            logger.warn("Skipping QuickJS build; plugins will use quickjs-kt's bundled DLL. Missing: MSYS2 UCRT64 gcc under ${msysBin.absolutePath} or jni.h")
+            output.delete()
+            return@doLast
+        }
+        val src = quickJsSourceDir.asFile
+        val version = src.resolve("quickjs/VERSION").readText().trim()
+        val sources = listOf("cutils", "dtoa", "libregexp", "libunicode", "quickjs").map { "quickjs/$it.c" } +
+            listOf("common", "jni", "jni/mapping").flatMap { dir ->
+                src.resolve(dir).listFiles { file -> file.extension == "c" }.orEmpty().sortedBy { it.name }.map { "$dir/${it.name}" }
+            }
+        output.parentFile.mkdirs()
+        val command = listOf(
+            gcc.absolutePath, "-O2", "-std=gnu99", "-shared", "-static", "-s",
+            // ProcessBuilder passes embedded quotes through unescaped, and gcc's argv parsing would
+            // strip them; the backslashes keep CONFIG_VERSION a string literal.
+            "-DCONFIG_WIN32", "-DCONFIG_BIGNUM", "-DCONFIG_VERSION=\\\"$version\\\"",
+            "-Iquickjs", "-Icommon", "-Ic-vector", "-Ijni", "-Ijni/mapping",
+            "-I${nuvioEngineJniIncludeDir.absolutePath}", "-I${nuvioEngineJniIncludeDir.resolve("win32").absolutePath}",
+        ) + sources + listOf(
+            "quickjs.def",
+            "-Wl,--dynamicbase,--nxcompat,--high-entropy-va,--no-insert-timestamp",
+            "-o", output.absolutePath,
+        )
+        val process = ProcessBuilder(command)
+            .directory(src)
+            .redirectErrorStream(true)
+            .apply { environment()["PATH"] = "${msysBin.absolutePath};${System.getenv("PATH").orEmpty()}" }
+            .start()
+        val log = process.inputStream.bufferedReader().readText()
+        val code = process.waitFor()
+        if (code != 0 || !output.isFile) {
+            throw GradleException("QuickJS build failed (exit $code)\n${log.lines().filter { "error" in it }.joinToString("\n").takeLast(6000)}")
+        }
+        logger.lifecycle("QuickJS DLL: ${output.absolutePath} (${output.length() / 1024} KB)")
+    }
+}
+
 val windowsPlaybackStartupTestSource = layout.projectDirectory.file("src/desktopTest/native/windows/playback_startup_test.cpp")
 val windowsPlaybackStartupTestOutput = layout.buildDirectory.file("native/windows/player_startup_test.exe")
 val buildWindowsPlaybackStartupTests = tasks.register<Exec>("buildWindowsPlaybackStartupTests") {
@@ -1034,6 +1092,7 @@ if (isWindowsHost) {
         dependsOn(
             buildWindowsPlayerBridge,
             buildWindowsNuvioEngine,
+            buildWindowsQuickJs,
             prepareWindowsPlayerRuntime,
             generateWindowsPlayerRuntimeIndex,
             prepareWindowsPythonLib,
@@ -1059,6 +1118,7 @@ if (isWindowsHost) {
             // The engine DLL is staged beside Nuvio.exe only (not via the jar), so it must be an
             // input here or a rebuilt DLL never reaches an otherwise up-to-date app image.
             inputs.files(nuvioEngineOutput).optional()
+            inputs.files(quickJsOutput).optional()
             inputs.files(
                 fileTree(desktopResourcesSourceDir) { include(externalDesktopResources) },
             )
@@ -1088,11 +1148,15 @@ if (isWindowsHost) {
                     from(windowsPlayerBridgeOutput)
                     from(windowsPlayerRuntimeOutput)
                     from(nuvioEngineOutput)
+                    from(quickJsOutput)
                     into(imageDir)
                 }
                 check(nuvioEngineOutput.get().asFile.isFile) {
                     "Nuvio Engine DLL was not built; a distributable must not ship without it. " +
                         "Missing inputs: ${missingNuvioEngineInputs(resolveNuvioEngineCMake()).joinToString("; ").ifBlank { "(build failed, see buildWindowsNuvioEngine output)" }}"
+                }
+                check(quickJsOutput.get().asFile.isFile) {
+                    "libquickjs.dll was not built (see buildWindowsQuickJs); a distributable must not fall back to quickjs-kt's unpatched copy."
                 }
                 copy {
                     from(windowsPythonLibOutput)
@@ -1646,6 +1710,15 @@ tasks.withType<Test>().configureEach {
         "nuvio.focusTests",
         (providers.gradleProperty("nuvio.focusTests").orNull ?: "false").ifBlank { "true" },
     )
+    // Plugin tests run on the patched libquickjs.dll the app ships, not the jar's own copy.
+    dependsOn(buildWindowsQuickJs)
+    val quickJsDll = quickJsOutput
+    inputs.files(quickJsDll).optional()
+    doFirst {
+        quickJsDll.get().asFile.takeIf(File::isFile)?.let { dll ->
+            systemProperty("com.dokar.quickjs.library.path", dll.parentFile.absolutePath)
+        }
+    }
     // Opt-in live-swarm probe for the P2P engine (NuvioEngineNetworkProbeTest); off by default.
     systemProperty("nuvio.p2pProbeHash", providers.gradleProperty("nuvio.p2pProbeHash").orNull ?: "")
     systemProperty("nuvio.p2pProbePreloadMb", providers.gradleProperty("nuvio.p2pProbePreloadMb").orNull ?: "")
@@ -2151,6 +2224,8 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
             // probe read that as "proxy down" and sent posters un-letterboxed, so they rendered
             // squashed; NuvioEngine's localhost probe uses http: too.
             add("--enable-url-protocols=http,https")
+            // HotSpotDiagnosticMXBean.dumpHeap for HeapDumpOnHighLiveSet (perf logging only).
+            add("--enable-monitoring=heapdump")
             if (nativeImageQa) {
                 add("--exact-reachability-metadata")
                 add("-H:MissingRegistrationReportingMode=Warn")
@@ -2168,6 +2243,20 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
             // -H:-RemoveLoopSafepoints was tried too and made no difference.
             add("-R:MaxHeapSize=1g")
             add("-R:MaxNewSize=192m")
+            // Heap floor for the old generation. Serial GC's default policy (Adaptive2) kept the old
+            // generation sized just above the ~200-280 MB live set, so ordinary browsing promoted
+            // it full every 20-40 s: a natural 250-316 ms stop-the-world full GC each time, every
+            // (UiStall) of 250 ms or more in the 2026-10-19 session, and back-to-back pairs ~400 ms
+            // apart. 512m leaves ~320 MB of old generation, so most growth is collected by
+            // IdleHeapCollector while the user is not interacting.
+            add("-R:MinHeapSize=512m")
+            // Objects are promoted after surviving 3 young collections instead of up to 15 (the
+            // serial GC's default). Startup builds ~60 MB of long-lived data (caches, catalogs, meta)
+            // that was copied between survivor spaces on every young collection until it aged out:
+            // (YoungGc) 2026-10-19 18:46, 26 young collections / 1,253 ms in the first 3.3 s, survivor
+            // space pinned at 55-63 MB, each pause 70-100 ms; once it tenured they took 7-10 ms.
+            // Hosted (build-time) option.
+            add("-H:MaxSurvivorSpaces=3")
             add("-o")
             add(slashes(work.resolve("Nuvio")))
             add("-cp")

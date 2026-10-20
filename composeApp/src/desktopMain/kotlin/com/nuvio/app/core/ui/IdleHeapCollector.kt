@@ -2,11 +2,18 @@ package com.nuvio.app.core.ui
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.NativeImageSupport
+import com.nuvio.app.core.perf.PerfTelemetry
+import com.nuvio.app.core.storage.CachePersistGate
+import com.nuvio.app.core.storage.DesktopStorage
+import com.sun.management.HotSpotDiagnosticMXBean
 import java.awt.AWTEvent
 import java.awt.Toolkit
 import java.awt.event.AWTEventListener
 import java.lang.management.GarbageCollectorMXBean
 import java.lang.management.ManagementFactory
+import java.nio.file.Files
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -25,7 +32,15 @@ internal object UserInputActivity {
             AWTEvent.MOUSE_WHEEL_EVENT_MASK or AWTEvent.KEY_EVENT_MASK
         runCatching {
             Toolkit.getDefaultToolkit().addAWTEventListener(
-                AWTEventListener { lastInputAtMs = System.currentTimeMillis() },
+                AWTEventListener { event ->
+                    val now = System.currentTimeMillis()
+                    lastInputAtMs = now
+                    if (event.id == java.awt.event.MouseEvent.MOUSE_MOVED ||
+                        event.id == java.awt.event.MouseEvent.MOUSE_DRAGGED
+                    ) {
+                        PointerMotionClock.lastRealMoveAtMs = now
+                    }
+                },
                 mask,
             )
         }
@@ -99,6 +114,70 @@ internal object FullGcLog {
         }
         lastCount = count
         lastTimeMs = timeMs
+        if (trigger == "natural") HeapDumpOnHighLiveSet.check(used)
+    }
+}
+
+/**
+ * Perf logging only: one live-heap dump per run, the first time a natural full collection leaves
+ * [ThresholdBytes] or more in use. Long-series details visits pushed the live set from ~200 to
+ * 450 MB for 15-30 s (2026-10-19 04:58 and 04:59), and no log says what held it. The dump takes a
+ * few seconds and holds session tokens, so it goes to the logs folder and should be deleted once read.
+ * The native build needs `--enable-monitoring=heapdump` and the VMRuntime reflection entry in
+ * native-image/management for this to work.
+ */
+internal object HeapDumpOnHighLiveSet {
+    // 380 MB never fired in the 07:11 session (natural full GCs peaked at 374 MB live while the
+    // post-GC heap crept 195 -> 374 MB), so one notch lower.
+    private const val ThresholdBytes = 320L * 1024 * 1024
+    private val log = Logger.withTag("HeapDump")
+    private val done = AtomicBoolean(false)
+
+    // Never during playback or just after it. A dump stops every thread for ~2.7 s, and the one
+    // that landed as the player was closing (2026-10-19 07:49:28) was followed a second later by a
+    // native abort (0xc0000409 in ucrtbase) with mpv mid-teardown.
+    private const val AfterPlaybackQuietMs = 30_000L
+
+    @Volatile
+    private var lastPlaybackSeenAtMs = 0L
+
+    /** From the idle collector's 250 ms tick. */
+    fun notePlayback(active: Boolean) {
+        if (active) lastPlaybackSeenAtMs = System.currentTimeMillis()
+    }
+
+    // Off: two dumps (07:54 browsing, 08:26 just after launch) have been read, and each one freezes
+    // the app for ~2.7 s. Flip to true for a run that needs another.
+    private const val Enabled = false
+
+    fun check(usedBytes: Long) {
+        if (!Enabled || usedBytes < ThresholdBytes || !PerfTelemetry.enabled) return
+        if (DesktopArtworkCaches.isPlaybackActive ||
+            System.currentTimeMillis() - lastPlaybackSeenAtMs < AfterPlaybackQuietMs
+        ) {
+            return
+        }
+        if (!done.compareAndSet(false, true)) return
+        runCatching {
+            val logs = DesktopStorage.rootDir.resolve("logs")
+            Files.createDirectories(logs)
+            val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+            val file = logs.resolve("nuvio-heap-$stamp.hprof")
+            val startedAt = System.nanoTime()
+            val path = file.toAbsolutePath().toString()
+            if (NativeImageSupport.inImage) {
+                // No HotSpotDiagnosticMXBean in the native image (2026-10-19: "not a platform
+                // management interface"); its own API, by reflection (native-image/management).
+                val vmRuntime = Class.forName("org.graalvm.nativeimage.VMRuntime")
+                vmRuntime.getMethod("dumpHeap", String::class.java, Boolean::class.javaPrimitiveType).invoke(null, path, true)
+            } else {
+                ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean::class.java).dumpHeap(path, true)
+            }
+            log.i {
+                "live heap ${usedBytes / (1024 * 1024)}MB after a natural full GC: dumped to $file in " +
+                    "${(System.nanoTime() - startedAt) / 1_000_000}ms"
+            }
+        }.onFailure { error -> log.w(error) { "heap dump failed" } }
     }
 }
 
@@ -153,6 +232,16 @@ internal object IdleHeapCollector {
             }.onFailure { error -> log.w(error) { "could not stop skiko's periodic GC" } }
         }
         UserInputActivity.install()
+        // Batched cache rewrites wait for the same quiet moment this collector does, so the garbage
+        // they make is collected here instead of by a natural full GC mid-scroll.
+        CachePersistGate.awaitQuietMoment = {
+            while (
+                System.currentTimeMillis() - UserInputActivity.lastInputAtMs < IdleInputMs ||
+                UiMotion.quietForMs() < IdleInputMs
+            ) {
+                kotlinx.coroutines.delay(CheckIntervalMs)
+            }
+        }
         // Memory use (thresholds here, hero cap in DesktopArtworkMemoryCache) is read live from it.
         runCatching { ImageCacheSettingsRepository.ensureLoaded() }
         FullGcLog.poll()
@@ -163,7 +252,9 @@ internal object IdleHeapCollector {
 
     private fun check() {
         runCatching {
+            HeapDumpOnHighLiveSet.notePlayback(DesktopArtworkCaches.isPlaybackActive)
             FullGcLog.poll()
+            StartupYoungGcTrace.sample()
             if (!NativeImageSupport.inImage) return
             val now = System.currentTimeMillis()
             val grown = FullGcLog.usedHeapBytes() - FullGcLog.usedAfterLastFullBytes

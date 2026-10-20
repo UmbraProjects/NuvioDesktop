@@ -255,7 +255,7 @@ actual fun HomeHeroTrailerSurface(
         var endedReported = false
         var readyReported = false
         while (true) {
-            val snapshot = controller.snapshot()
+            val snapshot = controller.snapshotOffUiThread()
             // A first paint can be a static startup frame while mpv is still buffering.
             // Reveal only once playback is genuinely advancing, keeping the artwork visible
             // through that otherwise noticeable frozen-frame interval.

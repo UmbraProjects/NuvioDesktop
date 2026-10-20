@@ -1,6 +1,8 @@
 package com.nuvio.app.features.details
 
 import com.nuvio.app.core.storage.DesktopBlobFile
+import java.io.InputStream
+import java.io.OutputStream
 
 internal actual object LightweightMetaCacheStorage {
     // A blob file, not a store: a store would hold the whole JSON in memory all session.
@@ -10,7 +12,7 @@ internal actual object LightweightMetaCacheStorage {
         legacyKey = "entries",
     )
 
-    actual fun load(): String? = blob.read()
-    actual fun save(payload: String) = blob.write(payload)
+    actual fun <T> read(decode: (InputStream) -> T): T? = blob.readStream(decode)
+    actual fun write(encode: (OutputStream) -> Unit) = blob.writeStream(encode)
     actual fun clear() = blob.delete()
 }

@@ -6,6 +6,8 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaExternalRating
 import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.core.storage.CoalescingCachePersister
+import com.nuvio.app.core.storage.decodeJsonMap
+import com.nuvio.app.core.storage.encodeJsonMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -23,7 +25,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -157,7 +158,7 @@ object MdbListMetadataService {
             cache = mutableMapOf()
             inFlightRequests.clear()
         }
-        runCatching { MdbListRatingsCacheStorage.save("{}") }
+        runCatching { MdbListRatingsCacheStorage.clearRatings() }
             .onFailure { error -> log.w { "Failed to clear MDBList ratings cache: ${error.message}" } }
     }
 
@@ -489,8 +490,8 @@ object MdbListMetadataService {
     }
 
     /**
-     * Same burst as the hero cast cache next door, into the same 3.4 MB properties file — batched
-     * for the same reason. See [CoalescingCachePersister].
+     * Same burst as the hero cast cache next door — batched for the same reason. See
+     * [CoalescingCachePersister]. Each write streams the whole map to its own file (encodeJsonMap).
      */
     private val persister = CoalescingCachePersister(tag = "mdbListRatings", writeDelayMs = MDBLIST_CACHE_WRITE_DELAY_MS) {
         val snapshot = cacheMutex.withLock { ensureCacheLoaded().toMap() }
@@ -516,21 +517,21 @@ object MdbListMetadataService {
         cache?.let { return it }
         val loaded = mutableMapOf<String, CachedRatings>()
         runCatching {
-            MdbListRatingsCacheStorage.load()?.let { raw ->
-                json.decodeFromString<Map<String, CachedRatingsDto>>(raw).forEach { (key, dto) ->
-                    loaded[key] = CachedRatings(
-                        ratings = dto.ratings.map { MetaExternalRating(source = it.source, value = it.value, url = it.url) },
-                        keywords = dto.keywords,
+            MdbListRatingsCacheStorage.readRatings { input ->
+                json.decodeJsonMap(input, CachedRatingsDto.serializer())
+            }?.forEach { (key, dto) ->
+                loaded[key] = CachedRatings(
+                    ratings = dto.ratings.map { MetaExternalRating(source = it.source, value = it.value, url = it.url) },
+                    keywords = dto.keywords,
+                    expiresAtMs = dto.expiresAtMs,
+                    hasLinks = dto.hasLinks,
+                    fetchedAtMs = dto.fetchedAtMs ?: legacyFetchedAtMs(
+                        found = dto.ratings.isNotEmpty() || dto.keywords.isNotEmpty(),
                         expiresAtMs = dto.expiresAtMs,
-                        hasLinks = dto.hasLinks,
-                        fetchedAtMs = dto.fetchedAtMs ?: legacyFetchedAtMs(
-                            found = dto.ratings.isNotEmpty() || dto.keywords.isNotEmpty(),
-                            expiresAtMs = dto.expiresAtMs,
-                        ),
-                        releaseFacts = dto.releaseFacts,
-                        extrasFetchedAtMs = dto.extrasFetchedAtMs,
-                    )
-                }
+                    ),
+                    releaseFacts = dto.releaseFacts,
+                    extrasFetchedAtMs = dto.extrasFetchedAtMs,
+                )
             }
         }.onFailure { error ->
             log.w { "Failed to load MDBList ratings cache: ${error.message}" }
@@ -558,18 +559,21 @@ object MdbListMetadataService {
         if (found) expiresAtMs - LEGACY_FOUND_TTL_MS else null
 
     private fun persistCache(entries: Map<String, CachedRatings>) {
-        val dto = entries.mapValues { (_, entry) ->
-            CachedRatingsDto(
-                ratings = entry.ratings.map { MetaExternalRatingDto(source = it.source, value = it.value, url = it.url) },
-                keywords = entry.keywords,
-                expiresAtMs = entry.expiresAtMs,
-                hasLinks = entry.hasLinks,
-                fetchedAtMs = entry.fetchedAtMs,
-                releaseFacts = entry.releaseFacts,
-                extrasFetchedAtMs = entry.extrasFetchedAtMs,
-            )
+        runCatching {
+            MdbListRatingsCacheStorage.writeRatings { output ->
+                json.encodeJsonMap(output, entries, CachedRatingsDto.serializer()) { entry ->
+                    CachedRatingsDto(
+                        ratings = entry.ratings.map { MetaExternalRatingDto(source = it.source, value = it.value, url = it.url) },
+                        keywords = entry.keywords,
+                        expiresAtMs = entry.expiresAtMs,
+                        hasLinks = entry.hasLinks,
+                        fetchedAtMs = entry.fetchedAtMs,
+                        releaseFacts = entry.releaseFacts,
+                        extrasFetchedAtMs = entry.extrasFetchedAtMs,
+                    )
+                }
+            }
         }
-        runCatching { MdbListRatingsCacheStorage.save(json.encodeToString(dto)) }
             .onFailure { error -> log.w { "Failed to save MDBList ratings cache: ${error.message}" } }
     }
 

@@ -1070,6 +1070,13 @@ object TmdbMetadataService {
          */
         includeEpisodes: Boolean = true,
         depth: EnrichmentDepth = EnrichmentDepth.Full,
+        /**
+         * Only these seasons' episodes are decorated (null: every season). The details page asks
+         * for the season it opens on first and the rest afterwards: each season is its own request,
+         * and a 20-season show held the whole page on ~20 of them (2026-10-19, Law & Order).
+         * Undecorated episodes keep the addon's values.
+         */
+        episodeSeasons: Set<Int>? = null,
     ): MetaDetails {
         if (!settings.enabled || !settings.hasApiKey) return meta
         if (!meta.imdbTmdbIdentityTrusted) return meta
@@ -1079,9 +1086,13 @@ object TmdbMetadataService {
             ?: TmdbService.ensureTmdbId(fallbackItemId, tmdbType)
             ?: return meta
 
+        val keepAddon = settings.keepsAddonRecord(meta)
         val needsEpisodes = includeEpisodes &&
             (settings.useEpisodes || settings.useSeasonPosters) &&
-            tmdbType == "tv"
+            tmdbType == "tv" &&
+            // A TVDB/Kitsu record's episodes are the record; TMDB is asked only when some episode
+            // has no title or still to fill (one request per season otherwise spent for nothing).
+            (!keepAddon || meta.videos.any { it.title.isBlank() || it.thumbnail.isNullOrBlank() })
         val (enrichment, episodeMap) = coroutineScope {
             val enrichmentDeferred = async {
                 fetchEnrichment(
@@ -1096,6 +1107,7 @@ object TmdbMetadataService {
             val episodeDeferred = if (needsEpisodes) {
                 async {
                     val seasons = meta.videos.mapNotNull { it.season }.distinct()
+                        .filter { season -> episodeSeasons == null || season in episodeSeasons }
                     fetchEpisodeEnrichment(
                         tmdbId = tmdbId,
                         seasonNumbers = seasons,
@@ -1246,6 +1258,8 @@ object TmdbMetadataService {
         settings: TmdbSettings,
     ): MetaDetails {
         if (enrichment == null && episodeMap.isEmpty()) return meta
+        // TheTVDB / Kitsu record under the source-aware setting: TMDB fills blanks, replaces nothing.
+        val keepAddon = settings.keepsAddonRecord(meta)
 
         var updated = meta
 
@@ -1257,7 +1271,17 @@ object TmdbMetadataService {
             )
         }
 
-        if (enrichment != null && settings.useBasicInfo) {
+        if (enrichment != null && settings.useBasicInfo && keepAddon) {
+            updated = updated.copy(
+                tmdbId = enrichment.tmdbId ?: updated.tmdbId,
+                name = updated.name.takeIf(String::isNotBlank) ?: enrichment.localizedTitle ?: updated.name,
+                description = updated.description?.takeIf(String::isNotBlank) ?: enrichment.description,
+                imdbRating = updated.imdbRating?.takeIf { it.isNotBlank() }
+                    ?: enrichment.rating?.formatRating(),
+                genres = updated.genres.ifEmpty { enrichment.genres },
+                tmdbKeywords = enrichment.keywords.ifEmpty { updated.tmdbKeywords },
+            )
+        } else if (enrichment != null && settings.useBasicInfo) {
             updated = updated.copy(
                 tmdbId = enrichment.tmdbId ?: updated.tmdbId,
                 name = enrichment.localizedTitle ?: updated.name,
@@ -1269,7 +1293,18 @@ object TmdbMetadataService {
             )
         }
 
-        if (enrichment != null && settings.useDetails) {
+        if (enrichment != null && settings.useDetails && keepAddon) {
+            updated = updated.copy(
+                releaseInfo = updated.releaseInfo?.takeIf(String::isNotBlank) ?: enrichment.releaseInfo,
+                lastAirDate = updated.lastAirDate?.takeIf(String::isNotBlank) ?: enrichment.lastAirDate,
+                status = updated.status?.takeIf(String::isNotBlank) ?: enrichment.status,
+                ageRating = updated.ageRating?.takeIf(String::isNotBlank) ?: enrichment.ageRating,
+                runtime = updated.runtime?.takeIf(String::isNotBlank) ?: enrichment.runtimeMinutes?.formatRuntime(),
+                country = updated.country?.takeIf(String::isNotBlank)
+                    ?: enrichment.countries.takeIf { it.isNotEmpty() }?.joinToString(", "),
+                language = updated.language?.takeIf(String::isNotBlank) ?: enrichment.language,
+            )
+        } else if (enrichment != null && settings.useDetails) {
             updated = updated.copy(
                 releaseInfo = enrichment.releaseInfo ?: updated.releaseInfo,
                 lastAirDate = enrichment.lastAirDate ?: updated.lastAirDate,
@@ -1289,15 +1324,25 @@ object TmdbMetadataService {
                 cast = mergeCastPreservingBaseOrder(
                     base = updated.cast,
                     enrichment = enrichment.people,
+                    // A TVDB/Kitsu cast list is the cast: TMDB adds photos and person links to
+                    // the people on it, not people of its own. Unless the addon sent only the top
+                    // billing: AIOMetadata's TVDB records carry five names (Orange Is the New Black
+                    // showed Piper, Alex, Red, Tiffany and Nicky and no one else), so a short list is
+                    // kept first and in order, and TMDB's remaining cast follows it.
+                    appendExtras = !keepAddon || updated.cast.size <= SHORT_ADDON_CAST_SIZE,
                 ),
             )
         }
 
-        if (enrichment != null && settings.useProductions && enrichment.productionCompanies.isNotEmpty()) {
+        if (enrichment != null && settings.useProductions && enrichment.productionCompanies.isNotEmpty() &&
+            !(keepAddon && updated.productionCompanies.isNotEmpty())
+        ) {
             updated = updated.copy(productionCompanies = enrichment.productionCompanies)
         }
 
-        if (enrichment != null && settings.useNetworks && enrichment.networks.isNotEmpty()) {
+        if (enrichment != null && settings.useNetworks && enrichment.networks.isNotEmpty() &&
+            !(keepAddon && updated.networks.isNotEmpty())
+        ) {
             updated = updated.copy(networks = enrichment.networks)
         }
 
@@ -1310,6 +1355,22 @@ object TmdbMetadataService {
                     val enrichmentForEpisode = key?.let(episodeMap::get)
                     if (enrichmentForEpisode == null) {
                         video
+                    } else if (keepAddon) {
+                        // Only what the record left blank. TMDB orders some shows' seasons
+                        // differently (anime, long-runners), so its episode at the same number
+                        // may not be this one; blanks are the only place that risk is worth it.
+                        video.copy(
+                            title = video.title.ifBlank {
+                                enrichmentForEpisode.title.takeIf { settings.useEpisodes } ?: video.title
+                            },
+                            overview = video.overview?.takeIf(String::isNotBlank)
+                                ?: enrichmentForEpisode.overview.takeIf { settings.useEpisodes },
+                            thumbnail = video.thumbnail?.takeIf(String::isNotBlank)
+                                ?: enrichmentForEpisode.thumbnail.takeIf { settings.useEpisodes },
+                            seasonPoster = video.seasonPoster?.takeIf(String::isNotBlank)
+                                ?: enrichmentForEpisode.seasonPoster.takeIf { settings.useSeasonPosters },
+                            runtime = video.runtime ?: enrichmentForEpisode.runtimeMinutes.takeIf { settings.useEpisodes },
+                        )
                     } else {
                         video.copy(
                             title = if (settings.useEpisodes) {
@@ -1375,6 +1436,7 @@ object TmdbMetadataService {
     private fun mergeCastPreservingBaseOrder(
         base: List<MetaPerson>,
         enrichment: List<MetaPerson>,
+        appendExtras: Boolean = true,
     ): List<MetaPerson> {
         if (enrichment.isEmpty()) return base
         if (base.isEmpty()) return enrichment
@@ -1398,6 +1460,7 @@ object TmdbMetadataService {
                 )
             }
         }
+        if (!appendExtras) return merged
         return merged + enrichment.filter { it.name.normalizedPersonName() !in seen }
     }
 
@@ -2179,6 +2242,31 @@ internal data class TmdbEnrichment(
             trailers.isNotEmpty()
 }
 
+/** Whether this record keeps its own text and episodes under the user's [TmdbShowEnrichment] choice. */
+internal fun TmdbSettings.keepsAddonRecord(meta: MetaDetails): Boolean =
+    showEnrichment == TmdbShowEnrichment.SourceAware && meta.isTvdbOrKitsuShowRecord()
+
+private val ShowTypes = setOf("series", "tv", "show", "tvshow", "anime")
+private val SourceIdPrefixes = listOf("tvdb:", "kitsu:", "mal:", "anilist:", "anidb:")
+private val SourceStillHosts = listOf("thetvdb.com", "kitsu.app", "kitsu.io")
+
+/**
+ * A show or anime whose addon built the record from TheTVDB or Kitsu (AIOMetadata's defaults for
+ * series and anime): an id in one of their namespaces, a MyAnimeList id (anime addons send one,
+ * Cinemeta does not), or episode stills hosted by TheTVDB or Kitsu. Not the TVDB id field alone:
+ * Cinemeta sends `tvdb_id` too, and its records are the ones worth upgrading.
+ */
+internal fun MetaDetails.isTvdbOrKitsuShowRecord(): Boolean {
+    if (type.trim().lowercase() !in ShowTypes) return false
+    val lowerId = id.trim().lowercase()
+    if (SourceIdPrefixes.any(lowerId::startsWith)) return true
+    if (!malId.isNullOrBlank()) return true
+    return videos.any { video ->
+        val still = video.thumbnail?.lowercase() ?: return@any false
+        SourceStillHosts.any(still::contains)
+    }
+}
+
 internal data class TmdbEpisodeEnrichment(
     val title: String?,
     val overview: String?,
@@ -2537,6 +2625,9 @@ private data class TmdbCreditsResponse(
 
 /** Most people a series keeps from aggregate_credits, by episode count; long runs list over a thousand. */
 private const val AGGREGATE_CAST_LIMIT = 60
+
+/** An addon cast list this short is top billing only, not the full cast; see enrich(). */
+private const val SHORT_ADDON_CAST_SIZE = 6
 private const val AGGREGATE_CREW_LIMIT = 60
 
 @Serializable

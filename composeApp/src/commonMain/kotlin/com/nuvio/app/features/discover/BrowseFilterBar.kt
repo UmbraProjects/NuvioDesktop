@@ -1,5 +1,6 @@
 package com.nuvio.app.features.discover
 
+import com.nuvio.app.core.ui.LocalScreenCovered
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -208,7 +209,7 @@ fun BrowseFilterMenu(
                 onPress = { cursor -> setOpenAt(if (openAt == null) cursor else null) },
             )
         }
-        openAt?.let { cursor ->
+        openAt?.takeIf { !LocalScreenCovered.current }?.let { cursor ->
             val density = LocalDensity.current
             val windowHeight = LocalWindowInfo.current.containerSize.height.toFloat()
             val marginPx = with(density) { MenuWindowMargin.toPx() }

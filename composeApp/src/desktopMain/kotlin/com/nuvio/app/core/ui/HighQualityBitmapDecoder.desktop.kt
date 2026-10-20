@@ -151,7 +151,7 @@ internal fun keepsSourceSizeForGpu(srcWidth: Int, srcHeight: Int, targetWidth: I
     srcWidth < targetWidth * 2 && srcHeight < targetHeight * 2 &&
         targetWidth.toLong() * targetHeight >= GpuScaledMinTargetPixels
 
-private const val GpuScaledMinTargetPixels = 2_000_000L
+internal const val GpuScaledMinTargetPixels = 2_000_000L
 
 /**
  * The encoded bytes in one exact-size array. A disk-cache hit is read straight from its file:

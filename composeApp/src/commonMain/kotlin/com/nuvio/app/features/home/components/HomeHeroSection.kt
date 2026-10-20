@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import com.nuvio.app.core.ui.LocalScreenCovered
 import androidx.compose.ui.layout.onSizeChanged
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
@@ -1414,7 +1415,11 @@ private fun DesktopHomeHeroFrame(
     }
     val heroTrailerMuted = heroTrailerAudioMuted
     val heroTrailerVolume by HeroTrailerAudioState.volume.collectAsState()
+    // Covered by a pushed screen (Home stays composed under it): the trailer's heavyweight surface
+    // would paint over that screen, and the gate's reset below only lands a frame later.
+    val heroTrailerCovered = LocalScreenCovered.current
     val heroTrailerMounted = tvHeroActive &&
+        !heroTrailerCovered &&
         heroTrailerSource != null &&
         !heroTrailerFinished
     val heroTrailerVisible = heroTrailerMounted && heroTrailerPlaybackRequested
@@ -3783,7 +3788,7 @@ private fun HeroDiscoveryAwardMedal(
             }
         }
 
-        hoverPosition?.let { position ->
+        hoverPosition?.takeIf { !LocalScreenCovered.current }?.let { position ->
             Popup(
                 popupPositionProvider = remember(position, tooltipOffsetPx) {
                     HeroDiscoveryTooltipPositionProvider(

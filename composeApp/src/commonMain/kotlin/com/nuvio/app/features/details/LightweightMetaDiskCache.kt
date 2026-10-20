@@ -2,18 +2,22 @@ package com.nuvio.app.features.details
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.storage.CoalescingCachePersister
+import com.nuvio.app.core.storage.decodeJsonMap
+import com.nuvio.app.core.storage.encodeJsonMap
 import com.nuvio.app.core.ui.ImageCacheSettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.InputStream
+import java.io.OutputStream
 
+/** Streamed in and out (see encodeJsonMap): the file is ~8 MB on a well-used install. */
 internal expect object LightweightMetaCacheStorage {
-    fun load(): String?
-    fun save(payload: String)
+    fun <T> read(decode: (InputStream) -> T): T?
+    fun write(encode: (OutputStream) -> Unit)
     fun clear()
 }
 
@@ -48,7 +52,9 @@ internal object LightweightMetaDiskCache {
 
     private val persister = CoalescingCachePersister(tag = "lightweightMeta", writeDelayMs = WRITE_DELAY_MS) {
         val snapshot = mutex.withLock { entries?.toMap() } ?: return@CoalescingCachePersister
-        LightweightMetaCacheStorage.save(json.encodeToString(snapshot))
+        LightweightMetaCacheStorage.write { output ->
+            json.encodeJsonMap(output, snapshot, StoredLightweightMeta.serializer()) { it }
+        }
     }
 
     private fun lifetimeMs(): Long {
@@ -102,9 +108,9 @@ internal object LightweightMetaDiskCache {
         val lifetime = lifetimeMs()
         val now = System.currentTimeMillis()
         val loaded = runCatching {
-            LightweightMetaCacheStorage.load()
-                ?.let { json.decodeFromString<Map<String, StoredLightweightMeta>>(it) }
-                .orEmpty()
+            LightweightMetaCacheStorage.read { input ->
+                json.decodeJsonMap(input, StoredLightweightMeta.serializer())
+            }.orEmpty()
         }.onFailure { error ->
             log.w { "Discarding unreadable lightweight meta cache: ${error.message}" }
         }.getOrDefault(emptyMap())

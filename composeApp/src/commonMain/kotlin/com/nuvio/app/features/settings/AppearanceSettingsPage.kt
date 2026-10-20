@@ -408,6 +408,7 @@ internal fun LazyListScope.appearanceSettingsContent(
                     collectionsPortraitPostersEnabled = posterCardStyleUiState.collectionsPortraitPostersEnabled,
                     landscapeTextTitlesEnabled = posterCardStyleUiState.landscapeTextTitlesEnabled,
                     landscapeRatingBadgeScale = posterCardStyleUiState.landscapeRatingBadgeScale,
+                    portraitRatingBadgeScale = posterCardStyleUiState.portraitRatingBadgeScale,
                     posterHighlightMode = posterCardStyleUiState.posterHighlightMode,
                     hideLabelsEnabled = posterCardStyleUiState.hideLabelsEnabled,
                     zoomActionPreviewEnabled = posterCardStyleUiState.zoomActionPreviewEnabled,
@@ -418,6 +419,7 @@ internal fun LazyListScope.appearanceSettingsContent(
                     onCollectionsPortraitPostersChange = PosterCardStyleRepository::setCollectionsPortraitPostersEnabled,
                     onLandscapeTextTitlesChange = PosterCardStyleRepository::setLandscapeTextTitlesEnabled,
                     onLandscapeRatingBadgeScaleChange = PosterCardStyleRepository::setLandscapeRatingBadgeScale,
+                    onPortraitRatingBadgeScaleChange = PosterCardStyleRepository::setPortraitRatingBadgeScale,
                     onHideLabelsChange = PosterCardStyleRepository::setHideLabelsEnabled,
                 )
             }

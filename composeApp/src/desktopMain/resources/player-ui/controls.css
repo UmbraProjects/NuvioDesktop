@@ -6252,3 +6252,8 @@ svg {
 
 .player.pip-active .party-pill,
 .player.locked .party-pill { display: none; }
+
+/* Switched off by the user in Settings > Playback (see applyHiddenHudButtons). */
+.user-hidden {
+  display: none !important;
+}

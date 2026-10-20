@@ -203,8 +203,13 @@ fun <T> NuvioShelfSection(
         // hover cascade loops. For keyboard navigation, scroll if the item is even partially clipped.
         // Item 0 always counts as needing it: after scrolling right and back it can sit partially
         // clipped on the left while still "visible", and the row should rest flush at its start.
-        val needsScroll = target == 0 || isKeyboardNavigation ||
-            rowState.layoutInfo.visibleItemsInfo.none { item -> item.index == target }
+        // A mouse focus only scrolls when the mouse actually moved: returning to Home puts the page
+        // back under a still cursor, Compose reports that as hover, and the row under it slid to
+        // rest flush (2026-10-19, "CW slides a few pixels on leaving").
+        val mouseMoved = !isDesktop || PointerMotionClock.movedWithin(MouseFocusScrollWindowMs)
+        val needsScroll = isKeyboardNavigation || (
+            mouseMoved && (target == 0 || rowState.layoutInfo.visibleItemsInfo.none { item -> item.index == target })
+        )
         if (needsScroll) rowState.scrollShelfItemIntoView(target)
     }
     Column(
@@ -231,7 +236,11 @@ fun <T> NuvioShelfSection(
             modifier = Modifier
                 .alpha(bodyAlpha)
                 .desktopShelfDragScroll(rowState)
-                .desktopShelfEdgeScroll(rowState, isMouseActive = !isKeyboardNavigation),
+                .desktopShelfEdgeScroll(
+                    rowState,
+                    isMouseActive = !isKeyboardNavigation,
+                    covered = LocalScreenCovered.current,
+                ),
             contentPadding = rowContentPadding,
             horizontalArrangement = Arrangement.spacedBy(itemSpacing),
         ) {
@@ -478,8 +487,12 @@ private fun Modifier.desktopShelfDragScroll(
     }
 }
 
-private fun Modifier.desktopShelfEdgeScroll(state: LazyListState, isMouseActive: Boolean): Modifier {
+private fun Modifier.desktopShelfEdgeScroll(state: LazyListState, isMouseActive: Boolean, covered: Boolean): Modifier {
     if (!isDesktop) return this
+    // Restarted (and its scroll stopped) when the screen is covered: Home now stays composed under
+    // Details, and a scroll started by clicking a poster near the row's edge kept running there and
+    // after Back until the mouse moved over the row again (2026-10-19, Next Up).
+    if (covered) return this
     return this.pointerInput(state) {
         // PointerInputScope (Compose 1.7+) no longer extends CoroutineScope, so we
         // need coroutineScope { } to get a scope for launching child coroutines.
@@ -518,9 +531,12 @@ private fun Modifier.desktopShelfEdgeScroll(state: LazyListState, isMouseActive:
                 while (true) {
                     val event = awaitPointerEvent(PointerEventPass.Initial)
                     when (event.type) {
-                        PointerEventType.Exit -> positionChannel.trySend(null)
-                        PointerEventType.Move ->
+                        PointerEventType.Exit, PointerEventType.Press -> positionChannel.trySend(null)
+                        // Only real mouse motion: a move Compose reports because the row scrolled
+                        // or the page came back under a still cursor neither starts nor stops it.
+                        PointerEventType.Move -> if (PointerMotionClock.movedWithin(MouseFocusScrollWindowMs)) {
                             positionChannel.trySend(event.changes.firstOrNull()?.position?.x)
+                        }
                         else -> Unit
                     }
                 }
@@ -1180,3 +1196,17 @@ internal fun Modifier.posterCardClickable(
     }
     return clickable.secondaryClick(handleLongClick)
 }
+
+/**
+ * When the mouse last really moved. Compose also reports hover moves when content moves under a
+ * still cursor (a row scrolling, a page returning); those must not drive anything meant to follow
+ * the user's hand. Stamped by the desktop input listener from the OS's own mouse-move events.
+ */
+object PointerMotionClock {
+    @kotlin.concurrent.Volatile
+    var lastRealMoveAtMs: Long = 0L
+
+    fun movedWithin(windowMs: Long): Boolean = System.currentTimeMillis() - lastRealMoveAtMs <= windowMs
+}
+
+private const val MouseFocusScrollWindowMs = 150L

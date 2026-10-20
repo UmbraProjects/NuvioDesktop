@@ -52,6 +52,8 @@ import com.nuvio.app.features.player.desktop.TorBoxNodeHop
 import com.nuvio.app.features.player.desktop.DESKTOP_PLAYBACK_FALLBACK_USER_AGENT
 import com.nuvio.app.features.player.desktop.desktopAppFullscreenState
 import com.nuvio.app.features.player.desktop.toggleDesktopAppFullscreen
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
@@ -957,7 +959,11 @@ private fun NativePlayerSurface(
                         "sourceSize=${videoState.sourceSize?.let { "${it.width}x${it.height}" } ?: "unknown"}, " +
                         "animeSkipUhd=${settings.desktopAnimeSkipUltraHdEnabled}",
                 )
-                val animeProfile = controller.withVideoProfile {
+                // Off the UI thread: endVideoProfile waits on mpv's VO, which with SVP starting and an
+                // Anime4K chain compiling took 1.08 s, all of it a frozen player (2026-10-19 soak).
+                // The collector still waits, so profiles apply in order and the acknowledgement
+                // below still follows its profile.
+                val animeProfile = withContext(Dispatchers.IO) { controller.withVideoProfile {
                     applyDesktopVideoProfile(
                         controller = controller,
                         hdrMode = settings.desktopHdrMode,
@@ -989,7 +995,7 @@ private fun NativePlayerSurface(
                         customShaderPaths = settings.desktopCustomShaderPaths,
                         customShaderSelectedPath = settings.desktopCustomShaderSelectedPath,
                     )
-                }
+                } }
                 // The outcome, not just the inputs above: whether a chain actually took is the
                 // only thing a bug report about shaders can be checked against, and deriving it
                 // from the inputs by hand is exactly the step that gets it wrong.

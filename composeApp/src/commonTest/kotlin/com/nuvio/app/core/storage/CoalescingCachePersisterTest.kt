@@ -136,6 +136,32 @@ class CoalescingCachePersisterTest {
     }
 
     @Test
+    fun `a scheduled write waits for a quiet moment, flush does not`() = runBlocking {
+        val recorder = Recorder()
+        val quiet = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val previousGate = CachePersistGate.awaitQuietMoment
+        CachePersistGate.awaitQuietMoment = { quiet.await() }
+        try {
+            val persister = CoalescingCachePersister("test", WINDOW_MS) { recorder.record() }
+            persister.schedule()
+            delay(SETTLE_MS)
+            assertEquals(0, recorder.writes, "the user is busy: the write holds")
+            quiet.complete(Unit)
+            delay(SETTLE_MS)
+            assertEquals(1, recorder.writes, "and lands once they pause")
+
+            val busyAgain = kotlinx.coroutines.CompletableDeferred<Unit>()
+            CachePersistGate.awaitQuietMoment = { busyAgain.await() }
+            persister.schedule()
+            delay(SETTLE_MS)
+            persister.flush()
+            assertEquals(2, recorder.writes, "the exit flush never waits")
+        } finally {
+            CachePersistGate.awaitQuietMoment = previousGate
+        }
+    }
+
+    @Test
     fun `schedule never blocks the caller`() = runBlocking {
         val persister = CoalescingCachePersister("test", WINDOW_MS) { delay(SETTLE_MS) }
 

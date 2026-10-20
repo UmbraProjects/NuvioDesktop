@@ -41,6 +41,8 @@ import com.nuvio.app.core.sync.AppForegroundMonitor
 import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
 import com.nuvio.app.core.ui.HoldToSelect
+import com.nuvio.app.core.ui.SwallowedClickRescue
+import com.nuvio.app.core.ui.SwallowedClickRescue.detectClicksSwallowedByScrolling
 import com.nuvio.app.core.ui.DesktopBackRequestSource
 import com.nuvio.app.core.ui.DesktopTrayMenu
 import com.nuvio.app.core.ui.DesktopTrayMenuEntry
@@ -201,7 +203,80 @@ private class MouseFiveShiftEventQueue : EventQueue() {
             }
         }
 
+        if (event is MouseEvent && event.id == MouseEvent.MOUSE_PRESSED && event.button == MouseEvent.BUTTON3) {
+            rightPressWhileMenuOpen = com.nuvio.app.core.ui.ContextMenuReopen.openMenus > 0
+        }
         super.dispatchEvent(event)
+        if (
+            event is MouseEvent &&
+            event.id == MouseEvent.MOUSE_RELEASED &&
+            event.button == MouseEvent.BUTTON1 &&
+            SwallowedClickRescue.takePendingReplay()
+        ) {
+            replaySwallowedClick(event)
+        }
+        if (
+            event is MouseEvent &&
+            event.id == MouseEvent.MOUSE_RELEASED &&
+            event.button == MouseEvent.BUTTON3 &&
+            rightPressWhileMenuOpen
+        ) {
+            rightPressWhileMenuOpen = false
+            replayRightClickAfterMenuClosed(event)
+        }
+    }
+
+    private var rightPressWhileMenuOpen = false
+
+    /**
+     * A right-click made while a right-click menu was open only closed that menu (see
+     * ContextMenuReopen). Sends it again at the same spot once the menu is gone, so the target
+     * under the pointer opens its own menu. A right-click inside the open menu does not close it,
+     * so nothing is re-sent; one landing on nothing re-sends a right-click that does nothing.
+     */
+    private fun replayRightClickAfterMenuClosed(release: MouseEvent) {
+        val component = release.component ?: return
+        javax.swing.Timer(RightClickReopenDelayMs) {
+            if (com.nuvio.app.core.ui.ContextMenuReopen.openMenus > 0) return@Timer
+            val at = System.currentTimeMillis()
+            fun post(id: Int, modifiers: Int, popupTrigger: Boolean) = postEvent(
+                MouseEvent(
+                    component, id, at, modifiers, release.x, release.y,
+                    release.xOnScreen, release.yOnScreen, 1, popupTrigger, MouseEvent.BUTTON3,
+                ),
+            )
+            post(MouseEvent.MOUSE_PRESSED, InputEvent.BUTTON3_DOWN_MASK, false)
+            post(MouseEvent.MOUSE_RELEASED, 0, true)
+            post(MouseEvent.MOUSE_CLICKED, 0, false)
+        }.apply { isRepeats = false }.start()
+    }
+
+    private var lastReplayAtMs = 0L
+
+    /**
+     * Compose saw this click land on a list that was still easing from a wheel notch and nothing
+     * took it (see [SwallowedClickRescue]). Clicks again at the same spot once the list has
+     * stopped, which the press itself did. Posted a frame later so the scroll's cancellation has
+     * run; at most one replay per click, so a replay that is lost too cannot repeat.
+     */
+    private fun replaySwallowedClick(release: MouseEvent) {
+        val now = System.currentTimeMillis()
+        if (now - lastReplayAtMs < SwallowedClickReplayGuardMs) return
+        lastReplayAtMs = now
+        co.touchlab.kermit.Logger.withTag("ClickReplay").i { "replaying a click lost to a scrolling list at ${release.x},${release.y}" }
+        val component = release.component ?: return
+        javax.swing.Timer(SwallowedClickReplayDelayMs) {
+            val at = System.currentTimeMillis()
+            fun post(id: Int, modifiers: Int) = postEvent(
+                MouseEvent(
+                    component, id, at, modifiers, release.x, release.y,
+                    release.xOnScreen, release.yOnScreen, 1, false, MouseEvent.BUTTON1,
+                ),
+            )
+            post(MouseEvent.MOUSE_PRESSED, InputEvent.BUTTON1_DOWN_MASK)
+            post(MouseEvent.MOUSE_RELEASED, 0)
+            post(MouseEvent.MOUSE_CLICKED, 0)
+        }.apply { isRepeats = false }.start()
     }
 
     private fun translatedModifiers(modifiersEx: Int): Int =
@@ -211,6 +286,11 @@ private class MouseFiveShiftEventQueue : EventQueue() {
         pop()
     }
 }
+
+private const val SwallowedClickReplayDelayMs = 32
+private const val SwallowedClickReplayGuardMs = 400L
+// Long enough for the closed menu's popup to leave the composition before the click is re-sent.
+private const val RightClickReopenDelayMs = 48
 
 private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
@@ -873,6 +953,9 @@ fun main(args: Array<String>) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Clicks lost to a list still easing from the wheel are replayed by
+                        // MouseFiveShiftEventQueue; this is where they are recognised.
+                        .detectClicksSwallowedByScrolling()
                         // Bubble-phase handling means focused text fields retain ordinary paste.
                         // Elsewhere, a copied HTTP(S) media URL opens through the same direct-play
                         // path as a dropped local file; App rejects it while playback is active.
@@ -994,6 +1077,7 @@ fun main(args: Array<String>) {
                     com.nuvio.app.core.ui.FrameCadenceTelemetry()
                     com.nuvio.app.core.ui.FrameBudgetTelemetry()
                     com.nuvio.app.core.ui.SteadyFramePacingEffect(window)
+                    com.nuvio.app.core.ui.UiStallProbe()
                     com.nuvio.app.core.ui.DesktopHdrUiCompensationEffect(window)
                 }
             } else {

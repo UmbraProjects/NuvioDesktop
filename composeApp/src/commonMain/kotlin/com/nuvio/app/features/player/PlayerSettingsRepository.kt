@@ -78,6 +78,8 @@ data class PlayerSettingsUiState(
     val desktopSeekHandleEnabled: Boolean = true,
     // The dark top/bottom edge gradients that fade in with the HUD so its controls stay legible.
     val desktopHudVignetteEnabled: Boolean = true,
+    // HUD buttons the user switched off, by their controls.html `data-command`.
+    val desktopHiddenHudButtons: Set<String> = emptySet(),
     val desktopAlwaysShowClockEnabled: Boolean = false,
     // Adds the playing source (release name + provider) as the bottom row of the paused metadata
     // overlay. Off by default: the raw release strings are noisy, and only some viewers want them.
@@ -279,6 +281,7 @@ object PlayerSettingsRepository {
     private var desktopMinimalHudPillsEnabled = false
     private var desktopSeekHandleEnabled = true
     private var desktopHudVignetteEnabled = true
+    private var desktopHiddenHudButtons: Set<String> = emptySet()
     private var desktopAlwaysShowClockEnabled = false
     private var desktopPauseOverlaySourceEnabled = false
     private var desktopPlaybackSpeedFineIncrementsEnabled = false
@@ -424,6 +427,7 @@ object PlayerSettingsRepository {
         desktopMinimalHudPillsEnabled = false
         desktopSeekHandleEnabled = true
         desktopHudVignetteEnabled = true
+        desktopHiddenHudButtons = emptySet()
         desktopAlwaysShowClockEnabled = false
         desktopPauseOverlaySourceEnabled = false
         desktopPlaybackSpeedFineIncrementsEnabled = false
@@ -565,6 +569,12 @@ object PlayerSettingsRepository {
         desktopMinimalHudPillsEnabled = PlayerSettingsStorage.loadDesktopMinimalHudPillsEnabled() ?: false
         desktopSeekHandleEnabled = PlayerSettingsStorage.loadDesktopSeekHandleEnabled() ?: true
         desktopHudVignetteEnabled = PlayerSettingsStorage.loadDesktopHudVignetteEnabled() ?: true
+        desktopHiddenHudButtons = PlayerSettingsStorage.loadDesktopHiddenHudButtons()
+            ?.split(',')
+            ?.map(String::trim)
+            ?.filter(String::isNotEmpty)
+            ?.toSet()
+            .orEmpty()
         // Four stored flags, one layout: official beats ultra beats minimal beats legacy if several
         // were ever set.
         if (desktopOfficialHudEnabled) desktopUltraHudEnabled = false
@@ -906,6 +916,15 @@ object PlayerSettingsRepository {
         desktopHudVignetteEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopHudVignetteEnabled(enabled)
+    }
+
+    fun setDesktopHudButtonHidden(command: String, hidden: Boolean) {
+        ensureLoaded()
+        val next = if (hidden) desktopHiddenHudButtons + command else desktopHiddenHudButtons - command
+        if (next == desktopHiddenHudButtons) return
+        desktopHiddenHudButtons = next
+        publish()
+        PlayerSettingsStorage.saveDesktopHiddenHudButtons(next.sorted().joinToString(","))
     }
 
     fun setDesktopHudLayout(layout: DesktopHudLayout) {
@@ -1716,6 +1735,7 @@ object PlayerSettingsRepository {
             desktopMinimalHudPillsEnabled = desktopMinimalHudPillsEnabled,
             desktopSeekHandleEnabled = desktopSeekHandleEnabled,
             desktopHudVignetteEnabled = desktopHudVignetteEnabled,
+            desktopHiddenHudButtons = desktopHiddenHudButtons,
             desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
             desktopPauseOverlaySourceEnabled = desktopPauseOverlaySourceEnabled,
             desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,

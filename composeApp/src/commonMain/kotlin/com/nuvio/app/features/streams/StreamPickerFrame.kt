@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -293,13 +294,22 @@ private fun Modifier.streamPickerGlassSurface(hazeState: HazeState?): Modifier =
     .swallowPointerInput()
 
 private fun Modifier.swallowPointerInput(): Modifier = this
-    // Swallow whatever the panel's own rows leave unconsumed: in the docked case it would
-    // otherwise click through to the details page underneath, and in the modal case reach the
-    // scrim and close the picker.
+    // Swallow what the panel's own rows leave unconsumed: in the docked case it would otherwise
+    // click through to the details page underneath, and in the modal case reach the scrim and close
+    // the picker. Presses, releases and wheel only, never moves: a parent consuming a move cancels
+    // the click of whatever is pressed below it, so any jitter during a click on a chip or a stream
+    // card did nothing (2026-10-19 (ChipClick) trace: every failed click moved 2-18 px, every still
+    // one worked). Nothing outside can click or scroll without a press or a wheel event anyway.
     .pointerInput(Unit) {
         awaitPointerEventScope {
             while (true) {
-                awaitPointerEvent().changes.forEach { it.consume() }
+                val event = awaitPointerEvent()
+                if (event.type == PointerEventType.Press ||
+                    event.type == PointerEventType.Release ||
+                    event.type == PointerEventType.Scroll
+                ) {
+                    event.changes.forEach { it.consume() }
+                }
             }
         }
     }

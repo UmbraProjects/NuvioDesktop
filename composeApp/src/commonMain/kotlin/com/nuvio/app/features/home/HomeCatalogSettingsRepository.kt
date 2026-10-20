@@ -714,6 +714,8 @@ object HomeCatalogSettingsRepository {
         definitions = emptyList()
         collectionDefinitions = emptyList()
         lastSyncedCatalogKeys = null
+        lastCatalogSync = null
+        lastCollectionSync = null
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -722,6 +724,8 @@ object HomeCatalogSettingsRepository {
         definitions = emptyList()
         collectionDefinitions = emptyList()
         lastSyncedCatalogKeys = null
+        lastCatalogSync = null
+        lastCollectionSync = null
         preferences.clear()
         heroEnabled = true
         heroInfoLines = 2
@@ -777,11 +781,26 @@ object HomeCatalogSettingsRepository {
     // set actually changed, not on every home (re)entry.
     private var lastSyncedCatalogKeys: List<String>? = null
 
+    // Inputs of the last sync and the state it published. Home runs both syncs every time it is
+    // built (tab switches, back from the player, startup); when nothing changed and nobody has
+    // published since, normalising, publishing and persisting again would only repeat the last pass.
+    private var lastCatalogSync: Triple<List<HomeCatalogDefinition>, List<CollectionCatalogDefinition>, HomeCatalogSettingsUiState>? = null
+    private var lastCollectionSync: Pair<List<CollectionCatalogDefinition>, HomeCatalogSettingsUiState>? = null
+
     fun syncCatalogs(addons: List<ManagedAddon>) {
         PerfTelemetry.count("HomeCatalogSettingsRepository.syncCatalogs")
         ensureLoaded()
         definitions = buildHomeCatalogDefinitions(addons)
         collectionDefinitions = buildCollectionDefinitions(CollectionRepository.collections.value)
+        lastCatalogSync?.let { (lastDefinitions, lastCollections, publishedState) ->
+            if (lastDefinitions === definitions && lastCollections === collectionDefinitions &&
+                publishedState === _uiState.value
+            ) {
+                // Still lets HomeRepository retry rows that failed; it returns early otherwise.
+                HomeRepository.refresh(addons.enabledAddons(), force = false)
+                return
+            }
+        }
         if (definitions.isEmpty() && collectionDefinitions.isEmpty()) {
             publish()
             return
@@ -798,6 +817,7 @@ object HomeCatalogSettingsRepository {
             collectionDefinitions.map(CollectionCatalogDefinition::key)
         val catalogSetChanged = lastSyncedCatalogKeys != catalogKeys
         lastSyncedCatalogKeys = catalogKeys
+        lastCatalogSync = Triple(definitions, collectionDefinitions, _uiState.value)
         HomeRepository.refresh(addons.enabledAddons(), force = catalogSetChanged)
     }
 
@@ -805,10 +825,14 @@ object HomeCatalogSettingsRepository {
         PerfTelemetry.count("HomeCatalogSettingsRepository.syncCollections")
         ensureLoaded()
         collectionDefinitions = buildCollectionDefinitions(collections)
+        lastCollectionSync?.let { (lastCollections, publishedState) ->
+            if (lastCollections === collectionDefinitions && publishedState === _uiState.value) return
+        }
         normalizePreferences()
         enforcePinnedCollectionsAtTop()
         publish()
         persist()
+        lastCollectionSync = collectionDefinitions to _uiState.value
         HomeRepository.applyCurrentSettings()
     }
 
@@ -2244,7 +2268,21 @@ internal data class CollectionCatalogDefinition(
     val hasHeroBackdrop: Boolean = false,
 )
 
-internal fun buildCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> =
+// Memoized like buildHomeCatalogDefinitions: each subtitle is a runBlocking resource lookup on the
+// UI thread, and Home entry rebuilds this twice. CollectionRepository replaces the list on change.
+private var collectionDefinitionsMemo: Triple<List<Collection>, String, List<CollectionCatalogDefinition>>? = null
+
+internal fun buildCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> {
+    val locale = androidx.compose.ui.text.intl.Locale.current.toLanguageTag()
+    collectionDefinitionsMemo?.let { (input, memoLocale, result) ->
+        if (memoLocale == locale && (input === collections || input == collections)) return result
+    }
+    return computeCollectionDefinitions(collections).also {
+        collectionDefinitionsMemo = Triple(collections, locale, it)
+    }
+}
+
+private fun computeCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> =
     collections.filter { it.folders.isNotEmpty() }.map { collection ->
         CollectionCatalogDefinition(
             key = "collection_${collection.id}",

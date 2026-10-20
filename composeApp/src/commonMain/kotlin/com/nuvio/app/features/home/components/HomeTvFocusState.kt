@@ -68,13 +68,29 @@ internal fun homeTvLazyScrollTarget(
  * (continue watching, then catalog/collection shelves, in emission order).
  * [itemIndex] is the focused position within the focused row's shelf.
  */
+private val focusTraceLog = co.touchlab.kermit.Logger.withTag("HomeTvFocus")
+private var nextFocusStateId = 1
+
 internal class HomeTvFocusState(
     private val onPositionChanged: ((sectionIndex: Int, itemIndex: Int) -> Unit)? = null,
 ) {
+    // Perf logging only: which code moves TV focus (2026-10-19: after Details, focus jumped back to
+    // the card just left and the next click opened it again; nothing logged who moved it).
+    private val instance = nextFocusStateId++
+    private fun trace(what: String) {
+        if (!com.nuvio.app.core.perf.PerfTelemetry.enabled) return
+        val callers = Throwable().stackTrace.asSequence()
+            .filter { it.className.startsWith("com.nuvio.") && !it.className.endsWith("HomeTvFocusState") }
+            .take(4)
+            .joinToString(" < ") { it.className.substringAfterLast('.') + "." + it.methodName + ":" + it.lineNumber }
+        focusTraceLog.d { "#$instance $what | $callers" }
+    }
+
     private var currentSectionIndex by mutableStateOf(0)
     var sectionIndex: Int
         get() = currentSectionIndex
         set(value) {
+            if (value != currentSectionIndex) trace("section ${currentSectionIndex} -> $value (item ${itemIndices[value] ?: 0})")
             currentSectionIndex = value
             onPositionChanged?.invoke(value, itemIndices[value] ?: 0)
         }
@@ -85,6 +101,7 @@ internal class HomeTvFocusState(
     var itemIndex: Int
         get() = itemIndices[sectionIndex] ?: 0
         set(value) {
+            if ((itemIndices[sectionIndex] ?: 0) != value) trace("item ${itemIndices[sectionIndex] ?: 0} -> $value in section $sectionIndex")
             itemIndices[sectionIndex] = value
             onPositionChanged?.invoke(sectionIndex, value)
         }
@@ -98,6 +115,7 @@ internal class HomeTvFocusState(
      * section focus (e.g. the hero on a fresh launch) untouched.
      */
     fun restoreItemIndex(section: Int, index: Int) {
+        trace("restore item $index in section $section")
         itemIndices[section] = index
     }
 

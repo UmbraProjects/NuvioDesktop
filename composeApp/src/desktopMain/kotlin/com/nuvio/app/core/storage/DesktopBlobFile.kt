@@ -1,6 +1,9 @@
 package com.nuvio.app.core.storage
 
 import co.touchlab.kermit.Logger
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -35,16 +38,41 @@ internal class DesktopBlobFile(
         migrateLegacy()
     }
 
+    /**
+     * Hands [decode] the file's bytes without reading them into a String first; null when there is
+     * no file (after the legacy move, whose one-time value is decoded from memory).
+     */
+    fun <T> readStream(decode: (InputStream) -> T): T? = synchronized(lock) {
+        val current = file
+        if (Files.exists(current)) {
+            return Files.newInputStream(current).buffered().use(decode)
+        }
+        migrateLegacy()?.let { value -> ByteArrayInputStream(value.toByteArray(Charsets.UTF_8)).use(decode) }
+    }
+
     /** Null deletes the file. */
-    fun write(text: String?): Unit = synchronized(lock) {
-        val target = file
+    fun write(text: String?) {
         if (text == null) {
-            Files.deleteIfExists(target)
+            delete()
             return
         }
+        writeStream { output -> output.write(text.toByteArray(Charsets.UTF_8)) }
+    }
+
+    /**
+     * Lets [encode] write the file straight to disk, so a large cache never exists as one String.
+     * Same atomic replace as [write]: a failed encode leaves the old file and no `.tmp` behind.
+     */
+    fun writeStream(encode: (OutputStream) -> Unit): Unit = synchronized(lock) {
+        val target = file
         Files.createDirectories(target.parent)
         val temp = target.resolveSibling("${target.fileName}.tmp")
-        Files.writeString(temp, text)
+        try {
+            Files.newOutputStream(temp).buffered().use(encode)
+        } catch (error: Throwable) {
+            Files.deleteIfExists(temp)
+            throw error
+        }
         try {
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } catch (_: AtomicMoveNotSupportedException) {

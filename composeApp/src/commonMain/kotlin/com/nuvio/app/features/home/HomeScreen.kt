@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.ui.LocalScreenCovered
 import coil3.compose.LocalPlatformContext
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
@@ -166,6 +167,7 @@ import com.nuvio.app.features.home.components.HomeTvKey
 import com.nuvio.app.features.home.components.HomeTvKeyboardBridge
 import com.nuvio.app.features.home.components.HomeSkeletonHero
 import com.nuvio.app.features.home.components.HomeSkeletonRow
+import com.nuvio.app.features.tmdb.TmdbBackgroundLane
 import com.nuvio.app.features.tmdb.HeroImageSource
 import com.nuvio.app.features.tmdb.TmdbHeroImageService
 import com.nuvio.app.features.tmdb.TmdbSettings
@@ -245,6 +247,7 @@ import com.nuvio.app.features.home.components.rememberContinueWatchingLayout
 import kotlinx.coroutines.CancellationException
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.roundToInt
 
 /**
@@ -277,6 +280,60 @@ private object HomeScrollMemory {
      * this way, plus the native pixels of every poster those painters held.
      */
     val rowPositions = mutableMapOf<String, Pair<Int, Int>>()
+}
+
+/**
+ * Continue Watching / Next Up state that has to outlive one HomeScreen.
+ *
+ * Opening details disposes HomeScreen (the tabs route leaves the NavHost composition), and this
+ * state lived in its `remember`s. Every return therefore started from nothing: no seeds (Next Up was
+ * cleared), the disk snapshot shown as a stand-in, then the seed pass and the live resolution
+ * replacing it ~100+ ms later in a different order and set. The shelf re-keys on order, so the Continue
+ * Watching row visibly jumped every time the user came back (2026-10-19). The artwork-refresh marker
+ * also restarted at -1, which forced uncached meta refetches for stale-artwork cards on every return.
+ *
+ * Held here for the session (per profile), the first frame after a return shows exactly the row the
+ * user left, and the seed pass and resolution only change it when something actually changed — the
+ * same as if HomeScreen had stayed composed.
+ */
+private object HomeContinueWatchingMemory {
+    private var profileId: Int? = null
+    var nextUpSeeds: List<CompletedSeriesCandidate>? = null
+        private set
+    var nextUpItemsBySeries: Map<String, Pair<Long, ContinueWatchingItem>> = emptyMap()
+        private set
+    var processedNextUpContentIds: Set<String> = emptySet()
+        private set
+    var appliedArtworkRefreshVersion: Int = -1
+        private set
+
+    /** This profile's memory; a different profile starts clean. */
+    fun forProfile(id: Int): HomeContinueWatchingMemory {
+        if (profileId != id) {
+            profileId = id
+            nextUpSeeds = null
+            nextUpItemsBySeries = emptyMap()
+            processedNextUpContentIds = emptySet()
+            appliedArtworkRefreshVersion = -1
+        }
+        return this
+    }
+
+    fun storeSeeds(id: Int, seeds: List<CompletedSeriesCandidate>) {
+        forProfile(id).nextUpSeeds = seeds
+    }
+
+    fun storeResolution(
+        id: Int,
+        items: Map<String, Pair<Long, ContinueWatchingItem>>,
+        processed: Set<String>,
+        appliedArtworkVersion: Int,
+    ) {
+        forProfile(id)
+        nextUpItemsBySeries = items
+        processedNextUpContentIds = processed
+        appliedArtworkRefreshVersion = appliedArtworkVersion
+    }
 }
 
 /** A row's [LazyListState], starting where [HomeScrollMemory] last saw it and saving on dispose. */
@@ -325,6 +382,8 @@ private object DiscoverScrollMemory {
 
 
 @OptIn(ExperimentalComposeUiApi::class)
+private val homePosterClickLog = co.touchlab.kermit.Logger.withTag("HomePosterClick")
+
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -497,7 +556,7 @@ fun HomeScreen(
     }
     val libraryFiltersActive = libraryDisplaySettings.filters.hasFilters ||
         libraryDisplaySettings.filters.watch != LibraryWatchFilter.All
-    val posterClickHandler: ((MetaPreview) -> Unit)? = if (contentMode is HomeContentMode.Library) {
+    val posterClickHandler: ((MetaPreview) -> Unit)? = (if (contentMode is HomeContentMode.Library) {
         { preview ->
             if (preview.preferLocalStreams) {
                 onLocalLibraryPosterClick?.invoke(preview) ?: onPosterClick?.invoke(preview)
@@ -507,6 +566,15 @@ fun HomeScreen(
         }
     } else {
         onPosterClick
+    })?.let { open ->
+        // Perf logging only: what a poster click asked for, against the TV focus it found (see
+        // HomeTvFocusState's trace).
+        { preview: MetaPreview ->
+            if (com.nuvio.app.core.perf.PerfTelemetry.enabled) {
+                homePosterClickLog.d { "open ${preview.type}:${preview.id} (${preview.name})" }
+            }
+            open(preview)
+        }
     }
 
     val platformContext = LocalPlatformContext.current
@@ -1274,8 +1342,11 @@ fun HomeScreen(
     // the stall samples. Null until the first pass lands, so the launch overlay can wait for it
     // (see hasLocalContinueWatchingRow) instead of Next Up popping into a row already on screen;
     // afterwards a rerun keeps showing the previous seeds until the new ones are ready.
+    // Read directly: the collected profile state is declared further down. Seeds from this profile's
+    // last pass (see HomeContinueWatchingMemory), so a return from details starts where it left off.
+    val seedMemoryProfileId = ProfileRepository.state.value.activeProfile?.profileIndex ?: 1
     val nextUpSeedCandidatesOrNull by produceState<List<CompletedSeriesCandidate>?>(
-        null,
+        HomeContinueWatchingMemory.forProfile(seedMemoryProfileId).nextUpSeeds,
         watchProgressUiState.entries,
         watchedUiState.items,
         watchedUiState.sourceHistoryKeys,
@@ -1333,7 +1404,7 @@ fun HomeScreen(
                 preferFurthestEpisode = fromFurthestEpisode,
                 nowEpochMs = WatchProgressClock.nowEpochMs(),
             )
-        }
+        }.also { seeds -> HomeContinueWatchingMemory.storeSeeds(seedMemoryProfileId, seeds) }
     }
     val allNextUpSeedCandidates = nextUpSeedCandidatesOrNull.orEmpty()
     val nextUpSeedsReady = nextUpSeedCandidatesOrNull != null
@@ -1464,14 +1535,28 @@ fun HomeScreen(
     val cwArtworkRefreshVersion by ContinueWatchingEnrichmentCache.artworkRefreshRequests
         .collectAsStateWithLifecycle()
 
-    var nextUpItemsBySeries by remember(activeProfileId) { mutableStateOf<Map<String, Pair<Long, ContinueWatchingItem>>>(emptyMap()) }
-    var processedNextUpContentIds by remember(activeProfileId) { mutableStateOf<Set<String>>(emptySet()) }
+    var nextUpItemsBySeries by remember(activeProfileId) {
+        mutableStateOf(HomeContinueWatchingMemory.forProfile(activeProfileId).nextUpItemsBySeries)
+    }
+    var processedNextUpContentIds by remember(activeProfileId) {
+        mutableStateOf(HomeContinueWatchingMemory.forProfile(activeProfileId).processedNextUpContentIds)
+    }
     // Lets the resolution effect tell a manual-resync run apart from the many other reasons it
     // re-runs, so only the resync pays for a meta refetch.
     // -1 makes the first settled Home pass a real artwork refresh. The persisted CW snapshot is
     // specifically what survives an app update/restart, so treating launch as already applied
     // leaves placeholder episode art untouched until the user happens to finish another episode.
-    var appliedArtworkRefreshVersion by remember(activeProfileId) { mutableStateOf(-1) }
+    var appliedArtworkRefreshVersion by remember(activeProfileId) {
+        mutableStateOf(HomeContinueWatchingMemory.forProfile(activeProfileId).appliedArtworkRefreshVersion)
+    }
+    // Kept for the next HomeScreen (see HomeContinueWatchingMemory); the effect below and the
+    // resolution pass write these from several places, so watch the state rather than each write.
+    LaunchedEffect(activeProfileId) {
+        snapshotFlow { Triple(nextUpItemsBySeries, processedNextUpContentIds, appliedArtworkRefreshVersion) }
+            .collect { (items, processed, applied) ->
+                HomeContinueWatchingMemory.storeResolution(activeProfileId, items, processed, applied)
+            }
+    }
 
     LaunchedEffect(activeProfileId, cwCacheClearVersion) {
         com.nuvio.app.features.watchprogress.NextUpDiagnostics.reset()
@@ -1727,7 +1812,7 @@ fun HomeScreen(
         homeSettingsUiState.randomPlayIncludeCollections,
     ) {
         if (homeSettingsUiState.randomPlayEnabled && homeSettingsUiState.randomPlayIncludeCollections) {
-            RandomPlayCollectionPool.ensureLoaded()
+            RandomPlayCollectionPool.ensureStarted()
         }
     }
 
@@ -2257,8 +2342,46 @@ fun HomeScreen(
         HomeHeroTrailerGate.notifyFocusChanged()
     }
     val tvFocusRequester = remember { FocusRequester() }
+    // Home stays composed while a pushed screen covers it (KeptAliveLayer). Its focus requests -
+    // a trailer surface going away, a mode change made from a settings route - must then not
+    // pull focus off the screen on top.
+    val homeScreenCovered by rememberUpdatedState(LocalScreenCovered.current)
+    fun requestHomeFocus() {
+        if (homeScreenCovered) return
+        runCatching { tvFocusRequester.requestFocus() }
+    }
     var homeRootHasFocus by remember { mutableStateOf(false) }
     var lastStateDrivenSearchQuery by remember { mutableStateOf<String?>(null) }
+    // Uncovered without being rebuilt (back from the Settings tab, where Home now stays composed):
+    // a rebuilt Home took focus in its first-composition effect; a kept one has to ask here, or
+    // the keyboard has nothing focused. Search hands focus to its text field instead.
+    val homeCoveredNow = LocalScreenCovered.current
+    var homeWasCovered by remember { mutableStateOf(homeCoveredNow) }
+    LaunchedEffect(homeCoveredNow) {
+        val uncovered = homeWasCovered && !homeCoveredNow
+        homeWasCovered = homeCoveredNow
+        if (!uncovered || contentMode is HomeContentMode.Search) return@LaunchedEffect
+        repeat(12) { attempt ->
+            delay(if (attempt == 0) 50 else 48)
+            requestHomeFocus()
+            if (homeRootHasFocus) return@LaunchedEffect
+        }
+    }
+    // A filter-bar menu (Discover's catalog / filters, Library's) is a focusable popup: it takes the
+    // keyboard while open and hands it to nobody when it closes. Opened and picked with the mouse,
+    // no press ever lands on this root to reclaim it (the click was inside the popup), so the arrow
+    // keys went nowhere until the next click on the page. Take it back once the menu is gone.
+    var browseFilterMenuWasOpen by remember { mutableStateOf(browseFilterMenuOpen) }
+    LaunchedEffect(browseFilterMenuOpen) {
+        val closed = browseFilterMenuWasOpen && !browseFilterMenuOpen
+        browseFilterMenuWasOpen = browseFilterMenuOpen
+        if (!closed || contentMode is HomeContentMode.Search) return@LaunchedEffect
+        repeat(12) { attempt ->
+            delay(if (attempt == 0) 50 else 48)
+            requestHomeFocus()
+            if (homeRootHasFocus) return@LaunchedEffect
+        }
+    }
     // Move content-area focus when the user presses Down from the search bar.
     LaunchedEffect(navigateToContentCount) {
         if (navigateToContentCount > 0) {
@@ -2266,7 +2389,7 @@ fun HomeScreen(
             // short bounded window instead of relying on a request that may land too early.
             repeat(12) { attempt ->
                 delay(if (attempt == 0) 50 else 48)
-                runCatching { tvFocusRequester.requestFocus() }
+                requestHomeFocus()
                 if (homeRootHasFocus) return@LaunchedEffect
             }
         }
@@ -2287,7 +2410,7 @@ fun HomeScreen(
         if (trimmedQ != searchUiState.query) {
             tvFocus.sectionIndex = 0
             tvFocus.itemIndex = 0
-            try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+            requestHomeFocus()
         }
         SearchRepository.search(trimmedQ, currentEnabledAddons)
     }
@@ -2301,7 +2424,7 @@ fun HomeScreen(
                     if (trimmedQ != searchUiState.query) {
                         tvFocus.sectionIndex = 0
                         tvFocus.itemIndex = 0
-                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                        requestHomeFocus()
                     }
                     SearchRepository.search(trimmedQ, currentEnabledAddons)
                 } else {
@@ -2881,7 +3004,7 @@ fun HomeScreen(
         // Normal + Library: content area must hold focus for hotkeys to work.
         if (contentMode is HomeContentMode.Search) return@LaunchedEffect
         delay(50)
-        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+        requestHomeFocus()
     }
     val immersiveRows = remember(
         contentMode,
@@ -3015,7 +3138,7 @@ fun HomeScreen(
         isDesktop -> tvRowIndexForSection(tvFocus.sectionIndex)
         else -> -1
     }
-    val tvFocusedHeroItemRaw = if (tvFocusedRowIndex >= 0) {
+    val tvFocusedHeroItemLive = if (tvFocusedRowIndex >= 0) {
         // Normalised HERE, at the source, so the first backdrop drawn is already the one enrichment
         // will settle on. The raw catalog item carries the metahub "medium" variant and
         // `bestBackdrop` upgrades it to "large" - but only during enrichment, so the hero drew the
@@ -3026,6 +3149,18 @@ fun HomeScreen(
     } else {
         null
     }
+    // What the hero, its trailer and its enrichment follow: the focused item, held while focus is
+    // moving fast (see rememberSettledHeroFocus). The row and its focus ring keep tracking the live
+    // focus. Everything below that says tvFocusedHeroItemRaw means this settled item.
+    val settledHeroFocus = rememberSettledHeroFocus(
+        HeroFocusTarget(
+            sectionIndex = tvFocus.sectionIndex,
+            itemIndex = tvFocus.itemIndex,
+            rowIndex = tvFocusedRowIndex,
+            item = tvFocusedHeroItemLive,
+        ),
+    )
+    val tvFocusedHeroItemRaw = settledHeroFocus.item
     SideEffect {
         focusedTrailerTarget.value = tvFocusedHeroItemRaw
     }
@@ -3382,8 +3517,9 @@ fun HomeScreen(
     // keying on the object itself would restart the effect on its own result.
     val focusedHeroEnrichmentKey = tvFocusedHeroItemRaw?.let { canonicalHeroKey(it.type, it.id) }
     LaunchedEffect(
-        tvFocus.sectionIndex,
-        tvFocus.itemIndex,
+        // Settled, not live: every restart cancels the lookups the previous run started.
+        settledHeroFocus.sectionIndex,
+        settledHeroFocus.itemIndex,
         focusedHeroEnrichmentKey,
         // Re-run once the addon list settles. Now that the focused enrichment fires as soon as the
         // hero has an item, it can land before the addons are loaded — the lookup then has no meta
@@ -3408,23 +3544,26 @@ fun HomeScreen(
             publishHeroEnrichment(heroEnrichmentMap, enriched)
         }
 
-        fun enrich(raw: MetaPreview) = launch {
-            val mapKey = canonicalHeroKey(raw.type, raw.id)
-            // A cached result only counts as final if it actually resolved the text. The pass
-            // publishes whatever it got even when a provider added nothing, so that anyone waiting
-            // on this key stops waiting — but treating that as done cached the failure for the rest
-            // of the session, and the row kept a bare title no matter how often it was focused.
-            // Retrying costs one lookup per focus for a title that genuinely has no metadata, which
-            // is the cheaper side of the trade.
-            val cached = heroEnrichmentMap[mapKey]
-            if (cached != null && !cached.needsHeroTextEnrichment()) return@launch
-            pendingHeroEnrichments[mapKey] = Unit
-            try {
-                fetchEnrichment(raw)
-            } finally {
-                pendingHeroEnrichments.remove(mapKey)
+        // Row warming is read-ahead, so it goes in TMDB's background lane; the focused title keeps
+        // the interactive lane to itself rather than queueing behind its neighbours.
+        fun enrich(raw: MetaPreview, readAhead: Boolean = false) =
+            launch(if (readAhead) TmdbBackgroundLane else EmptyCoroutineContext) {
+                val mapKey = canonicalHeroKey(raw.type, raw.id)
+                // A cached result only counts as final if it actually resolved the text. The pass
+                // publishes whatever it got even when a provider added nothing, so that anyone waiting
+                // on this key stops waiting — but treating that as done cached the failure for the rest
+                // of the session, and the row kept a bare title no matter how often it was focused.
+                // Retrying costs one lookup per focus for a title that genuinely has no metadata, which
+                // is the cheaper side of the trade.
+                val cached = heroEnrichmentMap[mapKey]
+                if (cached != null && !cached.needsHeroTextEnrichment()) return@launch
+                pendingHeroEnrichments[mapKey] = Unit
+                try {
+                    fetchEnrichment(raw)
+                } finally {
+                    pendingHeroEnrichments.remove(mapKey)
+                }
             }
-        }
 
         // Current item — immediately, highest priority.
         tvFocusedHeroItemRaw?.let { enrich(it) }
@@ -3440,16 +3579,16 @@ fun HomeScreen(
 
         // Warm the rendered row without waiting for hover. tvFocus.sectionIndex includes the hero
         // slot when it is focusable, whereas tvFocusedRowIndex is normalized to tvRows.
-        tvRows.getOrNull(tvFocusedRowIndex)?.metaItems?.let { items ->
-            items.drop(tvFocus.itemIndex + 1)
+        tvRows.getOrNull(settledHeroFocus.rowIndex)?.metaItems?.let { items ->
+            items.drop(settledHeroFocus.itemIndex + 1)
                 .take(rowPrefetchLimit)
-                .forEach { enrich(it) }
+                .forEach { enrich(it, readAhead = true) }
         }
 
         // Entire next row — ready before the user even gets there.
-        tvRows.getOrNull(tvFocusedRowIndex + 1)?.metaItems
+        tvRows.getOrNull(settledHeroFocus.rowIndex + 1)?.metaItems
             ?.take(rowPrefetchLimit)
-            ?.forEach { enrich(it) }
+            ?.forEach { enrich(it, readAhead = true) }
     }
     val immersiveMetadataPrefetchItems = if (tvModeEnabled) {
         // Home and Library warm ahead of the focused row: both are stable, user-owned catalogs whose
@@ -3480,7 +3619,7 @@ fun HomeScreen(
             .onFocusChanged { homeRootHasFocus = it.hasFocus }
             .focusable()
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
-                try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                requestHomeFocus()
             }
             .onPreviewKeyEvent { event ->
                 when {
@@ -3883,7 +4022,7 @@ fun HomeScreen(
                         }
                     },
                     onHeroTrailerSurfaceDisposed = {
-                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                        requestHomeFocus()
                         // Re-arm the "ignore next mouse move" guard right here, at the moment
                         // the native surface actually goes away and its synthetic re-entry
                         // event is imminent. The guard set at key-press time (see
@@ -4734,7 +4873,7 @@ fun HomeScreen(
             heroItem = basicHeroActiveItem,
             heroOnScreen = basicHeroOnScreen,
             onDismissed = {
-                try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                requestHomeFocus()
             },
             modifier = Modifier.zIndex(200f),
         )
@@ -5155,6 +5294,7 @@ private suspend fun resolveHomeNextUpCandidate(
             // Set only for a manual resync retrying a card whose episode still had no thumbnail;
             // the LRU would otherwise hand back the same artwork-less video list all session.
             forceRefresh = forceMetaRefresh,
+            background = true,
         )
     } catch (error: Throwable) {
         if (error is CancellationException) throw error

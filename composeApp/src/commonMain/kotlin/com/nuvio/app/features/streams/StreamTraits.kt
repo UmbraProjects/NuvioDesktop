@@ -135,7 +135,20 @@ object StreamTraitDetector {
 
     private val traitLog = Logger.withTag("StreamTraits")
 
+    // Streams are re-scored every time an addon answers: the list sort, the source merge, the HTPC
+    // tab and every card's badge each ran this text scan again for every stream on screen, on the UI
+    // thread (2026-10-19 soak: an 841 ms stall and several of ~220 ms around the source picker). The
+    // result depends on the stream alone, so it is kept for as long as the stream object lives.
+    private val detected = java.util.WeakHashMap<StreamItem, StreamTraits>()
+
     fun detect(stream: StreamItem): StreamTraits {
+        synchronized(detected) { detected[stream] }?.let { return it }
+        val traits = detectUncached(stream)
+        synchronized(detected) { detected[stream] = traits }
+        return traits
+    }
+
+    private fun detectUncached(stream: StreamItem): StreamTraits {
         val parsed = stream.clientResolve?.stream?.raw?.parsed
         val searchText = streamSearchText(stream)
         val group = parsed?.group?.takeIf { it.isNotBlank() } ?: releaseGroupFromText(searchText)

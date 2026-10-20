@@ -9,6 +9,17 @@ enum class HeroImageSource {
     TmdbMoviesTvdbShows,
 }
 
+/** How TMDB's text and episode data treat a show or anime the addon already describes. */
+enum class TmdbShowEnrichment {
+    /** TMDB's title, synopsis, details, credits and episodes replace the addon's for every title. */
+    Always,
+    /**
+     * A show or anime whose addon record comes from TheTVDB or Kitsu keeps it; TMDB only fills what
+     * the record leaves blank. Cinemeta / IMDb-style records and films are upgraded as before.
+     */
+    SourceAware,
+}
+
 data class TmdbSettings(
     val enabled: Boolean = false,
     val apiKey: String = "",
@@ -28,6 +39,7 @@ data class TmdbSettings(
     // metadata; when set, those rows are looked up on TMDB by parsed name + year. Needs an API key.
     val resolveFilenameCatalogs: Boolean = true,
     val heroImageSource: HeroImageSource = HeroImageSource.Addon,
+    val showEnrichment: TmdbShowEnrichment = TmdbShowEnrichment.SourceAware,
 ) {
     val hasApiKey: Boolean
         get() = apiKey.isNotBlank()

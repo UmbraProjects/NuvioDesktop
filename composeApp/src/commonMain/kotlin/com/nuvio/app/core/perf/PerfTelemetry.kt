@@ -57,6 +57,10 @@ object PerfTelemetry {
 
     private val inFlight = AtomicInteger(0)
 
+    /** The screen the current telemetry window belongs to (lags a screen change by a hop). */
+    val currentScreen: String
+        get() = synchronized(lock) { screen }
+
     fun start(source: String) {
         synchronized(lock) {
             if (enabled) return
@@ -96,6 +100,7 @@ object PerfTelemetry {
             previous = screen
             spentMs = System.currentTimeMillis() - windowStartedAtMs
         }
+        UiStallSampler.arm("screen $name")
         // Off the caller's thread: this is reached from composition.
         executor?.execute {
             flush()

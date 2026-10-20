@@ -63,6 +63,8 @@ import com.nuvio.app.features.player.primarySubtitleTargetsForSettings
 import com.nuvio.app.features.player.preferredMpvMediaTitle
 import com.nuvio.app.features.player.resolvePreferredAudioLanguageTargets
 import com.nuvio.app.features.player.toStorageHexString
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -495,36 +497,44 @@ internal class NativePlayerController(
         }
     }
 
-    private var videoProfileProperties: LinkedHashMap<String, String>? = null
-    private var videoProfileRedraw = false
-
-    /** Collect one final value per property before touching the decoder or rendering surface. */
-    fun <T> withVideoProfile(block: () -> T): T {
-        check(videoProfileProperties == null)
+    private class VideoProfileBatch {
         val properties = linkedMapOf<String, String>()
-        videoProfileProperties = properties
-        videoProfileRedraw = false
+        var redraw = false
+    }
+
+    // Per thread: the profile is applied off the UI thread (endVideoProfile waits on mpv's VO, ~1 s
+    // with SVP + Anime4K), and a volume or subtitle change made on the UI thread meanwhile must go
+    // straight to mpv, not into another thread's batch.
+    private val videoProfileBatch = ThreadLocal<VideoProfileBatch?>()
+
+    /**
+     * Collect one final value per property before touching the decoder or rendering surface.
+     * Blocks until native code has taken the profile, so call it off the UI thread.
+     */
+    fun <T> withVideoProfile(block: () -> T): T {
+        check(videoProfileBatch.get() == null)
+        val batch = VideoProfileBatch()
+        videoProfileBatch.set(batch)
         try {
             val result = block()
-            videoProfileProperties = null
+            videoProfileBatch.set(null)
             val current = handle
             val windows = DesktopHostOs.current == DesktopHostOs.WINDOWS && current != 0L
             if (windows) NativePlayerBridge.beginVideoProfile(current)
             try {
-                properties.forEach { (key, value) -> setMpvProperty(key, value) }
+                batch.properties.forEach { (key, value) -> setMpvProperty(key, value) }
             } finally {
                 if (windows) NativePlayerBridge.endVideoProfile(current)
-                else if (videoProfileRedraw) forceVideoRedraw()
+                else if (batch.redraw) forceVideoRedraw()
             }
             return result
         } finally {
-            videoProfileProperties = null
-            videoProfileRedraw = false
+            videoProfileBatch.remove()
         }
     }
 
     fun setMpvProperty(key: String, value: String) {
-        videoProfileProperties?.let { it[key] = value; return }
+        videoProfileBatch.get()?.let { it.properties[key] = value; return }
         synchronized(pendingMpvProperties) {
             pendingMpvProperties[key] = value
         }
@@ -546,7 +556,7 @@ internal class NativePlayerController(
 
     /** Forces mpv to repaint the embedded video surface (see native forceVideoRedraw). */
     fun forceVideoRedraw() {
-        if (videoProfileProperties != null) { videoProfileRedraw = true; return }
+        videoProfileBatch.get()?.let { it.redraw = true; return }
         val current = handle
         if (current == 0L) {
             pendingVideoRedraw = true
@@ -1289,6 +1299,16 @@ internal class NativePlayerController(
         // Buffer sizing is owned here (not in the native bridge), so every speed change must
         // re-apply the preset with the new rate — see setPlaybackSpeed for the main path.
         applyDesktopBufferPreset(PlayerSettingsRepository.uiState.value.desktopBufferPreset, next)
+    }
+
+    /**
+     * [snapshot] off the UI thread. Every field is an mpv property read that waits on mpv's core,
+     * which stalled the UI thread 150-190 ms per poll while a hero trailer opened (`(UiStall)`,
+     * 2026-10-19). Holds the process-wide lifecycle lock, which the native dispose also takes, so
+     * the handle cannot be freed mid-read.
+     */
+    suspend fun snapshotOffUiThread(): PlayerPlaybackSnapshot = withContext(Dispatchers.IO) {
+        synchronized(nativeProcessLifecycleLock) { snapshot() }
     }
 
     fun snapshot(): PlayerPlaybackSnapshot {
@@ -2427,6 +2447,8 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("seekHandleEnabled", seekHandleEnabled)
         append(',')
         appendJsonField("hudVignetteEnabled", hudVignetteEnabled)
+        append(',')
+        appendJsonField("hiddenHudButtons", hiddenHudButtons)
         append(',')
         appendJsonField("alwaysShowClock", alwaysShowClock)
         append(',')

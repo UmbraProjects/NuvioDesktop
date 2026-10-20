@@ -1,0 +1,134 @@
+--- a/quickjs/native/jni/binding_bridge.c
++++ b/quickjs/native/jni/binding_bridge.c
+@@ -17,7 +17,7 @@
+     return JS_Throw(context, java_throwable_to_js_error(env, context, exception));
+ }
+ 
+-JSValue jni_invoke_getter(JSContext *context, jobject call_host, int64_t object_handle,
++static JSValue jni_invoke_getter_inner(JSContext *context, jobject call_host, int64_t object_handle,
+                           const char *property_name, size_t property_name_length) {
+     JNIEnv *env = get_jni_env();
+     if (env == NULL) {
+@@ -45,7 +45,7 @@
+     return jobject_to_js_value(env, context, NULL, result);
+ }
+ 
+-JSValue jni_invoke_setter(JSContext *context, jobject call_host, int64_t object_handle,
++static JSValue jni_invoke_setter_inner(JSContext *context, jobject call_host, int64_t object_handle,
+                           const char *property_name, size_t property_name_length,
+                           int argc, JSValueConst *argv) {
+     JNIEnv *env = get_jni_env();
+@@ -82,7 +82,7 @@
+     return JS_UNDEFINED;
+ }
+ 
+-JSValue jni_invoke_function(JSContext *context, jobject call_host, int64_t object_handle,
++static JSValue jni_invoke_function_inner(JSContext *context, jobject call_host, int64_t object_handle,
+                             const char *function_name, size_t function_name_length,
+                             int argc, JSValueConst *argv) {
+     JNIEnv *env = get_jni_env();
+@@ -124,7 +124,7 @@
+     return jobject_to_js_value(env, context, NULL, result);
+ }
+ 
+-JSValue jni_invoke_async_function(JSContext *context, jobject call_host,
++static JSValue jni_invoke_async_function_inner(JSContext *context, jobject call_host,
+                                   int64_t object_handle,
+                                   const char *function_name, size_t function_name_length,
+                                   uint64_t resolve_handle,
+@@ -175,6 +175,95 @@
+     return JS_UNDEFINED;
+ }
+ 
++/*
++ * Nuvio patch: every JS -> host binding call runs in its own JNI local frame.
++ *
++ * The *_inner functions above create local references (argument arrays, boxed promise handles,
++ * the host's return value, conversion temporaries) and several are never deleted. They all live
++ * until the outermost Java -> native call returns, which for a plugin is one whole pending job:
++ * a scraper parsing a page through the cheerio bindings makes thousands of calls in one job.
++ * GraalVM native image never reuses a deleted local slot until its frame pops, so even the
++ * deleted ones grew the thread's handle table, and the undeleted ones kept fetched pages alive.
++ * PopLocalFrame frees everything the call created and resets the table to where it started.
++ */
++#define BINDING_LOCAL_FRAME_CAPACITY 16
++
++static int push_binding_frame(JNIEnv *env, JSContext *context) {
++    if ((*env)->PushLocalFrame(env, BINDING_LOCAL_FRAME_CAPACITY) != 0) {
++        (*env)->ExceptionClear(env);
++        JS_ThrowOutOfMemory(context);
++        return 0;
++    }
++    return 1;
++}
++
++JSValue jni_invoke_getter(JSContext *context, jobject call_host, int64_t object_handle,
++                          const char *property_name, size_t property_name_length) {
++    JNIEnv *env = get_jni_env();
++    if (env == NULL) {
++        return JS_EXCEPTION;
++    }
++    if (!push_binding_frame(env, context)) {
++        return JS_EXCEPTION;
++    }
++    JSValue result = jni_invoke_getter_inner(context, call_host, object_handle,
++                                             property_name, property_name_length);
++    (*env)->PopLocalFrame(env, NULL);
++    return result;
++}
++
++JSValue jni_invoke_setter(JSContext *context, jobject call_host, int64_t object_handle,
++                          const char *property_name, size_t property_name_length,
++                          int argc, JSValueConst *argv) {
++    JNIEnv *env = get_jni_env();
++    if (env == NULL) {
++        return JS_EXCEPTION;
++    }
++    if (!push_binding_frame(env, context)) {
++        return JS_EXCEPTION;
++    }
++    JSValue result = jni_invoke_setter_inner(context, call_host, object_handle,
++                                             property_name, property_name_length, argc, argv);
++    (*env)->PopLocalFrame(env, NULL);
++    return result;
++}
++
++JSValue jni_invoke_function(JSContext *context, jobject call_host, int64_t object_handle,
++                            const char *function_name, size_t function_name_length,
++                            int argc, JSValueConst *argv) {
++    JNIEnv *env = get_jni_env();
++    if (env == NULL) {
++        return JS_EXCEPTION;
++    }
++    if (!push_binding_frame(env, context)) {
++        return JS_EXCEPTION;
++    }
++    JSValue result = jni_invoke_function_inner(context, call_host, object_handle,
++                                               function_name, function_name_length, argc, argv);
++    (*env)->PopLocalFrame(env, NULL);
++    return result;
++}
++
++JSValue jni_invoke_async_function(JSContext *context, jobject call_host,
++                                  int64_t object_handle,
++                                  const char *function_name, size_t function_name_length,
++                                  uint64_t resolve_handle,
++                                  uint64_t reject_handle,
++                                  int argc, JSValueConst *argv) {
++    JNIEnv *env = get_jni_env();
++    if (env == NULL) {
++        return JS_EXCEPTION;
++    }
++    if (!push_binding_frame(env, context)) {
++        return JS_EXCEPTION;
++    }
++    JSValue result = jni_invoke_async_function_inner(context, call_host, object_handle,
++                                                     function_name, function_name_length,
++                                                     resolve_handle, reject_handle, argc, argv);
++    (*env)->PopLocalFrame(env, NULL);
++    return result;
++}
++
+ JSValue
+ property_getter(JSContext *context, JSValueConst this_val, int argc, JSValueConst *argv, int magic,
+                 JSValue *func_data) {

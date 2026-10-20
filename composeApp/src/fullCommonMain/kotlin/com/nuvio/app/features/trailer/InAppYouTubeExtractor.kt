@@ -25,6 +25,14 @@ private const val EXTRACTOR_TIMEOUT_MS = 30_000L
  * is recovered by the one-shot refresh retry rather than by this bound.
  */
 private const val WATCH_CONFIG_TTL_MS = 3L * 60L * 60L * 1000L
+
+/**
+ * How long the watch page is left alone after it answers 429. A 429 there means YouTube is
+ * throttling this IP's page loads; retrying on every hero rotation is what keeps it throttled.
+ * The player API is a separate endpoint and usually still answers, so extraction carries on
+ * with a keyless session meanwhile.
+ */
+internal const val WATCH_PAGE_BACKOFF_MS = 10L * 60L * 1000L
 private const val PREFERRED_SEPARATE_CLIENT = "visionos"
 
 private val VIDEO_ID_REGEX = Regex("^[a-zA-Z0-9_-]{11}$")
@@ -148,7 +156,20 @@ private val CLIENTS = listOf(
     ),
 )
 
-class InAppYouTubeExtractor {
+internal typealias TrailerRequester = suspend (
+    url: String,
+    method: String,
+    headers: Map<String, String>,
+    body: String?,
+    timeoutMillis: Long,
+) -> TrailerRequestResponse
+
+class InAppYouTubeExtractor internal constructor(
+    private val performRequest: TrailerRequester,
+    private val nowMs: () -> Long,
+) {
+    constructor() : this(TrailerExtractionPlatform::performRequest, LibraryClock::nowEpochMs)
+
     private val log = Logger.withTag(TRAILER_EXTRACTOR_TAG)
 
     /**
@@ -160,8 +181,12 @@ class InAppYouTubeExtractor {
     private var cachedConfig: CachedWatchConfig? = null
     private val configMutex = Mutex()
 
+    /** Epoch ms before which the watch page is not requested; set when it answers 429. */
+    private var watchPageBackoffUntilMs = 0L
+
+    /** [apiKey] is null for a keyless session bootstrapped from the player API. */
     private data class CachedWatchConfig(
-        val apiKey: String,
+        val apiKey: String?,
         val visitorData: String?,
         val fetchedAtMs: Long,
     )
@@ -204,6 +229,10 @@ class InAppYouTubeExtractor {
      *
      * The requested video's own watch page is used, so the first extraction costs exactly what
      * it always did and no placeholder video ID is needed.
+     *
+     * When the page is unusable — throttled (429), any other error, or a page without the key
+     * such as a consent interstitial — extraction falls back to a keyless session from
+     * [bootstrapKeylessConfig] rather than failing.
      */
     private suspend fun ensureWatchConfig(videoId: String, forceRefresh: Boolean): CachedWatchConfig =
         configMutex.withLock {
@@ -211,38 +240,77 @@ class InAppYouTubeExtractor {
                 cachedConfig?.takeIf { !it.isStale() }?.let { return@withLock it }
             }
 
-            val watchResponse = TrailerExtractionPlatform.performRequest(
-                url = "https://www.youtube.com/watch?v=$videoId&hl=en",
-                method = "GET",
-                headers = TrailerExtractionPlatform.defaultHeaders,
-                body = null,
-                timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+            if (nowMs() < watchPageBackoffUntilMs) {
+                // A forced refresh still deserves a new session; it just can't come from the page.
+                if (!forceRefresh) cachedConfig?.let { return@withLock it }
+                return@withLock bootstrapKeylessConfig(videoId)
+            }
+
+            val watchResponse = performRequest(
+                "https://www.youtube.com/watch?v=$videoId&hl=en",
+                "GET",
+                TrailerExtractionPlatform.defaultHeaders,
+                null,
+                TRAILER_REQUEST_TIMEOUT_MS,
             )
             if (!watchResponse.ok) {
+                if (watchResponse.status == 429) {
+                    watchPageBackoffUntilMs = nowMs() + WATCH_PAGE_BACKOFF_MS
+                    log.w { "Watch page throttled (429); skipping it for ${WATCH_PAGE_BACKOFF_MS / 60_000} min" }
+                }
                 // A stale config still usually works; failing outright would turn a transient
                 // network blip into an unplayable trailer.
                 cachedConfig?.let { stale ->
                     log.w { "Watch page failed (${watchResponse.status}), reusing cached config" }
                     return@withLock stale
                 }
-                throw IllegalStateException("Failed to fetch watch page (${watchResponse.status})")
+                log.w { "Watch page failed (${watchResponse.status}), using a keyless session" }
+                return@withLock bootstrapKeylessConfig(videoId)
             }
 
             val parsed = getWatchConfig(watchResponse.body)
-            val apiKey = parsed.apiKey
-                ?: throw IllegalStateException("Unable to extract INNERTUBE_API_KEY")
+            val apiKey = parsed.apiKey ?: run {
+                log.w { "Watch page had no INNERTUBE_API_KEY, using a keyless session" }
+                return@withLock bootstrapKeylessConfig(videoId)
+            }
             CachedWatchConfig(
                 apiKey = apiKey,
                 visitorData = parsed.visitorData,
-                fetchedAtMs = LibraryClock.nowEpochMs(),
+                fetchedAtMs = nowMs(),
             ).also {
                 cachedConfig = it
                 log.i { "Watch config cached (visitorData=${!it.visitorData.isNullOrBlank()})" }
             }
         }
 
+    /**
+     * Builds a session without the watch page. The player API needs no key, but a request
+     * without `visitorData` answers LOGIN_REQUIRED — while still issuing a fresh `visitorData`
+     * in `responseContext`. One throwaway player call therefore yields a session that every
+     * client then accepts. Caller holds [configMutex].
+     */
+    private suspend fun bootstrapKeylessConfig(videoId: String): CachedWatchConfig {
+        val response = fetchPlayerResponse(
+            apiKey = null,
+            videoId = videoId,
+            client = CLIENTS.first(),
+            visitorData = null,
+        )
+        val visitorData = response.objectValue("responseContext")?.stringValue("visitorData")
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Unable to bootstrap a keyless YouTube session")
+        return CachedWatchConfig(
+            apiKey = null,
+            visitorData = visitorData,
+            fetchedAtMs = nowMs(),
+        ).also {
+            cachedConfig = it
+            log.i { "Keyless watch config cached" }
+        }
+    }
+
     private fun CachedWatchConfig.isStale(): Boolean =
-        LibraryClock.nowEpochMs() - fetchedAtMs > WATCH_CONFIG_TTL_MS
+        nowMs() - fetchedAtMs > WATCH_CONFIG_TTL_MS
 
     private suspend fun extractPlaybackSourceInternal(
         youtubeUrl: String,
@@ -442,12 +510,13 @@ class InAppYouTubeExtractor {
     }
 
     private suspend fun fetchPlayerResponse(
-        apiKey: String,
+        apiKey: String?,
         videoId: String,
         client: YouTubeClient,
         visitorData: String?,
     ): JsonObject {
-        val endpoint = "https://www.youtube.com/youtubei/v1/player?key=${encodeUrlComponent(apiKey)}"
+        val endpoint = "https://www.youtube.com/youtubei/v1/player" +
+            apiKey?.let { "?key=${encodeUrlComponent(it)}" }.orEmpty()
 
         val headers = buildMap {
             putAll(TrailerExtractionPlatform.defaultHeaders)
@@ -469,13 +538,7 @@ class InAppYouTubeExtractor {
             ),
         )
 
-        val response = TrailerExtractionPlatform.performRequest(
-            url = endpoint,
-            method = "POST",
-            headers = headers,
-            body = payload.toString(),
-            timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
-        )
+        val response = performRequest(endpoint, "POST", headers, payload.toString(), TRAILER_REQUEST_TIMEOUT_MS)
 
         if (!response.ok) {
             val preview = response.body.take(200)
@@ -487,12 +550,12 @@ class InAppYouTubeExtractor {
     }
 
     private suspend fun parseHlsManifest(manifestUrl: String): ManifestBestVariant? {
-        val response = TrailerExtractionPlatform.performRequest(
-            url = manifestUrl,
-            method = "GET",
-            headers = TrailerExtractionPlatform.defaultHeaders,
-            body = null,
-            timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+        val response = performRequest(
+            manifestUrl,
+            "GET",
+            TrailerExtractionPlatform.defaultHeaders,
+            null,
+            TRAILER_REQUEST_TIMEOUT_MS,
         )
         if (!response.ok) {
             throw IllegalStateException("Failed to fetch HLS manifest (${response.status})")

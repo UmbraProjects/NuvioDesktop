@@ -707,7 +707,29 @@ const chromeInteractionSelector = [
   "#heroTrailerChrome",
 ].join(",");
 
+// Play/pause intent from the HUD itself, shown at once and held briefly. The real state arrives
+// from two producers (the native mpv push and Kotlin's controls push) at different latencies, so
+// rapid toggling used to show whichever stale copy landed last until both caught up.
+const PLAY_INTENT_HOLD_MS = 900;
+let playIntent = null;
+let playIntentAt = 0;
+let playIntentTimer = 0;
+const displayedIsPlaying = () => {
+  if (playIntent !== null && performance.now() - playIntentAt < PLAY_INTENT_HOLD_MS) return playIntent;
+  playIntent = null;
+  return Boolean(state.isPlaying);
+};
+const notePlayToggleIntent = () => {
+  playIntent = !displayedIsPlaying();
+  playIntentAt = performance.now();
+  window.clearTimeout(playIntentTimer);
+  // Re-render once the hold lapses so the icon settles on the confirmed state.
+  playIntentTimer = window.setTimeout(() => renderChrome(), PLAY_INTENT_HOLD_MS + 20);
+  renderChrome();
+};
+
 const send = (type, value = 0) => {
+  if ((type === "toggle" || type === "keyboardToggle") && !state.isLocked) notePlayToggleIntent();
   const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
   if (bridge) {
     bridge.postMessage({ type, value });
@@ -4838,7 +4860,7 @@ if (metadataSection) {
 const renderChrome = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
-  const isPlaying = Boolean(state.isPlaying);
+  const isPlaying = displayedIsPlaying();
   const showError = renderPlaybackError();
   const pictureInPictureActive = Boolean(state.pictureInPictureActive);
   // PiP takes the raw scale floor (see updateViewportUiScale); re-derive the scale on entry/exit.
@@ -4864,6 +4886,7 @@ const renderChrome = () => {
   root.classList.toggle("official-hud", officialHud);
   root.classList.toggle("seek-handle-hidden", state.seekHandleEnabled === false);
   root.classList.toggle("vignette-hidden", state.hudVignetteEnabled === false);
+  applyHiddenHudButtons(state.hiddenHudButtons);
   // The official bar also reads the time as one "position / duration" readout, right-aligned.
   applyMinimalHudTimeLayout(minimalHud || officialHud);
   applyUltraHudLayout(ultraHud);
@@ -5599,6 +5622,19 @@ const setActionOverflowOpen = open => {
   noteChromeActivity(true);
 };
 
+// Buttons switched off in Settings > Playback. Only the HUD's own controls: the notches, the
+// locked-overlay unlock button and PiP's exit button share some commands and stay put.
+let appliedHiddenHudButtons = "";
+const applyHiddenHudButtons = value => {
+  const next = String(value || "");
+  if (next === appliedHiddenHudButtons) return;
+  appliedHiddenHudButtons = next;
+  const hidden = new Set(next.split(",").map(part => part.trim()).filter(Boolean));
+  document.querySelectorAll(".action[data-command], .side-control[data-command], .header-button[data-command]")
+    .forEach(button => button.classList.toggle("user-hidden", hidden.has(button.dataset.command)));
+  // render() schedules the overflow pass right after; its signature counts user-hidden buttons.
+};
+
 // Returns every collapsible button to the row in authored order, so a measurement always starts
 // from the uncollapsed layout.
 const restoreActionRowLayout = () => {
@@ -5633,7 +5669,7 @@ function syncActionRowOverflow() {
     Math.round(availableBefore),
     appliedCombinedUserScale,
     root.className,
-    overflowCapableActions.map(button => (button.hidden ? "0" : "1")).join(""),
+    overflowCapableActions.map(button => (button.hidden || button.classList.contains("user-hidden") ? "0" : "1")).join(""),
   ].join("|");
   if (signature === appliedActionOverflowSignature) return;
   appliedActionOverflowSignature = signature;

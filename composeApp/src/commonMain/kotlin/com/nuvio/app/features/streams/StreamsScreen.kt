@@ -443,13 +443,18 @@ fun StreamsScreen(
         val filterIndex = selectedFilterIndex
         if (filterIndex < 0) return@LaunchedEffect
         val layoutInfo = providerListState.layoutInfo
-        val isFullyVisible = layoutInfo.visibleItemsInfo.any { item ->
-            item.index == filterIndex &&
-                item.offset >= layoutInfo.viewportStartOffset &&
-                item.offset + item.size <= layoutInfo.viewportEndOffset
+        // Only a chip that is mostly out of view is brought in. One the mouse just clicked is at
+        // least half visible, and moving the row under the pointer made the next quick chip click
+        // land on a different chip or a gap (2026-10-19). A jump, not an animation: a row that is
+        // still easing takes the next press to stop the scroll.
+        val mostlyVisible = layoutInfo.visibleItemsInfo.any { item ->
+            if (item.index != filterIndex || item.size <= 0) return@any false
+            val shownStart = maxOf(item.offset, layoutInfo.viewportStartOffset)
+            val shownEnd = minOf(item.offset + item.size, layoutInfo.viewportEndOffset)
+            (shownEnd - shownStart) * 2 >= item.size
         }
-        if (!isFullyVisible) {
-            providerListState.animateScrollToItem(filterIndex)
+        if (!mostlyVisible) {
+            providerListState.scrollToItem(filterIndex)
         }
     }
 
@@ -1747,7 +1752,22 @@ internal fun ProviderFilterRow(
     /** Controls pinned after Sort (the picker panel's layout toggle, refresh and close). */
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
-    val addonGroups = groups.filter { it.streams.isNotEmpty() || it.isLoading }
+    // A chip comes and goes with its addon (shown while loading, dropped when it answers empty) and
+    // the HTPC chip appears with the first results, so the row shifted under a fast-moving pointer
+    // and a quick chip click landed on the wrong chip or a gap. Same hold as the stream list.
+    val chipPointerActivity = remember { ListPointerActivity() }
+    val liveChips = ProviderChips(
+        addonGroups = groups.filter { it.streams.isNotEmpty() || it.isLoading }
+            .map { ProviderChip(addonId = it.addonId, addonName = it.addonName) },
+        showHtpcChip = showHtpcChip,
+    )
+    val chips = rememberHeldWhilePointerActive(
+        live = liveChips,
+        resetKey = null,
+        activity = chipPointerActivity,
+        canHold = { shown -> shown.addonGroups.isNotEmpty() },
+    )
+    val addonGroups = chips.addonGroups
     if (addonGroups.isEmpty()) {
         // Nothing to filter yet, but the panel's own controls still need a home.
         if (trailing != null) {
@@ -1774,6 +1794,7 @@ internal fun ProviderFilterRow(
         state = listState,
         modifier = Modifier
             .weight(1f)
+            .trackListPointerActivity(chipPointerActivity)
             .desktopHorizontalListNavigation(
                 state = listState,
                 treatPlainScrollAsHorizontal = true,
@@ -1790,7 +1811,7 @@ internal fun ProviderFilterRow(
         }
         // Pinned ahead of the addons rather than appended: its position then stays put as providers
         // finish loading and their chips appear.
-        if (showHtpcChip) {
+        if (chips.showHtpcChip) {
             item(key = StreamSourceMerge.HTPC_ADDON_ID) {
                 FilterChip(
                     label = StreamSourceMerge.HTPC_TAB_LABEL,
@@ -1902,38 +1923,44 @@ private fun FilterChip(
         label = "filter_chip_content",
     )
     val chipShape = RoundedCornerShape(16.dp)
+    // The click is taken by the unscaled outer box and the press shrink drawn by the inner one. With
+    // the scale on the clickable itself the hit area shrank with it, and a press near the chip's
+    // edge was released "outside" the pressed chip: press effect, no click (2026-10-19).
     Box(
-        modifier = Modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(chipShape)
-            .background(containerColor)
-            .then(
-                if (glass && isSelected) {
-                    Modifier.border(1.dp, StreamGlass.Edge, chipShape)
-                } else {
-                    Modifier
-                },
-            )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+        modifier = Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick,
+        ),
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 14.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                letterSpacing = 0.1.sp,
-            ),
-            color = contentColor,
-            maxLines = 1,
-        )
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .clip(chipShape)
+                .background(containerColor)
+                .then(
+                    if (glass && isSelected) {
+                        Modifier.border(1.dp, StreamGlass.Edge, chipShape)
+                    } else {
+                        Modifier
+                    },
+                )
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 14.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                    letterSpacing = 0.1.sp,
+                ),
+                color = contentColor,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1967,20 +1994,35 @@ internal fun StreamList(
     columns: Int = 1,
 ) {
     val scoreProfile by StreamScoreRepository.uiState.collectAsStateWithLifecycle()
-    val filteredGroups = displayGroups ?: rememberScoreSortedGroups(
+    val liveGroups = displayGroups ?: rememberScoreSortedGroups(
         groups = uiState.filteredGroups,
         profile = scoreProfile,
         isEpisode = isEpisode,
         contentId = contentId,
         contentType = contentType,
     )
-    val hasGroups = filteredGroups.isNotEmpty()
-    val hasAnyStreams = filteredGroups.any { it.streams.isNotEmpty() }
-    val anyLoading = filteredGroups.any { it.isLoading }
     val streamBadgeSettings by remember {
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
+    // Late sources wait while the mouse is in use over the list, so a row does not move out from
+    // under a click (see rememberHeldWhilePointerActive). A chip, sort or layout change shows at once.
+    val pointerActivity = remember { ListPointerActivity() }
+    val filteredGroups = rememberHeldWhilePointerActive(
+        live = liveGroups,
+        resetKey = listOf(
+            uiState.selectedFilter,
+            streamBadgeSettings.listSortOrder,
+            streamBadgeSettings.listCachedFirst,
+            columns,
+        ),
+        activity = pointerActivity,
+        canHold = { shown -> shown.any { it.streams.isNotEmpty() } },
+    )
+    val hasGroups = filteredGroups.isNotEmpty()
+    val hasAnyStreams = filteredGroups.any { it.streams.isNotEmpty() }
+    // Live, not held: the footer spinner should stop when the last source answers.
+    val anyLoading = liveGroups.any { it.isLoading }
     val showGroupHeaders = uiState.selectedFilter == null
     val entries = remember(filteredGroups, showGroupHeaders, columns) {
         buildStreamListEntries(groups = filteredGroups, showGroupHeaders = showGroupHeaders)
@@ -2036,7 +2078,7 @@ internal fun StreamList(
     CompositionLocalProvider(LocalStreamSizeLabelFormat provides formatStreamSize) {
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().trackListPointerActivity(pointerActivity),
         contentPadding = PaddingValues(
             horizontal = 12.dp,
             vertical = 12.dp,
@@ -2619,3 +2661,8 @@ private fun FooterLoadingBlock(modifier: Modifier = Modifier) {
         )
     }
 }
+
+/** What the provider chip row draws: held as one value while the pointer is in use over it. */
+private data class ProviderChips(val addonGroups: List<ProviderChip>, val showHtpcChip: Boolean)
+
+private data class ProviderChip(val addonId: String, val addonName: String)

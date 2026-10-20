@@ -1088,7 +1088,7 @@ object WatchProgressRepository {
     ): RemoteMetadataResolutionResult {
         val (metaId, metaType) = key
         val meta = try {
-            MetaDetailsRepository.fetch(metaType, metaId)
+            MetaDetailsRepository.fetch(metaType, metaId, background = true)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {

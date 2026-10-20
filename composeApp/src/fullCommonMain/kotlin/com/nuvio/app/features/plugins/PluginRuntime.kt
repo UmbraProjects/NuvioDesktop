@@ -133,7 +133,11 @@ internal object PluginRuntime {
     // updated concurrently, and [sentinelRuntime] is never closed so the count never reaches zero
     // and the cache-clearing branch is unreachable. Evaluation itself stays concurrent.
     private val runtimeLifecycleLock = Any()
-    private val sentinelRuntime: QuickJs by lazy { QuickJs.create(jobDispatcher = pluginDispatcher) }
+    // The first create loads the native library, so the patched one is selected here.
+    private val sentinelRuntime: QuickJs by lazy {
+        QuickJsNativeLibrary.select()
+        QuickJs.create(jobDispatcher = pluginDispatcher)
+    }
 
     /**
      * The library's `quickJs(dispatcher) { }` DSL with the runtime's creation and close serialised

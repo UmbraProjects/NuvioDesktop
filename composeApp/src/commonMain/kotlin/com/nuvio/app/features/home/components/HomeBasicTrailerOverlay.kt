@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import com.nuvio.app.core.ui.LocalScreenCovered
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -78,13 +79,17 @@ internal fun HomeBasicTrailerOverlay(
 
     // Announce that a targeted request has somewhere to land, so the hover preview knows whether to
     // offer its trailer button.
-    DisposableEffect(enabled) {
-        if (enabled) HomeHeroTrailerManualTrigger.addTargetedHost()
-        onDispose { if (enabled) HomeHeroTrailerManualTrigger.removeTargetedHost() }
+    // Home stays composed under pushed screens; a trailer playing when one opens is put away, as
+    // it was when leaving Home disposed it, and a covered Home is no place for a request to land.
+    val covered = LocalScreenCovered.current
+    val hosting = enabled && !covered
+    DisposableEffect(hosting) {
+        if (hosting) HomeHeroTrailerManualTrigger.addTargetedHost()
+        onDispose { if (hosting) HomeHeroTrailerManualTrigger.removeTargetedHost() }
     }
 
-    LaunchedEffect(enabled) {
-        if (!enabled) stop()
+    LaunchedEffect(enabled, covered) {
+        if (!enabled || covered) stop()
     }
 
     // Publishes "a trailer is showing" for the Escape mapping and the hover preview's stand-down.
@@ -145,7 +150,7 @@ internal fun HomeBasicTrailerOverlay(
 
     val activeSubject = subject
     val activeSource = source
-    if (!enabled || !playing || activeSubject == null || activeSource == null) return
+    if (!enabled || covered || !playing || activeSubject == null || activeSource == null) return
 
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
         // The surface stays 1px until its first frame, so without this the window would show

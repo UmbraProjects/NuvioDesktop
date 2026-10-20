@@ -19,6 +19,7 @@ import kotlin.system.exitProcess
 
 private const val updaterPreferencesName = "nuvio_updater"
 private const val ignoredTagKey = "ignored_release_tag"
+private const val snoozedUntilKey = "update_snoozed_until_ms"
 private const val inPlaceApplyKey = "in_place_apply"
 private const val updateChannelKey = "update_channel"
 private const val installedNightlyIdKey = "installed_nightly_id"
@@ -107,6 +108,12 @@ actual object AppUpdaterPlatform {
 
     actual fun setIgnoredTag(tag: String?) {
         store.putString(ignoredTagKey, tag)
+    }
+
+    actual fun getSnoozedUntilMs(): Long? = store.getString(snoozedUntilKey)?.toLongOrNull()
+
+    actual fun setSnoozedUntilMs(epochMs: Long?) {
+        store.putString(snoozedUntilKey, epochMs?.toString())
     }
 
     // Default ON: only an explicit "off" opts back into manual extraction.

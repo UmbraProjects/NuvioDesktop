@@ -164,7 +164,11 @@ internal fun NuvioContextMenu(
     // preview is anchored to.
     DisposableEffect(Unit) {
         PosterZoomOverlayCoordinator.show()
-        onDispose { PosterZoomOverlayCoordinator.hide() }
+        ContextMenuReopen.opened()
+        onDispose {
+            PosterZoomOverlayCoordinator.hide()
+            ContextMenuReopen.closed()
+        }
     }
     LaunchedEffect(Unit) {
         // Falls back to the panel if the row cannot take focus: a menu with nothing focused would
@@ -176,6 +180,9 @@ internal fun NuvioContextMenu(
         fadeIn.animateTo(1f, tween(durationMillis = 110, easing = NuvioTokens.Motion.standard))
     }
     PlatformBackHandler(enabled = true, onBack = onDismiss)
+    // Its screen can stay composed under a pushed one (KeptAliveLayer); a popup would stay on top.
+    val covered = LocalScreenCovered.current
+    LaunchedEffect(covered) { if (covered) onDismiss() }
 
     fun select(action: PosterZoomOverlayAction) {
         action.onSelected()
@@ -193,7 +200,7 @@ internal fun NuvioContextMenu(
         runCatching { rowFocus[next].requestFocus() }
     }
 
-    Popup(
+    if (!covered) Popup(
         popupPositionProvider = positionProvider,
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),

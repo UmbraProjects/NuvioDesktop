@@ -1428,6 +1428,11 @@ fun MetaDetailsScreen(
                 val currentSeasonForTv = selectedSeasonForTv
                     ?.takeIf { it in groupedEpisodesForTv }
                     ?: defaultSeasonForTv
+                // A long show decorates the season it opens on first and the rest in the background;
+                // a season picked before that lands is fetched now (no-op once it is decorated).
+                LaunchedEffect(meta.id, currentSeasonForTv) {
+                    currentSeasonForTv?.let(MetaDetailsRepository::prioritizeSeason)
+                }
 
                 LaunchedEffect(meta.id) {
                     listState.scrollToItem(0)
@@ -1879,13 +1884,18 @@ fun MetaDetailsScreen(
                 // — while the native hero-trailer surface holds OS focus — by DetailTvKeyboardBridge
                 // (see the surface's global key dispatcher). Both feed identical navigation.
                 val handleDetailTvKey: (DetailTvKey) -> Boolean = handleKey@{ key ->
-                    if ((key == DetailTvKey.Dismiss || key == DetailTvKey.Back) &&
-                        heroTrailerSourceUrl != null && !heroTrailerDismissed
-                    ) {
+                    // Escape puts away a hero trailer that is on screen; otherwise it leaves, like
+                    // Back. A trailer counts once it is actually showing, not once a source has
+                    // resolved: that happens seconds before it appears, and Escape then "dismissed"
+                    // something invisible and did nothing visible (2026-10-19). Escape is the key
+                    // under the left hand while the right is on the mouse, so it must leave.
+                    val heroTrailerShowing = heroTrailerSourceUrl != null && !heroTrailerDismissed &&
+                        heroTrailerReady && heroTrailerPlayWhenReady
+                    if (key == DetailTvKey.Dismiss && heroTrailerShowing) {
                         dismissHeroTrailerPlayback()
                         return@handleKey true
                     }
-                    if (key == DetailTvKey.Back) {
+                    if (key == DetailTvKey.Back || key == DetailTvKey.Dismiss) {
                         onBack()
                         return@handleKey true
                     }

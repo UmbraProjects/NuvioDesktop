@@ -1,5 +1,6 @@
 package com.nuvio.app.features.library
 
+import com.nuvio.app.core.ui.LocalScreenCovered
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -626,7 +627,7 @@ internal val LibrarySortEntries: List<Pair<LibrarySortOption, String>> = listOf(
 @Composable
 fun LibraryDisplayDropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit) {
     DropdownMenu(
-        expanded = expanded,
+        expanded = expanded && !LocalScreenCovered.current,
         onDismissRequest = onDismissRequest,
         shape = RoundedCornerShape(20.dp),
         containerColor = libraryNavMenuSurfaceColor(),

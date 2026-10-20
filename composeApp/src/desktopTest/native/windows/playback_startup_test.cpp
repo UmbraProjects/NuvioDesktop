@@ -2,6 +2,7 @@
 #define NUVIO_PLAYBACK_STARTUP_TEST
 #include "../../../desktopMain/native/windows/player_bridge.cpp"
 #include <cassert>
+#include <future>
 #include <iostream>
 
 namespace {
@@ -9,6 +10,7 @@ struct PlaybackStartupTest {
     inline static std::map<std::string, std::string> properties;
     inline static std::vector<std::string> writes;
     inline static std::vector<std::vector<std::string>> commands;
+    inline static int reads = 0;
 
     static int setString(mpv_handle *, const char *key, const char *value) {
         properties[key] = value;
@@ -16,6 +18,7 @@ struct PlaybackStartupTest {
         return 0;
     }
     static int get(mpv_handle *, const char *key, mpv_format format, void *out) {
+        ++reads;
         auto it = properties.find(key);
         if (it == properties.end()) return -10;
         if (format == MPV_FORMAT_STRING) *static_cast<char **>(out) = _strdup(it->second.c_str());
@@ -28,6 +31,7 @@ struct PlaybackStartupTest {
     static int set(mpv_handle *, const char *key, mpv_format format, void *value) {
         if (format == MPV_FORMAT_FLAG) return setString(nullptr, key, *static_cast<int *>(value) ? "yes" : "no");
         if (format == MPV_FORMAT_DOUBLE) return setString(nullptr, key, std::to_string(*static_cast<double *>(value)).c_str());
+        if (format == MPV_FORMAT_INT64) return setString(nullptr, key, std::to_string(*static_cast<int64_t *>(value)).c_str());
         return -9;
     }
     static std::shared_ptr<WindowsMpvWebPlayer> player() {
@@ -354,7 +358,95 @@ struct PlaybackStartupTest {
             assert(writes.size() == 1 && writes[0] == "audio-spdif");
             assert(properties["aid"] == "no");
         }
-        std::cout << "25 native playback startup scenarios passed\n";
+        // Java's writes run on the mpv call thread, in the order they were issued.
+        {
+            auto p = player();
+            const auto javaThread = std::this_thread::get_id();
+            std::thread::id callThread;
+            std::promise<std::string> seen;
+            p->postMpvCall([&]() { callThread = std::this_thread::get_id(); });
+            p->postMpvCall([p = p.get()]() { p->setMpvPropertyString("mc", "0.5"); });
+            p->postMpvCall([p = p.get()]() { p->setMpvPropertyString("mc", "0.25"); });
+            p->postMpvCall([&]() { seen.set_value(properties["mc"]); });
+            assert(seen.get_future().get() == "0.25");
+            assert(callThread != std::thread::id{} && callThread != javaThread);
+            // After shutdown's stop, nothing more reaches mpv.
+            p->stopMpvCalls();
+            p->postMpvCall([p = p.get()]() { p->setMpvPropertyString("mc", "0.75"); });
+            assert(properties["mc"] == "0.25");
+        }
+        // HUD reads come from mirrored observations and never query mpv; unobserved or
+        // unavailable values read as the same fallbacks a failed query gave.
+        {
+            auto p = player();
+            reads = 0;
+            assert(p->isPaused() && p->isLoading() && p->durationMs() == 0);
+            auto observe = [&](const char *name, mpv_format format, void *data) {
+                mpv_event_property property{name, format, data};
+                p->updatePropertyMirror(property);
+            };
+            double duration = 1500.0, position = 42.5, cacheTime = 60.0;
+            int no = 0, yes = 1;
+            observe("duration", MPV_FORMAT_DOUBLE, &duration);
+            observe("time-pos", MPV_FORMAT_DOUBLE, &position);
+            observe("demuxer-cache-time", MPV_FORMAT_DOUBLE, &cacheTime);
+            for (const char *name : {"pause", "core-idle", "seeking", "paused-for-cache", "eof-reached"}) {
+                observe(name, MPV_FORMAT_FLAG, &no);
+            }
+            assert(!p->isPaused() && !p->isLoading() && !p->isEnded());
+            assert(p->durationMs() == 1500000 && p->positionMs() == 42500);
+            assert(p->bufferedPositionMs() == 60000);
+            observe("seeking", MPV_FORMAT_FLAG, &yes);
+            assert(p->isLoading());
+            // A coalesced seek target wins over time-pos without taking mpvMutex.
+            p->deferredSeekTargetSeconds.store(90.0);
+            assert(p->positionMs() == 90000);
+            observe("duration", MPV_FORMAT_NONE, nullptr);
+            assert(p->durationMs() == 0);
+            assert(reads == 0);
+        }
+        // Track and chapter JSON is built on the event thread when mpv reports a change; Java and
+        // the HUD read the copy. Selection answers at once and switches on the call thread.
+        {
+            auto p = player();
+            properties["track-list/count"] = "1";
+            properties["track-list/0/type"] = "audio";
+            properties["track-list/0/id"] = "1";
+            properties["track-list/0/lang"] = "jpn";
+            properties["track-list/0/selected"] = "yes";
+            p->rebuildTrackJsonIfDirty();
+            p->rebuildTrackJsonIfDirty(); // clean: no rebuild
+            reads = 0;
+            const std::string audio = p->audioTracksJson();
+            assert(audio.find("\"language\":\"jpn\"") != std::string::npos);
+            assert(audio.find("\"selected\":true") != std::string::npos);
+            assert(p->subtitleTracksJson() == "[]" && p->chaptersJson() == "[]");
+            p->rebuildTrackJsonIfDirty();
+            assert(reads == 0);
+            properties["track-list/0/lang"] = "eng";
+            mpv_event_property changed{"track-list", MPV_FORMAT_NONE, nullptr};
+            p->updatePropertyMirror(changed);
+            p->rebuildTrackJsonIfDirty();
+            assert(p->audioTracksJson().find("\"eng\"") != std::string::npos);
+            // Already selected per the mirror: true, nothing queued.
+            char aid[] = "1";
+            char *aidValue = aid;
+            mpv_event_property selected{"aid", MPV_FORMAT_STRING, &aidValue};
+            p->updatePropertyMirror(selected);
+            assert(p->requestAudioTrackId(1));
+            // Rate-limited: refused without touching mpv, so Java can show its pill.
+            p->audioTrackSwitchBlockedUntil.store(std::chrono::steady_clock::now() + std::chrono::seconds(30));
+            reads = 0;
+            assert(!p->requestAudioTrackId(2));
+            assert(reads == 0);
+            // A subtitle switch is accepted at once and lands on the call thread.
+            assert(p->requestSubtitleTrackId(3));
+            std::promise<void> drained;
+            p->postMpvCall([&]() { drained.set_value(); });
+            drained.get_future().get();
+            assert(properties["sid"] == "3");
+        }
+        std::cout << "28 native playback startup scenarios passed\n";
     }
 };
 }

@@ -19,6 +19,7 @@ import coil3.request.SuccessResult
 import coil3.size.Dimension
 import coil3.size.Scale
 import coil3.size.Size
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import java.awt.image.BufferedImage
 import java.nio.file.Files
@@ -132,6 +133,81 @@ class DesktopArtworkSizingTest {
             val image = (result as SuccessResult).image
             assertEquals(3360, image.width)
             assertEquals(1890, image.height)
+        } finally {
+            loader.shutdown()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `hero-size requests share one entry whatever their size or tag, and concurrent ones decode once`() = runBlocking {
+        val file = Files.createTempFile("nuvio-hero-share", ".jpg").toFile()
+        ImageIO.write(BufferedImage(3840, 2160, BufferedImage.TYPE_INT_RGB), "jpg", file)
+        val context = PlatformContext.INSTANCE
+        val loader = ImageLoader.Builder(context)
+            .memoryCache { MemoryCache.Builder().maxSizeBytes(256L * 1024 * 1024).build() }
+            .components {
+                add(DesktopArtworkSizeInterceptor())
+                add(HighQualityBitmapDecoder.Factory())
+            }.build()
+        fun homeHero() = ImageRequest.Builder(context).data(file).size(3264, 1836)
+            .precision(coil3.size.Precision.INEXACT).scale(Scale.FILL).build()
+        fun detailsHero() = ImageRequest.Builder(context).data(file)
+            .scale(Scale.FILL).nuvioArtworkRequestSize(3840, 2160).build()
+        try {
+            val home = loader.execute(homeHero()) as SuccessResult
+            assertEquals(3360, home.image.width)
+            // The Details hero is size-tagged and wider than the 7/8 decode Home holds: it decodes
+            // the full image under the same key, which then serves Home without another decode.
+            val details = loader.execute(detailsHero()) as SuccessResult
+            assertEquals(3840, details.image.width)
+            assertEquals(home.memoryCacheKey, details.memoryCacheKey)
+            val homeAgain = loader.execute(homeHero()) as SuccessResult
+            assertEquals(DataSource.MEMORY_CACHE, homeAgain.dataSource)
+            assertEquals(3840, homeAgain.image.width)
+
+            loader.memoryCache!!.clear()
+            val pair = kotlinx.coroutines.coroutineScope {
+                listOf(async { loader.execute(detailsHero()) }, async { loader.execute(detailsHero()) })
+                    .map { (it.await() as SuccessResult).dataSource }
+            }
+            assertEquals(1, pair.count { it == DataSource.MEMORY_CACHE }, "sources: $pair")
+        } finally {
+            loader.shutdown()
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `a nearly full-size hero in memory serves the Details hero without a second decode`() = runBlocking {
+        val file = Files.createTempFile("nuvio-hero-near", ".jpg").toFile()
+        ImageIO.write(BufferedImage(3840, 2160, BufferedImage.TYPE_INT_RGB), "jpg", file)
+        val context = PlatformContext.INSTANCE
+        lateinit var loader: ImageLoader
+        loader = ImageLoader.Builder(context)
+            .memoryCache { MemoryCache.Builder().maxSizeBytes(256L * 1024 * 1024).build() }
+            .components {
+                add(DesktopArtworkSizeInterceptor(memoryCache = { loader.memoryCache }))
+                add(HighQualityBitmapDecoder.Factory())
+            }.build()
+        fun homeHero() = ImageRequest.Builder(context).data(file).size(3264, 1836)
+            .precision(coil3.size.Precision.INEXACT).scale(Scale.FILL).build()
+        fun detailsHero() = ImageRequest.Builder(context).data(file)
+            .scale(Scale.FILL).nuvioArtworkRequestSize(3840, 2160).build()
+        try {
+            val home = loader.execute(homeHero()) as SuccessResult
+            assertEquals(3360, home.image.width)
+            // 3360 of 3840 is 87.5%: Details takes Home's bitmap (and its texture) as it is.
+            val details = loader.execute(detailsHero()) as SuccessResult
+            assertEquals(DataSource.MEMORY_CACHE, details.dataSource)
+            assertEquals(3360, details.image.width)
+
+            // Cold: Details decodes at full size, and that bitmap then serves Home.
+            loader.memoryCache!!.clear()
+            val cold = loader.execute(detailsHero()) as SuccessResult
+            assertEquals(3840, cold.image.width)
+            assertNotEquals(DataSource.MEMORY_CACHE, cold.dataSource)
+            assertEquals(DataSource.MEMORY_CACHE, (loader.execute(homeHero()) as SuccessResult).dataSource)
         } finally {
             loader.shutdown()
             file.delete()

@@ -246,6 +246,8 @@ data class PlayerControlsState(
     val officialHudEnabled: Boolean = false,
     val seekHandleEnabled: Boolean = true,
     val hudVignetteEnabled: Boolean = true,
+    // Comma-separated controls.html `data-command`s the user hid from the HUD.
+    val hiddenHudButtons: String = "",
     val alwaysShowClock: Boolean = false,
     val playbackSpeedFineIncrementsEnabled: Boolean = false,
     val playbackSpeedToggleLow: Float = 1f,

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.details.components
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.async
 import com.nuvio.app.features.tmdb.fullSizeTmdbBackdrop
 import com.nuvio.app.features.tvdb.TvdbCharacter
 import com.nuvio.app.features.tvdb.TvdbImageService
@@ -587,17 +589,28 @@ private fun DetailDesktopHeroOverlay(
         val canShowProduction = showProduction && productionPeople.isNotEmpty()
         // TVDB's portraits of the characters (ported from the Nuvio Tracker site), matched to the
         // cast by actor name, else character name. Loaded after the page; a TVDB key is needed.
-        val tvdbCharacters by produceState(emptyList<TvdbCharacter>(), meta.id, canShowCast) {
-            value = emptyList()
-            if (!canShowCast) return@produceState
+        // null while the lookup runs. With the characters view on, the row waits for it on blank
+        // circles instead of loading every actor photo only to swap each one for the character's a
+        // moment later (two downloads per face and a visible swap). A slow lookup gives up waiting
+        // after CharacterPortraitWaitMs and shows the actors; the characters still replace them
+        // if they arrive.
+        var showCharacters by remember { mutableStateOf(CastViewStorage.loadShowCharacters()) }
+        val tvdbCharacters by produceState<List<TvdbCharacter>?>(null, meta.id, canShowCast) {
+            value = null
+            if (!canShowCast) {
+                value = emptyList()
+                return@produceState
+            }
             val imdb = meta.imdbId?.takeIf { it.startsWith("tt") } ?: meta.id.takeIf { it.startsWith("tt") }?.substringBefore(':')
-            value = TvdbImageService.fetchCharacters(meta.type, meta.id, imdb)
+            val lookup = async { TvdbImageService.fetchCharacters(meta.type, meta.id, imdb) }
+            value = withTimeoutOrNull(CharacterPortraitWaitMs) { lookup.await() } ?: emptyList()
+            if (!lookup.isCompleted) value = lookup.await()
         }
         val starringWithCharacters = remember(starringPeople, tvdbCharacters) {
-            starringPeople.withCharacterImages(tvdbCharacters)
+            starringPeople.withCharacterImages(tvdbCharacters.orEmpty())
         }
         val hasCharacters = starringWithCharacters.any { !it.characterImage.isNullOrBlank() }
-        var showCharacters by remember { mutableStateOf(CastViewStorage.loadShowCharacters()) }
+        val characterPortraitsPending = showCharacters && tvdbCharacters == null
         var peopleTab by remember(meta.id, canShowCast, canShowProduction) {
             mutableStateOf(
                 if (canShowCast) DetailHeroPeopleTab.Starring else DetailHeroPeopleTab.Production,
@@ -821,6 +834,8 @@ private fun DetailDesktopHeroOverlay(
                         },
                         showCharacters = showCharacters && hasCharacters &&
                             activePeopleTab == DetailHeroPeopleTab.Starring,
+                        portraitsPending = characterPortraitsPending &&
+                            activePeopleTab == DetailHeroPeopleTab.Starring,
                         // Series counts can land with TMDB enrichment after the cast is already
                         // shown; keeping the line from the start stops the row growing then.
                         reserveEpisodeLine = activePeopleTab == DetailHeroPeopleTab.Starring &&
@@ -1005,6 +1020,8 @@ private fun String?.normalizedForCharacterMatch(): String =
     orEmpty().lowercase().replace(characterNameNoise, "")
 
 /** Each cast member's TVDB character portrait: by actor name, else by character name. */
+private const val CharacterPortraitWaitMs = 1_500L
+
 private fun List<MetaPerson>.withCharacterImages(characters: List<TvdbCharacter>): List<MetaPerson> {
     if (characters.isEmpty()) return this
     // Blank names never match: an unnamed TVDB character must not land on a cast member with no role.

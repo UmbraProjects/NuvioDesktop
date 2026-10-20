@@ -17,6 +17,8 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -150,6 +152,9 @@ import com.nuvio.app.core.network.NetworkStatusRepository
 import com.nuvio.app.core.sync.AppForegroundMonitor
 import com.nuvio.app.core.sync.ProfileSettingsSync
 import com.nuvio.app.core.sync.SyncManager
+import com.nuvio.app.core.ui.ImageCacheSettingsRepository
+import com.nuvio.app.core.ui.KeptAliveLayer
+import com.nuvio.app.core.ui.rememberChildLifecycleOwner
 import com.nuvio.app.core.ui.nuvioLaunchBackdrop
 import com.nuvio.app.core.ui.rememberNuvioLaunchDrift
 import com.nuvio.app.core.ui.NuvioNavigationBar
@@ -732,6 +737,8 @@ private val randomPlayLog = Logger.withTag("RandomPlay")
 private val deferredStartupScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
 
 private const val EXTERNAL_PLAYER_DETECTION_DELAY_MS = 5_000L
+private const val SETTINGS_SEARCH_WARM_DELAY_MS = 8_000L
+private const val HEAVY_STARTUP_WARM_DELAY_MS = 3_000L
 
 private inline fun startupWarmStep(
     name: String,
@@ -900,9 +907,21 @@ private suspend fun warmProfileDeferredRepositories() {
         // The first initialize() reads every scraper's source out of nuvio_plugin_code (MBs of
         // JS; the open alone measured ~2.9 s, likely AV scanning it). Left to first use, that
         // was the stream screen, in series with the source list — or the UI thread, from settings.
+        // A few seconds after Home is up rather than now (2026-10-20): reading every scraper's source
+        // and the anime-list parse below both built long-lived data during Home's first frames, where
+        // each young collection copied it again ((YoungGc): ~1 s of pauses in the first 2.5 s). Nothing
+        // on Home needs either: plugins serve the stream list, and an early anime-id lookup simply
+        // parses the list on its own thread, as it would without the warm.
         if (AppFeaturePolicy.pluginsEnabled) {
-            startupWarmStep("plugins load", rethrow = false) {
-                withContext(Dispatchers.IO) { com.nuvio.app.features.plugins.PluginRepository.initialize() }
+            startupWarmStep("plugins load scheduled", rethrow = false) {
+                com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
+                    deferredStartupScope.launch {
+                        delay(HEAVY_STARTUP_WARM_DELAY_MS)
+                        startupWarmStep("plugins load", rethrow = false) {
+                            withContext(Dispatchers.IO) { com.nuvio.app.features.plugins.PluginRepository.initialize() }
+                        }
+                    }
+                }
             }
         }
         startupWarmStep("collection sync observer start", rethrow = false) { CollectionSyncService.startObserving() }
@@ -913,15 +932,29 @@ private suspend fun warmProfileDeferredRepositories() {
         }
         // Resolves the ~550 string resources behind settings search. Each one is a separate
         // blocking read out of the packaged jar, so doing it here rather than during the settings
-        // screen's first composition is what keeps opening settings instant.
-        startupWarmStep("settings search index warm", rethrow = false) {
-            ThemeSettingsRepository.ensureLoaded()
-            SettingsSearchIndex.warm(ThemeSettingsRepository.selectedAppLanguage.value.code)
+        // screen's first composition is what keeps opening settings instant. A few seconds after
+        // Home is up, not now: run here it took ~180 ms in the middle of the young-GC burst at the
+        // first Home frame (2026-10-19), and nobody reaches settings search that soon.
+        startupWarmStep("settings search index warm scheduled", rethrow = false) {
+            com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
+                deferredStartupScope.launch {
+                    delay(SETTINGS_SEARCH_WARM_DELAY_MS)
+                    startupWarmStep("settings search index warm", rethrow = false) {
+                        ThemeSettingsRepository.ensureLoaded()
+                        SettingsSearchIndex.warm(ThemeSettingsRepository.selectedAppLanguage.value.code)
+                    }
+                }
+            }
         }
         startupWarmStep("home catalog sync observer start", rethrow = false) { HomeCatalogSettingsSyncService.startObserving() }
         startupWarmStep("profile settings sync observer start", rethrow = false) { ProfileSettingsSync.startObserving() }
-        startupWarmStep("anime id mapping warm start", rethrow = false) {
-            com.nuvio.app.features.metadata.AnimeIdMappingRepository.warmAsync()
+        startupWarmStep("anime id mapping warm scheduled", rethrow = false) {
+            com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
+                deferredStartupScope.launch {
+                    delay(HEAVY_STARTUP_WARM_DELAY_MS)
+                    com.nuvio.app.features.metadata.AnimeIdMappingRepository.warmAsync()
+                }
+            }
         }
         // Connected tracking services are the user's own accounts, independent of whether they
         // signed into Nuvio — and `SyncManager.pullAllForProfile` runs neither for a signed-out
@@ -2872,9 +2905,21 @@ private fun MainAppContent(
                         navController.navigateIfResumed(DetailRoute(type = type, id = id))
                     },
                 ) {
+                Box(modifier = Modifier.fillMaxSize()) {
                 NavHost(
                     navController = navController,
                     startDestination = TabsRoute,
+                    // Instant on desktop. Routes that pass `null` fall through to these, and the
+                    // library default is a 700 ms crossfade: every screen change faded (the "ghost"
+                    // of the details page on Back), and the entry underneath only reached RESUMED
+                    // when the fade ended, so navigateIfResumed dropped every click in that window -
+                    // with Home kept composed and shown at once on Back, the first click on the next
+                    // title did nothing (2026-10-19 08:43: clicks 0.5-0.7 s after Back logged, no
+                    // navigation). iOS keeps the default.
+                    enterTransition = { if (isIos) fadeIn(animationSpec = tween(700)) else EnterTransition.None },
+                    exitTransition = { if (isIos) fadeOut(animationSpec = tween(700)) else ExitTransition.None },
+                    popEnterTransition = { if (isIos) fadeIn(animationSpec = tween(700)) else EnterTransition.None },
+                    popExitTransition = { if (isIos) fadeOut(animationSpec = tween(700)) else ExitTransition.None },
                     modifier = Modifier
                         .fillMaxSize()
                         // Right-click on empty space in a pushed screen (anything with a back arrow)
@@ -2918,381 +2963,6 @@ private fun MainAppContent(
                             }
                         },
                     )
-
-                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val isTabletLayout = maxWidth >= 768.dp
-                        val useNativeBottomTabs =
-                            liquidGlassNativeTabBarSupported && liquidGlassNativeTabBarEnabled && initialHomeReady
-                        val useDesktopSidebar =
-                            isTabletLayout &&
-                                !useNativeBottomTabs &&
-                                desktopNavigationLayout == DesktopNavigationLayout.Sidebar
-                        val showDesktopSidebar = useDesktopSidebar && selectedTab != AppScreenTab.Settings
-                        val useFloatingTopBar = isTabletLayout && !useNativeBottomTabs && !useDesktopSidebar
-                        val topChromePadding = if (useFloatingTopBar || selectedTab == AppScreenTab.Search) {
-                            val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-                            max(statusBarPadding + 24.dp, 48.dp) + 64.dp
-                        } else {
-                            null
-                        }
-                        val tabsRouteActive = currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true
-                        val onProfileSelected: (NuvioProfile) -> Unit = { profile ->
-                            profileSwitchLoading = true
-                            selectedTab = AppScreenTab.Home
-                            coroutineScope.launch {
-                                try {
-                                    ProfileRepository.switchToProfile(profile.profileIndex)
-                                    warmProfileStartupRepositories()
-                                    SyncManager.pullAllForProfile(profile.profileIndex)
-                                    launch {
-                                        warmProfileDeferredRepositories()
-                                    }
-                                    delay(300)
-                                } finally {
-                                    profileSwitchLoading = false
-                                }
-                            }
-                        }
-
-                        Scaffold(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .alpha(if (initialHomeReady) 1f else 0f),
-                            containerColor = Color.Transparent,
-                            contentWindowInsets = WindowInsets(0),
-                            bottomBar = {
-                                if (!isTabletLayout && !useNativeBottomTabs && selectedTab != AppScreenTab.Settings) {
-                                    NuvioNavigationBar {
-                                        NavItem(
-                                            selected = selectedTab == AppScreenTab.Home,
-                                            onClick = { handleRootTabClick(AppScreenTab.Home) },
-                                            icon = Icons.Filled.Home,
-                                            contentDescription = stringResource(Res.string.compose_nav_home),
-                                        )
-                                        NavItem(
-                                            selected = selectedTab == AppScreenTab.Search,
-                                            onClick = { handleRootTabClick(AppScreenTab.Search) },
-                                            icon = Res.drawable.sidebar_search,
-                                            contentDescription = stringResource(Res.string.compose_nav_search),
-                                        )
-                                        LibraryNavigationContextMenu(modifier = Modifier.width(64.dp)) { contextModifier ->
-                                            NavItem(
-                                                selected = selectedTab == AppScreenTab.Library,
-                                                onClick = { handleRootTabClick(AppScreenTab.Library) },
-                                                icon = Res.drawable.sidebar_library,
-                                                contentDescription = stringResource(Res.string.compose_nav_library),
-                                                modifier = contextModifier,
-                                            )
-                                        }
-                                        NavItem(
-                                            selected = selectedTab == AppScreenTab.Settings,
-                                            onClick = { handleRootTabClick(AppScreenTab.Settings) },
-                                        ) {
-                                            ProfileSwitcherTab(
-                                                selected = selectedTab == AppScreenTab.Settings,
-                                                onClick = { handleRootTabClick(AppScreenTab.Settings) },
-                                                onProfileSelected = onProfileSelected,
-                                                onAddProfileRequested = onSwitchProfile,
-                                            )
-                                        }
-                                    }
-                                }
-                            },
-                        ) { innerPadding ->
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                CompositionLocalProvider(
-                                    LocalNuvioBottomNavigationOverlayPadding provides if (useNativeBottomTabs) 49.dp else 0.dp,
-                                ) {
-                                    AppTabHost(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(innerPadding)
-                                            .padding(start = if (showDesktopSidebar) DesktopSidebarCollapsedWidth else 0.dp),
-                                        selectedTab = selectedTab,
-                                        topChromePadding = topChromePadding,
-                                        searchFocusRequestCount = searchFocusRequestCount,
-                                        navigateToContentCount = navigateToContentCount,
-                                        searchQuery = searchQuery,
-                                        submittedSearchQuery = submittedSearchQuery,
-                                        onSearchQueryChange = { searchQuery = it },
-                                        searchSubmitRequests = searchSubmitRequests,
-                                        rootActionsEnabled = tabsRouteActive,
-                                        homeScrollToTopRequests = homeScrollToTopRequests,
-                                        searchScrollToTopRequests = searchScrollToTopRequests,
-                                        libraryScrollToTopRequests = libraryScrollToTopRequests,
-                                        discoverScrollToTopRequests = discoverScrollToTopRequests,
-                                        settingsRootActionRequests = settingsRootActionRequests,
-                                        animateHomeCollectionGifs = tabsRouteActive,
-                                        resumePromptItem = resumePromptItem.takeIf { resumePromptUsesHero },
-                                        resumePromptLabel = stringResource(Res.string.resume_prompt_question),
-                                        onResumePromptAction = {
-                                            val item = resumePromptItem
-                                            if (item != null) {
-                                                resumePromptItem = null
-                                                openContinueWatching(item, false, false)
-                                            }
-                                        },
-                                        onResumePromptDismiss = { resumePromptItem = null },
-                                        continueWatchingHeroDismissed = continueWatchingHeroDismissed,
-                                        onContinueWatchingHeroDismiss = { continueWatchingHeroDismissed = true },
-                                        onCatalogClick = onCatalogClick,
-                                        onCastClick = onHeroCastClick,
-                                        onBadgeClick = { fact, item -> onHeroBadgeClick(fact, item.type) },
-                                        onPosterClick = posterClick@{ meta ->
-                                            if (meta.isPlaylistPreview()) {
-                                                openPlaylistId = meta.id
-                                                return@posterClick
-                                            }
-                                            val randomCategory = meta.randomPlayCategoryOrNull()
-                                            if (randomCategory != null) {
-                                                val randomSettings = HomeCatalogSettingsRepository.uiState.value
-                                                val randomSourceSections = randomPlaySourceSections(
-                                                    homeSections = HomeRepository.uiState.value.sections,
-                                                    collectionSections = RandomPlayCollectionPool.sections.value,
-                                                    settings = randomSettings,
-                                                )
-                                                val selected = pickRandomPlayItem(
-                                                    category = randomCategory,
-                                                    sourceSections = randomSourceSections
-                                                        .withRandomPlayPool(RandomPlayCandidatePool.state.value),
-                                                    settings = randomSettings,
-                                                    watchedKeys = WatchedRepository.uiState.value.watchedKeys,
-                                                )
-                                                // Warm the next window of collection sources for
-                                                // the pick after this one. No-op once every source
-                                                // is covered, or when collections are not included.
-                                                RandomPlayCollectionPool.ensureLoaded()
-                                                // Likewise top the candidate pool back up: this
-                                                // pick may have been the one that took a card
-                                                // under its target.
-                                                RandomPlayCandidatePool.ensureFilled(
-                                                    sourceSections = randomSourceSections,
-                                                    settings = randomSettings,
-                                                    watchedKeys = WatchedRepository.uiState.value.watchedKeys,
-                                                )
-                                                randomPlayLog.i {
-                                                    val pooled = randomSourceSections
-                                                        .withRandomPlayPool(RandomPlayCandidatePool.state.value)
-                                                    "Pick for $randomCategory: " + (
-                                                        selected?.let { randomPlayPickTrace(pooled, it) }
-                                                            ?: "no candidates"
-                                                        )
-                                                }
-                                                if (selected == null) {
-                                                    coroutineScope.launch {
-                                                        NuvioToastController.show(
-                                                            getString(Res.string.random_play_no_matches),
-                                                        )
-                                                    }
-                                                } else {
-                                                    navController.navigateIfResumed(
-                                                        DetailRoute(
-                                                            type = selected.type,
-                                                            id = selected.id,
-                                                            autoPlay = randomSettings.randomPlayAction == RandomPlayAction.Play,
-                                                        ),
-                                                    )
-                                                }
-                                                return@posterClick
-                                            }
-                                            navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
-                                        },
-                                        onPosterLongClick = posterLongClick@{ meta ->
-                                            if (meta.randomPlayCategoryOrNull() != null) return@posterLongClick
-                                            // Library, tracker and watched actions mean nothing
-                                            // for a playlist card; its screen holds its actions.
-                                            if (meta.isPlaylistPreview()) {
-                                                openPlaylistId = meta.id
-                                                return@posterLongClick
-                                            }
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            selectedPosterAnchor = PosterZoomAnchorHolder.consume()
-                                            selectedPosterMenuPosition = ContextMenuInvocation.consume()
-                                            selectedPosterActionTarget = PosterActionTarget(preview = meta)
-                                        },
-                                        onLibraryPosterClick = { item ->
-                                            navController.navigateIfResumed(
-                                                DetailRoute(type = item.type, id = item.id),
-                                            )
-                                        },
-                                        onLocalLibraryPosterClick = { meta ->
-                                            navController.navigateIfResumed(
-                                                DetailRoute(type = meta.type, id = meta.id),
-                                            )
-                                        },
-                                        onLibraryPosterLongClick = { item, section ->
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            selectedPosterAnchor = PosterZoomAnchorHolder.consume()
-                                            selectedPosterMenuPosition = ContextMenuInvocation.consume()
-                                            selectedPosterActionTarget = PosterActionTarget(
-                                                preview = item.toMetaPreview(),
-                                                libraryItem = item,
-                                                libraryListKey = section.type,
-                                            )
-                                        },
-                                        onLibrarySectionViewAllClick = onLibrarySectionViewAllClick,
-                                        onCloudFilePlay = { item, file ->
-                                            coroutineScope.launch {
-                                                val resumeItem = WatchProgressRepository
-                                                    .progressForVideo(item.playbackVideoId(file))
-                                                    ?.takeIf { it.isResumable }
-                                                    ?.toContinueWatchingItem()
-                                                if (
-                                                    !launchCloudLibraryFile(
-                                                        item = item,
-                                                        file = file,
-                                                        resumePositionMs = resumeItem?.resumePositionMs,
-                                                        resumeProgressFraction = resumeItem?.resumeProgressFraction,
-                                                    )
-                                                ) {
-                                                    NuvioToastController.show(cloudLibraryPlayFailedText)
-                                                }
-                                            }
-                                        },
-                                        onConnectCloudClick = {
-                                            requestedSettingsPageName = "Debrid"
-                                            selectedTab = AppScreenTab.Settings
-                                        },
-                                        onContinueWatchingClick = onContinueWatchingClick,
-                                        onContinueWatchingPlay = onContinueWatchingPlay,
-                                        onContinueWatchingLongPress = onContinueWatchingLongPress,
-                                        onSwitchProfile = onSwitchProfile,
-                                        onHomescreenSettingsClick = { navController.navigate(HomescreenSettingsRoute) },
-                                        onMetaScreenSettingsClick = { navController.navigate(MetaScreenSettingsRoute) },
-                                        onContinueWatchingSettingsClick = { navController.navigate(ContinueWatchingSettingsRoute) },
-                                        onOpenDownload = onOpenDownloadedItem,
-                                        onOpenPartyMedia = ::openPartyMedia,
-                                        onAddonsSettingsClick = { navController.navigate(AddonsSettingsRoute) },
-                                        onPluginsSettingsClick = {
-                                            if (AppFeaturePolicy.pluginsEnabled) {
-                                                navController.navigate(PluginsSettingsRoute)
-                                            }
-                                        },
-                                        onAccountSettingsClick = { navController.navigate(AccountSettingsRoute) },
-                                        onSupportersContributorsSettingsClick = {
-                                            navController.navigate(SupportersContributorsSettingsRoute)
-                                        },
-                                        onLicensesAttributionsSettingsClick = {
-                                            navController.navigate(LicensesAttributionsSettingsRoute)
-                                        },
-                                        onCheckForUpdatesClick = if (AppFeaturePolicy.inAppUpdaterEnabled) {
-                                            {
-                                                appUpdaterController.checkForUpdates(
-                                                    force = true,
-                                                    showNoUpdateFeedback = true,
-                                                )
-                                            }
-                                        } else {
-                                            null
-                                        },
-                                        onShowLatestChangelogClick = if (AppFeaturePolicy.inAppUpdaterEnabled) {
-                                            appUpdaterController::showLatestChangelog
-                                        } else {
-                                            null
-                                        },
-                                        onOpenCollectionEditor = { collectionId ->
-                                            navController.navigate(CollectionEditorRoute(collectionId = collectionId))
-                                        },
-                                        onFolderClick = { collectionId, folderId ->
-                                            navController.navigate(FolderDetailRoute(collectionId = collectionId, folderId = folderId))
-                                        },
-                                        requestedSettingsPageName = requestedSettingsPageName,
-                                        onRequestedSettingsPageConsumed = {
-                                            requestedSettingsPageName = null
-                                        },
-                                        onInitialHomeContentRendered = { initialHomeReady = true },
-                                        onNavigateToSearch = { openSearchOverlay() },
-                                        onNavigateToSearchTab = { handleRootTabClick(AppScreenTab.Search) },
-                                        onNavigateToLibrary = { handleRootTabClick(AppScreenTab.Library) },
-                                        onNavigateToDiscover = { handleRootTabClick(AppScreenTab.Discover) },
-                                        onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
-                                        onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
-                                    )
-                                }
-
-                                if (showDesktopSidebar) {
-                                    DesktopHoverSidebar(
-                                        selectedTab = selectedTab,
-                                        onTabSelected = ::handleRootTabClick,
-                                        onProfileSelected = onProfileSelected,
-                                        onAddProfileRequested = onSwitchProfile,
-                                    )
-                                }
-                                val homeHeroPickerDocked by remember {
-                                    combine(
-                                        StreamPickerController.request,
-                                        StreamPickerController.dock,
-                                    ) { request, dock ->
-                                        request != null && dock?.ownerKey == StreamPickerDock.HOME
-                                    }.distinctUntilChanged()
-                                }.collectAsStateWithLifecycle(initialValue = false)
-                                if (
-                                    (useFloatingTopBar && selectedTab != AppScreenTab.Settings) ||
-                                    selectedTab == AppScreenTab.Search ||
-                                    searchOverlayActive
-                                ) {
-                                    TabletFloatingTopBar(
-                                        selectedTab = selectedTab,
-                                        onTabSelected = ::handleRootTabClick,
-                                        onProfileSelected = onProfileSelected,
-                                        onAddProfileRequested = onSwitchProfile,
-                                        // TV mode docks the source picker into the home hero, right where
-                                        // the bar sits; the bar has nothing to offer there, pinned or not.
-                                        hidden = homeHeroPickerDocked && !searchOverlayActive,
-                                        // Pinning the bar is a content-screen preference: Settings
-                                        // draws its own chrome, so it keeps the fade regardless.
-                                        dimUntilHovered = (
-                                            !desktopTopBarAlwaysVisible ||
-                                                selectedTab == AppScreenTab.Settings
-                                            ) && (
-                                            selectedTab == AppScreenTab.Home ||
-                                                selectedTab == AppScreenTab.Library ||
-                                                selectedTab == AppScreenTab.Discover ||
-                                                selectedTab == AppScreenTab.Search ||
-                                                selectedTab == AppScreenTab.Settings
-                                            ),
-                                        searchOverlayActive = searchOverlayActive,
-                                        onSearchOverlayOpen = { openSearchOverlay() },
-                                        onSearchOverlayDismiss = { dismissSearchOverlay() },
-                                        searchQuery = searchQuery,
-                                        onSearchQueryChange = { searchQuery = it },
-                                        searchFocusRequestCount = searchFocusRequestCount,
-                                        onSearchSubmit = { q ->
-                                            val trimmed = q.trim()
-                                            submittedSearchQuery = trimmed
-                                            searchOverlayActive = false
-                                            handleRootTabClick(AppScreenTab.Search)
-                                            navigateToContentCount++
-                                            // Results load as usual; if the query can only mean one
-                                            // title, its details open on top once that's known, so
-                                            // Back lands on the full results.
-                                            confidentSearchJob[0]?.cancel()
-                                            confidentSearchJob[0] = coroutineScope.launch {
-                                                val match = com.nuvio.app.features.search.ConfidentSearch.resolve(trimmed)
-                                                    ?: return@launch
-                                                // Not if the user has already opened something or moved on.
-                                                val onResults = navController.currentBackStackEntry
-                                                    ?.destination?.hasRoute<TabsRoute>() == true
-                                                if (onResults && selectedTab == AppScreenTab.Search && submittedSearchQuery == trimmed) {
-                                                    navController.navigateIfResumed(DetailRoute(type = match.type, id = match.id))
-                                                }
-                                            }
-                                        },
-                                        onNavigateToContent = { navigateToContentCount++ },
-                                    )
-                                }
-                                if (isDesktop) {
-                                    DesktopFullscreenHoverButton(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(top = 12.dp, end = 12.dp)
-                                            .zIndex(NuvioTokens.Z.navigation + 1f),
-                                    )
-                                }
-
-                            }
-                        }
-                    }
                 }
                 composable<DetailRoute> { backStackEntry ->
                     val route = backStackEntry.toRoute<DetailRoute>()
@@ -3798,6 +3468,400 @@ private fun MainAppContent(
                             selectedPosterActionTarget = PosterActionTarget(preview = meta)
                         },
                     )
+                }
+                }
+                // Home and the other tabs stay composed while a pushed screen covers them, so Back shows a
+                // frame that already exists instead of rebuilding Home (2026-10-19: every Details -> Home
+                // return hitched 80-150 ms, with the details page lingering until Home's first frame). Not
+                // during playback: playback has its own memory trims, which a composed Home's artwork would
+                // sit out, and rebuilding Home on exit costs nothing measurable now (2026-10-19, four exits:
+                // no stalls with Home kept or rebuilt), so the setting that kept it was removed.
+                // Placed above the NavHost so it takes input while visible; covered, it is not placed at all.
+                val tabsEntry = remember(currentBackStackEntry) {
+                    runCatching { navController.getBackStackEntry<TabsRoute>() }.getOrNull()
+                }
+                val playerOnTop = currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true
+                if (tabsEntry != null && !playerOnTop) {
+                    KeptAliveLayer(
+                        visible = currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true,
+                        lifecycleOwner = tabsEntry,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                            val isTabletLayout = maxWidth >= 768.dp
+                            val useNativeBottomTabs =
+                                liquidGlassNativeTabBarSupported && liquidGlassNativeTabBarEnabled && initialHomeReady
+                            val useDesktopSidebar =
+                                isTabletLayout &&
+                                    !useNativeBottomTabs &&
+                                    desktopNavigationLayout == DesktopNavigationLayout.Sidebar
+                            val showDesktopSidebar = useDesktopSidebar && selectedTab != AppScreenTab.Settings
+                            val useFloatingTopBar = isTabletLayout && !useNativeBottomTabs && !useDesktopSidebar
+                            val topChromePadding = if (useFloatingTopBar || selectedTab == AppScreenTab.Search) {
+                                val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                                max(statusBarPadding + 24.dp, 48.dp) + 64.dp
+                            } else {
+                                null
+                            }
+                            val tabsRouteActive = currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true
+                            val onProfileSelected: (NuvioProfile) -> Unit = { profile ->
+                                profileSwitchLoading = true
+                                selectedTab = AppScreenTab.Home
+                                coroutineScope.launch {
+                                    try {
+                                        ProfileRepository.switchToProfile(profile.profileIndex)
+                                        warmProfileStartupRepositories()
+                                        SyncManager.pullAllForProfile(profile.profileIndex)
+                                        launch {
+                                            warmProfileDeferredRepositories()
+                                        }
+                                        delay(300)
+                                    } finally {
+                                        profileSwitchLoading = false
+                                    }
+                                }
+                            }
+
+                            Scaffold(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .alpha(if (initialHomeReady) 1f else 0f),
+                                containerColor = Color.Transparent,
+                                contentWindowInsets = WindowInsets(0),
+                                bottomBar = {
+                                    if (!isTabletLayout && !useNativeBottomTabs && selectedTab != AppScreenTab.Settings) {
+                                        NuvioNavigationBar {
+                                            NavItem(
+                                                selected = selectedTab == AppScreenTab.Home,
+                                                onClick = { handleRootTabClick(AppScreenTab.Home) },
+                                                icon = Icons.Filled.Home,
+                                                contentDescription = stringResource(Res.string.compose_nav_home),
+                                            )
+                                            NavItem(
+                                                selected = selectedTab == AppScreenTab.Search,
+                                                onClick = { handleRootTabClick(AppScreenTab.Search) },
+                                                icon = Res.drawable.sidebar_search,
+                                                contentDescription = stringResource(Res.string.compose_nav_search),
+                                            )
+                                            LibraryNavigationContextMenu(modifier = Modifier.width(64.dp)) { contextModifier ->
+                                                NavItem(
+                                                    selected = selectedTab == AppScreenTab.Library,
+                                                    onClick = { handleRootTabClick(AppScreenTab.Library) },
+                                                    icon = Res.drawable.sidebar_library,
+                                                    contentDescription = stringResource(Res.string.compose_nav_library),
+                                                    modifier = contextModifier,
+                                                )
+                                            }
+                                            NavItem(
+                                                selected = selectedTab == AppScreenTab.Settings,
+                                                onClick = { handleRootTabClick(AppScreenTab.Settings) },
+                                            ) {
+                                                ProfileSwitcherTab(
+                                                    selected = selectedTab == AppScreenTab.Settings,
+                                                    onClick = { handleRootTabClick(AppScreenTab.Settings) },
+                                                    onProfileSelected = onProfileSelected,
+                                                    onAddProfileRequested = onSwitchProfile,
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                            ) { innerPadding ->
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    CompositionLocalProvider(
+                                        LocalNuvioBottomNavigationOverlayPadding provides if (useNativeBottomTabs) 49.dp else 0.dp,
+                                    ) {
+                                        AppTabHost(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(innerPadding)
+                                                .padding(start = if (showDesktopSidebar) DesktopSidebarCollapsedWidth else 0.dp),
+                                            selectedTab = selectedTab,
+                                            topChromePadding = topChromePadding,
+                                            searchFocusRequestCount = searchFocusRequestCount,
+                                            navigateToContentCount = navigateToContentCount,
+                                            searchQuery = searchQuery,
+                                            submittedSearchQuery = submittedSearchQuery,
+                                            onSearchQueryChange = { searchQuery = it },
+                                            searchSubmitRequests = searchSubmitRequests,
+                                            rootActionsEnabled = tabsRouteActive,
+                                            homeScrollToTopRequests = homeScrollToTopRequests,
+                                            searchScrollToTopRequests = searchScrollToTopRequests,
+                                            libraryScrollToTopRequests = libraryScrollToTopRequests,
+                                            discoverScrollToTopRequests = discoverScrollToTopRequests,
+                                            settingsRootActionRequests = settingsRootActionRequests,
+                                            animateHomeCollectionGifs = tabsRouteActive,
+                                            resumePromptItem = resumePromptItem.takeIf { resumePromptUsesHero },
+                                            resumePromptLabel = stringResource(Res.string.resume_prompt_question),
+                                            onResumePromptAction = {
+                                                val item = resumePromptItem
+                                                if (item != null) {
+                                                    resumePromptItem = null
+                                                    openContinueWatching(item, false, false)
+                                                }
+                                            },
+                                            onResumePromptDismiss = { resumePromptItem = null },
+                                            continueWatchingHeroDismissed = continueWatchingHeroDismissed,
+                                            onContinueWatchingHeroDismiss = { continueWatchingHeroDismissed = true },
+                                            onCatalogClick = onCatalogClick,
+                                            onCastClick = onHeroCastClick,
+                                            onBadgeClick = { fact, item -> onHeroBadgeClick(fact, item.type) },
+                                            onPosterClick = posterClick@{ meta ->
+                                                if (meta.isPlaylistPreview()) {
+                                                    openPlaylistId = meta.id
+                                                    return@posterClick
+                                                }
+                                                val randomCategory = meta.randomPlayCategoryOrNull()
+                                                if (randomCategory != null) {
+                                                    val randomSettings = HomeCatalogSettingsRepository.uiState.value
+                                                    val randomSourceSections = randomPlaySourceSections(
+                                                        homeSections = HomeRepository.uiState.value.sections,
+                                                        collectionSections = RandomPlayCollectionPool.sections.value,
+                                                        settings = randomSettings,
+                                                    )
+                                                    val selected = pickRandomPlayItem(
+                                                        category = randomCategory,
+                                                        sourceSections = randomSourceSections
+                                                            .withRandomPlayPool(RandomPlayCandidatePool.state.value),
+                                                        settings = randomSettings,
+                                                        watchedKeys = WatchedRepository.uiState.value.watchedKeys,
+                                                    )
+                                                    // Warm the next window of collection sources for
+                                                    // the pick after this one. No-op once every source
+                                                    // is covered, or when collections are not included.
+                                                    RandomPlayCollectionPool.ensureLoaded()
+                                                    // Likewise top the candidate pool back up: this
+                                                    // pick may have been the one that took a card
+                                                    // under its target.
+                                                    RandomPlayCandidatePool.ensureFilled(
+                                                        sourceSections = randomSourceSections,
+                                                        settings = randomSettings,
+                                                        watchedKeys = WatchedRepository.uiState.value.watchedKeys,
+                                                    )
+                                                    randomPlayLog.i {
+                                                        val pooled = randomSourceSections
+                                                            .withRandomPlayPool(RandomPlayCandidatePool.state.value)
+                                                        "Pick for $randomCategory: " + (
+                                                            selected?.let { randomPlayPickTrace(pooled, it) }
+                                                                ?: "no candidates"
+                                                            )
+                                                    }
+                                                    if (selected == null) {
+                                                        coroutineScope.launch {
+                                                            NuvioToastController.show(
+                                                                getString(Res.string.random_play_no_matches),
+                                                            )
+                                                        }
+                                                    } else {
+                                                        navController.navigateIfResumed(
+                                                            DetailRoute(
+                                                                type = selected.type,
+                                                                id = selected.id,
+                                                                autoPlay = randomSettings.randomPlayAction == RandomPlayAction.Play,
+                                                            ),
+                                                        )
+                                                    }
+                                                    return@posterClick
+                                                }
+                                                navController.navigateIfResumed(DetailRoute(type = meta.type, id = meta.id))
+                                            },
+                                            onPosterLongClick = posterLongClick@{ meta ->
+                                                if (meta.randomPlayCategoryOrNull() != null) return@posterLongClick
+                                                // Library, tracker and watched actions mean nothing
+                                                // for a playlist card; its screen holds its actions.
+                                                if (meta.isPlaylistPreview()) {
+                                                    openPlaylistId = meta.id
+                                                    return@posterLongClick
+                                                }
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                selectedPosterAnchor = PosterZoomAnchorHolder.consume()
+                                                selectedPosterMenuPosition = ContextMenuInvocation.consume()
+                                                selectedPosterActionTarget = PosterActionTarget(preview = meta)
+                                            },
+                                            onLibraryPosterClick = { item ->
+                                                navController.navigateIfResumed(
+                                                    DetailRoute(type = item.type, id = item.id),
+                                                )
+                                            },
+                                            onLocalLibraryPosterClick = { meta ->
+                                                navController.navigateIfResumed(
+                                                    DetailRoute(type = meta.type, id = meta.id),
+                                                )
+                                            },
+                                            onLibraryPosterLongClick = { item, section ->
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                selectedPosterAnchor = PosterZoomAnchorHolder.consume()
+                                                selectedPosterMenuPosition = ContextMenuInvocation.consume()
+                                                selectedPosterActionTarget = PosterActionTarget(
+                                                    preview = item.toMetaPreview(),
+                                                    libraryItem = item,
+                                                    libraryListKey = section.type,
+                                                )
+                                            },
+                                            onLibrarySectionViewAllClick = onLibrarySectionViewAllClick,
+                                            onCloudFilePlay = { item, file ->
+                                                coroutineScope.launch {
+                                                    val resumeItem = WatchProgressRepository
+                                                        .progressForVideo(item.playbackVideoId(file))
+                                                        ?.takeIf { it.isResumable }
+                                                        ?.toContinueWatchingItem()
+                                                    if (
+                                                        !launchCloudLibraryFile(
+                                                            item = item,
+                                                            file = file,
+                                                            resumePositionMs = resumeItem?.resumePositionMs,
+                                                            resumeProgressFraction = resumeItem?.resumeProgressFraction,
+                                                        )
+                                                    ) {
+                                                        NuvioToastController.show(cloudLibraryPlayFailedText)
+                                                    }
+                                                }
+                                            },
+                                            onConnectCloudClick = {
+                                                requestedSettingsPageName = "Debrid"
+                                                selectedTab = AppScreenTab.Settings
+                                            },
+                                            onContinueWatchingClick = onContinueWatchingClick,
+                                            onContinueWatchingPlay = onContinueWatchingPlay,
+                                            onContinueWatchingLongPress = onContinueWatchingLongPress,
+                                            onSwitchProfile = onSwitchProfile,
+                                            onHomescreenSettingsClick = { navController.navigate(HomescreenSettingsRoute) },
+                                            onMetaScreenSettingsClick = { navController.navigate(MetaScreenSettingsRoute) },
+                                            onContinueWatchingSettingsClick = { navController.navigate(ContinueWatchingSettingsRoute) },
+                                            onOpenDownload = onOpenDownloadedItem,
+                                            onOpenPartyMedia = ::openPartyMedia,
+                                            onAddonsSettingsClick = { navController.navigate(AddonsSettingsRoute) },
+                                            onPluginsSettingsClick = {
+                                                if (AppFeaturePolicy.pluginsEnabled) {
+                                                    navController.navigate(PluginsSettingsRoute)
+                                                }
+                                            },
+                                            onAccountSettingsClick = { navController.navigate(AccountSettingsRoute) },
+                                            onSupportersContributorsSettingsClick = {
+                                                navController.navigate(SupportersContributorsSettingsRoute)
+                                            },
+                                            onLicensesAttributionsSettingsClick = {
+                                                navController.navigate(LicensesAttributionsSettingsRoute)
+                                            },
+                                            onCheckForUpdatesClick = if (AppFeaturePolicy.inAppUpdaterEnabled) {
+                                                {
+                                                    appUpdaterController.checkForUpdates(
+                                                        force = true,
+                                                        showNoUpdateFeedback = true,
+                                                    )
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                            onShowLatestChangelogClick = if (AppFeaturePolicy.inAppUpdaterEnabled) {
+                                                appUpdaterController::showLatestChangelog
+                                            } else {
+                                                null
+                                            },
+                                            onOpenCollectionEditor = { collectionId ->
+                                                navController.navigate(CollectionEditorRoute(collectionId = collectionId))
+                                            },
+                                            onFolderClick = { collectionId, folderId ->
+                                                navController.navigate(FolderDetailRoute(collectionId = collectionId, folderId = folderId))
+                                            },
+                                            requestedSettingsPageName = requestedSettingsPageName,
+                                            onRequestedSettingsPageConsumed = {
+                                                requestedSettingsPageName = null
+                                            },
+                                            onInitialHomeContentRendered = { initialHomeReady = true },
+                                            onNavigateToSearch = { openSearchOverlay() },
+                                            onNavigateToSearchTab = { handleRootTabClick(AppScreenTab.Search) },
+                                            onNavigateToLibrary = { handleRootTabClick(AppScreenTab.Library) },
+                                            onNavigateToDiscover = { handleRootTabClick(AppScreenTab.Discover) },
+                                            onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
+                                            onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
+                                        )
+                                    }
+
+                                    if (showDesktopSidebar) {
+                                        DesktopHoverSidebar(
+                                            selectedTab = selectedTab,
+                                            onTabSelected = ::handleRootTabClick,
+                                            onProfileSelected = onProfileSelected,
+                                            onAddProfileRequested = onSwitchProfile,
+                                        )
+                                    }
+                                    val homeHeroPickerDocked by remember {
+                                        combine(
+                                            StreamPickerController.request,
+                                            StreamPickerController.dock,
+                                        ) { request, dock ->
+                                            request != null && dock?.ownerKey == StreamPickerDock.HOME
+                                        }.distinctUntilChanged()
+                                    }.collectAsStateWithLifecycle(initialValue = false)
+                                    if (
+                                        (useFloatingTopBar && selectedTab != AppScreenTab.Settings) ||
+                                        selectedTab == AppScreenTab.Search ||
+                                        searchOverlayActive
+                                    ) {
+                                        TabletFloatingTopBar(
+                                            selectedTab = selectedTab,
+                                            onTabSelected = ::handleRootTabClick,
+                                            onProfileSelected = onProfileSelected,
+                                            onAddProfileRequested = onSwitchProfile,
+                                            // TV mode docks the source picker into the home hero, right where
+                                            // the bar sits; the bar has nothing to offer there, pinned or not.
+                                            hidden = homeHeroPickerDocked && !searchOverlayActive,
+                                            // Pinning the bar is a content-screen preference: Settings
+                                            // draws its own chrome, so it keeps the fade regardless.
+                                            dimUntilHovered = (
+                                                !desktopTopBarAlwaysVisible ||
+                                                    selectedTab == AppScreenTab.Settings
+                                                ) && (
+                                                selectedTab == AppScreenTab.Home ||
+                                                    selectedTab == AppScreenTab.Library ||
+                                                    selectedTab == AppScreenTab.Discover ||
+                                                    selectedTab == AppScreenTab.Search ||
+                                                    selectedTab == AppScreenTab.Settings
+                                                ),
+                                            searchOverlayActive = searchOverlayActive,
+                                            onSearchOverlayOpen = { openSearchOverlay() },
+                                            onSearchOverlayDismiss = { dismissSearchOverlay() },
+                                            searchQuery = searchQuery,
+                                            onSearchQueryChange = { searchQuery = it },
+                                            searchFocusRequestCount = searchFocusRequestCount,
+                                            onSearchSubmit = { q ->
+                                                val trimmed = q.trim()
+                                                submittedSearchQuery = trimmed
+                                                searchOverlayActive = false
+                                                handleRootTabClick(AppScreenTab.Search)
+                                                navigateToContentCount++
+                                                // Results load as usual; if the query can only mean one
+                                                // title, its details open on top once that's known, so
+                                                // Back lands on the full results.
+                                                confidentSearchJob[0]?.cancel()
+                                                confidentSearchJob[0] = coroutineScope.launch {
+                                                    val match = com.nuvio.app.features.search.ConfidentSearch.resolve(trimmed)
+                                                        ?: return@launch
+                                                    // Not if the user has already opened something or moved on.
+                                                    val onResults = navController.currentBackStackEntry
+                                                        ?.destination?.hasRoute<TabsRoute>() == true
+                                                    if (onResults && selectedTab == AppScreenTab.Search && submittedSearchQuery == trimmed) {
+                                                        navController.navigateIfResumed(DetailRoute(type = match.type, id = match.id))
+                                                    }
+                                                }
+                                            },
+                                            onNavigateToContent = { navigateToContentCount++ },
+                                        )
+                                    }
+                                    if (isDesktop) {
+                                        DesktopFullscreenHoverButton(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(top = 12.dp, end = 12.dp)
+                                                .zIndex(NuvioTokens.Z.navigation + 1f),
+                                        )
+                                    }
+
+                                }
+                            }
+                        }
+                    }
                 }
                 }
                 }
@@ -5367,34 +5431,28 @@ private fun AppTabHost(
     var cloudFileChooserTarget by remember { mutableStateOf<CloudLibraryItem?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
-        val stateKey = when (selectedTab) {
-            AppScreenTab.Home,
-            AppScreenTab.Search,
-            AppScreenTab.Discover,
-            AppScreenTab.Library,
-            -> "HomeSearchLibrary"
-            AppScreenTab.Settings -> AppScreenTab.Settings.name
-        }
-        tabStateHolder.SaveableStateProvider(stateKey) {
-            when (selectedTab) {
-                // Home, Search, and Library all share the same composable instance.
-                // This preserves scroll position, hero state, and list state across
-                // all three tabs — switching to Search never changes the visible UI
-                // until results arrive, and switching from Library to Search stays
-                // on the library view until the user types.
-                AppScreenTab.Home,
-                AppScreenTab.Search,
-                AppScreenTab.Discover,
-                AppScreenTab.Library,
-                -> {
+        val settingsSelected = selectedTab == AppScreenTab.Settings
+        // The content tab HomeScreen shows; kept while Settings is up, so the hidden screen does
+        // not change mode underneath it.
+        var contentTab by remember { mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings } ?: AppScreenTab.Home) }
+        if (!settingsSelected) contentTab = selectedTab
+        // HomeScreen stays composed (hidden) while Settings is open, so switching back shows it at
+        // once instead of rebuilding Home; Settings is still built and disposed as before.
+        tabStateHolder.SaveableStateProvider("HomeSearchLibrary") {
+            KeptAliveLayer(
+                visible = !settingsSelected,
+                lifecycleOwner = rememberChildLifecycleOwner(active = !settingsSelected),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                run {
                     // Keep one HomeScreen in the composition while its mode changes. AnimatedContent
                     // retained the outgoing screen for the fade, leaving two focusable HomeScreens
                     // and two HomeTvKeyboardBridge collectors alive at once. On Search -> Home the
                     // outgoing Search screen could reclaim/clear focus as it was disposed, freezing
                     // the Continue Watching shelf until another navigation resynchronised it.
-                    val isSearch = selectedTab == AppScreenTab.Search
-                    val isLib = selectedTab == AppScreenTab.Library
-                    val isDiscover = selectedTab == AppScreenTab.Discover
+                    val isSearch = contentTab == AppScreenTab.Search
+                    val isLib = contentTab == AppScreenTab.Library
+                    val isDiscover = contentTab == AppScreenTab.Discover
                     // Home-only surfaces: everything else about Discover is meant to match Home.
                     val isHomeOnlySurface = !isSearch && !isLib && !isDiscover
                     HomeScreen(
@@ -5410,7 +5468,7 @@ private fun AppTabHost(
                         },
                         searchQuery = if (isSearch) submittedSearchQuery else "",
                         searchSubmitRequests = if (isSearch) searchSubmitRequests else emptyFlow(),
-                        animateCollectionGifs = animateHomeCollectionGifs && isHomeOnlySurface,
+                        animateCollectionGifs = animateHomeCollectionGifs && isHomeOnlySurface && !settingsSelected,
                         scrollToTopRequests = when {
                             isLib -> libraryScrollToTopRequests
                             isSearch -> searchScrollToTopRequests
@@ -5459,8 +5517,12 @@ private fun AppTabHost(
                         onContinueWatchingHeroDismiss = onContinueWatchingHeroDismiss,
                     )
                 }
+            }
+        }
 
-                AppScreenTab.Settings -> {
+        if (settingsSelected) {
+            tabStateHolder.SaveableStateProvider(AppScreenTab.Settings.name) {
+                run {
                     SettingsScreen(
                         modifier = Modifier.fillMaxSize(),
                         rootActionRequests = settingsRootActionRequests,

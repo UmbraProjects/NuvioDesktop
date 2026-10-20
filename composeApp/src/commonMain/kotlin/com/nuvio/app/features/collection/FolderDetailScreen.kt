@@ -118,6 +118,7 @@ import com.nuvio.app.features.home.resolveFocusedHeroItem
 import com.nuvio.app.features.home.stableKey
 import com.nuvio.app.features.home.withNormalizedHeroBackdrop
 import com.nuvio.app.features.tmdb.HeroImageSource
+import com.nuvio.app.features.tmdb.TmdbBackgroundLane
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.home.components.immersiveShelfScrimStops
 import com.nuvio.app.features.home.components.PAGE_ITEM_STEP
@@ -128,6 +129,7 @@ import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWid
 import com.nuvio.app.features.home.immersiveCatalogPosterBaseWidthDp
 import com.nuvio.app.features.home.immersiveShelfHeightDp
 import com.nuvio.app.features.home.components.HomeHeroSection
+import com.nuvio.app.features.home.rememberSettledHeroFocus
 import com.nuvio.app.features.home.components.HomeHeroTrailerManualTrigger
 import com.nuvio.app.features.home.components.HomeTvKey
 import com.nuvio.app.features.home.components.HomeTvKeyboardBridge
@@ -153,6 +155,7 @@ import nuvio.composeapp.generated.resources.collections_folder_sources_failed
 import nuvio.composeapp.generated.resources.collections_folder_sources_failed_more
 import nuvio.composeapp.generated.resources.collections_tab_all
 import org.jetbrains.compose.resources.stringResource
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.abs
 
 private val FolderCoverHeight = 176.dp
@@ -659,8 +662,13 @@ private fun ImmersiveCollectionContent(
     // must still resolve to a real item instead of going null and freezing the hero on
     // whatever the pager last showed.
     val focusedItem = activeRowEntries.getOrNull(activeItemIndex)
-    val heroEnrichment = rememberFolderHeroEnrichment(sessionKey, activeRowEntries, activeItemIndex)
-    val heroFocusedItem = focusedItem?.withFolderHeroEnrichment(heroEnrichment)
+    // The hero and its enrichment follow focus once it stops moving (rememberSettledHeroFocus):
+    // with a key held, the enrichment window was rebuilt per step and restarted the lookups of
+    // titles still in it (2026-10-19: one title's external_ids started and cancelled 26 times in
+    // a second). Select still acts on the live focusedItem.
+    val heroFocus = rememberSettledHeroFocus(activeItemIndex to focusedItem)
+    val heroEnrichment = rememberFolderHeroEnrichment(sessionKey, activeRowEntries, heroFocus.first)
+    val heroFocusedItem = heroFocus.second?.withFolderHeroEnrichment(heroEnrichment)
     val selectHold = rememberHoldToSelectState()
 
     // Mirrors HomeScreen's handleHomeTvKey: a shared handler so the same navigation works
@@ -1065,8 +1073,13 @@ private fun AdaptiveCollectionContent(
     // must still resolve to a real item instead of going null and freezing the hero on
     // whatever the pager last showed.
     val focusedItem = activeRowEntries.getOrNull(activeItemIndex)
-    val heroEnrichment = rememberFolderHeroEnrichment(sessionKey, activeRowEntries, activeItemIndex)
-    val heroFocusedItem = focusedItem?.withFolderHeroEnrichment(heroEnrichment)
+    // The hero and its enrichment follow focus once it stops moving (rememberSettledHeroFocus):
+    // with a key held, the enrichment window was rebuilt per step and restarted the lookups of
+    // titles still in it (2026-10-19: one title's external_ids started and cancelled 26 times in
+    // a second). Select still acts on the live focusedItem.
+    val heroFocus = rememberSettledHeroFocus(activeItemIndex to focusedItem)
+    val heroEnrichment = rememberFolderHeroEnrichment(sessionKey, activeRowEntries, heroFocus.first)
+    val heroFocusedItem = heroFocus.second?.withFolderHeroEnrichment(heroEnrichment)
     val selectHold = rememberHoldToSelectState()
 
     // Mirrors HomeScreen's handleHomeTvKey: a shared handler so the same navigation works
@@ -1339,6 +1352,10 @@ private fun rememberFolderHeroEnrichment(
     LaunchedEffect(window) {
         val tvdbForShows = TmdbSettingsRepository.snapshot().heroImageSource == HeroImageSource.TmdbMoviesTvdbShows
         val permits = Semaphore(FolderHeroEnrichConcurrency)
+        // Only the focused title is something the user is waiting on. Its neighbours are read-ahead,
+        // and in TMDB's interactive lane they queued it behind them (2026-10-19 19:26: 124 of 178
+        // queued requests on a folder were neighbour lookups, median wait 1 s).
+        val focusedKey = window.firstOrNull()?.let(::folderHeroKey)
         coroutineScope {
             window
                 .map { it.withNormalizedHeroBackdrop() }
@@ -1350,7 +1367,7 @@ private fun rememberFolderHeroEnrichment(
                         )
                 }
                 .forEach { raw ->
-                    launch {
+                    launch(if (folderHeroKey(raw) == focusedKey) EmptyCoroutineContext else TmdbBackgroundLane) {
                         val resolved = permits.withPermit {
                             try {
                                 resolveFocusedHeroItem(raw, normalHomeMode = true, tvdbForShows = tvdbForShows).first

@@ -59,6 +59,8 @@ fun DetailCastSection(
     showCharacters: Boolean = false,
     /** Keeps the episode-count line's space even before (or without) counts, so the row can't grow. */
     reserveEpisodeLine: Boolean = false,
+    /** Characters view on and its portraits still being looked up: blank circles, no actor photos. */
+    portraitsPending: Boolean = false,
 ) {
     if (cast.isEmpty()) return
 
@@ -94,6 +96,7 @@ fun DetailCastSection(
                     CastItem(
                         person = person,
                         asCharacter = showCharacters && !person.characterImage.isNullOrBlank(),
+                        portraitPending = portraitsPending,
                         reserveEpisodeLine = reserveEpisodeLine,
                         sharedTransitionKey = sharedTransitionKey,
                         sizing = sizing,
@@ -117,6 +120,7 @@ private fun CastItem(
     person: MetaPerson,
     modifier: Modifier = Modifier,
     asCharacter: Boolean = false,
+    portraitPending: Boolean = false,
     reserveEpisodeLine: Boolean = false,
     sharedTransitionKey: String? = null,
     sizing: CastSectionSizing,
@@ -175,7 +179,9 @@ private fun CastItem(
                 .nuvioCardDepth(CircleShape, NuvioCardDepthSurface.Cast),
             contentAlignment = Alignment.Center,
         ) {
-            if (asCharacter) {
+            if (portraitPending) {
+                // The circle's own background only, until the character portraits are known.
+            } else if (asCharacter) {
                 AsyncImage(
                     model = person.characterImage,
                     contentDescription = person.role ?: person.name,
