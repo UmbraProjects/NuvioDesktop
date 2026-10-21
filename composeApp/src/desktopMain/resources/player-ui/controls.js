@@ -37,6 +37,9 @@ const pauseTitle = document.getElementById("pauseTitle");
 const pauseSource = document.getElementById("pauseSource");
 const pauseSourceTitle = document.getElementById("pauseSourceTitle");
 const pauseSourceProvider = document.getElementById("pauseSourceProvider");
+const pauseCast = document.getElementById("pauseCast");
+const pauseCastLabel = document.getElementById("pauseCastLabel");
+const pauseCastList = document.getElementById("pauseCastList");
 const pauseEpisodeLine = document.getElementById("pauseEpisodeLine");
 const pauseEpisodeInfo = document.getElementById("pauseEpisodeInfo");
 const pauseEpisodeSeparator = document.getElementById("pauseEpisodeSeparator");
@@ -334,6 +337,9 @@ let state = {
   subtitleAddonsTabLabel: "Addons",
   subtitleStyleTabLabel: "Style",
   downloadSubtitleLabel: "Download subtitle",
+  autoSyncedSubtitleLabel: "Synced by Auto Sync",
+  pauseOverlayCastLabel: "Starring",
+  pauseOverlayCast: [],
   noneLabel: "None",
   fetchSubtitlesLabel: "Tap to fetch subtitles",
   subtitleDelayLabel: "Subtitle Delay",
@@ -547,6 +553,13 @@ let submitIntroDraft = {
   status: "",
 };
 let hasReceivedPlayerControls = false;
+// mpv's loading state from the native playerUpdate push; null until the first push arrives.
+let nativeIsLoading = null;
+// The spinner appears only once loading has lasted this long, and hides at once. In-cache seeks
+// finish in 10–40 ms; showing the spinner for each was the "lag" felt on every local seek.
+const BUFFERING_SHOW_DELAY_MS = 250;
+let bufferingWantedSince = 0;
+let bufferingShowTimer = 0;
 let parentalGuideRunId = 0;
 let parentalGuideStartedKey = "";
 let parentalGuideCompletedKey = "";
@@ -726,6 +739,13 @@ const notePlayToggleIntent = () => {
   // Re-render once the hold lapses so the icon settles on the confirmed state.
   playIntentTimer = window.setTimeout(() => renderChrome(), PLAY_INTENT_HOLD_MS + 20);
   renderChrome();
+};
+
+// Rewriting a <use> href rebuilds its shadow instance even when the value is unchanged. A redraw
+// landing between press and release then removes the element that was pressed, and Chromium drops
+// the click — which is how play/pause "missed" clicks once state pushes made redraws frequent.
+const setIconHref = (icon, href) => {
+  if (icon && icon.getAttribute("href") !== href) icon.setAttribute("href", href);
 };
 
 const send = (type, value = 0) => {
@@ -1401,8 +1421,67 @@ const syncPauseMetadataTimer = showOpening => {
   }, prefersReducedMotion ? 1 : 4000);
 };
 
+const castInitials = name => String(name || "")
+  .split(/\s+/)
+  .filter(Boolean)
+  .slice(0, 2)
+  .map(part => part[0].toUpperCase())
+  .join("");
+
+// renderChrome runs on every state push; rebuild the cast rows only when the cast itself changes,
+// so portraits are not refetched and do not flicker while the overlay is up.
+let pauseCastRenderKey = "";
+const renderPauseCast = () => {
+  const cast = (Array.isArray(state.pauseOverlayCast) ? state.pauseOverlayCast : [])
+    .filter(member => String(member?.name || "").trim());
+  pauseCastLabel.textContent = state.pauseOverlayCastLabel || "Starring";
+  pauseCast.hidden = cast.length === 0;
+  const key = JSON.stringify(cast.map(member => [member.name, member.role, member.photo]));
+  if (key === pauseCastRenderKey) return;
+  pauseCastRenderKey = key;
+  pauseCastList.replaceChildren(...cast.map(member => {
+    const row = document.createElement("li");
+    row.className = "pause-cast-member";
+    const initials = () => {
+      const badge = document.createElement("span");
+      badge.className = "pause-cast-photo";
+      badge.setAttribute("aria-hidden", "true");
+      badge.textContent = castInitials(member.name);
+      return badge;
+    };
+    const photoUrl = String(member.photo || "").trim();
+    if (photoUrl) {
+      const photo = document.createElement("img");
+      photo.className = "pause-cast-photo";
+      photo.alt = "";
+      photo.decoding = "async";
+      photo.addEventListener("error", () => photo.replaceWith(initials()), { once: true });
+      photo.src = photoUrl;
+      row.appendChild(photo);
+    } else {
+      row.appendChild(initials());
+    }
+    const text = document.createElement("span");
+    text.className = "pause-cast-text";
+    const name = document.createElement("span");
+    name.className = "pause-cast-name";
+    name.textContent = member.name;
+    text.appendChild(name);
+    const roleText = String(member.role || "").trim();
+    if (roleText) {
+      const role = document.createElement("span");
+      role.className = "pause-cast-role";
+      role.textContent = roleText;
+      text.appendChild(role);
+    }
+    row.appendChild(text);
+    return row;
+  }));
+};
+
 const renderPauseMetadataOverlay = showOpening => {
   syncPauseMetadataTimer(showOpening);
+  renderPauseCast();
 
   const logoUrl = usableLogoSource(pauseLogo, state.pauseOverlayLogo);
   const titleText = String(state.title || "").trim();
@@ -2165,6 +2244,7 @@ const contextMenuItems = [
         { label: "Fit", action: "resizeMode:0", selectedField: "resizeModeLabel" },
         { label: "Fill", action: "resizeMode:1", selectedField: "resizeModeLabel" },
         { label: "Zoom", action: "resizeMode:2", selectedField: "resizeModeLabel" },
+        { label: "Auto crop", action: "resizeMode:3", selectedField: "resizeModeLabel" },
       ] },
       { label: "Video settings", children: [
         { label: "Auto", action: "send:selectDesktopHdrMode:0", selectedField: "desktopHdrModeLabel" },
@@ -2512,13 +2592,23 @@ const openSubtitleContextTab = tab => {
   send("subtitleTab", tab);
 };
 
+// Auto crop needs a few frames (~10 s) before the bars come off, so its pill says so and stays
+// up longer; otherwise picking it looks like nothing happened.
+const showAspectPill = label => {
+  if (label === "Auto crop") {
+    window.nuvioShowPresetPill("Aspect ratio", "Auto crop · detecting bars, ~10s", 4000);
+  } else {
+    window.nuvioShowPresetPill("Aspect ratio", label);
+  }
+};
+
 const cycleAspectFromControls = () => {
-  const modes = ["Fit", "Fill", "Zoom"];
+  const modes = ["Fit", "Fill", "Zoom", "Auto crop"];
   const currentIndex = Math.max(0, modes.findIndex(mode => mode.toLowerCase() === String(state.resizeModeLabel || "Fit").toLowerCase()));
   const next = modes[(currentIndex + 1) % modes.length];
   state = { ...state, resizeModeLabel: next };
   if (resizeLabel) resizeLabel.textContent = next;
-  window.nuvioShowPresetPill("Aspect ratio", next);
+  showAspectPill(next);
   send("resize", 0);
 };
 
@@ -2552,11 +2642,11 @@ const executeContextAction = action => {
   }
   if (kind === "resizeMode") {
     const index = Number(parts.shift() || 0);
-    const label = ["Fit", "Fill", "Zoom"][index] || "Fit";
+    const label = ["Fit", "Fill", "Zoom", "Auto crop"][index] || "Fit";
     state = { ...state, resizeModeLabel: label };
     if (resizeLabel) resizeLabel.textContent = label;
     refreshContextMenuIndicators();
-    window.nuvioShowPresetPill("Aspect ratio", label);
+    showAspectPill(label);
     send("selectResizeMode", index);
     return;
   }
@@ -3222,6 +3312,7 @@ const renderAddonSubtitleList = () => {
     Boolean(state.isLoadingAddonSubtitles),
     state.fetchSubtitlesLabel || "",
     state.downloadSubtitleLabel || "",
+    state.autoSyncedSubtitleLabel || "",
     items.map(item => [
       item.index,
       item.id,
@@ -3230,6 +3321,7 @@ const renderAddonSubtitleList = () => {
       item.addonName,
       Boolean(item.isSelected),
       Boolean(item.isDownloading),
+      Boolean(item.isAutoSynced),
     ]),
   ]);
   if (nextRenderKey === addonSubtitleListRenderKey) return;
@@ -3298,6 +3390,21 @@ const renderAddonSubtitleList = () => {
       copy.appendChild(detail);
     }
     row.appendChild(copy);
+    if (item.isAutoSynced) {
+      const syncedLabel = state.autoSyncedSubtitleLabel || "Synced by Auto Sync";
+      const synced = document.createElement("span");
+      synced.className = "subtitle-synced-badge";
+      synced.setAttribute("role", "img");
+      synced.setAttribute("aria-label", syncedLabel);
+      synced.title = syncedLabel;
+      const syncedIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      syncedIcon.setAttribute("aria-hidden", "true");
+      const syncedUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      syncedUse.setAttribute("href", "#icon-synced");
+      syncedIcon.appendChild(syncedUse);
+      synced.appendChild(syncedIcon);
+      row.appendChild(synced);
+    }
     const download = document.createElement("button");
     download.type = "button";
     download.className = "subtitle-download-button";
@@ -4857,6 +4964,28 @@ if (metadataSection) {
   metadataSection.addEventListener("mouseleave", () => setPlaylistPeekOpen(false));
 }
 
+const debouncedBuffering = wanted => {
+  if (!wanted) {
+    bufferingWantedSince = 0;
+    if (bufferingShowTimer) {
+      clearTimeout(bufferingShowTimer);
+      bufferingShowTimer = 0;
+    }
+    return false;
+  }
+  const now = performance.now();
+  if (!bufferingWantedSince) bufferingWantedSince = now;
+  const remaining = BUFFERING_SHOW_DELAY_MS - (now - bufferingWantedSince);
+  if (remaining <= 0) return true;
+  if (!bufferingShowTimer) {
+    bufferingShowTimer = setTimeout(() => {
+      bufferingShowTimer = 0;
+      renderChrome();
+    }, remaining + 1);
+  }
+  return false;
+};
+
 const renderChrome = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
@@ -4935,7 +5064,12 @@ const renderChrome = () => {
   // The Sources sheet leaves the picture uncovered and stays open across a swap, so buffering
   // must still show through it; every other modal hides the spinner as before.
   const modalHidesBuffering = Boolean(activeModal) && activeModal !== "sources";
-  const showBuffering = Boolean(!showError && state.isLoading && !state.isLocked && !modalHidesBuffering && !showOpening);
+  // The spinner follows mpv's own loading state once it arrives: the Compose feed's isLoading is
+  // a 500 ms-old snapshot that re-raised the spinner after a short seek had already finished.
+  const spinnerLoading = nativeIsLoading === null ? state.isLoading : nativeIsLoading;
+  const showBuffering = debouncedBuffering(
+    Boolean(!showError && spinnerLoading && !state.isLocked && !modalHidesBuffering && !showOpening),
+  );
   bufferingStatus.classList.toggle("visible", showBuffering);
   bufferingStatus.setAttribute("aria-hidden", showBuffering ? "false" : "true");
 
@@ -4961,10 +5095,10 @@ const renderChrome = () => {
     toggle.setAttribute("aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));
   }
   if (toggleIcon) {
-    toggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
+    setIconHref(toggleIcon, isPlaying ? "#icon-pause" : "#icon-play");
   }
   lockButton.setAttribute("aria-label", state.isLocked ? state.unlockLabel : state.lockLabel);
-  lockIcon.setAttribute("href", state.isLocked ? "#icon-lock-open" : "#icon-lock");
+  setIconHref(lockIcon, state.isLocked ? "#icon-lock-open" : "#icon-lock");
   backButton.setAttribute("aria-label", state.closeLabel || "Close player");
   const submitIntroButtonLabel = state.submitIntroLabel || "Submit Intro";
   submitIntroButton.setAttribute("aria-label", submitIntroButtonLabel);
@@ -4982,7 +5116,7 @@ const renderChrome = () => {
   const pictureInPicturePlaybackLabel = isPlaying ? (state.pauseLabel || "Pause") : (state.playLabel || "Play");
   pictureInPicturePlayButton.setAttribute("aria-label", pictureInPicturePlaybackLabel);
   pictureInPicturePlayButton.setAttribute("title", pictureInPicturePlaybackLabel);
-  pictureInPictureToggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
+  setIconHref(pictureInPictureToggleIcon, isPlaying ? "#icon-pause" : "#icon-play");
   seek.disabled = Boolean(state.isLocked);
   setProgress(positionMs, durationMs);
   renderChapterMarkers(durationMs);
@@ -5354,7 +5488,7 @@ const syncPlayerVolumeControl = () => {
     // Fill width for the layouts that paint the played part of the track (the official bar).
     playerVolumeSlider.style.setProperty("--volume-position", `${Math.max(0, Math.min(100, localVolume / 2))}%`);
   }
-  playerVolumeIcon?.setAttribute("href", volumeIconHref());
+  setIconHref(playerVolumeIcon, volumeIconHref());
   if (volumeMuteButton) {
     const label = localMuted ? "Unmute" : "Mute";
     volumeMuteButton.setAttribute("aria-label", label);
@@ -5801,6 +5935,13 @@ const clearPressedButton = () => {
 
 document.addEventListener("pointerdown", event => {
   const interactingWithChrome = isChromeInteractionTarget(event.target);
+  // Diagnostics: the bridge log pairs these with "hud input toggle", so a press that never
+  // becomes a toggle (chrome hidden, a double-click, a swallowed tap) shows up as a gap.
+  if (event.button === 0 && !isHeroTrailerSurface && !state.heroTrailerMode) {
+    const chromeHiddenOffset = root.classList.contains("chrome-hidden") ? 10 : 0;
+    if (event.target.closest("#toggle")) send("hudTrace", 1 + chromeHiddenOffset);
+    else if (!interactingWithChrome) send("hudTrace", 2 + chromeHiddenOffset);
+  }
   if (interactingWithChrome) {
     isChromePointerDown = true;
     isChromePointerInside = true;
@@ -6515,6 +6656,12 @@ speedButton.addEventListener("contextmenu", event => {
 playerVolumeSlider.addEventListener("input", event => {
   event.stopPropagation();
   localVolume = Math.max(0, Math.min(200, Number(playerVolumeSlider.value) || 0));
+  // A non-zero volume unmutes mpv (NativePlayerController.setVolume), and nothing pushes that
+  // back here, so clear the local flag too or the icon stays on the muted glyph.
+  if (localMuted && localVolume > 0) {
+    localMuted = false;
+    refreshContextMenuIndicators();
+  }
   // Keep the glyph's wave count in step with the drag, as the keyboard path already does.
   syncPlayerVolumeControl();
   send("volumeSet", localVolume);
@@ -6559,6 +6706,7 @@ window.playerUpdate = update => {
     audioTracks,
     subtitleTracks,
   };
+  nativeIsLoading = state.isLoading;
   setContextMenuDynamicItems("subtitleTracks", subtitleTracks);
   setContextMenuDynamicItems("audioTracks", visibleAudioTracks());
   renderChrome();

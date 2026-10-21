@@ -2187,6 +2187,9 @@ private fun MainAppContent(
             // Watch party: always open the source picker (which marks the party's source) rather
             // than auto-playing a stream or a downloaded copy that may be a different cut.
             forceManualSelection: Boolean = false,
+            // Continue Watching's source shortcut: replay the cached last link even with Reuse
+            // Last Link off.
+            forceReuseLastLink: Boolean = false,
         ) {
             val targetResumePositionMs = if (startFromBeginning) 0L else (resumePositionMs ?: 0L)
             val targetResumeProgressFraction = if (startFromBeginning) null else resumeProgressFraction
@@ -2308,6 +2311,7 @@ private fun MainAppContent(
                         resumePositionMs = if (startFromBeginning) 0L else resumePositionMs,
                         resumeProgressFraction = targetResumeProgressFraction,
                         manualSelection = manualSelection,
+                        reuseLastLink = forceReuseLastLink,
                         preferLocalStreams = prefersLocalStreams,
                         startFromBeginning = startFromBeginning,
                         disableProgressTracking = disableProgressTracking,
@@ -2713,7 +2717,13 @@ private fun MainAppContent(
             )
         }
 
-        val openContinueWatching: (ContinueWatchingItem, Boolean, Boolean) -> Unit = { item, useAlternateBehavior, startFromBeginning ->
+        fun openContinueWatching(
+            item: ContinueWatchingItem,
+            useAlternateBehavior: Boolean,
+            startFromBeginning: Boolean,
+            forceManualSelection: Boolean = false,
+            forceReuseLastLink: Boolean = false,
+        ) {
             resumePromptItem = null
             if (item.isCloudLibraryContinueWatchingItem()) {
                 coroutineScope.launch {
@@ -2775,6 +2785,8 @@ private fun MainAppContent(
                     useAlternateBehavior = useAlternateBehavior,
                     startFromBeginning = startFromBeginning,
                     watchProgressSource = item.source,
+                    forceManualSelection = forceManualSelection,
+                    forceReuseLastLink = forceReuseLastLink,
                 )
             }
         }
@@ -2798,6 +2810,16 @@ private fun MainAppContent(
         // continue into the existing local-file/source-picker/autoplay decision tree.
         val onContinueWatchingPlay: (ContinueWatchingItem) -> Unit = { item ->
             openContinueWatching(item, false, false)
+        }
+
+        // The card's source shortcut does the opposite of a plain click: with Reuse Last Link on it
+        // opens the source picker, otherwise it replays the last link.
+        val onContinueWatchingSourceShortcut: (ContinueWatchingItem) -> Unit = { item ->
+            if (PlayerSettingsRepository.uiState.value.streamReuseLastLinkEnabled) {
+                openContinueWatching(item, false, false, forceManualSelection = true)
+            } else {
+                openContinueWatching(item, false, false, forceReuseLastLink = true)
+            }
         }
 
         val onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = { item ->
@@ -3723,6 +3745,7 @@ private fun MainAppContent(
                                             },
                                             onContinueWatchingClick = onContinueWatchingClick,
                                             onContinueWatchingPlay = onContinueWatchingPlay,
+                                            onContinueWatchingSourceShortcut = onContinueWatchingSourceShortcut,
                                             onContinueWatchingLongPress = onContinueWatchingLongPress,
                                             onSwitchProfile = onSwitchProfile,
                                             onHomescreenSettingsClick = { navController.navigate(HomescreenSettingsRoute) },
@@ -4379,7 +4402,7 @@ private fun MainAppContent(
                 ) {
                     val infoHash = stream.p2pInfoHash ?: return
                     val sentinelUrl = p2pSentinelUrl(infoHash, stream.p2pFileIdx)
-                    if (playerSettings.streamReuseLastLinkEnabled) {
+                    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettings.streamReuseLastLinkEnabled)) {
                         val cacheKey = StreamLinkCacheRepository.contentKey(
                             type = launch.type,
                             videoId = effectiveStreamVideoId,
@@ -4494,8 +4517,12 @@ private fun MainAppContent(
                     if (!hasResolvedVideoId) return@LaunchedEffect
                     if (reuseHandled) return@LaunchedEffect
                     reuseHandled = true
-                    if (launch.manualSelection) return@LaunchedEffect
-                    if (!playerSettings.streamReuseLastLinkEnabled) return@LaunchedEffect
+                    // Continue Watching's source shortcut asks for the last link explicitly, whatever
+                    // the setting and the local-library routing say.
+                    if (!launch.reuseLastLink) {
+                        if (launch.manualSelection) return@LaunchedEffect
+                        if (!playerSettings.streamReuseLastLinkEnabled) return@LaunchedEffect
+                    }
                     val cacheKey = StreamLinkCacheRepository.contentKey(
                         type = launch.type,
                         videoId = effectiveStreamVideoId,
@@ -4667,7 +4694,7 @@ private fun MainAppContent(
                         return@LaunchedEffect
                     }
                     autoPlayHandled = true
-                    if (playerSettings.streamReuseLastLinkEnabled) {
+                    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettings.streamReuseLastLinkEnabled)) {
                         val cacheKey = StreamLinkCacheRepository.contentKey(
                             type = launch.type,
                             videoId = effectiveStreamVideoId,
@@ -4837,7 +4864,7 @@ private fun MainAppContent(
                         return
                     }
                     val sourceUrl = stream.playableDirectUrl ?: return
-                    if (playerSettings.streamReuseLastLinkEnabled && saveForReuse) {
+                    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettings.streamReuseLastLinkEnabled) && saveForReuse) {
                         val cacheKey = StreamLinkCacheRepository.contentKey(
                             type = launch.type,
                             videoId = effectiveStreamVideoId,
@@ -5399,6 +5426,7 @@ private fun AppTabHost(
     onConnectCloudClick: (() -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingPlay: ((ContinueWatchingItem) -> Unit)? = null,
+    onContinueWatchingSourceShortcut: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     onSwitchProfile: (() -> Unit)? = null,
     onHomescreenSettingsClick: () -> Unit = {},
@@ -5500,6 +5528,7 @@ private fun AppTabHost(
                         onLocalLibraryPosterClick = onLocalLibraryPosterClick,
                         onContinueWatchingClick = if (isHomeOnlySurface) onContinueWatchingClick else null,
                         onContinueWatchingPlay = if (isHomeOnlySurface) onContinueWatchingPlay else null,
+                        onContinueWatchingSourceShortcut = if (isHomeOnlySurface) onContinueWatchingSourceShortcut else null,
                         onContinueWatchingLongPress = if (isHomeOnlySurface) onContinueWatchingLongPress else null,
                         onFolderClick = if (isHomeOnlySurface) onFolderClick else null,
                         onFirstCatalogRendered = if (isHomeOnlySurface) onInitialHomeContentRendered else null,

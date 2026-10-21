@@ -23,6 +23,7 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import javax.swing.JFileChooser
 import javax.swing.JOptionPane
+import javax.swing.UIManager
 import javax.swing.filechooser.FileNameExtensionFilter
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
@@ -277,19 +278,27 @@ private fun settingsPropertiesForBackup(file: Path, includeCredentials: Boolean)
     return if (includeCredentials) source else credentialFreeSettingsProperties(source)
 }
 
+// Swing's default look-and-feel has no UI classes in the packaged runtime, so a chooser or option
+// pane built before one is installed throws "no ComponentUI class". The other pickers do the same.
+private fun installSystemLookAndFeel() {
+    runCatching { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) }
+}
+
 internal actual object DesktopSettingsBackup {
     actual fun create(includeCredentials: Boolean): DesktopSettingsBackupResult {
-        val chooser = JFileChooser().apply {
-            dialogTitle = "Back up Nuvio settings"
-            fileFilter = FileNameExtensionFilter("Nuvio settings backup (*.zip)", "zip")
-            selectedFile = DesktopStorage.rootDir.resolve(
-                "nuvio-settings-${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))}.zip",
-            ).toFile()
-        }
-        if (chooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) {
-            return DesktopSettingsBackupResult.Cancelled
-        }
-        val chosen = chooser.selectedFile.toPath()
+        installSystemLookAndFeel()
+        val chosen = runCatching {
+            val chooser = JFileChooser().apply {
+                dialogTitle = "Back up Nuvio settings"
+                fileFilter = FileNameExtensionFilter("Nuvio settings backup (*.zip)", "zip")
+                selectedFile = DesktopStorage.rootDir.resolve(
+                    "nuvio-settings-${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))}.zip",
+                ).toFile()
+            }
+            if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) chooser.selectedFile.toPath() else null
+        }.getOrElse { error ->
+            return DesktopSettingsBackupResult.Failed("Could not open the file picker: ${error.message ?: error::class.simpleName}")
+        } ?: return DesktopSettingsBackupResult.Cancelled
         val destination = if (chosen.extension.equals("zip", ignoreCase = true)) {
             chosen
         } else {
@@ -354,14 +363,17 @@ internal actual object DesktopSettingsBackup {
     }
 
     actual fun import(): DesktopSettingsImportResult {
-        val chooser = JFileChooser(DesktopStorage.rootDir.toFile()).apply {
-            dialogTitle = "Import Nuvio settings"
-            fileFilter = FileNameExtensionFilter("Nuvio settings backup (*.zip)", "zip")
-        }
-        if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) {
-            return DesktopSettingsImportResult.Cancelled
-        }
-        val source = chooser.selectedFile.toPath().toAbsolutePath().normalize()
+        installSystemLookAndFeel()
+        val selected = runCatching {
+            val chooser = JFileChooser(DesktopStorage.rootDir.toFile()).apply {
+                dialogTitle = "Import Nuvio settings"
+                fileFilter = FileNameExtensionFilter("Nuvio settings backup (*.zip)", "zip")
+            }
+            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) chooser.selectedFile else null
+        }.getOrElse { error ->
+            return DesktopSettingsImportResult.Failed("Could not open the file picker: ${error.message ?: error::class.simpleName}")
+        } ?: return DesktopSettingsImportResult.Cancelled
+        val source = selected.toPath().toAbsolutePath().normalize()
         return runCatching {
             // Read in full now, so a bad file is reported here rather than discovered at next launch.
             val contents = Files.newInputStream(source).use(::readSettingsBackup)

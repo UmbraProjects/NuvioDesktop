@@ -77,7 +77,7 @@ internal object FilenameMetaResolver {
 
         val queries = HashMap<Int, FilenameQuery>()
         items.forEachIndexed { index, item ->
-            if (!looksLikeReleaseFilename(item.name)) return@forEachIndexed
+            if (!needsFilenameResolution(item)) return@forEachIndexed
             parseFilenameQuery(item.name, item.type)?.let { queries[index] = it }
         }
         if (queries.isEmpty()) return items
@@ -304,6 +304,20 @@ internal object FilenameMetaResolver {
         // Debrid APIs frequently normalize release separators to spaces (`Hanna S01E07`). The
         // season/episode coordinate is already an unambiguous media signal on its own.
         return seasonEpisodeMarkerRegex.containsMatchIn(trimmed)
+    }
+
+    private val imdbIdTokenRegex = Regex("""(?<![a-z0-9])tt\d{5,}(?![0-9])""")
+
+    /**
+     * A catalog item already identified by a metadata addon is never a release filename, even when
+     * its name carries an episode marker: AIOMetadata's Up Next rows arrive as `Raising Hope - S1E1`
+     * with the IMDb id in the item id and `_tmdbId`/`_tvdbId` alongside. Resolving those swapped the
+     * addon's landscape art for a TMDB portrait poster and forced the card portrait.
+     */
+    internal fun needsFilenameResolution(item: MetaPreview): Boolean {
+        if (item.addonTmdbId != null || item.addonTvdbId != null) return false
+        if (imdbIdTokenRegex.containsMatchIn(item.id)) return false
+        return looksLikeReleaseFilename(item.name)
     }
 
     // Tracker/site stamps glued to the front of a torrent name (`www.UIndex.org   -   Show S01E01`).

@@ -44,11 +44,6 @@ class NativeImageReflectionCheckTest {
             "Same JVM-only preload as above.",
         ),
         Allowed(
-            "core/ui/SkiaGpuResourceTrim.kt", "current.getDeclaredField(name)",
-            "Walks skiko's redrawer for the literal fields contextHandler / context; any failure is caught and " +
-                "only disables the GPU cache trim.",
-        ),
-        Allowed(
             "features/player/desktop/MacosAwtViewResolver.kt", "current.getDeclaredMethod(name)",
             "Two copies: the macOS resolver never runs (Windows-only app); the Windows one calls getHWnd on " +
                 "the AWT peer, which the agent output registers and playback exercises on every start.",

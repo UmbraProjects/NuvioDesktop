@@ -401,6 +401,7 @@ fun HomeScreen(
     onLocalLibraryPosterClick: ((MetaPreview) -> Unit)? = null,
     onContinueWatchingClick: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingPlay: ((ContinueWatchingItem) -> Unit)? = null,
+    onContinueWatchingSourceShortcut: ((ContinueWatchingItem) -> Unit)? = null,
     onContinueWatchingLongPress: ((ContinueWatchingItem) -> Unit)? = null,
     onFolderClick: ((collectionId: String, folderId: String) -> Unit)? = null,
     onCastClick: ((HeroCastMember) -> Unit)? = null,
@@ -4070,6 +4071,7 @@ fun HomeScreen(
                                 layout = continueWatchingLayout,
                                 rowState = continueWatchingRowState,
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4087,6 +4089,7 @@ fun HomeScreen(
                                 layout = continueWatchingLayout,
                                 rowState = nextUpRowState,
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4104,6 +4107,7 @@ fun HomeScreen(
                                 layout = continueWatchingLayout,
                                 rowState = upcomingRowState,
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4130,6 +4134,7 @@ fun HomeScreen(
                                 layout = continueWatchingLayout,
                                 rowState = continueWatchingRowState,
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4147,6 +4152,7 @@ fun HomeScreen(
                                 layout = continueWatchingLayout,
                                 rowState = nextUpRowState,
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4164,6 +4170,7 @@ fun HomeScreen(
                                 layout = continueWatchingLayout,
                                 rowState = upcomingRowState,
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4273,6 +4280,7 @@ fun HomeScreen(
                                     null
                                 },
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4305,6 +4313,7 @@ fun HomeScreen(
                                     null
                                 },
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4337,6 +4346,7 @@ fun HomeScreen(
                                     null
                                 },
                                 onItemClick = onContinueWatchingClick,
+                                onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                 onItemLongPress = onContinueWatchingLongPress,
                             )
                         }
@@ -4640,6 +4650,7 @@ fun HomeScreen(
                                     headerTrailingContent = tvRowDotsContent,
                                     bodyModifier = rowBodyModifier,
                                     onItemClick = onContinueWatchingClick,
+                                    onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                     onItemLongPress = onContinueWatchingLongPress,
                                 )
 
@@ -4663,6 +4674,7 @@ fun HomeScreen(
                                         headerTrailingContent = tvRowDotsContent,
                                         bodyModifier = rowBodyModifier,
                                         onItemClick = onContinueWatchingClick,
+                                        onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                         onItemLongPress = onContinueWatchingLongPress,
                                     )
 
@@ -4686,6 +4698,7 @@ fun HomeScreen(
                                         headerTrailingContent = tvRowDotsContent,
                                         bodyModifier = rowBodyModifier,
                                         onItemClick = onContinueWatchingClick,
+                                        onItemSourceShortcut = onContinueWatchingSourceShortcut,
                                         onItemLongPress = onContinueWatchingLongPress,
                                     )
 

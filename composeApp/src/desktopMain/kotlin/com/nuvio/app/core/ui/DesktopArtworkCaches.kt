@@ -109,11 +109,15 @@ internal const val PlaybackScaledCacheBytes = 8L * 1024 * 1024
  * prevent an outgoing player from restoring budgets underneath a replacement. Late image requests
  * remain subject to the smaller budgets until every reason has ended. Pixels still owned by a
  * painter are never closed here; only cache references are dropped.
+ *
+ * Skia's GPU resource cache is deliberately left alone. With the Direct3D renderer skiko flushes
+ * frames on its `skiko-dispatcher-to-block-on` pool, not the EDT, so changing the DirectContext's
+ * cache limit from app code raced skiko's own post-flush purge and double-released a texture
+ * (crash ~5 s after opening the player). Only skiko may touch the context.
  */
 internal class DesktopArtworkCacheCoordinator(
     private val limitAnimations: (Boolean) -> Unit,
     private val limitScaledBitmaps: (Boolean) -> Unit,
-    private val limitGpuResources: (Boolean) -> Unit = {},
 ) {
     private var memoryCache: MemoryCache? = null
     private var browsingMaxBytes = 0L
@@ -166,7 +170,6 @@ internal class DesktopArtworkCacheCoordinator(
         applyMemoryBudget()
         limitAnimations(restricted)
         limitScaledBitmaps(restricted)
-        limitGpuResources(restricted)
     }
 
     private fun applyMemoryBudget() {
@@ -179,5 +182,4 @@ internal class DesktopArtworkCacheCoordinator(
 internal val DesktopArtworkCaches = DesktopArtworkCacheCoordinator(
     limitAnimations = ::limitDecodedAnimationCache,
     limitScaledBitmaps = ScaledBitmapCache::setBackgroundMode,
-    limitGpuResources = SkiaGpuResourceTrim::setBackgroundMode,
 )

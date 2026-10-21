@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.addons.AddonsUiState
 import com.nuvio.app.features.details.MetaDetailsUiState
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
+import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.p2p.P2pSettingsUiState
 import com.nuvio.app.features.p2p.P2pStreamingState
@@ -109,6 +110,7 @@ internal class PlayerScreenRuntime(
     var resizeModeFitLabel: String = ""
     var resizeModeFillLabel: String = ""
     var resizeModeZoomLabel: String = ""
+    var resizeModeAutoCropLabel: String = ""
     var downloadedLabel: String = ""
     var subtitleSavedLabel: String = "Subtitle saved"
     var subtitleSaveFailedLabel: String = "Could not save subtitle"
@@ -275,6 +277,8 @@ internal class PlayerScreenRuntime(
     var pendingSourcesEpisode by mutableStateOf<MetaVideo?>(null)
     var episodeStreamsPanelState by mutableStateOf(EpisodeStreamsPanelState())
     var playerMetaVideos by mutableStateOf<List<MetaVideo>>(emptyList())
+    /** The title's cast from the same meta load, for the pause overlay. */
+    var playerMetaCast by mutableStateOf<List<MetaPerson>>(emptyList())
     var playerChapters by mutableStateOf<List<PlayerChapter>>(emptyList())
     var skipIntervals by mutableStateOf<List<SkipInterval>>(emptyList())
     var seekrTrack by mutableStateOf<SeekrTrack?>(null)
@@ -367,7 +371,7 @@ internal class PlayerScreenRuntime(
     var subtitleAutoSyncState by mutableStateOf(SubtitleAutoSyncUiState())
     var automaticSubtitleSyncJob: Job? = null
     /** The last automatic sync applied: the addon subtitle's URL and its retimed text. */
-    var automaticallySyncedSubtitle: Pair<String, String>? = null
+    var automaticallySyncedSubtitle by mutableStateOf<Pair<String, String>?>(null)
 
     var lastSyncedSettingsResizeMode: PlayerResizeMode? = null
     var lastResetPlaybackIdentity: String? = null

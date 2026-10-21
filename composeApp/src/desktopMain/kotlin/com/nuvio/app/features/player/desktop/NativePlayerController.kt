@@ -5,6 +5,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.features.player.DesktopHudLayout
 import com.nuvio.app.features.player.PlayerControlAddonSubtitleItem
+import com.nuvio.app.features.player.PlayerControlCastItem
 import com.nuvio.app.features.player.PlayerControlAudioTrackItem
 import com.nuvio.app.features.player.PlayerControlBuiltInSubtitleItem
 import com.nuvio.app.features.player.PlayerControlEpisodeItem
@@ -119,6 +120,16 @@ internal class NativePlayerController(
 
     @Volatile
     private var handle: Long = 0L
+
+    /**
+     * Whether a handle of this controller may have touched VapourSynth: SVP requested, the user's
+     * mpv options/config applied, or any `vf` written. Sticky, so it only ever errs towards the
+     * serialized teardown. A hero trailer never sets it, and its teardown then skips
+     * [nativeProcessLifecycleLock]: a trailer whose mpv_terminate_destroy took 1.9s held the main
+     * player's create for exactly that long (2026-10-20).
+     */
+    @Volatile
+    private var mayHostVapourSynth = false
     @Volatile
     private var lastResizeMode: PlayerResizeMode? = null
     private val handleLock = Any()
@@ -201,6 +212,7 @@ internal class NativePlayerController(
         restoreVolume: Boolean = false,
     ) {
         if (disposed) return
+        if (enableUserMpvOptions || animeSvpEnabled) mayHostVapourSynth = true
         // A network-share source (\\host\share, file://host/…) from an addon or scraper would make
         // Windows authenticate to that host and hand it the user's NTLM hash.
         listOfNotNull(sourceUrl, sourceAudioUrl?.takeIf { it.isNotBlank() }).forEach { source ->
@@ -491,6 +503,7 @@ internal class NativePlayerController(
                     PlayerResizeMode.Fit -> 0
                     PlayerResizeMode.Fill -> 1
                     PlayerResizeMode.Zoom -> 2
+                    PlayerResizeMode.AutoCrop -> 3
                 },
             )
             forceVideoRedraw()
@@ -534,6 +547,7 @@ internal class NativePlayerController(
     }
 
     fun setMpvProperty(key: String, value: String) {
+        if (key == "vf") mayHostVapourSynth = true
         videoProfileBatch.get()?.let { it.properties[key] = value; return }
         synchronized(pendingMpvProperties) {
             pendingMpvProperties[key] = value
@@ -1252,15 +1266,14 @@ internal class NativePlayerController(
             PlayerControlsAction.KeyboardTogglePlayback -> {
                 val current = handle
                 if (current == 0L) return
-                val isEnded = NativePlayerBridge.isEnded(current)
-                val isPaused = NativePlayerBridge.isPaused(current)
-                if (isEnded) {
+                if (NativePlayerBridge.isEnded(current)) {
                     NativePlayerBridge.seekTo(current, 0L)
                     releaseMeteredPrefetchFreeze()
                     NativePlayerBridge.setPaused(current, false)
                 } else {
-                    if (isPaused) releaseMeteredPrefetchFreeze()
-                    NativePlayerBridge.setPaused(current, !isPaused)
+                    val play = NativePlayerBridge.isPaused(current)
+                    if (play) releaseMeteredPrefetchFreeze()
+                    NativePlayerBridge.setPaused(current, !play)
                 }
             }
             PlayerControlsAction.SeekBack,
@@ -1305,10 +1318,16 @@ internal class NativePlayerController(
      * [snapshot] off the UI thread. Every field is an mpv property read that waits on mpv's core,
      * which stalled the UI thread 150-190 ms per poll while a hero trailer opened (`(UiStall)`,
      * 2026-10-19). Holds the process-wide lifecycle lock, which the native dispose also takes, so
-     * the handle cannot be freed mid-read.
+     * the handle cannot be freed mid-read. A trailer's dispose skips that lock (see
+     * [mayHostVapourSynth]), so its polls do too rather than hold up the main player's create;
+     * the native handle registry already makes a read on a disposed id a no-op.
      */
     suspend fun snapshotOffUiThread(): PlayerPlaybackSnapshot = withContext(Dispatchers.IO) {
-        synchronized(nativeProcessLifecycleLock) { snapshot() }
+        if (mayHostVapourSynth) {
+            synchronized(nativeProcessLifecycleLock) { snapshot() }
+        } else {
+            snapshot()
+        }
     }
 
     fun snapshot(): PlayerPlaybackSnapshot {
@@ -1433,12 +1452,24 @@ internal class NativePlayerController(
         // preset options, so only the flag needs clearing.
         meteredPrefetchFrozen = false
         if (current != 0L) {
+            val serialized = mayHostVapourSynth
             kotlin.concurrent.thread(isDaemon = true, name = "Nuvio-Player-Dispose") {
-                synchronized(nativeProcessLifecycleLock) {
+                if (serialized) {
+                    synchronized(nativeProcessLifecycleLock) {
+                        runCatching { NativePlayerBridge.dispose(current) }
+                    }
+                } else {
                     runCatching { NativePlayerBridge.dispose(current) }
                 }
             }
         }
+    }
+
+    /** Mirrors [handleFallbackAction]'s toggle: an ended or paused player plays, otherwise it pauses. */
+    override fun toggleWouldPlay(): Boolean? {
+        val current = handle
+        if (current == 0L) return null
+        return NativePlayerBridge.isEnded(current) || NativePlayerBridge.isPaused(current)
     }
 
     override fun play() {
@@ -2196,6 +2227,10 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("pauseOverlaySourceEnabled", pauseOverlaySourceEnabled)
         append(',')
+        appendJsonField("pauseOverlayCastLabel", pauseOverlayCastLabel)
+        append(',')
+        appendJsonArrayField("pauseOverlayCast", pauseOverlayCast) { appendCastItemJson(it) }
+        append(',')
         appendJsonField("resizeModeLabel", resizeModeLabel)
         append(',')
         appendJsonField("playbackSpeedLabel", playbackSpeedLabel)
@@ -2327,6 +2362,8 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("fetchSubtitlesLabel", fetchSubtitlesLabel)
         append(',')
         appendJsonField("downloadSubtitleLabel", downloadSubtitleLabel)
+        append(',')
+        appendJsonField("autoSyncedSubtitleLabel", autoSyncedSubtitleLabel)
         append(',')
         appendJsonField("subtitleDelayLabel", subtitleDelayLabel)
         append(',')
@@ -2916,6 +2953,16 @@ private fun StringBuilder.appendEpisodeItemJson(item: PlayerControlEpisodeItem) 
     append('}')
 }
 
+private fun StringBuilder.appendCastItemJson(item: PlayerControlCastItem) {
+    append('{')
+    appendJsonField("name", item.name)
+    append(',')
+    appendJsonField("role", item.role)
+    append(',')
+    appendJsonField("photo", item.photo)
+    append('}')
+}
+
 private fun StringBuilder.appendAddonSubtitleItemJson(item: PlayerControlAddonSubtitleItem) {
     append('{')
     appendJsonField("index", item.index)
@@ -2931,6 +2978,8 @@ private fun StringBuilder.appendAddonSubtitleItemJson(item: PlayerControlAddonSu
     appendJsonField("isSelected", item.isSelected)
     append(',')
     appendJsonField("isDownloading", item.isDownloading)
+    append(',')
+    appendJsonField("isAutoSynced", item.isAutoSynced)
     append('}')
 }
 

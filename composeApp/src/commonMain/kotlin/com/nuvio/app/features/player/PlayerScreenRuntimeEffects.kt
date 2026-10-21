@@ -95,9 +95,13 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     }
 
     LaunchedEffect(parentMetaType, parentMetaId) {
-        playerMetaVideos = MetaDetailsRepository.peek(parentMetaType, parentMetaId)?.videos ?: emptyList()
-        if (playerMetaVideos.isEmpty()) {
-            playerMetaVideos = MetaDetailsRepository.fetch(parentMetaType, parentMetaId)?.videos ?: emptyList()
+        val peeked = MetaDetailsRepository.peek(parentMetaType, parentMetaId)
+        playerMetaVideos = peeked?.videos ?: emptyList()
+        playerMetaCast = peeked?.cast ?: emptyList()
+        if (playerMetaVideos.isEmpty() || playerMetaCast.isEmpty()) {
+            val fetched = MetaDetailsRepository.fetch(parentMetaType, parentMetaId)
+            if (playerMetaVideos.isEmpty()) playerMetaVideos = fetched?.videos ?: emptyList()
+            if (playerMetaCast.isEmpty()) playerMetaCast = fetched?.cast ?: emptyList()
         }
     }
 
@@ -105,6 +109,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         val currentMeta = metaUiState.meta ?: return@LaunchedEffect
         if (currentMeta.type == parentMetaType && currentMeta.id == parentMetaId) {
             playerMetaVideos = currentMeta.videos
+            if (currentMeta.cast.isNotEmpty()) playerMetaCast = currentMeta.cast
         }
     }
 

@@ -367,6 +367,19 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         // reads as messy clutter in the pause card, so it is intentionally not used as a fallback.
         pauseOverlayDescription = activePauseDescription.orEmpty(),
         pauseOverlaySourceEnabled = playerSettingsUiState.desktopPauseOverlaySourceEnabled,
+        pauseOverlayCastLabel = stringResource(Res.string.meta_starring),
+        pauseOverlayCast = remember(playerMetaCast) {
+            playerMetaCast
+                .filter { it.name.isNotBlank() }
+                .take(PauseOverlayCastLimit)
+                .map { person ->
+                    PlayerControlCastItem(
+                        name = person.name,
+                        role = person.role.orEmpty(),
+                        photo = person.photo.orEmpty(),
+                    )
+                }
+        },
         resizeModeLabel = stringResource(resizeMode.labelRes),
         playbackSpeedLabel = formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed),
         subtitlesLabel = stringResource(Res.string.compose_player_subs),
@@ -458,6 +471,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         noneLabel = stringResource(Res.string.compose_player_none),
         fetchSubtitlesLabel = stringResource(Res.string.compose_player_fetch_subtitles),
         downloadSubtitleLabel = stringResource(Res.string.compose_player_download_subtitle),
+        autoSyncedSubtitleLabel = stringResource(Res.string.compose_player_subtitle_auto_synced),
         subtitleDelayLabel = stringResource(Res.string.compose_player_subtitle_delay),
         resetLabel = stringResource(Res.string.compose_player_reset),
         autoSyncLabel = stringResource(Res.string.compose_player_auto_sync),
@@ -909,7 +923,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             )
         }
 
-        RenderPlayerControls(displayedPositionMs = displayedPositionMs, isEpisode = isEpisode)
+        // Desktop playback always draws the native HTML HUD over the mpv surface. These Compose
+        // controls only ever sat underneath it, and showed through for the frame or two before
+        // the surface and its launch shield went up (seen on Continue Watching's last-link launch).
+        if (!isDesktop) {
+            RenderPlayerControls(displayedPositionMs = displayedPositionMs, isEpisode = isEpisode)
+        }
         RenderPlaybackOverlays(
             runtime = runtime,
             displayedPositionMs = displayedPositionMs,
@@ -1516,6 +1535,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             when (value.toInt()) {
                 1 -> PlayerResizeMode.Fill
                 2 -> PlayerResizeMode.Zoom
+                3 -> PlayerResizeMode.AutoCrop
                 else -> PlayerResizeMode.Fit
             },
         )
@@ -2020,6 +2040,7 @@ private fun PlayerScreenRuntime.buildPlayerControlAddonSubtitleItems(): List<Pla
             addonName = subtitle.addonName.orEmpty(),
             isSelected = subtitle.id == selectedAddonSubtitleId || subtitle.url == selectedAddonSubtitleId,
             isDownloading = subtitle.id.ifBlank { subtitle.url } == downloadingAddonSubtitleId,
+            isAutoSynced = automaticallySyncedSubtitle?.first == subtitle.url,
         )
     }
 
@@ -2036,6 +2057,9 @@ private fun PlayerScreenRuntime.buildPlayerControlSubtitleCueItems(): List<Playe
 // Cues delivered to the scrollable HUD list: enough to recover from heavy desync (±30 lines
 // around the capture point is minutes of dialogue) while keeping the controls JSON small.
 private const val PLAYER_CONTROLS_SUBTITLE_CUE_WINDOW = 60
+
+// Top-billed names on the pause overlay; more turns the corner block into a list to read.
+private const val PauseOverlayCastLimit = 5
 
 private fun PlayerScreenRuntime.playerControlsNearestSubtitleCues(): List<SubtitleSyncCue> {
     val capturedPositionMs = subtitleAutoSyncState.capturedPositionMs ?: return emptyList()

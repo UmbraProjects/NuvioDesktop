@@ -157,7 +157,7 @@ internal fun PlayerScreenRuntime.saveP2pStreamForReuse(
     season: Int?,
     episode: Int?,
 ) {
-    if (!playerSettingsUiState.streamReuseLastLinkEnabled || videoId == null) return
+    if (!StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) || videoId == null) return
     val infoHash = stream.p2pInfoHash ?: return
     val cacheKey = StreamLinkCacheRepository.contentKey(
         type = contentType ?: parentMetaType,
@@ -315,7 +315,7 @@ internal fun PlayerScreenRuntime.switchToSource(
     flushWatchProgress()
     stopActiveP2pStream()
     val currentVideoId = activeVideoId
-    if (playerSettingsUiState.streamReuseLastLinkEnabled && currentVideoId != null) {
+    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && currentVideoId != null) {
         saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber)
     }
     activeSourceAudioUrl = null
@@ -394,7 +394,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     stopActiveP2pStream()
     val epVideoId = episode.id
     val resume = resolveEpisodeResume(epVideoId, episode)
-    if (playerSettingsUiState.streamReuseLastLinkEnabled) {
+    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled)) {
         saveDirectStreamForReuse(stream, url, epVideoId, seasonNumber, episodeNumber)
     }
     activeSourceAudioUrl = null

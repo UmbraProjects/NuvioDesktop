@@ -23,6 +23,9 @@ data class StreamLaunch(
     val resumePositionMs: Long? = null,
     val resumeProgressFraction: Float? = null,
     val manualSelection: Boolean = false,
+    // Continue Watching's source shortcut: replay the cached last link even when Reuse Last Link
+    // is off. Falls through to the normal flow when nothing is cached.
+    val reuseLastLink: Boolean = false,
     // Captured at play time from the detail page that launched playback, so the streams request
     // doesn't re-read a shared flag that a later, unrelated detail load may have overwritten.
     val preferLocalStreams: Boolean = false,

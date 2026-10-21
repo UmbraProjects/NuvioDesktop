@@ -108,6 +108,7 @@ enum class PlayerResizeMode {
     Fit,
     Fill,
     Zoom,
+    AutoCrop,
 }
 
 enum class IosVideoOutputPreset(

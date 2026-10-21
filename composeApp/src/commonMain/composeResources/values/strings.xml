@@ -634,6 +634,7 @@
     <string name="compose_player_playing">Playing</string>
     <string name="compose_player_fetch_subtitles">Tap to fetch subtitles</string>
     <string name="compose_player_download_subtitle">Download subtitle</string>
+    <string name="compose_player_subtitle_auto_synced">Synced by Auto Sync</string>
     <string name="compose_player_subtitle_saved">Subtitle saved</string>
     <string name="compose_player_subtitle_save_failed">Could not save subtitle</string>
     <string name="compose_player_go_back">Go back</string>
@@ -643,6 +644,7 @@
     <string name="compose_player_resize_fill">Fill</string>
     <string name="compose_player_resize_fit">Fit</string>
     <string name="compose_player_resize_zoom">Zoom</string>
+    <string name="compose_player_resize_auto_crop">Auto crop</string>
     <string name="compose_player_seek_back_10">Seek backward 10 seconds</string>
     <string name="compose_player_seek_back_seconds">Seek backward %1$d seconds</string>
     <string name="compose_player_seek_forward_seconds">Seek forward %1$d seconds</string>
@@ -948,6 +950,7 @@
     <string name="action_donate">Donate</string>
     <string name="cw_action_go_to_details">Go to details</string>
     <string name="cw_action_play">Play</string>
+    <string name="cw_action_play_last_link">Play last link</string>
     <string name="cw_action_remove">Remove</string>
     <string name="cw_action_resync">Resync Continue Watching</string>
     <string name="cw_action_start_from_beginning">Start from beginning</string>
@@ -1199,6 +1202,11 @@
     <string name="settings_continue_watching_click_action_description">Left click option.</string>
     <string name="settings_continue_watching_click_action_play">Play</string>
     <string name="settings_continue_watching_click_action_details">Details</string>
+    <string name="settings_continue_watching_source_shortcut_title">Source shortcut</string>
+    <string name="settings_continue_watching_source_shortcut_description">A hover button that does the opposite of a click: opens the source picker when Reuse Last Link is on, otherwise plays the last link. Centre makes it a large button over the artwork.</string>
+    <string name="settings_continue_watching_source_shortcut_off">Off</string>
+    <string name="settings_continue_watching_source_shortcut_corner">Corner</string>
+    <string name="settings_continue_watching_source_shortcut_center">Centre</string>
     <string name="settings_continue_watching_blur_next_up_description">Blur next episode thumbnails in Continue Watching to avoid spoilers.</string>
     <string name="settings_continue_watching_blur_next_up_title">Blur Unwatched in Continue Watching</string>
     <string name="settings_continue_watching_show_unaired_next_up_description">Include upcoming episodes in Continue Watching before they air.</string>

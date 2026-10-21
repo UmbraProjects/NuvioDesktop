@@ -124,7 +124,10 @@ typedef enum mpv_format {
     MPV_FORMAT_NODE = 6,
     MPV_FORMAT_NODE_ARRAY = 7,
     MPV_FORMAT_NODE_MAP = 8,
+    MPV_FORMAT_BYTE_ARRAY = 9,
 } mpv_format;
+
+typedef struct mpv_byte_array { void *data; size_t size; } mpv_byte_array;
 
 // ABI declarations from libmpv client.h; node contents are freed by libmpv.
 typedef struct mpv_node {
@@ -923,6 +926,73 @@ std::string hresultMessage(const char *operation, HRESULT hr) {
     return builder.str();
 }
 
+// Auto crop: how much of each edge of one captured frame is black bar, as fractions of the frame.
+struct AutoCropBars {
+    double top = 0.0, bottom = 0.0, left = 0.0, right = 0.0;
+};
+
+// Finds the black bars baked into one packed frame from screenshot-raw (bytesPerPixel 4 for
+// bgr0/rgb0-style formats, 8 for rgba64). Each edge is walked inwards until a row/column has
+// more than a couple of bright samples (logos and noise are tolerated). Bars are made symmetric
+// (only what both sides agree on is trimmed) and hairlines are dropped. Returns false when the
+// frame cannot be judged, e.g. a fade to black.
+static bool detectAutoCropBars(const uint8_t *data, int64_t width, int64_t height, int64_t stride,
+                               int bytesPerPixel, AutoCropBars &out) {
+    constexpr int threshold = 16;  // 0-255; at or below counts as black
+    constexpr int samples = 64;    // probes per row/column, across the middle 90% of the other axis
+    constexpr int stray = 2;       // bright probes tolerated per row/column
+    constexpr double minimumBar = 0.012;
+    if (!data || width < 64 || height < 64 || stride < width * bytesPerPixel) return false;
+
+    auto bright = [&](int64_t x, int64_t y) {
+        const uint8_t *pixel = data + y * stride + x * bytesPerPixel;
+        if (bytesPerPixel == 8) {
+            // 16-bit little-endian channels: the high byte is enough at this threshold.
+            return pixel[1] > threshold || pixel[3] > threshold || pixel[5] > threshold;
+        }
+        // Channel order doesn't matter: any of the three colour bytes being bright is picture.
+        return pixel[0] > threshold || pixel[1] > threshold || pixel[2] > threshold;
+    };
+    auto probe = [](int64_t span, int index) {
+        return (int64_t)(span * (0.05 + 0.90 * (index + 0.5) / samples));
+    };
+    auto rowHasPicture = [&](int64_t y) {
+        int hits = 0;
+        for (int i = 0; i < samples; ++i) {
+            if (bright(probe(width, i), y) && ++hits > stray) return true;
+        }
+        return false;
+    };
+    auto columnHasPicture = [&](int64_t x, int64_t top, int64_t bottom) {
+        int hits = 0;
+        const int64_t span = bottom - top;
+        for (int i = 0; i < samples; ++i) {
+            const int64_t y = top + (int64_t)(span * (i + 0.5) / samples);
+            if (bright(x, y) && ++hits > stray) return true;
+        }
+        return false;
+    };
+
+    int64_t top = 0;
+    while (top < height && !rowHasPicture(top)) ++top;
+    if (top >= height) return false;
+    int64_t bottom = height;
+    while (bottom > top && !rowHasPicture(bottom - 1)) --bottom;
+    int64_t left = 0;
+    while (left < width && !columnHasPicture(left, top, bottom)) ++left;
+    if (left >= width) return false;
+    int64_t right = width;
+    while (right > left && !columnHasPicture(right - 1, top, bottom)) --right;
+
+    double vertical = std::min((double)top / height, (double)(height - bottom) / height);
+    double horizontal = std::min((double)left / width, (double)(width - right) / width);
+    if (vertical < minimumBar) vertical = 0.0;
+    if (horizontal < minimumBar) horizontal = 0.0;
+    out.top = out.bottom = vertical;
+    out.left = out.right = horizontal;
+    return true;
+}
+
 struct MpvApi {
     using mpv_create_fn = mpv_handle *(*)();
     using mpv_initialize_fn = int (*)(mpv_handle *);
@@ -933,6 +1003,7 @@ struct MpvApi {
     using mpv_set_property_string_fn = int (*)(mpv_handle *, const char *, const char *);
     using mpv_get_property_fn = int (*)(mpv_handle *, const char *, mpv_format, void *);
     using mpv_command_fn = int (*)(mpv_handle *, const char **);
+    using mpv_command_node_fn = int (*)(mpv_handle *, mpv_node *, mpv_node *);
     using mpv_error_string_fn = const char *(*)(int);
     using mpv_free_fn = void (*)(void *);
     using mpv_free_node_contents_fn = void (*)(mpv_node *);
@@ -954,6 +1025,7 @@ struct MpvApi {
     mpv_set_property_string_fn setPropertyString = nullptr;
     mpv_get_property_fn getProperty = nullptr;
     mpv_command_fn command = nullptr;
+    mpv_command_node_fn commandNode = nullptr;
     mpv_error_string_fn errorString = nullptr;
     mpv_free_fn freeValue = nullptr;
     mpv_free_node_contents_fn freeNodeContents = nullptr;
@@ -1041,6 +1113,7 @@ struct MpvApi {
         setPropertyString = loadSymbol<mpv_set_property_string_fn>("mpv_set_property_string");
         getProperty = loadSymbol<mpv_get_property_fn>("mpv_get_property");
         command = loadSymbol<mpv_command_fn>("mpv_command");
+        commandNode = loadSymbol<mpv_command_node_fn>("mpv_command_node");
         errorString = loadSymbol<mpv_error_string_fn>("mpv_error_string");
         freeValue = loadSymbol<mpv_free_fn>("mpv_free");
         freeNodeContents = loadSymbol<mpv_free_node_contents_fn>("mpv_free_node_contents");
@@ -1732,6 +1805,12 @@ public:
         }
         int flag = paused ? 1 : 0;
         mpvApi().setProperty(mpv, "pause", MPV_FORMAT_FLAG, &flag);
+        // The queueing JNI call mirrored the requested value; record what was actually applied.
+        // A gate above may have kept mpv paused, and mpv emits no change event for a write that
+        // leaves the value as it was, so the mirror would otherwise keep the request.
+        setMirroredNumber("pause", flag);
+        nuvioBridgeLog(std::string("pause write requested=") + (requestedPlay ? "play" : "pause") +
+            " applied=" + (paused ? "pause" : "play"));
     }
 
     bool isPaused() {
@@ -2437,8 +2516,14 @@ public:
         }
         const double target = clampSeekSecondsLocked(base + (double)offsetMs / 1000.0);
         // Steps that follow a recent seek are folded into one trailing request; the first step
-        // of a burst (and any isolated press) still goes out immediately.
-        if (lastSeekIssuedAt != std::chrono::steady_clock::time_point{} &&
+        // of a burst (and any isolated press) still goes out immediately. Coalescing only exists
+        // to spare remote hosts a burst of range requests, so it is skipped for local files and
+        // for forward steps that land inside what the demuxer has already cached.
+        const double cachedUntil = mirroredDouble("demuxer-cache-time", -1.0);
+        const bool seekStaysOffNetwork = sourceIsLocalFile.load() ||
+            (target >= base && cachedUntil > 0.0 && target <= cachedUntil);
+        if (!seekStaysOffNetwork &&
+            lastSeekIssuedAt != std::chrono::steady_clock::time_point{} &&
             now - lastSeekIssuedAt < seekCoalesceWindow) {
             if (deferredSeekTargetSeconds < 0.0) deferredSeekStartedAt = now;
             deferredSeekTargetSeconds = target;
@@ -2501,6 +2586,23 @@ public:
     }
 
     void setResizeMode(int mode) {
+        // Runs on the mpv call thread, which also owns the auto crop state.
+        if (mode == 3) {
+            // Zoom's fill, applied to the frame once video-crop has trimmed its bars.
+            setStringProperty("keepaspect", "yes");
+            setStringProperty("panscan", "1.0");
+            setStringProperty("video-unscaled", "no");
+            if (!autoCropEnabled.exchange(true)) {
+                resetAutoCropState();
+                autoCropNextCheckAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+                nuvioMpvLogAppend("[nuvio] auto crop enabled\n");
+            }
+            return;
+        }
+        if (autoCropEnabled.exchange(false)) {
+            resetAutoCropState();
+            nuvioMpvLogAppend("[nuvio] auto crop disabled\n");
+        }
         switch (mode) {
             case 1: // Fill (stretch)
                 setStringProperty("keepaspect", "no");
@@ -2518,6 +2620,288 @@ public:
                 setStringProperty("video-unscaled", "no");
                 break;
         }
+    }
+
+    // ---- Auto crop (see the state block's comment). mpv call thread unless noted.
+
+    // Event thread: queues a check once one is due. Cheap enough for every loop tick.
+    void scheduleAutoCropIfDue() {
+        if (!autoCropEnabled.load() || autoCropCheckQueued.load()) return;
+        if (std::chrono::steady_clock::now() < autoCropNextCheckAt.load()) return;
+        autoCropCheckQueued = true;
+        postMpvCall([this]() {
+            runAutoCropCheck();
+            autoCropCheckQueued = false;
+        });
+    }
+
+    // Event thread: a new file starts learning from scratch (video-crop is a global option, so a
+    // crop learned for the previous file would otherwise carry over).
+    void onAutoCropFileLoaded() {
+        postMpvCall([this]() { resetAutoCropState(); });
+        autoCropNextCheckAt = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    }
+
+    // Event thread: after a seek the scene (and, while still learning, the bars) may differ.
+    void onAutoCropPlaybackRestart() {
+        if (!autoCropEnabled.load()) return;
+        const auto soon = std::chrono::steady_clock::now() + std::chrono::milliseconds(700);
+        if (soon < autoCropNextCheckAt.load()) autoCropNextCheckAt = soon;
+    }
+
+    void resetAutoCropState() {
+        autoCropHistory.clear();
+        autoCropAppliedBars = AutoCropBars{};
+        autoCropLearnChecks = 0;
+        autoCropAttempts = 0;
+        autoCropLocked = false;
+        autoCropReferenceAspect = 0.0;
+        autoCropAspectChanges = 0;
+        autoCropVariableAspect = autoCropEnabled.load() && autoCropTaggedImax();
+        if (autoCropVariableAspect) nuvioMpvLogAppend("[nuvio] auto crop: IMAX tag in title, checking continuously\n");
+        if (!autoCropAppliedCrop.empty()) {
+            autoCropAppliedCrop.clear();
+            setAutoCropProperty(std::string());
+        }
+        autoCropAppliedFrameWidth = 0;
+        autoCropAppliedFrameHeight = 0;
+    }
+
+    bool autoCropTaggedImax() {
+        for (const char *name : {"filename", "media-title"}) {
+            std::string value = stringProperty(name, "");
+            std::transform(value.begin(), value.end(), value.begin(),
+                [](unsigned char c) { return (char)std::tolower(c); });
+            if (value.find("imax") != std::string::npos) return true;
+        }
+        return false;
+    }
+
+    // Grabs the current video frame (no OSD/subtitles, after filters) and measures its bars.
+    bool captureAutoCropBars(AutoCropBars &out, int64_t &grabWidth, int64_t &grabHeight) {
+        mpv_handle *handle = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            handle = mpv;
+        }
+        if (!handle || !mpvApi().commandNode) return false;
+        // Used without mpvMutex so the grab doesn't stall every other property read: the handle
+        // is only destroyed in shutdown(), after stopMpvCalls() has joined this thread.
+        char commandName[] = "screenshot-raw";
+        char commandFlags[] = "video";
+        mpv_node items[2];
+        items[0].format = MPV_FORMAT_STRING;
+        items[0].u.string = commandName;
+        items[1].format = MPV_FORMAT_STRING;
+        items[1].u.string = commandFlags;
+        mpv_node_list list{2, items, nullptr};
+        mpv_node args;
+        args.format = MPV_FORMAT_NODE_ARRAY;
+        args.u.list = &list;
+        mpv_node result{};
+        const auto started = std::chrono::steady_clock::now();
+        const int error = mpvApi().commandNode(handle, &args, &result);
+        if (error < 0) {
+            nuvioMpvLogAppend("[nuvio] auto crop: screenshot-raw failed: " + mpvApi().errorText(error) + "\n");
+            return false;
+        }
+        int64_t width = 0, height = 0, stride = 0;
+        std::string format;
+        const uint8_t *data = nullptr;
+        if (result.format == MPV_FORMAT_NODE_MAP && result.u.list) {
+            for (int i = 0; i < result.u.list->num; ++i) {
+                const std::string key = result.u.list->keys[i];
+                const mpv_node &value = result.u.list->values[i];
+                if (key == "w" && value.format == MPV_FORMAT_INT64) width = value.u.int64;
+                else if (key == "h" && value.format == MPV_FORMAT_INT64) height = value.u.int64;
+                else if (key == "stride" && value.format == MPV_FORMAT_INT64) stride = value.u.int64;
+                else if (key == "format" && value.format == MPV_FORMAT_STRING && value.u.string) format = value.u.string;
+                else if (key == "data" && value.format == MPV_FORMAT_BYTE_ARRAY && value.u.ba) {
+                    data = static_cast<const uint8_t *>(static_cast<mpv_byte_array *>(value.u.ba)->data);
+                }
+            }
+        }
+        const int bytesPerPixel = format == "rgba64" ? 8
+            : (format == "bgr0" || format == "bgra" || format == "rgb0" || format == "rgba") ? 4 : 0;
+        bool judged = false;
+        if (bytesPerPixel > 0) {
+            judged = detectAutoCropBars(data, width, height, stride, bytesPerPixel, out);
+        } else {
+            nuvioMpvLogAppend("[nuvio] auto crop: unsupported screenshot format \"" + format + "\"\n");
+        }
+        mpvApi().freeNodeContents(&result);
+        grabWidth = width;
+        grabHeight = height;
+        if (judged && autoCropHistory.empty() && autoCropLearnChecks == 0) {
+            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+            nuvioMpvLogAppend("[nuvio] auto crop: first frame " + std::to_string(width) + "x" +
+                std::to_string(height) + " " + format + " grabbed in " + std::to_string(elapsedMs) + "ms\n");
+        }
+        return judged;
+    }
+
+    void runAutoCropCheck() {
+        if (!autoCropEnabled.load()) return;
+        const auto now = std::chrono::steady_clock::now();
+        // Once locked, a grab every 30 s that can only loosen the crop: a film that opens up to a
+        // taller picture after the learning minute (IMAX sequences) gets those scenes back uncut,
+        // while a dark or black frame can't tighten anything.
+        const bool loosenOnly = autoCropLocked && !autoCropVariableAspect;
+        autoCropNextCheckAt = now + (loosenOnly ? std::chrono::seconds(30) : std::chrono::seconds(3));
+        if (flagProperty("pause", false) || flagProperty("seeking", false)) {
+            autoCropNextCheckAt = now + std::chrono::seconds(1);
+            return;
+        }
+        // The decoder's display size: unlike dwidth/dheight it isn't changed by video-crop.
+        const double frameWidth = doubleProperty("video-params/dw", 0.0);
+        const double frameHeight = doubleProperty("video-params/dh", 0.0);
+        if (frameWidth <= 0.0 || frameHeight <= 0.0) return;
+
+        // A film too dark to ever give 20 usable frames still stops grabbing after ~2 minutes,
+        // keeping whatever it has applied by then.
+        if (!loosenOnly && !autoCropVariableAspect && ++autoCropAttempts > 40) {
+            autoCropLocked = true;
+            nuvioMpvLogAppend("[nuvio] auto crop: too few usable frames, locked as applied\n");
+            return;
+        }
+        AutoCropBars measured;
+        int64_t grabWidth = 0, grabHeight = 0;
+        if (!captureAutoCropBars(measured, grabWidth, grabHeight)) return; // unjudgeable frame: keep whatever is applied
+        const AutoCropBars bars = autoCropBarsOfFullFrame(measured, grabWidth, grabHeight);
+        const double frameAspect = frameWidth / frameHeight;
+        const double visibleWidth = 1.0 - bars.left - bars.right;
+        const double visibleHeight = 1.0 - bars.top - bars.bottom;
+        const double visibleAspect = frameAspect * visibleWidth / visibleHeight;
+        // Too little picture, or wider than any film: a dark scene rather than bars.
+        if (visibleWidth * visibleHeight < 0.40 || visibleAspect > 2.9) {
+            nuvioMpvLogAppend("[nuvio] auto crop: check " + std::to_string(autoCropAttempts) +
+                " ignored as a dark scene (picture " + std::to_string(visibleAspect) + ":1)\n");
+            return;
+        }
+        if (loosenOnly) {
+            // A clear margin, so a frame that differs by a row or two doesn't nudge the crop.
+            if (bars.top + 0.01 < autoCropAppliedBars.top || bars.left + 0.01 < autoCropAppliedBars.left) {
+                AutoCropBars loosened = autoCropAppliedBars;
+                loosened.top = loosened.bottom = std::min(loosened.top, bars.top);
+                loosened.left = loosened.right = std::min(loosened.left, bars.left);
+                nuvioMpvLogAppend("[nuvio] auto crop: taller picture seen after lock (" +
+                    std::to_string(visibleAspect) + ":1), loosening crop\n");
+                applyAutoCropBars(loosened);
+            }
+            return;
+        }
+
+        // A film whose picture keeps changing shape while learning is variable-aspect (IMAX).
+        if (!autoCropLocked && !autoCropVariableAspect) {
+            if (autoCropReferenceAspect <= 0.0) {
+                autoCropReferenceAspect = visibleAspect;
+            } else if (std::fabs(visibleAspect / autoCropReferenceAspect - 1.0) > 0.15 &&
+                       ++autoCropAspectChanges >= 3) {
+                autoCropVariableAspect = true;
+                nuvioMpvLogAppend("[nuvio] auto crop: variable aspect ratio (" +
+                    std::to_string(visibleAspect) + " vs " + std::to_string(autoCropReferenceAspect) +
+                    "), checking continuously\n");
+            }
+        }
+
+        nuvioMpvLogAppend("[nuvio] auto crop: check " + std::to_string(autoCropAttempts) +
+            " bars top/bottom " + std::to_string(bars.top * 100.0) + "% sides " +
+            std::to_string(bars.left * 100.0) + "% (picture " + std::to_string(visibleAspect) + ":1)\n");
+        autoCropHistory.push_back({now, bars});
+        // Learning keeps every sample; continuous checking trusts only the last few seconds.
+        if (autoCropVariableAspect) {
+            while (!autoCropHistory.empty() && now - autoCropHistory.front().at > std::chrono::seconds(8)) {
+                autoCropHistory.pop_front();
+            }
+        }
+        // The smallest bars seen are the safe estimate: bright pixels prove picture is there,
+        // while a dark scene can only ever make bars look bigger.
+        AutoCropBars smallest{1.0, 1.0, 1.0, 1.0};
+        for (const AutoCropSample &sample : autoCropHistory) {
+            smallest.top = std::min(smallest.top, sample.bars.top);
+            smallest.bottom = std::min(smallest.bottom, sample.bars.bottom);
+            smallest.left = std::min(smallest.left, sample.bars.left);
+            smallest.right = std::min(smallest.right, sample.bars.right);
+        }
+        const bool ready = autoCropHistory.size() >= 3 &&
+            now - autoCropHistory.front().at >= std::chrono::seconds(5);
+        AutoCropBars target = smallest;
+        if (!ready) {
+            // Too little history to zoom in yet, but zooming out is always allowed.
+            target.top = std::min(target.top, autoCropAppliedBars.top);
+            target.bottom = std::min(target.bottom, autoCropAppliedBars.bottom);
+            target.left = std::min(target.left, autoCropAppliedBars.left);
+            target.right = std::min(target.right, autoCropAppliedBars.right);
+        }
+        if (!autoCropVariableAspect && ++autoCropLearnChecks >= 20 && ready) {
+            autoCropLocked = true;
+            nuvioMpvLogAppend("[nuvio] auto crop: bars locked top/bottom " +
+                std::to_string(smallest.top * 100.0) + "% sides " + std::to_string(smallest.left * 100.0) +
+                "%, frame checks stopped\n");
+        }
+        applyAutoCropBars(target);
+    }
+
+    // Trims the bars off the frame itself with video-crop; panscan=1 then fills the window with
+    // what is left, exactly as Zoom does with a frame that never had bars. Cropping (rather than
+    // video-zoom) keeps the video rectangle on screen, which is what subtitles are placed in,
+    // and lets mpv re-fit on window resizes by itself.
+    void applyAutoCropBars(const AutoCropBars &bars) {
+        const int64_t frameWidth = int64Property("video-out-params/w", int64Property("video-params/w", 0));
+        const int64_t frameHeight = int64Property("video-out-params/h", int64Property("video-params/h", 0));
+        if (frameWidth <= 0 || frameHeight <= 0) return;
+        const int64_t x = (int64_t)std::llround(frameWidth * bars.left);
+        const int64_t y = (int64_t)std::llround(frameHeight * bars.top);
+        const int64_t width = frameWidth - 2 * x;
+        const int64_t height = frameHeight - 2 * y;
+        if (width <= 0 || height <= 0) return;
+        const std::string crop = (x == 0 && y == 0) ? std::string()
+            : std::to_string(width) + "x" + std::to_string(height) + "+" + std::to_string(x) + "+" + std::to_string(y);
+        autoCropAppliedBars = bars;
+        if (crop == autoCropAppliedCrop) return;
+        autoCropAppliedCrop = crop;
+        autoCropAppliedFrameWidth = frameWidth;
+        autoCropAppliedFrameHeight = frameHeight;
+        setAutoCropProperty(crop);
+        nuvioMpvLogAppend("[nuvio] auto crop: video-crop=" + (crop.empty() ? std::string("none") : crop) +
+            " for bars top/bottom " + std::to_string(bars.top * 100.0) + "% sides " +
+            std::to_string(bars.left * 100.0) + "% of " + std::to_string(frameWidth) + "x" +
+            std::to_string(frameHeight) + "\n");
+    }
+
+    void setAutoCropProperty(const std::string &crop) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        // An empty value is mpv's "no crop" (0.41 rejects "0x0" as an invalid rect); the explicit
+        // zero rect is only a fallback for builds that don't take the empty string.
+        int error = mpvApi().setPropertyString(mpv, "video-crop", crop.c_str());
+        if (error < 0 && crop.empty()) error = mpvApi().setPropertyString(mpv, "video-crop", "0x0+0+0");
+        if (error < 0) {
+            nuvioMpvLogAppend("[nuvio] auto crop: setting video-crop failed: " + mpvApi().errorText(error) + "\n");
+        }
+    }
+
+    // Bars measured on a grab, as fractions of the full frame. Whether screenshot-raw returns
+    // the frame before or after video-crop isn't something to rely on, so it is told apart by
+    // size: a grab the size of the applied crop shows only what is left, and its bars are added
+    // to the ones already trimmed.
+    AutoCropBars autoCropBarsOfFullFrame(const AutoCropBars &measured, int64_t grabWidth, int64_t grabHeight) {
+        if (autoCropAppliedCrop.empty() || autoCropAppliedFrameWidth <= 0 || autoCropAppliedFrameHeight <= 0) {
+            return measured;
+        }
+        const double croppedWidth = autoCropAppliedFrameWidth * (1.0 - 2.0 * autoCropAppliedBars.left);
+        const double croppedHeight = autoCropAppliedFrameHeight * (1.0 - 2.0 * autoCropAppliedBars.top);
+        const bool grabIsCropped = std::llabs(grabWidth - (int64_t)std::llround(croppedWidth)) <= 2 &&
+            std::llabs(grabHeight - (int64_t)std::llround(croppedHeight)) <= 2 &&
+            (grabWidth != autoCropAppliedFrameWidth || grabHeight != autoCropAppliedFrameHeight);
+        if (!grabIsCropped) return measured;
+        const double keptHeight = 1.0 - 2.0 * autoCropAppliedBars.top;
+        const double keptWidth = 1.0 - 2.0 * autoCropAppliedBars.left;
+        AutoCropBars full;
+        full.top = full.bottom = autoCropAppliedBars.top + measured.top * keptHeight;
+        full.left = full.right = autoCropAppliedBars.left + measured.left * keptWidth;
+        return full;
     }
 
     long long durationMs() {
@@ -2755,7 +3139,8 @@ public:
             std::lock_guard<std::mutex> lock(mpvMutex);
             if (!mpv) return;
             double outline = std::max(0.0, std::min(8.0, outlineSize));
-            double size = std::max(24.0, std::min(96.0, fontSize));
+            // Floor matches toMpvSubtitleFontSize() in NativePlayerController.kt (UI minimum 6 x 3).
+            double size = std::max(18.0, std::min(96.0, fontSize));
             int64_t position = std::max(0, std::min(150, subPos));
             mpvApi().setProperty(mpv, "sub-outline-size", MPV_FORMAT_DOUBLE, &outline);
             mpvApi().setProperty(mpv, "sub-font-size", MPV_FORMAT_DOUBLE, &size);
@@ -3253,13 +3638,19 @@ private:
     static constexpr std::chrono::milliseconds seekCoalesceWindow{350};
     static constexpr std::chrono::milliseconds seekCoalesceMaxWait{1000};
     std::atomic<double> deferredSeekTargetSeconds{-1.0};
+    // Local files open no HTTP range requests, so their seeks are never coalesced.
+    std::atomic<bool> sourceIsLocalFile{false};
     std::chrono::steady_clock::time_point deferredSeekDueAt{};
     std::chrono::steady_clock::time_point deferredSeekStartedAt{};
     std::chrono::steady_clock::time_point lastSeekIssuedAt{};
 
 
-    // Per-message occurrence counts backing shouldWriteMpvLogLine. Event-thread only.
-    std::map<std::string, int> mpvLogLineCounts;
+    // Per-message repeat windows backing shouldWriteMpvLogLine. Event-thread only.
+    struct MpvLogRepeat {
+        int count = 0;
+        std::chrono::steady_clock::time_point windowStart{};
+    };
+    std::map<std::string, MpvLogRepeat> mpvLogLineCounts;
 
     std::string videoParamsPrimaries;
     std::string videoParamsGamma;
@@ -3385,6 +3776,33 @@ private:
     // makes it visible by the time the reader observes the flag as true.
     std::atomic_bool subtitleAssOverrideInitialCheckPending = false;
     std::chrono::steady_clock::time_point subtitleAssOverrideCheckDeadline;
+
+    // Auto crop (resize mode 3): Zoom, applied to the picture inside any black bars that are
+    // baked into the frame (video-crop trims them first). A 2.39 film encoded in a 16:9 frame
+    // therefore fills a 16:9 screen (its sides are cut, as Zoom would cut a 2.39 file without
+    // bars), which neither Fill nor Zoom can do. Bars are learned from frames grabbed with
+    // screenshot-raw for about a minute and then locked, after which no more frames are grabbed;
+    // variable-aspect (IMAX) films keep being checked so the crop can back off when the picture
+    // opens up. The event thread only
+    // schedules checks (the atomics); everything else is owned by the mpv call thread.
+    struct AutoCropSample {
+        std::chrono::steady_clock::time_point at;
+        AutoCropBars bars;
+    };
+    std::atomic_bool autoCropEnabled = false;
+    std::atomic_bool autoCropCheckQueued = false;
+    std::atomic<std::chrono::steady_clock::time_point> autoCropNextCheckAt{std::chrono::steady_clock::time_point{}};
+    std::deque<AutoCropSample> autoCropHistory;
+    AutoCropBars autoCropAppliedBars;
+    std::string autoCropAppliedCrop; // video-crop value, empty = none
+    int64_t autoCropAppliedFrameWidth = 0;
+    int64_t autoCropAppliedFrameHeight = 0;
+    int autoCropLearnChecks = 0;
+    int autoCropAttempts = 0;
+    bool autoCropLocked = false;
+    bool autoCropVariableAspect = false;
+    double autoCropReferenceAspect = 0.0;
+    int autoCropAspectChanges = 0;
     std::atomic<std::chrono::steady_clock::time_point> eofSuppressedUntil{std::chrono::steady_clock::time_point{}};
 
     std::string externalAudioUrl;
@@ -3618,6 +4036,17 @@ private:
         if (target) {
             PostMessageW(target, WM_NUVIO_TASK, 0, 0);
         }
+    }
+
+    // Coalesces syncControls requests from other threads into one pending UI task.
+    std::atomic<bool> controlsSyncQueued{false};
+
+    void requestControlsSync() {
+        if (controlsSyncQueued.exchange(true)) return;
+        postUiTask([self = shared_from_this()]() {
+            self->controlsSyncQueued.store(false);
+            self->syncControls();
+        });
     }
 
     bool sendUiTask(std::function<void()> task) {
@@ -4081,6 +4510,7 @@ private:
             // HTTP reconnect options — skip for local file paths (no scheme = local file).
             bool isLocalFile = sourceUrl.find("://") == std::string::npos ||
                                sourceUrl.rfind("file://", 0) == 0;
+            sourceIsLocalFile.store(isLocalFile);
             if (!isLocalFile) {
                 // Deliberately NOT setting reconnect_on_http_error. Adding 429 to it was tried and
                 // reverted (2026-07-25): FFmpeg then retries a throttled request four more times
@@ -4429,6 +4859,20 @@ private:
             syncControls();
             return;
         }
+        // Pointer presses seen by the HUD, logged only (Kotlin has no use for them).
+        // value: 1 = play button, 2 = video surface; +10 when the chrome was hidden.
+        if (type == "hudTrace") {
+            const int code = (int)std::llround(value);
+            nuvioBridgeLog(std::string("hud pointerdown ") + (code % 10 == 1 ? "play-button" : "video-surface") +
+                " chrome=" + (code >= 10 ? "hidden" : "visible"));
+            return;
+        }
+        // Input timestamps for the controls: pair with "pause queued/write" and mpv's
+        // "queuing seek" lines to measure click-to-effect latency.
+        if (type == "toggle" || type == "keyboardToggle" || type == "seekBack" || type == "seekForward" ||
+            type == "keyboardSeekBack" || type == "keyboardSeekForward" || type == "toggleFullscreen") {
+            nuvioBridgeLog("hud input " + type);
+        }
         sendPlayerEvent(type, value);
     }
 
@@ -4605,21 +5049,52 @@ private:
     // message is written a few times, then silenced with a one-time notice. Counting per
     // message (not just consecutive-duplicate collapsing) is deliberate: the warnings arrive
     // as an alternating A/B pair that consecutive dedupe would never catch. Only touched on
-    // the mpv event thread. The map is capped as a safety valve — pathological log variety
-    // just falls back to writing everything rather than growing without bound.
+    // the mpv event thread.
+    //
+    // Repeats are counted per time window, not per session: a session-long count silenced
+    // legitimate repeats too — after four toggles every "Set property: pause=false" vanished for
+    // the rest of playback, which hid exactly the timing needed to diagnose the controls.
+    // Player state changes (property writes, commands, seeks) are never suppressed. The map is
+    // capped; expired windows are evicted first, and only if it is still full does pathological
+    // log variety fall back to writing everything.
+    static bool isMpvStateChangeLogLine(const std::string &line) {
+        return line.find("cplayer: Set property: ") != std::string::npos ||
+            line.find("cplayer: Run command: ") != std::string::npos ||
+            line.find("cplayer: queuing seek") != std::string::npos ||
+            line.find("cplayer: playback restart complete") != std::string::npos;
+    }
+
     bool shouldWriteMpvLogLine(const std::string &line) {
         static constexpr int kRepeatLimit = 5;
         static constexpr size_t kMaxTrackedMessages = 128;
+        static constexpr std::chrono::seconds kRepeatWindow{10};
+        if (isMpvStateChangeLogLine(line)) return true;
+        const auto now = std::chrono::steady_clock::now();
         auto existing = mpvLogLineCounts.find(line);
-        if (existing == mpvLogLineCounts.end() && mpvLogLineCounts.size() >= kMaxTrackedMessages) {
+        if (existing == mpvLogLineCounts.end()) {
+            if (mpvLogLineCounts.size() >= kMaxTrackedMessages) {
+                for (auto it = mpvLogLineCounts.begin(); it != mpvLogLineCounts.end();) {
+                    it = (now - it->second.windowStart >= kRepeatWindow) ? mpvLogLineCounts.erase(it) : std::next(it);
+                }
+                if (mpvLogLineCounts.size() >= kMaxTrackedMessages) return true;
+            }
+            mpvLogLineCounts[line] = MpvLogRepeat{1, now};
             return true;
         }
-        int count = (existing == mpvLogLineCounts.end())
-            ? (mpvLogLineCounts[line] = 1)
-            : ++existing->second;
+        MpvLogRepeat &repeat = existing->second;
+        if (now - repeat.windowStart >= kRepeatWindow) {
+            const int suppressed = repeat.count - (kRepeatLimit - 1);
+            if (suppressed > 0) {
+                nuvioMpvLogAppend("[nuvio] (" + std::to_string(suppressed) +
+                    " repeats suppressed in the last window of: " + line.substr(0, line.find('\n')) + ")\n");
+            }
+            repeat = MpvLogRepeat{1, now};
+            return true;
+        }
+        const int count = ++repeat.count;
         if (count < kRepeatLimit) return true;
         if (count == kRepeatLimit) {
-            nuvioMpvLogAppend("[nuvio] (suppressing further repeats of the previous message)\n");
+            nuvioMpvLogAppend("[nuvio] (suppressing repeats of the previous message for 10s)\n");
         }
         return false;
     }
@@ -4699,6 +5174,7 @@ private:
             // than applied once at load. Each is a cheap no-op after it has run.
             tryApplyInitialResume("params-retry");
             tryApplyDeferredAnimeSvp("params-retry");
+            scheduleAutoCropIfDue();
             if (!event) continue;
             // Poll the SVP filtered-output promotion here (not just on PLAYBACK_RESTART): at a
             // position-0 start the runtime-ready signal can arrive after the only restart event,
@@ -4914,12 +5390,14 @@ private:
                     publishPlaybackRestartIfReady();
                 }
             }
+            if (event->event_id == MPV_EVENT_PLAYBACK_RESTART) onAutoCropPlaybackRestart();
             if (event->event_id == MPV_EVENT_START_FILE) nuvioBridgeLog("media open started");
             if (event->event_id == MPV_EVENT_VIDEO_RECONFIG) nuvioBridgeLog("video reconfigured");
             if (event->event_id == MPV_EVENT_AUDIO_RECONFIG) nuvioBridgeLog("audio reconfigured");
             if (event->event_id == MPV_EVENT_FILE_LOADED) {
                 startupMetricsDue = std::chrono::steady_clock::now() + std::chrono::seconds(5);
                 nuvioBridgeLog("file loaded");
+                onAutoCropFileLoaded();
                 fileLoadedForCurrentSource = true;
                 playbackRestartPendingForFile = true;
                 tryApplyInitialResume("fileLoaded");
@@ -5452,8 +5930,17 @@ public:
             }
         }
         // MPV_FORMAT_NONE means unavailable: fall back exactly as a failed read would.
-        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
-        propertyMirror[name] = std::move(value);
+        {
+            std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+            propertyMirror[name] = std::move(value);
+        }
+        // Play/pause and loading feed the HUD's icon and spinner. Push them as they change rather
+        // than waiting up to 500 ms for the timer: a sampled 20 ms seek otherwise held the
+        // spinner up for a whole tick, and the icon lagged a toggle by as much.
+        if (name == "pause" || name == "seeking" || name == "core-idle" || name == "paused-for-cache" ||
+            name == "eof-reached") {
+            requestControlsSync();
+        }
     }
 
     // Records a value written through the mpv call queue before mpv reports it, so a read that
@@ -6191,7 +6678,12 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_initializeAppIdent
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setPaused(JNIEnv *, jobject, jlong handle, jboolean paused) {
     auto player = playerFromHandle(handle);
-    if (player) player->postMpvCall([p = player.get(), paused]() { p->setPaused(paused == JNI_TRUE); });
+    if (!player) return;
+    // Mirror the intent before queueing, as speed/volume do: a toggle read before mpv reports the
+    // change would otherwise flip from the old state and re-send the same value.
+    player->setMirroredNumber("pause", paused == JNI_TRUE ? 1.0 : 0.0);
+    player->nuvioBridgeLog(std::string("pause queued=") + (paused == JNI_TRUE ? "pause" : "play"));
+    player->postMpvCall([p = player.get(), paused]() { p->setPaused(paused == JNI_TRUE); });
 }
 
 extern "C" JNIEXPORT void JNICALL

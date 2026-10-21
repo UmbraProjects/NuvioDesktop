@@ -390,6 +390,13 @@ button:disabled {
   cursor: none;
 }
 
+/* A button's icon is never the pressed element: redraws swap an icon's <use> instance, and a
+   press whose target was swapped out mid-click never produces the click. */
+button svg,
+button svg * {
+  pointer-events: none;
+}
+
 /* Keep the header's layout available for an always-visible clock without letting its otherwise
    hidden band consume clicks across the top of the video. */
 .player.chrome-hidden .header { pointer-events: none; }
@@ -4218,6 +4225,17 @@ svg {
   outline: 1px solid var(--theme-focus);
 }
 #subtitleModal .subtitle-download-button:disabled { opacity: .62; }
+/* Marks the addon subtitle playing as Auto Sync's retimed copy; sits left of Download. */
+#subtitleModal .subtitle-synced-badge {
+  width: 28px;
+  height: 38px;
+  display: grid;
+  flex: 0 0 28px;
+  place-items: center;
+  align-self: center;
+  color: var(--theme-focus, #fff);
+}
+#subtitleModal .subtitle-synced-badge svg { width: 18px; height: 18px; fill: currentColor; }
 #subtitleModal .subtitle-download-button svg { width: 21px; height: 21px; fill: currentColor; }
 #subtitleModal .subtitle-download-spinner {
   width: 17px;
@@ -4716,6 +4734,64 @@ svg {
     calc(var(--hp) + env(safe-area-inset-left) + calc(var(--user-scale) * 48px));
 }
 .pause-kicker { font-size: calc(var(--user-scale) * 18px); }
+
+/* Top-billed cast, top-left of the pause overlay (the title block owns the bottom-left). */
+.pause-cast {
+  position: absolute;
+  top: calc(var(--user-scale) * 40px);
+  left: calc(var(--hp) + env(safe-area-inset-left) + calc(var(--user-scale) * 48px));
+  max-width: min(calc(var(--user-scale) * 420px), 40vw);
+}
+.pause-cast[hidden] { display: none; }
+.pause-cast-list {
+  list-style: none;
+  margin: calc(var(--user-scale) * 12px) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--user-scale) * 10px);
+}
+.pause-cast-member {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--user-scale) * 12px);
+  min-width: 0;
+}
+.pause-cast-photo {
+  flex: 0 0 auto;
+  width: calc(var(--user-scale) * 44px);
+  height: calc(var(--user-scale) * 44px);
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, .12);
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, .78);
+  font-size: calc(var(--user-scale) * 15px);
+  font-weight: 600;
+}
+.pause-cast-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pause-cast-name,
+.pause-cast-role {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pause-cast-name {
+  color: #fff;
+  font-size: calc(var(--user-scale) * 16px);
+  line-height: 1.3;
+  font-weight: 600;
+}
+.pause-cast-role {
+  color: #b8b8b8;
+  font-size: calc(var(--user-scale) * 13px);
+  line-height: 1.3;
+}
 .pause-logo {
   width: min(calc(var(--user-scale) * 360px), 62vw);
   height: calc(var(--user-scale) * 96px);
@@ -5406,6 +5482,44 @@ svg {
   flex: 0 1 auto;
   gap: calc(var(--user-scale) * 6px);
   padding: 0 calc(var(--user-scale) * 10px);
+}
+/* The skip prompt and next-episode card float just above the bar, so on the pills layout they wear
+   the same pill rather than the near-opaque card the other layouts use, which read as a different
+   UI sitting on top of this one. Same tint, edge and blur as the bar; the skip prompt matches its
+   height too. The next-episode card is taller (it carries a thumbnail), so it stays fully round
+   with a pill-shaped thumbnail to echo the ends. */
+.player.minimal-hud.minimal-pills .skip-prompt,
+.player.minimal-hud.minimal-pills .next-episode-card {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(28, 28, 34, .26);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.player.minimal-hud.minimal-pills .skip-prompt-row {
+  box-sizing: border-box;
+  height: calc(var(--user-scale) * 46px);
+  padding: 0 calc(var(--user-scale) * 20px) 0 calc(var(--user-scale) * 16px);
+}
+.player.minimal-hud.minimal-pills .skip-prompt-label { font-weight: 500; }
+/* Inset from the rounded ends so the countdown isn't clipped into two slivers. */
+.player.minimal-hud.minimal-pills .skip-progress-track {
+  width: auto;
+  margin: 0 calc(var(--user-scale) * 18px) calc(var(--user-scale) * 6px);
+  border-radius: 999px;
+}
+.player.minimal-hud.minimal-pills .next-episode-card {
+  padding: calc(var(--user-scale) * 6px) calc(var(--user-scale) * 7px);
+}
+.player.minimal-hud.minimal-pills .next-episode-thumb { border-radius: 999px; }
+.player.minimal-hud.minimal-pills .next-episode-action {
+  border: 0;
+  background: rgba(255, 255, 255, .1);
+  padding: calc(var(--user-scale) * 7px) calc(var(--user-scale) * 12px);
+}
+.player.minimal-hud.minimal-pills .next-episode-card.playable:hover .next-episode-action {
+  background: rgba(255, 255, 255, .18);
 }
 
 /* Ultra layout (the "Player Controls Layout: Ultra Minimal" setting -> .player.ultra-hud).

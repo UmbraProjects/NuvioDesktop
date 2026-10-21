@@ -1,6 +1,8 @@
 package com.nuvio.app.features.streams
 
 import com.nuvio.app.features.player.isPlaybackPlaceholderUrl
+import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
+import com.nuvio.app.features.watchprogress.ContinueWatchingSourceShortcut
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -41,6 +43,14 @@ object StreamLinkCacheRepository {
             "$normalizedType|$videoId"
         }
     }
+
+    /**
+     * Whether a played link is worth caching: Reuse Last Link replays it, and so does Continue
+     * Watching's source shortcut when Reuse Last Link is off.
+     */
+    fun shouldSaveLinks(reuseLastLinkEnabled: Boolean): Boolean =
+        reuseLastLinkEnabled ||
+            ContinueWatchingPreferencesRepository.uiState.value.sourceShortcut != ContinueWatchingSourceShortcut.OFF
 
     fun save(
         contentKey: String,

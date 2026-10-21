@@ -1735,6 +1735,11 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_continue_watching_click_action_title),
                 resolve(Res.string.settings_continue_watching_click_action_description),
             ),
+            PlaybackSearchRow(
+                "source-shortcut",
+                resolve(Res.string.settings_continue_watching_source_shortcut_title),
+                resolve(Res.string.settings_continue_watching_source_shortcut_description),
+            ),
         ),
     )
     addContinueWatchingRows(

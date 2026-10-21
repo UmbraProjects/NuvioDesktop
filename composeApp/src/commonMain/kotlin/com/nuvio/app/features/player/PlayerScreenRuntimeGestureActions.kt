@@ -134,7 +134,10 @@ internal fun PlayerScreenRuntime.togglePlayback(revealControls: Boolean = true) 
 
 internal fun PlayerScreenRuntime.prepareTogglePlaybackForNativeFallback(revealControls: Boolean = true) {
     resetPausedOverlayBackoff()
-    shouldPlay = !playbackSnapshot.isPlaying
+    // Take the engine's own decision, not the 500 ms snapshot: the snapshot lags a recent toggle
+    // and reports "not playing" while loading, and the playWhenReady effect would then write the
+    // opposite of what the native toggle just queued, undoing the click.
+    shouldPlay = playerController?.toggleWouldPlay() ?: !playbackSnapshot.isPlaying
     if (revealControls) {
         controlsVisible = true
     }
@@ -261,6 +264,7 @@ internal fun PlayerScreenRuntime.setPlayerResizeMode(nextMode: PlayerResizeMode)
             PlayerResizeMode.Fit -> resizeModeFitLabel
             PlayerResizeMode.Fill -> resizeModeFillLabel
             PlayerResizeMode.Zoom -> resizeModeZoomLabel
+            PlayerResizeMode.AutoCrop -> resizeModeAutoCropLabel
         },
     )
     controlsVisible = true

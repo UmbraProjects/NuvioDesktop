@@ -43,6 +43,14 @@ interface PlayerEngineController {
      * cache, A/V sync…). Only the desktop mpv engine implements it; other platforms no-op.
      */
     fun setDiagnosticsOverlayEnabled(enabled: Boolean) {}
+
+    /**
+     * Whether a play/pause toggle issued now would start playback, decided from the engine's own
+     * current state rather than the periodic playback snapshot. Engines that toggle natively
+     * return the exact decision their toggle makes, so callers that track intent agree with it.
+     * Null when the platform cannot tell.
+     */
+    fun toggleWouldPlay(): Boolean? = null
     /** Shows a short, non-blocking notification over the player when the platform supports it. */
     fun showTransientMessage(title: String, value: String) {}
 
@@ -109,6 +117,9 @@ data class PlayerControlsState(
     val pauseOverlayDescription: String = "",
     // Opt-in: adds the playing source as the overlay's bottom row, reusing streamTitle/providerName.
     val pauseOverlaySourceEnabled: Boolean = false,
+    // Top-billed cast for the pause overlay's top-left block; empty hides it.
+    val pauseOverlayCastLabel: String = "Starring",
+    val pauseOverlayCast: List<PlayerControlCastItem> = emptyList(),
     val resizeModeLabel: String = "Fit",
     val playbackSpeedLabel: String = "1x",
     val subtitlesLabel: String = "Subs",
@@ -185,6 +196,7 @@ data class PlayerControlsState(
     val noneLabel: String = "None",
     val fetchSubtitlesLabel: String = "Tap to fetch subtitles",
     val downloadSubtitleLabel: String = "Download subtitle",
+    val autoSyncedSubtitleLabel: String = "Synced by Auto Sync",
     val subtitleDelayLabel: String = "Subtitle Delay",
     val resetLabel: String = "Reset",
     val autoSyncLabel: String = "Auto Sync",
@@ -531,6 +543,13 @@ data class PlayerControlEpisodeItem(
     val fillerLabel: String = "",
 )
 
+/** A cast member on the desktop pause overlay. [photo] is a portrait URL, blank when unknown. */
+data class PlayerControlCastItem(
+    val name: String = "",
+    val role: String = "",
+    val photo: String = "",
+)
+
 data class PlayerControlAddonSubtitleItem(
     val index: Int = 0,
     val id: String = "",
@@ -539,6 +558,8 @@ data class PlayerControlAddonSubtitleItem(
     val addonName: String = "",
     val isSelected: Boolean = false,
     val isDownloading: Boolean = false,
+    /** Playing as the retimed copy made by automatic subtitle sync. */
+    val isAutoSynced: Boolean = false,
 )
 
 /**
