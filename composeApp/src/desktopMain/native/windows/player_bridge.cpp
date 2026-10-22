@@ -5877,6 +5877,75 @@ public:
         std::string text;
     };
 
+    // Audio-referenced subtitle sync samples a few stretches of the film's audio. Each is decoded
+    // by a throwaway headless mpv over its own connection to the same source (same headers, same
+    // audio track as the player), audio only, to 16 kHz mono float PCM in outputPath — sample 0 is
+    // startSeconds. Blocks until done; runs on a Kotlin background thread. Returns 0 on success.
+    // Average bytes per second of the playing source (size over duration), so the sampled stretches
+    // can be sized to a download budget. Negative when the size is unknown (live, some HLS) and for
+    // local files, which cost nothing to read.
+    double speechSourceBytesPerSecond() {
+        if (thumbnailSourceUrl.rfind("http://", 0) != 0 && thumbnailSourceUrl.rfind("https://", 0) != 0) return -1.0;
+        const long long size = int64Property("file-size", -1);
+        const double duration = mirroredDouble("duration", 0.0);
+        return size > 0 && duration > 0.0 ? (double)size / duration : -1.0;
+    }
+
+    int decodeSpeechSpot(double startSeconds, double durationSeconds, const std::string &outputPath) {
+        if (shuttingDown.load() || thumbnailSourceUrl.empty() || !externalAudioUrl.empty()) return -1;
+        MpvApi &api = mpvApi();
+        mpv_handle *probe = api.create();
+        if (!probe) return -1;
+        const std::string aid = mirroredString("aid", "");
+        const bool numericAid = !aid.empty() && std::all_of(aid.begin(), aid.end(), ::isdigit);
+        const std::string start = std::to_string(std::max(0.0, startSeconds));
+        const std::string end = std::to_string(std::max(0.0, startSeconds) + std::max(1.0, durationSeconds));
+        for (const auto &[name, value] : std::initializer_list<std::pair<const char *, const char *>>{
+                 {"config", "no"}, {"terminal", "no"}, {"load-scripts", "no"}, {"ytdl", "no"},
+                 {"input-default-bindings", "no"}, {"vid", "no"}, {"sid", "no"}, {"audio-display", "no"},
+                 {"audio-spdif", ""}, {"af", ""}, {"ao", "pcm"}, {"ao-pcm-waveheader", "no"},
+                 {"audio-samplerate", "16000"}, {"audio-channels", "mono"}, {"audio-format", "float"},
+                 // The spot only; nothing read ahead past its end.
+                 {"cache", "no"}, {"demuxer-readahead-secs", "1"}, {"demuxer-max-bytes", "8MiB"},
+                 {"hr-seek", "yes"}, {"keep-open", "no"}}) {
+            api.setOptionString(probe, name, value);
+        }
+        api.setOptionString(probe, "ao-pcm-file", outputPath.c_str());
+        api.setOptionString(probe, "start", start.c_str());
+        api.setOptionString(probe, "end", end.c_str());
+        if (numericAid) api.setOptionString(probe, "aid", aid.c_str());
+        if (!thumbnailHeaderLines.empty()) {
+            std::string headers;
+            for (size_t index = 0; index < thumbnailHeaderLines.size(); ++index) {
+                if (index > 0) headers.push_back(',');
+                for (char character : thumbnailHeaderLines[index]) {
+                    if (character == '\\' || character == ',') headers.push_back('\\');
+                    headers.push_back(character);
+                }
+            }
+            api.setOptionString(probe, "http-header-fields", headers.c_str());
+        }
+        int result = -1;
+        if (api.initialize(probe) >= 0) {
+            const char *load[] = {"loadfile", thumbnailSourceUrl.c_str(), nullptr};
+            if (api.command(probe, load) >= 0) {
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+                while (std::chrono::steady_clock::now() < deadline && !shuttingDown.load()) {
+                    mpv_event *event = api.waitEvent(probe, 0.25);
+                    if (!event) continue;
+                    if (event->event_id == MPV_EVENT_SHUTDOWN) break;
+                    if (event->event_id == MPV_EVENT_END_FILE) {
+                        const auto *endFile = static_cast<mpv_event_end_file *>(event->data);
+                        result = endFile && endFile->reason == MPV_END_FILE_REASON_EOF ? 0 : -2;
+                        break;
+                    }
+                }
+            }
+        }
+        api.terminateDestroy(probe);
+        return result;
+    }
+
     void observeMirroredProperties(MpvApi &api) {
         for (const char *name : {"time-pos", "duration", "speed", "volume",
                                  "demuxer-cache-time", "demuxer-cache-duration"}) {
@@ -6967,6 +7036,30 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMpvProperty(
     player->postMpvCall([p = player.get(), keyText = jstringToUtf8(env, key), valueText = jstringToUtf8(env, value)]() {
         p->setMpvPropertyString(keyText, valueText);
     });
+}
+
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_speechSourceBytesPerSecond(
+    JNIEnv *,
+    jobject,
+    jlong handle
+) {
+    auto player = playerFromHandle(handle);
+    return player ? player->speechSourceBytesPerSecond() : -1.0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeSpeechSpot(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jdouble startSeconds,
+    jdouble durationSeconds,
+    jstring outputPath
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return -1;
+    return player->decodeSpeechSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath));
 }
 
 extern "C" JNIEXPORT void JNICALL

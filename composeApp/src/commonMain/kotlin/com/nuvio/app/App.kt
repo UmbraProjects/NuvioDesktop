@@ -305,6 +305,10 @@ import com.nuvio.app.features.player.rememberExternalPlayerLauncher
 import com.nuvio.app.features.player.prepareExternalPlayerLaunch
 import com.nuvio.app.features.player.playerSourceIdentityKey
 import com.nuvio.app.features.player.externalPlayerSubtitleTargets
+import com.nuvio.app.features.player.externalPlaybackTracking
+import com.nuvio.app.features.cast.CastController
+import com.nuvio.app.features.cast.CastDialogHost
+import com.nuvio.app.features.cast.toCastRequest
 import com.nuvio.app.features.player.OriginalLanguageCache
 import com.nuvio.app.features.player.sanitizePlaybackHeaders
 import com.nuvio.app.features.player.sanitizePlaybackResponseHeaders
@@ -688,6 +692,7 @@ private fun PlayerLaunch.toExternalPlayerPlaybackRequest(): ExternalPlayerPlayba
         season = seasonNumber,
         episode = episodeNumber,
         episodeTitle = episodeTitle,
+        tracking = externalPlaybackTracking(),
     )
 
 /**
@@ -3306,10 +3311,17 @@ private fun MainAppContent(
                                 parentMetaType = launch.parentMetaType,
                                 watchProgressSource = launch.watchProgressSource,
                                 initialPositionMs = request.resumePositionMs,
+                                disableProgressTracking = launch.disableProgressTracking,
                             )
                             lastExternalPlayerLaunch = playerLaunch
+                            // After an in-player episode advance the launch still names the first
+                            // episode; tracking it would credit the wrong one, so skip it then.
+                            val sameEpisode = request.season == launch.seasonNumber &&
+                                request.episode == launch.episodeNumber
                             val intentResult = ExternalPlayerPlatform.buildIntent(
-                                request = request,
+                                request = request.copy(
+                                    tracking = playerLaunch.externalPlaybackTracking().takeIf { sameEpisode },
+                                ),
                                 playerId = playerSettingsUiState.externalPlayerId,
                             )
                             when (intentResult) {
@@ -3893,6 +3905,7 @@ private fun MainAppContent(
             }
 
             PlaylistAddDialogHost()
+            CastDialogHost()
 
             openPlaylistId?.let { playlistId ->
                 PlaylistDialog(
@@ -4559,6 +4572,18 @@ private fun MainAppContent(
                             reuseNavigated = true
                             return@LaunchedEffect
                         }
+                        val cachedDirectStream = StreamItem(
+                            name = cached.streamName,
+                            url = cached.url,
+                            addonName = cached.addonName,
+                            addonId = cached.addonId,
+                            streamType = cached.streamType,
+                            behaviorHints = StreamBehaviorHints(
+                                filename = cached.filename,
+                                videoSize = cached.videoSize,
+                                bingeGroup = cached.bingeGroup,
+                            ),
+                        )
                         val playerLaunch = PlayerLaunch(
                                 title = launch.title,
                                 sourceUrl = cached.url,
@@ -4579,6 +4604,10 @@ private fun MainAppContent(
                                 episodeThumbnail = launch.episodeThumbnail,
                                 streamTitle = cached.streamName,
                                 streamSubtitle = null,
+                                // Entries cached before the key was stored fall back to the
+                                // filename + size identity, which a fresh listing also produces.
+                                sourceIdentityKey = cached.sourceIdentityKey
+                                    ?: cachedDirectStream.playerSourceIdentityKey(),
                                 bingeGroup = cached.bingeGroup,
                                 pauseDescription = pauseDescription,
                                 providerName = cached.addonName,
@@ -4592,18 +4621,7 @@ private fun MainAppContent(
                                 initialProgressFraction = launch.resumeProgressFraction,
                                 disableProgressTracking = launch.disableProgressTracking,
                                 autoPlayMode = launch.autoPlayMode,
-                                stream = StreamItem(
-                                    name = cached.streamName,
-                                    url = cached.url,
-                                    addonName = cached.addonName,
-                                    addonId = cached.addonId,
-                                    streamType = cached.streamType,
-                                    behaviorHints = StreamBehaviorHints(
-                                        filename = cached.filename,
-                                        videoSize = cached.videoSize,
-                                        bingeGroup = cached.bingeGroup,
-                                    ),
-                                ),
+                                stream = cachedDirectStream,
                             )
                         if (playerSettings.externalPlayerEnabled) {
                             openExternalPlayback(playerLaunch)
@@ -4714,6 +4732,7 @@ private fun MainAppContent(
                             videoSize = stream.behaviorHints.videoSize,
                             bingeGroup = stream.behaviorHints.bingeGroup,
                             streamType = stream.streamType,
+                            sourceIdentityKey = selectedSourceIdentityKey,
                         )
                     }
                     val playerLaunch = PlayerLaunch(
@@ -4813,6 +4832,8 @@ private fun MainAppContent(
                     // False for a watch-party host's shared link: it can carry their debrid key,
                     // so it must not end up in this user's "reuse last link" cache.
                     saveForReuse: Boolean = true,
+                    // "Play on device…": resolve as usual, then hand the stream to the cast picker.
+                    castToDevice: Boolean = false,
                 ) {
                     if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
                         if (resolvingDebridStream) return
@@ -4832,6 +4853,7 @@ private fun MainAppContent(
                                     forceExternal = forceExternal,
                                     forceInternal = forceInternal,
                                     sourceIdentityKey = sourceIdentityKey,
+                                    castToDevice = castToDevice,
                                 )
                                 else -> {
                                     resolved.toastMessage()?.let { NuvioToastController.show(it) }
@@ -4853,6 +4875,10 @@ private fun MainAppContent(
                         return
                     }
                     if (stream.needsLocalDebridResolve && stream.p2pInfoHash != null) {
+                        if (castToDevice) {
+                            NuvioToastController.show("P2P sources can't be played on another device yet")
+                            return
+                        }
                         requestOrOpenP2pStream(
                             stream = stream,
                             resolvedResumePositionMs = resolvedResumePositionMs,
@@ -4884,6 +4910,7 @@ private fun MainAppContent(
                             videoSize = stream.behaviorHints.videoSize,
                             bingeGroup = stream.behaviorHints.bingeGroup,
                             streamType = stream.streamType,
+                            sourceIdentityKey = sourceIdentityKey,
                         )
                     }
                     val playerLaunch = PlayerLaunch(
@@ -4924,6 +4951,11 @@ private fun MainAppContent(
                         autoPlayMode = launch.autoPlayMode,
                         stream = stream,
                     )
+
+                    if (castToDevice) {
+                        CastController.request(playerLaunch.toCastRequest())
+                        return
+                    }
 
                     if (!forceInternal && (forceExternal || playerSettings.externalPlayerEnabled)) {
                         coroutineScope.launch { openExternalPlayback(playerLaunch) }
@@ -5021,6 +5053,20 @@ private fun MainAppContent(
                                     forceExternal = openExternally,
                                     forceInternal = !openExternally,
                                 )
+                            },
+                            onStreamActionCast = if (CastController.isSupported) {
+                                { stream, resolvedResumePositionMs, resolvedResumeProgressFraction ->
+                                    openSelectedStream(
+                                        stream = stream,
+                                        resolvedResumePositionMs = resolvedResumePositionMs,
+                                        resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                        forceExternal = false,
+                                        forceInternal = false,
+                                        castToDevice = true,
+                                    )
+                                }
+                            } else {
+                                null
                             },
                             onBack = streamsOnBack,
                             presentation = StreamsPresentation.Panel,

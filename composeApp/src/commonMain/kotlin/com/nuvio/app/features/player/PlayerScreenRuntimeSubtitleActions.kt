@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player
 
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
+import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -25,10 +26,12 @@ internal fun PlayerScreenRuntime.loadAddonSubtitle(subtitle: AddonSubtitle, allo
     if (!playerSettingsUiState.automaticSubtitleSyncEnabled) return
     // Torrents play from the active engine's local HTTP stream (Nuvio Engine or TorrServer, both
     // range-capable); the magnet in activeSourceUrl isn't fetchable. The URL may not exist yet.
+    // Local library files play from a plain path, which both sync paths read from disk.
     val isTorrent = activeTorrentInfoHash != null
     fun currentSyncSource(): String? =
         (if (isTorrent) p2pResolvedSourceUrl else activeSourceUrl)?.takeIf {
-            it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)
+            it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) ||
+                (!isTorrent && isLocalPlaybackPath(it))
         }
     if (!isTorrent && currentSyncSource() == null) return
     val torrentHashAtStart = activeTorrentInfoHash
@@ -49,7 +52,7 @@ internal fun PlayerScreenRuntime.loadAddonSubtitle(subtitle: AddonSubtitle, allo
         if (isTorrent && !awaitTorrentBufferForAutomaticSync { isStillSelected(subtitle) }) return@launch
         val syncSource = currentSyncSource() ?: return@launch
         sourceUrl = syncSource
-        val result = try {
+        var result = try {
             runAutomaticSubtitleSync(
                 AutomaticSubtitleSyncRequest(
                     sourceUrl = syncSource,
@@ -65,21 +68,20 @@ internal fun PlayerScreenRuntime.loadAddonSubtitle(subtitle: AddonSubtitle, allo
             null
         }
         if (!isStillSelected(subtitle)) return@launch
+        val player = playerController
+        if (result == AutomaticSubtitleSyncResult.NoReference && player != null) {
+            result = syncToAudio(syncSource, subtitle, player) { isStillSelected(subtitle) } ?: return@launch
+            // Each mapping was applied (and announced) as it was found.
+            if (result is AutomaticSubtitleSyncResult.Synced) return@launch
+        }
         when (result) {
             is AutomaticSubtitleSyncResult.Synced -> {
                 val synced = result.subtitle
                 if (synced.url != subtitle.url) {
                     selectedAddonSubtitleId = synced.id.ifBlank { synced.url }
                 }
-                automaticallySyncedSubtitle = synced.url to result.retimedBody
-                subtitleAutoSyncState = SubtitleAutoSyncUiState()
-                playerController?.setSubtitleUri(result.localFilePath)
-                // The retimed copy already carries the correction; a leftover manual delay would
-                // push it back out of sync.
-                if (subtitleDelayMs != 0) setSubtitleDelay(0)
-                showAutomaticSyncMessage(
-                    if (synced.url != subtitle.url) "Synced (better match found)" else "Synced",
-                )
+                applySyncedSubtitle(result)
+                showAutomaticSyncMessage(if (synced.url != subtitle.url) "Synced (better match found)" else "Synced")
             }
             AutomaticSubtitleSyncResult.NoReference ->
                 showAutomaticSyncMessage("No built-in subtitles to sync against")
@@ -89,6 +91,74 @@ internal fun PlayerScreenRuntime.loadAddonSubtitle(subtitle: AddonSubtitle, allo
                 showAutomaticSyncMessage("Failed, kept original timing")
         }
     }
+}
+
+private val localPathPattern = Regex("""^(?:[A-Za-z]:[\\/]|\\\\|/|file:)""", RegexOption.IGNORE_CASE)
+
+/** A local library file: `C:\…`, `\\server\share\…`, `/…` or a `file:` URL. */
+private fun isLocalPlaybackPath(source: String): Boolean = localPathPattern.containsMatchIn(source)
+
+private fun PlayerScreenRuntime.applySyncedSubtitle(synced: AutomaticSubtitleSyncResult.Synced) {
+    automaticallySyncedSubtitle = synced.subtitle.url to synced.retimedBody
+    subtitleAutoSyncState = SubtitleAutoSyncUiState()
+    playerController?.setSubtitleUri(synced.localFilePath)
+    // The retimed copy already carries the correction; a leftover manual delay would push it back
+    // out of sync.
+    if (subtitleDelayMs != 0) setSubtitleDelay(0)
+}
+
+/**
+ * No embedded subtitles to sync against: sync [subtitle] to the film's audio instead (sampled
+ * dialogue spots, speech detection; see `DesktopAudioSubtitleSync`). An early estimate is applied
+ * as soon as it repeats, and replaced by the confirmed mapping or withdrawn. Stops quietly when
+ * the viewer changes the subtitle or sets a delay by hand (null: nothing more to say).
+ */
+private suspend fun PlayerScreenRuntime.syncToAudio(
+    sourceUrl: String,
+    subtitle: AddonSubtitle,
+    player: PlayerEngineController,
+    stillSelected: () -> Boolean,
+): AutomaticSubtitleSyncResult? {
+    showAutomaticSyncMessage("No built-in subtitles, syncing to the audio")
+    // Applying a mapping resets the delay to 0; any other change is the viewer's own.
+    var expectedDelayMs = subtitleDelayMs
+    fun stillWanted() = stillSelected() && subtitleDelayMs == expectedDelayMs
+    return try {
+        runAudioReferencedSubtitleSync(
+            sourceUrl = sourceUrl,
+            subtitle = subtitle,
+            player = player,
+            durationMs = playbackSnapshot.durationMs,
+            positionMs = { playbackSnapshot.positionMs },
+        ) { update ->
+            if (!stillWanted()) throw CancellationException("subtitle or delay changed")
+            when (update) {
+                is AudioSubtitleSyncUpdate.Applied -> {
+                    applySyncedSubtitle(update.synced)
+                    expectedDelayMs = subtitleDelayMs
+                    val offset = formatSyncOffset(update.offsetMs)
+                    showAutomaticSyncMessage(
+                        if (update.confirmed) "Synced to the audio ($offset)" else "Estimated from the audio ($offset)",
+                    )
+                }
+                AudioSubtitleSyncUpdate.Withdrawn -> {
+                    automaticallySyncedSubtitle = null
+                    subtitleAutoSyncState = SubtitleAutoSyncUiState()
+                    playerController?.setSubtitleUri(subtitle.url)
+                    showAutomaticSyncMessage("Audio estimate withdrawn, original timing")
+                }
+            }
+        }
+    } catch (cancel: CancellationException) {
+        if (!stillWanted()) null else throw cancel
+    } catch (error: Throwable) {
+        null
+    }?.takeIf { stillWanted() }
+}
+
+private fun formatSyncOffset(offsetMs: Long): String {
+    val tenths = (abs(offsetMs) + 50) / 100
+    return "${if (offsetMs < 0) "-" else "+"}${tenths / 10}.${tenths % 10}s"
 }
 
 /**

@@ -43,6 +43,8 @@ private class DesktopPlayerDefinition(
     val isUsableInstall: (File) -> Boolean = { true },
     /** How the source goes on the command line; most players take it as a bare last argument. */
     val sourceArgs: (String) -> List<String> = { listOf(it) },
+    /** How playback is read back for progress tracking; [ExternalPlayerControl.None] = process lifetime. */
+    val control: ExternalPlayerControl = ExternalPlayerControl.None,
 )
 
 internal actual object ExternalPlayerPlatform {
@@ -72,6 +74,7 @@ internal actual object ExternalPlayerPlatform {
                     request.subtitles.orEmpty().forEach { add("--sub-file=${it.url}") }
                 }
             },
+            control = ExternalPlayerControl.Mpv,
         ),
         DesktopPlayerDefinition(
             id = "vlc",
@@ -113,6 +116,7 @@ internal actual object ExternalPlayerPlatform {
                         ?.let { add("--input-slave=${it.joinToString("#")}") }
                 }
             },
+            control = ExternalPlayerControl.Vlc,
         ),
         DesktopPlayerDefinition(
             id = "mpc-hc",
@@ -134,6 +138,7 @@ internal actual object ExternalPlayerPlatform {
                     addAll(request.mpcSubtitleArgs())
                 }
             },
+            control = ExternalPlayerControl.Mpc,
         ),
         DesktopPlayerDefinition(
             id = "mpc-be",
@@ -158,6 +163,7 @@ internal actual object ExternalPlayerPlatform {
                     addAll(request.mpcSubtitleArgs())
                 }
             },
+            control = ExternalPlayerControl.Mpc,
         ),
         DesktopPlayerDefinition(
             id = "potplayer",
@@ -327,8 +333,15 @@ internal actual object ExternalPlayerPlatform {
         if (effectiveId == null || effectiveId == systemPlayerId) {
             defaultMediaAssociation?.let { association ->
                 val knownDefinition = definitions.firstOrNull { it.matchesExecutable(association.executablePath) }
+                val channel = request.tracking?.let {
+                    prepareExternalPlayerChannel(
+                        control = knownDefinition?.control ?: ExternalPlayerControl.None,
+                        executablePath = association.executablePath,
+                    )
+                }
                 val command = buildList {
                     add(association.executablePath)
+                    channel?.let { addAll(it.launchArgs) }
                     if (knownDefinition != null) addAll(knownDefinition.buildArgs(request))
                     addEndOfOptions(association.executablePath)
                     if (knownDefinition != null) addAll(knownDefinition.sourceArgs(request.sourceUrl))
@@ -338,6 +351,8 @@ internal actual object ExternalPlayerPlatform {
                     launchDetached(
                         command = command,
                         diagnosticContext = "player=system association=${knownDefinition?.id ?: "unknown"} source=$sourceSummary",
+                        tracking = request.tracking,
+                        reader = channel?.reader,
                     )
                 ) return ExternalPlayerOpenResult.Opened
             }
@@ -354,8 +369,10 @@ internal actual object ExternalPlayerPlatform {
             return ExternalPlayerOpenResult.NoPlayerAvailable
         }
 
+        val channel = request.tracking?.let { prepareExternalPlayerChannel(def.control, exePath) }
         val command = buildList {
             add(exePath)
+            channel?.let { addAll(it.launchArgs) }
             addAll(def.buildArgs(request))
             addEndOfOptions(exePath)
             addAll(def.sourceArgs(request.sourceUrl))
@@ -364,6 +381,8 @@ internal actual object ExternalPlayerPlatform {
             launchDetached(
                 command = command,
                 diagnosticContext = "player=$effectiveId source=$sourceSummary",
+                tracking = request.tracking,
+                reader = channel?.reader,
             )
         ) ExternalPlayerOpenResult.Opened else ExternalPlayerOpenResult.Failed
     }
@@ -379,6 +398,8 @@ internal actual object ExternalPlayerPlatform {
     private fun launchDetached(
         command: List<String>,
         diagnosticContext: String,
+        tracking: ExternalPlaybackTracking? = null,
+        reader: ExternalPlayerReader? = null,
     ): Boolean {
         val executable = command.firstOrNull() ?: "none"
         externalPlayerLog.i {
@@ -408,7 +429,9 @@ internal actual object ExternalPlayerPlatform {
                 }
                 LightsController.ended(LightsPlaybackSource.External)
             }
+            tracking?.let { ExternalPlaybackMonitor.watch(process, it, reader, diagnosticContext) }
         }.onFailure { error ->
+            runCatching { reader?.close() }
             externalPlayerLog.e(error) {
                 "External process failed to start $diagnosticContext executable=$executable"
             }

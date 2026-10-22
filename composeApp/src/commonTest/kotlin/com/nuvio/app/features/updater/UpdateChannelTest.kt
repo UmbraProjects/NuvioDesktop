@@ -106,8 +106,20 @@ class UpdateChannelTest {
         assertFalse(offered(nightly, installedNightlyId = null, runningBuild = selfBuilt("2026-08-28T10:15:00Z")))
         // Level with it — the same build, packaged here — counts as already having it.
         assertFalse(offered(nightly, installedNightlyId = null, runningBuild = selfBuilt("2026-08-22T07:26:13Z")))
-        // A second behind, and the published nightly really is the newer build.
-        assertTrue(offered(nightly, installedNightlyId = null, runningBuild = selfBuilt("2026-08-22T07:26:12Z")))
+        // Past the upload grace, and the published nightly really is the newer build.
+        assertTrue(offered(nightly, installedNightlyId = null, runningBuild = selfBuilt("2026-08-22T06:41:12Z")))
+    }
+
+    @Test
+    fun `a hand-installed copy of the published nightly is not re-offered it`() {
+        // The asset's timestamp is its upload, minutes after the image was stamped: the reported
+        // case was built 07:31:17Z and uploaded after the smoke run.
+        val nightly = publishedNightly(at = "2026-10-21T07:52:40Z")
+
+        assertFalse(offered(nightly, installedNightlyId = null, runningBuild = selfBuilt("2026-10-21T07:31:17Z")))
+        // Exactly at the edge of the grace still counts as the same build.
+        assertFalse(offered(nightly, installedNightlyId = null, runningBuild = selfBuilt("2026-10-21T07:07:40Z")))
+        assertTrue(offered(nightly, installedNightlyId = null, runningBuild = selfBuilt("2026-10-21T07:07:39Z")))
     }
 
     @Test

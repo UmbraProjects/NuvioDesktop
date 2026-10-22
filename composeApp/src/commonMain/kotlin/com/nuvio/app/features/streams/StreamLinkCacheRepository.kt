@@ -22,6 +22,12 @@ data class CachedStreamLink(
     val sources: List<String> = emptyList(),
     val bingeGroup: String? = null,
     val streamType: String? = null,
+    /**
+     * Identity of the source as it was listed (before any debrid resolve), so a reused link can
+     * still mark its row as playing in the sources panel. The cached URL cannot do that: it is the
+     * resolved or re-signed one, which never appears in a fresh listing.
+     */
+    val sourceIdentityKey: String? = null,
 )
 
 internal expect fun epochMs(): Long
@@ -67,6 +73,7 @@ object StreamLinkCacheRepository {
         sources: List<String> = emptyList(),
         bingeGroup: String? = null,
         streamType: String? = null,
+        sourceIdentityKey: String? = null,
     ) {
         // A provider's error/status placeholder is the outcome of one failed resolve, not the
         // title's link: caching it would replay "Debrid Rate Limited" on every reopen until the
@@ -91,6 +98,7 @@ object StreamLinkCacheRepository {
             sources = sources,
             bingeGroup = bingeGroup,
             streamType = streamType,
+            sourceIdentityKey = sourceIdentityKey,
         )
         val payload = json.encodeToString(CachedStreamLink.serializer(), entry)
         StreamLinkCacheStorage.saveEntry(hashedKey(contentKey), payload)

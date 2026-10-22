@@ -117,6 +117,21 @@ class AutomaticSubtitleSyncEndToEndTest {
         }
     }
 
+    /** A local library file: the same reads, from disk instead of by range request. */
+    @Test
+    fun localMkvIsSynced() = runSynthetic(transform = { it + 2_500 }, localFile = true) { cues ->
+        assertAllWithin(cues, toleranceMs = 120)
+    }
+
+    @Test
+    fun localMp4WithIndexAtEndIsSynced() = runSynthetic(
+        container = Container.MP4,
+        transform = { it + 2_500 },
+        localFile = true,
+    ) { cues ->
+        assertAllWithin(cues, toleranceMs = 120)
+    }
+
     /** Fragmented MP4 keeps timing in moof boxes spread through the file; it isn't indexed. */
     @Test
     fun fragmentedMp4ReportsNoReference() = runSynthetic(
@@ -179,6 +194,7 @@ class AutomaticSubtitleSyncEndToEndTest {
         container: Container = Container.MKV,
         responseDelayMs: Long = 0,
         isTorrent: Boolean = false,
+        localFile: Boolean = false,
         check: (List<Pair<Long, Long>>) -> Unit,
     ) {
         val ffmpeg = findFfmpeg()
@@ -206,7 +222,9 @@ class AutomaticSubtitleSyncEndToEndTest {
             start()
         }
         try {
-            serve(mkv, responseDelayMs) { url ->
+            val withSource: ((String) -> Unit) -> Unit =
+                if (localFile) { block -> block(mkv.path) } else { block -> serve(mkv, responseDelayMs, block) }
+            withSource { url ->
                 val result = runBlocking {
                     runAutomaticSubtitleSync(
                         request(url, subtitleServer.url("/addon.srt").toString()).copy(isTorrent = isTorrent),
@@ -214,7 +232,7 @@ class AutomaticSubtitleSyncEndToEndTest {
                 }
                 if (expectedFailure != null || !expectSynced) {
                     assertEquals(expectedFailure ?: AutomaticSubtitleSyncResult.NotConfident, result)
-                    return@serve
+                    return@withSource
                 }
                 val synced = assertIs<AutomaticSubtitleSyncResult.Synced>(result)
                 val file = File(synced.localFilePath)

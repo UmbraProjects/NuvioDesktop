@@ -2,6 +2,9 @@ package com.nuvio.app.features.player.desktop
 
 import androidx.compose.ui.graphics.Color
 import co.touchlab.kermit.Logger
+import java.nio.ByteOrder
+import java.nio.ByteBuffer
+import java.io.File
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.features.player.DesktopHudLayout
 import com.nuvio.app.features.player.PlayerControlAddonSubtitleItem
@@ -16,6 +19,10 @@ import com.nuvio.app.features.player.PlayerControlSubtitleCueItem
 import com.nuvio.app.features.player.AudioTrack
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.AppShortcutsRepository
+import com.nuvio.app.features.player.DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY
+import com.nuvio.app.features.player.DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY
+import com.nuvio.app.features.player.desktopAudioChannelChoices
+import com.nuvio.app.features.player.desktopAudioDialogueChoices
 import com.nuvio.app.features.player.DesktopAnimeMode
 import com.nuvio.app.features.player.DesktopAnimeSessionOverride
 import com.nuvio.app.features.player.DesktopBufferPreset
@@ -43,6 +50,9 @@ import com.nuvio.app.features.player.PlayerShortcutAction
 import com.nuvio.app.features.player.PlayerShortcutsRepository
 import com.nuvio.app.features.player.playerShortcutKeyCodeLabel
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import com.nuvio.app.features.player.effectiveRtxTrueHdrAnimeEnabled
+import com.nuvio.app.features.player.effectiveRtxTrueHdrEnabled
+import com.nuvio.app.features.player.effectiveRtxVsrEnabled
 import com.nuvio.app.features.player.SUBTITLE_ASS_SCALE_MAX
 import com.nuvio.app.features.player.SUBTITLE_ASS_SCALE_MIN
 import com.nuvio.app.features.player.SUBTITLE_BLUR_MAX
@@ -269,7 +279,7 @@ internal class NativePlayerController(
                 }
                 if (isAnimeContent && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
                     add("@nuvio-anime-layer=${if (animeShaderRequested || animeSvpEnabled) "yes" else "no"}")
-                    if (PlayerSettingsRepository.uiState.value.nvidiaRtxHdrAnimeEnabled) {
+                    if (PlayerSettingsRepository.uiState.value.effectiveRtxTrueHdrAnimeEnabled) {
                         add("@nuvio-anime-true-hdr=yes")
                     }
                 }
@@ -597,6 +607,7 @@ internal class NativePlayerController(
         svpActive: Boolean,
         videoLabel: String,
         shaderLabel: String?,
+        qualityLabel: String = "",
     ) {
         // The same signal drives the pad's right stick: with a shader running its down direction
         // cycles the shader chain, and the HDR mode when none is. This pass is the only place that
@@ -607,7 +618,8 @@ internal class NativePlayerController(
             "\"hdr\":${(hdrLabel ?: "").toJsonString()}," +
             "\"svp\":$svpActive," +
             "\"video\":${videoLabel.toJsonString()}," +
-            "\"shader\":${(shaderLabel ?: "").toJsonString()}}"
+            "\"shader\":${(shaderLabel ?: "").toJsonString()}," +
+            "\"quality\":${qualityLabel.toJsonString()}}"
         NativePlayerBridge.runJavaScript(
             current,
             "window.nuvioSetPlaybackInfo && window.nuvioSetPlaybackInfo($payload)",
@@ -875,6 +887,17 @@ internal class NativePlayerController(
                 MpvChoice("Less bass", "lavfi=[bass=g=-8:f=110:w=0.6]"),
             ),
         ),
+        // Shared with the Playback settings page; see DesktopAudioDownmix.kt.
+        MpvOption(
+            key = DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY,
+            label = "Audio channels",
+            choices = desktopAudioChannelChoices.map { MpvChoice(it.label, it.value, it.isDefault) },
+        ),
+        MpvOption(
+            key = DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY,
+            label = "Dialogue boost (downmix)",
+            choices = desktopAudioDialogueChoices.map { MpvChoice(it.label, it.value, it.isDefault) },
+        ),
     )
 
     private fun selectedMpvValue(option: MpvOption, overrides: Map<String, String>): String? =
@@ -968,6 +991,33 @@ internal class NativePlayerController(
         // detected as anime (the persisted toggle alone only fires on effectively-anime content).
         PlayerSettingsRepository.setDesktopAnimeSvpSessionForced(next)
         showPresetPill("Anime SVP", if (next) "On" else "Off")
+    }
+
+    // The player menu's RTX rows: session-only, so the video profile swaps the d3d11vpp filter
+    // live instead of the saved setting re-attaching the player. The pill names the one hold-back
+    // a viewer can act on from here; the others (HDR source, Windows HDR off) are in the settings.
+    // The NVIDIA App switch is named too: without it the row would seem to do nothing.
+    private fun toggleRtxVsrForSession() {
+        val settings = PlayerSettingsRepository.uiState.value
+        val next = !settings.effectiveRtxVsrEnabled
+        PlayerSettingsRepository.setDesktopRtxVsrSessionOverride(next)
+        val driverOff = NvidiaRtxDriverState.settings.value.superResolutionEnabled == false
+        showPresetPill("RTX Super Resolution", rtxPillValue(next, settings.desktopAnimeSvpEnabled, driverOff))
+    }
+
+    private fun toggleRtxTrueHdrForSession() {
+        val settings = PlayerSettingsRepository.uiState.value
+        val next = !settings.effectiveRtxTrueHdrEnabled
+        PlayerSettingsRepository.setDesktopRtxTrueHdrSessionOverride(next)
+        val driverOff = NvidiaRtxDriverState.settings.value.trueHdrEnabled == false
+        showPresetPill("RTX True HDR", rtxPillValue(next, settings.desktopAnimeSvpEnabled, driverOff))
+    }
+
+    private fun rtxPillValue(enabled: Boolean, svpEnabled: Boolean, driverOff: Boolean): String = when {
+        !enabled -> "Off"
+        driverOff -> "On (off in the NVIDIA App)"
+        svpEnabled -> "On (off while SVP runs)"
+        else -> "On"
     }
 
     /**
@@ -1147,6 +1197,14 @@ internal class NativePlayerController(
         }
         if (type == "keyboardCycleAnimeSvp") {
             cycleDesktopAnimeSvpMode()
+            return
+        }
+        if (type == "toggleRtxVsr") {
+            toggleRtxVsrForSession()
+            return
+        }
+        if (type == "toggleRtxTrueHdr") {
+            toggleRtxTrueHdrForSession()
             return
         }
         // Both the AWT key dispatcher and the HUD (its speed button and the step/toggle keys, which
@@ -1659,6 +1717,28 @@ internal class NativePlayerController(
         handle.takeIf { it != 0L }?.let { current -> NativePlayerBridge.setSubtitleDelayMs(current, clamped) }
     }
 
+    override val supportsSpeechSpots: Boolean get() = handle != 0L
+
+    override fun decodeSpeechSpot(startSeconds: Double, durationSeconds: Double): FloatArray? {
+        val current = handle.takeIf { it != 0L } ?: return null
+        val directory = File(System.getProperty("java.io.tmpdir"), "nuvio-autosync").apply { mkdirs() }
+        val file = File.createTempFile("speech-", ".f32", directory)
+        return try {
+            val result = NativePlayerBridge.decodeSpeechSpot(current, startSeconds, durationSeconds, file.absolutePath)
+            if (result != 0 || file.length() < 4) return null
+            // ao=pcm with audio-format=float writes raw little-endian float32 samples.
+            val samples = ByteBuffer.wrap(file.readBytes()).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+            FloatArray(samples.remaining()).also(samples::get)
+        } finally {
+            file.delete()
+        }
+    }
+
+    override fun sourceBytesPerSecond(): Double? =
+        handle.takeIf { it != 0L }
+            ?.let { NativePlayerBridge.speechSourceBytesPerSecond(it) }
+            ?.takeIf { it > 0.0 }
+
     override fun applySubtitleStyle(style: SubtitleStyleState) {
         pendingSubtitleStyle = style
         handle.takeIf { it != 0L }?.let { current -> applySubtitleStyle(current, style) }
@@ -1990,6 +2070,15 @@ private fun buildDesktopUserMpvOptions(initialPlaybackSpeed: Float): List<String
                 hostOs = DesktopHostOs.current,
                 playbackSpeed = initialPlaybackSpeed,
             ).forEach { (name, value) -> add("$name=$value") }
+            // Nuvio's stats overlay in place of the built-in one (same script name, so the
+            // diagnostics binding still finds it). `scripts`, not `scripts-append`: mpv's option
+            // API rejects the -append suffix. A `scripts=` line in the custom options box is
+            // applied later and replaces this, which leaves no overlay; so would a failed export,
+            // hence the built-in is only switched off when ours is there.
+            DesktopMpvScripts.statsScriptPath?.let {
+                add("load-stats-overlay=no")
+                add("scripts=$it")
+            }
         }
         // Let mpv select an embedded preferred-language subtitle as part of file loading. Waiting
         // for the Compose-side track poll is unnecessarily fragile for tracks already present in
@@ -2227,8 +2316,6 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("pauseOverlaySourceEnabled", pauseOverlaySourceEnabled)
         append(',')
-        appendJsonField("pauseOverlayCastLabel", pauseOverlayCastLabel)
-        append(',')
         appendJsonArrayField("pauseOverlayCast", pauseOverlayCast) { appendCastItemJson(it) }
         append(',')
         appendJsonField("resizeModeLabel", resizeModeLabel)
@@ -2278,6 +2365,10 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("desktopAnimeModeLabel", desktopAnimeModeLabel)
         append(',')
         appendJsonField("desktopAnimeSvpEnabled", desktopAnimeSvpEnabled)
+        append(',')
+        appendJsonField("rtxVsrEnabled", rtxVsrEnabled)
+        append(',')
+        appendJsonField("rtxTrueHdrEnabled", rtxTrueHdrEnabled)
         append(',')
         appendJsonField("playbackInfoPanelEnabled", playbackInfoPanelEnabled)
         append(',')

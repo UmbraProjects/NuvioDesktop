@@ -316,7 +316,7 @@ internal fun PlayerScreenRuntime.switchToSource(
     stopActiveP2pStream()
     val currentVideoId = activeVideoId
     if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && currentVideoId != null) {
-        saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber)
+        saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber, sourceIdentityKey)
     }
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
@@ -395,7 +395,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     val epVideoId = episode.id
     val resume = resolveEpisodeResume(epVideoId, episode)
     if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled)) {
-        saveDirectStreamForReuse(stream, url, epVideoId, seasonNumber, episodeNumber)
+        saveDirectStreamForReuse(stream, url, epVideoId, seasonNumber, episodeNumber, sourceIdentityKey)
     }
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
@@ -1155,6 +1155,7 @@ private fun PlayerScreenRuntime.saveDirectStreamForReuse(
     videoId: String,
     season: Int?,
     episode: Int?,
+    sourceIdentityKey: String?,
 ) {
     val cacheKey = StreamLinkCacheRepository.contentKey(
         type = contentType ?: parentMetaType,
@@ -1175,5 +1176,6 @@ private fun PlayerScreenRuntime.saveDirectStreamForReuse(
         videoSize = stream.behaviorHints.videoSize,
         bingeGroup = stream.behaviorHints.bingeGroup,
         streamType = stream.streamType,
+        sourceIdentityKey = sourceIdentityKey,
     )
 }

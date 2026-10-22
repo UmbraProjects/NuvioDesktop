@@ -69,6 +69,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.coroutines.runBlocking
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -362,6 +364,12 @@ internal object UpdateAvailability {
      * for and when it was packaged. Applied only to the unmarked case — an install the updater
      * performed has its own settled rules, and nothing here should be able to talk it out of an
      * update.
+     *
+     * The published asset's timestamp is its upload time, which always trails its own build stamp
+     * by the smoke run and the upload, so a user who downloaded the nightly and unpacked it by hand
+     * runs a build "older" than the release it came from. [selfBuiltUploadGrace] absorbs that lag.
+     * The cost is that a nightly uploaded within that window of the running build is missed until
+     * the next one, which is rare and self-correcting.
      */
     private fun isSelfBuiltNightlyAtLeastAsNew(
         update: AppUpdate,
@@ -370,11 +378,14 @@ internal object UpdateAvailability {
     ): Boolean {
         if (installedNightlyId != null) return false
         if (runningBuild?.isNightly != true) return false
-        val builtAt = utcInstantOrNull(runningBuild.buildTime) ?: return false
-        val publishedAt = utcInstantOrNull(update.publishedAt) ?: return false
-        return builtAt >= publishedAt
+        val builtAt = utcInstantOrNull(runningBuild.buildTime)?.let { Instant.parse("${it}Z") } ?: return false
+        val publishedAt = utcInstantOrNull(update.publishedAt)?.let { Instant.parse("${it}Z") } ?: return false
+        return builtAt + selfBuiltUploadGrace >= publishedAt
     }
 }
+
+/** How long after a nightly is packaged its upload may land and still count as that same build. */
+internal val selfBuiltUploadGrace = 45.minutes
 
 private val utcInstantPattern = Regex("""^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?Z$""")
 

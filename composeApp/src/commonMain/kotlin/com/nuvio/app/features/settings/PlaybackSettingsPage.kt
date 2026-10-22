@@ -69,6 +69,11 @@ import com.nuvio.app.features.player.AudioRejectKeyword
 import com.nuvio.app.features.player.SubtitleRejectKeyword
 import com.nuvio.app.features.player.AvailableLanguageOptions
 import com.nuvio.app.features.player.DesktopAnimeMode
+import com.nuvio.app.features.player.DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY
+import com.nuvio.app.features.player.DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY
+import com.nuvio.app.features.player.desktopAudioChannelChoices
+import com.nuvio.app.features.player.desktopAudioDialogueChoices
+import com.nuvio.app.features.player.selectedFor
 import com.nuvio.app.features.player.DESKTOP_COLOR_OFFSET_RANGE
 import com.nuvio.app.features.player.DesktopBufferPreset
 import com.nuvio.app.features.player.DesktopRateLimitRecoveryMode
@@ -1377,6 +1382,38 @@ private fun PlaybackSettingsSection(
                             isTablet = isTablet,
                             onCheckedChange = PlayerSettingsRepository::setDesktopAudioPassthroughEnabled,
                         )
+                        // Same saved values as the player's Advanced (mpv) menu rows.
+                        val mpvOverrides = autoPlayPlayerSettings.desktopMpvPropertyOverrides
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_audio_channels),
+                            description = stringResource(Res.string.settings_playback_desktop_audio_channels_desc),
+                            options = desktopAudioChannelChoices.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = desktopAudioChannelChoices.selectedFor(mpvOverrides, DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY),
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("desktop-audio-channels")),
+                            onSelected = { choice ->
+                                PlayerSettingsRepository.setDesktopMpvPropertyOverride(
+                                    key = DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY,
+                                    value = choice.value.takeUnless { choice.isDefault },
+                                )
+                            },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_desktop_audio_dialogue_boost),
+                            description = stringResource(Res.string.settings_playback_desktop_audio_dialogue_boost_desc),
+                            options = desktopAudioDialogueChoices.map { SettingsChoiceOption(it, it.label) },
+                            selectedValue = desktopAudioDialogueChoices.selectedFor(mpvOverrides, DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY),
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("desktop-audio-dialogue-boost")),
+                            onSelected = { choice ->
+                                PlayerSettingsRepository.setDesktopMpvPropertyOverride(
+                                    key = DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY,
+                                    value = choice.value.takeUnless { choice.isDefault },
+                                )
+                            },
+                        )
                     }
                 }
             }
@@ -1786,6 +1823,11 @@ private fun PlaybackSettingsSection(
                 val subtitleRenderingEnabled = !autoPlayPlayerSettings.externalPlayerEnabled
                 SettingsGroup(isTablet = isTablet) {
                     val subtitleStyle = autoPlayPlayerSettings.subtitleStyle
+                    SubtitleStylePreview(
+                        style = subtitleStyle,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
                     SettingsSliderRow(
                         title = stringResource(Res.string.settings_playback_subtitle_size),
                         value = subtitleStyle.fontSizeSp,
@@ -1887,6 +1929,8 @@ private fun PlaybackSettingsSection(
                             title = stringResource(Res.string.settings_playback_subtitle_shadow_offset),
                             value = subtitleStyle.shadowOffset,
                             valueText = subtitleShadowOffsetLabel(subtitleStyle.shadowOffset),
+                            // Tenths of a pixel: the generic in-drag readout would show the raw count.
+                            valueTextForValue = ::subtitleShadowOffsetLabel,
                             valueRange = SUBTITLE_SHADOW_OFFSET_MIN..SUBTITLE_SHADOW_OFFSET_MAX,
                             step = SUBTITLE_SHADOW_OFFSET_STEP,
                             isTablet = isTablet,

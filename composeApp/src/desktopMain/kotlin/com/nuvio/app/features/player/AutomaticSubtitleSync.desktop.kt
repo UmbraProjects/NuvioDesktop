@@ -1,9 +1,16 @@
 package com.nuvio.app.features.player
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.player.audiosync.DesktopAudioSubtitleSync
+import com.nuvio.app.features.player.audiosync.SubtitleSyncModel
 import com.nuvio.app.features.player.autosync.AutoSyncAnalysisOutcome
 import com.nuvio.app.features.player.autosync.AutoSyncSubtitleCandidate
+import com.nuvio.app.features.player.autosync.AutoSyncSubtitleCueParser
 import com.nuvio.app.features.player.autosync.AutoSyncSubtitleRewriter
+import com.nuvio.app.features.player.autosync.AutoSyncCue
+import com.nuvio.app.features.player.autosync.AutoSyncRetimedCue
+import com.nuvio.app.features.player.autosync.AutoSyncTimelineRetimeResult
+import com.nuvio.app.features.player.autosync.AutoSyncTimelineRetimer
 import com.nuvio.app.features.player.autosync.AutomaticSubtitleSync
 import com.nuvio.app.features.player.autosync.EmbeddedSubtitleTimelineLoader
 import com.nuvio.app.features.player.autosync.maxAlignmentShiftMs
@@ -90,15 +97,7 @@ internal actual suspend fun runAutomaticSubtitleSync(
     val synced = withContext(Dispatchers.IO) {
         val body = resolved.subtitleBody
             ?: AutomaticSubtitleSync.downloadSubtitleBody(chosen.url, resolved.subtitleHeaders, chosen.language)
-        val rewritten = AutoSyncSubtitleRewriter.rewrite(body, chosen.url, resolved.timeline)
-        val name = sha1("${request.sourceUrl}\u0000${chosen.url}").take(16)
-        val file = File(syncDirectory, "$name.${rewritten.extension}")
-        file.writeText(rewritten.text, Charsets.UTF_8)
-        AutomaticSubtitleSyncResult.Synced(
-            subtitle = chosen,
-            localFilePath = file.absolutePath,
-            retimedBody = rewritten.text,
-        )
+        writeRetimedSubtitle(request.sourceUrl, chosen, body, resolved.timeline)
     }
     log.i {
         "synced after ${elapsedMs}ms swapped=${chosen.url != request.subtitle.url} " +
@@ -109,6 +108,124 @@ internal actual suspend fun runAutomaticSubtitleSync(
     }
     synchronized(resultCacheLock) { resultCache[cacheKey] = synced }
     return synced
+}
+
+private fun writeRetimedSubtitle(
+    sourceUrl: String,
+    subtitle: AddonSubtitle,
+    body: String,
+    timeline: AutoSyncTimelineRetimeResult,
+    nameSuffix: String = "",
+): AutomaticSubtitleSyncResult.Synced {
+    val rewritten = AutoSyncSubtitleRewriter.rewrite(body, subtitle.url, timeline)
+    // A refined audio sync gets its own name: mpv would treat a reload of the same path as a no-op.
+    val name = sha1("$sourceUrl\u0000${subtitle.url}").take(16) + nameSuffix
+    val file = File(syncDirectory, "$name.${rewritten.extension}")
+    file.writeText(rewritten.text, Charsets.UTF_8)
+    return AutomaticSubtitleSyncResult.Synced(
+        subtitle = subtitle,
+        localFilePath = file.absolutePath,
+        retimedBody = rewritten.text,
+    )
+}
+
+internal actual suspend fun runAudioReferencedSubtitleSync(
+    sourceUrl: String,
+    subtitle: AddonSubtitle,
+    player: PlayerEngineController,
+    durationMs: Long,
+    positionMs: () -> Long,
+    onUpdate: suspend (AudioSubtitleSyncUpdate) -> Unit,
+): AutomaticSubtitleSyncResult {
+    // Engines that can't sample audio keep the old answer.
+    if (!player.supportsSpeechSpots) return AutomaticSubtitleSyncResult.NoReference
+    val body = runCatching {
+        withContext(Dispatchers.IO) {
+            AutomaticSubtitleSync.downloadSubtitleBody(subtitle.url, emptyMap(), subtitle.language)
+        }
+    }.getOrNull() ?: return AutomaticSubtitleSyncResult.SubtitleUnavailable
+    val cues = AutoSyncTimelineRetimer.normalizeExternalTimeline(AutoSyncSubtitleCueParser.parse(body, subtitle.url))
+    if (cues.isEmpty()) return AutomaticSubtitleSyncResult.SubtitleUnavailable
+
+    suspend fun write(model: SubtitleSyncModel, suffix: String) = withContext(Dispatchers.IO) {
+        writeRetimedSubtitle(sourceUrl, subtitle, body, timelineFor(cues, model), nameSuffix = suffix)
+    }
+
+    var writes = 0
+    val outcome = withContext(Dispatchers.Default) {
+        DesktopAudioSubtitleSync.run(
+            sourceKey = sourceUrl,
+            dialogue = cues.map { Triple(it.startTimeMs, it.endTimeMs, it.text) },
+            durationMs = durationMs,
+            bytesPerSecond = withContext(Dispatchers.IO) { player.sourceBytesPerSecond() },
+            positionMs = positionMs,
+            decode = { startMs, lengthMs ->
+                withContext(Dispatchers.IO) { player.decodeSpeechSpot(startMs / 1_000.0, lengthMs / 1_000.0) }
+            },
+        ) { event ->
+            when (event) {
+                is DesktopAudioSubtitleSync.Event.Estimated -> onUpdate(
+                    AudioSubtitleSyncUpdate.Applied(
+                        synced = write(event.model, "-a${writes++}"),
+                        confirmed = false,
+                        offsetMs = event.model.delayUsAt(positionMs() * 1_000L) / 1_000L,
+                    ),
+                )
+                is DesktopAudioSubtitleSync.Event.Locked -> onUpdate(
+                    AudioSubtitleSyncUpdate.Applied(
+                        synced = write(event.model, "-a${writes++}"),
+                        confirmed = true,
+                        offsetMs = event.model.delayUsAt(positionMs() * 1_000L) / 1_000L,
+                    ),
+                )
+                DesktopAudioSubtitleSync.Event.Withdrawn -> onUpdate(AudioSubtitleSyncUpdate.Withdrawn)
+            }
+        }
+    }
+    return when (outcome) {
+        is DesktopAudioSubtitleSync.Outcome.Done -> write(outcome.model, "-a${writes - 1}")
+        is DesktopAudioSubtitleSync.Outcome.NoMatch -> AutomaticSubtitleSyncResult.NotConfident
+    }
+}
+
+/**
+ * The rewriter's view of an audio mapping: every cue placed by [model] (subtitle time to media
+ * time, piecewise for releases with a different cut), its first piece as the fallback transform.
+ */
+private fun timelineFor(cues: List<AutoSyncCue>, model: SubtitleSyncModel): AutoSyncTimelineRetimeResult {
+    val first = model.segments.first()
+    val retimed = cues.map { cue ->
+        val start = model.mediaTimeUs(cue.startTimeMs * 1_000L)?.div(1_000L)
+            ?: (cue.startTimeMs * first.scale + first.shiftMs).toLong()
+        val scale = model.segmentAt(start).scale
+        val end = start + ((cue.endTimeMs - cue.startTimeMs) * scale).toLong()
+        AutoSyncRetimedCue(
+            originalStartTimeMs = cue.startTimeMs,
+            originalEndTimeMs = cue.endTimeMs,
+            startTimeMs = start.coerceAtLeast(0L),
+            endTimeMs = end.coerceAtLeast(start + 1L),
+        )
+    }
+    return AutoSyncTimelineRetimeResult(
+        cues = retimed,
+        groups = emptyList(),
+        targetCoverage = 1.0,
+        referenceCoverage = 0.0,
+        skippedTargetCues = 0,
+        skippedReferenceCues = 0,
+        longestTargetSkipRun = 0,
+        averageGroupCost = 0.0,
+        oneToOneGroups = 0,
+        oneToTwoGroups = 0,
+        twoToOneGroups = 0,
+        oneToThreeGroups = 0,
+        threeToOneGroups = 0,
+        twoToTwoGroups = 0,
+        confident = true,
+        alignmentSource = "audio-vad",
+        alignmentScale = first.scale,
+        alignmentInterceptMs = first.shiftMs,
+    )
 }
 
 private fun sha1(value: String): String =

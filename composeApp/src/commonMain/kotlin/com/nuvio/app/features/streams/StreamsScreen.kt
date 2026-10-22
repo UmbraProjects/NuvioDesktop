@@ -235,6 +235,8 @@ fun StreamsScreen(
         resumePositionMs: Long?,
         resumeProgressFraction: Float?,
     ) -> Unit = { _, _, _, _ -> },
+    /** "Play on device…" from a stream's menu; null hides the entry. */
+    onStreamActionCast: ((stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit)? = null,
     onBack: () -> Unit,
     presentation: StreamsPresentation = StreamsPresentation.Screen,
     /** Panel only: inset of the panel's content from the frame StreamPickerFrame draws. */
@@ -920,6 +922,9 @@ fun StreamsScreen(
                     effectiveResumePositionMs,
                     effectiveResumeProgressFraction,
                 )
+            },
+            onCastToDevice = onStreamActionCast?.let { cast ->
+                { stream -> cast(stream, effectiveResumePositionMs, effectiveResumeProgressFraction) }
             },
             // Offered on an episode row only when a matching-type local-library folder exists (and
             // downloads are enabled): the season grab exists to file episodes INTO the library, so

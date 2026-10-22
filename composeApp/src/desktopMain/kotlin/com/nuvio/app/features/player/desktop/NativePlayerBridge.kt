@@ -114,6 +114,15 @@ internal object NativePlayerBridge {
     external fun setSubtitleDelayMs(handle: Long, delayMs: Int)
 
     /**
+     * Decodes [durationSeconds] of the playing audio from [startSeconds] to raw 16 kHz mono float32
+     * PCM in [outputPath], with a throwaway headless mpv on its own connection. Blocks; 0 = written.
+     */
+    external fun decodeSpeechSpot(handle: Long, startSeconds: Double, durationSeconds: Double, outputPath: String): Int
+
+    /** The playing source's size over its duration; negative when unknown. */
+    external fun speechSourceBytesPerSecond(handle: Long): Double
+
+    /**
      * mpv's `sub-ass-override` level for ASS/SSA tracks ("no", "yes", "scale" or "force") plus the
      * `sub-scale` factor that goes with it.
      *

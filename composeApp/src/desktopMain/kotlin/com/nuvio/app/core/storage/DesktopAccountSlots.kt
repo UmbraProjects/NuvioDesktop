@@ -36,6 +36,7 @@ internal val MACHINE_STORE_NAMES = setOf(
     "nuvio_screensaver",
     "nuvio_lights",
     "nuvio_external_players",
+    "nuvio_cast",
     "nuvio_engine",
     "nuvio_tmdb_external_ids",
     "nuvio_mdblist_ratings_cache",

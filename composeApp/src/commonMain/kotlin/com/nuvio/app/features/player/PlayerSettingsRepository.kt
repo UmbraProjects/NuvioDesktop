@@ -233,6 +233,11 @@ data class PlayerSettingsUiState(
     val desktopAnimeSessionOverride: DesktopAnimeSessionOverride? = null,
     // In-memory only: F7 turned SVP on this session, so it applies even to undetected content.
     val desktopAnimeSvpSessionForced: Boolean = false,
+    // In-memory only: the player menu's RTX VSR / True HDR toggles for this session. Null follows
+    // the saved setting. Kept out of the saved settings because those re-attach the player.
+    // A forced-on True HDR also skips its anime and anime-shader opt-ins: the user asked for it.
+    val desktopRtxVsrSessionOverride: Boolean? = null,
+    val desktopRtxTrueHdrSessionOverride: Boolean? = null,
     val desktopCustomShaderPaths: String = "",
     val desktopCustomShaderSelectedPath: String = "",
     // Bitstream/passthrough of compressed audio (AC3/DTS/E-AC3/TrueHD/DTS-HD) to a receiver.
@@ -385,6 +390,8 @@ object PlayerSettingsRepository {
     // Session-only state; deliberately has no PlayerSettingsStorage backing.
     private var desktopAnimeSessionOverride: DesktopAnimeSessionOverride? = null
     private var desktopAnimeSvpSessionForced = false
+    private var desktopRtxVsrSessionOverride: Boolean? = null
+    private var desktopRtxTrueHdrSessionOverride: Boolean? = null
     private var desktopCustomShaderPaths = ""
     private var desktopCustomShaderSelectedPath = ""
     private var desktopAudioPassthroughEnabled = false
@@ -530,6 +537,8 @@ object PlayerSettingsRepository {
         desktopPlaybackInfoPanelEnabled = false
         desktopAnimeSessionOverride = null
         desktopAnimeSvpSessionForced = false
+        desktopRtxVsrSessionOverride = null
+        desktopRtxTrueHdrSessionOverride = null
         desktopCustomShaderPaths = ""
         desktopCustomShaderSelectedPath = ""
         desktopAudioPassthroughEnabled = false
@@ -1838,6 +1847,8 @@ object PlayerSettingsRepository {
             desktopPlaybackInfoPanelEnabled = desktopPlaybackInfoPanelEnabled,
             desktopAnimeSessionOverride = desktopAnimeSessionOverride,
             desktopAnimeSvpSessionForced = desktopAnimeSvpSessionForced,
+            desktopRtxVsrSessionOverride = desktopRtxVsrSessionOverride,
+            desktopRtxTrueHdrSessionOverride = desktopRtxTrueHdrSessionOverride,
             desktopCustomShaderPaths = desktopCustomShaderPaths,
             desktopCustomShaderSelectedPath = desktopCustomShaderSelectedPath,
             desktopAudioPassthroughEnabled = desktopAudioPassthroughEnabled,
@@ -2054,10 +2065,28 @@ object PlayerSettingsRepository {
         publish()
     }
 
+    fun setDesktopRtxVsrSessionOverride(enabled: Boolean?) {
+        ensureLoaded()
+        if (desktopRtxVsrSessionOverride == enabled) return
+        desktopRtxVsrSessionOverride = enabled
+        publish()
+    }
+
+    fun setDesktopRtxTrueHdrSessionOverride(enabled: Boolean?) {
+        ensureLoaded()
+        if (desktopRtxTrueHdrSessionOverride == enabled) return
+        desktopRtxTrueHdrSessionOverride = enabled
+        publish()
+    }
+
     fun clearDesktopAnimeSessionState() {
-        if (desktopAnimeSessionOverride == null && !desktopAnimeSvpSessionForced) return
+        if (desktopAnimeSessionOverride == null && !desktopAnimeSvpSessionForced &&
+            desktopRtxVsrSessionOverride == null && desktopRtxTrueHdrSessionOverride == null
+        ) return
         desktopAnimeSessionOverride = null
         desktopAnimeSvpSessionForced = false
+        desktopRtxVsrSessionOverride = null
+        desktopRtxTrueHdrSessionOverride = null
         publish()
     }
 
@@ -2214,3 +2243,13 @@ object PlayerSettingsRepository {
         }
     }
 }
+
+// The RTX settings as the player applies them: the menu's session toggle wins over the saved one.
+val PlayerSettingsUiState.effectiveRtxVsrEnabled: Boolean
+    get() = desktopRtxVsrSessionOverride ?: nvidiaRtxSuperResolutionEnabled
+val PlayerSettingsUiState.effectiveRtxTrueHdrEnabled: Boolean
+    get() = desktopRtxTrueHdrSessionOverride ?: nvidiaRtxHdrEnabled
+val PlayerSettingsUiState.effectiveRtxTrueHdrAnimeEnabled: Boolean
+    get() = desktopRtxTrueHdrSessionOverride == true || nvidiaRtxHdrAnimeEnabled
+val PlayerSettingsUiState.effectiveRtxTrueHdrAnimeShadersEnabled: Boolean
+    get() = desktopRtxTrueHdrSessionOverride == true || nvidiaRtxHdrAnimeShadersEnabled

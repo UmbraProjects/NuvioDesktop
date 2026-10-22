@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Language
@@ -58,6 +59,7 @@ import nuvio.composeapp.generated.resources.streams_download_season
 import nuvio.composeapp.generated.resources.streams_inspect_source
 import nuvio.composeapp.generated.resources.streams_open_external_player
 import nuvio.composeapp.generated.resources.streams_open_in_browser
+import nuvio.composeapp.generated.resources.streams_play_on_device
 import org.jetbrains.compose.resources.stringResource
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -75,6 +77,7 @@ internal actual fun StreamRowContextMenu(
     val inspectSourceLabel = stringResource(Res.string.streams_inspect_source)
     val openInBrowserLabel = stringResource(Res.string.streams_open_in_browser)
     val externalLabel = stringResource(Res.string.streams_open_external_player)
+    val castLabel = stringResource(Res.string.streams_play_on_device)
     var menuOpen by remember(stream) { mutableStateOf(false) }
     var clickPosition by remember(stream) { mutableStateOf(Offset.Zero) }
     var rowCoordinates by remember(stream) { mutableStateOf<LayoutCoordinates?>(null) }
@@ -146,6 +149,7 @@ internal actual fun StreamRowContextMenu(
                     downloadSeasonLabel = if (isSeasonPack) downloadSeasonLabel else inspectSourceLabel,
                     openInBrowserLabel = openInBrowserLabel,
                     externalLabel = externalLabel,
+                    castLabel = castLabel,
                     onCopy = {
                         menuOpen = false
                         actions.onCopyUrl(stream)
@@ -175,6 +179,12 @@ internal actual fun StreamRowContextMenu(
                     onExternal = {
                         menuOpen = false
                         actions.onOpenExternal(stream)
+                    },
+                    onCast = actions.onCastToDevice?.let { cast ->
+                        {
+                            menuOpen = false
+                            cast(stream)
+                        }
                     },
                 )
             }
@@ -207,11 +217,13 @@ private fun StreamActionsMenu(
     downloadSeasonLabel: String,
     openInBrowserLabel: String,
     externalLabel: String,
+    castLabel: String,
     onCopy: () -> Unit,
     onDownload: (() -> Unit)?,
     onDownloadSeason: (() -> Unit)?,
     onOpenInBrowser: (() -> Unit)?,
     onExternal: () -> Unit,
+    onCast: (() -> Unit)?,
 ) {
     Surface(
         modifier = Modifier.width(244.dp),
@@ -233,6 +245,9 @@ private fun StreamActionsMenu(
                 StreamActionRow(openInBrowserLabel, Icons.Rounded.Language, onOpenInBrowser)
             }
             StreamActionRow(externalLabel, Icons.AutoMirrored.Rounded.OpenInNew, onExternal)
+            if (onCast != null) {
+                StreamActionRow(castLabel, Icons.Rounded.Cast, onCast)
+            }
             // Below the actions on purpose: the breakdown is read-only, so the clickable rows stay
             // closest to the cursor where the menu opens.
             scoreBreakdown?.let { score ->

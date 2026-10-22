@@ -36,6 +36,19 @@ interface PlayerEngineController {
     fun clearExternalSubtitleAndSelect(trackIndex: Int)
     fun applySubtitleStyle(style: SubtitleStyleState) {}
     fun setSubtitleDelayMs(delayMs: Int) {}
+
+    /**
+     * Decodes [durationSeconds] of the playing audio track from media time [startSeconds] to 16 kHz
+     * mono PCM, reading the source separately from playback (audio-referenced subtitle sync).
+     * Blocking. Null when unsupported or unreadable.
+     */
+    fun decodeSpeechSpot(startSeconds: Double, durationSeconds: Double): FloatArray? = null
+
+    /** Whether [decodeSpeechSpot] can work for the current source. */
+    val supportsSpeechSpots: Boolean get() = false
+
+    /** Average bytes per second of the playing source, when known. */
+    fun sourceBytesPerSecond(): Double? = null
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}
 
     /**
@@ -118,7 +131,6 @@ data class PlayerControlsState(
     // Opt-in: adds the playing source as the overlay's bottom row, reusing streamTitle/providerName.
     val pauseOverlaySourceEnabled: Boolean = false,
     // Top-billed cast for the pause overlay's top-left block; empty hides it.
-    val pauseOverlayCastLabel: String = "Starring",
     val pauseOverlayCast: List<PlayerControlCastItem> = emptyList(),
     val resizeModeLabel: String = "Fit",
     val playbackSpeedLabel: String = "1x",
@@ -145,6 +157,9 @@ data class PlayerControlsState(
     val desktopColorGamma: Int = 0,
     val desktopAnimeModeLabel: String = "Off",
     val desktopAnimeSvpEnabled: Boolean = false,
+    // The RTX rows in the player menu: the saved setting or this session's toggle of it.
+    val rtxVsrEnabled: Boolean = false,
+    val rtxTrueHdrEnabled: Boolean = false,
     /** Opt-in "what am I actually watching" summary, shown when playback starts. */
     val playbackInfoPanelEnabled: Boolean = false,
     /**

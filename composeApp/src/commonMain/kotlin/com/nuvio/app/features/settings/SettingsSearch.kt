@@ -1478,6 +1478,16 @@ private fun settingsSearchEntries(
                 anchor = SettingsScrollAnchor.SeekThumbnails,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
+                "desktop-audio-channels",
+                resolve(Res.string.settings_playback_desktop_audio_channels),
+                resolve(Res.string.settings_playback_desktop_audio_channels_desc),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-audio-dialogue-boost",
+                resolve(Res.string.settings_playback_desktop_audio_dialogue_boost),
+                resolve(Res.string.settings_playback_desktop_audio_dialogue_boost_desc),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "desktop-rate-limit-recovery",
                 resolve(Res.string.settings_playback_desktop_rate_limit_recovery),
                 resolve(Res.string.settings_playback_desktop_rate_limit_recovery_search),

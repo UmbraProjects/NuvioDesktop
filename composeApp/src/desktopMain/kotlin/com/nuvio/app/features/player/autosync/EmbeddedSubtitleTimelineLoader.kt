@@ -16,6 +16,9 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import java.io.File
+import java.io.RandomAccessFile
+import java.net.URI
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
 import java.util.concurrent.TimeUnit
@@ -154,7 +157,8 @@ internal object EmbeddedSubtitleTimelineLoader {
         pace: Pace = Pace.NETWORK,
     ): IndexedEmbeddedTimeline? {
         if (!sourceUrl.startsWith("http://", ignoreCase = true) &&
-            !sourceUrl.startsWith("https://", ignoreCase = true)
+            !sourceUrl.startsWith("https://", ignoreCase = true) &&
+            localSourceFile(sourceUrl) == null
         ) {
             return null
         }
@@ -1086,6 +1090,8 @@ internal object EmbeddedSubtitleTimelineLoader {
         val end = start + length - 1L
         if (end < start) return null
 
+        localSourceFile(sourceUrl)?.let { file -> return readLocalRange(file, start, length, requireExactLength, stats) }
+
         val requestBuilder = Request.Builder()
             .url(sourceUrl)
             .header("Range", "bytes=$start-$end")
@@ -1353,6 +1359,40 @@ internal object EmbeddedSubtitleTimelineLoader {
         val timeline: IndexedEmbeddedTimeline?,
         val createdAtNs: Long,
     )
+
+    /** A local library file given as a plain path or a `file:` URL; null for anything fetched over HTTP. */
+    private fun localSourceFile(sourceUrl: String): File? {
+        if (sourceUrl.startsWith("http://", ignoreCase = true) || sourceUrl.startsWith("https://", ignoreCase = true)) {
+            return null
+        }
+        val file = if (sourceUrl.startsWith("file:", ignoreCase = true)) {
+            runCatching { File(URI(sourceUrl)) }.getOrNull()
+        } else {
+            File(sourceUrl)
+        }
+        return file?.takeIf { it.isFile }
+    }
+
+    /** The same read as a range request, from disk. */
+    private suspend fun readLocalRange(
+        file: File,
+        start: Long,
+        length: Int,
+        requireExactLength: Boolean,
+        stats: RangeStats,
+    ): RangeResponse? = withContext(Dispatchers.IO) {
+        stats.requests++
+        RandomAccessFile(file, "r").use { input ->
+            val total = input.length()
+            if (start >= total) return@withContext null
+            val bytes = ByteArray(minOf(length.toLong(), total - start).toInt())
+            input.seek(start)
+            input.readFully(bytes)
+            stats.bytesDownloaded += bytes.size.toLong()
+            if (requireExactLength && bytes.size != length) return@withContext null
+            RangeResponse(bytes = bytes, totalLength = total)
+        }
+    }
 
     private data class RangeResponse(
         val bytes: ByteArray,

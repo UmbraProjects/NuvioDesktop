@@ -367,7 +367,6 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         // reads as messy clutter in the pause card, so it is intentionally not used as a fallback.
         pauseOverlayDescription = activePauseDescription.orEmpty(),
         pauseOverlaySourceEnabled = playerSettingsUiState.desktopPauseOverlaySourceEnabled,
-        pauseOverlayCastLabel = stringResource(Res.string.meta_starring),
         pauseOverlayCast = remember(playerMetaCast) {
             playerMetaCast
                 .filter { it.name.isNotBlank() }
@@ -411,6 +410,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 DesktopAnimeMode.Off.label
             },
         desktopAnimeSvpEnabled = playerSettingsUiState.desktopAnimeSvpEnabled,
+        rtxVsrEnabled = playerSettingsUiState.effectiveRtxVsrEnabled,
+        rtxTrueHdrEnabled = playerSettingsUiState.effectiveRtxTrueHdrEnabled,
         playbackInfoPanelEnabled = playerSettingsUiState.desktopPlaybackInfoPanelEnabled,
         activeSubtitleLabel = activePlaybackSubtitleLabel(),
         // The native decoder stands down while Seekr has (or is still fetching) this playback's
@@ -2058,8 +2059,8 @@ private fun PlayerScreenRuntime.buildPlayerControlSubtitleCueItems(): List<Playe
 // around the capture point is minutes of dialogue) while keeping the controls JSON small.
 private const val PLAYER_CONTROLS_SUBTITLE_CUE_WINDOW = 60
 
-// Top-billed names on the pause overlay; more turns the corner block into a list to read.
-private const val PauseOverlayCastLimit = 5
+// Top-billed names on the pause overlay, laid out as a two-column grid of five rows.
+private const val PauseOverlayCastLimit = 10
 
 private fun PlayerScreenRuntime.playerControlsNearestSubtitleCues(): List<SubtitleSyncCue> {
     val capturedPositionMs = subtitleAutoSyncState.capturedPositionMs ?: return emptyList()

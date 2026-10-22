@@ -136,10 +136,10 @@ internal object DesktopAnimeShaders {
      * Builds the mpv `glsl-shaders` value for [preset], exporting any not-yet-exported shaders.
      * Returns an empty string if the preset has no resolvable shaders.
      */
-    fun shaderChain(preset: DesktopAnimeMode): String {
+    fun shaderChain(preset: DesktopAnimeMode, lumaOnly: Boolean = false): String {
         val names = presetShaderNames[preset] ?: return ""
         return names
-            .mapNotNull { exportedPath(it) }
+            .mapNotNull { if (lumaOnly) exportedLumaOnlyPath(it) else exportedPath(it) }
             .joinToString(";")
     }
 
@@ -151,15 +151,53 @@ internal object DesktopAnimeShaders {
 
     private fun exportedPath(name: String): String? = exportedPaths.getOrPut(name) {
         runCatching {
-            val resource = "$resourcePrefix$name.glsl"
-            val bytes = DesktopAnimeShaders::class.java.getResourceAsStream(resource)
-                ?.use { it.readBytes() }
-                ?: return@runCatching null
-            val target = File(exportRoot, "$name.glsl")
-            if (!target.exists() || !target.readBytes().contentEquals(bytes)) {
-                target.writeBytes(bytes)
-            }
-            target.absolutePath
+            val bytes = resourceBytes(name) ?: return@runCatching null
+            writeIfChanged("$name.glsl", bytes)
         }.getOrNull()
+    }
+
+    /**
+     * The chain used when RTX True HDR runs in front of the shaders. Shaders without a per-channel
+     * residual are exported unchanged; see [anime4kLumaOnlySource].
+     */
+    private fun exportedLumaOnlyPath(name: String): String? = exportedPaths.getOrPut("$name#luma") {
+        runCatching {
+            val source = resourceBytes(name)?.toString(Charsets.UTF_8) ?: return@runCatching null
+            val transformed = anime4kLumaOnlySource(source) ?: return@runCatching exportedPath(name)
+            writeIfChanged("${name}_LumaOnly.glsl", transformed.toByteArray(Charsets.UTF_8))
+        }.getOrNull()
+    }
+
+    private fun resourceBytes(name: String): ByteArray? =
+        DesktopAnimeShaders::class.java.getResourceAsStream("$resourcePrefix$name.glsl")?.use { it.readBytes() }
+
+    private fun writeIfChanged(fileName: String, bytes: ByteArray): String {
+        val target = File(exportRoot, fileName)
+        if (!target.exists() || !target.readBytes().contentEquals(bytes)) {
+            target.writeBytes(bytes)
+        }
+        return target.absolutePath
+    }
+}
+
+private val anime4kResidualReturn = Regex("""return (.+?) \+ MAIN_tex\(MAIN_pos\);""")
+
+/**
+ * Rewrites an Anime4K CNN's final `return residual + MAIN_tex(MAIN_pos);` so the residual moves
+ * only brightness: its BT.2020 luma is added equally to R, G and B. Null when the shader has no
+ * such line (Clamp_Highlights, Thin and AutoDownscale already leave colour alone).
+ *
+ * Restore/Upscale predict a separate correction per channel, trained on SDR BT.709 frames. Under
+ * RTX True HDR the renderer hands them PQ-encoded BT.2020 instead, and the three corrections no
+ * longer agree at hard edges: black text on a light background picked up a pink rim with cyan
+ * inside. A luma-only residual keeps the sharpening and cannot tint anything.
+ */
+internal fun anime4kLumaOnlySource(source: String): String? {
+    if (!anime4kResidualReturn.containsMatchIn(source)) return null
+    return anime4kResidualReturn.replace(source) { match ->
+        val residual = match.groupValues[1]
+        "vec4 nuvio_residual = $residual;\n" +
+            "    vec4 nuvio_base = MAIN_tex(MAIN_pos);\n" +
+            "    return vec4(nuvio_base.rgb + dot(nuvio_residual.rgb, vec3(0.2627, 0.6780, 0.0593)), nuvio_base.a);"
     }
 }

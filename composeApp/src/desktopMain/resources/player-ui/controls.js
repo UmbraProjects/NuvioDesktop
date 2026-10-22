@@ -38,7 +38,6 @@ const pauseSource = document.getElementById("pauseSource");
 const pauseSourceTitle = document.getElementById("pauseSourceTitle");
 const pauseSourceProvider = document.getElementById("pauseSourceProvider");
 const pauseCast = document.getElementById("pauseCast");
-const pauseCastLabel = document.getElementById("pauseCastLabel");
 const pauseCastList = document.getElementById("pauseCastList");
 const pauseEpisodeLine = document.getElementById("pauseEpisodeLine");
 const pauseEpisodeInfo = document.getElementById("pauseEpisodeInfo");
@@ -49,6 +48,7 @@ const toggle = document.getElementById("toggle");
 const toggleIcon = document.getElementById("toggleIcon");
 const lockIcon = document.getElementById("lockIcon");
 const title = document.getElementById("title");
+const titleBadges = document.getElementById("titleBadges");
 const episode = document.getElementById("episode");
 const streamTitle = document.getElementById("streamTitle");
 const providerName = document.getElementById("providerName");
@@ -299,6 +299,8 @@ let state = {
   desktopColorProfileLabel: "Neutral",
   desktopAnimeModeLabel: "Off",
   desktopAnimeSvpEnabled: false,
+  rtxVsrEnabled: false,
+  rtxTrueHdrEnabled: false,
   seekThumbnailsEnabled: true,
   seekrVttUrl: "",
   seekrScale: 1,
@@ -338,7 +340,6 @@ let state = {
   subtitleStyleTabLabel: "Style",
   downloadSubtitleLabel: "Download subtitle",
   autoSyncedSubtitleLabel: "Synced by Auto Sync",
-  pauseOverlayCastLabel: "Starring",
   pauseOverlayCast: [],
   noneLabel: "None",
   fetchSubtitlesLabel: "Tap to fetch subtitles",
@@ -1434,7 +1435,6 @@ let pauseCastRenderKey = "";
 const renderPauseCast = () => {
   const cast = (Array.isArray(state.pauseOverlayCast) ? state.pauseOverlayCast : [])
     .filter(member => String(member?.name || "").trim());
-  pauseCastLabel.textContent = state.pauseOverlayCastLabel || "Starring";
   pauseCast.hidden = cast.length === 0;
   const key = JSON.stringify(cast.map(member => [member.name, member.role, member.photo]));
   if (key === pauseCastRenderKey) return;
@@ -2262,6 +2262,9 @@ const contextMenuItems = [
       ] },
       { label: "Anime shader", dynamicKey: "animeShaders", children: [] },
       { label: "SVP interpolation", action: "send:keyboardCycleAnimeSvp", toggleKey: "desktopAnimeSvpEnabled" },
+      // This session only; the saved defaults stay in Settings > Playback. Neither runs with SVP.
+      { label: "RTX Super Resolution", action: "send:toggleRtxVsr", toggleKey: "rtxVsrEnabled" },
+      { label: "RTX True HDR", action: "send:toggleRtxTrueHdr", toggleKey: "rtxTrueHdrEnabled" },
       { label: "Advanced (mpv)", dynamicKey: "mpvOptions", children: [] },
       { label: "UI scale", children: uiScalePresetItems },
       { label: "Controls layout", children: hudLayoutItems },
@@ -5049,6 +5052,7 @@ const renderChrome = () => {
   syncParentalGuide(showOpening || showError);
 
   title.textContent = state.title || "";
+  renderTitleBadges();
   renderPlaylistPeek();
   setText(episode, normalizeEpisodeDisplayText(state.episodeText));
   setText(streamTitle, state.streamTitle);
@@ -5549,7 +5553,7 @@ window.nuvioSyncMute = muted => {
 const playbackInfoPanel = document.getElementById("playbackInfoPanel");
 const playbackInfoRows = document.getElementById("playbackInfoRows");
 const PLAYBACK_INFO_HOLD_MS = 6500;
-let playbackInfo = { session: "", hdr: "", svp: false, video: "", shader: "" };
+let playbackInfo = { session: "", hdr: "", svp: false, video: "", shader: "", quality: "" };
 // The session this panel has already been shown for. Showing is per playback attempt: a new file
 // (next episode, source switch) is a new start of playback and earns the panel again, while a
 // settings change that merely re-pushes the same session must not pop it back up.
@@ -5632,8 +5636,44 @@ window.nuvioSetPlaybackInfo = payload => {
     svp: Boolean(next.svp),
     video: String(next.video == null ? "" : next.video),
     shader: String(next.shader == null ? "" : next.shader),
+    quality: String(next.quality == null ? "" : next.quality),
   };
   renderPlaybackInfoPanel();
+  renderTitleBadges();
+};
+
+// Badges beside the title: the decoded quality (from the video-profile pass, so it is what mpv
+// is actually playing, not what the source name claims) and the subtitle in use. Runs on every
+// position tick, hence the signature check.
+let titleBadgesSignature = null;
+const renderTitleBadges = () => {
+  if (!titleBadges) return;
+  const badges = [];
+  const quality = String(playbackInfo.quality || "").trim();
+  const subtitle = String(state.activeSubtitleLabel || "").trim();
+  if (quality) badges.push({ kind: "quality", text: quality });
+  if (subtitle) badges.push({ kind: "subtitle", text: subtitle });
+  const signature = badges.map(badge => `${badge.kind}:${badge.text}`).join("|");
+  if (signature === titleBadgesSignature) return;
+  titleBadgesSignature = signature;
+  titleBadges.replaceChildren();
+  badges.forEach(badge => {
+    const element = document.createElement("span");
+    element.className = `title-badge title-badge-${badge.kind}`;
+    if (badge.kind === "subtitle") {
+      const icon = document.createElement("span");
+      icon.className = "title-badge-icon";
+      icon.textContent = "CC";
+      element.appendChild(icon);
+    }
+    const text = document.createElement("span");
+    text.className = "title-badge-text";
+    text.textContent = badge.text;
+    element.appendChild(text);
+    element.title = badge.text;
+    titleBadges.appendChild(element);
+  });
+  titleBadges.hidden = badges.length === 0;
 };
 
 const presetPill = document.getElementById("presetPill");

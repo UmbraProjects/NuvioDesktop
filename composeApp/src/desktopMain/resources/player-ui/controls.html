@@ -173,6 +173,9 @@
         <section class="metadata" aria-label="Playback metadata">
           <div class="title" id="title"></div>
           <div class="episode" id="episode" hidden></div>
+          <!-- What is playing right now: decoded resolution/HDR and the active subtitle.
+               Below the episode line, so it stays the last line for series and movies alike. -->
+          <div class="title-badges" id="titleBadges" hidden></div>
           <div class="meta-row">
             <span class="stream-title" id="streamTitle"></span>
             <span class="provider" id="providerName"></span>
@@ -280,7 +283,6 @@
 
       <section class="pause-metadata-overlay" id="pauseMetadataOverlay" aria-hidden="true">
         <div class="pause-cast" id="pauseCast" hidden>
-          <div class="pause-kicker" id="pauseCastLabel">Starring</div>
           <ul class="pause-cast-list" id="pauseCastList"></ul>
         </div>
         <div class="pause-metadata-content">

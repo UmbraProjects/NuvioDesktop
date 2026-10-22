@@ -42,3 +42,34 @@ internal expect suspend fun runAutomaticSubtitleSync(
 
 /** Starts reading the stream's subtitle index while playback opens, so a later sync finds it cached. */
 internal expect fun prefetchAutomaticSubtitleSyncIndex(sourceUrl: String, sourceHeaders: Map<String, String>)
+
+/** Progress of [runAudioReferencedSubtitleSync]; each [Applied] replaces the previous one. */
+internal sealed interface AudioSubtitleSyncUpdate {
+    /** Load [synced] now. [confirmed] false = an early estimate that may still move or be withdrawn. */
+    data class Applied(
+        val synced: AutomaticSubtitleSyncResult.Synced,
+        val confirmed: Boolean,
+        /** Delay the mapping applies at the playhead, for the HUD message. */
+        val offsetMs: Long,
+    ) : AudioSubtitleSyncUpdate
+
+    /** The early estimate lost its support: go back to the subtitle's own timing. */
+    data object Withdrawn : AudioSubtitleSyncUpdate
+}
+
+/**
+ * Fallback for streams without embedded subtitles (ported from NuvioTV-Reshaped's audio subtitle
+ * sync): samples a few dialogue spots of the film's audio through [player], detects speech and
+ * aligns [subtitle] to it. Reports each mapping through [onUpdate] as it is found. Returns the
+ * final [AutomaticSubtitleSyncResult.Synced] (confirmed or a kept estimate),
+ * [AutomaticSubtitleSyncResult.NotConfident], [AutomaticSubtitleSyncResult.SubtitleUnavailable],
+ * or [AutomaticSubtitleSyncResult.NoReference] when the engine can't sample audio.
+ */
+internal expect suspend fun runAudioReferencedSubtitleSync(
+    sourceUrl: String,
+    subtitle: AddonSubtitle,
+    player: PlayerEngineController,
+    durationMs: Long,
+    positionMs: () -> Long,
+    onUpdate: suspend (AudioSubtitleSyncUpdate) -> Unit,
+): AutomaticSubtitleSyncResult
