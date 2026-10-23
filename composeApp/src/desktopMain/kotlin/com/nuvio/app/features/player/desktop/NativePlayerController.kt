@@ -292,12 +292,17 @@ internal class NativePlayerController(
                 ) {
                     add("ytdl=no")
                 }
+                // Live TV: reconnect options and, with an IPTV proxy set, the local relay. Before the
+                // user's options so an mpv.conf can still override them.
+                addAll(com.nuvio.app.features.iptv.iptvMpvOptions(sourceUrl))
                 // A Nuvio option like the rest: Replace lets a custom network-timeout override it,
                 // Add keeps this one, and Full (the user's own configuration only) never gets it.
                 if (PlayerSettingsRepository.uiState.value.desktopMpvConfigMode != DesktopMpvConfigMode.Full) {
                     directMediaNetworkTimeoutOption(sourceUrl)?.let(::add)
                 }
                 if (enableUserMpvOptions) addAll(buildDesktopUserMpvOptions(initialPlaybackSpeed))
+                // After the buffer preset in the user options, which also sets demuxer-max-back-bytes.
+                addAll(com.nuvio.app.features.iptv.iptvRewindMpvOptions(sourceUrl))
                 // An init option rather than a runtime property: mpv filters text subtitles as it
                 // parses them, so it has to be set before the first track loads. Only ever turned
                 // on here, never forced off, so an mpv.conf that enables it keeps working.
@@ -1051,13 +1056,19 @@ internal class NativePlayerController(
     }
 
     fun openKeyboardPanel(panel: String) {
-        if (panel != "sources" && panel != "episodes") return
+        if (panel != "sources" && panel != "episodes" && panel != "iptvChannels") return
         val current = handle.takeIf { it != 0L } ?: return
         keyboardPanelOpen = true
         NativePlayerBridge.runJavaScript(
             current,
             "window.nuvioOpenKeyboardPanel && window.nuvioOpenKeyboardPanel(${panel.toJsonString()})",
         )
+    }
+
+    /** Live TV: one typed digit of a channel number; the HUD collects them and sends the number. */
+    fun dispatchIptvDigit(digit: Int) {
+        val current = handle.takeIf { it != 0L } ?: return
+        NativePlayerBridge.runJavaScript(current, "window.nuvioIptvDigit && window.nuvioIptvDigit(${digit.coerceIn(0, 9)})")
     }
 
     fun dispatchKeyboardPanelKey(code: String): Boolean {
@@ -1437,6 +1448,10 @@ internal class NativePlayerController(
         val customOptionNames = desktopCustomMpvOptionNames(settings.desktopCustomMpvOptions)
         desktopBufferPresetMpvOptions(preset, DesktopHostOs.current, speed)
             .filterNot { (name, _) -> name == "stream-buffer-size" }
+            // Live TV's rewind buffer owns the back buffer; the preset would shrink it mid-stream.
+            .filterNot { (name, _) ->
+                name == "demuxer-max-back-bytes" && com.nuvio.app.features.iptv.iptvRewindActive(pendingSource?.sourceUrl)
+            }
             // While the Metered freeze is engaged the clamp outranks the preset. Without this an
             // unrelated re-apply (the video-profile flow re-runs this on every settings change, and
             // so does every speed change) would restore full readahead mid-pause and start
@@ -2382,6 +2397,9 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("seekStepSeconds", seekStepSeconds)
         append(',')
+        append("\"iptv\":")
+        iptv?.let { appendIptvStateJson(it) } ?: append("null")
+        append(',')
         appendJsonField("tapToUnlockLabel", tapToUnlockLabel)
         append(',')
         appendJsonField("playbackErrorTitle", playbackErrorTitle)
@@ -2900,6 +2918,68 @@ private fun StringBuilder.appendPlaylistPeekItemJson(item: PlayerControlPlaylist
     appendJsonField("subtitle", item.subtitle)
     append(',')
     appendJsonField("state", item.state)
+    append('}')
+}
+
+private fun StringBuilder.appendIptvStateJson(iptv: com.nuvio.app.features.player.PlayerControlIptvState) {
+    append('{')
+    appendJsonField("channelLabel", iptv.channelLabel)
+    append(',')
+    appendJsonField("nowTitle", iptv.nowTitle)
+    append(',')
+    appendJsonField("nowTimeLabel", iptv.nowTimeLabel)
+    append(',')
+    appendJsonField("nowProgress", iptv.nowProgress.toDouble())
+    append(',')
+    appendJsonField("nextLabel", iptv.nextLabel)
+    append(',')
+    appendJsonField("liveLabel", iptv.liveLabel)
+    append(',')
+    appendJsonField("goLiveLabel", iptv.goLiveLabel)
+    append(',')
+    appendJsonField("previousChannelLabel", iptv.previousChannelLabel)
+    append(',')
+    appendJsonField("nextChannelLabel", iptv.nextChannelLabel)
+    append(',')
+    appendJsonField("exitLabel", iptv.exitLabel)
+    append(',')
+    appendJsonField("rewindWindowMs", iptv.rewindWindowMs)
+    append(',')
+    appendJsonField("channelsLabel", iptv.channelsLabel)
+    append(',')
+    appendJsonField("groupsLabel", iptv.groupsLabel)
+    append(',')
+    appendJsonField("searchLabel", iptv.searchLabel)
+    append(',')
+    appendJsonField("channelsNote", iptv.channelsNote)
+    append(',')
+    appendJsonArrayField("groups", iptv.groups) { group ->
+        append('{')
+        appendJsonField("index", group.index.toLong())
+        append(',')
+        appendJsonField("name", group.name)
+        append(',')
+        appendJsonField("count", group.count.toLong())
+        append(',')
+        appendJsonField("selected", group.selected)
+        append('}')
+    }
+    append(',')
+    appendJsonArrayField("channels", iptv.channels) { channel ->
+        append('{')
+        appendJsonField("uid", channel.uid.toLong())
+        append(',')
+        appendJsonField("num", channel.num.toLong())
+        append(',')
+        appendJsonField("name", channel.name)
+        append(',')
+        appendJsonField("logo", channel.logo)
+        append(',')
+        appendJsonField("nowTitle", channel.nowTitle)
+        append(',')
+        appendJsonField("playing", channel.playing)
+        append('}')
+    }
     append('}')
 }
 

@@ -385,4 +385,19 @@ internal class PlayerScreenRuntime(
     val failoverTriedIdentityKeys: MutableSet<String> = mutableSetOf()
     var failoverInProgress by mutableStateOf(false)
     var failoverJob: Job? = null
+
+    /** Live TV: no metadata, skip lookups, addon failover or redirect probe; see PlayerScreenRuntimeIptv. */
+    val isIptvPlayback: Boolean get() = parentMetaType == com.nuvio.app.features.iptv.IPTV_META_TYPE
+
+    /** When the current IPTV stream last dropped and was reopened, to cap reconnect loops. */
+    val iptvReconnectTimesMs: ArrayDeque<Long> = ArrayDeque()
+
+    /** The HUD's channel switcher is open: only then is the (possibly long) channel list sent. */
+    var iptvPanelOpen by mutableStateOf(false)
+
+    /** The switcher's category ([com.nuvio.app.features.iptv.IptvGroups] id); null = the playing channel's. */
+    var iptvPanelGroup by mutableStateOf<String?>(null)
+
+    /** The switcher's search; while set, the list is the matching channels of the whole playlist. */
+    var iptvPanelQuery by mutableStateOf("")
 }

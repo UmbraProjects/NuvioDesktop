@@ -1,6 +1,8 @@
 package com.nuvio.app.features.tmdb
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.calendar.MovieReleaseDate
+import com.nuvio.app.features.calendar.pickMovieCalendarDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -336,27 +338,20 @@ object TmdbService {
     }
 
     /**
-     * The one date a movie goes on the calendar, as ISO `yyyy-MM-dd`, past or future: the same
-     * order the SIMKL calendar picks in — digital in the US, then GB, then the earliest anywhere,
-     * then US theatrical, then the earliest theatrical. Null without a key or any such date.
+     * The one date a movie goes on the calendar, as ISO `yyyy-MM-dd`, past or future; the order is
+     * [pickMovieCalendarDate]'s, shared with the SIMKL calendar. Null without a key or any such date.
      */
     suspend fun fetchMovieCalendarDate(tmdbId: Int): String? {
         val apiKey = currentApiKey() ?: return null
         val body = fetchReleaseDates(tmdbId, apiKey) ?: return null
-        fun releasesOfType(type: Int) = body.results.flatMap { country ->
-            country.releaseDates
-                .filter { it.type == type }
-                .mapNotNull { release ->
-                    release.releaseDate.take(10).takeIf(::isIsoDate)?.let { country.country.uppercase() to it }
+        return pickMovieCalendarDate(
+            body.results.flatMap { country ->
+                country.releaseDates.mapNotNull { release ->
+                    release.releaseDate.take(10).takeIf(::isIsoDate)
+                        ?.let { MovieReleaseDate(country.country.uppercase(), release.type, it) }
                 }
-        }
-        val digital = releasesOfType(TMDB_RELEASE_TYPE_DIGITAL)
-        val theatrical = releasesOfType(TMDB_RELEASE_TYPE_THEATRICAL)
-        return digital.firstOrNull { it.first == "US" }?.second
-            ?: digital.firstOrNull { it.first == "GB" }?.second
-            ?: digital.minByOrNull { it.second }?.second
-            ?: theatrical.firstOrNull { it.first == "US" }?.second
-            ?: theatrical.minByOrNull { it.second }?.second
+            },
+        )
     }
 
     private val releaseDatesMutex = Mutex()

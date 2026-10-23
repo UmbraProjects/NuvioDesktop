@@ -40,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -639,6 +640,8 @@ enum class AppScreenTab {
     Search,
     Discover,
     Library,
+    /** IPTV channels; only in the navigation while a playlist exists (see rememberLiveTvTabVisible). */
+    LiveTv,
     Settings,
 }
 
@@ -671,6 +674,7 @@ private fun AppScreenTab.toNativeNavigationTab(): NativeNavigationTab = when (th
     // The native tab bar is a fixed four-tab surface with no Discover slot, so Discover reports as
     // Home rather than inventing a tab the native bar cannot render or select back.
     AppScreenTab.Discover -> NativeNavigationTab.Home
+    AppScreenTab.LiveTv -> NativeNavigationTab.Home
     AppScreenTab.Library -> NativeNavigationTab.Library
     AppScreenTab.Settings -> NativeNavigationTab.Settings
 }
@@ -1417,6 +1421,12 @@ private fun MainAppContent(
         LaunchedEffect(Unit) {
             warmProfileDeferredRepositories()
         }
+        // Live TV plays in the built-in player only: the proxy relay and live reconnects are mpv's.
+        LaunchedEffect(navController) {
+            com.nuvio.app.features.iptv.IptvPlaybackRequests.requests.collect { launch ->
+                navController.navigateToPlayer(launch)
+            }
+        }
         val uriHandler = LocalUriHandler.current
         LaunchedEffect(Unit) {
             openSimklDailyVisitIfDue(uriHandler::openUri)
@@ -1538,6 +1548,7 @@ private fun MainAppContent(
         val discoverTabVisible by remember {
             ThemeSettingsRepository.desktopDiscoverTabVisible
         }.collectAsStateWithLifecycle()
+        val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
         val desktopAppUiScaleAppliesToDetails by remember {
             ThemeSettingsRepository.desktopAppUiScaleAppliesToDetails
         }.collectAsStateWithLifecycle()
@@ -1611,6 +1622,7 @@ private fun MainAppContent(
         // Discover is hidden from the navigation: nothing may select it, or the bar would show no
         // active tab and leave no way back.
         if (tab == AppScreenTab.Discover && !discoverTabVisible) return
+        if (tab == AppScreenTab.LiveTv && !liveTvTabVisible) return
         if (tab != AppScreenTab.Search) {
             searchOverlayActive = false
         }
@@ -1633,8 +1645,16 @@ private fun MainAppContent(
             }
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.Discover -> discoverScrollToTopRequests.tryEmit(Unit)
+            AppScreenTab.LiveTv -> Unit
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
+    }
+
+    // The last playlist removed while the tab is open: same as hiding Discover.
+    LaunchedEffect(liveTvTabVisible) {
+        if (liveTvTabVisible) return@LaunchedEffect
+        rootTabBackStack = rootTabBackStack.filterNot { it == AppScreenTab.LiveTv }
+        if (selectedTab == AppScreenTab.LiveTv) selectedTab = AppScreenTab.Home
     }
 
     // Hiding the tab while it is open would leave an active tab with no entry in the bar, and its
@@ -1658,6 +1678,9 @@ private fun MainAppContent(
         navigateToContentCount++
     }
 
+    // The collector below outlives compositions; the click handler it calls must be the current
+    // one, or a tab shown since launch (Discover, Live TV) would still look hidden to it.
+    val latestRootTabClick = rememberUpdatedState<(AppScreenTab) -> Unit>(::handleRootTabClick)
     LaunchedEffect(navController) {
         AppShortcutBridge.events.collect { action ->
             if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
@@ -1665,7 +1688,14 @@ private fun MainAppContent(
                 AppShortcutAction.GoHome,
                 AppShortcutAction.OpenSearch,
                 AppShortcutAction.OpenDiscover,
+                AppShortcutAction.OpenLiveTv,
                 AppShortcutAction.OpenLibrary -> {
+                    // Live TV only exists once a playlist does; the key then does nothing.
+                    if (action == AppShortcutAction.OpenLiveTv &&
+                        com.nuvio.app.features.iptv.IptvRepository.settings.value.playlists.isEmpty()
+                    ) {
+                        return@collect
+                    }
                     navController.navigate(TabsRoute) {
                         popUpTo<TabsRoute> { inclusive = false }
                         launchSingleTop = true
@@ -1683,9 +1713,14 @@ private fun MainAppContent(
                         } else {
                             AppScreenTab.Discover
                         }
+                        AppShortcutAction.OpenLiveTv -> if (selectedTab == AppScreenTab.LiveTv) {
+                            AppScreenTab.Home
+                        } else {
+                            AppScreenTab.LiveTv
+                        }
                         else -> AppScreenTab.Home
                     }
-                    handleRootTabClick(target)
+                    latestRootTabClick.value(target)
                 }
                 AppShortcutAction.OpenCalendar -> navController.navigateIfResumed(CalendarRoute)
                 AppShortcutAction.ToggleGameMode -> GameModeController.toggle()
@@ -3810,6 +3845,11 @@ private fun MainAppContent(
                                             onNavigateToDiscover = { handleRootTabClick(AppScreenTab.Discover) },
                                             onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
                                             onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
+                                            onNavigateToLiveTv = { handleRootTabClick(AppScreenTab.LiveTv) },
+                                            onLiveTvSettingsClick = {
+                                                requestedSettingsPageName = "Iptv"
+                                                handleRootTabClick(AppScreenTab.Settings)
+                                            },
                                         )
                                     }
 
@@ -3852,6 +3892,7 @@ private fun MainAppContent(
                                                     selectedTab == AppScreenTab.Library ||
                                                     selectedTab == AppScreenTab.Discover ||
                                                     selectedTab == AppScreenTab.Search ||
+                                                    selectedTab == AppScreenTab.LiveTv ||
                                                     selectedTab == AppScreenTab.Settings
                                                 ),
                                             searchOverlayActive = searchOverlayActive,
@@ -5404,6 +5445,7 @@ private fun tabsDiscordBrowsingActivity(
         )
         selectedTab == AppScreenTab.Library -> browsingActivity("Viewing Library")
         selectedTab == AppScreenTab.Discover -> browsingActivity("Browsing Discover")
+        selectedTab == AppScreenTab.LiveTv -> browsingActivity("Browsing Live TV")
         selectedTab == AppScreenTab.Settings -> settingsBrowsingActivity()
         else -> browsingActivity("Browsing Nuvio")
     }
@@ -5498,6 +5540,8 @@ private fun AppTabHost(
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToHome: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
+    onNavigateToLiveTv: (() -> Unit)? = null,
+    onLiveTvSettingsClick: () -> Unit = {},
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
     // A cloud item can be a folder (a season pack), so a poster click has to ask which file rather
@@ -5506,16 +5550,21 @@ private fun AppTabHost(
 
     Box(modifier = modifier.fillMaxSize()) {
         val settingsSelected = selectedTab == AppScreenTab.Settings
+        // Live TV is its own screen, built and disposed like Settings, with HomeScreen kept behind it.
+        val liveTvSelected = selectedTab == AppScreenTab.LiveTv
+        val homeHidden = settingsSelected || liveTvSelected
         // The content tab HomeScreen shows; kept while Settings is up, so the hidden screen does
         // not change mode underneath it.
-        var contentTab by remember { mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings } ?: AppScreenTab.Home) }
-        if (!settingsSelected) contentTab = selectedTab
+        var contentTab by remember {
+            mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings && it != AppScreenTab.LiveTv } ?: AppScreenTab.Home)
+        }
+        if (!homeHidden) contentTab = selectedTab
         // HomeScreen stays composed (hidden) while Settings is open, so switching back shows it at
         // once instead of rebuilding Home; Settings is still built and disposed as before.
         tabStateHolder.SaveableStateProvider("HomeSearchLibrary") {
             KeptAliveLayer(
-                visible = !settingsSelected,
-                lifecycleOwner = rememberChildLifecycleOwner(active = !settingsSelected),
+                visible = !homeHidden,
+                lifecycleOwner = rememberChildLifecycleOwner(active = !homeHidden),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 run {
@@ -5542,7 +5591,7 @@ private fun AppTabHost(
                         },
                         searchQuery = if (isSearch) submittedSearchQuery else "",
                         searchSubmitRequests = if (isSearch) searchSubmitRequests else emptyFlow(),
-                        animateCollectionGifs = animateHomeCollectionGifs && isHomeOnlySurface && !settingsSelected,
+                        animateCollectionGifs = animateHomeCollectionGifs && isHomeOnlySurface && !homeHidden,
                         scrollToTopRequests = when {
                             isLib -> libraryScrollToTopRequests
                             isSearch -> searchScrollToTopRequests
@@ -5595,6 +5644,16 @@ private fun AppTabHost(
             }
         }
 
+        if (liveTvSelected) {
+            tabStateHolder.SaveableStateProvider(AppScreenTab.LiveTv.name) {
+                com.nuvio.app.features.iptv.IptvScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    topChromePadding = topChromePadding,
+                    onOpenSettings = onLiveTvSettingsClick,
+                )
+            }
+        }
+
         if (settingsSelected) {
             tabStateHolder.SaveableStateProvider(AppScreenTab.Settings.name) {
                 run {
@@ -5623,6 +5682,7 @@ private fun AppTabHost(
                         onNavigateToLibrary = onNavigateToLibrary,
                         onNavigateToDiscover = onNavigateToDiscover,
                         onNavigateToCalendar = onNavigateToCalendar,
+                        onNavigateToLiveTv = onNavigateToLiveTv,
                     )
                 }
             }
@@ -5699,6 +5759,7 @@ private fun DesktopHoverSidebar(
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsStateWithLifecycle()
+    val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
     var profileStackVisible by remember { mutableStateOf(false) }
     val profileTopPadding = statusBarPadding + 18.dp
     fun selectTab(tab: AppScreenTab) {
@@ -5793,6 +5854,21 @@ private fun DesktopHoverSidebar(
                         Icon(
                             imageVector = Icons.Rounded.Explore,
                             contentDescription = stringResource(Res.string.compose_nav_discover),
+                            modifier = Modifier.size(DesktopSidebarIconSize),
+                            tint = color,
+                        )
+                    }
+                }
+                if (liveTvTabVisible) {
+                    DesktopSidebarItem(
+                        label = stringResource(Res.string.iptv_settings_page),
+                        selected = selectedTab == AppScreenTab.LiveTv,
+                        expanded = false,
+                        onClick = { selectTab(AppScreenTab.LiveTv) },
+                    ) { color ->
+                        Icon(
+                            imageVector = Icons.Rounded.LiveTv,
+                            contentDescription = stringResource(Res.string.iptv_settings_page),
                             modifier = Modifier.size(DesktopSidebarIconSize),
                             tint = color,
                         )
@@ -5989,11 +6065,10 @@ private fun TabletFloatingTopBar(
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsStateWithLifecycle()
-    val topBarWidth = if (discoverTabVisible) {
-        FloatingTopBarWidth
-    } else {
-        FloatingTopBarWidth - FloatingTopBarQuadrantWidth
-    }
+    val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
+    val topBarWidth = FloatingTopBarWidth -
+        (if (discoverTabVisible) 0.dp else FloatingTopBarQuadrantWidth) +
+        (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp)
     // Right-clicking the Library quadrant hangs its quick-access menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
     var libraryMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
@@ -6316,6 +6391,21 @@ private fun TabletFloatingTopBar(
                                     } else {
                                         inactiveIconTint
                                     },
+                                )
+                            }
+                        }
+                        if (liveTvTabVisible) {
+                            Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
+                            NavQuadrant(
+                                selected = selectedTab == AppScreenTab.LiveTv,
+                                activeColor = activeQuadColor,
+                                onClick = { onTabSelected(AppScreenTab.LiveTv) },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.LiveTv,
+                                    contentDescription = stringResource(Res.string.iptv_settings_page),
+                                    modifier = Modifier.size(NuvioTokens.Space.s18),
+                                    tint = if (selectedTab == AppScreenTab.LiveTv) activeIconTint else inactiveIconTint,
                                 )
                             }
                         }

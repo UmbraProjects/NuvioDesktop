@@ -95,6 +95,8 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     }
 
     LaunchedEffect(parentMetaType, parentMetaId) {
+        // A live channel has no addon metadata; asking for it is a wasted round of addon requests.
+        if (isIptvPlayback) return@LaunchedEffect
         val peeked = MetaDetailsRepository.peek(parentMetaType, parentMetaId)
         playerMetaVideos = peeked?.videos ?: emptyList()
         playerMetaCast = peeked?.cast ?: emptyList()
@@ -351,7 +353,9 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     LaunchedEffect(activeSourceUrl, activeSourceHeaders, playerSettingsUiState.automaticSubtitleSyncEnabled) {
         automaticallySyncedSubtitle = null
         val sourceUrl = activeSourceUrl ?: return@LaunchedEffect
-        if (playerSettingsUiState.automaticSubtitleSyncEnabled &&
+        // Live TV has no fixed timeline to sync against, and each read would take one of the
+        // provider's few connections.
+        if (playerSettingsUiState.automaticSubtitleSyncEnabled && !isIptvPlayback &&
             (sourceUrl.startsWith("http://", ignoreCase = true) || sourceUrl.startsWith("https://", ignoreCase = true))
         ) {
             prefetchAutomaticSubtitleSyncIndex(sourceUrl, activeSourceHeaders)
@@ -496,6 +500,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     BindDiscordRichPresenceEffect()
     BindLightsEffect()
     BindStreamFailoverWatchdogEffect()
+    BindIptvLiveEffects()
 
     DisposableEffect(playbackSession.videoId, activeSourceUrl, activeSourceAudioUrl) {
         val effectVideoId = playbackSession.videoId
@@ -1295,6 +1300,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val season = activeSeasonNumber
         val episode = activeEpisodeNumber
         val vid = activeVideoId ?: return@LaunchedEffect
+        if (isIptvPlayback) return@LaunchedEffect // no intro/outro timings exist for live TV
 
         launch {
             // Which provider chain this playback belongs to is decided by its id, before anything

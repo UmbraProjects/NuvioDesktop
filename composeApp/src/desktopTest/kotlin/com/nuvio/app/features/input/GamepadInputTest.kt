@@ -157,7 +157,11 @@ class GamepadInputTest {
     fun `every keyboard action is reachable from the pad`() {
         val boundApp = allTargets().filterIsInstance<GamepadTarget.AppAction>().map { it.action }.toSet()
         assertEquals(
-            emptySet(),
+            setOf(
+                // Every browsing button is taken. Live TV is a tab, which the D-pad already reaches
+                // in the top bar, and it only exists once a playlist has been added.
+                AppShortcutAction.OpenLiveTv,
+            ),
             AppShortcutAction.entries.toSet() - boundApp,
             "app actions with no button",
         )
@@ -182,6 +186,10 @@ class GamepadInputTest {
                 // player's dispatcher maps to seek before any rebindable action is considered.
                 PlayerShortcutAction.SeekBackward,
                 PlayerShortcutAction.SeekForward,
+                // During live TV, RB/LB (OpenSources/OpenEpisodes) open the channel switcher instead
+                // (PlayerEngine.desktop's dispatcher), where the D-pad picks a channel.
+                PlayerShortcutAction.ChannelUp,
+                PlayerShortcutAction.ChannelDown,
             ),
             PlayerShortcutAction.entries.toSet() - boundPlayer,
             "player actions with no button",

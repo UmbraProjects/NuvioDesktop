@@ -131,6 +131,25 @@ const sourcesButton = document.getElementById("sourcesButton");
 const episodesButton = document.getElementById("episodesButton");
 const episodeNotch = document.getElementById("episodeNotch");
 const episodeNotchLabel = document.getElementById("episodeNotchLabel");
+const iptvNow = document.getElementById("iptvNow");
+const iptvNowTime = document.getElementById("iptvNowTime");
+const iptvNowTitle = document.getElementById("iptvNowTitle");
+const iptvNowTrack = document.getElementById("iptvNowTrack");
+const iptvNowFill = document.getElementById("iptvNowFill");
+const iptvNext = document.getElementById("iptvNext");
+const iptvLiveBadge = document.getElementById("iptvLiveBadge");
+const iptvLiveLabel = document.getElementById("iptvLiveLabel");
+const iptvLiveBehind = document.getElementById("iptvLiveBehind");
+const iptvNumber = document.getElementById("iptvNumber");
+const iptvChannelModal = document.getElementById("iptvChannelModal");
+const iptvGroupButton = document.getElementById("iptvGroupButton");
+const iptvChannelCloseButton = document.getElementById("iptvChannelCloseButton");
+const iptvPanelNote = document.getElementById("iptvPanelNote");
+const iptvChannelList = document.getElementById("iptvChannelList");
+const iptvGroupList = document.getElementById("iptvGroupList");
+const iptvChannelsButton = document.getElementById("iptvChannelsButton");
+const iptvChannelsLabel = document.getElementById("iptvChannelsLabel");
+const iptvSearchInput = document.getElementById("iptvSearchInput");
 const sourceNotch = document.getElementById("sourceNotch");
 const lockedLabel = document.getElementById("lockedLabel");
 const audioModal = document.getElementById("audioModal");
@@ -986,12 +1005,16 @@ const applyMinimalHudTimeLayout = enabled => {
   if (enabled) {
     minimalTime.insertBefore(positionLabel, minimalTimeSeparator);
     minimalTime.appendChild(durationLabel);
+    // Live TV's badge follows the time into the control row. Left alone at the end of this
+    // layout's slim, edge-to-edge seek row it had no column of its own and sat over the controls.
+    minimalTime.after(iptvLiveBadge);
     minimalTime.setAttribute("aria-hidden", "false");
     return;
   }
   const timelineRow = timeline.parentElement;
   timelineRow.insertBefore(positionLabel, timeline);
   timelineRow.appendChild(durationLabel);
+  timelineRow.appendChild(iptvLiveBadge);
   minimalTime.setAttribute("aria-hidden", "true");
 };
 
@@ -1017,6 +1040,12 @@ const applyUltraHudLayout = enabled => {
 };
 
 const setProgress = (positionMs, durationMs) => {
+  // Live TV: positions arrive absolute; draw them against the rewind window.
+  const liveWindow = iptvLiveWindow();
+  if (liveWindow) {
+    positionMs = Math.max(0, positionMs - liveWindow.start);
+    durationMs = liveWindow.end - liveWindow.start;
+  }
   const percent = durationMs > 0 ? Math.max(0, Math.min(100, positionMs / durationMs * 100)) : 0;
   seek.value = Math.round(percent * 10);
   seek.style.setProperty("--progress", `${percent}%`);
@@ -1031,7 +1060,9 @@ const setProgress = (positionMs, durationMs) => {
     pipSeek.style.setProperty("--progress", `${percent}%`);
     pipSeek.style.setProperty("--buffered", `${bufferedPercent}%`);
   }
-  positionLabel.textContent = formatTime(positionMs);
+  positionLabel.textContent = liveWindow
+    ? `-${formatTime(Math.max(0, durationMs - positionMs))}`
+    : formatTime(positionMs);
   // Read through the same helper the click handler uses, so a countdown keeps counting down as
   // playback advances rather than freezing at whatever it read when the label was tapped.
   durationLabel.textContent = durationLabelText(durationMs, positionMs);
@@ -1540,6 +1571,10 @@ const normalizedOpeningProgress = () => {
 const playbackErrorText = () => String(state.playbackErrorMessage || "").trim();
 
 const rangePositionMs = (input = seek) => {
+  const liveWindow = iptvLiveWindow();
+  if (liveWindow) {
+    return Math.round(liveWindow.start + (liveWindow.end - liveWindow.start) * Number(input.value) / 1000);
+  }
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   return durationMs > 0 ? Math.round(durationMs * Number(input.value) / 1000) : 0;
 };
@@ -1969,6 +2004,7 @@ const modalByName = {
   submitIntro: submitIntroModal,
   p2pConsent: p2pConsentModal,
   party: partyModal,
+  iptvChannels: iptvChannelModal,
 };
 const modalElements = Object.values(modalByName);
 const modalCloseTimers = new Map();
@@ -2029,6 +2065,11 @@ const closePlayerModal = (notifyDismiss = false, animated = true) => {
   if (closingModal === "party") {
     partyConfirm = "";
     send("partyPanelClosed", 0);
+  }
+  if (closingModal === "iptvChannels") {
+    resetIptvSearch();
+    if (document.activeElement === iptvSearchInput) focusShortcutRoot();
+    send("iptvPanelOpen", 0);
   }
   if (keyboardPanelMode && closingModal === keyboardPanelMode) {
     keyboardPanelMode = "";
@@ -4989,6 +5030,298 @@ const debouncedBuffering = wanted => {
   return false;
 };
 
+// Live TV --------------------------------------------------------------------------------------
+// A live stream's position only ever grows, so the seek bar covers the rewind window instead of a
+// film's length: from the earliest point seen on this channel (no further back than the buffer
+// reaches, `rewindWindowMs`) to the end of what has been received (`bufferedMs`, absolute, from
+// playerUpdate), which is the live edge. Within a few seconds of the edge counts as live; further
+// back, the badge shows the gap and jumps to the edge when clicked.
+const IPTV_LIVE_SLACK_MS = 10000;
+let iptvWindowChannel = "";
+let iptvEarliestSeenMs = null;
+
+const iptvBehindLiveMs = () => {
+  const positionMs = Math.max(0, Number(state.positionMs) || 0);
+  const bufferedMs = Math.max(0, Number(state.bufferedMs) || 0);
+  return bufferedMs > positionMs ? bufferedMs - positionMs : 0;
+};
+
+// [start, end] of the live seek bar in absolute stream time, or null when not live TV.
+const iptvLiveWindow = () => {
+  const iptv = state.iptv;
+  if (!iptv) return null;
+  const positionMs = Math.max(0, Number(state.positionMs) || 0);
+  const end = Math.max(positionMs, Number(state.bufferedMs) || 0);
+  // A new channel (or a reconnect that restarted the clock) starts a new window.
+  if (iptv.channelLabel !== iptvWindowChannel || iptvEarliestSeenMs === null || positionMs + 5000 < iptvEarliestSeenMs) {
+    iptvWindowChannel = iptv.channelLabel;
+    iptvEarliestSeenMs = positionMs;
+  }
+  iptvEarliestSeenMs = Math.min(iptvEarliestSeenMs, positionMs);
+  const reach = Math.max(60000, Number(iptv.rewindWindowMs) || 0);
+  const start = Math.max(iptvEarliestSeenMs, end - reach);
+  return { start, end: Math.max(end, start + 1000) };
+};
+
+const renderIptvLive = () => {
+  const iptv = state.iptv || null;
+  root.classList.toggle("iptv-live", Boolean(iptv));
+  setVisible(iptvNow, Boolean(iptv && (iptv.nowTitle || iptv.nextLabel)));
+  setVisible(iptvLiveBadge, Boolean(iptv));
+  setVisible(iptvChannelsButton, Boolean(iptv));
+  if (!iptv) return;
+  // The previous/next buttons beside play change channel.
+  document.querySelectorAll(".episode-skip").forEach(button => {
+    setVisible(button, true);
+    const label = button.dataset.command === "previousEpisode" ? iptv.previousChannelLabel : iptv.nextChannelLabel;
+    if (label) {
+      button.setAttribute("aria-label", label);
+      button.dataset.tooltip = label;
+    }
+  });
+  if (iptv.channelsLabel) {
+    iptvChannelsLabel.textContent = iptv.channelsLabel;
+    iptvChannelsButton.setAttribute("aria-label", iptv.channelsLabel);
+    iptvChannelsButton.dataset.tooltip = iptv.channelsLabel;
+  }
+  iptvNowTime.textContent = iptv.nowTimeLabel || "";
+  iptvNowTitle.textContent = iptv.nowTitle || "";
+  const progress = Number(iptv.nowProgress);
+  setVisible(iptvNowTrack, Boolean(iptv.nowTitle) && progress >= 0);
+  iptvNowFill.style.width = `${Math.max(0, Math.min(1, progress || 0)) * 100}%`;
+  iptvNext.textContent = iptv.nextLabel || "";
+  const behindMs = iptvBehindLiveMs();
+  const behind = behindMs > IPTV_LIVE_SLACK_MS;
+  iptvLiveBadge.classList.toggle("behind", behind);
+  iptvLiveLabel.textContent = behind ? (iptv.goLiveLabel || "Go live") : (iptv.liveLabel || "LIVE");
+  iptvLiveBehind.textContent = "";
+  iptvLiveBadge.title = behind ? (iptv.goLiveLabel || "Go live") : "";
+  if (activeModal === "iptvChannels") renderIptvPanel();
+};
+
+iptvLiveBadge.addEventListener("click", event => {
+  event.stopPropagation();
+  if (!state.iptv || iptvBehindLiveMs() <= IPTV_LIVE_SLACK_MS) return;
+  // Just short of the received end, so mpv lands on data it has rather than waiting for more.
+  const target = Math.max(0, (Number(state.bufferedMs) || 0) - 2000);
+  send("scrubFinish", target);
+});
+
+// Typing a channel number: digits collect in a box and the number is sent after a pause.
+let iptvDigits = "";
+let iptvDigitsTimer = null;
+window.nuvioIptvDigit = digit => {
+  if (!state.iptv) return;
+  if (iptvDigits.length >= 5) iptvDigits = "";
+  iptvDigits += String(Math.max(0, Math.min(9, Number(digit) || 0)));
+  iptvNumber.textContent = iptvDigits;
+  iptvNumber.classList.add("visible");
+  clearTimeout(iptvDigitsTimer);
+  iptvDigitsTimer = setTimeout(() => {
+    const number = Number(iptvDigits);
+    iptvDigits = "";
+    iptvNumber.classList.remove("visible");
+    if (number > 0) send("iptvChannelNumber", number);
+  }, 1400);
+};
+
+// Channel switcher (GoatTV's side panel): the channels of one category, the categories, or the
+// channels matching a search. The channel list only arrives while the panel is open
+// ("iptvPanelOpen"), so Kotlin never pushes a 50,000-channel list with every state update.
+// The search runs in Kotlin over the whole playlist; the bridge only carries numbers, so the query
+// rides in the event name ("iptvPanelSearch:<query>").
+let iptvPanelShowingGroups = false;
+let iptvPanelIndex = 0;
+let iptvPanelSignature = "";
+let iptvPanelScrollToPlaying = false;
+let iptvSearchQuery = "";
+let iptvSearchTimer = null;
+// Arrow keys typed into the search box highlight rows the same way the keyboard panel mode does.
+let iptvSearchKeyboard = false;
+
+const sendIptvSearch = query => {
+  clearTimeout(iptvSearchTimer);
+  iptvSearchTimer = null;
+  const trimmed = String(query || "").trim().slice(0, 80);
+  if (trimmed === iptvSearchQuery) return;
+  iptvSearchQuery = trimmed;
+  iptvPanelScrollToPlaying = !trimmed;
+  iptvPanelIndex = 0;
+  send(`iptvPanelSearch:${trimmed}`, 0);
+  if (iptvPanelShowingGroups) iptvPanelShowGroups(false);
+};
+
+const resetIptvSearch = () => {
+  clearTimeout(iptvSearchTimer);
+  iptvSearchTimer = null;
+  iptvSearchQuery = "";
+  iptvSearchKeyboard = false;
+  if (iptvSearchInput) iptvSearchInput.value = "";
+};
+
+const iptvPanelRows = () => (iptvPanelShowingGroups ? iptvGroupList : iptvChannelList).children;
+
+const iptvPanelHighlight = (scroll = true) => {
+  const rows = iptvPanelRows();
+  if (!rows.length) return;
+  iptvPanelIndex = Math.max(0, Math.min(rows.length - 1, iptvPanelIndex));
+  const showFocus = Boolean(keyboardPanelMode) || iptvSearchKeyboard;
+  Array.from(rows).forEach((row, index) => row.classList.toggle("keyboard-focus", showFocus && index === iptvPanelIndex));
+  if (scroll) rows[iptvPanelIndex].scrollIntoView({ block: "nearest" });
+};
+
+const iptvPanelShowGroups = showGroups => {
+  iptvPanelShowingGroups = showGroups;
+  setVisible(iptvGroupList, showGroups);
+  setVisible(iptvChannelList, !showGroups);
+  const rows = Array.from(iptvPanelRows());
+  const selected = rows.findIndex(row => row.classList.contains(showGroups ? "selected" : "playing"));
+  iptvPanelIndex = selected >= 0 ? selected : 0;
+  iptvPanelHighlight();
+};
+
+const renderIptvPanel = () => {
+  const iptv = state.iptv;
+  if (!iptv) return;
+  const groups = Array.isArray(iptv.groups) ? iptv.groups : [];
+  const channels = Array.isArray(iptv.channels) ? iptv.channels : [];
+  const selectedGroup = groups.find(group => group.selected);
+  iptvGroupButton.textContent = selectedGroup ? selectedGroup.name : (iptv.groupsLabel || "Categories");
+  iptvGroupButton.title = iptv.groupsLabel || "Categories";
+  iptvChannelCloseButton.textContent = state.panelCloseLabel || "Close";
+  if (iptvSearchInput) iptvSearchInput.placeholder = iptv.searchLabel || "Search channels";
+  iptvPanelNote.textContent = iptv.channelsNote || "";
+  setVisible(iptvPanelNote, Boolean(iptv.channelsNote));
+  const signature = JSON.stringify([groups.map(g => [g.index, g.count, g.selected]), channels.map(c => [c.uid, c.nowTitle, c.playing])]);
+  if (signature === iptvPanelSignature) return;
+  iptvPanelSignature = signature;
+  iptvGroupList.replaceChildren(...groups.map(group => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "iptv-group-row" + (group.selected ? " selected" : "");
+    const name = document.createElement("span");
+    name.textContent = group.name;
+    const count = document.createElement("span");
+    count.className = "iptv-group-count";
+    count.textContent = String(group.count);
+    row.append(name, count);
+    row.addEventListener("click", event => {
+      event.stopPropagation();
+      iptvPickGroup(Number(group.index));
+    });
+    return row;
+  }));
+  iptvChannelList.replaceChildren(...channels.map(channel => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "iptv-row" + (channel.playing ? " playing" : "");
+    const num = document.createElement("span");
+    num.className = "iptv-row-num";
+    num.textContent = String(channel.num);
+    const logo = document.createElement("img");
+    logo.className = "iptv-row-logo";
+    logo.alt = "";
+    logo.loading = "lazy";
+    if (channel.logo) logo.src = channel.logo;
+    else logo.style.visibility = "hidden";
+    logo.addEventListener("error", () => { logo.style.visibility = "hidden"; });
+    const text = document.createElement("span");
+    text.className = "iptv-row-text";
+    const name = document.createElement("span");
+    name.className = "iptv-row-name";
+    name.textContent = channel.name;
+    const now = document.createElement("span");
+    now.className = "iptv-row-now";
+    now.textContent = channel.nowTitle || "";
+    text.append(name, now);
+    row.append(num, logo, text);
+    row.addEventListener("click", event => {
+      event.stopPropagation();
+      send("iptvPanelPlay", Number(channel.uid));
+    });
+    return row;
+  }));
+  if (iptvPanelScrollToPlaying && channels.length) {
+    iptvPanelScrollToPlaying = false;
+    const playingIndex = channels.findIndex(channel => channel.playing);
+    iptvPanelIndex = playingIndex >= 0 ? playingIndex : 0;
+    const row = iptvChannelList.children[iptvPanelIndex];
+    if (row) row.scrollIntoView({ block: "center" });
+  }
+  iptvPanelHighlight(false);
+};
+
+const iptvPickGroup = index => {
+  // A category replaces the search.
+  if (iptvSearchQuery) {
+    resetIptvSearch();
+    send("iptvPanelSearch:", 0);
+  }
+  iptvPanelScrollToPlaying = true;
+  send("iptvPanelGroup", index);
+  iptvPanelShowGroups(false);
+};
+
+const openIptvPanel = keyboard => {
+  if (!state.iptv) return;
+  iptvPanelSignature = "";
+  iptvPanelScrollToPlaying = true;
+  resetIptvSearch();
+  openPlayerModal("iptvChannels");
+  if (keyboard) {
+    keyboardPanelMode = "iptvChannels";
+    send("keyboardPanelOpened", 0);
+  }
+  send("iptvPanelOpen", 1);
+  iptvPanelShowGroups(false);
+  renderIptvPanel();
+};
+
+const handleIptvPanelKey = code => {
+  const rows = iptvPanelRows();
+  if (code === "ArrowUp") { iptvPanelIndex -= 1; iptvPanelHighlight(); return; }
+  if (code === "ArrowDown") { iptvPanelIndex += 1; iptvPanelHighlight(); return; }
+  if (code === "ArrowLeft") { if (!iptvPanelShowingGroups) iptvPanelShowGroups(true); return; }
+  if (code === "ArrowRight") { if (iptvPanelShowingGroups) iptvPanelShowGroups(false); return; }
+  if (code === "Enter" && rows[iptvPanelIndex]) rows[iptvPanelIndex].click();
+};
+
+iptvGroupButton.addEventListener("click", event => {
+  event.stopPropagation();
+  iptvPanelShowGroups(!iptvPanelShowingGroups);
+});
+iptvChannelCloseButton.addEventListener("click", event => {
+  event.stopPropagation();
+  closePlayerModal(true);
+});
+if (iptvSearchInput) {
+  iptvSearchInput.addEventListener("click", event => event.stopPropagation());
+  iptvSearchInput.addEventListener("input", () => {
+    clearTimeout(iptvSearchTimer);
+    iptvSearchTimer = setTimeout(() => sendIptvSearch(iptvSearchInput.value), 220);
+  });
+  iptvSearchInput.addEventListener("keydown", event => {
+    if (event.code === "ArrowUp" || event.code === "ArrowDown" || event.code === "Enter" || event.code === "NumpadEnter") {
+      // The keyboard panel mode already routes these from the document handler.
+      if (keyboardPanelMode) return;
+      event.preventDefault();
+      event.stopPropagation();
+      // Enter acts on what is typed now, not what the debounce will send in a moment.
+      if (iptvSearchTimer) sendIptvSearch(iptvSearchInput.value);
+      iptvSearchKeyboard = true;
+      handleIptvPanelKey(event.code === "NumpadEnter" ? "Enter" : event.code);
+      return;
+    }
+    if (event.code === "Escape" && iptvSearchInput.value) {
+      // First Escape clears the search; the next closes the panel as usual.
+      event.preventDefault();
+      event.stopPropagation();
+      iptvSearchInput.value = "";
+      sendIptvSearch("");
+    }
+  });
+}
+
 const renderChrome = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
@@ -5003,6 +5336,7 @@ const renderChrome = () => {
   root.classList.toggle("locked", Boolean(state.isLocked));
   root.classList.toggle("episode-panel-open", activeModal === "episodes");
   root.classList.toggle("source-panel-open", activeModal === "sources");
+  root.classList.toggle("iptv-panel-open", activeModal === "iptvChannels");
   // The layouts are exclusive; the repository never sets two at once, but the HUD must not depend
   // on it, and a stale payload mid-switch would otherwise stack two rule sets for a frame.
   const officialHud = Boolean(state.officialHudEnabled);
@@ -5090,8 +5424,10 @@ const renderChrome = () => {
   root.classList.toggle("source-notch-left", sourceNotchPosition === "left");
   sourceNotchHoverOpens = state.sourceNotchHoverEnabled !== false;
   root.classList.toggle("notifications-top", state.notificationPosition === "top-center");
-  setVisible(sourceNotch, Boolean(state.showSources) && sourceNotchPosition !== "hidden");
+  // Live TV keeps the notch: it opens the channel switcher there.
+  setVisible(sourceNotch, Boolean(state.showSources || state.iptv) && sourceNotchPosition !== "hidden");
   document.querySelectorAll(".episode-skip").forEach(button => setVisible(button, Boolean(state.showEpisodes)));
+  renderIptvLive();
   scheduleActionOverflowSync();
 
   const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
@@ -5151,7 +5487,10 @@ const updatePlayerClock = () => {
   const remainingWallMs = Math.max(0, durationMs - positionMs) / speed;
   const endTime = new Date(now.getTime() + remainingWallMs);
   const contentLabel = String(state.episodeText || "").trim() ? "Episode" : "Movie";
-  playerEndTime.textContent = `${contentLabel} ends at ${playerClockFormatter.format(endTime)}`;
+  // Live TV never ends; the same spot (and its click, "back") is the way out.
+  playerEndTime.textContent = state.iptv
+    ? (state.iptv.exitLabel || state.closeLabel || "Exit")
+    : `${contentLabel} ends at ${playerClockFormatter.format(endTime)}`;
 };
 window.setInterval(updatePlayerClock, 1000);
 
@@ -5423,6 +5762,8 @@ const shortcutCommandForEvent = event => {
     speed_up: "keyboardSpeedUp",
     speed_down: "keyboardSpeedDown",
     toggle_speed: "keyboardSpeedToggle",
+    channel_up: "iptvChannelUp",
+    channel_down: "iptvChannelDown",
     next_subtitle: "keyboardNextSubtitle",
     next_audio: "keyboardNextAudio",
     open_sources: "keyboardOpenSources",
@@ -6070,7 +6411,16 @@ document.querySelectorAll("[data-command]").forEach(button => {
       openPlayerModal("subtitles");
       return;
     }
+    if (command === "iptvChannels") {
+      openIptvPanel(false);
+      return;
+    }
     if (command === "sources") {
+      // Live TV's Sources notch is the channel switcher's: same edge, same hover rule.
+      if (state.iptv) {
+        if (activeModal !== "iptvChannels") openIptvPanel(false);
+        return;
+      }
       sourceFilterId = "";
       openPlayerModal("sources");
       send("sources", 0);
@@ -6323,6 +6673,10 @@ episodeReloadButton.addEventListener("click", event => {
 });
 
 window.nuvioOpenKeyboardPanel = panel => {
+  if (panel === "iptvChannels") {
+    openIptvPanel(true);
+    return;
+  }
   if (panel === "sources") {
     keyboardPanelMode = "sources";
     send("keyboardPanelOpened", 0);
@@ -6355,6 +6709,10 @@ window.nuvioHandleKeyboardPanelKey = code => {
   if (!keyboardPanelMode) return;
   if (code === "Escape") {
     closePlayerModal(true);
+    return;
+  }
+  if (keyboardPanelMode === "iptvChannels") {
+    handleIptvPanelKey(code);
     return;
   }
   if (keyboardPanelMode === "sources") {
@@ -7056,7 +7414,9 @@ document.addEventListener("keydown", event => {
     send("toggleFullscreen", 0);
     return;
   }
-  if (keyboardPanelMode && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter"].includes(event.code)) {
+  // In the channel search box Left/Right move the caret; Up/Down/Enter still walk the list.
+  const caretKey = isTextEntryTarget(event.target) && (event.code === "ArrowLeft" || event.code === "ArrowRight");
+  if (keyboardPanelMode && !caretKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter"].includes(event.code)) {
     event.preventDefault();
     window.nuvioHandleKeyboardPanelKey(event.code === "NumpadEnter" ? "Enter" : event.code);
     return;
@@ -7065,7 +7425,25 @@ document.addEventListener("keydown", event => {
     return;
   }
   const command = shortcutCommandForEvent(event);
+  // Live TV: a digit with no binding of its own starts or extends a channel number.
+  const digitMatch = /^(?:Digit|Numpad)([0-9])$/.exec(event.code);
+  if (state.iptv && !command && digitMatch && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    event.preventDefault();
+    window.nuvioIptvDigit(Number(digitMatch[1]));
+    return;
+  }
   if (!command) {
+    return;
+  }
+  if (command === "iptvChannelUp" || command === "iptvChannelDown") {
+    event.preventDefault();
+    if (state.iptv) send("iptvChannel", command === "iptvChannelUp" ? 1 : -1);
+    return;
+  }
+  // Live TV has no sources or episodes panels; their keys open the channel switcher instead.
+  if (state.iptv && (command === "keyboardOpenSources" || command === "keyboardOpenEpisodes")) {
+    event.preventDefault();
+    openIptvPanel(true);
     return;
   }
   event.preventDefault();

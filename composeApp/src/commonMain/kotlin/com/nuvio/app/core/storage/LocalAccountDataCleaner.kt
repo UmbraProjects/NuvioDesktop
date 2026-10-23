@@ -52,6 +52,7 @@ internal object LocalAccountDataCleaner {
         CollectionMobileSettingsRepository.clearLocalState()
         CollectionRepository.clearLocalState()
         com.nuvio.app.features.playlist.PlaylistRepository.clearLocalState()
+        com.nuvio.app.features.iptv.IptvRepository.clearLocalState()
         ThemeSettingsRepository.clearLocalState()
         PosterCardStyleRepository.clearLocalState()
         TraktAuthRepository.clearLocalState()

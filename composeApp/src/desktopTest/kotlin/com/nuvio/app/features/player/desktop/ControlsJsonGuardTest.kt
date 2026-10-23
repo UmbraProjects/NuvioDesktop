@@ -1,5 +1,8 @@
 package com.nuvio.app.features.player.desktop
 
+import com.nuvio.app.features.player.PlayerControlIptvChannel
+import com.nuvio.app.features.player.PlayerControlIptvGroup
+import com.nuvio.app.features.player.PlayerControlIptvState
 import com.nuvio.app.features.player.PlayerControlPartyMember
 import com.nuvio.app.features.player.PlayerControlPartyState
 import com.nuvio.app.features.player.PlayerControlsState
@@ -100,6 +103,33 @@ class ControlsJsonGuardTest {
         assertEquals("Waiting for \"Sam\"", party.getValue("pillMessage").jsonPrimitive.content)
         assertEquals(2, party.getValue("members").jsonArray.size)
         assertEquals("Remove {name}?", party.getValue("labels").jsonObject.getValue("removeTitle").jsonPrimitive.content)
+    }
+
+    /** Live TV's block is nested too; a missing comma after `groupsLabel` blanked the IPTV HUD. */
+    @Test
+    fun `a payload with live TV is well formed and keeps its channels`() {
+        val state = PlayerControlsState(
+            title = "Comedy Central",
+            iptv = PlayerControlIptvState(
+                channelLabel = "4  Comedy \"Central\"",
+                nowTitle = "Maury",
+                groups = listOf(PlayerControlIptvGroup(0, "Favourites", 2, false), PlayerControlIptvGroup(1, "US | Comedy", 9, true)),
+                channels = listOf(PlayerControlIptvChannel(3, 4, "Comedy Central", "", "Maury", true)),
+                channelsNote = "9 channels match",
+            ),
+        )
+
+        val payload = state.toControlsJson(
+            appFullscreenKeyCode = 122,
+            playerShortcutKeyCodes = emptyMap(),
+            skipIntervalKeyLabel = "S",
+        )
+
+        assertTrue(controlsJsonIsWellFormed(payload))
+        val iptv = Json.parseToJsonElement(payload).jsonObject.getValue("iptv").jsonObject
+        assertEquals("Search channels", iptv.getValue("searchLabel").jsonPrimitive.content)
+        assertEquals(2, iptv.getValue("groups").jsonArray.size)
+        assertEquals(1, iptv.getValue("channels").jsonArray.size)
     }
 
     @Test

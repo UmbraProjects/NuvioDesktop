@@ -437,7 +437,8 @@ internal object PerfUrls {
     private val Digits = Regex("\\d+")
 
     fun redact(url: String): Redacted {
-        val withoutFragment = url.substringBefore('#')
+        // Xtream (live TV) puts the login in the stream path, where no segment rule would catch it.
+        val withoutFragment = com.nuvio.app.features.iptv.redactIptvCredentials(url.substringBefore('#'))
         val afterScheme = withoutFragment.substringAfter("://", missingDelimiterValue = withoutFragment)
         val hostAndPath = afterScheme.substringBefore('?')
         val query = afterScheme.substringAfter('?', missingDelimiterValue = "")

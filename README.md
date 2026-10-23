@@ -48,6 +48,7 @@ This fork is unaffiliated with the Nuvio team. Don't worry about the commit disp
 * Anime shaders (4K Anime, Stremio Kai, custom), SVP frame interpolation and NVIDIA RTX Video True HDR.
 * Seek-bar thumbnails, chapters, SkipDB support, intro/outro skipping, dual subtitles, subtitle styling, playback speed controls, and volume boost.
 * Desktop Picture-in-Picture, direct URL playback, local-file playback, and external-player integration.
+* Live TV / IPTV from your own provider (Xtream Codes or M3U) with a programme guide, favourites and an in-player channel switcher, based on Slokker's GoatTV (used with Permission).
 * Stream Scoring can rank or reject sources based on quality, resolution, HDR, audio, codec, language, release metadata, cache status, and file size.
 
 # Tracking & Metadata

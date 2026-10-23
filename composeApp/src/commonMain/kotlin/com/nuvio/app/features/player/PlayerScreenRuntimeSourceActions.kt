@@ -480,6 +480,8 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
     trigger: StreamFailoverTrigger = StreamFailoverTrigger.PlaybackError,
     rateLimited: Boolean = false,
 ): Boolean {
+    // Live TV has no addon sources to fail over to, only the channel's other format.
+    if (isIptvPlayback) return tryNextIptvFormat(message)
     if (!playerSettingsUiState.streamFailoverEnabled) return false
     if (failoverInProgress) {
         StreamFailoverLog.event("trigger_ignored", buildJsonObject {

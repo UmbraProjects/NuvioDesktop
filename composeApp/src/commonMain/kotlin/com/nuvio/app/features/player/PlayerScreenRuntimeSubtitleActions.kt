@@ -24,6 +24,8 @@ internal fun PlayerScreenRuntime.loadAddonSubtitle(subtitle: AddonSubtitle, allo
     automaticSubtitleSyncJob = null
     playerController?.setSubtitleUri(subtitle.url)
     if (!playerSettingsUiState.automaticSubtitleSyncEnabled) return
+    // Live TV: nothing to sync against, and reading the stream costs a provider connection.
+    if (isIptvPlayback) return
     // Torrents play from the active engine's local HTTP stream (Nuvio Engine or TorrServer, both
     // range-capable); the magnet in activeSourceUrl isn't fetchable. The URL may not exist yet.
     // Local library files play from a plain path, which both sync paths read from disk.

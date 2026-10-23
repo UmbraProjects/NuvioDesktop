@@ -87,6 +87,51 @@ data class PlayerChapter(
     val title: String,
 )
 
+/**
+ * What the HUD shows for a live channel. Times arrive pre-formatted in the user's clock; the HUD
+ * itself works out how far behind live it is from mpv's position and buffered end.
+ */
+data class PlayerControlIptvState(
+    /** "4  BBC One". */
+    val channelLabel: String,
+    val nowTitle: String = "",
+    /** "21:00 – 22:00". */
+    val nowTimeLabel: String = "",
+    /** Share of the current programme already aired, 0..1; negative when unknown. */
+    val nowProgress: Float = -1f,
+    /** "Next 22:00  Weather". */
+    val nextLabel: String = "",
+    val liveLabel: String = "LIVE",
+    val goLiveLabel: String = "Go live",
+    val previousChannelLabel: String = "Previous channel",
+    val nextChannelLabel: String = "Next channel",
+    /** Under the clock, where films show "ends at": live TV never ends, so it is the way out. */
+    val exitLabel: String = "Exit",
+    /** How far back the rewind buffer reaches, for the live seek bar's left end. */
+    val rewindWindowMs: Long = 0L,
+    val channelsLabel: String = "Channels",
+    val groupsLabel: String = "Categories",
+    /** Placeholder of the switcher's search box. */
+    val searchLabel: String = "Search channels",
+    /** The channel switcher's categories (Favourites, Recently watched, All, then the provider's). */
+    val groups: List<PlayerControlIptvGroup> = emptyList(),
+    /** The selected category's channels; only sent while the switcher is open. */
+    val channels: List<PlayerControlIptvChannel> = emptyList(),
+    /** "Showing 600 of 57,053. Pick a category to see the rest.", when the list was cut. */
+    val channelsNote: String = "",
+)
+
+data class PlayerControlIptvGroup(val index: Int, val name: String, val count: Int, val selected: Boolean)
+
+data class PlayerControlIptvChannel(
+    val uid: Int,
+    val num: Int,
+    val name: String,
+    val logo: String,
+    val nowTitle: String,
+    val playing: Boolean,
+)
+
 enum class PlayerControlsAction {
     ToggleChrome,
     RevealLockedOverlay,
@@ -175,6 +220,8 @@ data class PlayerControlsState(
     val seekrScale: Double = 1.0,
     /** Drives the HUD's seek button/command-palette labels so they name the real jump distance. */
     val seekStepSeconds: Int = 10,
+    /** Live TV: the HUD's live mode (LIVE badge, now/next, channel buttons); null for anything else. */
+    val iptv: PlayerControlIptvState? = null,
     val tapToUnlockLabel: String = "Tap to unlock",
     val playbackErrorTitle: String = "Playback error",
     val playbackErrorMessage: String = "",

@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -547,6 +548,32 @@ private fun settingsSearchEntries(
         description = resolve(Res.string.compose_settings_root_games_description),
         icon = Icons.Rounded.SportsEsports,
     )
+    val iptvPage = resolve(Res.string.iptv_settings_page)
+    addPage(
+        page = SettingsPage.Iptv,
+        key = "iptv",
+        title = iptvPage,
+        description = resolve(Res.string.iptv_settings_description),
+        icon = Icons.Rounded.LiveTv,
+    )
+    listOf(
+        PlaybackSearchRow("iptv-add-playlist", resolve(Res.string.iptv_settings_add_playlist), resolve(Res.string.iptv_settings_add_playlist_description), resolve(Res.string.iptv_settings_section_playlists)),
+        PlaybackSearchRow("iptv-refresh-interval", resolve(Res.string.iptv_settings_refresh_interval), resolve(Res.string.iptv_settings_refresh_interval_description), resolve(Res.string.iptv_settings_section_updates)),
+        PlaybackSearchRow("iptv-refresh-now", resolve(Res.string.iptv_settings_refresh_now), resolve(Res.string.iptv_settings_refresh_now_description), resolve(Res.string.iptv_settings_section_updates)),
+        PlaybackSearchRow("iptv-preferred-format", resolve(Res.string.iptv_settings_preferred_format), resolve(Res.string.iptv_settings_preferred_format_description), resolve(Res.string.iptv_settings_section_playback)),
+        PlaybackSearchRow("iptv-rewind", resolve(Res.string.iptv_settings_rewind), resolve(Res.string.iptv_settings_rewind_description), resolve(Res.string.iptv_settings_section_playback)),
+        PlaybackSearchRow("iptv-proxy", resolve(Res.string.iptv_proxy), resolve(Res.string.iptv_proxy_description), resolve(Res.string.iptv_settings_section_connection)),
+    ).forEach { row ->
+        addRow(
+            page = SettingsPage.Iptv,
+            key = row.key,
+            title = row.title,
+            description = row.description,
+            pageLabel = iptvPage,
+            section = row.sectionOverride ?: iptvPage,
+            icon = Icons.Rounded.LiveTv,
+        )
+    }
     addPage(
         page = SettingsPage.Integrations,
         key = "integrations",

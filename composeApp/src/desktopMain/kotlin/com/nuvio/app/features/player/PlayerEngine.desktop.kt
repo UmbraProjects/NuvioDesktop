@@ -403,6 +403,19 @@ private fun NativePlayerSurface(
                 event.consume()
                 return@KeyEventDispatcher true
             }
+            // Live TV: typing a channel number. The HUD shows and times the number box.
+            val digit = when (event.keyCode) {
+                in KeyEvent.VK_0..KeyEvent.VK_9 -> event.keyCode - KeyEvent.VK_0
+                in KeyEvent.VK_NUMPAD0..KeyEvent.VK_NUMPAD9 -> event.keyCode - KeyEvent.VK_NUMPAD0
+                else -> -1
+            }
+            if (digit >= 0 && com.nuvio.app.features.iptv.IptvPlaybackSession.active.value != null &&
+                PlayerShortcutsRepository.actionForKeyCode(event.keyCode) == null
+            ) {
+                controller.dispatchIptvDigit(digit)
+                event.consume()
+                return@KeyEventDispatcher true
+            }
             // Rebindable actions, resolved against the user's current bindings.
             val action = PlayerShortcutsRepository.actionForKeyCode(event.keyCode)
                 ?: return@KeyEventDispatcher false
@@ -417,8 +430,26 @@ private fun NativePlayerSurface(
                 PlayerShortcutAction.ToggleSpeed -> controller.dispatchKeyboardShortcut("keyboardSpeedToggle", 1.0)
                 PlayerShortcutAction.NextSubtitle -> controller.dispatchKeyboardShortcut("keyboardNextSubtitle", 1.0)
                 PlayerShortcutAction.NextAudio -> controller.dispatchKeyboardShortcut("keyboardNextAudio", 1.0)
-                PlayerShortcutAction.OpenSources -> controller.openKeyboardPanel("sources")
-                PlayerShortcutAction.OpenEpisodes -> controller.openKeyboardPanel("episodes")
+                // Live TV has no sources or episodes panel: these keys (and the pad's RB/LB) open the
+                // channel switcher, which the D-pad then drives like the episodes panel.
+                PlayerShortcutAction.OpenSources -> if (com.nuvio.app.features.iptv.IptvPlaybackSession.active.value != null) {
+                    controller.openKeyboardPanel("iptvChannels")
+                } else {
+                    controller.openKeyboardPanel("sources")
+                }
+                PlayerShortcutAction.OpenEpisodes -> if (com.nuvio.app.features.iptv.IptvPlaybackSession.active.value != null) {
+                    controller.openKeyboardPanel("iptvChannels")
+                } else {
+                    controller.openKeyboardPanel("episodes")
+                }
+                PlayerShortcutAction.ChannelUp -> {
+                    if (com.nuvio.app.features.iptv.IptvPlaybackSession.active.value == null) return@KeyEventDispatcher false
+                    controller.dispatchKeyboardShortcut("iptvChannel", 1.0)
+                }
+                PlayerShortcutAction.ChannelDown -> {
+                    if (com.nuvio.app.features.iptv.IptvPlaybackSession.active.value == null) return@KeyEventDispatcher false
+                    controller.dispatchKeyboardShortcut("iptvChannel", -1.0)
+                }
                 PlayerShortcutAction.CycleZoom -> controller.dispatchKeyboardShortcut("resize", 1.0)
                 PlayerShortcutAction.SkipInterval -> {
                     if (!controller.triggerSkipIntervalIfAvailable()) return@KeyEventDispatcher false
@@ -513,7 +544,7 @@ private fun NativePlayerSurface(
                 " sourceHost=${PlaybackRedirectResolver.hostOf(sourceUrl)}" +
                 " playbackHost=${PlaybackRedirectResolver.hostOf(resolution.playbackUrl)}" +
                 " redirect=${resolution.outcome.name.lowercase()}/${resolution.hops}" +
-                " sourceUrl=${sourceUrl.takeLast(48)}"
+                " sourceUrl=${com.nuvio.app.features.iptv.redactIptvCredentials(sourceUrl).takeLast(48)}"
         }
         fun attachWith(
             playbackUrl: String,

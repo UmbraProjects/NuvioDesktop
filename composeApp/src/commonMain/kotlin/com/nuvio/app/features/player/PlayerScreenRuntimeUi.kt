@@ -345,8 +345,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         }
     }
 
+    val iptvControlState = rememberIptvControlState()
     val playerControlsState = PlayerControlsState(
-        title = title,
+        // Live TV: the playing channel, which channel up/down changes after launch.
+        title = iptvControlState?.channelLabel ?: title,
+        iptv = iptvControlState,
         episodeText = episodeText,
         streamTitle = activeStreamTitle,
         streamFilename = activeStreamFilename.orEmpty(),
@@ -563,8 +566,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 ) &&
             !activeSubmitIntroImdbId().isNullOrBlank(),
         showVideoSettings = isIos,
-        showSources = activeVideoId != null,
-        showEpisodes = isSeries,
+        showSources = activeVideoId != null && !isIptvPlayback,
+        showEpisodes = isSeries && !isIptvPlayback,
         showExternalPlayer = args.onOpenInExternalPlayer != null,
         durationMs = playbackSnapshot.durationMs,
         positionMs = displayedPositionMs,
@@ -859,6 +862,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     // its synthetic last-frame position to the EOF/autoplay effects.
                     playbackSourceFailureActive = true
                     PlaybackErrorLog.error(playbackAttemptId, activeSourceUrl, message)
+                    if (isIptvPlayback) {
+                        handleIptvPlaybackError(message, playbackFailedToast)
+                        return@PlatformPlayerSurface
+                    }
 
                     val isRateLimited =
                         playbackErrorFailure(message) == PlaybackSourceFailure.DebridRateLimited
@@ -1081,6 +1088,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
 }
 
 private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControlsAction): Boolean {
+    if (handleIptvControlsAction(action)) return true
     // Playback and seek actions normally fall through to mpv (return false). In a watch party they
     // run here instead, so they can be shared with the party, or refused when only the host
     // controls playback.
@@ -1196,6 +1204,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
 
 private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: Double): Boolean {
     if (handlePartyControlsEvent(type, value)) return true
+    if (handleIptvControlsEvent(type, value)) return true
     when (type) {
         "revealChrome" -> {
             if (!playerControlsLocked) {

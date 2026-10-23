@@ -1012,6 +1012,7 @@ fun main(args: Array<String>) {
                                 AppShortcutAction.OpenLibrary,
                                 AppShortcutAction.OpenDiscover,
                                 AppShortcutAction.OpenCalendar,
+                                AppShortcutAction.OpenLiveTv,
                                 // Routed through App so it inherits the same guard the other
                                 // navigation shortcuts get: nothing fires while the player is up.
                                 AppShortcutAction.ToggleGameMode -> {

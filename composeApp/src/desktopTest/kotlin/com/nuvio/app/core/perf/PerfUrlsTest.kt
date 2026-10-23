@@ -35,6 +35,17 @@ class PerfUrlsTest {
     }
 
     @Test
+    fun xtreamLoginInALiveStreamPathNeverReachesTheLog() {
+        val redacted = PerfUrls.redact("http://provider.example:8080/live/someuser/s3cretpw/325781.ts")
+        assertFalse("someuser" in redacted.display, redacted.display)
+        assertFalse("s3cretpw" in redacted.display, redacted.display)
+        assertFalse("s3cretpw" in redacted.pattern, redacted.pattern)
+        val api = PerfUrls.redact("http://provider.example/player_api.php?username=someuser&password=s3cretpw")
+        assertFalse("someuser" in api.display, api.display)
+        assertFalse("s3cretpw" in api.display, api.display)
+    }
+
+    @Test
     fun posterFileNamesStayReadable() {
         val redacted = PerfUrls.redact("https://image.tmdb.org/t/p/w500/kqjL17yufvn9OVLyXYpvtyrFfak.jpg")
         assertEquals("image.tmdb.org/t/p/w500/kqjL17yufvn9OVLyXYpvtyrFfak.jpg", redacted.display)

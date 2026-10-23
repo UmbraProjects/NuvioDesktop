@@ -59,6 +59,7 @@ import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Groups
@@ -186,6 +187,7 @@ import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.collections_header
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.calendar_title
+import nuvio.composeapp.generated.resources.iptv_settings_page
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.compose_settings_page_account
@@ -267,6 +269,7 @@ fun SettingsScreen(
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
+    onNavigateToLiveTv: (() -> Unit)? = null,
 ) {
     val homeKeyFocusRequester = remember { FocusRequester() }
     var settingsSearchHasFocus by remember { mutableStateOf(false) }
@@ -616,6 +619,7 @@ fun SettingsScreen(
                 onNavigateToLibrary = onNavigateToLibrary,
                 onNavigateToDiscover = onNavigateToDiscover,
                 onNavigateToCalendar = onNavigateToCalendar,
+                onNavigateToLiveTv = onNavigateToLiveTv,
                 onSettingsSearchFocusChange = { settingsSearchHasFocus = it },
             )
         } else {
@@ -809,6 +813,7 @@ private fun MobileSettingsScreen(
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
+    onNavigateToLiveTv: (() -> Unit)? = null,
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -946,6 +951,7 @@ private fun MobileSettingsScreen(
                             onStreamsClick = { onPageChange(SettingsPage.Streams) },
                             onLocalLibraryClick = { onPageChange(SettingsPage.LocalLibrary) },
                             onGamesClick = { onPageChange(SettingsPage.Games) },
+                            onIptvClick = { onPageChange(SettingsPage.Iptv) },
                             onAutoDownloadsClick = { onPageChange(SettingsPage.AutoDownloads) },
                             onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                             onAdvancedClick = { onPageChange(SettingsPage.Advanced) },
@@ -1149,6 +1155,7 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     settings = gameLibrarySettings,
                 )
+                SettingsPage.Iptv -> iptvSettingsContent(isTablet = false)
                 SettingsPage.Screensaver -> screensaverSettingsContent(
                     isTablet = false,
                     settings = screensaverSettings,
@@ -1344,6 +1351,7 @@ private fun TabletSettingsScreen(
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
+    onNavigateToLiveTv: (() -> Unit)? = null,
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
@@ -1499,6 +1507,7 @@ private fun TabletSettingsScreen(
                 onNavigateToLibrary = onNavigateToLibrary,
                 onNavigateToDiscover = onNavigateToDiscover,
                 onNavigateToCalendar = onNavigateToCalendar,
+                onNavigateToLiveTv = onNavigateToLiveTv,
                 contextPanelWidth = contextPanelWidth,
             )
             if (desktopColumnGuidesVisible) {
@@ -1677,6 +1686,7 @@ private fun TabletSettingsScreen(
                                 onStreamsClick = { openInlinePage(SettingsPage.Streams) },
                                 onLocalLibraryClick = { openInlinePage(SettingsPage.LocalLibrary) },
                                 onGamesClick = { openInlinePage(SettingsPage.Games) },
+                                onIptvClick = { openInlinePage(SettingsPage.Iptv) },
                                 onAutoDownloadsClick = { openInlinePage(SettingsPage.AutoDownloads) },
                                 onAppearanceClick = { openInlinePage(SettingsPage.Appearance) },
                                 onAdvancedClick = { openInlinePage(SettingsPage.Advanced) },
@@ -1884,6 +1894,7 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         settings = gameLibrarySettings,
                     )
+                    SettingsPage.Iptv -> iptvSettingsContent(isTablet = true)
                     SettingsPage.Screensaver -> screensaverSettingsContent(
                         isTablet = true,
                         settings = screensaverSettings,
@@ -2054,6 +2065,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Games,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.iptv_settings_page),
+        icon = Icons.Rounded.LiveTv,
+        page = SettingsPage.Iptv,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_auto_downloads),
         icon = Icons.Rounded.CloudDownload,
         page = SettingsPage.AutoDownloads,
@@ -2099,6 +2115,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Streams -> SettingsPage.Streams
     SettingsPage.LocalLibrary -> SettingsPage.LocalLibrary
     SettingsPage.Games -> SettingsPage.Games
+    SettingsPage.Iptv -> SettingsPage.Iptv
     SettingsPage.AutoDownloads -> SettingsPage.AutoDownloads
     SettingsPage.Downloads -> SettingsPage.Downloads
     SettingsPage.StreamScoring -> SettingsPage.Streams
@@ -2421,6 +2438,7 @@ private fun DesktopSettingsTopBar(
     onNavigateToLibrary: (() -> Unit)?,
     onNavigateToDiscover: (() -> Unit)?,
     onNavigateToCalendar: (() -> Unit)?,
+    onNavigateToLiveTv: (() -> Unit)?,
     contextPanelWidth: Dp,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -2507,6 +2525,7 @@ private fun DesktopSettingsTopBar(
                 onNavigateToLibrary = onNavigateToLibrary,
                 onNavigateToDiscover = onNavigateToDiscover,
                 onNavigateToCalendar = onNavigateToCalendar,
+                onNavigateToLiveTv = onNavigateToLiveTv,
             )
             Spacer(modifier = Modifier.weight(1f))
             if (contextPanelWidth == 0.dp) {
@@ -2549,11 +2568,13 @@ private fun DesktopSettingsRootNavigation(
     onNavigateToLibrary: (() -> Unit)?,
     onNavigateToDiscover: (() -> Unit)?,
     onNavigateToCalendar: (() -> Unit)?,
+    onNavigateToLiveTv: (() -> Unit)?,
 ) {
     val tokens = MaterialTheme.nuvio
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsState()
+    val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -2631,6 +2652,26 @@ private fun DesktopSettingsRootNavigation(
                     tokens.colors.textMuted.copy(alpha = 0.42f)
                 },
             )
+        }
+        // Live TV, like its tab, only once a playlist exists.
+        if (liveTvTabVisible) {
+            IconButton(
+                onClick = { onNavigateToLiveTv?.invoke() },
+                enabled = onNavigateToLiveTv != null,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.LiveTv,
+                    contentDescription = stringResource(Res.string.iptv_settings_page),
+                    modifier = Modifier
+                        .size(22.dp)
+                        .then(if (onNavigateToLiveTv != null) Modifier.accentGradientMask() else Modifier),
+                    tint = if (onNavigateToLiveTv != null) {
+                        tokens.colors.accent
+                    } else {
+                        tokens.colors.textMuted.copy(alpha = 0.42f)
+                    },
+                )
+            }
         }
         // Calendar is a pushed route rather than a tab, so it has no sidebar entry to fall back
         // on; from Settings the only other ways in are the hotkey or the Library header icon.

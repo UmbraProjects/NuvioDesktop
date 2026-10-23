@@ -191,6 +191,35 @@ internal fun nuvioCalendarIsFinished(
     return ended || last.isBefore(today.minusDays(DORMANT_DAYS))
 }
 
+/** One row of TMDB's `release_dates` (SIMKL relays the same codes): country, type, `yyyy-MM-dd`. */
+internal data class MovieReleaseDate(val country: String, val type: Int, val date: String)
+
+// TMDB release types: 1 premiere, 2 limited theatrical, 3 theatrical, 4 digital, 5 physical, 6 TV.
+internal const val MOVIE_RELEASE_TYPE_LIMITED = 2
+internal const val MOVIE_RELEASE_TYPE_THEATRICAL = 3
+internal const val MOVIE_RELEASE_TYPE_DIGITAL = 4
+
+/**
+ * The one date a movie goes on the calendar (Nuvio and SIMKL alike): digital in the US, then GB,
+ * then the earliest anywhere; failing that, theatrical in the US, then the earliest anywhere.
+ *
+ * Limited and wide theatrical count as one release, earliest first. A film that opens limited and
+ * goes wide a week later (You Can See Everything: US limited 16 Oct, wide 23 Oct) came out on the
+ * first date — the one TMDB itself gives as its release date — not on the day it expanded.
+ */
+internal fun pickMovieCalendarDate(releases: List<MovieReleaseDate>): String? {
+    fun earliest(types: Set<Int>, country: String? = null) = releases
+        .filter { it.type in types && (country == null || it.country.equals(country, ignoreCase = true)) }
+        .minOfOrNull { it.date }
+    val digital = setOf(MOVIE_RELEASE_TYPE_DIGITAL)
+    val theatrical = setOf(MOVIE_RELEASE_TYPE_LIMITED, MOVIE_RELEASE_TYPE_THEATRICAL)
+    return earliest(digital, "US")
+        ?: earliest(digital, "GB")
+        ?: earliest(digital)
+        ?: earliest(theatrical, "US")
+        ?: earliest(theatrical)
+}
+
 /** Persists the local calendar across launches. */
 internal expect object NuvioCalendarCacheStorage {
     fun load(): String?

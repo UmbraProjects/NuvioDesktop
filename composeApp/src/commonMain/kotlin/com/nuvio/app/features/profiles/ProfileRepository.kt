@@ -262,6 +262,7 @@ object ProfileRepository {
         SearchHistoryRepository.onProfileChanged()
         CollectionRepository.onProfileChanged()
         com.nuvio.app.features.playlist.PlaylistRepository.onProfileChanged()
+        com.nuvio.app.features.iptv.IptvRepository.onProfileChanged()
         CollectionMobileSettingsRepository.onProfileChanged()
         DownloadsRepository.onProfileChanged()
         com.nuvio.app.features.librarypvr.LibraryPvrRepository.onProfileChanged()

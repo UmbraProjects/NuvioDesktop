@@ -152,6 +152,12 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.Games, Res.string.settings_games_section_rows),
             section(SettingsPage.Games, Res.string.settings_games_section_artwork),
         )
+        SettingsPage.Iptv -> listOf(
+            section(SettingsPage.Iptv, Res.string.iptv_settings_section_playlists),
+            section(SettingsPage.Iptv, Res.string.iptv_settings_section_updates),
+            section(SettingsPage.Iptv, Res.string.iptv_settings_section_playback),
+            section(SettingsPage.Iptv, Res.string.iptv_settings_section_connection),
+        )
         SettingsPage.LocalLibrary -> listOf(
             section(SettingsPage.LocalLibrary, Res.string.settings_local_library_browse_section),
             section(SettingsPage.LocalLibrary, Res.string.settings_local_library_playback_title),

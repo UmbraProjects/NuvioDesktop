@@ -92,4 +92,40 @@ class NuvioCalendarCacheTest {
         assertEquals(10, follows.first { it.contentId == "tt1" }.tmdbId)
         assertEquals("anime", follows.first { it.contentId == "kitsu:7" }.type)
     }
+
+    private fun release(country: String, type: Int, date: String) = MovieReleaseDate(country, type, date)
+
+    @Test
+    fun `a limited opening dates the movie, not the day it goes wide`() {
+        // TMDB's release_dates for You Can See Everything (1765072) on 2026-10-23.
+        val releases = listOf(
+            release("US", 1, "2026-09-06"),
+            release("CA", 3, "2026-10-16"),
+            release("GB", 3, "2026-11-20"),
+            release("PL", 2, "2026-10-23"),
+            release("US", 2, "2026-10-16"),
+            release("US", 3, "2026-10-23"),
+        )
+        assertEquals("2026-10-16", pickMovieCalendarDate(releases))
+    }
+
+    @Test
+    fun `digital wins over theatrical, US then GB then the earliest anywhere`() {
+        val theatrical = listOf(release("US", 3, "2026-01-01"))
+        assertEquals(
+            "2026-03-01",
+            pickMovieCalendarDate(theatrical + release("FR", 4, "2026-02-01") + release("GB", 4, "2026-03-01")),
+        )
+        assertEquals(
+            "2026-04-01",
+            pickMovieCalendarDate(theatrical + release("GB", 4, "2026-03-01") + release("US", 4, "2026-04-01")),
+        )
+        assertEquals("2026-02-01", pickMovieCalendarDate(theatrical + release("FR", 4, "2026-02-01")))
+    }
+
+    @Test
+    fun `premieres are ignored, limited openings count anywhere`() {
+        assertEquals(null, pickMovieCalendarDate(listOf(release("US", 1, "2026-09-06"))))
+        assertEquals("2026-10-23", pickMovieCalendarDate(listOf(release("PL", 2, "2026-10-23"), release("TR", 3, "2026-10-30"))))
+    }
 }
