@@ -801,13 +801,7 @@ val buildWindowsQuickJs = tasks.register("buildWindowsQuickJs") {
         val msysBin = nuvioEngineMsys2Root.resolve("bin")
         val gcc = msysBin.resolve("gcc.exe")
         if (!gcc.isFile || !nuvioEngineJniIncludeDir.resolve("jni.h").isFile) {
-            val missing = "MSYS2 UCRT64 gcc under ${msysBin.absolutePath} or jni.h"
-            // A silent skip is recorded as UP-TO-DATE (output absent), hiding the cause on later
-            // runs, so fail loudly when a distributable/package is being built.
-            if (gradle.startParameter.taskNames.any { "Distributable" in it || it.contains("package", ignoreCase = true) }) {
-                throw GradleException("QuickJS build needs a toolchain for a distributable. Missing: $missing")
-            }
-            logger.warn("Skipping QuickJS build; plugins will use quickjs-kt's bundled DLL. Missing: $missing")
+            logger.warn("Skipping QuickJS build; plugins will use quickjs-kt's bundled DLL. Missing: MSYS2 UCRT64 gcc under ${msysBin.absolutePath} or jni.h")
             output.delete()
             return@doLast
         }
@@ -838,7 +832,14 @@ val buildWindowsQuickJs = tasks.register("buildWindowsQuickJs") {
         val log = process.inputStream.bufferedReader().readText()
         val code = process.waitFor()
         if (code != 0 || !output.isFile) {
-            throw GradleException("QuickJS build failed (exit $code)\n${log.lines().filter { "error" in it }.joinToString("\n").takeLast(6000)}")
+            val detail = "QuickJS build failed (exit $code)\n${log.takeLast(8000)}"
+            if (nuvioEngineOptional) {
+                // Same escape hatch as the Nuvio Engine: the app falls back to quickjs-kt's bundled DLL.
+                logger.warn("$detail\nContinuing because -Pnuvio.engine.optional=true; using quickjs-kt's bundled DLL.")
+                output.delete()
+                return@doLast
+            }
+            throw GradleException(detail)
         }
         logger.lifecycle("QuickJS DLL: ${output.absolutePath} (${output.length() / 1024} KB)")
     }
@@ -1200,7 +1201,7 @@ if (isWindowsHost) {
                     "Nuvio Engine DLL was not built; a distributable must not ship without it. " +
                         "Missing inputs: ${missingNuvioEngineInputs(resolveNuvioEngineCMake()).joinToString("; ").ifBlank { "(build failed, see buildWindowsNuvioEngine output)" }}"
                 }
-                check(quickJsOutput.get().asFile.isFile) {
+                check(nuvioEngineOptional || quickJsOutput.get().asFile.isFile) {
                     "libquickjs.dll was not built (see buildWindowsQuickJs); a distributable must not fall back to quickjs-kt's unpatched copy."
                 }
                 copy {
