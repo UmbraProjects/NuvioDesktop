@@ -102,6 +102,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import com.nuvio.app.features.music.MusicRootHosts
+import com.nuvio.app.features.music.musicRoutes
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -3035,7 +3037,7 @@ private fun MainAppContent(
                     )
                 }
                 // fork:music
-                com.nuvio.app.features.music.musicRoutes(
+                musicRoutes(
                     guardedBack = { entry -> rememberGuardedPopBackStack(navController = navController, backStackEntry = entry) },
                     navigate = { navController.navigateIfResumed(it) },
                 )
@@ -5216,7 +5218,7 @@ private fun MainAppContent(
                     streamPickerRequest != null,
             )
 
-            com.nuvio.app.features.music.MusicRootHosts(hidden = musicPlayerHidden) // fork:music
+            MusicRootHosts(hidden = musicPlayerHidden) // fork:music
 
             NuvioToastHost(
                 modifier = Modifier

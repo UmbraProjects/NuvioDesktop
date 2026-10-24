@@ -59,7 +59,7 @@ import com.nuvio.app.features.music.library.rememberCdArtFor
 import kotlinx.coroutines.delay
 
 /** Lines light up this long before their stamp, so the eye is on the line as it is sung. */
-private const val LYRIC_LEAD_MS = 250L
+private const val NOW_PLAYING_LYRIC_LEAD_MS = 250L
 private const val FANART_HOLD_MS = 14_000L
 private const val FANART_PUSH_MS = 16_000
 
@@ -267,7 +267,7 @@ private fun PlainLyrics(lines: List<String>) {
 
 @Composable
 private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long, onSeek: (Long) -> Unit) {
-    val active = activeLyricIndex(lines, positionMs + LYRIC_LEAD_MS)
+    val active = activeLyricIndex(lines, positionMs + NOW_PLAYING_LYRIC_LEAD_MS)
     val listState = rememberLazyListState()
     // Keep the sung line a third of the way down: far enough from the top to see what is coming.
     LaunchedEffect(active, lines) {
