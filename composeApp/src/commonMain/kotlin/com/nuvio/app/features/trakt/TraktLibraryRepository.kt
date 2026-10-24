@@ -1,6 +1,7 @@
 package com.nuvio.app.features.trakt
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.RawHttpResponse
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.library.LibraryItem
@@ -106,6 +107,7 @@ object TraktLibraryRepository {
     }
 
     suspend fun refreshNow() {
+        PerfTelemetry.count("TraktLibraryRepository.refreshNow")
         refresh(force = true)
     }
 

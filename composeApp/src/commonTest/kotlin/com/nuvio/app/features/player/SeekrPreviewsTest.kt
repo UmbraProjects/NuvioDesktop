@@ -82,4 +82,18 @@ class SeekrPreviewsTest {
         assertEquals(120_000L, SeekrPreviews.retryAfterMs(mapOf("retry-after" to "120")))
         assertEquals(3_600_000L, SeekrPreviews.retryAfterMs(emptyMap()))
     }
+
+    /** Seekr's 410: no more lookups, and Local + Seekr hands streams (not torrents) to the decoder. */
+    @Test
+    fun seekrServiceOffFallsBackToTheNativeDecoder() {
+        val debrid = "https://nexus-133.neur.tb-cdn.st/dld/abc?token=x"
+        val preset = DesktopBufferPreset.Balanced
+        assertFalse(seekrPreviewsEligible(DesktopSeekThumbnailMode.LocalAndSeekr, preset, debrid, false, "sk_live_test", seekrServiceOff = true))
+        assertFalse(seekrPreviewsEligible(DesktopSeekThumbnailMode.Streaming, preset, debrid, false, "sk_live_test", seekrServiceOff = true))
+        val mode = DesktopSeekThumbnailMode.LocalAndSeekr
+        assertTrue(seekThumbnailsAllowed(mode, preset, debrid, isTorrent = false, seekrServiceOff = true))
+        assertFalse(seekThumbnailsAllowed(mode, preset, "http://127.0.0.1:8097/stream/abc", isTorrent = true, seekrServiceOff = true))
+        assertFalse(seekThumbnailsAllowed(DesktopSeekThumbnailMode.Local, preset, debrid, isTorrent = false, seekrServiceOff = true))
+        assertFalse(seekThumbnailsAllowed(mode, DesktopBufferPreset.Metered, debrid, isTorrent = false, seekrServiceOff = true))
+    }
 }

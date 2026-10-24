@@ -1,6 +1,7 @@
 package com.nuvio.app.features.discover
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.home.HeroDiscoveryMetadataService
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsSnapshot
@@ -10,6 +11,12 @@ import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.tmdb.TmdbBackgroundLane
 import com.nuvio.app.features.tmdb.TmdbSearchResult
 import com.nuvio.app.features.tmdb.TmdbService
+import kotlin.math.pow
+import kotlin.math.log10
+import com.nuvio.app.features.watchprogress.CurrentDateProvider
+import com.nuvio.app.features.tmdb.TmdbTitleProfile
+import com.nuvio.app.features.tmdb.TmdbLeadPerson
+import com.nuvio.app.features.tmdb.TmdbMetadataService
 import com.nuvio.app.features.posterservice.CustomPosterScreen
 import com.nuvio.app.features.posterservice.CustomPosterSettingsRepository
 import com.nuvio.app.features.posterservice.prefetchCustomPosterIds
@@ -124,6 +131,7 @@ object DiscoverRecommendationsRepository {
     }
 
     fun refresh(force: Boolean = false) {
+        PerfTelemetry.count("DiscoverRecommendationsRepository.refresh")
         scope.launch {
             refreshMutex.withLock {
                 hydrateFromDisk()
@@ -301,6 +309,8 @@ object DiscoverRecommendationsRepository {
         val wantsGenreRows = settings.discoverMoreLikeFavouritesEnabled ||
             settings.discoverHiddenGemsEnabled ||
             settings.discoverTrendingGenreRows > 0
+        val wantsTopPicks = settings.discoverTopPicksEnabled
+        val wantsPeopleRows = settings.discoverPeopleRowsEnabled
 
         // Local first: no network, no TMDB key, so this is available immediately — and on an
         // install without a key it is the entire tab. It goes on screen below, before the
@@ -342,7 +352,7 @@ object DiscoverRecommendationsRepository {
 
         val freeRows = localRows + importedRows + aiRows
 
-        if (!wantsBecauseRows && !wantsGenreRows && customDefinitions.isEmpty()) {
+        if (!wantsBecauseRows && !wantsGenreRows && !wantsTopPicks && !wantsPeopleRows && customDefinitions.isEmpty()) {
             val onlyFreeRows = orderRows(freeRows, settings)
             publish(onlyFreeRows, now, signature, seedSignature = null)
             // Every built-in family switched off is a perfectly ordinary configuration, and an AI
@@ -368,9 +378,17 @@ object DiscoverRecommendationsRepository {
             customDefinitions.forEach { row ->
                 add(placeholderRow(customDiscoverEntryId(row.id)))
             }
+            if (wantsTopPicks) {
+                add(placeholderRow(DiscoverRowFamily.TopPicks.entryId))
+            }
             if (wantsBecauseRows) {
                 repeat(settings.discoverBecauseYouWatchedRows) {
                     add(placeholderRow(DiscoverRowFamily.Because.entryId))
+                }
+            }
+            if (wantsPeopleRows) {
+                repeat(PEOPLE_ROWS) {
+                    add(placeholderRow(DiscoverRowFamily.People.entryId))
                 }
             }
             if (settings.discoverMoreLikeFavouritesEnabled) {
@@ -413,7 +431,7 @@ object DiscoverRecommendationsRepository {
         log.d { "Seeds resolved: ${seeds.size} in ${WatchProgressClock.nowEpochMs() - seedsStartedAt}ms" }
         // No seeds is fatal to every generated row but not to a custom one: a custom row is a query
         // the user wrote, so it needs no history behind it and must still render on a fresh install.
-        if (seeds.isEmpty() && customDefinitions.isEmpty()) {
+        if (seeds.isEmpty() && customDefinitions.isEmpty() && !wantsTopPicks && !wantsPeopleRows) {
             log.d { "No usable seeds from ${history.size} watched rows" }
             publish(orderRows(freeRows, settings), now, signature, seedSignature = "")
             return
@@ -421,7 +439,8 @@ object DiscoverRecommendationsRepository {
 
         // Skip the whole fan-out when nothing that shapes the rows has changed: same seeds, same
         // settings, rows already in hand. Only the freshness stamp needs updating.
-        val seedSignature = seeds.joinToString("|") { "${it.tmdbMediaType}:${it.tmdbId}" }
+        // Titles too: a seed's title is a row heading, and a corrected one has to replace the old row.
+        val seedSignature = seeds.joinToString("|") { "${it.tmdbMediaType}:${it.tmdbId}:${it.title}" }
         if (seedSignature == cachedSeedSignature &&
             signature == cachedSettingsSignature &&
             cachedRows.isNotEmpty()
@@ -441,6 +460,7 @@ object DiscoverRecommendationsRepository {
             watchedParentKeys = watchedKeys,
             hideWatched = hideWatched,
             excludedGenreIds = DiscoverSeedService.resolveExcludedGenreIds(settings.discoverExcludedGenres),
+            notInterested = notInterestedKeys(),
         )
 
         // Cross-row dedupe, so an item claimed by one row does not reappear three rows down. The
@@ -484,6 +504,18 @@ object DiscoverRecommendationsRepository {
                     emptyList()
                 }
             }
+            // Top picks and the people rows read a wider, weighted slice of the history than the
+            // per-title rows — the tracker site's model — so they resolve their own seed set.
+            val tasteDeferred = async {
+                if (!wantsTopPicks && !wantsPeopleRows) return@async null to emptyList()
+                val tasteSeeds = DiscoverSeedService.buildSeeds(
+                    history,
+                    now = now,
+                    maxSeeds = TASTE_SEEDS,
+                    maxCandidatesToResolve = TASTE_CANDIDATES,
+                )
+                buildTasteRows(tasteSeeds, filters, now, wantsTopPicks, wantsPeopleRows)
+            }
             // Shared by favourites, gems and trending; resolved once, awaited three times.
             val affinitiesDeferred = async {
                 if (wantsGenreRows && seeds.isNotEmpty()) {
@@ -524,7 +556,9 @@ object DiscoverRecommendationsRepository {
 
             // Every custom row carries its own entry id, so this releases the whole namespace.
             emit("Custom rows", { customDiscoverRowId(it) != null }, customDeferred.await())
+            emit("Top picks", { it == DiscoverRowFamily.TopPicks.entryId }, listOfNotNull(tasteDeferred.await().first))
             emit("Because you watched", { it == DiscoverRowFamily.Because.entryId }, becauseDeferred.await())
+            emit("More from / with", { it == DiscoverRowFamily.People.entryId }, tasteDeferred.await().second)
             emit("More like your favourites", { it == DiscoverRowFamily.Favourites.entryId }, listOfNotNull(favouritesDeferred.await()))
             emit("Hidden gems", { it == DiscoverRowFamily.Gems.entryId }, listOfNotNull(gemsDeferred.await()))
 
@@ -656,6 +690,224 @@ object DiscoverRecommendationsRepository {
             title = getString(Res.string.discover_row_finish_what_you_started),
             items = items,
             entryId = DiscoverRowFamily.Finish.entryId,
+        )
+    }
+
+    /** A seed weighted the way the Nuvio Tracker site weighs history (recommend.ts `seeds`). */
+    private class TasteSeed(val seed: DiscoverSeed, val profile: TmdbTitleProfile?, val weight: Double, val dropped: Boolean)
+
+    /**
+     * Both taste families from one pass over the history (ported from the Nuvio Tracker site):
+     *
+     *  - **Top picks for you**: every seed's TMDB recommendations vote for their titles, by the
+     *    seed's weight and the title's place in that list; a show you dropped votes *against* what
+     *    it recommends. A title several seeds point to rises. Nudged by rating and by how much it is
+     *    watched now (TMDB's lists lean on old catalogue), and nothing under 100 votes.
+     *  - **More from <director> / More with <actor>**: film directors and actors (films and shows)
+     *    who lead three or more of your titles (two when nobody reaches three), one per franchise —
+     *    someone whose titles mostly overlap a person already picked is passed over — and their
+     *    other work, most popular first. Up to two directors and three actors.
+     *
+     * A seed's weight is recency (halving each year, never below 0.15) times engagement: a film 1,
+     * a show by how much of it you watched (1.6 for 80% or more). A show is "dropped" when it has
+     * eight or more episodes, you watched four or fewer (under 30%), and nothing for two months.
+     */
+    private suspend fun buildTasteRows(
+        seeds: List<DiscoverSeed>,
+        filters: RowFilters,
+        now: Long,
+        wantsTopPicks: Boolean,
+        wantsPeople: Boolean,
+    ): Pair<DiscoverRecommendationRow?, List<DiscoverRecommendationRow>> {
+        if (seeds.isEmpty()) return null to emptyList()
+        val weighed = coroutineScope {
+            seeds.map { seed ->
+                async {
+                    val profile = runCatching { TmdbMetadataService.fetchTitleProfile(seed.tmdbId, seed.tmdbMediaType) }.getOrNull()
+                    val ageDays = ((now - seed.lastWatchedAtEpochMs).coerceAtLeast(0L)).toDouble() / MILLIS_PER_DAY
+                    val recency = maxOf(0.15, 0.5.pow(ageDays / 365.0))
+                    val total = profile?.numberOfEpisodes ?: 0
+                    val eps = seed.episodesWatched
+                    val dropped = seed.tmdbMediaType == "tv" && total >= 8 && eps.toDouble() / total < 0.3 && eps <= 4 && ageDays > 60
+                    val engagement = when {
+                        seed.tmdbMediaType != "tv" -> 1.0
+                        total > 0 && eps.toDouble() / total >= 0.8 -> 1.6
+                        else -> 0.6 + minOf(1.0, eps / 10.0)
+                    }
+                    TasteSeed(seed, profile, if (dropped) recency else engagement * recency, dropped)
+                }
+            }.awaitAll()
+        }
+        val seedKeys = seeds.mapTo(mutableSetOf()) { "${it.tmdbMediaType}:${it.tmdbId}" }
+        val topPicks = if (wantsTopPicks) buildTopPicksRow(weighed, seedKeys, filters) else null
+        val people = if (wantsPeople) buildPeopleRows(weighed, seedKeys, filters) else emptyList()
+        return topPicks to people
+    }
+
+    private suspend fun buildTopPicksRow(
+        weighed: List<TasteSeed>,
+        seedKeys: Set<String>,
+        filters: RowFilters,
+    ): DiscoverRecommendationRow? {
+        val positive = weighed.filterNot { it.dropped }.sortedByDescending { it.weight }.take(TOP_PICKS_POSITIVE_SEEDS)
+        val negative = weighed.filter { it.dropped }.sortedByDescending { it.weight }.take(TOP_PICKS_NEGATIVE_SEEDS)
+        val voters = positive + negative
+        val today = CurrentDateProvider.todayIsoDate()
+        val lists = coroutineScope {
+            voters.map { taste ->
+                async {
+                    runCatching { TmdbService.fetchRecommendations(taste.seed.tmdbId, taste.seed.tmdbMediaType, 1) }
+                        .getOrDefault(emptyList())
+                }
+            }.awaitAll()
+        }
+        class Candidate(val result: TmdbSearchResult) {
+            var score = 0.0
+            /** Seed title → how much it contributed: the strongest is the card's "because". */
+            val because = linkedMapOf<String, Double>()
+        }
+        val candidates = linkedMapOf<String, Candidate>()
+        voters.forEachIndexed { i, taste ->
+            lists[i]
+                .filter { r -> (r.releaseDate?.takeIf(String::isNotBlank) ?: r.firstAirDate)?.let { it <= today } == true }
+                .take(25)
+                .forEachIndexed { rank, result ->
+                    val key = "${if (result.isTv) "tv" else "movie"}:${result.id}"
+                    if (key in seedKeys) return@forEachIndexed
+                    val candidate = candidates.getOrPut(key) { Candidate(result) }
+                    val w = taste.weight * (1.0 - rank / 30.0)
+                    if (taste.dropped) {
+                        candidate.score -= 0.5 * w
+                    } else {
+                        candidate.score += w
+                        candidate.because[taste.seed.title] = (candidate.because[taste.seed.title] ?: 0.0) + w
+                    }
+                }
+        }
+        val quality = { r: TmdbSearchResult -> 0.75 + 0.25 * ((r.voteAverage - 5.0) / 3.5).coerceIn(0.0, 1.0) }
+        val current = { r: TmdbSearchResult -> 0.55 + 0.45 * minOf(1.0, log10(r.popularity + 1.0) / 2.0) }
+        val rankedCandidates = candidates.values
+            .filter { it.score > 0 && it.result.voteCount >= 100 }
+            .sortedByDescending { it.score * quality(it.result) * current(it.result) }
+        val reasons = rankedCandidates.associate { candidate ->
+            "${if (candidate.result.isTv) "series" else "movie"}:tmdb:${candidate.result.id}" to
+                candidate.because.maxByOrNull { it.value }?.key?.takeIf(String::isNotBlank)?.let { "Because you watched $it" }
+        }
+        val items = rankedCandidates.map { it.result }.toRowItems(filters)
+            .map { item -> reasons["${item.type}:${item.id}"]?.let { item.copy(recommendationReason = it) } ?: item }
+        log.i { "Top picks: ${positive.size} seeds (+${negative.size} dropped), ${candidates.size} candidates, ${items.size} shown" }
+        if (items.size < MIN_ROW_ITEMS) return null
+        return DiscoverRecommendationRow(
+            key = TOP_PICKS_ROW_KEY,
+            title = "Top picks for you",
+            items = items,
+            entryId = DiscoverRowFamily.TopPicks.entryId,
+        )
+    }
+
+    private suspend fun buildPeopleRows(
+        weighed: List<TasteSeed>,
+        seedKeys: Set<String>,
+        filters: RowFilters,
+    ): List<DiscoverRecommendationRow> {
+        class Person(val lead: TmdbLeadPerson) {
+            val titles = mutableSetOf<String>()
+            var weight = 0.0
+        }
+        val directors = linkedMapOf<Int, Person>()
+        val actors = linkedMapOf<Int, Person>()
+        weighed.filterNot { it.dropped }.forEach { taste ->
+            val title = "${taste.seed.tmdbMediaType}:${taste.seed.tmdbId}"
+            taste.profile?.leads.orEmpty().forEach { lead ->
+                val map = if (lead.isDirector) directors else actors
+                val person = map.getOrPut(lead.id) { Person(lead) }
+                if (person.titles.add(title)) person.weight += taste.weight
+            }
+        }
+        // One per franchise: eight Harry Potter films would make all three leads "recurring".
+        val chosen = mutableListOf<Person>()
+        fun overlaps(p: Person) = chosen.any { q ->
+            p.titles.count { it in q.titles } >= 0.6 * minOf(p.titles.size, q.titles.size)
+        }
+        fun top(map: Map<Int, Person>, n: Int): List<Person> {
+            val ranked = map.values.sortedWith(compareByDescending<Person> { it.titles.size }.thenByDescending { it.weight })
+            val floor = if (ranked.any { it.titles.size >= PEOPLE_MIN_TITLES }) PEOPLE_MIN_TITLES else 2
+            val out = mutableListOf<Person>()
+            for (p in ranked) {
+                if (out.size >= n || p.titles.size < floor) break
+                if (overlaps(p)) continue
+                out += p
+                chosen += p
+            }
+            return out
+        }
+        val picked = top(directors, PEOPLE_DIRECTOR_ROWS) + top(actors, PEOPLE_ACTOR_ROWS)
+        log.i {
+            "People rows: ${directors.size} directors, ${actors.size} actors across ${weighed.size} seeds; picked " +
+                picked.joinToString { "${it.lead.name} (${it.titles.size})" }
+        }
+        return coroutineScope {
+            picked.map { person ->
+                async {
+                    val lead = person.lead
+                    val works = runCatching { TmdbMetadataService.fetchPersonWorks(lead.id, lead.isDirector) }
+                        .getOrDefault(emptyList())
+                        .filterNot { "${if (it.isTv) "tv" else "movie"}:${it.id}" in seedKeys }
+                    val items = works.toRowItems(filters)
+                    if (items.size < MIN_ROW_ITEMS) return@async null
+                    DiscoverRecommendationRow(
+                        key = "$PEOPLE_ROW_KEY_PREFIX${lead.id}:${lead.isDirector}",
+                        title = if (lead.isDirector) "More from ${lead.name}" else "More with ${lead.name}",
+                        items = items,
+                        entryId = DiscoverRowFamily.People.entryId,
+                    )
+                }
+            }.awaitAll().filterNotNull()
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Not interested
+    // ---------------------------------------------------------------------------------------
+
+    /** The active profile's set, re-read when the profile changes (the storage key is profile-scoped). */
+    @kotlin.concurrent.Volatile
+    private var notInterestedCache: Pair<Any?, Set<String>>? = null
+
+    private fun notInterestedKeys(): Set<String> {
+        val profile = ProfileRepository.activeProfileId
+        notInterestedCache?.takeIf { it.first == profile }?.let { return it.second }
+        return DiscoverNotInterestedStorage.load().also { notInterestedCache = profile to it }
+    }
+
+    private fun notInterestedKey(item: MetaPreview): String = "${item.type.lowercase()}:${item.id}"
+
+    /** Whether [item] sits in a generated Discover row, where "Not interested" is offered. */
+    fun canMarkNotInterested(item: MetaPreview): Boolean {
+        val key = notInterestedKey(item)
+        return _uiState.value.rows.any { row ->
+            !row.isPlaceholder &&
+                row.entryId != DiscoverRowFamily.Finish.entryId &&
+                importedDiscoverRowId(row.entryId) == null &&
+                row.items.any { notInterestedKey(it) == key }
+        }
+    }
+
+    /**
+     * "Not interested": the title leaves every Discover row at once and is never suggested again
+     * on this profile (as on the tracker site's Recommended page).
+     */
+    fun markNotInterested(item: MetaPreview) {
+        val key = notInterestedKey(item)
+        val next = notInterestedKeys() + key
+        notInterestedCache = ProfileRepository.activeProfileId to next
+        DiscoverNotInterestedStorage.save(next)
+        val state = _uiState.value
+        _uiState.value = state.copy(
+            rows = state.rows.map { row ->
+                if (row.entryId == DiscoverRowFamily.Finish.entryId) row
+                else row.copy(items = row.items.filterNot { notInterestedKey(it) == key })
+            },
         )
     }
 
@@ -1042,6 +1294,8 @@ object DiscoverRecommendationsRepository {
         val hideWatched: Boolean,
         /** Media type → TMDB genre ids the user has excluded. */
         val excludedGenreIds: Map<String, Set<Int>>,
+        /** Titles marked "Not interested", as [notInterestedKey]s. Never shown again. */
+        val notInterested: Set<String> = emptySet(),
     )
 
     /**
@@ -1064,6 +1318,7 @@ object DiscoverRecommendationsRepository {
                 excluded.isNotEmpty() && result.genreIds.any { it in excluded }
             }
             .map { it.toMetaPreview() }
+            .filterNot { item -> notInterestedKey(item) in filters.notInterested }
             .filter { item ->
                 // Only catches TMDB-keyed history; the `tt…` majority is resolved after publish.
                 !filters.hideWatched ||
@@ -1294,6 +1549,9 @@ object DiscoverRecommendationsRepository {
         settings.discoverFinishIdleDays,
         settings.discoverMoreLikeFavouritesEnabled,
         settings.discoverHiddenGemsEnabled,
+        settings.discoverTopPicksEnabled,
+        settings.discoverPeopleRowsEnabled,
+        notInterestedKeys().size,
         settings.discoverTrendingGenreRows,
         settings.discoverExcludedGenres.sorted().joinToString(","),
         settings.hideUnreleasedContent,
@@ -1309,6 +1567,17 @@ object DiscoverRecommendationsRepository {
     const val FINISH_ROW_KEY = "discover:finish"
     const val FAVOURITES_ROW_KEY = "discover:favourites"
     const val HIDDEN_GEMS_ROW_KEY = "discover:gems"
+    const val TOP_PICKS_ROW_KEY = "discover:top_picks"
+    const val PEOPLE_ROW_KEY_PREFIX = "discover:people:"
+    /** History titles weighed for Top picks and the people rows, and how many are resolved to find them. */
+    private const val TASTE_SEEDS = 40
+    private const val TASTE_CANDIDATES = 80
+    private const val TOP_PICKS_POSITIVE_SEEDS = 30
+    private const val TOP_PICKS_NEGATIVE_SEEDS = 10
+    private const val PEOPLE_MIN_TITLES = 3
+    private const val PEOPLE_DIRECTOR_ROWS = 2
+    private const val PEOPLE_ACTOR_ROWS = 3
+    private const val PEOPLE_ROWS = PEOPLE_DIRECTOR_ROWS + PEOPLE_ACTOR_ROWS
     const val TRENDING_ROW_KEY_PREFIX = "discover:trending:"
     const val CUSTOM_ROW_KEY_PREFIX = "discover:custom:"
 

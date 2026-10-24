@@ -2,6 +2,8 @@ package com.nuvio.app.features.search
 
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.home.HomeCatalogSection
+import com.nuvio.app.features.discover.TmdbBrowseOptions
+import com.nuvio.app.features.discover.TmdbBrowseQuery
 
 enum class SearchEmptyStateReason {
     NoActiveAddons,
@@ -35,7 +37,27 @@ data class DiscoverCatalogOption(
     val genreOptions: List<String> = emptyList(),
     val genreRequired: Boolean = false,
     val supportsPagination: Boolean = false,
-)
+) {
+    /** Which Type entry the catalog sits under — see [discoverTypeGroup]. Requests keep [type]. */
+    val typeGroup: String
+        get() = discoverTypeGroup(type)
+}
+
+/**
+ * Groups catalog types that mean the same thing under one Type entry. Addons may relabel types —
+ * AIOMetadata registers its catalogs as "Films" and "TV" — while their items are ordinary films and
+ * shows, so those join "movie" and "series". Lowercase `tv` is left alone: in the Stremio addon
+ * protocol that is the live-TV channel type, not television series.
+ */
+internal fun discoverTypeGroup(type: String): String {
+    val lower = type.trim().lowercase()
+    return when {
+        lower in setOf("movie", "movies", "film", "films") -> "movie"
+        lower in setOf("series", "show", "shows") -> "series"
+        lower == "tv" && type.trim() != "tv" -> "series"
+        else -> type
+    }
+}
 
 internal fun discoverCatalogDisplayLabels(catalogs: List<DiscoverCatalogOption>): List<String> =
     catalogs.mapIndexed { index, catalog ->
@@ -74,9 +96,16 @@ data class DiscoverUiState(
     val paginates: Boolean = false,
     val emptyStateReason: DiscoverEmptyStateReason? = null,
     val errorMessage: String? = null,
+    // The built-in TMDB browser (ported from Nuvio Tracker) in place of an addon catalog. While it
+    // is selected, [nextSkip] is the next TMDB page rather than an addon skip.
+    val tmdbSelected: Boolean = false,
+    val tmdbAvailable: Boolean = false,
+    val tmdbQuery: TmdbBrowseQuery = TmdbBrowseQuery(),
+    val tmdbTotal: Int = 0,
+    val tmdbOptions: TmdbBrowseOptions = TmdbBrowseOptions(),
 ) {
     val selectedCatalog: DiscoverCatalogOption?
-        get() = catalogOptions.firstOrNull { it.key == selectedCatalogKey }
+        get() = if (tmdbSelected) null else catalogOptions.firstOrNull { it.key == selectedCatalogKey }
 
     val genreOptions: List<String>
         get() = selectedCatalog?.genreOptions.orEmpty()

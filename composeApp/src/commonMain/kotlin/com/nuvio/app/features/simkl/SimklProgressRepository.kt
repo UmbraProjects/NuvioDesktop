@@ -1,6 +1,7 @@
 package com.nuvio.app.features.simkl
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.RawHttpResponse
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
@@ -88,6 +89,7 @@ internal object SimklProgressRepository {
     }
 
     suspend fun refreshNow() {
+        PerfTelemetry.count("SimklProgressRepository.refreshNow")
         if (!SimklAuthRepository.isAuthenticated.value) {
             _uiState.value = SimklProgressUiState(hasLoaded = true)
             return

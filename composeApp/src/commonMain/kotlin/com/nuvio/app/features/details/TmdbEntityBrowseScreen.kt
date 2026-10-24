@@ -68,6 +68,7 @@ fun TmdbEntityBrowseScreen(
     sourceType: String,
     onBack: () -> Unit,
     onOpenMeta: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // The header name TMDB returns can differ from the name the logo carried; keep whichever the
@@ -93,6 +94,7 @@ fun TmdbEntityBrowseScreen(
         },
         onBack = onBack,
         onOpenMeta = onOpenMeta,
+        onPosterLongClick = onPosterLongClick,
         modifier = modifier,
     )
 }
@@ -105,6 +107,7 @@ fun HeroBadgeBrowseScreen(
     sourceType: String,
     onBack: () -> Unit,
     onOpenMeta: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     TmdbRailBrowseScreen(
@@ -114,6 +117,7 @@ fun HeroBadgeBrowseScreen(
         loadNextPage = { rail -> TmdbMetadataService.fetchNextBadgeRailPage(target = target, rail = rail) },
         onBack = onBack,
         onOpenMeta = onOpenMeta,
+        onPosterLongClick = onPosterLongClick,
         modifier = modifier,
     )
 }
@@ -135,6 +139,7 @@ internal fun TmdbRailBrowseScreen(
     loadNextPage: suspend (TmdbEntityRail) -> TmdbEntityRailPageResult,
     onBack: () -> Unit,
     onOpenMeta: (MetaPreview) -> Unit,
+    onPosterLongClick: ((MetaPreview) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var uiState by remember(key) { mutableStateOf<RailBrowseUiState>(RailBrowseUiState.Loading) }
@@ -159,12 +164,18 @@ internal fun TmdbRailBrowseScreen(
         }
     }
 
+    // Crossfade by kind only. Every page load replaces the Success value, and with the value as the
+    // target the crossfade treated each one as a new screen: it rebuilt HomeScreen underneath, and
+    // focus and scroll went back to the first item mid-pagination. The latest state of each kind is
+    // kept so a side that is fading out still has something to draw.
+    val latestByKind = remember(key) { mutableMapOf<kotlin.reflect.KClass<out RailBrowseUiState>, RailBrowseUiState>() }
+    latestByKind[uiState::class] = uiState
     Box(modifier = modifier.fillMaxSize()) {
         Crossfade(
-            targetState = uiState,
+            targetState = uiState::class,
             label = "RailBrowseCrossfade",
-        ) { state ->
-            when (state) {
+        ) { kind ->
+            when (val state = if (uiState::class == kind) uiState else latestByKind[kind] ?: uiState) {
                 is RailBrowseUiState.Loading -> EntityBrowseSkeleton()
                 is RailBrowseUiState.Error -> EntityBrowseError(
                     message = state.message,
@@ -224,6 +235,8 @@ internal fun TmdbRailBrowseScreen(
                             }
                         },
                         onPosterClick = onOpenMeta,
+                        // Right click / long press: without it these pages had no poster menu.
+                        onPosterLongClick = onPosterLongClick,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

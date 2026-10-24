@@ -35,7 +35,13 @@ internal object PackagedBuildInfo {
         }.getOrNull()
         // A packaged run resolves to <install>/app/<jar>; a `gradlew run` launch resolves to a
         // classes directory, where no stamp exists and callers fall back to the version alone.
-        val appDir = codeSource?.let { if (it.isFile) it.parentFile else it } ?: return null
-        return appDir.resolve("build-info.properties").takeIf(File::isFile)
+        codeSource?.let { if (it.isFile) it.parentFile else it }
+            ?.resolve("build-info.properties")?.takeIf(File::isFile)
+            ?.let { return it }
+        // A native image has no code source; it lays the install out like jpackage and sets
+        // jpackage.app-path (NativeImageSupport), so the stamp is at <install>/app/.
+        return System.getProperty("jpackage.app-path")?.takeIf(String::isNotBlank)
+            ?.let { File(it).parentFile?.resolve("app")?.resolve("build-info.properties") }
+            ?.takeIf(File::isFile)
     }
 }

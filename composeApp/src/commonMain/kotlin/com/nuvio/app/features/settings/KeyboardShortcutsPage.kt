@@ -38,7 +38,9 @@ import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.AppShortcutRebindDialog
 import com.nuvio.app.features.player.PlayerShortcutRebindDialog
 import com.nuvio.app.features.player.ensurePlayerShortcutBindingsLoaded
+import com.nuvio.app.features.player.playerEscWindowedFirstState
 import com.nuvio.app.features.player.playerShortcutKeyLabels
+import com.nuvio.app.features.player.setPlayerEscWindowedFirst
 import com.nuvio.app.features.player.resetPlayerShortcuts
 import com.nuvio.app.features.player.appShortcutKeyLabels
 import com.nuvio.app.features.player.ensureAppShortcutBindingsLoaded
@@ -52,6 +54,8 @@ import com.nuvio.app.features.input.gamepadMappingRows
 import com.nuvio.app.features.input.gamepadRepeatIntervalRange
 import com.nuvio.app.features.input.gamepadRepeatIntervalState
 import com.nuvio.app.features.input.gamepadSupported
+import com.nuvio.app.features.input.mouseKeyboardState
+import com.nuvio.app.features.input.setMouseKeyboard
 import com.nuvio.app.features.input.resetGamepadSettings
 import com.nuvio.app.features.input.setGamepadDeadZone
 import com.nuvio.app.features.input.setGamepadEnabled
@@ -214,9 +218,10 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
     item(key = "keyboard-shortcuts-player") {
         LaunchedEffect(Unit) { ensurePlayerShortcutBindingsLoaded() }
         val labels by playerShortcutKeyLabels().collectAsState()
+        val escWindowedFirst by playerEscWindowedFirstState().collectAsState()
         var rebinding by remember { mutableStateOf<PlayerShortcutAction?>(null) }
         Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s18)) {
-            playerRowSections.forEach { (title, specs) ->
+            playerRowSections.forEachIndexed { sectionIndex, (title, specs) ->
                 val sectionActions = specs.mapNotNull { it.action }
                 SettingsSection(
                     title = title,
@@ -230,6 +235,16 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
                                 shortcut = spec.toShortcut(labels),
                                 isTablet = isTablet,
                                 onRebind = spec.action?.let { action -> { rebinding = action } },
+                            )
+                        }
+                        if (sectionIndex == 0) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = "Escape goes windowed first",
+                                description = "In fullscreen playback, Escape leaves fullscreen instead of closing the player. Press it again while windowed to close.",
+                                checked = escWindowedFirst,
+                                isTablet = isTablet,
+                                onCheckedChange = ::setPlayerEscWindowedFirst,
                             )
                         }
                     }
@@ -331,9 +346,25 @@ private fun GamepadSection(isTablet: Boolean) {
     val connected by gamepadConnectedState().collectAsState()
     val deadZone by gamepadDeadZoneState().collectAsState()
     val repeatInterval by gamepadRepeatIntervalState().collectAsState()
+    val mouseKeyboard by mouseKeyboardState().collectAsState()
     val rows = remember { gamepadMappingRows() }
 
     Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s18)) {
+        // Its own section rather than a Controller row: it works with no controller at all, and
+        // the Controller rows grey out while gamepad control is off.
+        SettingsSection(title = "On-screen keyboard", isTablet = isTablet) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Show for mouse",
+                    description = "Open the on-screen keyboard whenever a text box is clicked, so you can " +
+                        "search by clicking letters — for a wireless mouse on the couch with no keyboard.",
+                    checked = mouseKeyboard,
+                    isTablet = isTablet,
+                    onCheckedChange = { setMouseKeyboard(it) },
+                )
+            }
+        }
+
         SettingsSection(
             title = "Controller",
             isTablet = isTablet,

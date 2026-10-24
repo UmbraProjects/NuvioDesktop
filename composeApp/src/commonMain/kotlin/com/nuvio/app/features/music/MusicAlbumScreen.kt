@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.library.rememberCdArtFor
 
 /**
  * An album: cover, a Play/Shuffle pair, the Audio/Video choice, and the track list.
@@ -101,7 +102,7 @@ private fun AlbumContent(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
     ) {
-        item { AlbumHeader(album, onArtistClick) }
+        item { AlbumHeader(album, spinning = loaded && state.isPlaying, onArtistClick = onArtistClick) }
         item {
             Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -168,8 +169,10 @@ private fun AlbumContent(
 }
 
 @Composable
-private fun AlbumHeader(album: MusicAlbum, onArtistClick: (String) -> Unit) {
+private fun AlbumHeader(album: MusicAlbum, spinning: Boolean, onArtistClick: (String) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
+    // CD art is only known for releases in the music library; any other album gets a drawn disc.
+    val cdArt = rememberCdArtFor(album.browseId)
     val artistId = album.artists.firstOrNull()?.browseId
     val minutes = album.tracks.sumOf { it.durationSeconds } / 60
     val meta = listOfNotNull(
@@ -179,7 +182,7 @@ private fun AlbumHeader(album: MusicAlbum, onArtistClick: (String) -> Unit) {
         "$minutes min".takeIf { minutes > 0 },
     ).joinToString(" · ")
     Row(verticalAlignment = Alignment.CenterVertically) {
-        MusicCover(album.thumbnailUrl, album.title, size = 160.dp)
+        MusicCdSleeve(album.thumbnailUrl, cdArt, spinning = spinning, size = 160.dp, peek = 0.34f)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(

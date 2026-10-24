@@ -2,6 +2,8 @@ package com.nuvio.app.features.mdblist
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.storage.CoalescingCachePersister
+import com.nuvio.app.core.storage.decodeJsonMap
+import com.nuvio.app.core.storage.encodeJsonMap
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.library.LibraryClock
@@ -12,8 +14,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 object HeroCastMetadataService {
@@ -88,7 +88,7 @@ object HeroCastMetadataService {
      * Hero enrichment adds one of these per title, and writing the whole cache each time cost ~23 ms
      * on the UI thread. Batched instead; see [CoalescingCachePersister].
      */
-    private val persister = CoalescingCachePersister(tag = "heroCast") {
+    private val persister = CoalescingCachePersister(tag = "heroCast", writeDelayMs = MDBLIST_CACHE_WRITE_DELAY_MS) {
         val snapshot = cacheMutex.withLock { ensureCacheLoaded().toMap() }
         persistCache(snapshot)
     }
@@ -194,26 +194,26 @@ object HeroCastMetadataService {
         cache?.let { return it }
         val loaded = mutableMapOf<String, CachedCast>()
         runCatching {
-            MdbListRatingsCacheStorage.loadCast()?.let { raw ->
-                json.decodeFromString<Map<String, CachedCastDto>>(raw).forEach { (key, dto) ->
-                    loaded[key] = CachedCast(
-                        cast = dto.cast.map { person ->
-                            HeroCastMember(
-                                name = person.name,
-                                photo = person.photo,
-                                role = person.role,
-                                tmdbId = person.tmdbId,
-                            )
-                        },
-                        expiresAtMs = dto.expiresAtMs,
-                    )
-                }
+            MdbListRatingsCacheStorage.readCast { input ->
+                json.decodeJsonMap(input, CachedCastDto.serializer())
+            }?.forEach { (key, dto) ->
+                loaded[key] = CachedCast(
+                    cast = dto.cast.map { person ->
+                        HeroCastMember(
+                            name = person.name,
+                            photo = person.photo,
+                            role = person.role,
+                            tmdbId = person.tmdbId,
+                        )
+                    },
+                    expiresAtMs = dto.expiresAtMs,
+                )
             }
         }.onFailure { error ->
             log.w { "Failed to load hero cast cache: ${error.message}" }
         }
         // Prune superseded key schemes (older CACHE_VERSIONs are never looked up again) and expired
-        // entries so the shared cache file doesn't grow unbounded. See MdbListMetadataService for the
+        // entries so the cache file doesn't grow unbounded. See MdbListMetadataService for the
         // full rationale; the slimmed map is written back on the next persistCache.
         val now = LibraryClock.nowEpochMs()
         val currentPrefix = "$CACHE_VERSION:"
@@ -223,20 +223,23 @@ object HeroCastMetadataService {
     }
 
     private fun persistCache(entries: Map<String, CachedCast>) {
-        val dto = entries.mapValues { (_, entry) ->
-            CachedCastDto(
-                cast = entry.cast.map { person ->
-                    HeroCastMemberDto(
-                        name = person.name,
-                        photo = person.photo,
-                        role = person.role,
-                        tmdbId = person.tmdbId,
+        runCatching {
+            MdbListRatingsCacheStorage.writeCast { output ->
+                json.encodeJsonMap(output, entries, CachedCastDto.serializer()) { entry ->
+                    CachedCastDto(
+                        cast = entry.cast.map { person ->
+                            HeroCastMemberDto(
+                                name = person.name,
+                                photo = person.photo,
+                                role = person.role,
+                                tmdbId = person.tmdbId,
+                            )
+                        },
+                        expiresAtMs = entry.expiresAtMs,
                     )
-                },
-                expiresAtMs = entry.expiresAtMs,
-            )
+                }
+            }
         }
-        runCatching { MdbListRatingsCacheStorage.saveCast(json.encodeToString(dto)) }
             .onFailure { error -> log.w { "Failed to save hero cast cache: ${error.message}" } }
     }
 }

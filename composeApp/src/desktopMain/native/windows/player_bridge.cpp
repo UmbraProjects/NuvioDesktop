@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cwctype>
 #include <deque>
 #include <functional>
@@ -76,6 +77,26 @@ typedef ABI::Windows::Foundation::ITypedEventHandler<
 // consuming the message stops it reaching the shell, so SMTC can't also fire for the same press.
 constexpr UINT_PTR kMediaKeySubclassId = 1;
 
+// SetWindowSubclass/RemoveWindowSubclass only work from the thread that owns the window, and the
+// top-level window belongs to AWT's toolkit thread while the player runs on its own UI thread —
+// so called directly they failed on every playback and the layer above never existed. The
+// request is instead run on the owning thread: a short-lived WH_CALLWNDPROC hook on that thread
+// picks up a private message sent to the window. The request lives in a sequence-numbered slot
+// so a send that timed out can't be acted on late.
+struct MediaKeySubclassRequest {
+    UINT64 sequence = 0;
+    bool install = false;
+    HWND window = nullptr;
+    DWORD_PTR refData = 0;
+    bool done = false;
+    BOOL result = FALSE;
+    DWORD error = 0;
+};
+std::mutex gMediaKeySubclassCallMutex;
+std::mutex gMediaKeySubclassRequestMutex;
+MediaKeySubclassRequest gMediaKeySubclassRequest;
+UINT64 gMediaKeySubclassSequence = 0;
+
 // ISystemMediaTransportControlsInterop::GetForWindow returns a per-window SINGLETON, and the
 // WM_APPCOMMAND subclass is likewise keyed by (window, id). Source failover and binge autoplay
 // tear down and recreate players every few seconds against the same top-level window, so a
@@ -103,7 +124,10 @@ typedef enum mpv_format {
     MPV_FORMAT_NODE = 6,
     MPV_FORMAT_NODE_ARRAY = 7,
     MPV_FORMAT_NODE_MAP = 8,
+    MPV_FORMAT_BYTE_ARRAY = 9,
 } mpv_format;
+
+typedef struct mpv_byte_array { void *data; size_t size; } mpv_byte_array;
 
 // ABI declarations from libmpv client.h; node contents are freed by libmpv.
 typedef struct mpv_node {
@@ -902,6 +926,73 @@ std::string hresultMessage(const char *operation, HRESULT hr) {
     return builder.str();
 }
 
+// Auto crop: how much of each edge of one captured frame is black bar, as fractions of the frame.
+struct AutoCropBars {
+    double top = 0.0, bottom = 0.0, left = 0.0, right = 0.0;
+};
+
+// Finds the black bars baked into one packed frame from screenshot-raw (bytesPerPixel 4 for
+// bgr0/rgb0-style formats, 8 for rgba64). Each edge is walked inwards until a row/column has
+// more than a couple of bright samples (logos and noise are tolerated). Bars are made symmetric
+// (only what both sides agree on is trimmed) and hairlines are dropped. Returns false when the
+// frame cannot be judged, e.g. a fade to black.
+static bool detectAutoCropBars(const uint8_t *data, int64_t width, int64_t height, int64_t stride,
+                               int bytesPerPixel, AutoCropBars &out) {
+    constexpr int threshold = 16;  // 0-255; at or below counts as black
+    constexpr int samples = 64;    // probes per row/column, across the middle 90% of the other axis
+    constexpr int stray = 2;       // bright probes tolerated per row/column
+    constexpr double minimumBar = 0.012;
+    if (!data || width < 64 || height < 64 || stride < width * bytesPerPixel) return false;
+
+    auto bright = [&](int64_t x, int64_t y) {
+        const uint8_t *pixel = data + y * stride + x * bytesPerPixel;
+        if (bytesPerPixel == 8) {
+            // 16-bit little-endian channels: the high byte is enough at this threshold.
+            return pixel[1] > threshold || pixel[3] > threshold || pixel[5] > threshold;
+        }
+        // Channel order doesn't matter: any of the three colour bytes being bright is picture.
+        return pixel[0] > threshold || pixel[1] > threshold || pixel[2] > threshold;
+    };
+    auto probe = [](int64_t span, int index) {
+        return (int64_t)(span * (0.05 + 0.90 * (index + 0.5) / samples));
+    };
+    auto rowHasPicture = [&](int64_t y) {
+        int hits = 0;
+        for (int i = 0; i < samples; ++i) {
+            if (bright(probe(width, i), y) && ++hits > stray) return true;
+        }
+        return false;
+    };
+    auto columnHasPicture = [&](int64_t x, int64_t top, int64_t bottom) {
+        int hits = 0;
+        const int64_t span = bottom - top;
+        for (int i = 0; i < samples; ++i) {
+            const int64_t y = top + (int64_t)(span * (i + 0.5) / samples);
+            if (bright(x, y) && ++hits > stray) return true;
+        }
+        return false;
+    };
+
+    int64_t top = 0;
+    while (top < height && !rowHasPicture(top)) ++top;
+    if (top >= height) return false;
+    int64_t bottom = height;
+    while (bottom > top && !rowHasPicture(bottom - 1)) --bottom;
+    int64_t left = 0;
+    while (left < width && !columnHasPicture(left, top, bottom)) ++left;
+    if (left >= width) return false;
+    int64_t right = width;
+    while (right > left && !columnHasPicture(right - 1, top, bottom)) --right;
+
+    double vertical = std::min((double)top / height, (double)(height - bottom) / height);
+    double horizontal = std::min((double)left / width, (double)(width - right) / width);
+    if (vertical < minimumBar) vertical = 0.0;
+    if (horizontal < minimumBar) horizontal = 0.0;
+    out.top = out.bottom = vertical;
+    out.left = out.right = horizontal;
+    return true;
+}
+
 struct MpvApi {
     using mpv_create_fn = mpv_handle *(*)();
     using mpv_initialize_fn = int (*)(mpv_handle *);
@@ -912,6 +1003,7 @@ struct MpvApi {
     using mpv_set_property_string_fn = int (*)(mpv_handle *, const char *, const char *);
     using mpv_get_property_fn = int (*)(mpv_handle *, const char *, mpv_format, void *);
     using mpv_command_fn = int (*)(mpv_handle *, const char **);
+    using mpv_command_node_fn = int (*)(mpv_handle *, mpv_node *, mpv_node *);
     using mpv_error_string_fn = const char *(*)(int);
     using mpv_free_fn = void (*)(void *);
     using mpv_free_node_contents_fn = void (*)(mpv_node *);
@@ -933,6 +1025,7 @@ struct MpvApi {
     mpv_set_property_string_fn setPropertyString = nullptr;
     mpv_get_property_fn getProperty = nullptr;
     mpv_command_fn command = nullptr;
+    mpv_command_node_fn commandNode = nullptr;
     mpv_error_string_fn errorString = nullptr;
     mpv_free_fn freeValue = nullptr;
     mpv_free_node_contents_fn freeNodeContents = nullptr;
@@ -1020,6 +1113,7 @@ struct MpvApi {
         setPropertyString = loadSymbol<mpv_set_property_string_fn>("mpv_set_property_string");
         getProperty = loadSymbol<mpv_get_property_fn>("mpv_get_property");
         command = loadSymbol<mpv_command_fn>("mpv_command");
+        commandNode = loadSymbol<mpv_command_node_fn>("mpv_command_node");
         errorString = loadSymbol<mpv_error_string_fn>("mpv_error_string");
         freeValue = loadSymbol<mpv_free_fn>("mpv_free");
         freeNodeContents = loadSymbol<mpv_free_node_contents_fn>("mpv_free_node_contents");
@@ -1061,6 +1155,104 @@ LRESULT CALLBACK mediaKeyRootSubclassProc(
     UINT_PTR idSubclass,
     DWORD_PTR refData
 );
+
+// Runs on the window's owning thread. Only acts on the request the sender is still waiting for.
+void runMediaKeySubclassRequest(UINT64 sequence) {
+    std::lock_guard<std::mutex> lock(gMediaKeySubclassRequestMutex);
+    MediaKeySubclassRequest &request = gMediaKeySubclassRequest;
+    if (request.sequence != sequence || request.done) return;
+    SetLastError(0);
+    request.result = request.install
+        ? SetWindowSubclass(request.window, mediaKeyRootSubclassProc, kMediaKeySubclassId, request.refData)
+        : RemoveWindowSubclass(request.window, mediaKeyRootSubclassProc, kMediaKeySubclassId);
+    request.error = request.result ? 0 : GetLastError();
+    request.done = true;
+}
+
+UINT mediaKeySubclassMessage() {
+    static const UINT message = RegisterWindowMessageW(L"NuvioMediaKeySubclassRequest");
+    return message;
+}
+
+LRESULT CALLBACK mediaKeySubclassMarshalHook(int code, WPARAM wParam, LPARAM lParam) {
+    if (code == HC_ACTION && lParam) {
+        const auto *sent = reinterpret_cast<const CWPSTRUCT *>(lParam);
+        if (sent->message != 0 && sent->message == mediaKeySubclassMessage()) {
+            runMediaKeySubclassRequest(static_cast<UINT64>(sent->lParam));
+        }
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
+// Installs or removes the media-key subclass on `window` from its owning thread. Returns the
+// SetWindowSubclass/RemoveWindowSubclass result; on failure `detail` says which step failed.
+bool applyMediaKeySubclass(HWND window, bool install, DWORD_PTR refData, std::string &detail) {
+    if (!window || !IsWindow(window)) {
+        detail = "window gone";
+        return false;
+    }
+    // One request at a time: the slot below is shared, and players on different UI threads can
+    // overlap during failover. Held for at most the send timeout.
+    std::lock_guard<std::mutex> callLock(gMediaKeySubclassCallMutex);
+    const DWORD ownerThread = GetWindowThreadProcessId(window, nullptr);
+    UINT64 sequence = 0;
+    {
+        std::lock_guard<std::mutex> lock(gMediaKeySubclassRequestMutex);
+        sequence = ++gMediaKeySubclassSequence;
+        gMediaKeySubclassRequest = MediaKeySubclassRequest{};
+        gMediaKeySubclassRequest.sequence = sequence;
+        gMediaKeySubclassRequest.install = install;
+        gMediaKeySubclassRequest.window = window;
+        gMediaKeySubclassRequest.refData = refData;
+    }
+
+    if (ownerThread == GetCurrentThreadId()) {
+        runMediaKeySubclassRequest(sequence);
+    } else {
+        const UINT message = mediaKeySubclassMessage();
+        HHOOK hook = message ? SetWindowsHookExW(WH_CALLWNDPROC, mediaKeySubclassMarshalHook, gModule, ownerThread) : nullptr;
+        if (!hook) {
+            detail = "hook failed, error " + std::to_string(GetLastError()) +
+                " (owner thread " + std::to_string(ownerThread) + ")";
+            std::lock_guard<std::mutex> lock(gMediaKeySubclassRequestMutex);
+            gMediaKeySubclassRequest.sequence = 0;
+            return false;
+        }
+        // Bounded and abort-if-hung: during shutdown the toolkit thread may itself be waiting on
+        // this player, and a missing media-key layer is better than a stalled teardown. The
+        // default (non-SMTO_BLOCK) wait still services messages sent to this thread meanwhile.
+        DWORD_PTR ignored = 0;
+        const LRESULT sent = SendMessageTimeoutW(
+            window,
+            message,
+            0,
+            static_cast<LPARAM>(sequence),
+            SMTO_ABORTIFHUNG,
+            1000,
+            &ignored
+        );
+        const DWORD sendError = sent ? 0 : GetLastError();
+        UnhookWindowsHookEx(hook);
+        if (!sent) {
+            detail = "owner thread did not answer, error " + std::to_string(sendError) +
+                " (owner thread " + std::to_string(ownerThread) + ")";
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(gMediaKeySubclassRequestMutex);
+    const MediaKeySubclassRequest request = gMediaKeySubclassRequest;
+    // Invalidate, so a late delivery of a timed-out send is a no-op.
+    gMediaKeySubclassRequest.sequence = 0;
+    if (!request.done) {
+        if (detail.empty()) detail = "request never ran (owner thread " + std::to_string(ownerThread) + ")";
+        return false;
+    }
+    if (!request.result) {
+        detail = "error " + std::to_string(request.error) + " (owner thread " + std::to_string(ownerThread) + ")";
+        return false;
+    }
+    return true;
+}
 
 std::wstring currentExecutablePath() {
     wchar_t buffer[32768] = {};
@@ -1347,6 +1539,9 @@ public:
         eventSink = sink;
         eventMethod = method;
         hostHwnd = host;
+        // Kept apart from hostHwnd: by the time a trailer is torn down its AWT canvas may already
+        // be gone, and the frame is what focus has to go back to (see cleanupUiResources).
+        hostTopLevelHwnd = host ? GetAncestor(host, GA_ROOT) : nullptr;
         thumbnailSourceUrl = sourceUrl;
         thumbnailHeaderLines = headerLines;
         // Set before spawning the UI/mpv thread so it is visible there. When present
@@ -1361,6 +1556,13 @@ public:
         initialRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled;
         initialRtxHdrEnabled = nvidiaRtxHdrEnabled;
         initialAnimeContent = isAnimeContent;
+        initialAnimeLayer = isAnimeContent;
+        initialAnimeTrueHdr = false;
+        for (const auto &option : extraMpvOptions) {
+            if (option == "@nuvio-anime-layer=yes") initialAnimeLayer = true;
+            else if (option == "@nuvio-anime-layer=no") initialAnimeLayer = false;
+            else if (option == "@nuvio-anime-true-hdr=yes") initialAnimeTrueHdr = true;
+        }
         // Do not install VapourSynth as an mpv option during probing. It is applied synchronously
         // when FILE_LOADED arrives, before the first PLAYBACK_RESTART can reach the app.
         deferredAnimeSvpFilter = animeSvpFilter;
@@ -1400,6 +1602,8 @@ public:
             " initialProgress=" + std::to_string(initialProgressFraction) +
             " rtxVsr=" + (nvidiaRtxSuperResolutionEnabled ? "yes" : "no") +
             " rtxHdr=" + (nvidiaRtxHdrEnabled ? "yes" : "no") +
+            " anime=" + (isAnimeContent ? "yes" : "no") +
+            " animeLayer=" + (initialAnimeLayer ? "yes" : "no") +
             " animeSvp=" + (animeSvpFilter.empty() ? "no" : "yes")
         );
 
@@ -1425,6 +1629,11 @@ public:
         nuvioBridgeLog("initialize complete");
     }
 
+    ~WindowsMpvWebPlayer() {
+        // shutdown() normally stopped it already; never leave a joinable thread behind.
+        stopMpvCalls();
+    }
+
     void shutdown() {
         if (shuttingDown.exchange(true)) {
             return;
@@ -1432,6 +1641,8 @@ public:
 
         nuvioBridgeLog("shutdown begin");
         stopping.store(true);
+        // Before the handle can go away below. A call already running finishes first.
+        stopMpvCalls();
         {
             // Serialize against lazy worker creation so a request cannot create a joinable thread
             // after shutdown has already checked it.
@@ -1594,10 +1805,16 @@ public:
         }
         int flag = paused ? 1 : 0;
         mpvApi().setProperty(mpv, "pause", MPV_FORMAT_FLAG, &flag);
+        // The queueing JNI call mirrored the requested value; record what was actually applied.
+        // A gate above may have kept mpv paused, and mpv emits no change event for a write that
+        // leaves the value as it was, so the mirror would otherwise keep the request.
+        setMirroredNumber("pause", flag);
+        nuvioBridgeLog(std::string("pause write requested=") + (requestedPlay ? "play" : "pause") +
+            " applied=" + (paused ? "pause" : "play"));
     }
 
     bool isPaused() {
-        return flagProperty("pause", true);
+        return mirroredFlag("pause", true);
     }
 
     // Keep seeks at least this far from the end. With keep-open=yes, landing
@@ -2007,7 +2224,9 @@ public:
         const bool requested = containsVapourSynthFilter(requestedVideoFilters);
         const bool bypass = requested && (speed >= svpSpeedBypassThreshold ||
             (svpBypassedForSpeed && speed > svpSpeedRestoreThreshold));
-        const std::string filters = bypass ? removeVapourSynthFilters(requestedVideoFilters) : requestedVideoFilters;
+        const std::string filters = !bypass ? requestedVideoFilters
+            : !svpBypassVideoFilters.empty() ? svpBypassVideoFilters
+            : removeVapourSynthFilters(requestedVideoFilters);
         const bool enabled = containsVapourSynthFilter(filters);
         if (svpGraphInitInFlight && filters != appliedVideoFilters) {
             // Keep the complete transition pending, including decoder and timing options.
@@ -2297,8 +2516,14 @@ public:
         }
         const double target = clampSeekSecondsLocked(base + (double)offsetMs / 1000.0);
         // Steps that follow a recent seek are folded into one trailing request; the first step
-        // of a burst (and any isolated press) still goes out immediately.
-        if (lastSeekIssuedAt != std::chrono::steady_clock::time_point{} &&
+        // of a burst (and any isolated press) still goes out immediately. Coalescing only exists
+        // to spare remote hosts a burst of range requests, so it is skipped for local files and
+        // for forward steps that land inside what the demuxer has already cached.
+        const double cachedUntil = mirroredDouble("demuxer-cache-time", -1.0);
+        const bool seekStaysOffNetwork = sourceIsLocalFile.load() ||
+            (target >= base && cachedUntil > 0.0 && target <= cachedUntil);
+        if (!seekStaysOffNetwork &&
+            lastSeekIssuedAt != std::chrono::steady_clock::time_point{} &&
             now - lastSeekIssuedAt < seekCoalesceWindow) {
             if (deferredSeekTargetSeconds < 0.0) deferredSeekStartedAt = now;
             deferredSeekTargetSeconds = target;
@@ -2333,7 +2558,7 @@ public:
     }
 
     double speed() {
-        return doubleProperty("speed", 1.0);
+        return mirroredDouble("speed", 1.0);
     }
 
     void setVolume(double volume) {
@@ -2346,7 +2571,7 @@ public:
     }
 
     double volume() {
-        return doubleProperty("volume", 100.0);
+        return mirroredDouble("volume", 100.0);
     }
 
     void setMute(bool muted) {
@@ -2357,10 +2582,27 @@ public:
     }
 
     bool isMuted() {
-        return flagProperty("mute", false);
+        return mirroredFlag("mute", false);
     }
 
     void setResizeMode(int mode) {
+        // Runs on the mpv call thread, which also owns the auto crop state.
+        if (mode == 3) {
+            // Zoom's fill, applied to the frame once video-crop has trimmed its bars.
+            setStringProperty("keepaspect", "yes");
+            setStringProperty("panscan", "1.0");
+            setStringProperty("video-unscaled", "no");
+            if (!autoCropEnabled.exchange(true)) {
+                resetAutoCropState();
+                autoCropNextCheckAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+                nuvioMpvLogAppend("[nuvio] auto crop enabled\n");
+            }
+            return;
+        }
+        if (autoCropEnabled.exchange(false)) {
+            resetAutoCropState();
+            nuvioMpvLogAppend("[nuvio] auto crop disabled\n");
+        }
         switch (mode) {
             case 1: // Fill (stretch)
                 setStringProperty("keepaspect", "no");
@@ -2380,21 +2622,301 @@ public:
         }
     }
 
+    // ---- Auto crop (see the state block's comment). mpv call thread unless noted.
+
+    // Event thread: queues a check once one is due. Cheap enough for every loop tick.
+    void scheduleAutoCropIfDue() {
+        if (!autoCropEnabled.load() || autoCropCheckQueued.load()) return;
+        if (std::chrono::steady_clock::now() < autoCropNextCheckAt.load()) return;
+        autoCropCheckQueued = true;
+        postMpvCall([this]() {
+            runAutoCropCheck();
+            autoCropCheckQueued = false;
+        });
+    }
+
+    // Event thread: a new file starts learning from scratch (video-crop is a global option, so a
+    // crop learned for the previous file would otherwise carry over).
+    void onAutoCropFileLoaded() {
+        postMpvCall([this]() { resetAutoCropState(); });
+        autoCropNextCheckAt = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    }
+
+    // Event thread: after a seek the scene (and, while still learning, the bars) may differ.
+    void onAutoCropPlaybackRestart() {
+        if (!autoCropEnabled.load()) return;
+        const auto soon = std::chrono::steady_clock::now() + std::chrono::milliseconds(700);
+        if (soon < autoCropNextCheckAt.load()) autoCropNextCheckAt = soon;
+    }
+
+    void resetAutoCropState() {
+        autoCropHistory.clear();
+        autoCropAppliedBars = AutoCropBars{};
+        autoCropLearnChecks = 0;
+        autoCropAttempts = 0;
+        autoCropLocked = false;
+        autoCropReferenceAspect = 0.0;
+        autoCropAspectChanges = 0;
+        autoCropVariableAspect = autoCropEnabled.load() && autoCropTaggedImax();
+        if (autoCropVariableAspect) nuvioMpvLogAppend("[nuvio] auto crop: IMAX tag in title, checking continuously\n");
+        if (!autoCropAppliedCrop.empty()) {
+            autoCropAppliedCrop.clear();
+            setAutoCropProperty(std::string());
+        }
+        autoCropAppliedFrameWidth = 0;
+        autoCropAppliedFrameHeight = 0;
+    }
+
+    bool autoCropTaggedImax() {
+        for (const char *name : {"filename", "media-title"}) {
+            std::string value = stringProperty(name, "");
+            std::transform(value.begin(), value.end(), value.begin(),
+                [](unsigned char c) { return (char)std::tolower(c); });
+            if (value.find("imax") != std::string::npos) return true;
+        }
+        return false;
+    }
+
+    // Grabs the current video frame (no OSD/subtitles, after filters) and measures its bars.
+    bool captureAutoCropBars(AutoCropBars &out, int64_t &grabWidth, int64_t &grabHeight) {
+        mpv_handle *handle = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            handle = mpv;
+        }
+        if (!handle || !mpvApi().commandNode) return false;
+        // Used without mpvMutex so the grab doesn't stall every other property read: the handle
+        // is only destroyed in shutdown(), after stopMpvCalls() has joined this thread.
+        char commandName[] = "screenshot-raw";
+        char commandFlags[] = "video";
+        mpv_node items[2];
+        items[0].format = MPV_FORMAT_STRING;
+        items[0].u.string = commandName;
+        items[1].format = MPV_FORMAT_STRING;
+        items[1].u.string = commandFlags;
+        mpv_node_list list{2, items, nullptr};
+        mpv_node args;
+        args.format = MPV_FORMAT_NODE_ARRAY;
+        args.u.list = &list;
+        mpv_node result{};
+        const auto started = std::chrono::steady_clock::now();
+        const int error = mpvApi().commandNode(handle, &args, &result);
+        if (error < 0) {
+            nuvioMpvLogAppend("[nuvio] auto crop: screenshot-raw failed: " + mpvApi().errorText(error) + "\n");
+            return false;
+        }
+        int64_t width = 0, height = 0, stride = 0;
+        std::string format;
+        const uint8_t *data = nullptr;
+        if (result.format == MPV_FORMAT_NODE_MAP && result.u.list) {
+            for (int i = 0; i < result.u.list->num; ++i) {
+                const std::string key = result.u.list->keys[i];
+                const mpv_node &value = result.u.list->values[i];
+                if (key == "w" && value.format == MPV_FORMAT_INT64) width = value.u.int64;
+                else if (key == "h" && value.format == MPV_FORMAT_INT64) height = value.u.int64;
+                else if (key == "stride" && value.format == MPV_FORMAT_INT64) stride = value.u.int64;
+                else if (key == "format" && value.format == MPV_FORMAT_STRING && value.u.string) format = value.u.string;
+                else if (key == "data" && value.format == MPV_FORMAT_BYTE_ARRAY && value.u.ba) {
+                    data = static_cast<const uint8_t *>(static_cast<mpv_byte_array *>(value.u.ba)->data);
+                }
+            }
+        }
+        const int bytesPerPixel = format == "rgba64" ? 8
+            : (format == "bgr0" || format == "bgra" || format == "rgb0" || format == "rgba") ? 4 : 0;
+        bool judged = false;
+        if (bytesPerPixel > 0) {
+            judged = detectAutoCropBars(data, width, height, stride, bytesPerPixel, out);
+        } else {
+            nuvioMpvLogAppend("[nuvio] auto crop: unsupported screenshot format \"" + format + "\"\n");
+        }
+        mpvApi().freeNodeContents(&result);
+        grabWidth = width;
+        grabHeight = height;
+        if (judged && autoCropHistory.empty() && autoCropLearnChecks == 0) {
+            const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - started).count();
+            nuvioMpvLogAppend("[nuvio] auto crop: first frame " + std::to_string(width) + "x" +
+                std::to_string(height) + " " + format + " grabbed in " + std::to_string(elapsedMs) + "ms\n");
+        }
+        return judged;
+    }
+
+    void runAutoCropCheck() {
+        if (!autoCropEnabled.load()) return;
+        const auto now = std::chrono::steady_clock::now();
+        // Once locked, a grab every 30 s that can only loosen the crop: a film that opens up to a
+        // taller picture after the learning minute (IMAX sequences) gets those scenes back uncut,
+        // while a dark or black frame can't tighten anything.
+        const bool loosenOnly = autoCropLocked && !autoCropVariableAspect;
+        autoCropNextCheckAt = now + (loosenOnly ? std::chrono::seconds(30) : std::chrono::seconds(3));
+        if (flagProperty("pause", false) || flagProperty("seeking", false)) {
+            autoCropNextCheckAt = now + std::chrono::seconds(1);
+            return;
+        }
+        // The decoder's display size: unlike dwidth/dheight it isn't changed by video-crop.
+        const double frameWidth = doubleProperty("video-params/dw", 0.0);
+        const double frameHeight = doubleProperty("video-params/dh", 0.0);
+        if (frameWidth <= 0.0 || frameHeight <= 0.0) return;
+
+        // A film too dark to ever give 20 usable frames still stops grabbing after ~2 minutes,
+        // keeping whatever it has applied by then.
+        if (!loosenOnly && !autoCropVariableAspect && ++autoCropAttempts > 40) {
+            autoCropLocked = true;
+            nuvioMpvLogAppend("[nuvio] auto crop: too few usable frames, locked as applied\n");
+            return;
+        }
+        AutoCropBars measured;
+        int64_t grabWidth = 0, grabHeight = 0;
+        if (!captureAutoCropBars(measured, grabWidth, grabHeight)) return; // unjudgeable frame: keep whatever is applied
+        const AutoCropBars bars = autoCropBarsOfFullFrame(measured, grabWidth, grabHeight);
+        const double frameAspect = frameWidth / frameHeight;
+        const double visibleWidth = 1.0 - bars.left - bars.right;
+        const double visibleHeight = 1.0 - bars.top - bars.bottom;
+        const double visibleAspect = frameAspect * visibleWidth / visibleHeight;
+        // Too little picture, or wider than any film: a dark scene rather than bars.
+        if (visibleWidth * visibleHeight < 0.40 || visibleAspect > 2.9) {
+            nuvioMpvLogAppend("[nuvio] auto crop: check " + std::to_string(autoCropAttempts) +
+                " ignored as a dark scene (picture " + std::to_string(visibleAspect) + ":1)\n");
+            return;
+        }
+        if (loosenOnly) {
+            // A clear margin, so a frame that differs by a row or two doesn't nudge the crop.
+            if (bars.top + 0.01 < autoCropAppliedBars.top || bars.left + 0.01 < autoCropAppliedBars.left) {
+                AutoCropBars loosened = autoCropAppliedBars;
+                loosened.top = loosened.bottom = std::min(loosened.top, bars.top);
+                loosened.left = loosened.right = std::min(loosened.left, bars.left);
+                nuvioMpvLogAppend("[nuvio] auto crop: taller picture seen after lock (" +
+                    std::to_string(visibleAspect) + ":1), loosening crop\n");
+                applyAutoCropBars(loosened);
+            }
+            return;
+        }
+
+        // A film whose picture keeps changing shape while learning is variable-aspect (IMAX).
+        if (!autoCropLocked && !autoCropVariableAspect) {
+            if (autoCropReferenceAspect <= 0.0) {
+                autoCropReferenceAspect = visibleAspect;
+            } else if (std::fabs(visibleAspect / autoCropReferenceAspect - 1.0) > 0.15 &&
+                       ++autoCropAspectChanges >= 3) {
+                autoCropVariableAspect = true;
+                nuvioMpvLogAppend("[nuvio] auto crop: variable aspect ratio (" +
+                    std::to_string(visibleAspect) + " vs " + std::to_string(autoCropReferenceAspect) +
+                    "), checking continuously\n");
+            }
+        }
+
+        nuvioMpvLogAppend("[nuvio] auto crop: check " + std::to_string(autoCropAttempts) +
+            " bars top/bottom " + std::to_string(bars.top * 100.0) + "% sides " +
+            std::to_string(bars.left * 100.0) + "% (picture " + std::to_string(visibleAspect) + ":1)\n");
+        autoCropHistory.push_back({now, bars});
+        // Learning keeps every sample; continuous checking trusts only the last few seconds.
+        if (autoCropVariableAspect) {
+            while (!autoCropHistory.empty() && now - autoCropHistory.front().at > std::chrono::seconds(8)) {
+                autoCropHistory.pop_front();
+            }
+        }
+        // The smallest bars seen are the safe estimate: bright pixels prove picture is there,
+        // while a dark scene can only ever make bars look bigger.
+        AutoCropBars smallest{1.0, 1.0, 1.0, 1.0};
+        for (const AutoCropSample &sample : autoCropHistory) {
+            smallest.top = std::min(smallest.top, sample.bars.top);
+            smallest.bottom = std::min(smallest.bottom, sample.bars.bottom);
+            smallest.left = std::min(smallest.left, sample.bars.left);
+            smallest.right = std::min(smallest.right, sample.bars.right);
+        }
+        const bool ready = autoCropHistory.size() >= 3 &&
+            now - autoCropHistory.front().at >= std::chrono::seconds(5);
+        AutoCropBars target = smallest;
+        if (!ready) {
+            // Too little history to zoom in yet, but zooming out is always allowed.
+            target.top = std::min(target.top, autoCropAppliedBars.top);
+            target.bottom = std::min(target.bottom, autoCropAppliedBars.bottom);
+            target.left = std::min(target.left, autoCropAppliedBars.left);
+            target.right = std::min(target.right, autoCropAppliedBars.right);
+        }
+        if (!autoCropVariableAspect && ++autoCropLearnChecks >= 20 && ready) {
+            autoCropLocked = true;
+            nuvioMpvLogAppend("[nuvio] auto crop: bars locked top/bottom " +
+                std::to_string(smallest.top * 100.0) + "% sides " + std::to_string(smallest.left * 100.0) +
+                "%, frame checks stopped\n");
+        }
+        applyAutoCropBars(target);
+    }
+
+    // Trims the bars off the frame itself with video-crop; panscan=1 then fills the window with
+    // what is left, exactly as Zoom does with a frame that never had bars. Cropping (rather than
+    // video-zoom) keeps the video rectangle on screen, which is what subtitles are placed in,
+    // and lets mpv re-fit on window resizes by itself.
+    void applyAutoCropBars(const AutoCropBars &bars) {
+        const int64_t frameWidth = int64Property("video-out-params/w", int64Property("video-params/w", 0));
+        const int64_t frameHeight = int64Property("video-out-params/h", int64Property("video-params/h", 0));
+        if (frameWidth <= 0 || frameHeight <= 0) return;
+        const int64_t x = (int64_t)std::llround(frameWidth * bars.left);
+        const int64_t y = (int64_t)std::llround(frameHeight * bars.top);
+        const int64_t width = frameWidth - 2 * x;
+        const int64_t height = frameHeight - 2 * y;
+        if (width <= 0 || height <= 0) return;
+        const std::string crop = (x == 0 && y == 0) ? std::string()
+            : std::to_string(width) + "x" + std::to_string(height) + "+" + std::to_string(x) + "+" + std::to_string(y);
+        autoCropAppliedBars = bars;
+        if (crop == autoCropAppliedCrop) return;
+        autoCropAppliedCrop = crop;
+        autoCropAppliedFrameWidth = frameWidth;
+        autoCropAppliedFrameHeight = frameHeight;
+        setAutoCropProperty(crop);
+        nuvioMpvLogAppend("[nuvio] auto crop: video-crop=" + (crop.empty() ? std::string("none") : crop) +
+            " for bars top/bottom " + std::to_string(bars.top * 100.0) + "% sides " +
+            std::to_string(bars.left * 100.0) + "% of " + std::to_string(frameWidth) + "x" +
+            std::to_string(frameHeight) + "\n");
+    }
+
+    void setAutoCropProperty(const std::string &crop) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        // An empty value is mpv's "no crop" (0.41 rejects "0x0" as an invalid rect); the explicit
+        // zero rect is only a fallback for builds that don't take the empty string.
+        int error = mpvApi().setPropertyString(mpv, "video-crop", crop.c_str());
+        if (error < 0 && crop.empty()) error = mpvApi().setPropertyString(mpv, "video-crop", "0x0+0+0");
+        if (error < 0) {
+            nuvioMpvLogAppend("[nuvio] auto crop: setting video-crop failed: " + mpvApi().errorText(error) + "\n");
+        }
+    }
+
+    // Bars measured on a grab, as fractions of the full frame. Whether screenshot-raw returns
+    // the frame before or after video-crop isn't something to rely on, so it is told apart by
+    // size: a grab the size of the applied crop shows only what is left, and its bars are added
+    // to the ones already trimmed.
+    AutoCropBars autoCropBarsOfFullFrame(const AutoCropBars &measured, int64_t grabWidth, int64_t grabHeight) {
+        if (autoCropAppliedCrop.empty() || autoCropAppliedFrameWidth <= 0 || autoCropAppliedFrameHeight <= 0) {
+            return measured;
+        }
+        const double croppedWidth = autoCropAppliedFrameWidth * (1.0 - 2.0 * autoCropAppliedBars.left);
+        const double croppedHeight = autoCropAppliedFrameHeight * (1.0 - 2.0 * autoCropAppliedBars.top);
+        const bool grabIsCropped = std::llabs(grabWidth - (int64_t)std::llround(croppedWidth)) <= 2 &&
+            std::llabs(grabHeight - (int64_t)std::llround(croppedHeight)) <= 2 &&
+            (grabWidth != autoCropAppliedFrameWidth || grabHeight != autoCropAppliedFrameHeight);
+        if (!grabIsCropped) return measured;
+        const double keptHeight = 1.0 - 2.0 * autoCropAppliedBars.top;
+        const double keptWidth = 1.0 - 2.0 * autoCropAppliedBars.left;
+        AutoCropBars full;
+        full.top = full.bottom = autoCropAppliedBars.top + measured.top * keptHeight;
+        full.left = full.right = autoCropAppliedBars.left + measured.left * keptWidth;
+        return full;
+    }
+
     long long durationMs() {
-        return (long long)std::llround(doubleProperty("duration", 0.0) * 1000.0);
+        return (long long)std::llround(mirroredDouble("duration", 0.0) * 1000.0);
     }
 
     long long positionMs() {
-        {
-            // While steps are being coalesced the HUD must track the accumulated target:
-            // time-pos still sits at the pre-burst position until the seek is actually issued,
-            // which would otherwise make a held arrow key look like it had stopped responding.
-            std::lock_guard<std::mutex> lock(mpvMutex);
-            if (deferredSeekTargetSeconds >= 0.0) {
-                return (long long)std::llround(deferredSeekTargetSeconds * 1000.0);
-            }
+        // While steps are being coalesced the HUD must track the accumulated target:
+        // time-pos still sits at the pre-burst position until the seek is actually issued,
+        // which would otherwise make a held arrow key look like it had stopped responding.
+        const double deferredTarget = deferredSeekTargetSeconds.load();
+        if (deferredTarget >= 0.0) {
+            return (long long)std::llround(deferredTarget * 1000.0);
         }
-        return (long long)std::llround(doubleProperty("time-pos", 0.0) * 1000.0);
+        return (long long)std::llround(mirroredDouble("time-pos", 0.0) * 1000.0);
     }
 
 
@@ -2407,10 +2929,10 @@ public:
         if (initialResumeTransactionPending.load()) return true;
         bool paused = isPaused();
         bool eofReached = isEnded();
-        bool idle = flagProperty("core-idle", true);
-        bool seeking = flagProperty("seeking", false);
-        bool bufferingCache = flagProperty("paused-for-cache", false);
-        bool fileReady = doubleProperty("duration", 0.0) > 0.0 || int64Property("track-list/count", 0) > 0;
+        bool idle = mirroredFlag("core-idle", true);
+        bool seeking = mirroredFlag("seeking", false);
+        bool bufferingCache = mirroredFlag("paused-for-cache", false);
+        bool fileReady = mirroredDouble("duration", 0.0) > 0.0 || mirroredDouble("track-list/count", 0.0) > 0.0;
         return !fileReady || (idle && !paused && !eofReached) || seeking || bufferingCache;
     }
 
@@ -2424,18 +2946,47 @@ public:
         if (playbackFailureDetected.load()) return false;
         if (initialResumeTransactionPending.load()) return false;
         if (std::chrono::steady_clock::now() < eofSuppressedUntil.load()) return false;
-        return flagProperty("eof-reached", false);
+        return mirroredFlag("eof-reached", false);
     }
 
     std::string audioTracksJson() {
-        return tracksJsonForType("audio");
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        return sharedAudioTracksJson;
     }
 
     std::string subtitleTracksJson() {
-        return tracksJsonForType("sub");
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        return sharedSubtitleTracksJson;
     }
 
     std::string chaptersJson() {
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        return sharedChaptersJson;
+    }
+
+    // Track and chapter JSON for Java and the HUD. Building it reads every track synchronously,
+    // which waits on the mpv core (131 ms of UI thread at start-up, step 27), so the event thread
+    // rebuilds it whenever mpv reports a track-list, selection or chapter-list change and the
+    // getters above hand out the last copy.
+    // The event thread picks it up within its 0.5 s idle wait; the track-list change that
+    // follows any real track edit wakes it sooner.
+    void markTrackJsonDirty() {
+        trackJsonDirty.store(true);
+    }
+
+    // Event-thread only.
+    void rebuildTrackJsonIfDirty() {
+        if (!trackJsonDirty.exchange(false)) return;
+        std::string audio = tracksJsonForType("audio");
+        std::string subtitles = tracksJsonForType("sub");
+        std::string chapters = buildChaptersJson();
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        sharedAudioTracksJson = std::move(audio);
+        sharedSubtitleTracksJson = std::move(subtitles);
+        sharedChaptersJson = std::move(chapters);
+    }
+
+    std::string buildChaptersJson() {
         long long count = int64Property("chapter-list/count", 0);
         std::ostringstream json;
         json << "[";
@@ -2451,6 +3002,26 @@ public:
         }
         json << "]";
         return json.str();
+    }
+
+    // JNI entry points. Java only needs to know whether a switch was refused (the rate-limit pill),
+    // which the mirror and the 429 block answer without mpv; the switch runs on the call thread,
+    // where selectAudioTrackId re-checks both against mpv itself.
+    bool requestAudioTrackId(int trackId) {
+        if (mirroredString("aid", "") == std::to_string(trackId)) return true;
+        if (std::chrono::steady_clock::now() < audioTrackSwitchBlockedUntil.load()) {
+            nuvioMpvLogAppend("[nuvio] audio track switch deferred after HTTP 429\n");
+            return false;
+        }
+        postMpvCall([this, trackId]() { selectAudioTrackId(trackId); });
+        return true;
+    }
+
+    bool requestSubtitleTrackId(int trackId) {
+        // Suppress the refresh-seek EOF from now, not from when the call thread gets to it.
+        eofSuppressedUntil.store(std::chrono::steady_clock::now() + std::chrono::seconds(2));
+        postMpvCall([this, trackId]() { selectSubtitleTrackId(trackId); });
+        return true;
     }
 
     bool selectAudioTrackId(int trackId) {
@@ -2502,6 +3073,7 @@ public:
             std::lock_guard<std::mutex> lock(appAddedSubtitleUrlsMutex);
             appAddedSubtitleUrls.insert(url);
         }
+        markTrackJsonDirty();
         command({"sub-add", url, "select"});
         refreshSubtitleAssOverrideMode();
     }
@@ -2567,7 +3139,8 @@ public:
             std::lock_guard<std::mutex> lock(mpvMutex);
             if (!mpv) return;
             double outline = std::max(0.0, std::min(8.0, outlineSize));
-            double size = std::max(24.0, std::min(96.0, fontSize));
+            // Floor matches toMpvSubtitleFontSize() in NativePlayerController.kt (UI minimum 6 x 3).
+            double size = std::max(18.0, std::min(96.0, fontSize));
             int64_t position = std::max(0, std::min(150, subPos));
             mpvApi().setProperty(mpv, "sub-outline-size", MPV_FORMAT_DOUBLE, &outline);
             mpvApi().setProperty(mpv, "sub-font-size", MPV_FORMAT_DOUBLE, &size);
@@ -2754,6 +3327,10 @@ public:
                 value + "\n");
             return;
         }
+        if (key == "@nuvio-svp-bypass-vf") {
+            svpBypassVideoFilters = value;
+            return;
+        }
         if (key == "vf") {
             videoPipelineManaged = true;
             requestedVideoFilters = value;
@@ -2819,8 +3396,12 @@ public:
             // Trailer playback's D3D11 swapchain only commits dynamic colour changes on
             // a top-level activation transition (the same reason alt-tab makes them show).
             // Reproduce those notifications without moving focus to another application.
+            // Only while Nuvio is the foreground window: a synthetic WA_ACTIVE sent to a
+            // background window makes AWT request focus, which Windows' foreground lock turns
+            // into a flashing taskbar button (seen when a profile refresh lands while paused and
+            // alt-tabbed away). The real activation on returning commits the change anyway.
             HWND topLevel = GetAncestor(self->hostHwnd, GA_ROOT);
-            if (topLevel && IsWindow(topLevel)) {
+            if (topLevel && IsWindow(topLevel) && GetForegroundWindow() == topLevel) {
                 DWORD currentThreadId = GetCurrentThreadId();
                 SendMessageW(topLevel, WM_NCACTIVATE, FALSE, 0);
                 SendMessageW(topLevel, WM_ACTIVATEAPP, FALSE, currentThreadId);
@@ -2980,6 +3561,7 @@ public:
 
 private:
     HWND hostHwnd = nullptr;
+    HWND hostTopLevelHwnd = nullptr;
     HWND containerHwnd = nullptr;
     HWND messageHwnd = nullptr;
     DWORD uiThreadId = 0;
@@ -3051,30 +3633,35 @@ private:
     // high-bitrate remux, so one step means one HTTP range request. Hosts that throttle
     // connection opens — debrid proxies especially — answer a burst of those with 429. Only
     // steps arriving inside the coalesce window are folded into a single trailing seek, so an
-    // isolated press still seeks with no added latency. Guarded by mpvMutex; -1 when idle.
+    // isolated press still seeks with no added latency. Written under mpvMutex; -1 when idle.
+    // Atomic so positionMs() can read it without waiting on the lock.
     static constexpr std::chrono::milliseconds seekCoalesceWindow{350};
     static constexpr std::chrono::milliseconds seekCoalesceMaxWait{1000};
-    double deferredSeekTargetSeconds = -1.0;
+    std::atomic<double> deferredSeekTargetSeconds{-1.0};
+    // Local files open no HTTP range requests, so their seeks are never coalesced.
+    std::atomic<bool> sourceIsLocalFile{false};
     std::chrono::steady_clock::time_point deferredSeekDueAt{};
     std::chrono::steady_clock::time_point deferredSeekStartedAt{};
     std::chrono::steady_clock::time_point lastSeekIssuedAt{};
 
 
-    // Per-message occurrence counts backing shouldWriteMpvLogLine. Event-thread only.
-    std::map<std::string, int> mpvLogLineCounts;
-
-    // Cached track-list JSON for the 500ms controls sync. Rebuilding the lists means dozens
-    // of mutex-locked mpv property reads per tick; tracks only change on file load, external
-    // subtitle add/remove, or selection changes, all of which show up in the key below.
-    std::string cachedTracksKey;
-    std::string cachedAudioTracksJson = "[]";
-    std::string cachedSubtitleTracksJson = "[]";
+    // Per-message repeat windows backing shouldWriteMpvLogLine. Event-thread only.
+    struct MpvLogRepeat {
+        int count = 0;
+        std::chrono::steady_clock::time_point windowStart{};
+    };
+    std::map<std::string, MpvLogRepeat> mpvLogLineCounts;
 
     std::string videoParamsPrimaries;
     std::string videoParamsGamma;
     bool videoParamsPrimariesReceived = false;
     bool videoParamsGammaReceived = false;
     std::string requestedVideoFilters;
+    // Chain to run instead of requestedVideoFilters while its VapourSynth part is bypassed for
+    // speed, set from the "@nuvio-svp-bypass-vf" pseudo-property just before each `vf` write.
+    // Empty means "the same chain minus VapourSynth". It carries the RTX d3d11vpp filter, which
+    // must not stack on SVP but should come back when SVP is not actually running.
+    std::string svpBypassVideoFilters;
     std::string appliedVideoFilters;
     std::string deferredAnimeSvpFilter;
     std::string appTraceId = "none";
@@ -3127,6 +3714,12 @@ private:
     bool initialRtxSuperResolutionEnabled = false;
     bool initialRtxHdrEnabled = false;
     bool initialAnimeContent = false;
+    // From the "@nuvio-anime-layer" / "@nuvio-anime-true-hdr" markers. The layer flag is whether
+    // Kotlin expects Anime4K / a custom shader / SVP on this session; RTX never stacks on that, but
+    // detected anime without it gets VSR (and True HDR only with the anime opt-in). Without the
+    // marker, detected anime is treated as having the layer, which was the old behaviour.
+    bool initialAnimeLayer = false;
+    bool initialAnimeTrueHdr = false;
     int lastReportedHdrState = -1;
     // Last "videoSourceSize" value handed to Kotlin, so a re-observation of unchanged dimensions
     // does not restart the video-profile pass. -1 means nothing reported for this source yet.
@@ -3183,6 +3776,33 @@ private:
     // makes it visible by the time the reader observes the flag as true.
     std::atomic_bool subtitleAssOverrideInitialCheckPending = false;
     std::chrono::steady_clock::time_point subtitleAssOverrideCheckDeadline;
+
+    // Auto crop (resize mode 3): Zoom, applied to the picture inside any black bars that are
+    // baked into the frame (video-crop trims them first). A 2.39 film encoded in a 16:9 frame
+    // therefore fills a 16:9 screen (its sides are cut, as Zoom would cut a 2.39 file without
+    // bars), which neither Fill nor Zoom can do. Bars are learned from frames grabbed with
+    // screenshot-raw for about a minute and then locked, after which no more frames are grabbed;
+    // variable-aspect (IMAX) films keep being checked so the crop can back off when the picture
+    // opens up. The event thread only
+    // schedules checks (the atomics); everything else is owned by the mpv call thread.
+    struct AutoCropSample {
+        std::chrono::steady_clock::time_point at;
+        AutoCropBars bars;
+    };
+    std::atomic_bool autoCropEnabled = false;
+    std::atomic_bool autoCropCheckQueued = false;
+    std::atomic<std::chrono::steady_clock::time_point> autoCropNextCheckAt{std::chrono::steady_clock::time_point{}};
+    std::deque<AutoCropSample> autoCropHistory;
+    AutoCropBars autoCropAppliedBars;
+    std::string autoCropAppliedCrop; // video-crop value, empty = none
+    int64_t autoCropAppliedFrameWidth = 0;
+    int64_t autoCropAppliedFrameHeight = 0;
+    int autoCropLearnChecks = 0;
+    int autoCropAttempts = 0;
+    bool autoCropLocked = false;
+    bool autoCropVariableAspect = false;
+    double autoCropReferenceAspect = 0.0;
+    int autoCropAspectChanges = 0;
     std::atomic<std::chrono::steady_clock::time_point> eofSuppressedUntil{std::chrono::steady_clock::time_point{}};
 
     std::string externalAudioUrl;
@@ -3348,6 +3968,19 @@ private:
 
     void cleanupUiResources() {
         nuvioBridgeLog("cleanup begin");
+        // Clicking the trailer's own X (the "back" command) focuses the WebView2's HWND and then
+        // tears the trailer down straight away, so the chrome's heroTrailerReclaimFocus message
+        // arrives after the message handler is gone. Focus was left on a destroyed window and the
+        // app took no clicks or keys until it was deactivated and reactivated (2026-10-13). Hand
+        // it back here, while the WebView still exists, and only if the app is what the user is
+        // in: a trailer ending behind another app must not pull focus.
+        if (passiveSurface) {
+            HWND topLevel = hostHwnd && IsWindow(hostHwnd) ? GetAncestor(hostHwnd, GA_ROOT) : hostTopLevelHwnd;
+            if (topLevel && GetForegroundWindow() == topLevel) {
+                nuvioBridgeLog("cleanup reclaim host focus");
+                reclaimHostKeyboardFocus();
+            }
+        }
         // Before OleUninitialize, and before the window this session is bound to goes away.
         teardownSystemMediaControls();
         if (cursorHidden) {
@@ -3403,6 +4036,17 @@ private:
         if (target) {
             PostMessageW(target, WM_NUVIO_TASK, 0, 0);
         }
+    }
+
+    // Coalesces syncControls requests from other threads into one pending UI task.
+    std::atomic<bool> controlsSyncQueued{false};
+
+    void requestControlsSync() {
+        if (controlsSyncQueued.exchange(true)) return;
+        postUiTask([self = shared_from_this()]() {
+            self->controlsSyncQueued.store(false);
+            self->syncControls();
+        });
     }
 
     bool sendUiTask(std::function<void()> task) {
@@ -3605,6 +4249,7 @@ private:
             std::lock_guard<std::mutex> lock(appAddedSubtitleUrlsMutex);
             appAddedSubtitleUrls.clear();
         }
+        markTrackJsonDirty();
         startupFailureReported = false;
         audioPassthroughRequested = false;
         audioPassthroughFallbackApplied = false;
@@ -3678,8 +4323,8 @@ private:
                 const bool svpActive = !animeSvpFilter.empty();
                 // RTX VSR / True HDR are suppressed on the anime enhancement layer (see
                 // applyDesktopAnimeProfile), so their verbose pipeline logging has nothing to
-                // diagnose there; only pay for it on non-anime content.
-                const bool animeEnhancementActive = initialAnimeContent || svpActive;
+                // diagnose there; only pay for it when RTX can actually run.
+                const bool animeEnhancementActive = initialAnimeLayer || svpActive;
                 const bool rtxVerbose = (nvidiaRtxSuperResolutionEnabled || nvidiaRtxHdrEnabled) &&
                     !animeEnhancementActive;
                 const bool deliverVerbose = verboseEnvSet || rtxVerbose || svpActive;
@@ -3787,7 +4432,8 @@ private:
                 setMpvOptionStringLocked("d3d11-adapter", "NVIDIA");
             }
 
-            // NVIDIA RTX Video True HDR (opt-in, requires RTX GPU + Windows HDR enabled).
+            // NVIDIA RTX Video True HDR (opt-in, requires RTX GPU + Windows HDR enabled; the
+            // filter itself is only installed when FILE_LOADED finds the display in HDR).
             // When enabled, d3d11vpp (the NVIDIA video processor) converts SDR → HDR using the
             // driver's AI-based tone mapping. This requires mpv master ≥ Feb 19 2026 which:
             //   (1) automatically sets IMGFMT_X2BGR10 output on the VP (10-bit BT.2020+PQ RGB),
@@ -3864,6 +4510,7 @@ private:
             // HTTP reconnect options — skip for local file paths (no scheme = local file).
             bool isLocalFile = sourceUrl.find("://") == std::string::npos ||
                                sourceUrl.rfind("file://", 0) == 0;
+            sourceIsLocalFile.store(isLocalFile);
             if (!isLocalFile) {
                 // Deliberately NOT setting reconnect_on_http_error. Adding 429 to it was tried and
                 // reverted (2026-07-25): FFmpeg then retries a throttled request four more times
@@ -3908,6 +4555,7 @@ private:
                 if (option.rfind("@nuvio-trace-id=", 0) == 0) continue;
                 if (option.rfind("@nuvio-config-mode=", 0) == 0) continue;
                 if (option.rfind("@nuvio-low-vram=", 0) == 0) continue;
+                if (option.rfind("@nuvio-anime-", 0) == 0) continue;
                 const bool userOption = option.rfind("@nuvio-user:", 0) == 0;
                 const std::string optionText = userOption ? option.substr(12) : option;
                 std::string::size_type equals = optionText.find('=');
@@ -3980,6 +4628,7 @@ private:
             for (const char *property : {"hwdec-current", "paused-for-cache", "audio-params/format", "speed"}) {
                 api.observeProperty(mpv, 0, property, MPV_FORMAT_STRING);
             }
+            observeMirroredProperties(api);
 
             // Up/Down are reserved for app-level volume control; explicitly
             // disable mpv's built-in seek bindings for them so they can't
@@ -4096,8 +4745,10 @@ private:
 
     void syncControls() {
         if (!webView) return;
-        double duration = doubleProperty("duration", 0.0);
-        double position = doubleProperty("time-pos", 0.0);
+        // Mirrored values only: this runs on the native UI thread, and a synchronous mpv read
+        // waits for the mpv core, which a VapourSynth graph build keeps busy for over a second.
+        double duration = mirroredDouble("duration", 0.0);
+        double position = mirroredDouble("time-pos", 0.0);
         // Absolute time (seconds) up to which media is demuxer-cached ahead, so the controls can
         // draw a lighter "buffered" region on the seek bar.
         double buffered = (double)bufferedPositionMs() / 1000.0;
@@ -4106,30 +4757,9 @@ private:
         // Keep the media session's status honest — Windows picks the app it routes media keys
         // to by playback status, so a stale value costs us the keys.
         updateSystemMediaPlaybackStatus(paused);
-        // Track metadata (titles, languages, codecs) is immutable per track; the lists only
-        // change when tracks appear/disappear or the selection moves, so key the cache on
-        // count + selected audio/subtitle ids instead of re-reading every track each tick.
-        const long long trackCount = int64Property("track-list/count", 0);
-        std::string selectedTracksKey;
-        for (long long index = 0; index < trackCount; index++) {
-            const std::string selectedProperty =
-                "track-list/" + std::to_string(index) + "/selected";
-            if (flagProperty(selectedProperty.c_str(), false)) {
-                if (!selectedTracksKey.empty()) selectedTracksKey += ",";
-                selectedTracksKey += std::to_string(index);
-            }
-        }
-        std::string tracksKey = std::to_string(trackCount) +
-            "|" + stringProperty("aid", "") + "|" + stringProperty("sid", "") +
-            "|" + stringProperty("current-tracks/sub/id", "") +
-            "|" + selectedTracksKey;
-        if (tracksKey != cachedTracksKey) {
-            cachedTracksKey = tracksKey;
-            cachedAudioTracksJson = audioTracksJson();
-            cachedSubtitleTracksJson = subtitleTracksJson();
-        }
-        const std::string &audioTracks = cachedAudioTracksJson;
-        const std::string &subtitleTracks = cachedSubtitleTracksJson;
+        // Built on the event thread when the tracks or the selection change.
+        const std::string audioTracks = audioTracksJson();
+        const std::string subtitleTracks = subtitleTracksJson();
 
         std::ostringstream script;
         script << "window.playerUpdate({duration:" << duration
@@ -4154,15 +4784,34 @@ private:
     // WebView2/AWT thread boundary so SetFocus is honoured; Kotlin then routes focus to its
     // Compose node (see the "heroTrailerFocusEscaped" event below). Runs on the native UI thread.
     void reclaimHostKeyboardFocus() {
-        HWND topLevel = GetAncestor(hostHwnd, GA_ROOT);
+        HWND topLevel = hostHwnd && IsWindow(hostHwnd) ? GetAncestor(hostHwnd, GA_ROOT) : hostTopLevelHwnd;
         if (!topLevel || !IsWindow(topLevel)) return;
         DWORD thisThread = GetCurrentThreadId();
         DWORD targetThread = GetWindowThreadProcessId(topLevel, nullptr);
+        // The user is dragging the app window's edge or title bar. Windows' size/move loop owns
+        // the mouse capture then, and releasing it cancels the drag and snaps the window back to
+        // its pre-drag size. A trailer torn down mid-resize (the details page swapping layouts
+        // at a width threshold) used to do exactly that (2026-10-14). Focus can't be on the
+        // trailer during the drag anyway, so there is nothing to reclaim.
+        GUITHREADINFO guiInfo = {};
+        guiInfo.cbSize = sizeof(guiInfo);
+        if (targetThread != 0 && GetGUIThreadInfo(targetThread, &guiInfo) &&
+            (guiInfo.flags & GUI_INMOVESIZE) != 0) {
+            logBridge("reclaim host focus skipped: window move/size in progress");
+            return;
+        }
         bool attached = false;
         if (targetThread != 0 && targetThread != thisThread) {
             attached = AttachThreadInput(thisThread, targetThread, TRUE) != FALSE;
         }
         SetFocus(topLevel);
+        // A press on the WebView2 can leave it holding the shared mouse capture too; with the
+        // queues attached this releases it for the app's thread as well.
+        // Only a capture the trailer's own windows hold; anyone else's (a drag in the app) stays.
+        HWND capture = GetCapture();
+        if (capture && containerHwnd && (capture == containerHwnd || IsChild(containerHwnd, capture))) {
+            ReleaseCapture();
+        }
         if (attached) {
             AttachThreadInput(thisThread, targetThread, FALSE);
         }
@@ -4209,6 +4858,20 @@ private:
             selectSubtitleTrackId((int)std::llround(value));
             syncControls();
             return;
+        }
+        // Pointer presses seen by the HUD, logged only (Kotlin has no use for them).
+        // value: 1 = play button, 2 = video surface; +10 when the chrome was hidden.
+        if (type == "hudTrace") {
+            const int code = (int)std::llround(value);
+            nuvioBridgeLog(std::string("hud pointerdown ") + (code % 10 == 1 ? "play-button" : "video-surface") +
+                " chrome=" + (code >= 10 ? "hidden" : "visible"));
+            return;
+        }
+        // Input timestamps for the controls: pair with "pause queued/write" and mpv's
+        // "queuing seek" lines to measure click-to-effect latency.
+        if (type == "toggle" || type == "keyboardToggle" || type == "seekBack" || type == "seekForward" ||
+            type == "keyboardSeekBack" || type == "keyboardSeekForward" || type == "toggleFullscreen") {
+            nuvioBridgeLog("hud input " + type);
         }
         sendPlayerEvent(type, value);
     }
@@ -4292,8 +4955,12 @@ private:
      * driver that cannot answer, reports "not HDR" — the conservative direction, since the cost of
      * a false negative is one missing status line and the cost of a false positive is the exact
      * misinformation this exists to stop.
+     *
+     * Public because the UI asks too (see the `isWindowDisplayHdr` export), and it passes
+     * [requireWindowMonitor]: for it a guess from some other display is worse than no answer.
      */
-    static bool isDisplayHdrEnabled(HWND hwnd) {
+public:
+    static bool isDisplayHdrEnabled(HWND hwnd, bool requireWindowMonitor = false) {
         using CreateDXGIFactory1Fn = HRESULT(WINAPI *)(REFIID, void **);
         static CreateDXGIFactory1Fn createFactory = [] () -> CreateDXGIFactory1Fn {
             HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
@@ -4327,8 +4994,9 @@ private:
         }
         // The window's monitor was never enumerated (no window yet, or a hybrid-GPU quirk); the
         // desktop-wide answer is the best remaining evidence.
-        return anyOutputIsHdr;
+        return !requireWindowMonitor && anyOutputIsHdr;
     }
+private:
 
     /**
      * Writes the largest dedicated video-memory pool reported by any hardware DXGI adapter, plus
@@ -4381,21 +5049,52 @@ private:
     // message is written a few times, then silenced with a one-time notice. Counting per
     // message (not just consecutive-duplicate collapsing) is deliberate: the warnings arrive
     // as an alternating A/B pair that consecutive dedupe would never catch. Only touched on
-    // the mpv event thread. The map is capped as a safety valve — pathological log variety
-    // just falls back to writing everything rather than growing without bound.
+    // the mpv event thread.
+    //
+    // Repeats are counted per time window, not per session: a session-long count silenced
+    // legitimate repeats too — after four toggles every "Set property: pause=false" vanished for
+    // the rest of playback, which hid exactly the timing needed to diagnose the controls.
+    // Player state changes (property writes, commands, seeks) are never suppressed. The map is
+    // capped; expired windows are evicted first, and only if it is still full does pathological
+    // log variety fall back to writing everything.
+    static bool isMpvStateChangeLogLine(const std::string &line) {
+        return line.find("cplayer: Set property: ") != std::string::npos ||
+            line.find("cplayer: Run command: ") != std::string::npos ||
+            line.find("cplayer: queuing seek") != std::string::npos ||
+            line.find("cplayer: playback restart complete") != std::string::npos;
+    }
+
     bool shouldWriteMpvLogLine(const std::string &line) {
         static constexpr int kRepeatLimit = 5;
         static constexpr size_t kMaxTrackedMessages = 128;
+        static constexpr std::chrono::seconds kRepeatWindow{10};
+        if (isMpvStateChangeLogLine(line)) return true;
+        const auto now = std::chrono::steady_clock::now();
         auto existing = mpvLogLineCounts.find(line);
-        if (existing == mpvLogLineCounts.end() && mpvLogLineCounts.size() >= kMaxTrackedMessages) {
+        if (existing == mpvLogLineCounts.end()) {
+            if (mpvLogLineCounts.size() >= kMaxTrackedMessages) {
+                for (auto it = mpvLogLineCounts.begin(); it != mpvLogLineCounts.end();) {
+                    it = (now - it->second.windowStart >= kRepeatWindow) ? mpvLogLineCounts.erase(it) : std::next(it);
+                }
+                if (mpvLogLineCounts.size() >= kMaxTrackedMessages) return true;
+            }
+            mpvLogLineCounts[line] = MpvLogRepeat{1, now};
             return true;
         }
-        int count = (existing == mpvLogLineCounts.end())
-            ? (mpvLogLineCounts[line] = 1)
-            : ++existing->second;
+        MpvLogRepeat &repeat = existing->second;
+        if (now - repeat.windowStart >= kRepeatWindow) {
+            const int suppressed = repeat.count - (kRepeatLimit - 1);
+            if (suppressed > 0) {
+                nuvioMpvLogAppend("[nuvio] (" + std::to_string(suppressed) +
+                    " repeats suppressed in the last window of: " + line.substr(0, line.find('\n')) + ")\n");
+            }
+            repeat = MpvLogRepeat{1, now};
+            return true;
+        }
+        const int count = ++repeat.count;
         if (count < kRepeatLimit) return true;
         if (count == kRepeatLimit) {
-            nuvioMpvLogAppend("[nuvio] (suppressing further repeats of the previous message)\n");
+            nuvioMpvLogAppend("[nuvio] (suppressing repeats of the previous message for 10s)\n");
         }
         return false;
     }
@@ -4456,6 +5155,17 @@ private:
             // the idle 0.5s, which while paused (few spontaneous events) would otherwise let it
             // land hundreds of ms late.
             mpv_event *event = mpvApi().waitEvent(current, (deferredSeekPending() || initialResumeTransactionPending.load() || svpPrerollPending || profileRenderPending.load()) ? 0.05 : 0.5);
+            if (event && event->event_id == MPV_EVENT_PROPERTY_CHANGE &&
+                event->reply_userdata == propertyMirrorReplyId) {
+                if (event->data) updatePropertyMirror(*static_cast<mpv_event_property *>(event->data));
+                rebuildTrackJsonIfDirty();
+                // time-pos alone arrives once per frame. The startup work below polls mpv
+                // synchronously and only needs the cadence it had before the mirror existed.
+                const auto now = std::chrono::steady_clock::now();
+                if (now - lastMirrorTickAt < std::chrono::milliseconds(20)) continue;
+                lastMirrorTickAt = now;
+            }
+            rebuildTrackJsonIfDirty();
             // The deadline is driven by wall clock, not by events, so it must be serviced even on
             // a wait that produced nothing to dispatch.
             flushDeferredSeek();
@@ -4464,6 +5174,7 @@ private:
             // than applied once at load. Each is a cheap no-op after it has run.
             tryApplyInitialResume("params-retry");
             tryApplyDeferredAnimeSvp("params-retry");
+            scheduleAutoCropIfDue();
             if (!event) continue;
             // Poll the SVP filtered-output promotion here (not just on PLAYBACK_RESTART): at a
             // position-0 start the runtime-ready signal can arrive after the only restart event,
@@ -4679,12 +5390,14 @@ private:
                     publishPlaybackRestartIfReady();
                 }
             }
+            if (event->event_id == MPV_EVENT_PLAYBACK_RESTART) onAutoCropPlaybackRestart();
             if (event->event_id == MPV_EVENT_START_FILE) nuvioBridgeLog("media open started");
             if (event->event_id == MPV_EVENT_VIDEO_RECONFIG) nuvioBridgeLog("video reconfigured");
             if (event->event_id == MPV_EVENT_AUDIO_RECONFIG) nuvioBridgeLog("audio reconfigured");
             if (event->event_id == MPV_EVENT_FILE_LOADED) {
                 startupMetricsDue = std::chrono::steady_clock::now() + std::chrono::seconds(5);
                 nuvioBridgeLog("file loaded");
+                onAutoCropFileLoaded();
                 fileLoadedForCurrentSource = true;
                 playbackRestartPendingForFile = true;
                 tryApplyInitialResume("fileLoaded");
@@ -4706,7 +5419,8 @@ private:
 
                 // Re-read per file rather than once per session: the user can flip the Windows HDR
                 // toggle (or drag the app to another display) between titles.
-                sendPlayerEvent("displayHdr", isDisplayHdrEnabled(containerHwnd) ? 1.0 : 0.0);
+                const bool displayHdr = isDisplayHdrEnabled(containerHwnd);
+                sendPlayerEvent("displayHdr", displayHdr ? 1.0 : 0.0);
 
                 int64_t videoWidth = int64Property("video-params/w", 0);
                 int64_t videoHeight = int64Property("video-params/h", 0);
@@ -4738,13 +5452,17 @@ private:
                 // Install the final live-action RTX chain before the first playback restart.
                 // Kotlin constructs the same canonical string later, so its profile refresh is a
                 // no-op instead of tearing down and rebuilding an active D3D11 video processor.
-                if (!initialAnimeContent && hdrStateKnown) {
+                if (!initialAnimeLayer && hdrStateKnown) {
                     // NVIDIA's d3d11vpp VSR path can output a solid green plane for native HDR,
                     // particularly Dolby Vision P010. VSR is an SDR upscale enhancement here;
                     // HDR remains on gpu-next's normal colour-managed path.
                     const bool vsrActive = initialRtxSuperResolutionEnabled &&
                         !resolvedHdr && vsrScale > 1.01;
-                    const bool trueHdrActive = initialRtxHdrEnabled && !resolvedHdr;
+                    // True HDR outputs BT.2020/PQ; on an SDR desktop that signal has nowhere to
+                    // go and the picture comes out with broken colours. Must match
+                    // shouldEnableDesktopRtxTrueHdr in Kotlin, or its refresh rebuilds vf.
+                    const bool trueHdrActive = initialRtxHdrEnabled && displayHdr && !resolvedHdr &&
+                        (!initialAnimeContent || initialAnimeTrueHdr);
                     std::string initialRtxFilters;
                     if (vsrActive || trueHdrActive) {
                         initialRtxFilters = "d3d11vpp=";
@@ -4795,6 +5513,9 @@ private:
             if (event->event_id == MPV_EVENT_PROPERTY_CHANGE && event->data) {
                 auto *prop = static_cast<mpv_event_property *>(event->data);
                 if (!prop || !prop->name) continue;
+                // Mirror-only observations were applied above; the handlers below key on the
+                // reply-0 ones.
+                if (event->reply_userdata == propertyMirrorReplyId) continue;
                 std::string propName(prop->name);
                 bool hasValue = prop->format == MPV_FORMAT_STRING && prop->data;
                 std::string propValue = hasValue ? std::string(*static_cast<char **>(prop->data)) : "";
@@ -4900,15 +5621,12 @@ private:
 
         // Focus-path handler. Installed even if the SMTC session below fails, since this alone
         // is enough to make the keys work whenever Nuvio is the foreground window.
-        if (SetWindowSubclass(
-                sessionWindow,
-                mediaKeyRootSubclassProc,
-                kMediaKeySubclassId,
-                reinterpret_cast<DWORD_PTR>(this)
-            )) {
+        std::string subclassDetail;
+        if (applyMediaKeySubclass(sessionWindow, true, reinterpret_cast<DWORD_PTR>(this), subclassDetail)) {
             mediaKeySubclassInstalled = true;
+            nuvioBridgeLog("smtc WM_APPCOMMAND subclass installed");
         } else {
-            nuvioBridgeLog("smtc WM_APPCOMMAND subclass failed");
+            nuvioBridgeLog("smtc WM_APPCOMMAND subclass failed: " + subclassDetail);
         }
 
         ComPtr<ISystemMediaTransportControlsInterop> interop;
@@ -5111,7 +5829,12 @@ private:
         }
 
         if (mediaKeySubclassInstalled && mediaSessionWindow) {
-            RemoveWindowSubclass(mediaSessionWindow, mediaKeyRootSubclassProc, kMediaKeySubclassId);
+            std::string subclassDetail;
+            if (!applyMediaKeySubclass(mediaSessionWindow, false, 0, subclassDetail)) {
+                // Harmless if it stays: the proc ignores a player that no longer owns the
+                // session, and WM_NCDESTROY unhooks it with the window.
+                nuvioBridgeLog("cleanup smtc WM_APPCOMMAND subclass removal failed: " + subclassDetail);
+            }
         }
         mediaKeySubclassInstalled = false;
         mediaSessionWindow = nullptr;
@@ -5140,6 +5863,247 @@ private:
         return true;
     }
 
+public:
+    // Property mirror. A synchronous mpv read or write does not return until the mpv core thread
+    // services it, and that thread runs the video filter chain: building a VapourSynth/SVP graph
+    // (startup, or an SVP restore when the speed drops below the bypass threshold) keeps it busy
+    // for 1-1.5 s. The HUD and Kotlin poll from UI threads, so the values they read come from
+    // these observations, delivered on the event thread, instead of from mpv directly.
+    static constexpr uint64_t propertyMirrorReplyId = 0x4E555649424D4952ULL;
+
+    struct MirroredProperty {
+        bool valid = false;
+        double number = 0.0;
+        std::string text;
+    };
+
+    // Audio-referenced subtitle sync samples a few stretches of the film's audio. Each is decoded
+    // by a throwaway headless mpv over its own connection to the same source (same headers, same
+    // audio track as the player), audio only, to 16 kHz mono float PCM in outputPath — sample 0 is
+    // startSeconds. Blocks until done; runs on a Kotlin background thread. Returns 0 on success.
+    // Average bytes per second of the playing source (size over duration), so the sampled stretches
+    // can be sized to a download budget. Negative when the size is unknown (live, some HLS) and for
+    // local files, which cost nothing to read.
+    double speechSourceBytesPerSecond() {
+        if (thumbnailSourceUrl.rfind("http://", 0) != 0 && thumbnailSourceUrl.rfind("https://", 0) != 0) return -1.0;
+        const long long size = int64Property("file-size", -1);
+        const double duration = mirroredDouble("duration", 0.0);
+        return size > 0 && duration > 0.0 ? (double)size / duration : -1.0;
+    }
+
+    int decodeSpeechSpot(double startSeconds, double durationSeconds, const std::string &outputPath) {
+        if (shuttingDown.load() || thumbnailSourceUrl.empty() || !externalAudioUrl.empty()) return -1;
+        MpvApi &api = mpvApi();
+        mpv_handle *probe = api.create();
+        if (!probe) return -1;
+        const std::string aid = mirroredString("aid", "");
+        const bool numericAid = !aid.empty() && std::all_of(aid.begin(), aid.end(), ::isdigit);
+        const std::string start = std::to_string(std::max(0.0, startSeconds));
+        const std::string end = std::to_string(std::max(0.0, startSeconds) + std::max(1.0, durationSeconds));
+        for (const auto &[name, value] : std::initializer_list<std::pair<const char *, const char *>>{
+                 {"config", "no"}, {"terminal", "no"}, {"load-scripts", "no"}, {"ytdl", "no"},
+                 {"input-default-bindings", "no"}, {"vid", "no"}, {"sid", "no"}, {"audio-display", "no"},
+                 {"audio-spdif", ""}, {"af", ""}, {"ao", "pcm"}, {"ao-pcm-waveheader", "no"},
+                 {"audio-samplerate", "16000"}, {"audio-channels", "mono"}, {"audio-format", "float"},
+                 // The spot only; nothing read ahead past its end.
+                 {"cache", "no"}, {"demuxer-readahead-secs", "1"}, {"demuxer-max-bytes", "8MiB"},
+                 {"hr-seek", "yes"}, {"keep-open", "no"}}) {
+            api.setOptionString(probe, name, value);
+        }
+        api.setOptionString(probe, "ao-pcm-file", outputPath.c_str());
+        api.setOptionString(probe, "start", start.c_str());
+        api.setOptionString(probe, "end", end.c_str());
+        if (numericAid) api.setOptionString(probe, "aid", aid.c_str());
+        if (!thumbnailHeaderLines.empty()) {
+            std::string headers;
+            for (size_t index = 0; index < thumbnailHeaderLines.size(); ++index) {
+                if (index > 0) headers.push_back(',');
+                for (char character : thumbnailHeaderLines[index]) {
+                    if (character == '\\' || character == ',') headers.push_back('\\');
+                    headers.push_back(character);
+                }
+            }
+            api.setOptionString(probe, "http-header-fields", headers.c_str());
+        }
+        int result = -1;
+        if (api.initialize(probe) >= 0) {
+            const char *load[] = {"loadfile", thumbnailSourceUrl.c_str(), nullptr};
+            if (api.command(probe, load) >= 0) {
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+                while (std::chrono::steady_clock::now() < deadline && !shuttingDown.load()) {
+                    mpv_event *event = api.waitEvent(probe, 0.25);
+                    if (!event) continue;
+                    if (event->event_id == MPV_EVENT_SHUTDOWN) break;
+                    if (event->event_id == MPV_EVENT_END_FILE) {
+                        const auto *endFile = static_cast<mpv_event_end_file *>(event->data);
+                        result = endFile && endFile->reason == MPV_END_FILE_REASON_EOF ? 0 : -2;
+                        break;
+                    }
+                }
+            }
+        }
+        api.terminateDestroy(probe);
+        return result;
+    }
+
+    void observeMirroredProperties(MpvApi &api) {
+        for (const char *name : {"time-pos", "duration", "speed", "volume",
+                                 "demuxer-cache-time", "demuxer-cache-duration"}) {
+            api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_DOUBLE);
+        }
+        for (const char *name : {"pause", "eof-reached", "core-idle", "seeking",
+                                 "paused-for-cache", "mute"}) {
+            api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_FLAG);
+        }
+        api.observeProperty(mpv, propertyMirrorReplyId, "track-list/count", MPV_FORMAT_INT64);
+        for (const char *name : {"aid", "sid", "current-tracks/sub/id"}) {
+            api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_STRING);
+        }
+        // Change notifications only: they trigger rebuildTrackJsonIfDirty.
+        api.observeProperty(mpv, propertyMirrorReplyId, "track-list", MPV_FORMAT_NONE);
+        api.observeProperty(mpv, propertyMirrorReplyId, "chapter-list", MPV_FORMAT_NONE);
+    }
+
+    // Event-thread only.
+    void updatePropertyMirror(const mpv_event_property &property) {
+        if (!property.name) return;
+        const std::string name = property.name;
+        if (name == "track-list" || name == "chapter-list" || name == "aid" || name == "sid" ||
+            name == "current-tracks/sub/id") {
+            trackJsonDirty.store(true);
+        }
+        if (name == "track-list" || name == "chapter-list") return;
+        MirroredProperty value;
+        if (property.data) {
+            switch (property.format) {
+                case MPV_FORMAT_DOUBLE:
+                    value.number = *static_cast<double *>(property.data);
+                    value.valid = std::isfinite(value.number);
+                    break;
+                case MPV_FORMAT_FLAG:
+                    value.number = *static_cast<int *>(property.data) != 0 ? 1.0 : 0.0;
+                    value.valid = true;
+                    break;
+                case MPV_FORMAT_INT64:
+                    value.number = (double)*static_cast<int64_t *>(property.data);
+                    value.valid = true;
+                    break;
+                case MPV_FORMAT_STRING: {
+                    const char *text = *static_cast<char **>(property.data);
+                    value.valid = text != nullptr;
+                    if (text) value.text = text;
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        // MPV_FORMAT_NONE means unavailable: fall back exactly as a failed read would.
+        {
+            std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+            propertyMirror[name] = std::move(value);
+        }
+        // Play/pause and loading feed the HUD's icon and spinner. Push them as they change rather
+        // than waiting up to 500 ms for the timer: a sampled 20 ms seek otherwise held the
+        // spinner up for a whole tick, and the icon lagged a toggle by as much.
+        if (name == "pause" || name == "seeking" || name == "core-idle" || name == "paused-for-cache" ||
+            name == "eof-reached") {
+            requestControlsSync();
+        }
+    }
+
+    // Records a value written through the mpv call queue before mpv reports it, so a read that
+    // immediately follows the write (the volume and speed pills) shows the new value.
+    void setMirroredNumber(const char *name, double number) {
+        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+        MirroredProperty &value = propertyMirror[name];
+        value.valid = true;
+        value.number = number;
+    }
+
+    double mirroredDouble(const char *name, double fallback) {
+        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+        auto it = propertyMirror.find(name);
+        return it != propertyMirror.end() && it->second.valid ? it->second.number : fallback;
+    }
+
+    bool mirroredFlag(const char *name, bool fallback) {
+        return mirroredDouble(name, fallback ? 1.0 : 0.0) != 0.0;
+    }
+
+    std::string mirroredString(const char *name, const std::string &fallback) {
+        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+        auto it = propertyMirror.find(name);
+        return it != propertyMirror.end() && it->second.valid ? it->second.text : fallback;
+    }
+
+    // mpv call queue. Every JNI call that writes to mpv runs here, in the order Java issued it,
+    // instead of on the calling Java thread (usually the UI thread): a synchronous mpv write waits
+    // on the mpv core exactly as a read does (see the property mirror above). The calls keep their
+    // synchronous mpv semantics and mpvMutex discipline, so the SVP graph latch, held vf/hwdec
+    // writes and pre-roll all behave as before; only the caller no longer waits for them.
+    void postMpvCall(std::function<void()> call) {
+        std::lock_guard<std::mutex> lock(mpvCallMutex);
+        if (mpvCallsStopping || shuttingDown.load()) return;
+        mpvCalls.push_back(std::move(call));
+        if (!mpvCallThread.joinable()) {
+            mpvCallThread = std::thread([this]() { runMpvCalls(); });
+        }
+        mpvCallCv.notify_one();
+    }
+
+    void runMpvCalls() {
+        gPlaybackThreadLog = playbackLogPath;
+        while (true) {
+            std::function<void()> call;
+            {
+                std::unique_lock<std::mutex> lock(mpvCallMutex);
+                mpvCallCv.wait(lock, [this]() { return mpvCallsStopping || !mpvCalls.empty(); });
+                if (mpvCallsStopping) return;
+                call = std::move(mpvCalls.front());
+                mpvCalls.pop_front();
+            }
+            try {
+                call();
+            } catch (const std::exception &error) {
+                nuvioBridgeLog(std::string("mpv call failed: ") + error.what());
+            } catch (...) {
+                nuvioBridgeLog("mpv call failed");
+            }
+        }
+    }
+
+    // Drops calls not yet started; the one in progress finishes first. Must run before the mpv
+    // handle is destroyed: queued calls use it.
+    void stopMpvCalls() {
+        std::deque<std::function<void()>> dropped;
+        {
+            std::lock_guard<std::mutex> lock(mpvCallMutex);
+            mpvCallsStopping = true;
+            dropped.swap(mpvCalls);
+        }
+        mpvCallCv.notify_all();
+        if (mpvCallThread.joinable() && mpvCallThread.get_id() != std::this_thread::get_id()) {
+            mpvCallThread.join();
+        }
+    }
+
+    std::mutex propertyMirrorMutex;
+    std::chrono::steady_clock::time_point lastMirrorTickAt{}; // event thread
+    std::unordered_map<std::string, MirroredProperty> propertyMirror; // propertyMirrorMutex
+    std::atomic<bool> trackJsonDirty{true};
+    std::mutex trackJsonMutex;
+    std::string sharedAudioTracksJson = "[]"; // trackJsonMutex
+    std::string sharedSubtitleTracksJson = "[]"; // trackJsonMutex
+    std::string sharedChaptersJson = "[]"; // trackJsonMutex
+
+    std::mutex mpvCallMutex;
+    std::condition_variable mpvCallCv;
+    std::deque<std::function<void()>> mpvCalls; // mpvCallMutex
+    bool mpvCallsStopping = false; // mpvCallMutex
+    std::thread mpvCallThread;
+
+private:
     double doubleProperty(const char *name, double fallback) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return fallback;
@@ -5217,7 +6181,7 @@ private:
     }
 
     double rawPositionSeconds() {
-        double position = doubleProperty("time-pos", 0.0);
+        double position = mirroredDouble("time-pos", 0.0);
         return std::isfinite(position) ? std::max(position, 0.0) : 0.0;
     }
 
@@ -5232,7 +6196,7 @@ private:
 
     double cacheAheadSeconds() {
         double effectivePosition = effectiveCachePositionSeconds();
-        double cacheTime = doubleProperty("demuxer-cache-time", 0.0);
+        double cacheTime = mirroredDouble("demuxer-cache-time", 0.0);
         if (std::isfinite(cacheTime) && cacheTime > 0.0) {
             if (cacheTime >= effectivePosition - 5.0) {
                 return std::max(cacheTime - effectivePosition, 0.0);
@@ -5240,7 +6204,7 @@ private:
             return cacheTime;
         }
 
-        double cacheDuration = doubleProperty("demuxer-cache-duration", 0.0);
+        double cacheDuration = mirroredDouble("demuxer-cache-duration", 0.0);
         if (std::isfinite(cacheDuration) && cacheDuration > 0.0) {
             return cacheDuration;
         }
@@ -5252,6 +6216,7 @@ private:
             std::lock_guard<std::mutex> lock(appAddedSubtitleUrlsMutex);
             appAddedSubtitleUrls.clear();
         }
+        markTrackJsonDirty();
         long long count = int64Property("track-list/count", 0);
         if (count <= 0) return;
         for (long long index = count - 1; index >= 0; index--) {
@@ -5635,10 +6600,16 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_create(
     jmethodID eventMethod = nullptr;
     if (eventSink) {
         eventSinkRef = env->NewGlobalRef(eventSink);
-        jclass eventSinkClass = env->GetObjectClass(eventSink);
-        eventMethod = env->GetMethodID(eventSinkClass, "onPlayerEvent", "(Ljava/lang/String;D)V");
-        env->DeleteLocalRef(eventSinkClass);
+        // The interface, not GetObjectClass(eventSink): the sink is a Kotlin lambda whose generated
+        // class name the native-image metadata generator cannot know, while a literal it can
+        // (composeApp/native-image/README.md, "generated"). The call still dispatches to the lambda.
+        jclass eventSinkClass = env->FindClass("com/nuvio/app/features/player/desktop/NativePlayerEventSink");
+        eventMethod = eventSinkClass
+            ? env->GetMethodID(eventSinkClass, "onPlayerEvent", "(Ljava/lang/String;D)V")
+            : nullptr;
+        if (eventSinkClass) env->DeleteLocalRef(eventSinkClass);
         if (!eventMethod) {
+            env->ExceptionClear();
             if (eventSinkRef) env->DeleteGlobalRef(eventSinkRef);
             throwJavaError(env, "Native player event sink is missing onPlayerEvent(String, Double).");
             return 0;
@@ -5776,25 +6747,32 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_initializeAppIdent
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setPaused(JNIEnv *, jobject, jlong handle, jboolean paused) {
     auto player = playerFromHandle(handle);
-    if (player) player->setPaused(paused == JNI_TRUE);
+    if (!player) return;
+    // Mirror the intent before queueing, as speed/volume do: a toggle read before mpv reports the
+    // change would otherwise flip from the old state and re-send the same value.
+    player->setMirroredNumber("pause", paused == JNI_TRUE ? 1.0 : 0.0);
+    player->nuvioBridgeLog(std::string("pause queued=") + (paused == JNI_TRUE ? "pause" : "play"));
+    player->postMpvCall([p = player.get(), paused]() { p->setPaused(paused == JNI_TRUE); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_seekTo(JNIEnv *, jobject, jlong handle, jlong positionMs) {
     auto player = playerFromHandle(handle);
-    if (player) player->seekToMilliseconds(positionMs);
+    if (player) player->postMpvCall([p = player.get(), positionMs]() { p->seekToMilliseconds(positionMs); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_seekBy(JNIEnv *, jobject, jlong handle, jlong offsetMs) {
     auto player = playerFromHandle(handle);
-    if (player) player->seekByMilliseconds(offsetMs);
+    if (player) player->postMpvCall([p = player.get(), offsetMs]() { p->seekByMilliseconds(offsetMs); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSpeed(JNIEnv *, jobject, jlong handle, jfloat speed) {
     auto player = playerFromHandle(handle);
-    if (player) player->setSpeed(speed);
+    if (!player) return;
+    player->setMirroredNumber("speed", std::max(0.25, std::min(4.0, (double)speed)));
+    player->postMpvCall([p = player.get(), speed]() { p->setSpeed(speed); });
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -5842,7 +6820,9 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_speed(JNIEnv *, jo
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setVolume(JNIEnv *, jobject, jlong handle, jfloat volume) {
     auto player = playerFromHandle(handle);
-    if (player) player->setVolume(volume);
+    if (!player) return;
+    player->setMirroredNumber("volume", std::max(0.0, std::min(200.0, (double)volume)));
+    player->postMpvCall([p = player.get(), volume]() { p->setVolume(volume); });
 }
 
 extern "C" JNIEXPORT jfloat JNICALL
@@ -5854,7 +6834,9 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_volume(JNIEnv *, j
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMute(JNIEnv *, jobject, jlong handle, jboolean muted) {
     auto player = playerFromHandle(handle);
-    if (player) player->setMute(muted == JNI_TRUE);
+    if (!player) return;
+    player->setMirroredNumber("mute", muted == JNI_TRUE ? 1.0 : 0.0);
+    player->postMpvCall([p = player.get(), muted]() { p->setMute(muted == JNI_TRUE); });
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -5866,7 +6848,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isMuted(JNIEnv *, 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setResizeMode(JNIEnv *, jobject, jlong handle, jint mode) {
     auto player = playerFromHandle(handle);
-    if (player) player->setResizeMode(mode);
+    if (player) player->postMpvCall([p = player.get(), mode]() { p->setResizeMode(mode); });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -5884,18 +6866,18 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_beginVideoProfile(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
-    if (player) player->beginVideoProfile();
+    if (player) player->postMpvCall([p = player.get()]() { p->beginVideoProfile(); });
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_endVideoProfile(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
-    if (player) player->endVideoProfile();
+    if (player) player->postMpvCall([p = player.get()]() { p->endVideoProfile(); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_completeSvpStartupProfile(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
-    if (player) player->acknowledgeSvpStartupProfile();
+    if (player) player->postMpvCall([p = player.get()]() { p->acknowledgeSvpStartupProfile(); });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -5907,31 +6889,33 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_chaptersJson(JNIEn
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectAudioTrack(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
-    return (player && player->selectAudioTrackId(trackId)) ? JNI_TRUE : JNI_FALSE;
+    return player && player->requestAudioTrackId(trackId) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_selectSubtitleTrack(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
-    return (player && player->selectSubtitleTrackId(trackId)) ? JNI_TRUE : JNI_FALSE;
+    return player && player->requestSubtitleTrackId(trackId) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_addSubtitleUrl(JNIEnv *env, jobject, jlong handle, jstring url) {
     auto player = playerFromHandle(handle);
-    if (player) player->addSubtitleUrl(jstringToUtf8(env, url));
+    if (!player) return;
+    std::string urlText = jstringToUtf8(env, url);
+    player->postMpvCall([p = player.get(), urlText]() { p->addSubtitleUrl(urlText); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_clearExternalSubtitles(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
-    if (player) player->removeExternalSubtitles();
+    if (player) player->postMpvCall([p = player.get()]() { p->removeExternalSubtitles(); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_clearExternalSubtitlesAndSelect(JNIEnv *, jobject, jlong handle, jint trackId) {
     auto player = playerFromHandle(handle);
-    if (player) player->removeExternalSubtitlesAndSelect(trackId);
+    if (player) player->postMpvCall([p = player.get(), trackId]() { p->removeExternalSubtitlesAndSelect(trackId); });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -5998,13 +6982,14 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleAssStyl
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->setSubtitleAssStyleMode(mode ? jstringToUtf8(env, mode) : std::string("no"), scale);
+    std::string modeText = mode ? jstringToUtf8(env, mode) : std::string("no");
+    player->postMpvCall([p = player.get(), modeText, scale]() { p->setSubtitleAssStyleMode(modeText, scale); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSubtitleDelayMs(JNIEnv *, jobject, jlong handle, jint delayMs) {
     auto player = playerFromHandle(handle);
-    if (player) player->setSubtitleDelayMs(delayMs);
+    if (player) player->postMpvCall([p = player.get(), delayMs]() { p->setSubtitleDelayMs(delayMs); });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6023,16 +7008,19 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applySubtitleStyle
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->applySubtitleStyle(
-        jstringToUtf8(env, textColor),
-        jstringToUtf8(env, backgroundColor),
-        jstringToUtf8(env, outlineColor),
+    player->postMpvCall([
+        p = player.get(),
+        text = jstringToUtf8(env, textColor),
+        background = jstringToUtf8(env, backgroundColor),
+        outline = jstringToUtf8(env, outlineColor),
         outlineSize,
-        bold == JNI_TRUE,
+        isBold = bold == JNI_TRUE,
         fontSize,
         subPos,
-        fontName ? jstringToUtf8(env, fontName) : std::string()
-    );
+        font = fontName ? jstringToUtf8(env, fontName) : std::string()
+    ]() {
+        p->applySubtitleStyle(text, background, outline, outlineSize, isBold, fontSize, subPos, font);
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6045,7 +7033,33 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMpvProperty(
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->setMpvPropertyString(jstringToUtf8(env, key), jstringToUtf8(env, value));
+    player->postMpvCall([p = player.get(), keyText = jstringToUtf8(env, key), valueText = jstringToUtf8(env, value)]() {
+        p->setMpvPropertyString(keyText, valueText);
+    });
+}
+
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_speechSourceBytesPerSecond(
+    JNIEnv *,
+    jobject,
+    jlong handle
+) {
+    auto player = playerFromHandle(handle);
+    return player ? player->speechSourceBytesPerSecond() : -1.0;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeSpeechSpot(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jdouble startSeconds,
+    jdouble durationSeconds,
+    jstring outputPath
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return -1;
+    return player->decodeSpeechSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath));
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6056,7 +7070,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_toggleStatsOverlay
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->toggleStatsOverlay();
+    player->postMpvCall([p = player.get()]() { p->toggleStatsOverlay(); });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -6067,7 +7081,8 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_forceVideoRedraw(
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->forceVideoRedraw();
+    // Queued so it lands after the property writes it is meant to make visible.
+    player->postMpvCall([p = player.get()]() { p->forceVideoRedraw(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -6629,6 +7644,91 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_systemIdleMs(JNIEn
     // still right across the wrap.
     const DWORD idle = GetTickCount() - info.dwTime;
     return static_cast<jlong>(idle);
+}
+
+// Keeps the display (and the system) awake during playback, ported from upstream. The
+// ES_CONTINUOUS request belongs to the thread that made it and lapses when that thread exits, so
+// it is held by a parked thread of our own rather than whichever JVM thread happens to call in.
+// GetLastInputInfo is unaffected, so Nuvio's own screensaver (systemIdleMs above) still dims and
+// shuts down on idle exactly as before.
+namespace {
+struct DisplaySleepInhibitRequest {
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool stop = false;
+};
+
+std::mutex gDisplaySleepInhibitMutex;
+std::shared_ptr<DisplaySleepInhibitRequest> gDisplaySleepInhibitRequest;
+std::thread *gDisplaySleepInhibitThread = nullptr;
+
+void displaySleepInhibitThreadMain(std::shared_ptr<DisplaySleepInhibitRequest> request) {
+    SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
+
+    std::unique_lock<std::mutex> lock(request->mutex);
+    request->condition.wait(lock, [request] { return request->stop; });
+    lock.unlock();
+
+    SetThreadExecutionState(ES_CONTINUOUS);
+}
+
+bool setDisplaySleepInhibited(bool inhibited) {
+    if (inhibited) {
+        std::lock_guard<std::mutex> stateLock(gDisplaySleepInhibitMutex);
+        if (gDisplaySleepInhibitThread != nullptr) return true;
+
+        auto request = std::make_shared<DisplaySleepInhibitRequest>();
+        try {
+            gDisplaySleepInhibitThread = new std::thread(displaySleepInhibitThreadMain, request);
+            gDisplaySleepInhibitRequest = request;
+            return true;
+        } catch (...) {
+            gDisplaySleepInhibitRequest.reset();
+            return false;
+        }
+    }
+
+    std::shared_ptr<DisplaySleepInhibitRequest> request;
+    std::thread *threadToJoin = nullptr;
+    {
+        std::lock_guard<std::mutex> stateLock(gDisplaySleepInhibitMutex);
+        if (gDisplaySleepInhibitThread == nullptr) return true;
+
+        request = gDisplaySleepInhibitRequest;
+        threadToJoin = gDisplaySleepInhibitThread;
+        gDisplaySleepInhibitThread = nullptr;
+        gDisplaySleepInhibitRequest.reset();
+    }
+
+    if (request) {
+        {
+            std::lock_guard<std::mutex> requestLock(request->mutex);
+            request->stop = true;
+        }
+        request->condition.notify_all();
+    }
+    if (threadToJoin != nullptr) {
+        if (threadToJoin->joinable()) {
+            threadToJoin->join();
+        }
+        delete threadToJoin;
+    }
+    return true;
+}
+} // namespace
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setWindowsDisplaySleepInhibited(JNIEnv *, jobject, jboolean inhibited) {
+    return setDisplaySleepInhibited(inhibited == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
+}
+
+// Whether the monitor [windowHwnd] sits on has Windows HDR switched on. Only that monitor counts:
+// the UI uses this to pre-correct for DWM's SDR-in-HDR conversion, and a false yes darkens it.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isWindowDisplayHdr(JNIEnv *, jobject, jlong windowHwnd) {
+    HWND hwnd = (HWND)(intptr_t)windowHwnd;
+    if (!hwnd) return JNI_FALSE;
+    return WindowsMpvWebPlayer::isDisplayHdrEnabled(hwnd, true) ? JNI_TRUE : JNI_FALSE;
 }
 
 // Whether the foreground window belongs to this process. The screensaver's shutdown wants "is

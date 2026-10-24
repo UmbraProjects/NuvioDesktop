@@ -1,5 +1,7 @@
 package com.nuvio.app.features.simkl
 
+import com.nuvio.app.features.calendar.MovieReleaseDate
+import com.nuvio.app.features.calendar.pickMovieCalendarDate
 import com.nuvio.app.features.metadata.AnimeIdMapping
 import com.nuvio.app.features.metadata.AnimeIdMappingRepository
 import com.nuvio.app.features.metadata.AnimeIdPreference
@@ -480,11 +482,6 @@ internal data class SimklCalendarIds(
 
 // ── Movie release dates ───────────────────────────────────────────────────────
 
-// Release type codes (TMDB convention used by SIMKL):
-// 1=Premiere  2=Limited theatrical  3=Theatrical  4=Digital  5=Physical/Home  6=TV
-internal const val SIMKL_RELEASE_TYPE_DIGITAL = 4
-internal const val SIMKL_RELEASE_TYPE_THEATRICAL = 3
-
 @Serializable
 internal data class SimklMovieDetails(
     val title: String? = null,
@@ -503,30 +500,16 @@ internal data class SimklMovieReleaseResult(
     @SerialName("release_date") val releaseDate: String? = null,
 )
 
-/**
- * Picks the best calendar date for a movie. Priority:
- * 1. US digital (type 4) — most common reference date for English-language apps
- * 2. GB digital (type 4)
- * 3. Any digital (type 4) — earliest
- * 4. US theatrical (type 3) — fallback if no digital date available
- * 5. Any theatrical (type 3) — earliest
- */
-internal fun List<SimklMovieReleaseCountry>.bestCalendarDate(): String? {
-    fun releasesOfType(type: Int) = flatMap { country ->
-        country.results
-            .filter { it.type == type }
-            .mapNotNull { r -> r.releaseDate?.takeIf { it.isNotBlank() }?.let { country.country to it } }
-    }
-
-    val digital = releasesOfType(SIMKL_RELEASE_TYPE_DIGITAL)
-    val theatrical = releasesOfType(SIMKL_RELEASE_TYPE_THEATRICAL)
-
-    return digital.firstOrNull { it.first == "US" }?.second
-        ?: digital.firstOrNull { it.first == "GB" }?.second
-        ?: digital.minByOrNull { it.second }?.second
-        ?: theatrical.firstOrNull { it.first == "US" }?.second
-        ?: theatrical.minByOrNull { it.second }?.second
-}
+/** The movie's calendar date, in the same order the Nuvio calendar uses ([pickMovieCalendarDate]). */
+internal fun List<SimklMovieReleaseCountry>.bestCalendarDate(): String? = pickMovieCalendarDate(
+    flatMap { country ->
+        country.results.mapNotNull { r ->
+            val type = r.type ?: return@mapNotNull null
+            val date = r.releaseDate?.trim()?.take(10)?.takeIf { it.length == 10 } ?: return@mapNotNull null
+            MovieReleaseDate(country.country.orEmpty(), type, date)
+        }
+    },
+)
 
 // ── Playback / continue watching ──────────────────────────────────────────────
 

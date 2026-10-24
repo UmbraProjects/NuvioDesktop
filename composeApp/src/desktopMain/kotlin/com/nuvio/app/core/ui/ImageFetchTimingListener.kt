@@ -1,6 +1,7 @@
 package com.nuvio.app.core.ui
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import coil3.EventListener
 import coil3.decode.DataSource
 import coil3.decode.DecodeResult
@@ -73,6 +74,14 @@ internal class ImageFetchTimingListener(
         val source = result.dataSource
         if (source == DataSource.MEMORY_CACHE || source == DataSource.MEMORY) return
         val totalMs = (now() - startedAt) / 1_000_000
+        if (source == DataSource.NETWORK) {
+            // The fetch alone: wait is queueing and decode is ours, neither is the request.
+            PerfTelemetry.recordHttp(
+                "img", "GET", request.data.toString(),
+                status = 200,
+                durationMs = fetchNanos.coerceAtLeast(0) / 1_000_000,
+            )
+        }
         if (source != DataSource.NETWORK && totalMs < SlowDiskLoadMs) return
         emit(
             "$source ${totalMs}ms ${timings()} " +
@@ -83,6 +92,14 @@ internal class ImageFetchTimingListener(
     override fun onError(request: ImageRequest, result: ErrorResult) {
         val totalMs = (now() - startedAt) / 1_000_000
         val error = result.throwable
+        if (fetchNanos >= 0) {
+            PerfTelemetry.recordHttp(
+                "img", "GET", request.data.toString(),
+                status = 0,
+                durationMs = fetchNanos / 1_000_000,
+                failure = error,
+            )
+        }
         emit(
             "FAILED ${totalMs}ms ${timings()} ${describeData(request.data)} " +
                 "error=${error.javaClass.simpleName}: ${error.message?.take(160)}",

@@ -23,6 +23,8 @@ object MdbListSettingsRepository {
     private var useLetterboxd = true
     private var useAudience = true
     private var useMal = true
+    private var refreshPreset = MdbListRefreshPreset.Auto
+    private var customRefreshDays: Map<MdbListRefreshTier, Double> = emptyMap()
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -163,6 +165,39 @@ object MdbListSettingsRepository {
         publish()
     }
 
+    fun setRefreshPreset(value: MdbListRefreshPreset) {
+        ensureLoaded()
+        if (refreshPreset == value) return
+        if (value == MdbListRefreshPreset.Custom && customRefreshDays.isEmpty()) {
+            // Custom starts from what was in force, not from the defaults it may have scaled.
+            val current = _uiState.value
+            saveCustomRefreshDays(MdbListRefreshTier.entries.associateWith(current::refreshDays))
+        }
+        refreshPreset = value
+        publish()
+        MdbListSettingsStorage.saveRefreshPreset(value.storageValue)
+    }
+
+    /** Sets one interval, switching to Custom (seeded from the current pace) if needed. */
+    fun setRefreshDays(tier: MdbListRefreshTier, days: Double) {
+        ensureLoaded()
+        if (days <= 0.0) return
+        val current = _uiState.value
+        val base = MdbListRefreshTier.entries.associateWith(current::refreshDays)
+        if (refreshPreset == MdbListRefreshPreset.Custom && base[tier] == days) return
+        saveCustomRefreshDays(base + (tier to days))
+        if (refreshPreset != MdbListRefreshPreset.Custom) {
+            refreshPreset = MdbListRefreshPreset.Custom
+            MdbListSettingsStorage.saveRefreshPreset(refreshPreset.storageValue)
+        }
+        publish()
+    }
+
+    private fun saveCustomRefreshDays(days: Map<MdbListRefreshTier, Double>) {
+        customRefreshDays = days
+        MdbListSettingsStorage.saveCustomRefreshDays(MdbListRefreshIntervalsCodec.encode(days))
+    }
+
     private fun loadFromDisk() {
         hasLoaded = true
         apiKey = MdbListSettingsStorage.loadApiKey().orEmpty().trim()
@@ -179,6 +214,8 @@ object MdbListSettingsRepository {
         useLetterboxd = MdbListSettingsStorage.loadUseLetterboxd() ?: true
         useAudience = MdbListSettingsStorage.loadUseAudience() ?: true
         useMal = MdbListSettingsStorage.loadUseMal() ?: true
+        refreshPreset = MdbListRefreshPreset.fromStorage(MdbListSettingsStorage.loadRefreshPreset())
+        customRefreshDays = MdbListRefreshIntervalsCodec.decode(MdbListSettingsStorage.loadCustomRefreshDays())
         publish()
     }
 
@@ -197,6 +234,8 @@ object MdbListSettingsRepository {
             useLetterboxd = useLetterboxd,
             useAudience = useAudience,
             useMal = useMal,
+            refreshPreset = refreshPreset,
+            customRefreshDays = customRefreshDays,
         )
         // The key and the tracking toggle together are what "connected" means for MDBList, so the
         // registry's view of it has to move whenever either does.

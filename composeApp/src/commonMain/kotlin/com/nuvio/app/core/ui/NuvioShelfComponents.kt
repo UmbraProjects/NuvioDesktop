@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.animateScrollBy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -192,40 +193,24 @@ fun <T> NuvioShelfSection(
     LaunchedEffect(focusedItemIndex, entries) {
         val target = focusedItemIndex
         if (target == null || target !in entries.indices) return@LaunchedEffect
-        // Item 0 must always snap to scroll offset 0 — after scrolling right and back,
-        // item 0 can be partially clipped on the left while still counting as "visible",
-        // so the normal off-screen check would leave it cut off.
-        if (target == 0) {
-            rowState.animateScrollToItem(0, scrollOffset = 0)
-            return@LaunchedEffect
-        }
-        
         // Wait for the LazyRow to lay out the new items if they were just added via pagination
         if (target >= rowState.layoutInfo.totalItemsCount) {
             androidx.compose.runtime.snapshotFlow { rowState.layoutInfo.totalItemsCount }
                 .first { it > target }
         }
 
-        val layoutInfo = rowState.layoutInfo
         // For mouse hover, only scroll when the item is completely off-screen to prevent
         // hover cascade loops. For keyboard navigation, scroll if the item is even partially clipped.
-        val isVisible = if (isKeyboardNavigation) {
-            layoutInfo.visibleItemsInfo.any { item -> 
-                item.index == target && 
-                item.offset >= layoutInfo.viewportStartOffset && 
-                item.offset + item.size <= layoutInfo.viewportEndOffset 
-            }
-        } else {
-            layoutInfo.visibleItemsInfo.any { item -> item.index == target }
-        }
-        if (!isVisible) {
-            // When navigating with keyboard, scrolling an item into view perfectly from the right edge
-            // by just using animateScrollToItem(target) snaps it to the far LEFT of the screen, which is
-            // visually jarring. We use an offset scroll if possible to bring it into view gently.
-            // Wait, animateScrollToItem(target) natively snaps to the start, but we can't easily calculate
-            // the offset without knowing the item widths. For now, snapping to start is acceptable and ensures visibility.
-            rowState.animateScrollToItem(target)
-        }
+        // Item 0 always counts as needing it: after scrolling right and back it can sit partially
+        // clipped on the left while still "visible", and the row should rest flush at its start.
+        // A mouse focus only scrolls when the mouse actually moved: returning to Home puts the page
+        // back under a still cursor, Compose reports that as hover, and the row under it slid to
+        // rest flush (2026-10-19, "CW slides a few pixels on leaving").
+        val mouseMoved = !isDesktop || PointerMotionClock.movedWithin(MouseFocusScrollWindowMs)
+        val needsScroll = isKeyboardNavigation || (
+            mouseMoved && (target == 0 || rowState.layoutInfo.visibleItemsInfo.none { item -> item.index == target })
+        )
+        if (needsScroll) rowState.scrollShelfItemIntoView(target)
     }
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -251,7 +236,11 @@ fun <T> NuvioShelfSection(
             modifier = Modifier
                 .alpha(bodyAlpha)
                 .desktopShelfDragScroll(rowState)
-                .desktopShelfEdgeScroll(rowState, isMouseActive = !isKeyboardNavigation),
+                .desktopShelfEdgeScroll(
+                    rowState,
+                    isMouseActive = !isKeyboardNavigation,
+                    covered = LocalScreenCovered.current,
+                ),
             contentPadding = rowContentPadding,
             horizontalArrangement = Arrangement.spacedBy(itemSpacing),
         ) {
@@ -305,6 +294,40 @@ fun <T> NuvioShelfSection(
 
 private const val ShelfLoadMoreThreshold = 6
 
+/**
+ * Scrolls the row just far enough that [target] sits wholly inside the content padding: its
+ * trailing edge at the right edge when it is clipped on the right, its leading edge at the left
+ * edge otherwise — one card's step per key press, as on a TV, rather than a page.
+ *
+ * Only ever by scroll distance. `animateScrollToItem` ends in `snapToItem`, which the item animator
+ * reads as the cards having moved rather than the row having scrolled, so each card's placement
+ * spring (the shuffle deal) slid it across from its old spot and the cards overlapped mid-flight.
+ * A target that is not laid out at all (a Page or End jump) is reached by an estimate from the
+ * visible cards' stride, then corrected once it is on screen.
+ */
+private suspend fun LazyListState.scrollShelfItemIntoView(target: Int) {
+    fun distanceTo(offset: Int, size: Int): Int {
+        val info = layoutInfo
+        val start = info.viewportStartOffset + info.beforeContentPadding
+        val end = info.viewportEndOffset - info.afterContentPadding
+        return when {
+            offset < start -> offset - start
+            offset + size > end -> offset + size - end
+            else -> 0
+        }
+    }
+    val placed = layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
+    if (placed == null) {
+        val reference = layoutInfo.visibleItemsInfo.firstOrNull() ?: return scrollToItem(target)
+        val stride = reference.size + layoutInfo.mainAxisItemSpacing
+        val estimate = reference.offset + (target - reference.index) * stride
+        animateScrollBy(distanceTo(estimate, reference.size).toFloat())
+    }
+    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.index == target } ?: return
+    val distance = distanceTo(item.offset, item.size)
+    if (distance != 0) animateScrollBy(distance.toFloat())
+}
+
 // --- Shuffle deal animation -------------------------------------------------------------------
 //
 // The driver runs 0 -> ShuffleDealSettled over ShuffleDealDurationMs. Each card maps that to its
@@ -350,6 +373,14 @@ internal fun shuffleDealProgressFor(driver: Float, index: Int): Float {
 // How much of the header row the title may occupy when trailing content is present. Longer names
 // ellipsize rather than run under the centred trailing slot.
 private const val HeaderTitleMaxWidthFraction = 0.26f
+
+/**
+ * Lets a header drawn through `titleContent` reach further than [HeaderTitleMaxWidthFraction] when
+ * trailing content shares its line: given the header's width, how wide the title content may be.
+ * TV Mode provides the room left of its row-jump dots, so Discover's filter bar runs up to the
+ * dots and scrolls beyond that. Null keeps the fixed fraction.
+ */
+val LocalNuvioShelfTitleContentMaxWidth = androidx.compose.runtime.staticCompositionLocalOf<((Dp) -> Dp)?> { null }
 
 /**
  * The share of the header row kept clear on *each* side of centred trailing content.
@@ -456,8 +487,12 @@ private fun Modifier.desktopShelfDragScroll(
     }
 }
 
-private fun Modifier.desktopShelfEdgeScroll(state: LazyListState, isMouseActive: Boolean): Modifier {
+private fun Modifier.desktopShelfEdgeScroll(state: LazyListState, isMouseActive: Boolean, covered: Boolean): Modifier {
     if (!isDesktop) return this
+    // Restarted (and its scroll stopped) when the screen is covered: Home now stays composed under
+    // Details, and a scroll started by clicking a poster near the row's edge kept running there and
+    // after Back until the mouse moved over the row again (2026-10-19, Next Up).
+    if (covered) return this
     return this.pointerInput(state) {
         // PointerInputScope (Compose 1.7+) no longer extends CoroutineScope, so we
         // need coroutineScope { } to get a scope for launching child coroutines.
@@ -496,9 +531,12 @@ private fun Modifier.desktopShelfEdgeScroll(state: LazyListState, isMouseActive:
                 while (true) {
                     val event = awaitPointerEvent(PointerEventPass.Initial)
                     when (event.type) {
-                        PointerEventType.Exit -> positionChannel.trySend(null)
-                        PointerEventType.Move ->
+                        PointerEventType.Exit, PointerEventType.Press -> positionChannel.trySend(null)
+                        // Only real mouse motion: a move Compose reports because the row scrolled
+                        // or the page came back under a still cursor neither starts nor stops it.
+                        PointerEventType.Move -> if (PointerMotionClock.movedWithin(MouseFocusScrollWindowMs)) {
                             positionChannel.trySend(event.changes.firstOrNull()?.position?.x)
+                        }
                         else -> Unit
                     }
                 }
@@ -814,10 +852,15 @@ private fun NuvioShelfSectionHeader(
                 contentAlignment = Alignment.Center,
             ) {
                 if (titleContent != null) {
+                    // A caller-drawn header (Discover's filter bar) may be told how far it can reach
+                    // before the trailing content instead — see LocalNuvioShelfTitleContentMaxWidth.
+                    val titleCap = LocalNuvioShelfTitleContentMaxWidth.current?.invoke(maxWidth)
+                        ?.coerceAtLeast(maxWidth * HeaderTitleMaxWidthFraction)
+                        ?: (maxWidth * HeaderTitleMaxWidthFraction)
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
-                            .widthIn(max = maxWidth * HeaderTitleMaxWidthFraction),
+                            .widthIn(max = titleCap),
                     ) {
                         titleContent()
                     }
@@ -1153,3 +1196,17 @@ internal fun Modifier.posterCardClickable(
     }
     return clickable.secondaryClick(handleLongClick)
 }
+
+/**
+ * When the mouse last really moved. Compose also reports hover moves when content moves under a
+ * still cursor (a row scrolling, a page returning); those must not drive anything meant to follow
+ * the user's hand. Stamped by the desktop input listener from the OS's own mouse-move events.
+ */
+object PointerMotionClock {
+    @kotlin.concurrent.Volatile
+    var lastRealMoveAtMs: Long = 0L
+
+    fun movedWithin(windowMs: Long): Boolean = System.currentTimeMillis() - lastRealMoveAtMs <= windowMs
+}
+
+private const val MouseFocusScrollWindowMs = 150L

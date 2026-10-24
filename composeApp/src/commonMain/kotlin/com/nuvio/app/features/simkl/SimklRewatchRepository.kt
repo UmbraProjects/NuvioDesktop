@@ -1,6 +1,7 @@
 package com.nuvio.app.features.simkl
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.metadata.toSimklIds
@@ -127,6 +128,7 @@ internal object SimklRewatchRepository {
      * are stored. This used to re-read the whole `extended=full` payload then, and at least daily.
      */
     suspend fun refreshNow(full: Boolean = false): Boolean {
+        PerfTelemetry.count("SimklRewatchRepository.refreshNow")
         ensureLoaded()
         if (!rewatchRequestsAllowed()) return false
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)

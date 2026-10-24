@@ -30,9 +30,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.library.MusicLibraryGrid
 import kotlinx.coroutines.delay
 
 private enum class MusicSearchKind { Albums, Artists }
+
+private enum class MusicSection { Search, Library }
 
 private sealed interface MusicSearchResults {
     data object Idle : MusicSearchResults
@@ -57,12 +60,15 @@ fun MusicTabScreen(
     onAlbumClick: (browseId: String) -> Unit,
     onArtistClick: (browseId: String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens an artist of the library (by library id) on its own page. */
+    onLibraryArtistClick: (artistId: String) -> Unit = {},
     topChromePadding: Dp = 0.dp,
     catalog: MusicCatalog = remember { defaultMusicCatalog() },
 ) {
     val colors = MaterialTheme.nuvio.colors
     var query by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf(MusicSearchKind.Albums) }
+    var section by rememberSaveable { mutableStateOf(MusicSection.Search) }
     var results by remember { mutableStateOf<MusicSearchResults>(MusicSearchResults.Idle) }
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
@@ -97,21 +103,37 @@ fun MusicTabScreen(
                 color = colors.textPrimary,
             )
             Spacer(Modifier.height(12.dp))
-            NuvioTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = "Search albums and artists",
-                leadingContent = {
-                    Icon(Icons.Rounded.Search, contentDescription = null, tint = colors.textMuted)
-                },
-            )
-            Spacer(Modifier.height(12.dp))
             MusicSegmented(
-                options = listOf(MusicSearchKind.Albums to "Albums", MusicSearchKind.Artists to "Artists"),
-                selected = kind,
-                onSelect = { kind = it },
+                options = listOf(MusicSection.Search to "Search", MusicSection.Library to "Library"),
+                selected = section,
+                onSelect = { section = it },
             )
+            if (section == MusicSection.Search) {
+                Spacer(Modifier.height(12.dp))
+                NuvioTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Search albums and artists",
+                    leadingContent = {
+                        Icon(Icons.Rounded.Search, contentDescription = null, tint = colors.textMuted)
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+                MusicSegmented(
+                    options = listOf(MusicSearchKind.Albums to "Albums", MusicSearchKind.Artists to "Artists"),
+                    selected = kind,
+                    onSelect = { kind = it },
+                )
+            }
+        }
+
+        if (section == MusicSection.Library) {
+            MusicLibraryGrid(
+                onArtistClick = onLibraryArtistClick,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            )
+            return@Column
         }
 
         LazyColumn(

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import androidx.compose.ui.text.intl.Locale
 import com.nuvio.app.core.i18n.localizedMediaTypeLabel
 import com.nuvio.app.features.addons.AddonCatalog
 import com.nuvio.app.features.addons.ManagedAddon
@@ -21,7 +22,50 @@ data class HomeCatalogDefinition(
     val supportsPagination: Boolean,
 )
 
-fun buildHomeCatalogDefinitions(addons: List<ManagedAddon>): List<HomeCatalogDefinition> =
+/**
+ * Memoized: Home calls this two or three times on every entry (settings sync, HomeRepository.refresh,
+ * Random Play), and each catalog's title is a `runBlocking` resource lookup on the UI thread
+ * (2026-10-19: these frames were in most Home-return stalls). The result depends only on each
+ * addon's URL, manifest, name and enabled flag, and on the locale the titles are in.
+ */
+fun buildHomeCatalogDefinitions(addons: List<ManagedAddon>): List<HomeCatalogDefinition> {
+    val locale = Locale.current.toLanguageTag()
+    homeDefinitionsMemo?.let { memo ->
+        if (memo.locale == locale && memo.addons.sameDefinitionInputs(addons)) return memo.result
+    }
+    val result = computeHomeCatalogDefinitions(addons)
+    homeDefinitionsMemo = HomeDefinitionsMemo(addons, locale, result)
+    return result
+}
+
+private class HomeDefinitionsMemo(
+    val addons: List<ManagedAddon>,
+    val locale: String,
+    val result: List<HomeCatalogDefinition>,
+)
+
+// Replaced whole, never mutated: a race between threads only costs a recomputation.
+private var homeDefinitionsMemo: HomeDefinitionsMemo? = null
+
+private fun List<ManagedAddon>.sameDefinitionInputs(other: List<ManagedAddon>): Boolean {
+    if (this === other) return true
+    if (size != other.size) return false
+    for (index in indices) {
+        val a = this[index]
+        val b = other[index]
+        if (a === b) continue
+        // Manifests are compared by reference: a refetch builds a new one, so a changed catalog
+        // list always misses, and comparing the parsed manifests deeply would cost more than this.
+        if (a.manifestUrl != b.manifestUrl || a.manifest !== b.manifest ||
+            a.userSetName != b.userSetName || a.enabled != b.enabled
+        ) {
+            return false
+        }
+    }
+    return true
+}
+
+private fun computeHomeCatalogDefinitions(addons: List<ManagedAddon>): List<HomeCatalogDefinition> =
     addons.enabledAddons().mapNotNull { addon ->
         val manifest = addon.manifest ?: return@mapNotNull null
         addon to manifest

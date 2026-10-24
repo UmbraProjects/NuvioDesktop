@@ -10,8 +10,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
@@ -24,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImagePainter
 import com.nuvio.app.features.home.extractHeroAccentColor
+import kotlinx.coroutines.delay
 
 // Blurring the ambient backdrop at full window resolution (2K/4K displays) every time the
 // active item changes — and, unless perfectly layer-cached, on every nearby recomposition
@@ -57,6 +64,9 @@ import com.nuvio.app.features.home.extractHeroAccentColor
 // that a fixed picture was being recomputed every frame.
 private const val AmbientBlurRadiusDp = 72
 private const val AmbientBlurDownsampleFactor = 6
+private const val AmbientPreloadTimeoutMs = 1_500L
+private const val AmbientWashMinFadeMs = 120
+private const val AmbientWashMaxFadeMs = 650
 
 /**
  * Shared full-bleed ambient background: a crossfading, blurred, tinted wash of [backdrop] used
@@ -71,15 +81,60 @@ internal fun HeroAmbientBackdrop(
     onAccentChanged: (Color?) -> Unit,
     modifier: Modifier = Modifier,
     label: String = "hero_ambient_background",
+    /**
+     * Keep the wash at its row-top strength to the bottom instead of dimming toward background.
+     * On for every mode (Adaptive Ambient, TV ambient, Collections); false restores the dip.
+     */
+    holdBottom: Boolean = true,
 ) {
     val ambientBackdropColorFilter = remember {
         ColorFilter.colorMatrix(
             ColorMatrix().apply { setToSaturation(1.7f) },
         )
     }
+    // Accent per backdrop URL. onSuccess only fires when an image finishes loading, so scrolling
+    // A -> B -> A quickly (A still loaded in the outgoing crossfade slot) never reported A again and
+    // the wash kept B's tint. Re-applying from this cache on every backdrop change fixes that.
+    // Unspecified stands for "extracted, no usable accent".
+    val accentCache = remember { mutableStateMapOf<String, Color>() }
+    val currentOnAccentChanged by rememberUpdatedState(onAccentChanged)
+    val cachedAccent = backdrop?.let { accentCache[it] }
+    LaunchedEffect(backdrop, cachedAccent) {
+        if (cachedAccent != null) {
+            currentOnAccentChanged(cachedAccent.takeIf { it != Color.Unspecified })
+        }
+    }
+    // The wash changes when its new picture is ready, not when the URL does. The crossfade used to
+    // start at once, fading to bare tint while the blurred image loaded, and the accent was only
+    // extracted after that and then eased in, so the wash settled about a second after the hero.
+    // The incoming image is decoded invisibly (same model and size as the wash, so the crossfade then
+    // shows it from cache) and its accent cached; then image and tint change together.
+    var shownBackdrop by remember { mutableStateOf<String?>(null) }
+    val latestBackdrop by rememberUpdatedState(backdrop)
+    val pendingBackdrop = backdrop?.takeIf { it.isNotBlank() && it != shownBackdrop }
+    fun showIfCurrent(candidate: String) {
+        if (candidate == latestBackdrop) shownBackdrop = candidate
+    }
+    LaunchedEffect(backdrop) {
+        if (backdrop.isNullOrBlank()) {
+            shownBackdrop = null
+            return@LaunchedEffect
+        }
+        // An image that never loads must not hold the old wash forever.
+        delay(AmbientPreloadTimeoutMs)
+        showIfCurrent(backdrop)
+    }
+    // The wash keeps time with the hero's own backdrop crossfade (Settings -> Home), image and tint
+    // alike. It used a fixed 650 ms for both, so with the hero set to cut (0 ms) the hero snapped to
+    // the new title and the background followed for most of a second; the wash image itself is
+    // ready ~100 ms after the change ((AmbientWash), 2026-10-19). A floor keeps a cut from flashing
+    // the whole background.
+    val homeSettings by com.nuvio.app.features.home.HomeCatalogSettingsRepository.uiState
+        .collectAsState()
+    val washFadeMs = homeSettings.heroBackdropCrossfadeMillis.coerceIn(AmbientWashMinFadeMs, AmbientWashMaxFadeMs)
     val ambientAccent by animateColorAsState(
         targetValue = accent ?: MaterialTheme.colorScheme.background,
-        animationSpec = tween(durationMillis = 650),
+        animationSpec = tween(durationMillis = washFadeMs),
         label = "${label}_accent",
     )
     // Always Full outside the diagnostic build; see AmbientWashProbe.
@@ -97,9 +152,9 @@ internal fun HeroAmbientBackdrop(
                     },
                     blurred = variant != AmbientWashVariant.NoBlur,
                     onSuccess = { state ->
-                        if (backdrop == activeBackdrop) {
-                            onAccentChanged(extractHeroAccentColor(state.result.image))
-                        }
+                        if (accentCache.size > 64) accentCache.clear()
+                        accentCache[activeBackdrop] =
+                            extractHeroAccentColor(state.result.image) ?: Color.Unspecified
                     },
                 )
             }
@@ -112,6 +167,7 @@ internal fun HeroAmbientBackdrop(
                                 colorStops = ambientWashStops(
                                     accent = ambientAccent,
                                     background = background,
+                                    holdBottom = holdBottom,
                                 ),
                             ),
                         ),
@@ -125,15 +181,34 @@ internal fun HeroAmbientBackdrop(
     // 0.39 ms a frame rather than saving anything: wash cost went 2.87 -> 3.26 ms against a stable
     // Adaptive control, giving back the whole gradient-fold win. Do not "fix" this again without a
     // measurement.
-    if (variant == AmbientWashVariant.NoCrossfade) {
-        Box(modifier = modifier.fillMaxSize()) { washContent(backdrop) }
-    } else {
-        Crossfade(
-            targetState = backdrop,
-            animationSpec = tween(durationMillis = 650),
-            label = label,
-            modifier = modifier.fillMaxSize(),
-        ) { activeBackdrop -> washContent(activeBackdrop) }
+    // One root, so the hidden preload never takes space beside the wash in a caller's layout.
+    Box(modifier = modifier.fillMaxSize()) {
+        if (pendingBackdrop != null) {
+            Box(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0f }) {
+                CheapBlurredBackdropImage(
+                    imageUrl = pendingBackdrop,
+                    colorFilter = if (variant == AmbientWashVariant.NoColorFilter) null else ambientBackdropColorFilter,
+                    blurred = variant != AmbientWashVariant.NoBlur,
+                    onSuccess = { state ->
+                        if (accentCache.size > 64) accentCache.clear()
+                        accentCache[pendingBackdrop] =
+                            extractHeroAccentColor(state.result.image) ?: Color.Unspecified
+                        showIfCurrent(pendingBackdrop)
+                    },
+                    onError = { showIfCurrent(pendingBackdrop) },
+                )
+            }
+        }
+        if (variant == AmbientWashVariant.NoCrossfade) {
+            Box(modifier = Modifier.fillMaxSize()) { washContent(shownBackdrop) }
+        } else {
+            Crossfade(
+                targetState = shownBackdrop,
+                animationSpec = tween(durationMillis = washFadeMs),
+                label = label,
+                modifier = Modifier.fillMaxSize(),
+            ) { activeBackdrop -> washContent(activeBackdrop) }
+        }
     }
 }
 
@@ -161,6 +236,7 @@ internal fun HeroAmbientBackdrop(
 internal fun ambientWashStops(
     accent: Color,
     background: Color,
+    holdBottom: Boolean = false,
 ): Array<Pair<Float, Color>> {
     val dim = 0.38f
     fun fold(layerColor: Color, layerAlpha: Float): Color {
@@ -180,10 +256,12 @@ internal fun ambientWashStops(
             alpha = alpha,
         )
     }
+    // The accent holds most of the way down and the closing dim is light, so the wash carries
+    // well into the rows rather than being spent just under the hero.
     return arrayOf(
         0f to fold(accent, 0.46f),
-        0.42f to fold(accent, 0.32f),
-        1f to fold(background, 0.72f),
+        0.68f to fold(accent, 0.34f),
+        1f to if (holdBottom) fold(accent, 0.34f) else fold(background, 0.55f),
     )
 }
 
@@ -193,6 +271,7 @@ private fun CheapBlurredBackdropImage(
     colorFilter: ColorFilter?,
     blurred: Boolean,
     onSuccess: (AsyncImagePainter.State.Success) -> Unit,
+    onError: () -> Unit = {},
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val downsampledWidth = maxWidth / AmbientBlurDownsampleFactor
@@ -232,6 +311,7 @@ private fun CheapBlurredBackdropImage(
                 contentScale = ContentScale.Crop,
                 colorFilter = colorFilter,
                 onSuccess = onSuccess,
+                onError = { onError() },
             )
         }
     }

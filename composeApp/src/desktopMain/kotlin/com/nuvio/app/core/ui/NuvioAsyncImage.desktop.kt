@@ -108,12 +108,10 @@ internal actual fun NuvioAsyncImage(
         else -> artworkSize.also { artworkSizeBaseline.key = it }
     }
     val requestModel = remember(context, model, effectiveDesktopImageScaling, artworkSizeKey) {
+        val sizeResolver = artworkSizeKey?.let { SizeResolver(it) } ?: artworkSizeResolver
         when {
             effectiveDesktopImageScaling != NuvioDesktopImageScaling.Disabled ->
-                model.withDesktopArtworkSize(
-                    context,
-                    artworkSizeKey?.let { SizeResolver(it) } ?: artworkSizeResolver,
-                )
+                model.withDesktopArtworkSize(context, sizeResolver)
             // Scaling "disabled" only ever meant "do not run the custom painter on this". It also
             // silently meant "send no size", which left the hero decoding backdrops at whatever the
             // source happened to be. It now takes its size from LAYOUT like every other surface -
@@ -121,7 +119,7 @@ internal actual fun NuvioAsyncImage(
             else ->
                 model.withDesktopArtworkSize(
                     context,
-                    artworkSizeKey?.let { SizeResolver(it) } ?: artworkSizeResolver,
+                    sizeResolver,
                     // The hero draws no custom painter, so nothing downstream needs a per-size cache
                     // key; and the backdrop is one image on screen at a time, not a grid of cards.
                     tagForCacheKey = false,

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.cloud
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.catalog.FilenameMetaResolver
 import com.nuvio.app.features.catalog.ResolvedName
 import com.nuvio.app.features.debrid.DebridCloudLibraryWindow
@@ -30,6 +31,7 @@ internal class CloudLibraryStore(
     fun window(): DebridCloudLibraryWindow = windowProvider()
 
     suspend fun refresh(window: DebridCloudLibraryWindow = windowProvider()): CloudLibraryUiState {
+        PerfTelemetry.count("CloudLibraryRepository.refresh")
         val credentials = credentialsProvider()
             .filter { credential -> credential.provider.supports(DebridProviderCapability.CloudLibrary) }
         val now = nowEpochMs()
@@ -145,6 +147,7 @@ object CloudLibraryRepository {
     }
 
     fun refresh() {
+        PerfTelemetry.count("CloudLibraryRepository.refresh")
         DebridSettingsRepository.ensureLoaded()
         if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
             loadedConnectionKeys = emptyList()

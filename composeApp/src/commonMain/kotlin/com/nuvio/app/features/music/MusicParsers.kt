@@ -188,6 +188,55 @@ internal fun parseAlbum(body: String, browseId: String): MusicAlbum? {
     )
 }
 
+/** An album, single or EP tile of an artist page or of its "more" grid; null for playlists, videos and artists. */
+private fun JsonObject.toTwoRowAlbum(self: MusicArtistRef, fallbackKind: String?): MusicAlbumSummary? {
+    val id = (runBrowseId() ?: runsOf(this["title"]).firstNotNullOfOrNull { it.runBrowseId() })
+        ?.takeIf { it.startsWith(ALBUM_PREFIX) } ?: return null
+    val title = textOf(this["title"]).trim().ifEmpty { return null }
+    val parts = segments(runsOf(this["subtitle"]))
+    val kind = parts.firstOrNull()?.let(::segmentText)?.takeIf { it.isNotEmpty() && !isYear(it) } ?: fallbackKind
+    val year = parts.map(::segmentText).firstOrNull(::isYear)
+    return MusicAlbumSummary(id, title, listOf(self), year, kind, thumbnailOf(this["thumbnailRenderer"]))
+}
+
+/** One carousel of an artist page ("Albums", "Singles & EPs"), with the endpoint of its full list when it has one. */
+internal data class ArtistShelf(
+    val title: String,
+    val items: List<MusicAlbumSummary>,
+    val moreBrowseId: String?,
+    val moreParams: String?,
+)
+
+private fun kindOfShelf(title: String): String? = when {
+    title.contains("single", ignoreCase = true) -> "Single"
+    title.equals("albums", ignoreCase = true) -> "Album"
+    else -> null
+}
+
+/**
+ * The album carousels of an artist page. A carousel shows only its first few items; when it has a
+ * "more" button, [ArtistShelf.moreBrowseId] and [ArtistShelf.moreParams] name the page with all of them.
+ */
+internal fun parseArtistShelves(body: String, self: MusicArtistRef): List<ArtistShelf> {
+    val root = parseRoot(body) ?: return emptyList()
+    return findAll(root, "musicCarouselShelfRenderer").mapNotNull { shelf ->
+        val header = shelf.at("header", "musicCarouselShelfBasicHeaderRenderer")
+        val title = textOf(header.at("title")).trim()
+        val fallback = kindOfShelf(title)
+        val items = findAll(shelf, "musicTwoRowItemRenderer").mapNotNull { it.toTwoRowAlbum(self, fallback) }
+        if (items.isEmpty()) return@mapNotNull null
+        val more = header.at("moreContentButton", "buttonRenderer", "navigationEndpoint", "browseEndpoint")
+        ArtistShelf(title, items, more.at("browseId").str(), more.at("params").str())
+    }
+}
+
+/** The full list behind a carousel's "more" button: a grid of album tiles. */
+internal fun parseAlbumGrid(body: String, self: MusicArtistRef, shelfTitle: String): List<MusicAlbumSummary> {
+    val root = parseRoot(body) ?: return emptyList()
+    val fallback = kindOfShelf(shelfTitle)
+    return findAll(root, "musicTwoRowItemRenderer").mapNotNull { it.toTwoRowAlbum(self, fallback) }
+}
+
 /** An artist page: its name and the albums, singles and EPs it lists. Null when it has no name. */
 internal fun parseArtist(body: String, browseId: String): MusicArtist? {
     val root = parseRoot(body) ?: return null
@@ -196,15 +245,8 @@ internal fun parseArtist(body: String, browseId: String): MusicArtist? {
         ?: findAll(root, "musicHeaderRenderer").firstOrNull()
     val name = textOf(header?.get("title")).trim().ifEmpty { return null }
     val self = MusicArtistRef(name, browseId)
-    val albums = findAll(root, "musicTwoRowItemRenderer").mapNotNull { item ->
-        val id = (item.runBrowseId() ?: runsOf(item["title"]).firstNotNullOfOrNull { it.runBrowseId() })
-            ?.takeIf { it.startsWith(ALBUM_PREFIX) } ?: return@mapNotNull null
-        val title = textOf(item["title"]).trim().ifEmpty { return@mapNotNull null }
-        val parts = segments(runsOf(item["subtitle"]))
-        val kind = parts.firstOrNull()?.let(::segmentText)?.takeIf { it.isNotEmpty() && !isYear(it) }
-        val year = parts.map(::segmentText).firstOrNull(::isYear)
-        MusicAlbumSummary(id, title, listOf(self), year, kind, thumbnailOf(item["thumbnailRenderer"]))
-    }.distinctBy { it.browseId }
+    val albums = findAll(root, "musicTwoRowItemRenderer").mapNotNull { it.toTwoRowAlbum(self, fallbackKind = null) }
+        .distinctBy { it.browseId }
     return MusicArtist(browseId, name, thumbnailOf(header?.get("thumbnail")), albums)
 }
 

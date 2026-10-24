@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.tmdb.HeroImageSource
 import com.nuvio.app.features.tmdb.TmdbSettings
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.tmdb.TmdbShowEnrichment
 import com.nuvio.app.features.tvdb.TvdbSettingsRepository
 import com.nuvio.app.features.tmdb.normalizeLanguage
 import nuvio.composeapp.generated.resources.Res
@@ -49,6 +50,11 @@ import nuvio.composeapp.generated.resources.settings_tmdb_module_production_comp
 import nuvio.composeapp.generated.resources.settings_tmdb_module_season_posters
 import nuvio.composeapp.generated.resources.settings_tmdb_module_season_posters_description
 import nuvio.composeapp.generated.resources.settings_tmdb_module_trailers
+import nuvio.composeapp.generated.resources.settings_tmdb_show_enrichment_title
+import nuvio.composeapp.generated.resources.settings_tmdb_show_enrichment_source_aware
+import nuvio.composeapp.generated.resources.settings_tmdb_show_enrichment_always
+import nuvio.composeapp.generated.resources.settings_tmdb_show_enrichment_source_aware_description
+import nuvio.composeapp.generated.resources.settings_tmdb_show_enrichment_always_description
 import nuvio.composeapp.generated.resources.settings_tmdb_module_trailers_description
 import nuvio.composeapp.generated.resources.settings_tmdb_personal_api_key
 import nuvio.composeapp.generated.resources.settings_tmdb_preferred_language
@@ -121,6 +127,18 @@ internal fun LazyListScope.tmdbSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-api-key")),
                     onApiKeyCommitted = TmdbSettingsRepository::setApiKey,
                 )
+                if (settings.hasApiKey) {
+                    TmdbApiKeyStatusLine(
+                        apiKey = settings.apiKey,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = if (isTablet) 20.dp else 16.dp,
+                                end = if (isTablet) 20.dp else 16.dp,
+                                bottom = if (isTablet) 14.dp else 12.dp,
+                            ),
+                    )
+                }
             }
         }
     }
@@ -148,6 +166,31 @@ internal fun LazyListScope.tmdbSettingsContent(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
+                SettingsChoiceRow(
+                    title = stringResource(Res.string.settings_tmdb_show_enrichment_title),
+                    description = when (settings.showEnrichment) {
+                        TmdbShowEnrichment.SourceAware ->
+                            stringResource(Res.string.settings_tmdb_show_enrichment_source_aware_description)
+                        TmdbShowEnrichment.Always ->
+                            stringResource(Res.string.settings_tmdb_show_enrichment_always_description)
+                    },
+                    options = listOf(
+                        SettingsChoiceOption(
+                            TmdbShowEnrichment.SourceAware,
+                            stringResource(Res.string.settings_tmdb_show_enrichment_source_aware),
+                        ),
+                        SettingsChoiceOption(
+                            TmdbShowEnrichment.Always,
+                            stringResource(Res.string.settings_tmdb_show_enrichment_always),
+                        ),
+                    ),
+                    selectedValue = settings.showEnrichment,
+                    enabled = enrichmentControlsEnabled,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-show-enrichment")),
+                    onSelected = TmdbSettingsRepository::setShowEnrichment,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
                 TmdbToggleRow(
                     isTablet = isTablet,
                     title = stringResource(Res.string.settings_tmdb_module_trailers),

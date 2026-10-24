@@ -5,13 +5,14 @@ import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.catalog.CatalogTarget
-import com.nuvio.app.features.catalog.fetchCatalogPage
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionFolder
 import com.nuvio.app.features.collection.CollectionRepository
 import com.nuvio.app.features.collection.CollectionSource
 import com.nuvio.app.features.collection.TmdbCollectionSourceResolver
 import com.nuvio.app.features.collection.catalogRouteKey
+import com.nuvio.app.features.collection.fallbackCatalogId
+import com.nuvio.app.features.collection.fetchCollectionCatalogPage
 import com.nuvio.app.features.collection.findCollectionCatalog
 import com.nuvio.app.features.trakt.TraktPublicListSourceResolver
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
@@ -71,6 +72,32 @@ object RandomPlayCollectionPool {
     fun ensureLoaded(force: Boolean = false) {
         requestWindow(force)
     }
+
+    /**
+     * [ensureLoaded] for Home being built: loads the first window if nothing is loaded for the
+     * current sources yet, and otherwise leaves the pool alone. Home is built on every tab switch
+     * and return from the player, and each build used to fetch another window (2026-10-19: 443 ->
+     * 6,092 pooled items over 19 returns). Picks still advance the traversal through [ensureLoaded].
+     */
+    fun ensureStarted() {
+        if (loadedSections.isNotEmpty() || activeJob?.isActive == true) {
+            // A changed source set or setting still restarts the coverage.
+            val settings = HomeCatalogSettingsRepository.snapshot()
+            if (settings.randomPlayEnabled && settings.randomPlayIncludeCollections &&
+                currentRequestKey(settings) == loadedRequestKey
+            ) {
+                return
+            }
+        }
+        requestWindow(force = false)
+    }
+
+    private fun currentRequestKey(settings: HomeCatalogSettingsSnapshot): String = requestKey(
+        sources = collectionSources(CollectionRepository.collections.value),
+        addons = AddonRepository.uiState.value.addons.enabledAddons(),
+        hideUnreleasedContent = settings.hideUnreleasedContent,
+        hideWatchedContent = settings.hideWatchedContent,
+    )
 
     /**
      * Requests one bounded source window and waits for it. An in-flight window is joined instead of
@@ -165,6 +192,7 @@ object RandomPlayCollectionPool {
                         }
                     }
                 }
+                evictOldestOverCap(progress)
                 _sections.value = loadedSections.values.toList()
             }
             log.i {
@@ -180,6 +208,21 @@ object RandomPlayCollectionPool {
         }
         activeJob = request
         return request
+    }
+
+    /**
+     * Keeps at most [RANDOM_PLAY_COLLECTION_MAX_LOADED_SOURCES] sources loaded. The oldest go back
+     * into the traversal, so later windows reach them again and the pool keeps rotating through
+     * every source, instead of growing towards one page of all of them (thousands of sources in an
+     * imported community collection) and making every candidate pass walk all of it.
+     */
+    private fun evictOldestOverCap(progress: RandomPlayCollectionSourceProgress) {
+        val excess = loadedSections.size - RANDOM_PLAY_COLLECTION_MAX_LOADED_SOURCES
+        if (excess <= 0) return
+        loadedSections.keys.take(excess).forEach { sectionKey ->
+            loadedSections.remove(sectionKey)
+            progress.release(sectionKey.removePrefix(RANDOM_PLAY_COLLECTION_SECTION_PREFIX))
+        }
     }
 
     fun clear() {
@@ -244,13 +287,15 @@ object RandomPlayCollectionPool {
 
         val catalogSource = source.addonCatalogSource() ?: return null
         val resolved = addons.findCollectionCatalog(catalogSource) ?: return null
-        val page = fetchCatalogPage(
+        val fetched = fetchCollectionCatalogPage(
             manifestUrl = resolved.addon.manifestUrl,
             type = catalogSource.type,
             catalogId = catalogSource.catalogId,
+            fallbackCatalogId = resolved.fallbackCatalogId(catalogSource),
             genre = catalogSource.genre,
             maxItems = RANDOM_PLAY_COLLECTION_SOURCE_ITEM_LIMIT,
         )
+        val page = fetched.page
         return HomeCatalogSection(
             key = key,
             title = resolved.catalog.name,
@@ -261,7 +306,7 @@ object RandomPlayCollectionPool {
             target = CatalogTarget.Addon(
                 manifestUrl = resolved.addon.manifestUrl,
                 contentType = catalogSource.type,
-                catalogId = catalogSource.catalogId,
+                catalogId = fetched.catalogId,
                 genre = catalogSource.genre,
             ),
             items = page.items.filtered(),
@@ -377,6 +422,11 @@ internal class RandomPlayCollectionSourceProgress(
         retries.remove(key)
     }
 
+    /** A loaded source evicted from the pool: eligible again once the traversal comes back round. */
+    fun release(key: String) {
+        completed.remove(key)
+    }
+
     fun markRetryable(key: String, nowMs: Long) {
         if (key !in keys || key in completed) return
         val attempts = (retries[key]?.attempts ?: 0) + 1
@@ -424,6 +474,7 @@ internal fun <T> List<T>.rotatedWindow(start: Int, size: Int): List<T> {
 internal const val RANDOM_PLAY_COLLECTION_SECTION_PREFIX = "nuvio:random-play-collection:"
 /** Sources fetched per pass. Successive passes move on to the next window; see `ensureLoaded`. */
 internal const val RANDOM_PLAY_COLLECTION_SOURCE_WINDOW = 24
+internal const val RANDOM_PLAY_COLLECTION_MAX_LOADED_SOURCES = 8 * RANDOM_PLAY_COLLECTION_SOURCE_WINDOW
 private const val RANDOM_PLAY_COLLECTION_SOURCE_ITEM_LIMIT = 40
 private const val RANDOM_PLAY_COLLECTION_FETCH_BATCH_SIZE = 4
 internal const val RANDOM_PLAY_COLLECTION_RETRY_BASE_DELAY_MS = 30_000L

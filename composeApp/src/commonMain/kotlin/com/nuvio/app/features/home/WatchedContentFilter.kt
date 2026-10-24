@@ -7,9 +7,19 @@ import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.watched.WatchedItem
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
+import com.nuvio.app.features.tmdb.ImdbToTmdbLookup
+import com.nuvio.app.features.tmdb.TmdbBackgroundLane
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -122,6 +132,10 @@ internal class WatchedContentFilter private constructor(private val keys: Set<St
             if (!HomeCatalogSettingsRepository.snapshot().hideWatchedContent) return
             TmdbService.ensureExternalIdCacheLoaded()
             if (resolveBudgetMs <= 0) return
+            // Once every watched title's TMDB id is known, a `tmdb:` row is judged from that index
+            // and looking the row up adds nothing. Until then (first run, a fresh watch, no TMDB
+            // key) the page is resolved exactly as before.
+            if (WatchedTmdbIndex.covers(forHistory(WatchedRepository.uiState.value.items).keys)) return
             val unmapped = items.mapNotNull { item ->
                 val tmdbId = item.id.takeIf { it.startsWith("tmdb:") }
                     ?.removePrefix("tmdb:")
@@ -151,6 +165,7 @@ internal class WatchedContentFilter private constructor(private val keys: Set<St
             val keys = buildWatchedParentKeys(items)
             cached = items to keys
             ShownThisSession.noteHistory(keys)
+            WatchedTmdbIndex.learn(keys)
             return WatchedContentFilter(keys)
         }
 
@@ -159,8 +174,11 @@ internal class WatchedContentFilter private constructor(private val keys: Set<St
             if (watchedParentKey(type, id) in keys) return true
             if (!id.startsWith("tmdb:")) return false
             val tmdbId = id.removePrefix("tmdb:").toIntOrNull() ?: return false
-            val imdbId = TmdbService.peekTmdbToImdb(tmdbId, tmdbMediaTypeFor(type)) ?: return false
-            return watchedParentKey(type, imdbId) in keys
+            val mediaType = tmdbMediaTypeFor(type)
+            TmdbService.peekTmdbToImdb(tmdbId, mediaType)?.let { imdbId ->
+                if (watchedParentKey(type, imdbId) in keys) return true
+            }
+            return WatchedTmdbIndex.historyKeyFor(mediaType, tmdbId)?.let { it in keys } ?: false
         }
     }
 }
@@ -207,4 +225,102 @@ internal class BrowsingFilters private constructor(
                 watched = WatchedContentFilter.current(snapshot),
             )
     }
+}
+
+/**
+ * The watch history's titles by TMDB id, so a `tmdb:` row can be judged without a lookup of its own.
+ *
+ * The history is IMDb-keyed, and a `tmdb:` row used to be matched by asking TMDB for that row's
+ * IMDb id: one request per never-seen title, about 20 per TMDB source opened, and a large community
+ * collection is thousands of titles. The history is the small side of that comparison — a few hundred
+ * titles, growing one watch at a time — so it is the side mapped instead: once per title, in the
+ * background, with the answers persisted by [TmdbService] like every other external-id mapping.
+ *
+ * [covers] is true only when every history title has a definite answer (a TMDB id, or TMDB saying
+ * it has none). Until then — the first run, a title just watched, no TMDB key, TMDB unreachable —
+ * the per-row path in [WatchedContentFilter.prepareForLoad] runs exactly as it did, so a gap here
+ * can only cost requests, never let a watched title through.
+ */
+internal object WatchedTmdbIndex {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + TmdbBackgroundLane)
+    private val lock = Any()
+
+    /** `movie:603` / `tv:1399` → the history key it belongs to (`movie:tt0133093`, `series:tt0944947`). */
+    private val historyKeyByTmdb = HashMap<String, String>()
+
+    /** History keys with a definite answer, whichever it was. */
+    private val settled = HashSet<String>()
+    private val inFlight = HashSet<String>()
+
+    /** Identity of the last history set [covers] confirmed, so the common case is one comparison. */
+    @Volatile
+    private var coveredKeys: Set<String>? = null
+
+    fun historyKeyFor(tmdbMediaType: String, tmdbId: Int): String? =
+        synchronized(lock) { historyKeyByTmdb["$tmdbMediaType:$tmdbId"] }
+
+    fun covers(keys: Set<String>): Boolean {
+        if (coveredKeys === keys) return true
+        val covered = synchronized(lock) { settled.containsAll(keys) }
+        if (covered) coveredKeys = keys
+        return covered
+    }
+
+    /** Settles, in the background, whichever of [keys] are not settled yet. */
+    fun learn(keys: Set<String>) {
+        val pending = synchronized(lock) {
+            keys.filter { it !in settled && inFlight.add(it) }
+        }
+        if (pending.isEmpty()) return
+        scope.launch {
+            TmdbService.ensureExternalIdCacheLoaded()
+            val permits = Semaphore(LOOKUP_CONCURRENCY)
+            pending.map { key ->
+                launch {
+                    val answer = try {
+                        permits.withPermit { resolve(key) }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        null
+                    }
+                    synchronized(lock) {
+                        inFlight -= key
+                        if (answer != null) {
+                            settled += key
+                            answer.tmdbKey?.let { historyKeyByTmdb[it] = key }
+                        }
+                    }
+                }
+            }.joinAll()
+        }
+    }
+
+    /** null = no definite answer yet (asked again on the next history change or launch). */
+    private suspend fun resolve(historyKey: String): Answer? {
+        val type = historyKey.substringBefore(':')
+        val id = historyKey.substringAfter(':')
+        val mediaType = tmdbMediaTypeFor(type)
+        return when {
+            id.startsWith("tmdb:") -> {
+                // Already TMDB-addressed: the row matches it directly in isWatchedIn.
+                Answer(tmdbKey = id.removePrefix("tmdb:").toIntOrNull()?.let { "$mediaType:$it" })
+            }
+            id.startsWith("tt", ignoreCase = true) -> {
+                TmdbService.peekImdbToTmdb(id, mediaType)?.let { return Answer("$mediaType:$it") }
+                when (val lookup = TmdbService.lookupImdbToTmdb(id, mediaType)) {
+                    is ImdbToTmdbLookup.Found -> Answer("$mediaType:${lookup.tmdbId}")
+                    ImdbToTmdbLookup.NotFound -> Answer(tmdbKey = null)
+                    ImdbToTmdbLookup.Unavailable -> null
+                }
+            }
+            // kitsu:, mal:, tvdb: and the like: no `tmdb:` row was ever matched to these by the
+            // per-row path either (it maps rows to IMDb ids), so there is nothing to wait for.
+            else -> Answer(tmdbKey = null)
+        }
+    }
+
+    private class Answer(val tmdbKey: String?)
+
+    private const val LOOKUP_CONCURRENCY = 4
 }

@@ -3,6 +3,9 @@ package com.nuvio.app.features.player.desktop
 import com.nuvio.app.features.player.DesktopMpvConfigMode
 import com.nuvio.app.features.player.DesktopBufferPreset
 import com.nuvio.app.features.player.shouldEnableDesktopRtxSuperResolution
+import com.nuvio.app.features.player.shouldEnableDesktopRtxTrueHdr
+import com.nuvio.app.features.player.desktopRtxVideoFilter
+import com.nuvio.app.features.player.desktopVsrScaleText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -154,7 +157,7 @@ class DesktopMpvRuntimeOverrideTest {
             shouldEnableDesktopRtxSuperResolution(
                 enabled = true,
                 isHdr = false,
-                isEffectivelyAnime = false,
+                animeLayerActive = false,
                 scale = 2.0,
             ),
         )
@@ -162,7 +165,7 @@ class DesktopMpvRuntimeOverrideTest {
             shouldEnableDesktopRtxSuperResolution(
                 enabled = true,
                 isHdr = true,
-                isEffectivelyAnime = false,
+                animeLayerActive = false,
                 scale = 2.0,
             ),
             "Native HDR/Dolby Vision must bypass d3d11vpp VSR to avoid green video output",
@@ -171,10 +174,80 @@ class DesktopMpvRuntimeOverrideTest {
             shouldEnableDesktopRtxSuperResolution(
                 enabled = true,
                 isHdr = null,
-                isEffectivelyAnime = false,
+                animeLayerActive = false,
                 scale = 2.0,
             ),
             "VSR must wait until the stream is positively identified as SDR",
+        )
+        assertFalse(
+            shouldEnableDesktopRtxSuperResolution(
+                enabled = true,
+                isHdr = false,
+                animeLayerActive = true,
+                scale = 2.0,
+            ),
+            "VSR must not stack on a running Anime4K/shader/SVP layer",
+        )
+    }
+
+    @Test
+    fun rtxScaleIsSpelledLikeTheNativeFileLoadInstall() {
+        // Must match roundTripFloatText in player_bridge.cpp, or mpv rebuilds d3d11vpp for nothing.
+        assertEquals("2", desktopVsrScaleText(2.0))
+        assertEquals("1.90277779", desktopVsrScaleText(2055.0 / 1080.0))
+        assertEquals("1.5", desktopVsrScaleText(1.5))
+        assertEquals(
+            "d3d11vpp=scale=2:scaling-mode=nvidia:nvidia-true-hdr=yes",
+            desktopRtxVideoFilter(vsrActive = true, trueHdrActive = true, scale = 2.0),
+        )
+        assertEquals("", desktopRtxVideoFilter(vsrActive = false, trueHdrActive = false, scale = 2.0))
+    }
+
+    @Test
+    fun rtxTrueHdrOnAnimeNeedsOptInAndNoAnimeLayer() {
+        assertTrue(
+            shouldEnableDesktopRtxTrueHdr(
+                enabled = true, isHdr = false, displayHdr = true, isEffectivelyAnime = false,
+                animeOptIn = false, animeLayerActive = false,
+            ),
+        )
+        assertFalse(
+            shouldEnableDesktopRtxTrueHdr(
+                enabled = true, isHdr = false, displayHdr = true, isEffectivelyAnime = true,
+                animeOptIn = false, animeLayerActive = false,
+            ),
+            "Detected anime stays off True HDR without the opt-in",
+        )
+        assertTrue(
+            shouldEnableDesktopRtxTrueHdr(
+                enabled = true, isHdr = false, displayHdr = true, isEffectivelyAnime = true,
+                animeOptIn = true, animeLayerActive = false,
+            ),
+        )
+        assertFalse(
+            shouldEnableDesktopRtxTrueHdr(
+                enabled = true, isHdr = false, displayHdr = true, isEffectivelyAnime = true,
+                animeOptIn = true, animeLayerActive = true,
+            ),
+            "The opt-in never stacks True HDR on SVP",
+        )
+    }
+
+    @Test
+    fun rtxTrueHdrNeedsWindowsHdrOnTheDisplay() {
+        assertFalse(
+            shouldEnableDesktopRtxTrueHdr(
+                enabled = true, isHdr = false, displayHdr = false, isEffectivelyAnime = false,
+                animeOptIn = false, animeLayerActive = false,
+            ),
+            "An SDR desktop has nowhere to send True HDR's PQ output",
+        )
+        assertFalse(
+            shouldEnableDesktopRtxTrueHdr(
+                enabled = true, isHdr = false, displayHdr = null, isEffectivelyAnime = false,
+                animeOptIn = false, animeLayerActive = false,
+            ),
+            "An unreported display state counts as SDR",
         )
     }
 }

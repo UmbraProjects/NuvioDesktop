@@ -5,6 +5,7 @@ import coil3.ImageLoader
 import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.memory.MemoryCache
+import coil3.annotation.ExperimentalCoilApi
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.nuvio.app.core.storage.DesktopStorage
 import okio.Path.Companion.toOkioPath
@@ -23,15 +24,26 @@ internal actual fun ImageLoader.Builder.configurePlatformImageLoader(): ImageLoa
             .build()
             .let(::DesktopArtworkMemoryCache)
             .also(DesktopArtworkCaches::register)
+            .also { HeroArtworkMemory.cache = it }
     }.diskCache {
         val cacheDir = DesktopStorage.rootDir.resolve(IMAGE_CACHE_DIR_NAME)
         // Before the cache is opened, not after: the purge edits the journal directly, which is
         // only safe while Coil is not holding it.
         ImageDiskCachePurge.purgeCachedFailures(cacheDir)
-        DiskCache.Builder()
-            .directory(cacheDir.toOkioPath())
-            .maxSizeBytes(IMAGE_CACHE_MAX_BYTES)
-            .build()
+        // Read once: Coil sizes a disk cache when it opens it, so a change applies on next launch.
+        ImageCacheSettingsRepository.ensureLoaded()
+        val totalBytes = ImageCacheSettingsRepository.settings.value.diskCacheGb * BytesPerGb
+        val animatedBytes = (totalBytes * AnimatedImageCacheFraction).toLong()
+        PartitionedImageDiskCache(
+            stills = DiskCache.Builder()
+                .directory(cacheDir.toOkioPath())
+                .maxSizeBytes(totalBytes - animatedBytes)
+                .build(),
+            animated = DiskCache.Builder()
+                .directory(DesktopStorage.rootDir.resolve(ANIMATED_IMAGE_CACHE_DIR_NAME).toOkioPath())
+                .maxSizeBytes(animatedBytes)
+                .build(),
+        )
     }.components { addDesktopArtworkComponents() }
         // Per-image wait/fetch/decode timing for every load that leaves the memory cache; see the
         // listener for the log format and why it exists.
@@ -41,11 +53,13 @@ internal actual fun ImageLoader.Builder.configurePlatformImageLoader(): ImageLoa
  * The desktop fetch/decode chain, shared with the integration test that drives it against a real
  * HTTP server so the registration order below is what gets tested.
  */
+@OptIn(ExperimentalCoilApi::class)
 internal fun ComponentRegistry.Builder.addDesktopArtworkComponents() {
     // Order matters: factories are tried in registration order and the first non-null wins, and
     // Coil appends its own defaults after these. Animation is offered the source first; whatever
     // it declines falls to the high-quality still decoder, which would otherwise have gone to
     // Coil's own - the one that reduces with nearest-neighbour.
+    add(HeroBackdropPrefetchJoinInterceptor())
     add(DesktopArtworkSizeInterceptor())
     // After the size interceptor, so a stale-copy retry keeps the memory key it was sized under.
     add(ImageStaleIfErrorInterceptor())
@@ -54,7 +68,15 @@ internal fun ComponentRegistry.Builder.addDesktopArtworkComponents() {
     // Coil finds a Ktor fetcher through the JVM ServiceLoader on its own, but only ever with
     // `CacheStrategy.DEFAULT`. Registering one here — ahead of the service-loader entry, which
     // is appended after everything added explicitly — is the only way to choose the strategy.
-    add(KtorNetworkFetcherFactory(cacheStrategy = { ImageDiskCacheStrategy }))
+    //
+    // The concurrent-request strategy makes identical in-flight requests share one download; see
+    // CoalescingRequestStrategy.
+    add(
+        KtorNetworkFetcherFactory(
+            cacheStrategy = { ImageDiskCacheStrategy },
+            concurrentRequestStrategy = { SharedImageRequestCoalescing },
+        ),
+    )
 }
 
 /**
@@ -69,7 +91,7 @@ internal fun ComponentRegistry.Builder.addDesktopArtworkComponents() {
  * for smooth back-navigation; DesktopArtworkCaches temporarily lowers it while playback or a
  * hidden window makes most of the artwork inactive. The animation cache owns its frames itself.
  *
- * This is separate from, and much smaller than, [IMAGE_CACHE_MAX_BYTES] — that one holds compressed
+ * This is separate from, and much smaller than, the disk cache — that one holds compressed
  * bytes on disk, which is not the resource that runs out here.
  */
 private fun memoryCacheBudgetBytes(): Long {
@@ -94,10 +116,12 @@ private const val MinMemoryCacheBytes = 96L * 1024 * 1024
 private const val MaxMemoryCacheBytes = 384L * 1024 * 1024
 
 private const val IMAGE_CACHE_DIR_NAME = "image_cache"
+private const val ANIMATED_IMAGE_CACHE_DIR_NAME = "image_cache_animated"
 
 /**
- * Posters and backdrops are small, but animated collection art is not — one browsing session filled
- * 452 MB of the original 512 MB budget, which would have had the LRU thrashing almost immediately.
- * This is a desktop app with a real disk, so the budget is generous.
+ * The total is the user's (Settings → Advanced → Cache, 5 GB unless changed). Posters and backdrops
+ * are small, but animated collection art is not — one browsing session filled 452 MB of the
+ * original 512 MB budget — which is why that art gets its own partition of the total; see
+ * PartitionedImageDiskCache.
  */
-private const val IMAGE_CACHE_MAX_BYTES = 5L * 1024 * 1024 * 1024
+private const val BytesPerGb = 1024L * 1024 * 1024

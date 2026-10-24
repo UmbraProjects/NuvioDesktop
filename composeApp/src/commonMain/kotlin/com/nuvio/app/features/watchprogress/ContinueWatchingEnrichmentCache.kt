@@ -110,18 +110,44 @@ internal object ContinueWatchingEnrichmentCache {
         val encoded = runCatching {
             json.encodeToString(payload)
         }.getOrNull() ?: return
-        ContinueWatchingEnrichmentStorage.savePayload(ProfileScopedKey.of(storageKey), encoded)
+        val key = ProfileScopedKey.of(storageKey)
+        ContinueWatchingEnrichmentStorage.savePayload(key, encoded)
         lastPayloadHash = payloadHash
+        warmed = key to payload
     }
 
     fun clearAll() {
+        NextUpNoCardCache.clear()
         ContinueWatchingEnrichmentStorage.removePayload(ProfileScopedKey.of(storageKey))
         lastPayloadHash = null
+        warmed = null
         _cacheCleared.value += 1
     }
 
+    /**
+     * The payload decoded ahead of Home, keyed by the profile-scoped key it was read under. Home
+     * reads the snapshots during its first composition; reading cold there meant loading the
+     * store's file and decoding the JSON on the UI thread (it showed up in a startup profile of
+     * Home's first-composition freeze). [warm] does that during the profile warm-up instead; a
+     * save or clear keeps it current.
+     */
+    @Volatile
+    private var warmed: Pair<String, CachedEnrichmentPayload?>? = null
+
+    /** Off the UI thread, before Home: see [warmed]. */
+    fun warm() {
+        val key = ProfileScopedKey.of(storageKey)
+        warmed = key to decodeStored(key)
+    }
+
     private fun loadPayload(): CachedEnrichmentPayload? {
-        val raw = ContinueWatchingEnrichmentStorage.loadPayload(ProfileScopedKey.of(storageKey))
+        val key = ProfileScopedKey.of(storageKey)
+        warmed?.let { (warmedKey, payload) -> if (warmedKey == key) return payload }
+        return decodeStored(key)
+    }
+
+    private fun decodeStored(key: String): CachedEnrichmentPayload? {
+        val raw = ContinueWatchingEnrichmentStorage.loadPayload(key)
             ?: return null
         return runCatching {
             json.decodeFromString<CachedEnrichmentPayload>(raw)

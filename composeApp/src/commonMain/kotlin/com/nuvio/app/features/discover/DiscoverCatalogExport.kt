@@ -181,6 +181,8 @@ private fun catalogSourceKind(entryId: String): String = when {
     entryId == DiscoverRowFamily.Because.entryId -> "tmdb-recommendations"
     entryId == DiscoverRowFamily.Favourites.entryId -> "tmdb-discover-genres"
     entryId == DiscoverRowFamily.Gems.entryId -> "tmdb-discover-hidden-gems"
+    entryId == DiscoverRowFamily.TopPicks.entryId -> "tmdb-recommendations-aggregate"
+    entryId == DiscoverRowFamily.People.entryId -> "tmdb-person-credits"
     entryId == DiscoverRowFamily.Trending.entryId -> "tmdb-trending-genre"
     else -> "unknown"
 }

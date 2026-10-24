@@ -3,7 +3,7 @@ name: Windows build
 on:
   workflow_dispatch:
   push:
-    branches: [music]
+    branches: [feature/preroll-trivia]
 
 jobs:
   build:

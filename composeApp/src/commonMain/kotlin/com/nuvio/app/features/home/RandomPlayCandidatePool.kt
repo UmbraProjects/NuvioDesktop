@@ -528,10 +528,22 @@ object RandomPlayCandidatePool {
         append("|minRating=")
         append(settings.randomPlayMinimumImdbRating)
         append("|watched=")
-        watchedKeys.sorted().forEach { key ->
-            append(key)
-            append(';')
+        append(watchedFingerprint(watchedKeys))
+    }
+
+    // The watched set is ~13k keys for a long history; sorting and joining it into the key on every
+    // call ran several times per Home build on the UI thread (2026-10-19 (UiStall) samples). A size
+    // plus content hash, cached per set instance, tells the same sets apart for this purpose: a
+    // collision would only skip one refill.
+    private var watchedFingerprintFor: Set<String>? = null
+    private var watchedFingerprint = ""
+
+    private fun watchedFingerprint(watchedKeys: Set<String>): String {
+        if (watchedFingerprintFor !== watchedKeys) {
+            watchedFingerprint = "${watchedKeys.size}#${watchedKeys.hashCode()}"
+            watchedFingerprintFor = watchedKeys
         }
+        return watchedFingerprint
     }
 }
 

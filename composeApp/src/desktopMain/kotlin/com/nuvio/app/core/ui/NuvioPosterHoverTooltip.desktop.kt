@@ -3,6 +3,7 @@ package com.nuvio.app.core.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.TooltipPlacement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -24,7 +25,10 @@ actual fun NuvioPosterHoverTooltip(
     content: @Composable () -> Unit,
 ) {
     if (title.isBlank() && subtitle.isBlank()) {
-        content()
+        // Same Box(modifier) wrapper TooltipArea lays its content out in. Dropping the modifier here
+        // made callers that size or place themselves through it (the TV row-jump dot strip's width
+        // cap and centring offset) jump to the left edge whenever their label was momentarily blank.
+        Box(modifier = modifier) { content() }
         return
     }
     TooltipArea(

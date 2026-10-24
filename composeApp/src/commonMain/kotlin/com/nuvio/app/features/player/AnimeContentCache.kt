@@ -19,7 +19,7 @@ package com.nuvio.app.features.player
  * continue-watching paths) simply won't auto-detect — the in-player F10 toggle still forces the
  * preset on those.
  *
- * Follows the same object-store pattern as [PlayerLaunchStore] / StreamLaunchStore.
+ * Follows the same object-store pattern as [PlayerLaunchStore].
  */
 object AnimeContentCache {
     private val kindByMetaId = java.util.concurrent.ConcurrentHashMap<String, AnimeContentKind>()

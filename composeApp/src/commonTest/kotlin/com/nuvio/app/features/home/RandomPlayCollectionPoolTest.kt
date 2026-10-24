@@ -89,4 +89,16 @@ class RandomPlayCollectionPoolTest {
             ordered.map(Source::name),
         )
     }
+
+    @Test
+    fun releasedSourcesComeRoundAgain() {
+        val progress = RandomPlayCollectionSourceProgress(sourceKeys = listOf("a", "b", "c"), startIndex = 0)
+        progress.nextWindow(nowMs = 0, size = 3).forEach(progress::markLoaded)
+        assertTrue(progress.nextWindow(nowMs = 0, size = 3).isEmpty(), "every source is loaded")
+
+        // Evicted from the capped pool: the traversal reaches it again.
+        progress.release("b")
+        assertEquals(2, progress.completedCount)
+        assertEquals(listOf("b"), progress.nextWindow(nowMs = 0, size = 3))
+    }
 }

@@ -39,6 +39,10 @@ private const val UNKNOWN_TORRENT_ERROR = "Unknown torrent error"
 private const val STREAMING_SAMPLE_INTERVAL_MS = 5_000L
 private const val STARTUP_SAMPLE_INTERVAL_MS = 1_000L
 
+// Under DesktopStorage.rootDir/nuvio-engine. The engine adds its own `payload/<info hash>` below.
+internal const val NUVIO_ENGINE_CACHE_DIRECTORY = "torrent-cache"
+private const val LEGACY_NUVIO_ENGINE_CACHE_DIRECTORY = "payload"
+
 // Metadata wait. The hard cap is the most a user should ever stare at "fetching metadata"; the
 // stall rule ends it sooner when the swarm has demonstrably nothing to offer: the announce round
 // has had time to settle (MIN_WAIT), and for STALL ms nothing has moved — no new known peers, no
@@ -439,7 +443,8 @@ internal object NuvioEngineP2pBackend : DesktopP2pBackend {
         currentCoroutineContext().ensureActive()
         val root = DesktopStorage.rootDir.resolve("nuvio-engine").toFile()
         val stateDirectory = File(root, "state")
-        val cacheDirectory = File(root, "payload")
+        val cacheDirectory = File(root, NUVIO_ENGINE_CACHE_DIRECTORY)
+        removeLegacyCacheDirectory(root)
         check(stateDirectory.mkdirs() || stateDirectory.isDirectory) {
             "Could not create the Nuvio Engine state directory"
         }
@@ -459,9 +464,53 @@ internal object NuvioEngineP2pBackend : DesktopP2pBackend {
             engine = created
             engineConfigurationKey = configurationKey
             observeEngineEvents(created)
+            pruneDiskCacheAtStart(created, configurationKey.diskCacheCapacityBytes)
             log.i {
                 "Using Nuvio Engine ${NuvioEngine.version} (${NuvioEngine.protocolBackendVersion}) " +
                     "after ${elapsedMillis(startedAt)}ms"
+            }
+        }
+    }
+
+    /**
+     * The engine only enforces the cache size every 30 s while nothing is streaming, so torrents
+     * left over from earlier sessions could sit there for a whole viewing session. One reclaim to
+     * the cap right after start evicts the least recently used ones by their real on-disk size
+     * (the files are sparse; their listed size is the whole torrent). Not awaited: playback start
+     * must not wait on a directory scan, and the engine queues it ahead of the new torrent.
+     */
+    private fun pruneDiskCacheAtStart(activeEngine: NuvioEngine, capacityBytes: Long) {
+        scope.launch {
+            try {
+                activeEngine.reclaimDiskCache(capacityBytes)
+                val stats = activeEngine.stats.value
+                log.i {
+                    "Nuvio Engine startup cache prune: used=${stats.diskCacheUsedBytes} " +
+                        "capacity=$capacityBytes reclaimed=${stats.diskCacheReclaimedBytes}"
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                log.w(error) { "Nuvio Engine startup cache prune failed" }
+            }
+        }
+    }
+
+    /**
+     * Before the rename the cache lived in `nuvio-engine/payload` (BitTorrent's word for file
+     * content), whose sparse files list at the full torrent size and alarmed people. It is only
+     * part-streamed data, so it is deleted rather than moved; in the background, as it can hold
+     * thousands of files.
+     */
+    private fun removeLegacyCacheDirectory(root: File) {
+        val legacy = File(root, LEGACY_NUVIO_ENGINE_CACHE_DIRECTORY)
+        if (!legacy.exists()) return
+        scope.launch(Dispatchers.IO) {
+            val removed = legacy.deleteRecursively()
+            if (removed) {
+                log.i { "Removed legacy Nuvio Engine cache directory ${legacy.path}" }
+            } else {
+                log.w { "Could not fully remove legacy Nuvio Engine cache directory ${legacy.path}" }
             }
         }
     }

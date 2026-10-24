@@ -68,6 +68,8 @@ data class PlayerLaunch(
     val initialProgressFraction: Float? = null,
     val disableProgressTracking: Boolean = false,
     val autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
+    /** The stream being played, when the launch came from one; a watch-party host can share it. */
+    val stream: com.nuvio.app.features.streams.StreamItem? = null,
 )
 
 enum class PlayerAutoPlayMode {
@@ -106,6 +108,7 @@ enum class PlayerResizeMode {
     Fit,
     Fill,
     Zoom,
+    AutoCrop,
 }
 
 enum class IosVideoOutputPreset(
@@ -303,7 +306,7 @@ enum class DesktopSeekThumbnailMode(val label: String, val description: String) 
     ),
     LocalAndSeekr(
         "Local + Seekr",
-        "Local previews for files on this PC and your home network. Debrid streams and torrents use Seekr's ready-made thumbnails when it has the title and show none otherwise, so the stream's host is never asked. Needs a Seekr key under Integrations.",
+        "Local previews for files on this PC and your home network. Debrid streams and torrents use Seekr's ready-made thumbnails when it has the title and show none otherwise, so the stream's host is never asked. If Seekr switches its thumbnails off, debrid streams fall back to local previews. Needs a Seekr key under Integrations.",
     ),
     Streaming(
         "Streaming",

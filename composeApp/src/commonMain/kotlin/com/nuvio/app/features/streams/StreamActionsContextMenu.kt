@@ -9,6 +9,8 @@ internal data class StreamRowActions(
     val onDownload: ((StreamItem) -> Unit)?,
     val onOpenInBrowser: ((StreamItem) -> Unit)? = null,
     val onOpenExternal: (StreamItem) -> Unit,
+    /** Sends the stream to a TV or player on the network; null where casting is unavailable. */
+    val onCastToDevice: ((StreamItem) -> Unit)? = null,
     /**
      * Grabs a whole season into the local library.
      *

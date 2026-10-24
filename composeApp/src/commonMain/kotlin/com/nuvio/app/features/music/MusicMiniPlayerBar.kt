@@ -215,7 +215,7 @@ private fun Transport(
             tint = if (state.hasNext) colors.textPrimary else colors.textDisabled,
         )
     }
-    if (showLyrics) MusicTextChip("Lyrics", onClick = onOpenNowPlaying)
+    if (showLyrics) MusicTextChip("Lyrics", onOpenNowPlaying)
     if (video && !state.lyricVideo) {
         when (videoView) {
             MusicVideoView.Bar -> MusicTextChip("Expand") { onSetVideoView(MusicVideoView.Expanded) }
@@ -234,13 +234,13 @@ private fun Transport(
 
 /** A small text button for the bar and the expanded video's header. */
 @Composable
-internal fun MusicTextChip(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun MusicTextChip(text: String, onClick: () -> Unit) {
     Text(
         text = text,
         color = MaterialTheme.nuvio.colors.textSecondary,
         fontSize = 13.sp,
         maxLines = 1,
-        modifier = modifier
+        modifier = Modifier
             .clip(CircleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp),

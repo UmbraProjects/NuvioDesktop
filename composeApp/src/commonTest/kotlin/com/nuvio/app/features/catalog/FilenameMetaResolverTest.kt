@@ -1,5 +1,6 @@
 package com.nuvio.app.features.catalog
 
+import com.nuvio.app.features.home.MetaPreview
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -34,6 +35,23 @@ class FilenameMetaResolverTest {
         ).forEach { name ->
             assertFalse(FilenameMetaResolver.looksLikeReleaseFilename(name), "expected title: $name")
         }
+    }
+
+    @Test
+    fun leavesMetadataAddonEpisodeRowsAlone() {
+        // AIOMetadata's MDBList Up Next: an episode marker in the name, but already identified.
+        val upNext = MetaPreview(id = "mdblist_upnext_tt1615919_S1E1", type = "series", name = "Raising Hope - S1E1")
+        assertFalse(FilenameMetaResolver.needsFilenameResolution(upNext))
+        assertFalse(
+            FilenameMetaResolver.needsFilenameResolution(
+                MetaPreview(id = "upnext:32815", type = "series", name = "Raising Hope - S1E1", addonTmdbId = 32815),
+            ),
+        )
+        assertTrue(
+            FilenameMetaResolver.needsFilenameResolution(
+                MetaPreview(id = "torbox:4821", type = "other", name = "Hanna S01E07"),
+            ),
+        )
     }
 
     @Test

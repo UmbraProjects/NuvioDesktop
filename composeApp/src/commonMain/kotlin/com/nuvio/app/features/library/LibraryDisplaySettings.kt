@@ -10,11 +10,16 @@ import kotlinx.serialization.json.Json
 
 enum class LibraryLayoutMode { SHELVES, GRID }
 
-enum class LibrarySortOption { DEFAULT, ADDED_DESC, ADDED_ASC, TITLE_ASC, TITLE_DESC }
+enum class LibrarySortOption {
+    DEFAULT, ADDED_DESC, ADDED_ASC, TITLE_ASC, TITLE_DESC,
+    // From the Nuvio Tracker's library: these read TMDB details (LibraryTitleFactsRepository).
+    POPULAR, TOP_RATED, MOST_VOTED, NEWEST, OLDEST,
+}
 
 data class LibraryDisplaySettingsUiState(
     val layoutMode: LibraryLayoutMode = LibraryLayoutMode.SHELVES,
     val sortOption: LibrarySortOption = LibrarySortOption.DEFAULT,
+    val filters: LibraryBrowseFilters = LibraryBrowseFilters(),
 )
 
 object LibraryDisplaySettingsRepository {
@@ -29,6 +34,8 @@ object LibraryDisplaySettingsRepository {
 
     fun setLayoutMode(value: LibraryLayoutMode) = update { it.copy(layoutMode = value) }
     fun setSortOption(value: LibrarySortOption) = update { it.copy(sortOption = value) }
+    fun updateFilters(transform: (LibraryBrowseFilters) -> LibraryBrowseFilters) =
+        update { it.copy(filters = transform(it.filters)) }
 
     private fun update(transform: (LibraryDisplaySettingsUiState) -> LibraryDisplaySettingsUiState) {
         ensureLoaded()
@@ -47,15 +54,20 @@ object LibraryDisplaySettingsRepository {
             layoutMode = LibraryLayoutMode.SHELVES,
             sortOption = stored?.sortOption?.let { name -> LibrarySortOption.entries.firstOrNull { it.name == name } }
                 ?: LibrarySortOption.DEFAULT,
+            filters = stored?.filters ?: LibraryBrowseFilters(),
         )
     }
 }
 
 @Serializable
-private data class StoredLibraryDisplaySettings(val layoutMode: String, val sortOption: String)
+private data class StoredLibraryDisplaySettings(
+    val layoutMode: String,
+    val sortOption: String,
+    val filters: LibraryBrowseFilters = LibraryBrowseFilters(),
+)
 
 private fun LibraryDisplaySettingsUiState.toStored() =
-    StoredLibraryDisplaySettings(layoutMode.name, sortOption.name)
+    StoredLibraryDisplaySettings(layoutMode.name, sortOption.name, filters)
 
 internal fun effectiveLibrarySortOption(
     option: LibrarySortOption,
@@ -68,6 +80,7 @@ internal fun sortLibraryItems(
     items: List<LibraryItem>,
     option: LibrarySortOption,
     sourceMode: LibrarySourceMode,
+    facts: Map<String, LibraryTitleFacts> = emptyMap(),
 ): List<LibraryItem> = when (effectiveLibrarySortOption(option, sourceMode)) {
     LibrarySortOption.DEFAULT -> items.sortedWith(compareBy<LibraryItem> { it.traktRank ?: Int.MAX_VALUE }
         .thenByDescending { it.savedAtEpochMs }.thenBy { it.sortTitle() }.thenBy { it.id })
@@ -77,13 +90,43 @@ internal fun sortLibraryItems(
         .thenBy { it.sortTitle() }.thenBy { it.id })
     LibrarySortOption.TITLE_ASC -> items.sortedWith(compareBy<LibraryItem> { it.sortTitle() }.thenBy { it.id })
     LibrarySortOption.TITLE_DESC -> items.sortedWith(compareByDescending<LibraryItem> { it.sortTitle() }.thenBy { it.id })
+    // Unknown values last, whichever way the sort runs — as the tracker's `nulls last`.
+    LibrarySortOption.POPULAR -> items.sortedByFact(facts, descending = true) { it.popularity }
+    LibrarySortOption.TOP_RATED -> items.sortedWith(
+        compareBy<LibraryItem> { facts.factFor(it)?.voteAverage == null }
+            .thenByDescending { facts.factFor(it)?.voteAverage }
+            .thenByDescending { facts.factFor(it)?.voteCount }
+            .thenBy { it.sortTitle() },
+    )
+    LibrarySortOption.MOST_VOTED -> items.sortedByFact(facts, descending = true) { it.voteCount }
+    LibrarySortOption.NEWEST -> items.sortedByFact(facts, descending = true) { it.releaseDate }
+    LibrarySortOption.OLDEST -> items.sortedByFact(facts, descending = false) { it.releaseDate }
+}
+
+private fun Map<String, LibraryTitleFacts>.factFor(item: LibraryItem): LibraryTitleFacts? =
+    this[libraryItemKey(item.id, item.type)]?.takeUnless { it.unresolved }
+
+private fun <T : Comparable<T>> List<LibraryItem>.sortedByFact(
+    facts: Map<String, LibraryTitleFacts>,
+    descending: Boolean,
+    value: (LibraryTitleFacts) -> T?,
+): List<LibraryItem> {
+    val byValue = compareBy<LibraryItem, T?>(nullsLast()) { item -> facts.factFor(item)?.let(value) }
+    val ordered = if (descending) {
+        compareBy<LibraryItem> { item -> facts.factFor(item)?.let(value) == null }
+            .thenByDescending { item -> facts.factFor(item)?.let(value) }
+    } else {
+        byValue
+    }
+    return sortedWith(ordered.thenBy { it.sortTitle() }.thenBy { it.id })
 }
 
 internal fun sortLibrarySections(
     sections: List<LibrarySection>,
     option: LibrarySortOption,
     sourceMode: LibrarySourceMode,
-): List<LibrarySection> = sections.map { it.copy(items = sortLibraryItems(it.items, option, sourceMode)) }
+    facts: Map<String, LibraryTitleFacts> = emptyMap(),
+): List<LibrarySection> = sections.map { it.copy(items = sortLibraryItems(it.items, option, sourceMode, facts)) }
 
 internal data class LibraryGridEntry(val item: LibraryItem, val section: LibrarySection)
 

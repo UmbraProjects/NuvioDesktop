@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.perf.PerfTelemetry
+import com.nuvio.app.features.library.LibraryQuickAccess
 import com.nuvio.app.core.build.AppFeaturePolicy
 
 import androidx.compose.foundation.border
@@ -58,8 +60,10 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material.icons.rounded.WidthFull
 import androidx.compose.material3.Icon
@@ -184,6 +188,7 @@ import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.collections_header
 import nuvio.composeapp.generated.resources.compose_nav_home
 import nuvio.composeapp.generated.resources.calendar_title
+import nuvio.composeapp.generated.resources.iptv_settings_page
 import nuvio.composeapp.generated.resources.compose_nav_library
 import nuvio.composeapp.generated.resources.compose_nav_search
 import nuvio.composeapp.generated.resources.compose_settings_page_account
@@ -221,6 +226,13 @@ import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
+/**
+ * The settings page last shown, so `(PerfScreen)` can name it when the Settings tab is re-entered
+ * with its composition retained (the page effect does not re-run then).
+ */
+@Volatile
+internal var perfSettingsPage: String = SettingsPage.Addons.name
+
 private val SettingsSearchRevealThreshold = 28.dp
 private const val SettingsSearchRevealAnimationMillis = 240L
 private const val SettingsSearchRevealHapticDelayMillis = 90L
@@ -246,6 +258,7 @@ fun SettingsScreen(
     onAddonsClick: () -> Unit = {},
     onPluginsClick: () -> Unit = {},
     onOpenDownload: (DownloadItem) -> Unit = {},
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportersContributorsClick: () -> Unit = {},
     onLicensesAttributionsClick: () -> Unit = {},
@@ -257,6 +270,7 @@ fun SettingsScreen(
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
+    onNavigateToLiveTv: (() -> Unit)? = null,
 ) {
     val homeKeyFocusRequester = remember { FocusRequester() }
     var settingsSearchHasFocus by remember { mutableStateOf(false) }
@@ -447,6 +461,10 @@ fun SettingsScreen(
         }
 
         var currentPage by rememberSaveable { mutableStateOf(SettingsPage.Addons.name) }
+        LaunchedEffect(currentPage) {
+            perfSettingsPage = currentPage
+            PerfTelemetry.markScreen("Settings/$currentPage")
+        }
         var selectedDownloadsShowId by rememberSaveable { mutableStateOf<String?>(null) }
         var pendingDownloadsDelete by remember { mutableStateOf<DownloadsSettingsDeleteTarget?>(null) }
         val scrollToTopRequests = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
@@ -590,6 +608,7 @@ fun SettingsScreen(
                 selectedDownloadsShowId = selectedDownloadsShowId,
                 onSelectedDownloadsShowChange = { selectedDownloadsShowId = it },
                 onOpenDownload = onOpenDownload,
+                onOpenPartyMedia = onOpenPartyMedia,
                 onDownloadsDeleteTarget = { pendingDownloadsDelete = it },
                 onSupportersContributorsClick = onSupportersContributorsClick,
                 onLicensesAttributionsClick = onLicensesAttributionsClick,
@@ -601,6 +620,7 @@ fun SettingsScreen(
                 onNavigateToLibrary = onNavigateToLibrary,
                 onNavigateToDiscover = onNavigateToDiscover,
                 onNavigateToCalendar = onNavigateToCalendar,
+                onNavigateToLiveTv = onNavigateToLiveTv,
                 onSettingsSearchFocusChange = { settingsSearchHasFocus = it },
             )
         } else {
@@ -683,6 +703,7 @@ fun SettingsScreen(
                 selectedDownloadsShowId = selectedDownloadsShowId,
                 onSelectedDownloadsShowChange = { selectedDownloadsShowId = it },
                 onOpenDownload = onOpenDownload,
+                onOpenPartyMedia = onOpenPartyMedia,
                 onDownloadsDeleteTarget = { pendingDownloadsDelete = it },
                 onAccountClick = onAccountClick,
                 onSupportersContributorsClick = onSupportersContributorsClick,
@@ -774,6 +795,7 @@ private fun MobileSettingsScreen(
     selectedDownloadsShowId: String?,
     onSelectedDownloadsShowChange: (String?) -> Unit,
     onOpenDownload: (DownloadItem) -> Unit,
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit,
     onDownloadsDeleteTarget: (DownloadsSettingsDeleteTarget) -> Unit,
     onSwitchProfile: (() -> Unit)? = null,
     onHomescreenClick: () -> Unit = {},
@@ -792,6 +814,7 @@ private fun MobileSettingsScreen(
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
+    onNavigateToLiveTv: (() -> Unit)? = null,
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -808,6 +831,7 @@ private fun MobileSettingsScreen(
         LaunchedEffect(page) {
             if (page != SettingsPage.LocalLibrary) localLibraryTitlesState.browserOpen = false
         }
+        ApplyLibraryQuickAccessBrowser(page, localLibraryTitlesState)
         if (page == SettingsPage.LocalLibrary && localLibraryTitlesState.browserOpen) {
             LocalLibraryBrowserDialog(
                 state = localLibraryUiState,
@@ -928,6 +952,7 @@ private fun MobileSettingsScreen(
                             onStreamsClick = { onPageChange(SettingsPage.Streams) },
                             onLocalLibraryClick = { onPageChange(SettingsPage.LocalLibrary) },
                             onGamesClick = { onPageChange(SettingsPage.Games) },
+                            onIptvClick = { onPageChange(SettingsPage.Iptv) },
                             onAutoDownloadsClick = { onPageChange(SettingsPage.AutoDownloads) },
                             onAppearanceClick = { onPageChange(SettingsPage.Appearance) },
                             onAdvancedClick = { onPageChange(SettingsPage.Advanced) },
@@ -1009,6 +1034,7 @@ private fun MobileSettingsScreen(
                     onOpenDownload = onOpenDownload,
                     onDeleteTarget = onDownloadsDeleteTarget,
                 )
+                SettingsPage.WatchParty -> watchPartySettingsContent(onOpenPartyMedia)
                 SettingsPage.StreamScoring -> streamScoringSection(isTablet = false)
                 SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
                     isTablet = false,
@@ -1130,6 +1156,7 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     settings = gameLibrarySettings,
                 )
+                SettingsPage.Iptv -> iptvSettingsContent(isTablet = false)
                 SettingsPage.Screensaver -> screensaverSettingsContent(
                     isTablet = false,
                     settings = screensaverSettings,
@@ -1159,6 +1186,25 @@ private fun MobileSettingsScreen(
                     onActivityNameChange = DiscordPresenceSettingsRepository::setActivityName,
                 )
             }
+        }
+    }
+}
+
+/**
+ * The Library nav item's right-click shortcuts: once the LocalLibrary page is up (App has already
+ * requested it), open the titles browser or make sure it isn't covering the settings. Both the
+ * mobile and tablet/desktop layouts host the browser, so both call this.
+ */
+@Composable
+private fun ApplyLibraryQuickAccessBrowser(page: SettingsPage, titlesState: LocalLibraryTitlesState) {
+    LaunchedEffect(page, LibraryQuickAccess.browserPending) {
+        val openBrowser = LibraryQuickAccess.browserPending ?: return@LaunchedEffect
+        if (page != SettingsPage.LocalLibrary) return@LaunchedEffect
+        LibraryQuickAccess.browserPending = null
+        if (openBrowser) {
+            titlesState.openBrowser(FILTER_ALL)
+        } else {
+            titlesState.browserOpen = false
         }
     }
 }
@@ -1293,6 +1339,7 @@ private fun TabletSettingsScreen(
     selectedDownloadsShowId: String?,
     onSelectedDownloadsShowChange: (String?) -> Unit,
     onOpenDownload: (DownloadItem) -> Unit,
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit,
     onDownloadsDeleteTarget: (DownloadsSettingsDeleteTarget) -> Unit,
     profileAvatars: List<AvatarCatalogItem>,
     onSwitchProfile: (() -> Unit)? = null,
@@ -1306,6 +1353,7 @@ private fun TabletSettingsScreen(
     onNavigateToLibrary: (() -> Unit)? = null,
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
+    onNavigateToLiveTv: (() -> Unit)? = null,
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
@@ -1346,6 +1394,7 @@ private fun TabletSettingsScreen(
             LaunchedEffect(page) {
                 if (page != SettingsPage.LocalLibrary) localLibraryTitlesState.browserOpen = false
             }
+            ApplyLibraryQuickAccessBrowser(page, localLibraryTitlesState)
             if (page == SettingsPage.LocalLibrary && localLibraryTitlesState.browserOpen) {
                 LocalLibraryBrowserDialog(
                     state = localLibraryUiState,
@@ -1460,6 +1509,7 @@ private fun TabletSettingsScreen(
                 onNavigateToLibrary = onNavigateToLibrary,
                 onNavigateToDiscover = onNavigateToDiscover,
                 onNavigateToCalendar = onNavigateToCalendar,
+                onNavigateToLiveTv = onNavigateToLiveTv,
                 contextPanelWidth = contextPanelWidth,
             )
             if (desktopColumnGuidesVisible) {
@@ -1638,6 +1688,7 @@ private fun TabletSettingsScreen(
                                 onStreamsClick = { openInlinePage(SettingsPage.Streams) },
                                 onLocalLibraryClick = { openInlinePage(SettingsPage.LocalLibrary) },
                                 onGamesClick = { openInlinePage(SettingsPage.Games) },
+                                onIptvClick = { openInlinePage(SettingsPage.Iptv) },
                                 onAutoDownloadsClick = { openInlinePage(SettingsPage.AutoDownloads) },
                                 onAppearanceClick = { openInlinePage(SettingsPage.Appearance) },
                                 onAdvancedClick = { openInlinePage(SettingsPage.Advanced) },
@@ -1723,6 +1774,7 @@ private fun TabletSettingsScreen(
                         onOpenDownload = onOpenDownload,
                         onDeleteTarget = onDownloadsDeleteTarget,
                     )
+                SettingsPage.WatchParty -> watchPartySettingsContent(onOpenPartyMedia)
                 SettingsPage.StreamScoring -> streamScoringSection(isTablet = true)
                     SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
                         isTablet = true,
@@ -1844,6 +1896,7 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         settings = gameLibrarySettings,
                     )
+                    SettingsPage.Iptv -> iptvSettingsContent(isTablet = true)
                     SettingsPage.Screensaver -> screensaverSettingsContent(
                         isTablet = true,
                         settings = screensaverSettings,
@@ -1965,6 +2018,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Account,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.party_title),
+        icon = Icons.Rounded.Groups,
+        page = SettingsPage.WatchParty,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_appearance),
         icon = Icons.Rounded.Palette,
         page = SettingsPage.Appearance,
@@ -2015,6 +2073,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Games,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.iptv_settings_page),
+        icon = Icons.Rounded.LiveTv,
+        page = SettingsPage.Iptv,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_auto_downloads),
         icon = Icons.Rounded.CloudDownload,
         page = SettingsPage.AutoDownloads,
@@ -2028,6 +2091,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         label = stringResource(Res.string.compose_settings_page_keyboard_shortcuts),
         icon = Icons.Rounded.Keyboard,
         page = SettingsPage.KeyboardShortcuts,
+    ),
+    DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_advanced),
+        icon = Icons.Rounded.Tune,
+        page = SettingsPage.Advanced,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_licenses_attributions),
@@ -2056,12 +2124,14 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Streams -> SettingsPage.Streams
     SettingsPage.LocalLibrary -> SettingsPage.LocalLibrary
     SettingsPage.Games -> SettingsPage.Games
+    SettingsPage.Iptv -> SettingsPage.Iptv
     SettingsPage.AutoDownloads -> SettingsPage.AutoDownloads
     SettingsPage.Downloads -> SettingsPage.Downloads
     SettingsPage.StreamScoring -> SettingsPage.Streams
     SettingsPage.KeyboardShortcuts -> SettingsPage.KeyboardShortcuts
     SettingsPage.LicensesAttributions -> SettingsPage.LicensesAttributions
     SettingsPage.Account -> SettingsPage.Account
+    SettingsPage.WatchParty -> SettingsPage.WatchParty
     SettingsPage.TraktAuthentication,
     SettingsPage.SimklAuthentication -> SettingsPage.Integrations
     SettingsPage.YamtrackAuthentication,
@@ -2377,6 +2447,7 @@ private fun DesktopSettingsTopBar(
     onNavigateToLibrary: (() -> Unit)?,
     onNavigateToDiscover: (() -> Unit)?,
     onNavigateToCalendar: (() -> Unit)?,
+    onNavigateToLiveTv: (() -> Unit)?,
     contextPanelWidth: Dp,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -2463,6 +2534,7 @@ private fun DesktopSettingsTopBar(
                 onNavigateToLibrary = onNavigateToLibrary,
                 onNavigateToDiscover = onNavigateToDiscover,
                 onNavigateToCalendar = onNavigateToCalendar,
+                onNavigateToLiveTv = onNavigateToLiveTv,
             )
             Spacer(modifier = Modifier.weight(1f))
             if (contextPanelWidth == 0.dp) {
@@ -2505,11 +2577,13 @@ private fun DesktopSettingsRootNavigation(
     onNavigateToLibrary: (() -> Unit)?,
     onNavigateToDiscover: (() -> Unit)?,
     onNavigateToCalendar: (() -> Unit)?,
+    onNavigateToLiveTv: (() -> Unit)?,
 ) {
     val tokens = MaterialTheme.nuvio
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsState()
+    val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -2587,6 +2661,26 @@ private fun DesktopSettingsRootNavigation(
                     tokens.colors.textMuted.copy(alpha = 0.42f)
                 },
             )
+        }
+        // Live TV, like its tab, only once a playlist exists.
+        if (liveTvTabVisible) {
+            IconButton(
+                onClick = { onNavigateToLiveTv?.invoke() },
+                enabled = onNavigateToLiveTv != null,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.LiveTv,
+                    contentDescription = stringResource(Res.string.iptv_settings_page),
+                    modifier = Modifier
+                        .size(22.dp)
+                        .then(if (onNavigateToLiveTv != null) Modifier.accentGradientMask() else Modifier),
+                    tint = if (onNavigateToLiveTv != null) {
+                        tokens.colors.accent
+                    } else {
+                        tokens.colors.textMuted.copy(alpha = 0.42f)
+                    },
+                )
+            }
         }
         // Calendar is a pushed route rather than a tab, so it has no sidebar entry to fall back
         // on; from Settings the only other ways in are the hotkey or the Library header icon.
@@ -2872,3 +2966,21 @@ private fun DesktopActionRow(
 private fun enabledLabel(enabled: Boolean): String = if (enabled) "Enabled" else "Disabled"
 
 private fun connectedLabel(connected: Boolean): String = if (connected) "Connected" else "Not connected"
+
+/**
+ * The Watch party page: join with a code or an invite link, or manage the party you are in.
+ * Upstream's PartyScreen route, shown inside Settings here (see PartyInvites for invite links).
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.watchPartySettingsContent(
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit,
+) {
+    item(key = "watch_party_page") {
+        val invite by com.nuvio.app.features.party.PartyInvites.latest.collectAsStateWithLifecycle()
+        androidx.compose.runtime.key(invite?.id) {
+            com.nuvio.app.features.party.PartyPage(
+                initialCode = invite?.code.orEmpty(),
+                onWatch = onOpenPartyMedia,
+            )
+        }
+    }
+}

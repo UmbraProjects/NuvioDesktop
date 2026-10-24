@@ -31,6 +31,17 @@ data class WatchedUiState(
     val items: List<WatchedItem> = emptyList(),
     val watchedKeys: Set<String> = emptySet(),
     val isLoaded: Boolean = false,
+    /**
+     * Storage id of the provider whose history [sourceHistoryKeys] describes — the one that owned
+     * Continue Watching at its last import — or null before any import this session.
+     */
+    val sourceHistoryProvider: String? = null,
+    /**
+     * Keys (and alias keys) of every row that provider reported, whether or not the row is tagged
+     * [WatchedItem.importedFrom]: an episode the store already had keeps its own provenance on
+     * import, so most of a provider's history is untagged and only this set can tell it apart.
+     */
+    val sourceHistoryKeys: Set<String> = emptySet(),
 )
 
 fun MetaPreview.toWatchedItem(markedAtEpochMs: Long): WatchedItem =

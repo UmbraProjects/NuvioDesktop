@@ -1,6 +1,12 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -44,3 +50,49 @@ internal expect fun Modifier.nuvioDitheredScrim(
     horizontal: NuvioScrimRamp,
     vertical: NuvioScrimRamp,
 ): Modifier
+
+/**
+ * Corrects this element's finished rendering for Windows HDR's SDR conversion, and does nothing
+ * at all while the window's display is SDR (or the setting is off).
+ *
+ * For stacks of fades that cannot be folded into one [nuvioDitheredScrim] — the TV hero's side
+ * fade, vignette and bottom fade over the backdrop — so the correction is applied once, to the
+ * composite. The curve is anchored on [background]: that colour maps to itself, so the corrected
+ * region meets the uncorrected page around it without a seam, and every fade toward it gets the
+ * gamma-2.2 shape that Windows' sRGB decode otherwise flattens. Keep native surfaces outside it.
+ */
+internal expect fun Modifier.nuvioHdrFadeCorrection(background: Color): Modifier
+
+/** True under a [HdrFadeCorrected] that already corrects this content; nested ones stand down. */
+internal val LocalHdrFadeCorrected = staticCompositionLocalOf { false }
+
+/**
+ * A [Box] whose rendering gets [nuvioHdrFadeCorrection] — unless an ancestor already applies it,
+ * since the correction is not idempotent and running it twice crushes the shadows. The TV home
+ * screen corrects itself as a whole (hero, shelf scrim and posters, so they all match); the hero
+ * alone corrects only itself everywhere else.
+ */
+@Composable
+internal fun HdrFadeCorrected(
+    background: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val alreadyCorrected = LocalHdrFadeCorrected.current
+    Box(modifier = if (alreadyCorrected) modifier else modifier.nuvioHdrFadeCorrection(background)) {
+        CompositionLocalProvider(LocalHdrFadeCorrected provides true) {
+            content()
+        }
+    }
+}
+
+/**
+ * `Brush.verticalGradient(colorStops)`, translucent stops and all, with a level of noise added
+ * before the 8-bit write — up to [NuvioScrimRamp.MAX_STOPS] stops.
+ *
+ * For scrims drawn over flat colour, like TV Mode's shelf darkening: a fade from clear to the
+ * background spends only a dozen levels across a few hundred pixels and lands as stripes. (Over
+ * artwork, banding is in the product of scrim and picture and only [nuvioDitheredScrim] can help.)
+ * Stops are interpolated premultiplied, as Skia does for the plain brush.
+ */
+internal expect fun nuvioDitheredVerticalGradient(colorStops: Array<Pair<Float, Color>>): Brush

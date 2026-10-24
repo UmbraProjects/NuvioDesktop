@@ -13,22 +13,22 @@ class DiscoverRowLayoutTest {
 
     @Test
     fun `a saved order wins over the default`() {
-        val saved = listOf("gems", "finish", "trending", "favourites", "because")
+        val saved = listOf("gems", "finish", "trending", "people", "favourites", "because", "top_picks")
         assertEquals(saved, normalizeDiscoverRowOrder(saved, emptyList()))
     }
 
     @Test
     fun `a deleted custom row is dropped from the order`() {
-        val saved = listOf("finish", "custom:gone", "because", "custom:kept", "favourites", "gems", "trending")
+        val saved = listOf("finish", "top_picks", "custom:gone", "because", "people", "custom:kept", "favourites", "gems", "trending")
         assertEquals(
-            listOf("finish", "because", "custom:kept", "favourites", "gems", "trending"),
+            listOf("finish", "top_picks", "because", "people", "custom:kept", "favourites", "gems", "trending"),
             normalizeDiscoverRowOrder(saved, listOf("kept")),
         )
     }
 
     @Test
     fun `a new custom row is appended, not inserted`() {
-        val saved = listOf("finish", "because", "favourites", "gems", "trending")
+        val saved = listOf("finish", "top_picks", "because", "people", "favourites", "gems", "trending")
         assertEquals(saved + "custom:new", normalizeDiscoverRowOrder(saved, listOf("new")))
     }
 
@@ -40,7 +40,7 @@ class DiscoverRowLayoutTest {
     fun `a family missing from a saved order lands at its default position`() {
         val saved = listOf("finish", "because", "trending", "custom:mine")
         assertEquals(
-            listOf("finish", "because", "favourites", "gems", "trending", "custom:mine"),
+            listOf("finish", "top_picks", "because", "people", "favourites", "gems", "trending", "custom:mine"),
             normalizeDiscoverRowOrder(saved, listOf("mine")),
         )
     }
@@ -56,7 +56,7 @@ class DiscoverRowLayoutTest {
     fun `insertion follows the user's arrangement, not the default one`() {
         val saved = listOf("trending", "gems", "finish")
         val normalized = normalizeDiscoverRowOrder(saved, emptyList())
-        assertEquals(listOf("trending", "gems", "finish", "because", "favourites"), normalized)
+        assertEquals(listOf("trending", "gems", "finish", "top_picks", "because", "people", "favourites"), normalized)
     }
 
     @Test

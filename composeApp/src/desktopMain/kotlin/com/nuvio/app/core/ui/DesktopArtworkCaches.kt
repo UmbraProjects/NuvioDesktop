@@ -15,10 +15,34 @@ import coil3.memory.MemoryCache
  * an expired entry is a miss, the request falls through to the disk cache and its strategy, and
  * whatever comes back (a 304, or a new poster) is stored here again with a new deadline.
  */
-internal class DesktopArtworkMemoryCache(private val delegate: MemoryCache) : MemoryCache by delegate {
+internal class DesktopArtworkMemoryCache(
+    private val delegate: MemoryCache,
+    /** Read on every insert, so a change to Settings -> Advanced -> Memory use applies at once. */
+    private val maxLargeEntries: () -> Int = {
+        ImageCacheSettingsRepository.settings.value.memoryUse.largeArtworkEntries
+    },
+) : MemoryCache by delegate {
+
+    /**
+     * Keys of the large (hero-size) bitmaps currently cached, least recently used first.
+     *
+     * A full hero backdrop is 18–33 MB; a few of them fill the whole budget and evict hundreds of
+     * posters (Docs/plans/image-memory-plan.md, option 2). Balanced keeps six: the focused hero, the
+     * four cards one key press away that HeroBackdropPrefetcher decodes ahead (the one just left is
+     * among them), and one spare so a seventh request does not evict a neighbour. Lean keeps 4,
+     * Generous 10 ([MemoryUse.largeArtworkEntries]). Re-showing an evicted backdrop costs a
+     * ~110 ms decode from the disk cache.
+     */
+    private val largeKeys = LinkedHashSet<MemoryCache.Key>()
 
     override fun get(key: MemoryCache.Key): MemoryCache.Value? {
-        val value = delegate[key] ?: return null
+        val value = delegate[key] ?: run {
+            synchronized(largeKeys) { largeKeys.remove(key) }
+            return null
+        }
+        synchronized(largeKeys) {
+            if (largeKeys.remove(key)) largeKeys.add(key)
+        }
         // Values without a disk-cache key did not come through a fetcher we track (a painter
         // resource, a data URI); Coil's own rules apply to them unchanged.
         val diskCacheKey = value.extras[CoilDiskCacheKeyExtra] as? String ?: return value
@@ -41,9 +65,36 @@ internal class DesktopArtworkMemoryCache(private val delegate: MemoryCache) : Me
         } else {
             value.copy(extras = value.extras + (BodyVersionExtra to freshness.bodyVersion))
         }
+        if (value.image.size >= LargeEntryBytes) {
+            val evict = synchronized(largeKeys) {
+                largeKeys.remove(key)
+                largeKeys.add(key)
+                val cap = maxLargeEntries()
+                buildList {
+                    while (largeKeys.size > cap) {
+                        val oldest = largeKeys.first()
+                        largeKeys.remove(oldest)
+                        add(oldest)
+                    }
+                }
+            }
+            evict.forEach(delegate::remove)
+        }
     }
 
-    private companion object {
+    override fun remove(key: MemoryCache.Key): Boolean {
+        synchronized(largeKeys) { largeKeys.remove(key) }
+        return delegate.remove(key)
+    }
+
+    override fun clear() {
+        synchronized(largeKeys) { largeKeys.clear() }
+        delegate.clear()
+    }
+
+    internal companion object {
+        /** Hero-size: a 1536x1382 ARGB bitmap is ~8 MB; posters, logos and hero previews sit far below. */
+        const val LargeEntryBytes = 8L * 1024 * 1024
         /** `MemoryCacheService.EXTRA_DISK_CACHE_KEY`: Coil records it on every value it writes. */
         const val CoilDiskCacheKeyExtra = "coil#disk_cache_key"
         const val BodyVersionExtra = "nuvio#body_version"
@@ -58,6 +109,11 @@ internal const val PlaybackScaledCacheBytes = 8L * 1024 * 1024
  * prevent an outgoing player from restoring budgets underneath a replacement. Late image requests
  * remain subject to the smaller budgets until every reason has ended. Pixels still owned by a
  * painter are never closed here; only cache references are dropped.
+ *
+ * Skia's GPU resource cache is deliberately left alone. With the Direct3D renderer skiko flushes
+ * frames on its `skiko-dispatcher-to-block-on` pool, not the EDT, so changing the DirectContext's
+ * cache limit from app code raced skiko's own post-flush purge and double-released a texture
+ * (crash ~5 s after opening the player). Only skiko may touch the context.
  */
 internal class DesktopArtworkCacheCoordinator(
     private val limitAnimations: (Boolean) -> Unit,
@@ -96,6 +152,10 @@ internal class DesktopArtworkCacheCoordinator(
         playbackSessions.remove(session)
         update()
     }
+
+    /** Whether a full-player session is open; background artwork work waits it out. */
+    val isPlaybackActive: Boolean
+        @Synchronized get() = playbackSessions.isNotEmpty()
 
     @Synchronized
     fun onWindowVisibilityChanged(visible: Boolean) {

@@ -69,6 +69,8 @@ internal object SettingsScrollAnchor {
     const val AnimeSvp = "anime_svp"
     const val AnimeSvpOverlay = "anime_svp_overlay"
     const val RtxHdr = "rtx_hdr"
+    const val RtxHdrAnime = "rtx_hdr_anime"
+    const val RtxHdrAnimeShaders = "rtx_hdr_anime_shaders"
     const val TmdbHeroImages = "tmdb_hero_images"
     const val TvdbApiKey = "tvdb_api_key"
     const val DiscordPresence = "discord_presence"

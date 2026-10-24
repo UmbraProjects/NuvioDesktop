@@ -25,6 +25,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopSeekHandleEnabled(enabled: Boolean)
     fun loadDesktopHudVignetteEnabled(): Boolean?
     fun saveDesktopHudVignetteEnabled(enabled: Boolean)
+    fun loadDesktopHiddenHudButtons(): String?
+    fun saveDesktopHiddenHudButtons(commands: String)
     fun loadDesktopAlwaysShowClockEnabled(): Boolean?
     fun saveDesktopAlwaysShowClockEnabled(enabled: Boolean)
     fun loadDesktopPauseOverlaySourceEnabled(): Boolean?
@@ -128,6 +130,10 @@ internal expect object PlayerSettingsStorage {
     fun saveNvidiaRtxSuperResolutionEnabled(enabled: Boolean)
     fun loadNvidiaRtxHdrEnabled(): Boolean?
     fun saveNvidiaRtxHdrEnabled(enabled: Boolean)
+    fun loadNvidiaRtxHdrAnimeEnabled(): Boolean?
+    fun saveNvidiaRtxHdrAnimeEnabled(enabled: Boolean)
+    fun loadNvidiaRtxHdrAnimeShadersEnabled(): Boolean?
+    fun saveNvidiaRtxHdrAnimeShadersEnabled(enabled: Boolean)
     fun loadDesktopAnimeModeAutoEnabled(): Boolean?
     fun saveDesktopAnimeModeAutoEnabled(enabled: Boolean)
     fun loadDesktopAnimeTreatAnimationAsAnime(): Boolean?
@@ -199,6 +205,8 @@ internal expect object PlayerSettingsStorage {
     fun saveSkipMovieCreditsToPostCredits(enabled: Boolean)
     fun loadStripSdhSubtitles(): Boolean?
     fun saveStripSdhSubtitles(enabled: Boolean)
+    fun loadAutomaticSubtitleSyncEnabled(): Boolean?
+    fun saveAutomaticSubtitleSyncEnabled(enabled: Boolean)
     fun loadIntroSubmitEnabled(): Boolean?
     fun saveIntroSubmitEnabled(enabled: Boolean)
     fun loadStreamAutoPlayNextEpisodeEnabled(): Boolean?
@@ -271,6 +279,10 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopRendererApi(api: String)
     fun loadDesktopPerformanceLogging(): Boolean?
     fun saveDesktopPerformanceLogging(enabled: Boolean)
+    fun loadDesktopSteadyFramePacing(): Boolean?
+    fun saveDesktopSteadyFramePacing(enabled: Boolean)
+    fun loadDesktopHdrUiCompensation(): Boolean?
+    fun saveDesktopHdrUiCompensation(enabled: Boolean)
     fun loadDesktopLowVramMode(): String?
     fun saveDesktopLowVramMode(mode: String)
     fun loadDesktopAnimeMode(): String?

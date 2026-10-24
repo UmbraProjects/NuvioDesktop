@@ -172,7 +172,7 @@ private fun ExpandedHeader(
         modifier = modifier.fillMaxWidth().height(ExpandedHeaderHeight).background(Color.Black).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MusicTextChip("Collapse", onClick = onCollapse)
+        MusicTextChip("Collapse", onCollapse)
         Spacer(Modifier.width(8.dp))
         Text(
             text = title,
@@ -182,6 +182,6 @@ private fun ExpandedHeader(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        MusicTextChip("Fullscreen", onClick = onFullscreen)
+        MusicTextChip("Fullscreen", onFullscreen)
     }
 }

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.perf.PerfTelemetry
+import com.nuvio.app.features.collection.FolderRowShuffleState
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.ManagedAddon
 import com.nuvio.app.features.addons.enabledAddons
@@ -15,6 +17,8 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.features.profiles.ProfileRepository
+import kotlinx.coroutines.launch
 import com.nuvio.app.features.discover.CUSTOM_DISCOVER_REF_LIMIT
 import com.nuvio.app.features.discover.CUSTOM_DISCOVER_ROW_LIMIT
 import com.nuvio.app.features.discover.CustomDiscoverRow
@@ -208,6 +212,8 @@ data class HomeCatalogSettingsUiState(
     val discoverFinishIdleDays: Int = DISCOVER_FINISH_IDLE_DAYS_DEFAULT,
     val discoverMoreLikeFavouritesEnabled: Boolean = true,
     val discoverHiddenGemsEnabled: Boolean = true,
+    val discoverTopPicksEnabled: Boolean = true,
+    val discoverPeopleRowsEnabled: Boolean = true,
     val discoverTrendingGenreRows: Int = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT,
     val discoverExcludedGenres: Set<String> = emptySet(),
     /**
@@ -223,6 +229,7 @@ data class HomeCatalogSettingsUiState(
     val catalogRowShuffleEnabled: Boolean = false,
     val adaptiveHeroEnabled: Boolean = false,
     val adaptiveHeroVerticalBias: Float = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT,
+    val adaptiveHeroAutoFraming: Boolean = true,
     val adaptiveHeroHeightMultiplier: Float = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT,
     val heroAmbientBackgroundEnabled: Boolean = false,
     val tvModeEnabled: Boolean = false,
@@ -231,12 +238,13 @@ data class HomeCatalogSettingsUiState(
     val hoverPreviewAdaptiveEnabled: Boolean = false,
     val catalogSeeMoreEnabled: Boolean = false,
     val catalogRowNumbersEnabled: Boolean = false,
-    val collectionGifsOnFocusOnly: Boolean = false,
+    val collectionGifsOnFocusOnly: Boolean = true,
     val catalogProviderTagEnabled: Boolean = false,
     val tvRowDotsEnabled: Boolean = false,
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
     val tvRowTransition: HomeTvRowTransition = HomeTvRowTransition.Fade,
     val tvFullBackdropEnabled: Boolean = false,
+    val tvAmbientBackgroundEnabled: Boolean = false,
     val randomPlayEnabled: Boolean = false,
     val randomPlayIncludeCollections: Boolean = false,
     val randomPlayCategories: Set<RandomPlayCategory> = RandomPlayCategory.entries.toSet(),
@@ -271,6 +279,8 @@ data class HomeCatalogSettingsUiState(
             append('|')
             append(adaptiveHeroVerticalBias)
             append('|')
+            append(adaptiveHeroAutoFraming)
+            append('|')
             append(adaptiveHeroHeightMultiplier)
             append('|')
             append(heroAmbientBackgroundEnabled)
@@ -298,6 +308,8 @@ data class HomeCatalogSettingsUiState(
             append(tvRowTransition)
             append('|')
             append(tvFullBackdropEnabled)
+            append('|')
+            append(tvAmbientBackgroundEnabled)
             append('|')
             append(randomPlayEnabled)
             append('|')
@@ -342,6 +354,8 @@ internal data class HomeCatalogSettingsSnapshot(
     val discoverFinishIdleDays: Int,
     val discoverMoreLikeFavouritesEnabled: Boolean,
     val discoverHiddenGemsEnabled: Boolean,
+    val discoverTopPicksEnabled: Boolean,
+    val discoverPeopleRowsEnabled: Boolean,
     val discoverTrendingGenreRows: Int,
     val discoverExcludedGenres: Set<String>,
     /** Already normalised — see [HomeCatalogSettingsUiState.discoverRowOrder]. */
@@ -353,6 +367,7 @@ internal data class HomeCatalogSettingsSnapshot(
     val catalogRowShuffleEnabled: Boolean,
     val adaptiveHeroEnabled: Boolean,
     val adaptiveHeroVerticalBias: Float,
+    val adaptiveHeroAutoFraming: Boolean,
     val adaptiveHeroHeightMultiplier: Float,
     val heroAmbientBackgroundEnabled: Boolean,
     val tvModeEnabled: Boolean,
@@ -521,6 +536,8 @@ private data class StoredHomeCatalogSettingsPayload(
     val discoverFinishIdleDays: Int = DISCOVER_FINISH_IDLE_DAYS_DEFAULT,
     val discoverMoreLikeFavouritesEnabled: Boolean = true,
     val discoverHiddenGemsEnabled: Boolean = true,
+    val discoverTopPicksEnabled: Boolean = true,
+    val discoverPeopleRowsEnabled: Boolean = true,
     val discoverTrendingGenreRows: Int = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT,
     val discoverExcludedGenres: Set<String> = emptySet(),
     /**
@@ -537,6 +554,7 @@ private data class StoredHomeCatalogSettingsPayload(
     @SerialName("tvModeEnabled")
     val adaptiveHeroEnabled: Boolean = false,
     val adaptiveHeroVerticalBias: Float = -0.58f,
+    val adaptiveHeroAutoFraming: Boolean = true,
     val adaptiveHeroHeightMultiplier: Float = 1.25f,
     val heroAmbientBackgroundEnabled: Boolean = false,
     @SerialName("immersiveCatalogModeEnabled")
@@ -546,12 +564,13 @@ private data class StoredHomeCatalogSettingsPayload(
     val hoverPreviewAdaptiveEnabled: Boolean = false,
     val catalogSeeMoreEnabled: Boolean = false,
     val catalogRowNumbersEnabled: Boolean = false,
-    val collectionGifsOnFocusOnly: Boolean = false,
+    val collectionGifsOnFocusOnly: Boolean = true,
     val catalogProviderTagEnabled: Boolean = false,
     val tvRowDotsEnabled: Boolean = false,
     val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
     val tvRowTransition: HomeTvRowTransition = HomeTvRowTransition.Fade,
     val tvFullBackdropEnabled: Boolean = false,
+    val tvAmbientBackgroundEnabled: Boolean = false,
     val randomPlayEnabled: Boolean = false,
     val randomPlayIncludeCollections: Boolean = false,
     val randomPlayCategories: Set<RandomPlayCategory> = RandomPlayCategory.entries.toSet(),
@@ -595,6 +614,8 @@ object HomeCatalogSettingsRepository {
     private var discoverFinishIdleDays = DISCOVER_FINISH_IDLE_DAYS_DEFAULT
     private var discoverMoreLikeFavouritesEnabled = true
     private var discoverHiddenGemsEnabled = true
+    private var discoverTopPicksEnabled = true
+    private var discoverPeopleRowsEnabled = true
     private var discoverTrendingGenreRows = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT
     private var discoverExcludedGenres: Set<String> = emptySet()
     private var discoverRowOrder: List<String> = emptyList()
@@ -615,6 +636,7 @@ object HomeCatalogSettingsRepository {
     private var catalogRowShuffleEnabled = false
     private var adaptiveHeroEnabled = false
     private var adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+    private var adaptiveHeroAutoFraming = true
     private var adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
     private var heroAmbientBackgroundEnabled = false
     private var tvModeEnabled = false
@@ -623,12 +645,13 @@ object HomeCatalogSettingsRepository {
     private var hoverPreviewAdaptiveEnabled = false
     private var catalogSeeMoreEnabled = false
     private var catalogRowNumbersEnabled = false
-    private var collectionGifsOnFocusOnly = false
+    private var collectionGifsOnFocusOnly = true
     private var catalogProviderTagEnabled = false
     private var tvRowDotsEnabled = false
     private var tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
     private var tvRowTransition = HomeTvRowTransition.Fade
     private var tvFullBackdropEnabled = false
+    private var tvAmbientBackgroundEnabled = false
     private var randomPlayEnabled = false
     private var randomPlayIncludeCollections = false
     private var randomPlayCategories = RandomPlayCategory.entries.toSet()
@@ -637,6 +660,8 @@ object HomeCatalogSettingsRepository {
     private var randomPlayAction = RandomPlayAction.Details
 
     fun onProfileChanged() {
+        // The outgoing profile's last change lands before anything reloads from the store.
+        flushPendingPersist()
         hasLoaded = false
         preferences.clear()
         heroEnabled = true
@@ -656,6 +681,8 @@ object HomeCatalogSettingsRepository {
         discoverFinishIdleDays = DISCOVER_FINISH_IDLE_DAYS_DEFAULT
         discoverMoreLikeFavouritesEnabled = true
         discoverHiddenGemsEnabled = true
+        discoverTopPicksEnabled = true
+        discoverPeopleRowsEnabled = true
         discoverTrendingGenreRows = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT
         discoverExcludedGenres = emptySet()
         discoverRowOrder = emptyList()
@@ -667,6 +694,7 @@ object HomeCatalogSettingsRepository {
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroAutoFraming = true
         adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
@@ -675,16 +703,19 @@ object HomeCatalogSettingsRepository {
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
         catalogRowNumbersEnabled = false
-        collectionGifsOnFocusOnly = false
+        collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         tvRowTransition = HomeTvRowTransition.Fade
         tvFullBackdropEnabled = false
+        tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
         definitions = emptyList()
         collectionDefinitions = emptyList()
         lastSyncedCatalogKeys = null
+        lastCatalogSync = null
+        lastCollectionSync = null
         _uiState.value = HomeCatalogSettingsUiState()
     }
 
@@ -693,6 +724,8 @@ object HomeCatalogSettingsRepository {
         definitions = emptyList()
         collectionDefinitions = emptyList()
         lastSyncedCatalogKeys = null
+        lastCatalogSync = null
+        lastCollectionSync = null
         preferences.clear()
         heroEnabled = true
         heroInfoLines = 2
@@ -711,6 +744,8 @@ object HomeCatalogSettingsRepository {
         discoverFinishIdleDays = DISCOVER_FINISH_IDLE_DAYS_DEFAULT
         discoverMoreLikeFavouritesEnabled = true
         discoverHiddenGemsEnabled = true
+        discoverTopPicksEnabled = true
+        discoverPeopleRowsEnabled = true
         discoverTrendingGenreRows = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT
         discoverExcludedGenres = emptySet()
         discoverRowOrder = emptyList()
@@ -722,6 +757,7 @@ object HomeCatalogSettingsRepository {
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroAutoFraming = true
         adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
@@ -730,12 +766,13 @@ object HomeCatalogSettingsRepository {
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
         catalogRowNumbersEnabled = false
-        collectionGifsOnFocusOnly = false
+        collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         tvRowTransition = HomeTvRowTransition.Fade
         tvFullBackdropEnabled = false
+        tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
         _uiState.value = HomeCatalogSettingsUiState()
     }
@@ -744,10 +781,26 @@ object HomeCatalogSettingsRepository {
     // set actually changed, not on every home (re)entry.
     private var lastSyncedCatalogKeys: List<String>? = null
 
+    // Inputs of the last sync and the state it published. Home runs both syncs every time it is
+    // built (tab switches, back from the player, startup); when nothing changed and nobody has
+    // published since, normalising, publishing and persisting again would only repeat the last pass.
+    private var lastCatalogSync: Triple<List<HomeCatalogDefinition>, List<CollectionCatalogDefinition>, HomeCatalogSettingsUiState>? = null
+    private var lastCollectionSync: Pair<List<CollectionCatalogDefinition>, HomeCatalogSettingsUiState>? = null
+
     fun syncCatalogs(addons: List<ManagedAddon>) {
+        PerfTelemetry.count("HomeCatalogSettingsRepository.syncCatalogs")
         ensureLoaded()
         definitions = buildHomeCatalogDefinitions(addons)
         collectionDefinitions = buildCollectionDefinitions(CollectionRepository.collections.value)
+        lastCatalogSync?.let { (lastDefinitions, lastCollections, publishedState) ->
+            if (lastDefinitions === definitions && lastCollections === collectionDefinitions &&
+                publishedState === _uiState.value
+            ) {
+                // Still lets HomeRepository retry rows that failed; it returns early otherwise.
+                HomeRepository.refresh(addons.enabledAddons(), force = false)
+                return
+            }
+        }
         if (definitions.isEmpty() && collectionDefinitions.isEmpty()) {
             publish()
             return
@@ -764,16 +817,22 @@ object HomeCatalogSettingsRepository {
             collectionDefinitions.map(CollectionCatalogDefinition::key)
         val catalogSetChanged = lastSyncedCatalogKeys != catalogKeys
         lastSyncedCatalogKeys = catalogKeys
+        lastCatalogSync = Triple(definitions, collectionDefinitions, _uiState.value)
         HomeRepository.refresh(addons.enabledAddons(), force = catalogSetChanged)
     }
 
     fun syncCollections(collections: List<Collection>) {
+        PerfTelemetry.count("HomeCatalogSettingsRepository.syncCollections")
         ensureLoaded()
         collectionDefinitions = buildCollectionDefinitions(collections)
+        lastCollectionSync?.let { (lastCollections, publishedState) ->
+            if (lastCollections === collectionDefinitions && publishedState === _uiState.value) return
+        }
         normalizePreferences()
         enforcePinnedCollectionsAtTop()
         publish()
         persist()
+        lastCollectionSync = collectionDefinitions to _uiState.value
         HomeRepository.applyCurrentSettings()
     }
 
@@ -795,6 +854,8 @@ object HomeCatalogSettingsRepository {
             discoverFinishIdleDays = discoverFinishIdleDays,
             discoverMoreLikeFavouritesEnabled = discoverMoreLikeFavouritesEnabled,
             discoverHiddenGemsEnabled = discoverHiddenGemsEnabled,
+            discoverTopPicksEnabled = discoverTopPicksEnabled,
+            discoverPeopleRowsEnabled = discoverPeopleRowsEnabled,
             discoverTrendingGenreRows = discoverTrendingGenreRows,
             discoverExcludedGenres = discoverExcludedGenres,
             discoverRowOrder = normalizeDiscoverRowOrder(
@@ -810,6 +871,7 @@ object HomeCatalogSettingsRepository {
             catalogRowShuffleEnabled = catalogRowShuffleEnabled,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
             adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+            adaptiveHeroAutoFraming = adaptiveHeroAutoFraming,
             adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
@@ -950,6 +1012,22 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
+    fun setDiscoverTopPicksEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (discoverTopPicksEnabled == enabled) return
+        discoverTopPicksEnabled = enabled
+        publish()
+        persist()
+    }
+
+    fun setDiscoverPeopleRowsEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (discoverPeopleRowsEnabled == enabled) return
+        discoverPeopleRowsEnabled = enabled
+        publish()
+        persist()
+    }
+
     fun setDiscoverTrendingGenreRows(count: Int) {
         ensureLoaded()
         val clamped = count.coerceIn(
@@ -976,6 +1054,8 @@ object HomeCatalogSettingsRepository {
             DiscoverRowFamily.Finish -> setDiscoverFinishWhatYouStartedEnabled(enabled)
             DiscoverRowFamily.Favourites -> setDiscoverMoreLikeFavouritesEnabled(enabled)
             DiscoverRowFamily.Gems -> setDiscoverHiddenGemsEnabled(enabled)
+            DiscoverRowFamily.TopPicks -> setDiscoverTopPicksEnabled(enabled)
+            DiscoverRowFamily.People -> setDiscoverPeopleRowsEnabled(enabled)
             DiscoverRowFamily.Because -> setDiscoverBecauseYouWatchedRows(
                 countForFamilyToggle(family, enabled, discoverBecauseYouWatchedRows, DISCOVER_BECAUSE_ROWS_DEFAULT),
             )
@@ -1168,7 +1248,7 @@ object HomeCatalogSettingsRepository {
     }
 
     /**
-     * Shows the per-row shuffle control on home catalog rows.
+     * Shows the per-row shuffle control on home and collection folder catalog rows.
      *
      * Local-only: it stays out of [SyncHomeCatalogPayload] because that schema is shared with the
      * TV and mobile clients, which have no such control. Turning it off also drops any shuffles
@@ -1179,7 +1259,10 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         if (catalogRowShuffleEnabled == enabled) return
         catalogRowShuffleEnabled = enabled
-        if (!enabled) HomeRowShuffleState.clearAll()
+        if (!enabled) {
+            HomeRowShuffleState.clearAll()
+            FolderRowShuffleState.clearAll()
+        }
         publish()
         persist()
     }
@@ -1201,6 +1284,14 @@ object HomeCatalogSettingsRepository {
         val normalized = normalizeAdaptiveHeroVerticalBias(bias)
         if (adaptiveHeroVerticalBias == normalized) return
         adaptiveHeroVerticalBias = normalized
+        publish()
+        persist()
+    }
+
+    fun setAdaptiveHeroAutoFraming(enabled: Boolean) {
+        ensureLoaded()
+        if (adaptiveHeroAutoFraming == enabled) return
+        adaptiveHeroAutoFraming = enabled
         publish()
         persist()
     }
@@ -1313,6 +1404,19 @@ object HomeCatalogSettingsRepository {
         ensureLoaded()
         if (tvFullBackdropEnabled == enabled) return
         tvFullBackdropEnabled = enabled
+        publish()
+        persist()
+    }
+
+    /**
+     * Whether TV Mode paints the Adaptive Ambient wash (blurred backdrop + accent tint) behind the
+     * screen, so the shelf sits on a tinted picture instead of black. Stored regardless of the mode
+     * being on, same as [setTvFullBackdropEnabled].
+     */
+    fun setTvAmbientBackgroundEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (tvAmbientBackgroundEnabled == enabled) return
+        tvAmbientBackgroundEnabled = enabled
         publish()
         persist()
     }
@@ -1481,6 +1585,8 @@ object HomeCatalogSettingsRepository {
         discoverFinishIdleDays = DISCOVER_FINISH_IDLE_DAYS_DEFAULT
         discoverMoreLikeFavouritesEnabled = true
         discoverHiddenGemsEnabled = true
+        discoverTopPicksEnabled = true
+        discoverPeopleRowsEnabled = true
         discoverTrendingGenreRows = DISCOVER_TRENDING_GENRE_ROWS_DEFAULT
         discoverExcludedGenres = emptySet()
         discoverRowOrder = emptyList()
@@ -1492,6 +1598,7 @@ object HomeCatalogSettingsRepository {
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
+        adaptiveHeroAutoFraming = true
         adaptiveHeroHeightMultiplier = ADAPTIVE_HERO_HEIGHT_MULTIPLIER_DEFAULT
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
@@ -1500,12 +1607,13 @@ object HomeCatalogSettingsRepository {
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
         catalogRowNumbersEnabled = false
-        collectionGifsOnFocusOnly = false
+        collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
         tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
         tvRowTransition = HomeTvRowTransition.Fade
         tvFullBackdropEnabled = false
+        tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
         preferences.clear()
         normalizePreferences()
@@ -1595,6 +1703,8 @@ object HomeCatalogSettingsRepository {
                 .coerceIn(DISCOVER_FINISH_IDLE_DAYS_RANGE.first, DISCOVER_FINISH_IDLE_DAYS_RANGE.last)
             discoverMoreLikeFavouritesEnabled = parsedPayload.discoverMoreLikeFavouritesEnabled
             discoverHiddenGemsEnabled = parsedPayload.discoverHiddenGemsEnabled
+            discoverTopPicksEnabled = parsedPayload.discoverTopPicksEnabled
+            discoverPeopleRowsEnabled = parsedPayload.discoverPeopleRowsEnabled
             discoverTrendingGenreRows = parsedPayload.discoverTrendingGenreRows
                 .coerceIn(DISCOVER_TRENDING_GENRE_ROWS_RANGE.first, DISCOVER_TRENDING_GENRE_ROWS_RANGE.last)
             // Canonicalised on load so a stored name that no longer matches the list is dropped
@@ -1622,6 +1732,7 @@ object HomeCatalogSettingsRepository {
             catalogRowShuffleEnabled = parsedPayload.catalogRowShuffleEnabled
             adaptiveHeroEnabled = parsedPayload.adaptiveHeroEnabled
             adaptiveHeroVerticalBias = normalizeAdaptiveHeroVerticalBias(parsedPayload.adaptiveHeroVerticalBias)
+            adaptiveHeroAutoFraming = parsedPayload.adaptiveHeroAutoFraming
             adaptiveHeroHeightMultiplier = normalizeAdaptiveHeroHeightMultiplier(parsedPayload.adaptiveHeroHeightMultiplier)
             heroAmbientBackgroundEnabled = parsedPayload.heroAmbientBackgroundEnabled
             tvModeEnabled = parsedPayload.tvModeEnabled
@@ -1636,6 +1747,7 @@ object HomeCatalogSettingsRepository {
             tvRowDotsAnchor = parsedPayload.tvRowDotsAnchor
             tvRowTransition = parsedPayload.tvRowTransition
             tvFullBackdropEnabled = parsedPayload.tvFullBackdropEnabled
+            tvAmbientBackgroundEnabled = parsedPayload.tvAmbientBackgroundEnabled
             randomPlayEnabled = parsedPayload.randomPlayEnabled
             randomPlayIncludeCollections = parsedPayload.randomPlayIncludeCollections
             randomPlayCategories = parsedPayload.randomPlayCategories
@@ -1787,6 +1899,8 @@ object HomeCatalogSettingsRepository {
             discoverFinishIdleDays = discoverFinishIdleDays,
             discoverMoreLikeFavouritesEnabled = discoverMoreLikeFavouritesEnabled,
             discoverHiddenGemsEnabled = discoverHiddenGemsEnabled,
+            discoverTopPicksEnabled = discoverTopPicksEnabled,
+            discoverPeopleRowsEnabled = discoverPeopleRowsEnabled,
             discoverTrendingGenreRows = discoverTrendingGenreRows,
             discoverExcludedGenres = discoverExcludedGenres,
             discoverRowOrder = normalizeDiscoverRowOrder(
@@ -1805,6 +1919,7 @@ object HomeCatalogSettingsRepository {
             catalogRowShuffleEnabled = catalogRowShuffleEnabled,
             adaptiveHeroEnabled = adaptiveHeroEnabled,
             adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+            adaptiveHeroAutoFraming = adaptiveHeroAutoFraming,
             adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
@@ -1823,6 +1938,7 @@ object HomeCatalogSettingsRepository {
             tvRowDotsAnchor = tvRowDotsAnchor,
             tvRowTransition = tvRowTransition,
             tvFullBackdropEnabled = tvFullBackdropEnabled,
+            tvAmbientBackgroundEnabled = tvAmbientBackgroundEnabled,
             randomPlayEnabled = randomPlayEnabled,
             randomPlayIncludeCollections = randomPlayIncludeCollections,
             randomPlayCategories = randomPlayCategories,
@@ -1885,9 +2001,18 @@ object HomeCatalogSettingsRepository {
         return true
     }
 
+    /**
+     * Snapshots the settings on the caller's thread and writes them on [persistScope].
+     *
+     * Every mutation persists, and Home's own startup effects (syncCatalogs, syncCollections) do
+     * too — on the UI thread, where encoding the whole payload (every row preference, the Discover
+     * layout, Random Play...) sat inside Home's first-composition freeze in a startup profile. The
+     * snapshot below is cheap and copies the one mutable field ([preferences]); the encode and the
+     * store write happen off the caller. Writes stay in order on a single-file writer, and a burst
+     * of changes collapses into one write of the newest snapshot.
+     */
     private fun persist() {
-        HomeCatalogSettingsStorage.savePayload(
-            json.encodeToString(
+        val payload =
                 StoredHomeCatalogSettingsPayload(
                     heroEnabled = heroEnabled,
                     heroInfoLines = heroInfoLines,
@@ -1905,6 +2030,8 @@ object HomeCatalogSettingsRepository {
                     discoverFinishIdleDays = discoverFinishIdleDays,
                     discoverMoreLikeFavouritesEnabled = discoverMoreLikeFavouritesEnabled,
                     discoverHiddenGemsEnabled = discoverHiddenGemsEnabled,
+                    discoverTopPicksEnabled = discoverTopPicksEnabled,
+                    discoverPeopleRowsEnabled = discoverPeopleRowsEnabled,
                     discoverTrendingGenreRows = discoverTrendingGenreRows,
                     discoverExcludedGenres = discoverExcludedGenres,
                     // Saved raw, not normalised — see HomeCatalogSettingsUiState.discoverRowOrder.
@@ -1916,6 +2043,7 @@ object HomeCatalogSettingsRepository {
                     catalogRowShuffleEnabled = catalogRowShuffleEnabled,
                     adaptiveHeroEnabled = adaptiveHeroEnabled,
                     adaptiveHeroVerticalBias = adaptiveHeroVerticalBias,
+                    adaptiveHeroAutoFraming = adaptiveHeroAutoFraming,
                     adaptiveHeroHeightMultiplier = adaptiveHeroHeightMultiplier,
                     heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
                     tvModeEnabled = tvModeEnabled,
@@ -1928,6 +2056,7 @@ object HomeCatalogSettingsRepository {
             catalogProviderTagEnabled = catalogProviderTagEnabled,
                     tvRowDotsEnabled = tvRowDotsEnabled,
                     tvFullBackdropEnabled = tvFullBackdropEnabled,
+                    tvAmbientBackgroundEnabled = tvAmbientBackgroundEnabled,
                     tvRowDotsAnchor = tvRowDotsAnchor,
                     tvRowTransition = tvRowTransition,
                     randomPlayEnabled = randomPlayEnabled,
@@ -1940,10 +2069,29 @@ object HomeCatalogSettingsRepository {
                     randomPlayMinimumImdbRating = randomPlayMinimumImdbRating,
                     randomPlayAction = randomPlayAction,
                     items = preferences.values.sortedBy { it.order },
-                ),
-            ),
-        )
+                )
+        // The profile is fixed now, not at write time: a write landing after a profile switch must
+        // still go to the profile the settings belong to.
+        if (pendingPersist.getAndSet(ProfileRepository.activeProfileId to payload) == null) {
+            persistScope.launch { writePendingPersist() }
+        }
     }
+
+    private val pendingPersist =
+        java.util.concurrent.atomic.AtomicReference<Pair<Int, StoredHomeCatalogSettingsPayload>?>(null)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val persistScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default.limitedParallelism(1),
+    )
+
+    private fun writePendingPersist() {
+        val (profileId, payload) = pendingPersist.getAndSet(null) ?: return
+        HomeCatalogSettingsStorage.savePayload(json.encodeToString(payload), profileId)
+    }
+
+    /** Writes a pending snapshot now, on the caller. For tests and the exit path. */
+    internal fun flushPendingPersist() = writePendingPersist()
 
     private fun updatePreference(
         key: String,
@@ -2120,7 +2268,21 @@ internal data class CollectionCatalogDefinition(
     val hasHeroBackdrop: Boolean = false,
 )
 
-internal fun buildCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> =
+// Memoized like buildHomeCatalogDefinitions: each subtitle is a runBlocking resource lookup on the
+// UI thread, and Home entry rebuilds this twice. CollectionRepository replaces the list on change.
+private var collectionDefinitionsMemo: Triple<List<Collection>, String, List<CollectionCatalogDefinition>>? = null
+
+internal fun buildCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> {
+    val locale = androidx.compose.ui.text.intl.Locale.current.toLanguageTag()
+    collectionDefinitionsMemo?.let { (input, memoLocale, result) ->
+        if (memoLocale == locale && (input === collections || input == collections)) return result
+    }
+    return computeCollectionDefinitions(collections).also {
+        collectionDefinitionsMemo = Triple(collections, locale, it)
+    }
+}
+
+private fun computeCollectionDefinitions(collections: List<Collection>): List<CollectionCatalogDefinition> =
     collections.filter { it.folders.isNotEmpty() }.map { collection ->
         CollectionCatalogDefinition(
             key = "collection_${collection.id}",

@@ -12,9 +12,15 @@ import coil3.request.maxBitmapSize
 import coil3.size.Dimension
 import coil3.size.Precision
 import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.Codec
+import org.jetbrains.skia.Data
+import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.EncodedOrigin
 import org.jetbrains.skia.SamplingMode
 import org.jetbrains.skia.Image as SkiaImage
 import kotlin.math.roundToInt
+import okio.FileSystem
+import java.nio.file.Files
 
 /**
  * Decodes still images, reducing them properly on the way rather than leaving that to the draw path.
@@ -37,7 +43,7 @@ internal class HighQualityBitmapDecoder(
 ) : Decoder {
 
     override suspend fun decode(): DecodeResult {
-        val bytes = source.source().readByteArray()
+        val bytes = source.readAllBytes()
         val encoded = SkiaImage.makeFromEncoded(bytes)
         try {
             val multiplier = reductionMultiplier(encoded.width, encoded.height, options)
@@ -46,9 +52,21 @@ internal class HighQualityBitmapDecoder(
             val targetWidth = (encoded.width * multiplier).roundToInt().coerceAtLeast(1)
             val targetHeight = (encoded.height * multiplier).roundToInt().coerceAtLeast(1)
 
-            val bitmap = if (targetWidth >= encoded.width && targetHeight >= encoded.height) {
-                // Nothing to reduce. Rasterise exactly as Coil would, so the common case (a source
-                // already smaller than the request) stays identical to what shipped before.
+            val nothingToReduce = targetWidth >= encoded.width && targetHeight >= encoded.height
+            val jpegScaled = if (nothingToReduce) null else decodeJpegEighths(bytes, targetWidth, targetHeight)
+            val keepSourceSize = nothingToReduce ||
+                keepsSourceSizeForGpu(encoded.width, encoded.height, targetWidth, targetHeight)
+            val bitmap = if (jpegScaled != null) {
+                if (keepsSourceSizeForGpu(jpegScaled.width, jpegScaled.height, targetWidth, targetHeight)) {
+                    jpegScaled
+                } else {
+                    // Only a source 16x the slot gets here: 1/8 was still too large to hand the GPU.
+                    jpegScaled.use { SkiaImage.makeFromBitmap(it).use { image -> image.reduceHighQuality(targetWidth, targetHeight) } }
+                }
+            } else if (keepSourceSize) {
+                // Nothing to reduce, or a hero the GPU scales at draw. Rasterise exactly as Coil
+                // would, so the common case (a source already smaller than the request) stays
+                // identical to what shipped before.
                 encoded.rasterize(encoded.width, encoded.height, SamplingMode.DEFAULT)
             } else {
                 encoded.reduceHighQuality(targetWidth, targetHeight)
@@ -60,9 +78,14 @@ internal class HighQualityBitmapDecoder(
                 outWidth = bitmap.width,
                 outHeight = bitmap.height,
                 destinationSized = options.hasDesktopArtworkDestinationSize(),
+                sourceKey = options.diskCacheKey,
+                requested = "${options.size.width}x${options.size.height}",
             )
             DesktopArtworkTelemetry.maybeLogSummary()
-            return DecodeResult(image = bitmap.asImage(), isSampled = multiplier < 1.0)
+            // Unsampled lets Coil serve a full-size bitmap to a request of any size. Anything smaller
+            // than its source is sampled, and Coil serves it only to requests it still covers.
+            val sampled = bitmap.width < encoded.width || bitmap.height < encoded.height
+            return DecodeResult(image = bitmap.asImage(), isSampled = sampled)
         } finally {
             encoded.close()
         }
@@ -112,6 +135,77 @@ internal class HighQualityBitmapDecoder(
 // leaves Lanczos a 2-4x step: simulated at 97% of a straight Lanczos from source, and it keeps a
 // 2000px poster into a 4K TV Mode card at ~30 ms (decode thread) instead of ~65 ms for the full kernel.
 private const val HalveWhileRatioAtLeast = 2
+
+/**
+ * Hero-size artwork that would shrink by under 2x (a 3840 px TMDB original into a 3264 px hero slot)
+ * is kept at source size and scaled by the GPU at draw, where bilinear under 2x reads every texel.
+ *
+ * Measured per 4K backdrop (2026-10-16): JPEG decode ~140 ms, plus the Kotlin Lanczos pass 300–560
+ * ms on the native build (with ~170 MB of arrays, which forced stop-the-world GCs while scrolling) or
+ * Skia's CPU Catmull-Rom ~126 ms. Skipping the CPU resize leaves the decode alone. The cost is ~9 MB
+ * more per cached hero (33 MB vs 24 MB). Posters keep the CPU reduction, since they shrink further and
+ * are cheap. Hero-size means a target of ~2 MP, the same line as
+ * [DesktopArtworkMemoryCache.LargeEntryBytes].
+ */
+internal fun keepsSourceSizeForGpu(srcWidth: Int, srcHeight: Int, targetWidth: Int, targetHeight: Int): Boolean =
+    srcWidth < targetWidth * 2 && srcHeight < targetHeight * 2 &&
+        targetWidth.toLong() * targetHeight >= GpuScaledMinTargetPixels
+
+internal const val GpuScaledMinTargetPixels = 2_000_000L
+
+/**
+ * The encoded bytes in one exact-size array. A disk-cache hit is read straight from its file:
+ * through okio it was read into a chain of 8 KB segments and then copied out, so every decode
+ * allocated its file size twice (11% of all allocation while scrolling Home, JFR 2026-10-16).
+ */
+private fun ImageSource.readAllBytes(): ByteArray {
+    val path = if (fileSystem == FileSystem.SYSTEM) fileOrNull() else null
+    if (path != null) {
+        runCatching { return Files.readAllBytes(path.toNioPath()) }
+    }
+    return source().readByteArray()
+}
+
+/**
+ * The smallest k/8 JPEG decode scale whose output still covers the target on both axes, or 8 when
+ * nothing smaller does. libjpeg-turbo sizes a k/8 decode as ceil(size * k / 8).
+ */
+internal fun jpegEighthsScale(srcWidth: Int, srcHeight: Int, targetWidth: Int, targetHeight: Int): Int =
+    (1..8).first { k ->
+        (srcWidth * k + 7) / 8 >= targetWidth && (srcHeight * k + 7) / 8 >= targetHeight
+    }
+
+/**
+ * Hero-size JPEGs decoded straight at the smallest k/8 scale that still covers the slot, for
+ * example a 3840 px TMDB original at 7/8 (3360 px) for a 3264 px slot. libjpeg-turbo does the
+ * reduction inside the decode, so it costs nothing extra, the GPU never has to upscale, and the
+ * bitmap is 24 MB instead of 33 MB. Measured 2026-10-16: no faster than a full decode (~140 ms for
+ * 4K, which is dominated by entropy decoding), so the gain is memory only.
+ *
+ * Null (the caller decodes as before) for other formats, for a rotated EXIF orientation (a codec
+ * decode ignores it, unlike [SkiaImage.makeFromEncoded]), when 8/8 is the only scale that covers the
+ * slot, and on any codec failure.
+ */
+private fun decodeJpegEighths(bytes: ByteArray, targetWidth: Int, targetHeight: Int): Bitmap? {
+    if (targetWidth.toLong() * targetHeight < GpuScaledMinTargetPixels) return null
+    return runCatching {
+        Codec.makeFromData(Data.makeFromBytes(bytes)).use { codec ->
+            if (codec.encodedImageFormat != EncodedImageFormat.JPEG) return null
+            if (codec.encodedOrigin != EncodedOrigin.TOP_LEFT) return null
+            val k = jpegEighthsScale(codec.width, codec.height, targetWidth, targetHeight)
+            if (k == 8) return null
+            val bitmap = Bitmap()
+            bitmap.allocN32Pixels((codec.width * k + 7) / 8, (codec.height * k + 7) / 8)
+            try {
+                codec.readPixels(bitmap)
+            } catch (error: Throwable) {
+                bitmap.close()
+                throw error
+            }
+            bitmap
+        }
+    }.getOrNull()
+}
 
 /**
  * Box-halves while the source is still several times the target, then one area-correct Lanczos pass.

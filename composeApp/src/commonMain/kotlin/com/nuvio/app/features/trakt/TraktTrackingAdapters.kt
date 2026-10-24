@@ -50,11 +50,6 @@ object TraktTrackingAuthProvider : TrackingAuthProvider {
 
     override fun ensureLoaded() = TraktAuthRepository.ensureLoaded()
 
-    override fun handleAuthCallback(url: String): Boolean {
-        TraktAuthRepository.onAuthCallbackReceived(url)
-        return true
-    }
-
     override fun onProfileChanged() = TraktAuthRepository.onProfileChanged()
 
     override fun clearLocalState() {

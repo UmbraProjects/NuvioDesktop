@@ -180,10 +180,19 @@ internal actual object DownloadsPlatformDownloader {
     }
 
     actual fun usableSpaceBytes(destinationDirOverride: String?): Long? {
-        val dir = baseDirFor(destinationDirOverride) ?: return null
-        // usableSpace resolves against the nearest existing ancestor when the dir isn't created yet.
-        val probe = generateSequence(dir) { it.parentFile }.firstOrNull { it.exists() } ?: return null
+        val probe = spaceProbeFor(destinationDirOverride) ?: return null
         return runCatching { probe.usableSpace }.getOrNull()?.takeIf { it > 0L }
+    }
+
+    actual fun totalSpaceBytes(destinationDirOverride: String?): Long? {
+        val probe = spaceProbeFor(destinationDirOverride) ?: return null
+        return runCatching { probe.totalSpace }.getOrNull()?.takeIf { it > 0L }
+    }
+
+    // Space queries resolve against the nearest existing ancestor when the dir isn't created yet.
+    private fun spaceProbeFor(destinationDirOverride: String?): File? {
+        val dir = baseDirFor(destinationDirOverride) ?: return null
+        return generateSequence(dir) { it.parentFile }.firstOrNull { it.exists() }
     }
 
     private suspend fun downloadAttempt(

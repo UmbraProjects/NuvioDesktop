@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="controls.css?v=20261002-source-resize-1">
+  <link rel="stylesheet" href="controls.css?v=20261017-watch-party-1">
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
@@ -90,11 +90,17 @@
     <symbol id="icon-pip" viewBox="0 0 24 24">
       <path d="M19 7H5v10h14V7Zm0-2c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2h14Zm-1 7v4h-6v-4h6Z"/>
     </symbol>
+    <symbol id="icon-party" viewBox="0 0 24 24">
+      <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3Zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5Zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5Z"/>
+    </symbol>
     <symbol id="icon-check" viewBox="0 0 24 24">
       <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z"/>
     </symbol>
     <symbol id="icon-download" viewBox="0 0 24 24">
       <path d="M19.35 10.04A7.49 7.49 0 0 0 5.3 8.04 6 6 0 0 0 6 20h13a5 5 0 0 0 .35-9.96ZM13 12v4h3l-4 4-4-4h3v-4h2Zm6 6h-3.17L18 15.83 16.59 14.41 14 17V10h-4v7l-2.59-2.59L6 15.83 8.17 18H6a4 4 0 0 1-.47-7.97l1.1-.13.4-1.03A5.49 5.49 0 0 1 17.3 10.3l.3 1.3 1.33.09A3 3 0 0 1 19 18Z"/>
+    </symbol>
+    <symbol id="icon-synced" viewBox="0 0 24 24">
+      <path d="M12 4V1L8 5l4 4V6a6 6 0 0 1 5.65 8.03l1.46 1.46A8 8 0 0 0 12 4Zm0 14a6 6 0 0 1-5.65-8.03L4.89 8.51A8 8 0 0 0 12 20v3l4-4-4-4v3Z"/>
     </symbol>
     <symbol id="icon-reset" viewBox="0 0 24 24">
       <path d="M20 5v6h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -167,6 +173,15 @@
         <section class="metadata" aria-label="Playback metadata">
           <div class="title" id="title"></div>
           <div class="episode" id="episode" hidden></div>
+          <!-- Live TV only: what is on now (with how far through it is) and next. -->
+          <div class="iptv-now" id="iptvNow" hidden>
+            <div class="iptv-now-line"><span class="iptv-now-time" id="iptvNowTime"></span><span class="iptv-now-title" id="iptvNowTitle"></span></div>
+            <div class="iptv-now-track" id="iptvNowTrack"><div class="iptv-now-fill" id="iptvNowFill"></div></div>
+            <div class="iptv-next" id="iptvNext"></div>
+          </div>
+          <!-- What is playing right now: decoded resolution/HDR and the active subtitle.
+               Below the episode line, so it stays the last line for series and movies alike. -->
+          <div class="title-badges" id="titleBadges" hidden></div>
           <div class="meta-row">
             <span class="stream-title" id="streamTitle"></span>
             <span class="provider" id="providerName"></span>
@@ -273,6 +288,9 @@
       </section>
 
       <section class="pause-metadata-overlay" id="pauseMetadataOverlay" aria-hidden="true">
+        <div class="pause-cast" id="pauseCast" hidden>
+          <ul class="pause-cast-list" id="pauseCastList"></ul>
+        </div>
         <div class="pause-metadata-content">
           <div class="pause-kicker" id="pauseWatchingLabel">You're watching</div>
           <img class="pause-logo" id="pauseLogo" alt="">
@@ -290,6 +308,8 @@
         </div>
       </section>
 
+      <!-- Live TV: the channel number being typed, sent after a short pause. -->
+      <div class="iptv-number" id="iptvNumber" aria-hidden="true"></div>
       <div class="gesture-pill" id="volumePill" aria-hidden="true">
         <svg><use id="volumePillIcon" href="#icon-volume"></use></svg>
         <span class="gesture-pill-label" id="volumePillLabel">100%</span>
@@ -299,6 +319,12 @@
         <span class="preset-pill-title" id="presetPillTitle"></span>
         <span class="preset-pill-value" id="presetPillValue"></span>
       </div>
+
+      <!-- Watch party status: members and what the party is waiting on. Opens the party panel. -->
+      <button class="party-pill" id="partyPill" type="button" aria-hidden="true" tabindex="-1">
+        <span class="party-avatars" id="partyPillAvatars"></span>
+        <span class="party-pill-text" id="partyPillText"></span>
+      </button>
 
       <div class="control-tooltip" id="controlTooltip" role="tooltip" hidden></div>
 
@@ -355,6 +381,13 @@
             <div class="chapter-tooltip" id="chapterTooltip" role="status" hidden></div>
           </div>
           <span class="timeline-time timeline-time-duration timeline-time-toggle" id="duration" title="Click to show time remaining">00:00</span>
+          <!-- Live TV replaces the timeline with this: LIVE at the live edge, otherwise how far
+               behind it is, and a click jumps back to live. -->
+          <button class="iptv-live-badge" id="iptvLiveBadge" type="button" hidden>
+            <span class="iptv-live-dot" aria-hidden="true"></span>
+            <span class="iptv-live-label" id="iptvLiveLabel">LIVE</span>
+            <span class="iptv-live-behind" id="iptvLiveBehind"></span>
+          </button>
         </div>
         <div class="desktop-control-row">
           <div class="time-cluster"><span class="player-volume-control" id="playerVolumeControl"><button class="volume-mute-button" id="volumeMuteButton" type="button" data-command="keyboardToggleMute" aria-label="Mute" title="Mute"><svg class="player-volume-icon" aria-hidden="true"><use id="playerVolumeIcon" href="#icon-volume-high"></use></svg></button><input id="playerVolumeSlider" class="hero-trailer-volume player-volume" type="range" min="0" max="200" step="1" value="100" aria-label="Player volume"></span><span class="minimal-time" id="minimalTime" aria-hidden="true"><span class="minimal-time-separator" id="minimalTimeSeparator">/</span></span></div>
@@ -374,9 +407,11 @@
             <button class="action desktop-preset-action" data-action-priority="75" data-command="keyboardCycleColorProfile" aria-label="Cycle color profile" title="Color profile"><svg><use href="#icon-color-profile"></use></svg><span>Color</span></button>
             <button class="action desktop-preset-action" data-action-priority="80" id="animeShaderButton" data-command="keyboardCycleAnimeMode" aria-label="Cycle anime shader" title="Anime shaders"><svg><use href="#icon-anime-shader"></use></svg><span>Anime</span></button>
             <button class="action desktop-preset-action" data-action-priority="85" data-command="keyboardCycleAnimeSvp" aria-label="Toggle SVP" title="SVP interpolation"><svg><use href="#icon-svp"></use></svg><span>SVP</span></button>
+            <button class="action" data-action-priority="3" id="iptvChannelsButton" data-command="iptvChannels" aria-label="Channels" title="Channels" hidden><svg><use href="#icon-video"></use></svg><span id="iptvChannelsLabel">Channels</span></button>
             <button class="action optional" data-action-priority="20" id="sourcesButton" data-command="sources"><svg><use href="#icon-swap"></use></svg><span id="sourcesLabel">Sources</span></button>
             <button class="action optional" data-action-priority="25" id="episodesButton" data-command="episodes" hidden><svg><use href="#icon-video"></use></svg><span id="episodesLabel">Episodes</span></button>
             <button class="action" data-action-priority="65" id="submitIntroButton" data-command="submitIntro" aria-label="Submit intro" title="Submit intro"><svg><use href="#icon-flag"></use></svg><span>Submit</span></button>
+            <button class="action" data-action-priority="35" id="partyButton" data-command="party" aria-label="Watch party" title="Watch party" hidden><svg><use href="#icon-party"></use></svg><span id="partyButtonLabel">Party</span></button>
             <button class="action pip-action" data-action-priority="30" id="pictureInPictureButton" data-command="pictureInPicture" aria-label="Picture in picture" title="Picture in picture"><svg><use href="#icon-pip"></use></svg><span>PiP</span></button>
             <button class="action action-overflow-toggle" id="actionOverflowButton" type="button" aria-label="More controls" title="More controls" aria-haspopup="true" aria-expanded="false" hidden><svg><use href="#icon-action-overflow"></use></svg><svg class="ultra-gear-glyph" aria-hidden="true"><use href="#icon-settings"></use></svg><span>More</span></button>
             <!-- Ultra layout only (see .player.ultra-hud in controls.css). Not overflow-capable on
@@ -659,6 +694,37 @@
           </div>
         </div>
       </section>
+      <!-- Live TV channel switcher: the Sources sheet for live TV. It docks on the Sources notch's
+           edge and opens from it, and lists the channels of one category, the categories, or the
+           channels matching a search. Mouse, keyboard and the pad's D-pad (keyboard panel mode)
+           all drive it. -->
+      <section class="modal-layer" id="iptvChannelModal" aria-label="Channels" hidden>
+        <div class="track-panel wide iptv-panel">
+          <div class="track-header-row">
+            <button class="panel-button iptv-group-button" id="iptvGroupButton" type="button"></button>
+            <div class="panel-actions">
+              <button class="panel-button" id="iptvChannelCloseButton" type="button">Close</button>
+            </div>
+          </div>
+          <div class="iptv-search-row">
+            <input class="iptv-search-input" id="iptvSearchInput" type="search" placeholder="Search channels" spellcheck="false" autocomplete="off" autocapitalize="off">
+          </div>
+          <div class="iptv-panel-note" id="iptvPanelNote" hidden></div>
+          <div class="track-list iptv-channel-list" id="iptvChannelList"></div>
+          <div class="track-list iptv-group-list" id="iptvGroupList" hidden></div>
+        </div>
+      </section>
+      <section class="modal-layer" id="partyModal" aria-label="Watch party" hidden>
+        <div class="track-panel party-panel">
+          <div class="track-header-row">
+            <div class="track-title" id="partyPanelTitle">Watch party</div>
+            <div class="panel-actions">
+              <button class="panel-button" id="partyCloseButton" type="button">Close</button>
+            </div>
+          </div>
+          <div class="party-body" id="partyBody"></div>
+        </div>
+      </section>
       <section class="modal-layer" id="p2pConsentModal" aria-label="P2P streaming consent" hidden>
         <div class="track-panel submit">
           <div class="track-header-row">
@@ -694,6 +760,6 @@
     <div class="pip-resize-handle pip-resize-nw" data-pip-resize="8"></div>
   </div>
 
-  <script src="controls.js?v=20261002-source-resize-1"></script>
+  <script src="controls.js?v=20261017-watch-party-1"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@ package com.nuvio.app.features.mdblist
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.addons.isTruncated
 import com.nuvio.app.features.trakt.parseTraktIsoDateTimeToEpochMs
 import com.nuvio.app.features.watched.WatchedItem
 import kotlinx.coroutines.CancellationException
@@ -27,7 +28,13 @@ internal object MdbListSyncRepository {
     private var cachedActivitySignature: String? = null
 
     private const val PAGE_LIMIT = 1000
-    private const val MAX_PAGES = 10
+
+    /**
+     * A safety stop against a pagination loop, not a size limit: reaching it with more pages left
+     * fails the fetch. Ten pages used to cap history at 10,000 rows and quietly cache the cut-off
+     * list as complete — one real account was already at 9,071.
+     */
+    private const val MAX_PAGES = 50
 
     fun clearLocalState() {
         cachedItems = emptyList()
@@ -81,7 +88,16 @@ internal object MdbListSyncRepository {
         var cursor: String? = null
         var offset = 0
         var page = 0
-        while (page < MAX_PAGES) {
+        while (true) {
+            if (page >= MAX_PAGES) {
+                // Returning what was collected would cache a truncated history under the current
+                // activity signature and serve it until the next remote change.
+                log.e {
+                    "MDBList watched history exceeds $MAX_PAGES pages of $PAGE_LIMIT " +
+                        "(${collected.size} rows read); refusing to import a truncated history"
+                }
+                return null
+            }
             page += 1
             val url = buildString {
                 append("$MDBLIST_BASE_URL/sync/watched?apikey=")
@@ -101,6 +117,12 @@ internal object MdbListSyncRepository {
             val response = get(url) ?: return null
             if (response.status !in 200..299) {
                 log.w { "MDBList watched fetch failed: HTTP ${response.status}" }
+                return null
+            }
+            if (response.isTruncated) {
+                // The raw client caps bodies at 1 MB; parsing the cut-off body only reports a
+                // misleading "unexpected end of input".
+                log.e { "MDBList watched page $page exceeded the response size cap; lower PAGE_LIMIT" }
                 return null
             }
             val payload = runCatching {
@@ -145,6 +167,7 @@ internal object MdbListSyncRepository {
             body = response.body,
             nextCursorHeader = response.header("x-next-cursor")?.takeIf { it.isNotBlank() },
             hasMoreHeader = response.header("x-has-more")?.toBooleanStrictOrNull(),
+            isTruncated = response.isTruncated,
         )
     }.onFailure { error ->
         if (error is CancellationException) throw error
@@ -157,6 +180,7 @@ private data class MdbListHttpResult(
     val body: String,
     val nextCursorHeader: String?,
     val hasMoreHeader: Boolean?,
+    val isTruncated: Boolean,
 )
 
 private fun com.nuvio.app.features.addons.RawHttpResponse.header(name: String): String? =

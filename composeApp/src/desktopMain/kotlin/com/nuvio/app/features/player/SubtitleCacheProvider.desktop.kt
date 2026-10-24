@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.features.downloads.hasExecutableDownloadExtension
 import com.nuvio.app.features.downloads.hasExecutableFileSignature
@@ -96,15 +97,15 @@ actual object SubtitleCacheProvider {
 internal fun downloadSubtitleFile(sourceUrl: String): DownloadedSubtitleFile? {
     if (!sourceUrl.isRemoteHttpUrl() || sourceUrl.hasExecutableDownloadExtension()) return null
     val response = runCatching {
-        subtitleHttpClient.send(
-            HttpRequest.newBuilder()
-                .uri(URI(sourceUrl.trim()))
-                .timeout(Duration.ofSeconds(20))
-                .header("Accept", "text/*,application/x-subrip;q=0.9,*/*;q=0.5")
-                .GET()
-                .build(),
-            HttpResponse.BodyHandlers.ofByteArray(),
-        )
+        val request = HttpRequest.newBuilder()
+            .uri(URI(sourceUrl.trim()))
+            .timeout(Duration.ofSeconds(20))
+            .header("Accept", "text/*,application/x-subrip;q=0.9,*/*;q=0.5")
+            .GET()
+            .build()
+        PerfTelemetry.timedHttp("subtitle", request.method(), request.uri().toString(), { it.statusCode() }) {
+            subtitleHttpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
+        }
     }.getOrNull() ?: return null
     if (response.statusCode() !in 200..299) return null
     if (

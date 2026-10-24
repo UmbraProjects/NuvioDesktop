@@ -12,6 +12,12 @@ interface MusicCatalog {
     suspend fun searchArtists(query: String): List<MusicArtistSummary>
     suspend fun album(browseId: String): MusicAlbum?
     suspend fun artist(browseId: String): MusicArtist?
+
+    /**
+     * Every album, single and EP of an artist, not just the first few its page shows. Empty on
+     * failure. The default is empty so test fakes need not implement it.
+     */
+    suspend fun artistReleases(browseId: String): List<MusicAlbumSummary> = emptyList()
 }
 
 /** The catalog the app uses: [MusicMetadataClient] on desktop. */

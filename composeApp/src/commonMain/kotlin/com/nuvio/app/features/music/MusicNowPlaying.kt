@@ -37,7 +37,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,8 +55,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.features.music.library.rememberCdArtFor
 import kotlinx.coroutines.delay
 
+/** Lines light up this long before their stamp, so the eye is on the line as it is sung. */
+private const val LYRIC_LEAD_MS = 250L
 private const val FANART_HOLD_MS = 14_000L
 private const val FANART_PUSH_MS = 16_000
 
@@ -117,17 +119,13 @@ private fun MusicNowPlayingScreen(
         val found = track?.let { LyricsRepository.forTrack(it, album) }
         value = if (found != null) LyricsUi.Ready(found) else LyricsUi.Missing
     }
+    val cdArt = rememberCdArtFor(album?.browseId)
     val fanart by produceState(emptyList<String>(), primaryArtist) {
         value = ArtistFanartRepository.forArtist(primaryArtist)
     }
 
-    val effects by MusicPlayback.lyricEffects.collectAsStateWithLifecycle()
-    val accent = remember(track?.title) { moodColor(track?.title.orEmpty() + primaryArtist) }
-    var hype by remember { mutableStateOf(false) }
-
     Box(modifier.background(Color.Black)) {
         FanartBackdrop(images = fanart, coverUrl = album?.thumbnailUrl)
-        if (effects) LyricAurora(accent = accent, hype = hype)
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 860.dp
             if (wide) {
@@ -136,8 +134,14 @@ private fun MusicNowPlayingScreen(
                     horizontalArrangement = Arrangement.spacedBy(48.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.width(300.dp)) {
-                        Cover(album?.thumbnailUrl, Modifier.size(300.dp))
+                    Column(Modifier.width(300.dp * 1.3f)) {
+                        MusicCdSleeve(
+                            coverUrl = album?.thumbnailUrl,
+                            cdArtUrl = cdArt,
+                            spinning = state.isPlaying,
+                            size = 300.dp,
+                            peek = 0.3f,
+                        )
                         Spacer(Modifier.height(20.dp))
                         Text(
                             track?.title.orEmpty(),
@@ -150,7 +154,7 @@ private fun MusicNowPlayingScreen(
                         Spacer(Modifier.height(4.dp))
                         Text(artist, color = Color.White.copy(alpha = 0.75f), fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    LyricsPane(lyrics, state.positionMs, state.isPlaying, effects, accent, { hype = it }, onSeek, Modifier.weight(1f).fillMaxSize())
+                    LyricsPane(lyrics, state.positionMs, onSeek, Modifier.weight(1f).fillMaxSize())
                 }
             } else {
                 Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp)) {
@@ -162,15 +166,10 @@ private fun MusicNowPlayingScreen(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    LyricsPane(lyrics, state.positionMs, state.isPlaying, effects, accent, { hype = it }, onSeek, Modifier.weight(1f).fillMaxWidth())
+                    LyricsPane(lyrics, state.positionMs, onSeek, Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
-        MusicTextChip(
-            text = if (effects) "Effects: on" else "Effects: calm",
-            onClick = { MusicPlayback.lyricEffects.value = !effects },
-            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
-        )
         IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(12.dp)) {
             Icon(Icons.Rounded.Close, contentDescription = "Close lyrics", tint = Color.White)
         }
@@ -232,16 +231,7 @@ private fun FanartBackdrop(images: List<String>, coverUrl: String?) {
 }
 
 @Composable
-private fun LyricsPane(
-    ui: LyricsUi,
-    positionMs: Long,
-    playing: Boolean,
-    effects: Boolean,
-    accent: Color,
-    onHype: (Boolean) -> Unit,
-    onSeek: (Long) -> Unit,
-    modifier: Modifier,
-) {
+private fun LyricsPane(ui: LyricsUi, positionMs: Long, onSeek: (Long) -> Unit, modifier: Modifier) {
     Box(modifier, contentAlignment = Alignment.Center) {
         when (ui) {
             LyricsUi.Loading -> Unit
@@ -249,7 +239,7 @@ private fun LyricsPane(
             is LyricsUi.Ready -> when (val lyrics = ui.lyrics) {
                 Lyrics.Instrumental -> Message("Instrumental")
                 is Lyrics.Plain -> PlainLyrics(lyrics.lines)
-                is Lyrics.Synced -> SyncedLyricsFx(lyrics.lines, positionMs, playing, effects, accent, onHype, onSeek)
+                is Lyrics.Synced -> SyncedLyrics(lyrics.lines, positionMs, onSeek)
             }
         }
     }
@@ -270,6 +260,52 @@ private fun PlainLyrics(lines: List<String>) {
                 fontSize = 22.sp,
                 lineHeight = 30.sp,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long, onSeek: (Long) -> Unit) {
+    val active = activeLyricIndex(lines, positionMs + LYRIC_LEAD_MS)
+    val listState = rememberLazyListState()
+    // Keep the sung line a third of the way down: far enough from the top to see what is coming.
+    LaunchedEffect(active, lines) {
+        if (active >= 0) {
+            val height = listState.layoutInfo.viewportSize.height
+            listState.animateScrollToItem(active, scrollOffset = -(height / 3))
+        }
+    }
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 220.dp),
+    ) {
+        itemsIndexed(lines) { index, line ->
+            val target = when {
+                active < 0 -> 0.55f
+                index == active -> 1f
+                kotlin.math.abs(index - active) == 1 -> 0.6f
+                else -> 0.35f
+            }
+            val alpha by animateFloatAsState(target, tween(350), label = "lineAlpha")
+            val scale by animateFloatAsState(if (index == active) 1.1f else 1f, tween(300), label = "lineScale")
+            Text(
+                text = line.text.ifBlank { "♪" },
+                color = Color.White.copy(alpha = alpha),
+                fontSize = 30.sp,
+                lineHeight = 38.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onSeek(line.timeMs) }
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                    },
             )
         }
     }

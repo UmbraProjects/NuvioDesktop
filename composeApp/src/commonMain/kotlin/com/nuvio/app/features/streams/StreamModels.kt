@@ -163,6 +163,8 @@ data class StreamItem(
         get() = url != null || infoHash != null || externalUrl != null || clientResolve != null
 }
 
+// Serializable for watch parties, which send the host's stream (badges included) to members.
+@kotlinx.serialization.Serializable
 data class StreamBadge(
     val name: String,
     val imageURL: String = "",

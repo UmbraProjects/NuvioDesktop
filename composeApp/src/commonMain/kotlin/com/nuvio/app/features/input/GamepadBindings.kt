@@ -29,6 +29,10 @@ expect fun gamepadRepeatIntervalRange(): IntRange
 
 expect fun resetGamepadSettings()
 
+/** Raise the on-screen keyboard whenever a text field is focused, so it can be typed on by mouse. */
+expect fun mouseKeyboardState(): StateFlow<Boolean>
+expect fun setMouseKeyboard(enabled: Boolean)
+
 /**
  * One row of the mapping inventory: what a button does while browsing, and what the same button
  * does during playback.

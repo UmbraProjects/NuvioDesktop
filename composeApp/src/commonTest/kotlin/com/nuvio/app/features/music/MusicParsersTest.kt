@@ -176,3 +176,47 @@ class MusicParsersTest {
         assertNull(parseCounterpart("garbage", "AAAAAAAAAAA"))
     }
 }
+
+class ArtistShelfParsersTest {
+    private fun tile(id: String, title: String, subtitle: String) = """
+        {"musicTwoRowItemRenderer":{"title":{"runs":[{"text":"$title","navigationEndpoint":{"browseEndpoint":{"browseId":"$id"}}}]},
+          "subtitle":{"runs":[$subtitle]},
+          "thumbnailRenderer":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img/$id"}]}}}}}"""
+
+    private val self = MusicArtistRef("Daft Punk", "UC123")
+
+    @Test
+    fun shelvesCarryTheirItemsAndTheEndpointOfTheFullList() {
+        val body = """
+        {"contents":[
+          {"musicCarouselShelfRenderer":{
+            "header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Albums"}]},
+              "moreContentButton":{"buttonRenderer":{"navigationEndpoint":{"browseEndpoint":{"browseId":"MPAD123","params":"abc"}}}}}},
+            "contents":[${tile("MPREb_d", "Discovery", """{"text":"Album"},{"text":" • "},{"text":"2001"}""")}]}},
+          {"musicCarouselShelfRenderer":{
+            "header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Singles & EPs"}]}}},
+            "contents":[${tile("MPREb_s", "One More Time", """{"text":"2000"}""")}]}},
+          {"musicCarouselShelfRenderer":{
+            "header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Fans might also like"}]}}},
+            "contents":[{"musicTwoRowItemRenderer":{"title":{"runs":[{"text":"Another Artist","navigationEndpoint":{"browseEndpoint":{"browseId":"UC999"}}}]}}}]}}
+        ]}"""
+        val shelves = parseArtistShelves(body, self)
+        assertEquals(listOf("Albums", "Singles & EPs"), shelves.map { it.title })
+        assertEquals("MPAD123", shelves[0].moreBrowseId)
+        assertEquals("abc", shelves[0].moreParams)
+        assertNull(shelves[1].moreBrowseId)
+        assertEquals("Album", shelves[0].items.single().kind)
+        // No kind in the tile: the shelf's title supplies it.
+        assertEquals("Single", shelves[1].items.single().kind)
+        assertEquals("2000", shelves[1].items.single().year)
+    }
+
+    @Test
+    fun theFullGridListsEveryTile() {
+        val body = """{"contents":[${tile("MPREb_1", "One", """{"text":"EP"},{"text":" • "},{"text":"2010"}""")},${tile("MPREb_2", "Two", """{"text":"2012"}""")}]}"""
+        val albums = parseAlbumGrid(body, self, "Singles & EPs")
+        assertEquals(listOf("EP", "Single"), albums.map { it.kind })
+        assertEquals(listOf("MPREb_1", "MPREb_2"), albums.map { it.browseId })
+        assertEquals("Daft Punk", albums.first().artists.single().name)
+    }
+}

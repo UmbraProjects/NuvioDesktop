@@ -68,6 +68,20 @@ class NextUpArtworkRefreshTest {
     }
 
     @Test
+    fun `a seed already known to yield no card is processed without a fetch`() {
+        val plan = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1"), candidate("tt2"), candidate("tt3")),
+            cachedNextUpItems = mapOf(cachedCard("tt3", episodeThumbnail = "still.jpg")),
+            isKnownNoCard = { it.content.id == "tt1" || it.content.id == "tt3" },
+        )
+
+        assertEquals(listOf("tt2"), plan.candidatesToResolve.map { it.content.id })
+        // A cached card is never second-guessed by the no-card list.
+        assertEquals(setOf("tt1"), plan.knownNoCardContentIds)
+        assertEquals(setOf("tt3"), plan.cachedBySeries.keys)
+    }
+
+    @Test
     fun `a cached card missing its thumbnail is queued for re-resolution`() {
         val plan = planNextUpResolution(
             completedSeriesCandidates = listOf(candidate("tt1")),

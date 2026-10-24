@@ -28,6 +28,14 @@ object TvdbImageService {
         val logo: String?,
     )
 
+    /**
+     * English, else language-neutral, else nothing. TVDB wins over every other logo source, so
+     * falling back to "any language" here put e.g. a Polish logo on a show TMDB has an English
+     * one for. Returning null lets metahub / addon / TMDB (language-aware) supply it instead.
+     */
+    private fun List<TvdbArtwork>.selectEnglishOrNeutralLogo(): String? =
+        (firstOrNull { it.language == "eng" } ?: firstOrNull { it.language.isNullOrBlank() })?.image
+
     private const val BASE_URL = "https://api4.thetvdb.com/v4"
     private const val ARTWORK_BACKGROUND_SERIES = 3   // series landscape backdrop
     private const val ARTWORK_BACKGROUND_MOVIE = 15  // movie landscape backdrop
@@ -129,6 +137,45 @@ object TvdbImageService {
         return schedule
     }
 
+    private val characterCache = mutableMapOf<String, List<TvdbCharacter>>()
+    private val characterCacheMutex = Mutex()
+
+    /**
+     * TVDB's character portraits for a title's cast — a community-uploaded image of the
+     * character in the role, separate from the actor's photo (ported from the Nuvio Tracker
+     * site's `tvdbCharacters`). Series resolve through the usual TVDB id lookup; movies through
+     * TVDB's remote-id search on the IMDb id. Empty without a TVDB key or on any failure.
+     */
+    suspend fun fetchCharacters(type: String, id: String, imdbId: String?): List<TvdbCharacter> {
+        val apiKey = TvdbSettingsRepository.snapshot().apiKey.trim().takeIf(String::isNotBlank) ?: return emptyList()
+        val cacheKey = "$type:$id"
+        characterCacheMutex.withLock { characterCache[cacheKey] }?.let { return it }
+        val token = acquireToken(apiKey) ?: return emptyList()
+        val characters = runCatching {
+            val endpoint = if (isTvType(type)) {
+                val tvdbId = resolveTvdbId(imdbId ?: id, token) ?: return emptyList()
+                "series/$tvdbId/extended"
+            } else {
+                val imdb = imdbId?.takeIf { it.startsWith("tt") } ?: return emptyList()
+                val found = json.decodeFromString<TvdbRemoteIdSearchResponse>(
+                    httpGetTextWithHeaders("$BASE_URL/search/remoteid/$imdb", authHeaders(token)),
+                ).data.firstOrNull()?.movie?.id ?: return emptyList()
+                "movies/$found/extended"
+            }
+            json.decodeFromString<TvdbCharactersResponse>(
+                httpGetTextWithHeaders("$BASE_URL/$endpoint", authHeaders(token)),
+            ).data?.characters.orEmpty()
+                .filter { (it.peopleType.equals("Actor", ignoreCase = true) || it.type == 3) && !it.image.isNullOrBlank() }
+                .map { TvdbCharacter(person = it.personName.orEmpty(), character = it.name.orEmpty(), image = it.image!!) }
+        }.onFailure { log.w { "TVDB characters failed for $type/$id: ${it.message}" } }
+            .getOrNull() ?: return emptyList() // not cached: try again next open
+        characterCacheMutex.withLock {
+            if (characterCache.size > 300) characterCache.clear()
+            characterCache[cacheKey] = characters
+        }
+        return characters
+    }
+
     fun clearCache() {
         imageCache.clear()
         remoteIdCache.clear()
@@ -149,8 +196,7 @@ object TvdbImageService {
         val backdrop = backdrops2.firstOrNull { it.language.isNullOrBlank() }?.image
             ?: backdrops2.firstOrNull()?.image
         val logoList = artworks.filter { !it.image.isNullOrBlank() && it.type == ARTWORK_CLEARLOGO }
-        val logo = logoList.firstOrNull { it.language == "eng" }?.image
-            ?: logoList.firstOrNull()?.image
+        val logo = logoList.selectEnglishOrNeutralLogo()
         val result = TvdbImages(backdrop = backdrop, logo = logo)
         imageCacheMutex.withLock { imageCache[cacheKey] = result }
         return result
@@ -177,8 +223,7 @@ object TvdbImageService {
         val backdrop = backdrops.firstOrNull { it.language.isNullOrBlank() }?.image
             ?: backdrops.firstOrNull()?.image
         val logoList = artworks.filter { it.type == ARTWORK_CLEARLOGO && !it.image.isNullOrBlank() }
-        val logo = logoList.firstOrNull { it.language == "eng" }?.image
-            ?: logoList.firstOrNull()?.image
+        val logo = logoList.selectEnglishOrNeutralLogo()
 
         val result = TvdbImages(backdrop = backdrop, logo = logo)
         imageCacheMutex.withLock { imageCache[cacheKey] = result }
@@ -304,6 +349,44 @@ object TvdbImageService {
 }
 
 // ── Response models ────────────────────────────────────────────────────────────
+
+/** A TVDB character: the actor's name, the character's, and the portrait of them in the role. */
+data class TvdbCharacter(val person: String, val character: String, val image: String)
+
+@Serializable
+private data class TvdbCharactersResponse(
+    val data: TvdbCharactersData? = null,
+)
+
+@Serializable
+private data class TvdbCharactersData(
+    val characters: List<TvdbCharacterDto> = emptyList(),
+)
+
+@Serializable
+private data class TvdbCharacterDto(
+    val name: String? = null,
+    val image: String? = null,
+    val personName: String? = null,
+    val peopleType: String? = null,
+    val type: Int? = null,
+)
+
+@Serializable
+private data class TvdbRemoteIdSearchResponse(
+    val data: List<TvdbRemoteIdHit> = emptyList(),
+)
+
+@Serializable
+private data class TvdbRemoteIdHit(
+    val movie: TvdbIdOnly? = null,
+    val series: TvdbIdOnly? = null,
+)
+
+@Serializable
+private data class TvdbIdOnly(
+    val id: Int? = null,
+)
 
 @Serializable
 private data class TvdbLoginResponse(

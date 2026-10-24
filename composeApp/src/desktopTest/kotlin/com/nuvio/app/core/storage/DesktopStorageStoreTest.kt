@@ -29,6 +29,24 @@ class DesktopStorageStoreTest {
     }
 
     @Test
+    fun `rewriting the stored value does not rewrite the file`() {
+        val file = tempStoreFile()
+        val store = DesktopStorage.Store(file, flushDelayMs = 60_000L)
+        store.putString("k", "v1")
+        store.flush()
+        Files.delete(file)
+
+        store.putString("k", "v1")
+        store.remove("absent")
+        store.flush()
+        assertFalse(Files.exists(file))
+
+        store.putString("k", "v2")
+        store.flush()
+        assertEquals("v2", readFile(file).getProperty("k"))
+    }
+
+    @Test
     fun `a store that cannot be parsed is never overwritten`() {
         val file = tempStoreFile()
         Files.writeString(file, "good=1\nbad=\\uZZZZ\n")

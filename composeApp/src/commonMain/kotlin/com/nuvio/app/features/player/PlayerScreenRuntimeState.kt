@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.addons.AddonsUiState
 import com.nuvio.app.features.details.MetaDetailsUiState
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
+import com.nuvio.app.features.details.MetaPerson
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.p2p.P2pSettingsUiState
 import com.nuvio.app.features.p2p.P2pStreamingState
@@ -23,6 +24,7 @@ import com.nuvio.app.features.watchprogress.WatchProgressUiState
 import com.nuvio.app.features.watchprogress.isLiveEventContentType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlin.time.TimeMark
 
 internal class PlayerScreenRuntime(
     args: PlayerScreenArgs,
@@ -108,6 +110,7 @@ internal class PlayerScreenRuntime(
     var resizeModeFitLabel: String = ""
     var resizeModeFillLabel: String = ""
     var resizeModeZoomLabel: String = ""
+    var resizeModeAutoCropLabel: String = ""
     var downloadedLabel: String = ""
     var subtitleSavedLabel: String = "Subtitle saved"
     var subtitleSaveFailedLabel: String = "Could not save subtitle"
@@ -147,6 +150,8 @@ internal class PlayerScreenRuntime(
     var activeStreamSubtitle by mutableStateOf(streamSubtitle)
     var activeProviderName by mutableStateOf(providerName)
     var activeProviderAddonId by mutableStateOf(providerAddonId)
+    /** The stream on screen, when known; a watch-party host shares it (PlayerScreenRuntimeParty). */
+    var activeStream by mutableStateOf(args.stream)
     var activeWatchProgressSource by mutableStateOf(watchProgressSource)
     var currentStreamBingeGroup by mutableStateOf(initialBingeGroup)
     var activeSeasonNumber by mutableStateOf(seasonNumber)
@@ -241,6 +246,17 @@ internal class PlayerScreenRuntime(
     var hasSentCompletionScrobbleForCurrentItem by mutableStateOf(false)
     var currentTrackingScrobbleMedia by mutableStateOf<TrackingMediaReference?>(null)
 
+    // Watch party (PlayerScreenRuntimeParty.kt). showPartyPanel mirrors the HUD's party modal.
+    var showPartyPanel by mutableStateOf(false)
+    var partyPanelOpenToken by mutableStateOf(0)
+    var partyBehind by mutableStateOf(false)
+    var partyBehindMs by mutableStateOf<Long?>(null)
+    var partyRateNudge: Float? = null
+    var partyPreviousKey: String? = null
+    var partyAppInBackground = false
+    var playbackSnapshotMark: TimeMark? = null
+    var pendingSeekTarget: Pair<Long, TimeMark>? = null
+
     var showSourcesPanel by mutableStateOf(false)
     var showEpisodesPanel by mutableStateOf(false)
     var showSubmitIntroModal by mutableStateOf(false)
@@ -261,6 +277,8 @@ internal class PlayerScreenRuntime(
     var pendingSourcesEpisode by mutableStateOf<MetaVideo?>(null)
     var episodeStreamsPanelState by mutableStateOf(EpisodeStreamsPanelState())
     var playerMetaVideos by mutableStateOf<List<MetaVideo>>(emptyList())
+    /** The title's cast from the same meta load, for the pause overlay. */
+    var playerMetaCast by mutableStateOf<List<MetaPerson>>(emptyList())
     var playerChapters by mutableStateOf<List<PlayerChapter>>(emptyList())
     var skipIntervals by mutableStateOf<List<SkipInterval>>(emptyList())
     var seekrTrack by mutableStateOf<SeekrTrack?>(null)
@@ -287,6 +305,8 @@ internal class PlayerScreenRuntime(
     var parentalGuideHasShown by mutableStateOf(false)
     var playbackStartedForParentalGuide by mutableStateOf(false)
     var nextEpisodeInfo by mutableStateOf<NextEpisodeInfo?>(null)
+    /** AnimeFillerList categories for [playerMetaVideos], by video id; empty for non-anime. */
+    var playerFillerKinds by mutableStateOf<Map<String, com.nuvio.app.features.details.filler.AnimeEpisodeKind>>(emptyMap())
     var showNextEpisodeCard by mutableStateOf(false)
     // Playlist playback replaces next-episode binge with "the next thing in the playlist". The
     // entry is resolved once per player — a playlist edited mid-playback takes effect at the next
@@ -349,6 +369,9 @@ internal class PlayerScreenRuntime(
     var trackPreferenceRestoreApplied by mutableStateOf(false)
     var subtitleDelayMs by mutableStateOf(0)
     var subtitleAutoSyncState by mutableStateOf(SubtitleAutoSyncUiState())
+    var automaticSubtitleSyncJob: Job? = null
+    /** The last automatic sync applied: the addon subtitle's URL and its retimed text. */
+    var automaticallySyncedSubtitle by mutableStateOf<Pair<String, String>?>(null)
 
     var lastSyncedSettingsResizeMode: PlayerResizeMode? = null
     var lastResetPlaybackIdentity: String? = null
@@ -362,4 +385,19 @@ internal class PlayerScreenRuntime(
     val failoverTriedIdentityKeys: MutableSet<String> = mutableSetOf()
     var failoverInProgress by mutableStateOf(false)
     var failoverJob: Job? = null
+
+    /** Live TV: no metadata, skip lookups, addon failover or redirect probe; see PlayerScreenRuntimeIptv. */
+    val isIptvPlayback: Boolean get() = parentMetaType == com.nuvio.app.features.iptv.IPTV_META_TYPE
+
+    /** When the current IPTV stream last dropped and was reopened, to cap reconnect loops. */
+    val iptvReconnectTimesMs: ArrayDeque<Long> = ArrayDeque()
+
+    /** The HUD's channel switcher is open: only then is the (possibly long) channel list sent. */
+    var iptvPanelOpen by mutableStateOf(false)
+
+    /** The switcher's category ([com.nuvio.app.features.iptv.IptvGroups] id); null = the playing channel's. */
+    var iptvPanelGroup by mutableStateOf<String?>(null)
+
+    /** The switcher's search; while set, the list is the matching channels of the whole playlist. */
+    var iptvPanelQuery by mutableStateOf("")
 }

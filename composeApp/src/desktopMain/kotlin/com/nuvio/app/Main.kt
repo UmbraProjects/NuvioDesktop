@@ -41,6 +41,8 @@ import com.nuvio.app.core.sync.AppForegroundMonitor
 import com.nuvio.app.core.build.AppVersionPolicy
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
 import com.nuvio.app.core.ui.HoldToSelect
+import com.nuvio.app.core.ui.SwallowedClickRescue
+import com.nuvio.app.core.ui.SwallowedClickRescue.detectClicksSwallowedByScrolling
 import com.nuvio.app.core.ui.DesktopBackRequestSource
 import com.nuvio.app.core.ui.DesktopTrayMenu
 import com.nuvio.app.core.ui.DesktopTrayMenuEntry
@@ -201,7 +203,80 @@ private class MouseFiveShiftEventQueue : EventQueue() {
             }
         }
 
+        if (event is MouseEvent && event.id == MouseEvent.MOUSE_PRESSED && event.button == MouseEvent.BUTTON3) {
+            rightPressWhileMenuOpen = com.nuvio.app.core.ui.ContextMenuReopen.openMenus > 0
+        }
         super.dispatchEvent(event)
+        if (
+            event is MouseEvent &&
+            event.id == MouseEvent.MOUSE_RELEASED &&
+            event.button == MouseEvent.BUTTON1 &&
+            SwallowedClickRescue.takePendingReplay()
+        ) {
+            replaySwallowedClick(event)
+        }
+        if (
+            event is MouseEvent &&
+            event.id == MouseEvent.MOUSE_RELEASED &&
+            event.button == MouseEvent.BUTTON3 &&
+            rightPressWhileMenuOpen
+        ) {
+            rightPressWhileMenuOpen = false
+            replayRightClickAfterMenuClosed(event)
+        }
+    }
+
+    private var rightPressWhileMenuOpen = false
+
+    /**
+     * A right-click made while a right-click menu was open only closed that menu (see
+     * ContextMenuReopen). Sends it again at the same spot once the menu is gone, so the target
+     * under the pointer opens its own menu. A right-click inside the open menu does not close it,
+     * so nothing is re-sent; one landing on nothing re-sends a right-click that does nothing.
+     */
+    private fun replayRightClickAfterMenuClosed(release: MouseEvent) {
+        val component = release.component ?: return
+        javax.swing.Timer(RightClickReopenDelayMs) {
+            if (com.nuvio.app.core.ui.ContextMenuReopen.openMenus > 0) return@Timer
+            val at = System.currentTimeMillis()
+            fun post(id: Int, modifiers: Int, popupTrigger: Boolean) = postEvent(
+                MouseEvent(
+                    component, id, at, modifiers, release.x, release.y,
+                    release.xOnScreen, release.yOnScreen, 1, popupTrigger, MouseEvent.BUTTON3,
+                ),
+            )
+            post(MouseEvent.MOUSE_PRESSED, InputEvent.BUTTON3_DOWN_MASK, false)
+            post(MouseEvent.MOUSE_RELEASED, 0, true)
+            post(MouseEvent.MOUSE_CLICKED, 0, false)
+        }.apply { isRepeats = false }.start()
+    }
+
+    private var lastReplayAtMs = 0L
+
+    /**
+     * Compose saw this click land on a list that was still easing from a wheel notch and nothing
+     * took it (see [SwallowedClickRescue]). Clicks again at the same spot once the list has
+     * stopped, which the press itself did. Posted a frame later so the scroll's cancellation has
+     * run; at most one replay per click, so a replay that is lost too cannot repeat.
+     */
+    private fun replaySwallowedClick(release: MouseEvent) {
+        val now = System.currentTimeMillis()
+        if (now - lastReplayAtMs < SwallowedClickReplayGuardMs) return
+        lastReplayAtMs = now
+        co.touchlab.kermit.Logger.withTag("ClickReplay").i { "replaying a click lost to a scrolling list at ${release.x},${release.y}" }
+        val component = release.component ?: return
+        javax.swing.Timer(SwallowedClickReplayDelayMs) {
+            val at = System.currentTimeMillis()
+            fun post(id: Int, modifiers: Int) = postEvent(
+                MouseEvent(
+                    component, id, at, modifiers, release.x, release.y,
+                    release.xOnScreen, release.yOnScreen, 1, false, MouseEvent.BUTTON1,
+                ),
+            )
+            post(MouseEvent.MOUSE_PRESSED, InputEvent.BUTTON1_DOWN_MASK)
+            post(MouseEvent.MOUSE_RELEASED, 0)
+            post(MouseEvent.MOUSE_CLICKED, 0)
+        }.apply { isRepeats = false }.start()
     }
 
     private fun translatedModifiers(modifiersEx: Int): Int =
@@ -211,6 +286,11 @@ private class MouseFiveShiftEventQueue : EventQueue() {
         pop()
     }
 }
+
+private const val SwallowedClickReplayDelayMs = 32
+private const val SwallowedClickReplayGuardMs = 400L
+// Long enough for the closed menu's popup to leave the composition before the click is re-sent.
+private const val RightClickReopenDelayMs = 48
 
 private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
@@ -369,23 +449,45 @@ private inline fun desktopStartupStep(name: String, block: () -> Unit) {
         }
 }
 
-fun main() {
+fun main(args: Array<String>) {
+    com.nuvio.app.core.build.NativeImageSupport.configureRuntime()
+    com.nuvio.app.core.build.NativeImageSupport.startSelfTestIfRequested()
+    // Build-time archive training (createDistributable): before anything else, so it touches no
+    // store, lock or log of the user's. Never returns.
+    if (com.nuvio.app.core.build.AppClassArchiveTraining.BuildArgument in args) {
+        com.nuvio.app.core.build.AppClassArchiveTraining.runForBuild()
+    }
+    // A nuvio:// link the OS launched us with (see DesktopUrlScheme): handed to the running copy
+    // if there is one, else opened here once the app is up.
+    val launchUrl = args.map(String::trim).firstOrNull { it.startsWith("nuvio://", ignoreCase = true) }
     // Before the log file or any store is opened: a second copy of Nuvio sharing the data directory
     // corrupts the log rotation and the image disk cache (see DesktopSingleInstance). The player
     // smoke harness is exempt — it is a deliberate side-by-side dev launch with its own window.
     val smokeLaunch = !(System.getProperty("nuvio.desktop.smokePlayerUrl")
         ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")).isNullOrBlank()
     if (!smokeLaunch) {
-        val claim = DesktopSingleInstance.claim(com.nuvio.app.core.storage.DesktopStorage.rootDir)
+        val claim = DesktopSingleInstance.claim(com.nuvio.app.core.storage.DesktopStorage.rootDir, launchUrl)
         if (claim is DesktopSingleInstance.Outcome.Secondary) {
             System.err.println(
                 "Nuvio is already running; " +
-                    if (claim.signalled) "asked it to come forward and exiting." else "exiting."
+                    if (!claim.signalled) "exiting."
+                    else if (launchUrl != null) "passed it the link and exiting."
+                    else "asked it to come forward and exiting."
             )
             System.exit(0)
         }
     }
     configureDesktopFileLogging()
+    com.nuvio.app.core.build.JvmLeftoverCleanup.startIfNative()
+    desktopPerfLoggingSource()?.let(com.nuvio.app.core.perf.PerfTelemetry::start)
+    // Now that this copy owns the data directory and before any store is read: a settings import
+    // staged by the previous session lands here (see applyPendingSettingsImport).
+    com.nuvio.app.features.settings.applyPendingSettingsImport(com.nuvio.app.core.storage.DesktopStorage.rootDir)
+    // Not from a nativeSmoke launch: it would point the user's nuvio:// links at the build folder.
+    if (!com.nuvio.app.core.build.NativeImageSupport.selfTestRequested) DesktopUrlScheme.registerInBackground()
+    // Held as the pending link until the app's navigation is up to take it. Straight to the link
+    // queue rather than handleAppUrl, whose Trakt-callback check loads profile stores this early.
+    launchUrl?.let(com.nuvio.app.core.deeplink.AppDeepLinkRepository::handleUrl)
     // Opt-in: dumps raw addon stream payloads so unparsed fields are visible. See
     // StreamPayloadDiagnostics — off by default, since it logs whole stream objects.
     //
@@ -405,17 +507,21 @@ fun main() {
     )
     val desktopStartupStartedAt = System.currentTimeMillis()
     System.out.println("Info: (DesktopStartup) main entered")
-    // Before any window exists: Windows caches the process AppUserModelID early, and the media
+    // A launch without a usable class archive builds one in a short UI-less run and restarts,
+    // instead of being the user's slow session; see AppClassArchiveTraining. Returns at once
+    // otherwise.
+    com.nuvio.app.core.build.AppClassArchiveTraining.runIfNeeded()    // Before any window exists: Windows caches the process AppUserModelID early, and the media
     // session created later is labelled "Unknown app" without it.
     desktopStartupStep("app identity") {
         runCatching { com.nuvio.app.features.player.desktop.registerDesktopAppIdentity() }
     }
     // Immediately after: every millisecond of head start is a class the UI thread will not have
     // to load itself when Home first composes. Non-blocking; see StartupClassPreloader.
-    desktopStartupStep("startup class preload") { com.nuvio.app.core.build.StartupClassPreloader.start() }
-    // Same idea for the one native library Home's first composition loads: see warmPhysicalMemoryProbe.
+    desktopStartupStep("startup class preload") { com.nuvio.app.core.build.StartupClassPreloader.start() }    // Same idea for the one native library Home's first composition loads: see warmPhysicalMemoryProbe.
     desktopStartupStep("memory probe warm") { com.nuvio.app.core.ui.warmPhysicalMemoryProbe() }
     desktopStartupStep("configure renderer") { configureDesktopRenderer() }
+    limitSwingBackBuffer()
+    com.nuvio.app.core.ui.IdleHeapCollector.start()
     // Before the first Skia layer exists: the vsync properties this flips are read at layer
     // construction. Always reported, so a benchmark log can never be misread as a vsync-capped one.
     System.out.println(
@@ -427,6 +533,8 @@ fun main() {
     desktopStartupStep("configure chrome") { configureDesktopChrome() }
     desktopStartupStep("subtitle font warm request") { com.nuvio.app.features.player.warmSubtitleFontCache() }
     desktopStartupStep("app font warm request") { com.nuvio.app.core.ui.warmSystemFontCache() }
+    // Idle until Home has rows and the user opted in; see ArtworkPrewarmer.
+    desktopStartupStep("artwork prewarm") { com.nuvio.app.core.ui.ArtworkPrewarmer.start() }
     System.out.println("Info: (DesktopStartup) entering Compose application")
 
     application {
@@ -517,6 +625,18 @@ fun main() {
                         "${System.currentTimeMillis() - desktopStartupStartedAt}ms"
                 )
                 Unit
+            }
+            // Compose's default handler only shows a modal "Error" dialog (blank on the native
+            // build) and closes the window; it never logs. Log the stack first so a crash from
+            // an input or effect handler leaves something in nuvio.log, then keep that behaviour.
+            remember(window) {
+                val composeDefault = window.exceptionHandler
+                window.exceptionHandler = androidx.compose.ui.window.WindowExceptionHandler { error ->
+                    System.err.println("Uncaught exception in window '${window.title}' (Compose window handler)")
+                    error.printStackTrace(System.err)
+                    System.err.flush()
+                    composeDefault?.onException(error) ?: throw error
+                }
             }
             val windowSideEffectLogged = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
             SideEffect {
@@ -833,6 +953,9 @@ fun main() {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        // Clicks lost to a list still easing from the wheel are replayed by
+                        // MouseFiveShiftEventQueue; this is where they are recognised.
+                        .detectClicksSwallowedByScrolling()
                         // Bubble-phase handling means focused text fields retain ordinary paste.
                         // Elsewhere, a copied HTTP(S) media URL opens through the same direct-play
                         // path as a dropped local file; App rejects it while playback is active.
@@ -843,6 +966,16 @@ fun main() {
                                     Toolkit.getDefaultToolkit().systemClipboard
                                         .getData(DataFlavor.stringFlavor) as? String
                                 }.getOrNull()?.trim().orEmpty()
+                                // A watch-party invite (the link alone, or the whole "join my
+                                // party" message) opens the Watch party page, not a stream.
+                                val partyInvite = clipboardText.split(Regex("\\s+")).firstOrNull { word ->
+                                    com.nuvio.app.core.deeplink.parseAppDeepLink(word) is
+                                        com.nuvio.app.core.deeplink.AppDeepLink.Party
+                                }
+                                if (partyInvite != null) {
+                                    com.nuvio.app.core.deeplink.handleAppUrl(partyInvite)
+                                    return@onKeyEvent true
+                                }
                                 val webStream = clipboardText.takeIf {
                                     it.startsWith("https://", ignoreCase = true) ||
                                         it.startsWith("http://", ignoreCase = true)
@@ -879,6 +1012,7 @@ fun main() {
                                 AppShortcutAction.OpenLibrary,
                                 AppShortcutAction.OpenDiscover,
                                 AppShortcutAction.OpenCalendar,
+                                AppShortcutAction.OpenLiveTv,
                                 // Routed through App so it inherits the same guard the other
                                 // navigation shortcuts get: nothing fires while the player is up.
                                 AppShortcutAction.ToggleGameMode -> {
@@ -928,20 +1062,32 @@ fun main() {
                             },
                         ),
                 ) {
-                    App()
+                    // Text fields' right-click menu (Cut/Copy/Paste/Select all) in the app's own
+                    // context-menu style rather than Compose's white desktop popup.
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.foundation.LocalContextMenuRepresentation provides
+                            com.nuvio.app.core.ui.NuvioContextMenuRepresentation,
+                        androidx.compose.foundation.text.LocalTextContextMenu provides
+                            com.nuvio.app.core.ui.NuvioTextContextMenu,
+                    ) {
+                        App()
+                    }
                     // Above the app so it covers whatever screen owns the focused field, and hosted
                     // here rather than inside App() because it is desktop-only.
                     com.nuvio.app.features.input.OnScreenKeyboardOverlay()
                     com.nuvio.app.core.ui.FrameCadenceTelemetry()
                     com.nuvio.app.core.ui.FrameBudgetTelemetry()
+                    com.nuvio.app.core.ui.SteadyFramePacingEffect(window)
+                    com.nuvio.app.core.ui.UiStallProbe()
+                    com.nuvio.app.core.ui.DesktopHdrUiCompensationEffect(window)
                 }
             } else {
                 PlatformPlayerSurface(
                     sourceUrl = smokePlayerUrl,
                     modifier = Modifier.fillMaxSize(),
-                    onControllerReady = {},
+                    onControllerReady = { println("Info: (PlayerSmoke) controller ready") },
                     onSnapshot = {},
-                    onError = {},
+                    onError = { error -> System.err.println("Error: (PlayerSmoke) $error") },
                 )
             }
         }
@@ -956,8 +1102,13 @@ fun main() {
         withTimeoutOrNull(CACHE_FLUSH_TIMEOUT_MS) {
             runCatching { HeroCastMetadataService.flushPendingWrites() }
             runCatching { MdbListMetadataService.flushPendingWrites() }
+            runCatching { com.nuvio.app.features.details.LightweightMetaDiskCache.flushPendingWrites() }
+            runCatching { com.nuvio.app.features.details.filler.AnimeFillerRepository.flushPendingWrites() }
         }
     }
+    // Home settings are encoded off the UI thread now; a change made just before exit is written
+    // here, before the stores flush below.
+    runCatching { com.nuvio.app.features.home.HomeCatalogSettingsRepository.flushPendingPersist() }
     // Every store coalesces its writes (DesktopStorage.flushAll), including the two caches just
     // flushed above. A shutdown hook does the same for exit paths that skip this function.
     runCatching { com.nuvio.app.core.storage.DesktopStorage.flushAll() }
@@ -993,6 +1144,19 @@ private fun configureDesktopRenderer() {
         // OpenGL is opt-in); it must match the PlayerSettingsRepository default Settings displays.
         val renderer = stored ?: DesktopRendererApi.D3D11
         renderer?.let { System.setProperty("skiko.renderApi", it.skikoRenderApi) }
+    }
+}
+
+/**
+ * Caps Swing's double-buffer at 512x512. Compose draws through skiko's own surface, so Swing paints
+ * next to nothing, yet RepaintManager kept a window-sized back buffer for the whole session: 33 MB at
+ * 3840x2160 (heap dump, 2026-10-16). With `sun.java2d.d3d=false` that buffer is plain memory.
+ * Larger paints go through the capped buffer in tiles, so painting itself is unchanged.
+ */
+private fun limitSwingBackBuffer() {
+    runCatching {
+        javax.swing.RepaintManager.currentManager(null as java.awt.Component?)
+            .doubleBufferMaximumSize = java.awt.Dimension(512, 512)
     }
 }
 

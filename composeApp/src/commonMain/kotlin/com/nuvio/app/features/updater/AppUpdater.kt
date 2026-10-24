@@ -28,6 +28,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -65,6 +67,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.runBlocking
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -358,6 +364,12 @@ internal object UpdateAvailability {
      * for and when it was packaged. Applied only to the unmarked case — an install the updater
      * performed has its own settled rules, and nothing here should be able to talk it out of an
      * update.
+     *
+     * The published asset's timestamp is its upload time, which always trails its own build stamp
+     * by the smoke run and the upload, so a user who downloaded the nightly and unpacked it by hand
+     * runs a build "older" than the release it came from. [selfBuiltUploadGrace] absorbs that lag.
+     * The cost is that a nightly uploaded within that window of the running build is missed until
+     * the next one, which is rare and self-correcting.
      */
     private fun isSelfBuiltNightlyAtLeastAsNew(
         update: AppUpdate,
@@ -366,11 +378,14 @@ internal object UpdateAvailability {
     ): Boolean {
         if (installedNightlyId != null) return false
         if (runningBuild?.isNightly != true) return false
-        val builtAt = utcInstantOrNull(runningBuild.buildTime) ?: return false
-        val publishedAt = utcInstantOrNull(update.publishedAt) ?: return false
-        return builtAt >= publishedAt
+        val builtAt = utcInstantOrNull(runningBuild.buildTime)?.let { Instant.parse("${it}Z") } ?: return false
+        val publishedAt = utcInstantOrNull(update.publishedAt)?.let { Instant.parse("${it}Z") } ?: return false
+        return builtAt + selfBuiltUploadGrace >= publishedAt
     }
 }
+
+/** How long after a nightly is packaged its upload may land and still count as that same build. */
+internal val selfBuiltUploadGrace = 45.minutes
 
 private val utcInstantPattern = Regex("""^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?Z$""")
 
@@ -454,7 +469,9 @@ class AppUpdaterController internal constructor(
                     runningBuild = runningBuild,
                 )
                 val ignored = ignoredTag != null && ignoredTag == update.ignoreKey()
-                val shouldShowDialog = force || (remoteNewer && !ignored)
+                val snoozed = AppUpdaterPlatform.getSnoozedUntilMs()
+                    ?.let { until -> Clock.System.now().toEpochMilliseconds() < until } == true
+                val shouldShowDialog = force || (remoteNewer && !ignored && !snoozed)
 
                 _uiState.update { state ->
                     state.copy(
@@ -578,6 +595,19 @@ class AppUpdaterController internal constructor(
         dismissDialog()
     }
 
+    /**
+     * Keeps the automatic check quiet for [days], whatever version is out by then. A manual
+     * "Check for updates" still shows the dialog (it passes force).
+     */
+    fun snoozeFor(days: Int) {
+        val until = Clock.System.now() + days.days
+        AppUpdaterPlatform.setSnoozedUntilMs(until.toEpochMilliseconds())
+        dismissDialog()
+        scope.launch {
+            NuvioToastController.show(getString(Res.string.updates_snoozed_until, until.toString().take(10)))
+        }
+    }
+
     fun downloadUpdate() {
         val update = _uiState.value.update ?: return
 
@@ -688,6 +718,7 @@ class AppUpdaterController internal constructor(
             ?.let { InstalledNightlyBuild(id = it, publishedAt = update.publishedAt) }
         AppUpdaterPlatform.setInstalledNightlyBuild(nightly)
         AppUpdaterPlatform.setIgnoredTag(null)
+        AppUpdaterPlatform.setSnoozedUntilMs(null)
     }
 
     companion object {
@@ -740,6 +771,7 @@ fun AppUpdaterHost(
     if (visibleOverlay != StartupOverlayCoordinator.Overlay.Updater) return
 
     val tokens = MaterialTheme.nuvio
+    var snoozeOptionsOpen by remember { mutableStateOf(false) }
     val showPrimaryAction =
         state.showUnknownSourcesDialog || state.isDownloading || state.downloadedApkPath != null || state.isUpdateAvailable
 
@@ -900,6 +932,29 @@ fun AppUpdaterHost(
 
                 UpdaterHairline()
 
+                if (snoozeOptionsOpen && state.isUpdateAvailable && !state.isDownloading) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        listOf(
+                            1 to Res.string.updates_snooze_one_day,
+                            3 to Res.string.updates_snooze_three_days,
+                            7 to Res.string.updates_snooze_one_week,
+                            14 to Res.string.updates_snooze_two_weeks,
+                        ).forEach { (days, label) ->
+                            TextButton(onClick = { controller.snoozeFor(days) }) {
+                                Text(stringResource(label))
+                            }
+                        }
+                        TextButton(onClick = controller::ignoreThisVersion) {
+                            Text(stringResource(Res.string.updates_skip_version))
+                        }
+                    }
+                    UpdaterHairline()
+                }
+
                 // The action strip doubles as the app's footer: the project link and the logs
                 // folder used to sit under the settings sidebar, and this dialog — reached from
                 // the same top bar — is where the build being run is already the subject.
@@ -913,8 +968,8 @@ fun AppUpdaterHost(
                     // their width instead of the last one (Update) being squeezed to nothing.
                     UpdaterFooterLinks(modifier = Modifier.weight(1f).padding(start = 6.dp))
                     if (state.isUpdateAvailable && !state.isDownloading && !state.showUnknownSourcesDialog) {
-                        TextButton(onClick = controller::ignoreThisVersion) {
-                            Text(stringResource(Res.string.action_ignore))
+                        TextButton(onClick = { snoozeOptionsOpen = !snoozeOptionsOpen }) {
+                            Text(stringResource(Res.string.updates_remind_me))
                         }
                     }
                     TextButton(

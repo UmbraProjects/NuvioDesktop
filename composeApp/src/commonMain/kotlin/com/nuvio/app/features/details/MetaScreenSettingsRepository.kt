@@ -58,6 +58,7 @@ data class MetaScreenSettingsUiState(
     val blurUnwatchedEpisodes: Boolean = false,
     val episodeRatingsVisibility: EpisodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL,
     val showOverallRatings: Boolean = true,
+    val sameCastLabelPlacement: SameCastLabelPlacement = SameCastLabelPlacement.AUTO,
 )
 
 enum class MetaScreenBackgroundMode {
@@ -185,6 +186,8 @@ private data class StoredMetaScreenSettingsPayload(
     val episodeRatingsVisibility: String? = null,
     @SerialName("show_overall_ratings")
     val showOverallRatings: Boolean = true,
+    @SerialName("same_cast_label_placement")
+    val sameCastLabelPlacement: String? = null,
 )
 
 private data class MetaScreenSectionDefinition(
@@ -270,6 +273,7 @@ object MetaScreenSettingsRepository {
     private var blurUnwatchedEpisodes: Boolean = false
     private var episodeRatingsVisibility: EpisodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL
     private var showOverallRatings: Boolean = true
+    private var sameCastLabelPlacement: SameCastLabelPlacement = SameCastLabelPlacement.AUTO
     private fun localizedString(resource: StringResource): String = runBlocking { getString(resource) }
 
     fun ensureLoaded() {
@@ -304,6 +308,9 @@ object MetaScreenSettingsRepository {
                         EpisodeRatingsVisibility.HIDE_EPISODES
                     }
                 showOverallRatings = parsed.showOverallRatings
+                sameCastLabelPlacement = parsed.sameCastLabelPlacement
+                    ?.let(SameCastLabelPlacement::parse)
+                    ?: SameCastLabelPlacement.AUTO
                 preferences = parsed.items.mapNotNull { item ->
                     val key = runCatching { MetaScreenSectionKey.valueOf(item.key) }.getOrNull() ?: return@mapNotNull null
                     key to item
@@ -332,6 +339,7 @@ object MetaScreenSettingsRepository {
         blurUnwatchedEpisodes = false
         episodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL
         showOverallRatings = true
+        sameCastLabelPlacement = SameCastLabelPlacement.AUTO
         _uiState.value = MetaScreenSettingsUiState()
         ensureLoaded()
     }
@@ -424,6 +432,13 @@ object MetaScreenSettingsRepository {
         persist()
     }
 
+    fun setSameCastLabelPlacement(placement: SameCastLabelPlacement) {
+        ensureLoaded()
+        sameCastLabelPlacement = placement
+        publish()
+        persist()
+    }
+
     fun setShowOverallRatings(enabled: Boolean) {
         ensureLoaded()
         showOverallRatings = enabled
@@ -454,6 +469,7 @@ object MetaScreenSettingsRepository {
         blurUnwatchedEpisodes = false
         episodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL
         showOverallRatings = true
+        sameCastLabelPlacement = SameCastLabelPlacement.AUTO
         _uiState.value = MetaScreenSettingsUiState()
     }
 
@@ -518,6 +534,7 @@ object MetaScreenSettingsRepository {
         blurUnwatchedEpisodes = false
         episodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL
         showOverallRatings = true
+        sameCastLabelPlacement = SameCastLabelPlacement.AUTO
         normalizePreferences()
         publish()
         persist()
@@ -582,6 +599,7 @@ object MetaScreenSettingsRepository {
             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
             episodeRatingsVisibility = episodeRatingsVisibility,
             showOverallRatings = showOverallRatings,
+            sameCastLabelPlacement = sameCastLabelPlacement,
         )
     }
 
@@ -604,6 +622,7 @@ object MetaScreenSettingsRepository {
                     episodeRatingsEnabled = episodeRatingsVisibility.showRatings,
                     episodeRatingsVisibility = episodeRatingsVisibility.name,
                     showOverallRatings = showOverallRatings,
+                    sameCastLabelPlacement = sameCastLabelPlacement.name,
                 ),
             ),
         )

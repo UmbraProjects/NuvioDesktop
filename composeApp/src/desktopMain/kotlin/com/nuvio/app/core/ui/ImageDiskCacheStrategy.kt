@@ -6,6 +6,7 @@ import coil3.network.NetworkHeaders
 import coil3.network.NetworkRequest
 import coil3.network.NetworkResponse
 import coil3.request.Options
+import kotlinx.coroutines.currentCoroutineContext
 
 /**
  * What Nuvio's image disk cache is allowed to keep, and for how long.
@@ -52,6 +53,14 @@ internal object ImageDiskCacheStrategy : CacheStrategy {
         // Honour it even for a cached failure: the caller has said it would rather have the stale
         // answer than none, and a network request would not be served anyway.
         if (networkRequest.headers.cacheControlDirectives().contains(ONLY_IF_CACHED)) {
+            return CacheStrategy.ReadResult(cacheResponse)
+        }
+
+        // A fetch that waited behind an identical one (see CoalescingRequestStrategy): the entry
+        // was written by that request moments ago, so it is the answer the network just gave.
+        // Serving it is what makes the wait worth anything for a `no-store` poster, which would
+        // otherwise be downloaded once per waiter anyway.
+        if (cacheResponse.isSuccessful && currentCoroutineContext()[CoalescedFollower] != null) {
             return CacheStrategy.ReadResult(cacheResponse)
         }
 

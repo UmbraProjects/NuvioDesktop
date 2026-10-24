@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player.desktop
 
 import com.nuvio.app.core.ui.DesktopArtworkCaches
+import kotlin.concurrent.thread
 
 /**
  * Returns committed-but-unused heap to the OS at the one moment a collection pause cannot be seen:
@@ -51,7 +52,27 @@ internal object DesktopIdleHeapTrim {
         trimmedWhileHidden = true
         // Native frames went first, in the artwork-cache call above: that is the bigger reclaim,
         // and unlike the heap it is unaffected by whether this collection decides to uncommit
-        // anything at all.
-        System.gc()
+        // anything at all. Off the event thread: a concurrent explicit GC blocks its caller.
+        thread(isDaemon = true, name = "nuvio-hidden-heap-trim") {
+            com.nuvio.app.core.ui.MemoryTrimLog.trim(reason = "window hidden") { System.gc() }
+        }
+    }
+
+    /**
+     * Call once a full-player session has settled, after [DesktopArtworkCaches] has dropped to its
+     * playback budgets. The collection that follows is what actually frees the native Skia pixels
+     * behind the evicted artwork: their Java wrappers are only unreachable until a GC runs their
+     * cleaners. Measured on Home after a 4K session: a concurrent cycle took private bytes from
+     * 2,029 MB to 1,888 MB with the committed heap unchanged, and a full collection on top of it
+     * only reached 1,874 MB — so the concurrent cycle `ExplicitGCInvokesConcurrent` gives us is
+     * enough, and it has no stop-the-world pause to hide.
+     *
+     * On its own daemon thread because a concurrent explicit GC blocks its caller until the cycle
+     * completes, and this is called from the UI's coroutine.
+     */
+    fun onPlaybackStarted() {
+        thread(isDaemon = true, name = "nuvio-playback-heap-trim") {
+            com.nuvio.app.core.ui.MemoryTrimLog.trim(reason = "playback started") { System.gc() }
+        }
     }
 }

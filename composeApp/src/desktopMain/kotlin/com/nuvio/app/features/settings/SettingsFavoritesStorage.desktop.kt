@@ -13,5 +13,5 @@ internal actual object SettingsFavoritesStorage {
         store.putString(ProfileScopedKey.of("settings_favorites"), payload)
     }
 
-    actual fun shouldSeedDefaults(): Boolean = DesktopStorage.isFreshInstall
+    actual fun shouldSeedDefaults(): Boolean = DesktopStorage.isFreshAccount
 }

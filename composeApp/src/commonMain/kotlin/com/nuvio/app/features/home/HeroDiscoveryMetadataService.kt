@@ -61,15 +61,29 @@ object HeroDiscoveryMetadataService {
         }
         if (!ownsRequest) return pending.await()
 
+        val startedMs = now
         val facts = try {
             // Summary rather than the details-screen record. The badges that count seasons and
             // episodes read `meta.videos`, which comes from the addon and is unaffected by dropping
             // TMDB's per-episode decoration - see MetaDetailsRepository.fetchHeroSummary.
-            val meta = MetaDetailsRepository.peek(type = type, id = id)
-                ?: MetaDetailsRepository.fetchHeroSummary(type = type, id = id)
+            val peeked = MetaDetailsRepository.peek(type = type, id = id)
+            val meta = peeked ?: MetaDetailsRepository.fetchHeroSummary(type = type, id = id)
+            val metaMs = elapsedSince(startedMs)
             if (meta != null) {
                 val enrichedMeta = enrichDiscoveryMeta(meta = meta, fallbackItemId = id)
-                computeFacts(enrichedMeta, priority, releaseStatusUnavailableOnly)
+                val enrichMs = elapsedSince(startedMs) - metaMs
+                computeFacts(enrichedMeta, priority, releaseStatusUnavailableOnly).also { result ->
+                    val totalMs = elapsedSince(startedMs)
+                    // Which step holds the badges back; only slow lookups, so a scroll stays readable.
+                    if (totalMs >= SLOW_FETCH_LOG_MS) {
+                        log.i {
+                            "Slow badges $type:$id ${totalMs}ms: meta=${metaMs}ms " +
+                                "(${if (peeked != null) "cached" else "summary"}) " +
+                                "mdblist+tmdbId=${enrichMs}ms facts=${totalMs - metaMs - enrichMs}ms " +
+                                "-> ${result.size} badges"
+                        }
+                    }
+                }
             } else {
                 emptyList()
             }
@@ -86,6 +100,9 @@ object HeroDiscoveryMetadataService {
         }
         return facts
     }
+
+    private fun elapsedSince(startedMs: Long): Long =
+        com.nuvio.app.features.watchprogress.WatchProgressClock.nowEpochMs() - startedMs
 
     private suspend fun enrichDiscoveryMeta(
         meta: MetaDetails,
@@ -549,6 +566,7 @@ object HeroDiscoveryMetadataService {
     private const val NEW_RELEASE_WINDOW_DAYS = 30
     private const val NEW_RELEASE_ORIGINAL_YEAR_LOOKBACK = 1
     private const val MDBLIST_DISCOVERY_TIMEOUT_MS = 6_000L
+    private const val SLOW_FETCH_LOG_MS = 400L
     private const val METACRITIC_MUST_SEE_MIN_SCORE = 81.0
     private const val BINGE_READY_MAX_SEASONS = 3
     private val BINGE_READY_EPISODE_RANGE = 2..30

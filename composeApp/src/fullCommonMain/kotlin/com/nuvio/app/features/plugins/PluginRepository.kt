@@ -66,6 +66,9 @@ actual object PluginRepository {
     // Written on the caller's thread and removed from the job's finally on a worker thread.
     private val activeRefreshJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
+    // Synchronized: the startup warm runs this on IO while a stream screen may already be asking;
+    // the second caller waits for the one load instead of reading the code store again.
+    @Synchronized
     actual fun initialize() {
         val effectiveProfileId = resolveEffectiveProfileId(ProfileRepository.activeProfileId)
         val shouldRefreshStoredRepos = !initialized || currentProfileId != effectiveProfileId

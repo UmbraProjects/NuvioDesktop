@@ -1,7 +1,9 @@
-The desktop P2P engine (P2pStreamingEngine.desktop.kt) loads it from the
-classpath resource /torrserver/windows-amd64/TorrServer.exe and installs a
-content-addressed copy under the Nuvio data directory at runtime. Override at
-dev time with -Dnuvio.torrserver.binary=<abs path> or the
+Packaged builds ship TorrServer.exe beside Nuvio.exe at torrserver\windows-amd64\TorrServer.exe
+(staged by createDistributable / createReleaseDistributable) and keep it out of the app jar, so
+updates don't re-download it. The desktop P2P backend (TorrServerP2pBackend.kt) reads that copy
+first, falls back to the classpath resource /torrserver/windows-amd64/TorrServer.exe (only present
+with -Pnuvio.desktop.leanJar=false), and installs a content-addressed copy under the Nuvio data
+directory at runtime. Override at dev time with -Dnuvio.torrserver.binary=<abs path> or the
 NUVIO_TORRSERVER_BINARY env var.
 
 Source: https://github.com/YouROK/TorrServer  (TorrServer-windows-amd64.exe -> rename to TorrServer.exe)

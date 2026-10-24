@@ -3,6 +3,7 @@ package com.nuvio.app.features.home
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.sync.HOME_CATALOG_LEGACY_SYNC_PLATFORMS
 import com.nuvio.app.core.sync.HOME_CATALOG_SHARED_SYNC_PLATFORM
 import com.nuvio.app.core.sync.SynchronizationPreferencesRepository
@@ -112,6 +113,7 @@ object HomeCatalogSettingsSyncService {
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        PerfTelemetry.count("HomeCatalogSettingsSyncService.pullFromServer")
         SynchronizationPreferencesRepository.ensureLoaded()
         if (!SynchronizationPreferencesRepository.uiState.value.homeCatalogsEnabled) return
         runCatching {

@@ -1,7 +1,9 @@
 package com.nuvio.app.features.profiles
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.network.ServerConfigurationRepository
 import com.nuvio.app.core.network.SupabaseProvider
+import com.nuvio.app.core.perf.PerfTelemetry
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,14 +30,37 @@ object AvatarRepository {
     private var cacheHydrated = false
     private var fetchInFlight = false
 
+    /** Wall-clock time of the last catalogue fetch that succeeded this session; 0 = none yet. */
+    private var lastFetchedAtMs = 0L
+
+    /**
+     * The profile picture as a URL other watch-party members can load: a custom URL only when it
+     * points into this server's storage, else the catalogue avatar's public URL. Upstream also signs
+     * supporter-only avatars here; this fork has none.
+     */
+    fun shareableImageUrl(profile: NuvioProfile): String? {
+        val storage = "${ServerConfigurationRepository.active.value.backendUrl}/storage/v1/object/"
+        normalizedAvatarUrl(profile.avatarUrl)?.let { url -> return url.takeIf { it.startsWith(storage) } }
+        val avatar = profile.avatarId?.let { id -> avatars.value.firstOrNull { it.id == id } } ?: return null
+        return avatar.storagePath.takeIf { it.isNotBlank() }?.let(::avatarStorageUrl)
+    }
+
     suspend fun fetchAvatars() {
         hydrateFromCacheIfNeeded()
         if (loaded && _avatars.value.isNotEmpty()) return
         doFetch()
     }
 
+    /**
+     * Re-reads the catalogue at most once per [REFRESH_INTERVAL_MS]. Every profile bar, picker and
+     * edit screen calls this when it mounts, so the bar alone asked for it 10 times in a 4-minute
+     * session - for a catalogue that changes when a release adds avatars, not between screens.
+     */
     suspend fun refreshAvatars() {
+        PerfTelemetry.count("AvatarRepository.refreshAvatars")
         hydrateFromCacheIfNeeded()
+        val fresh = lastFetchedAtMs > 0L && System.currentTimeMillis() - lastFetchedAtMs < REFRESH_INTERVAL_MS
+        if (fresh && _avatars.value.isNotEmpty()) return
         doFetch()
     }
 
@@ -59,6 +84,8 @@ object AvatarRepository {
         loaded = true
     }
 
+    private const val REFRESH_INTERVAL_MS = 6L * 60L * 60L * 1000L
+
     private suspend fun doFetch() {
         if (fetchInFlight) return
         fetchInFlight = true
@@ -70,6 +97,7 @@ object AvatarRepository {
             )
             _avatars.value = activeItems
             loaded = true
+            lastFetchedAtMs = System.currentTimeMillis()
             AvatarStorage.savePayload(
                 json.encodeToString(
                     StoredAvatarCatalogPayload(items = activeItems),

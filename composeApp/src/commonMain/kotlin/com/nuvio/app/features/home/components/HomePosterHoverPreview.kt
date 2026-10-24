@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import com.nuvio.app.core.ui.LocalScreenCovered
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -177,6 +178,16 @@ internal fun HomePosterHoverPreview(
         )
     }
 
+    // Home staying composed under a pushed screen: put the preview away as that screen opens, as
+    // leaving used to by disposing it, and wait for a fresh hover after.
+    val screenCovered = LocalScreenCovered.current
+    LaunchedEffect(screenCovered) {
+        if (!screenCovered) return@LaunchedEffect
+        previewVisible = false
+        popupMounted = false
+        previewDismissedByScroll = true
+    }
+
     LaunchedEffect(anchorHovered, previewHovered, previewDismissedByScroll) {
         if (previewDismissedByScroll) {
             if (!anchorHovered && !previewHovered) {
@@ -227,7 +238,8 @@ internal fun HomePosterHoverPreview(
     Box(modifier = modifier) {
         content(Modifier.hoverable(anchorInteractionSource))
 
-        if (popupMounted) {
+        // A popup is its own layer: Home staying composed under a pushed screen does not hide it.
+        if (popupMounted && !screenCovered) {
             Popup(
                 popupPositionProvider = positionProvider,
                 properties = PopupProperties(focusable = false),

@@ -47,6 +47,8 @@ fun PlayerScreen(
     autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
     onPlaylistHandoff: ((com.nuvio.app.features.playlist.PlaylistHandoff) -> Unit)? = null,
     onPlaylistJump: ((entryId: String) -> Unit)? = null,
+    onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit = {},
+    stream: com.nuvio.app.features.streams.StreamItem? = null,
 ) {
     PlayerScreenContent(
         PlayerScreenArgs(
@@ -92,6 +94,8 @@ fun PlayerScreen(
             autoPlayMode = autoPlayMode,
             onPlaylistHandoff = onPlaylistHandoff,
             onPlaylistJump = onPlaylistJump,
+            onOpenPartyMedia = onOpenPartyMedia,
+            stream = stream,
         )
     )
 }

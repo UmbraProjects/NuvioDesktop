@@ -78,6 +78,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepositor
 import com.nuvio.app.features.watchprogress.ContinueWatchingClickAction
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
 import com.nuvio.app.features.watchprogress.ContinueWatchingSortMode
+import com.nuvio.app.features.watchprogress.ContinueWatchingSourceShortcut
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
@@ -91,6 +92,11 @@ import nuvio.composeapp.generated.resources.settings_continue_watching_click_act
 import nuvio.composeapp.generated.resources.settings_continue_watching_click_action_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_click_action_play
 import nuvio.composeapp.generated.resources.settings_continue_watching_click_action_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_source_shortcut_center
+import nuvio.composeapp.generated.resources.settings_continue_watching_source_shortcut_corner
+import nuvio.composeapp.generated.resources.settings_continue_watching_source_shortcut_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_source_shortcut_off
+import nuvio.composeapp.generated.resources.settings_continue_watching_source_shortcut_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_default_action
 import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_title
@@ -175,6 +181,31 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                         SettingsScrollAnchor.searchKey("continue-watching-click-action"),
                     ),
                     onSelected = ContinueWatchingPreferencesRepository::setClickAction,
+                )
+                val preferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
+                SettingsChoiceRow(
+                    title = stringResource(Res.string.settings_continue_watching_source_shortcut_title),
+                    description = stringResource(Res.string.settings_continue_watching_source_shortcut_description),
+                    options = listOf(
+                        SettingsChoiceOption(
+                            ContinueWatchingSourceShortcut.OFF,
+                            stringResource(Res.string.settings_continue_watching_source_shortcut_off),
+                        ),
+                        SettingsChoiceOption(
+                            ContinueWatchingSourceShortcut.CORNER,
+                            stringResource(Res.string.settings_continue_watching_source_shortcut_corner),
+                        ),
+                        SettingsChoiceOption(
+                            ContinueWatchingSourceShortcut.CENTER,
+                            stringResource(Res.string.settings_continue_watching_source_shortcut_center),
+                        ),
+                    ),
+                    selectedValue = preferences.sourceShortcut,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(
+                        SettingsScrollAnchor.searchKey("continue-watching-source-shortcut"),
+                    ),
+                    onSelected = ContinueWatchingPreferencesRepository::setSourceShortcut,
                 )
             }
         }

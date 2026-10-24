@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +55,7 @@ import com.nuvio.app.features.details.MetaScreenSectionItem
 import com.nuvio.app.features.details.MetaScreenBackgroundMode
 import com.nuvio.app.features.details.MetaScreenSectionKey
 import com.nuvio.app.features.details.EpisodeRatingsVisibility
+import com.nuvio.app.features.details.SameCastLabelPlacement
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
 import com.nuvio.app.features.player.HERO_TV_TRAILER_DELAY_VALUES
@@ -296,10 +298,29 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-overall-ratings")),
                     onCheckedChange = MetaScreenSettingsRepository::setShowOverallRatings,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSegmentedChoiceRow(
+                    title = SAME_CAST_LABEL_TITLE,
+                    description = SAME_CAST_LABEL_DESCRIPTION,
+                    options = listOf(
+                        SettingsChoiceOption(SameCastLabelPlacement.AUTO, "Auto"),
+                        SettingsChoiceOption(SameCastLabelPlacement.ON_POSTER, "On Poster"),
+                        SettingsChoiceOption(SameCastLabelPlacement.BELOW_POSTER, "Below Poster"),
+                    ),
+                    selectedValue = uiState.sameCastLabelPlacement,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-same-cast-label")),
+                    onSelected = MetaScreenSettingsRepository::setSameCastLabelPlacement,
+                )
             }
         }
     }
 }
+
+// Literal, like the other Same Cast strings: see nuviodesktop-build-facts on new string keys.
+internal const val SAME_CAST_LABEL_TITLE = "Same Cast Label"
+internal const val SAME_CAST_LABEL_DESCRIPTION =
+    "Where Same Cast cards say who from the cast is in them. Auto puts it below the card when the art comes from a poster service, which often has its own badges there, and on the card otherwise."
 
 private enum class HeroTrailerPlaybackArea {
     Off,

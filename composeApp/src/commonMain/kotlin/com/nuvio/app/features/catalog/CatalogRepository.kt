@@ -1,5 +1,6 @@
 package com.nuvio.app.features.catalog
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.posterservice.withCachedCustomPosters
 import com.nuvio.app.features.posterservice.withCustomPosterOverlay
 import com.nuvio.app.features.posterservice.CustomPosterScreen
@@ -49,6 +50,7 @@ object CatalogRepository {
         target: CatalogTarget,
         force: Boolean = false,
     ) {
+        PerfTelemetry.count("CatalogRepository.load")
         val request = catalogRequest(target)
         if (!force && activeRequest == request && (_uiState.value.items.isNotEmpty() || _uiState.value.isLoading)) {
             return
@@ -59,6 +61,10 @@ object CatalogRepository {
             // Already built and sitting in memory; there is no page to fetch, and the addon
             // failure path below would only turn "See all" on a generated row into an error.
             is CatalogTarget.DiscoverRow -> publishInMemoryItems(request) {
+                // Row 1's TMDB browser: what it has loaded so far.
+                if (target.rowKey == com.nuvio.app.features.home.DISCOVER_BROWSER_ROW_KEY) {
+                    return@publishInMemoryItems com.nuvio.app.features.search.SearchRepository.discoverUiState.value.items
+                }
                 DiscoverRecommendationsRepository.uiState.value.rows
                     .firstOrNull { it.key == target.rowKey }
                     ?.items
@@ -69,6 +75,7 @@ object CatalogRepository {
     }
 
     fun loadMore() {
+        PerfTelemetry.count("CatalogRepository.loadMore")
         val request = activeRequest ?: return
         val current = _uiState.value
         if (current.isLoading || current.nextSkip == null) return

@@ -35,6 +35,8 @@ internal expect object TmdbSettingsStorage {
     fun saveResolveFilenameCatalogs(enabled: Boolean)
     fun loadHeroImageSource(): String?
     fun saveHeroImageSource(source: String)
+    fun loadShowEnrichment(): String?
+    fun saveShowEnrichment(value: String)
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }

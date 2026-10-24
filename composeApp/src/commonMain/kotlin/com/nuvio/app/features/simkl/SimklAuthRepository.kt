@@ -2,6 +2,7 @@ package com.nuvio.app.features.simkl
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppVersionPolicy
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.httpRequestRaw
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -507,6 +508,7 @@ internal object SimklAuthRepository {
     // ── Account ────────────────────────────────────────────────────────────────
 
     suspend fun refreshUserSettings(settingsActivitiesAt: String? = authState.settingsActivitiesAt): Boolean {
+        PerfTelemetry.count("SimklAuthRepository.refreshUserSettings")
         if (!hasUsableToken()) return false
         val settings = fetchUserSettings(authState) ?: return false
         authState = authState.copy(

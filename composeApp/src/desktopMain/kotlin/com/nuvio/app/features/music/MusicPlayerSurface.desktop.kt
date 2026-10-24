@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.PlayerControlsState
+import com.nuvio.app.features.player.PlayerHeroTrailerState
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
@@ -103,11 +104,13 @@ actual fun MusicPlayerSurface(
         revealed = false
         controller.updateControls(
             PlayerControlsState(
-                heroTrailerMode = true,
-                heroTrailerBackgroundColor = "#000000",
                 isLoading = true,
-                heroTrailerMuted = false,
-                heroTrailerVolume = volume,
+                heroTrailer = PlayerHeroTrailerState(
+                    enabled = true,
+                    backgroundColor = "#000000",
+                    muted = false,
+                    volume = volume,
+                ),
             ),
         )
         log.i { "attach load=$loadId video=${sourceUrl.take(80)} audio=${sourceAudioUrl?.take(60)} from=${startPositionMs}ms visible=$videoVisible" }
@@ -156,7 +159,7 @@ actual fun MusicPlayerSurface(
     LaunchedEffect(controller, loadId) {
         var endedReported = false
         while (true) {
-            val snapshot = controller.snapshot()
+            val snapshot = controller.snapshotOffUiThread()
             if (snapshot.isPlaying && snapshot.positionMs >= 150L) revealed = true
             latestOnSnapshot.value(loadId, snapshot)
             if (snapshot.isEnded && !endedReported) {

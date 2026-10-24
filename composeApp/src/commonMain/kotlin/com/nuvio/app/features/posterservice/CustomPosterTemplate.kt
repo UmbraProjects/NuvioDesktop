@@ -174,26 +174,52 @@ private class CustomPosterIdValues(
     }
 }
 
+/** One `{…}` in a template: where it sits, its lowercased names (pipe list split) and the `?`. */
+private class TemplatePlaceholder(val start: Int, val endExclusive: Int, val names: List<String>, val optional: Boolean)
+
+/**
+ * Templates parsed once rather than per poster. Home fills the same template for every title it
+ * shows — some 4,000 on a 43-row Home, again on every publish while rows load — on the UI thread,
+ * and the regex pass over the template was most of that cost (the launch stall sampler caught it in
+ * Home's first composition). Bounded because RPDB fallback templates are built per title.
+ */
+private val parsedTemplates = java.util.concurrent.ConcurrentHashMap<String, List<TemplatePlaceholder>>()
+private const val PARSED_TEMPLATE_CACHE_LIMIT = 64
+
+private fun parsedTemplate(template: String): List<TemplatePlaceholder> {
+    parsedTemplates[template]?.let { return it }
+    val parsed = CUSTOM_POSTER_PLACEHOLDER.findAll(template).map { match ->
+        TemplatePlaceholder(
+            start = match.range.first,
+            endExclusive = match.range.last + 1,
+            names = match.groupValues[1].lowercase().split('|'),
+            optional = match.groupValues[2].isNotEmpty(),
+        )
+    }.toList()
+    if (parsedTemplates.size >= PARSED_TEMPLATE_CACHE_LIMIT) parsedTemplates.clear()
+    parsedTemplates[template] = parsed
+    return parsed
+}
+
 /** One pass over [template]; null when a strict placeholder has no value (see [customPosterUrl]). */
 private fun fillCustomPosterTemplate(template: String, values: Map<String, String>): String? {
-    val matches = CUSTOM_POSTER_PLACEHOLDER.findAll(template).toList()
+    val placeholders = parsedTemplate(template)
     val hasRawId = values["id"].orEmpty().isNotBlank() &&
-        matches.any { it.groupValues[1].equals("id", ignoreCase = true) }
+        placeholders.any { it.names.singleOrNull() == "id" }
     val out = StringBuilder(template.length + 32)
     var last = 0
-    for (match in matches) {
-        val names = match.groupValues[1].lowercase().split('|')
+    for (placeholder in placeholders) {
+        val names = placeholder.names
         if (names.any { it !in CUSTOM_POSTER_PLACEHOLDER_NAMES }) continue
-        val optional = match.groupValues[2].isNotEmpty()
         val value = names.firstNotNullOfOrNull { name -> values[name]?.takeIf { it.isNotBlank() } }
-        if (value == null && !optional) {
+        if (value == null && !placeholder.optional) {
             val single = names.singleOrNull()
             val waived = single in CUSTOM_POSTER_KEY_NAMES ||
                 (single in CUSTOM_POSTER_PROVIDER_ID_NAMES && hasRawId)
             if (!waived) return null
         }
-        out.append(template, last, match.range.first).append(value.orEmpty())
-        last = match.range.last + 1
+        out.append(template, last, placeholder.start).append(value.orEmpty())
+        last = placeholder.endExclusive
     }
     return out.append(template, last, template.length).toString()
 }
@@ -247,11 +273,10 @@ private fun rpdbFallbackTemplates(template: String, ids: CustomPosterIdValues, c
  * it is soft — optional, or one of several alternatives, so no single member is required.
  */
 private fun placeholderNames(template: String): List<Pair<String, Boolean>> =
-    CUSTOM_POSTER_PLACEHOLDER.findAll(template).flatMap { match ->
-        val names = match.groupValues[1].lowercase().split('|')
-        val soft = match.groupValues[2].isNotEmpty() || names.size > 1
-        names.map { it to soft }
-    }.toList()
+    parsedTemplate(template).flatMap { placeholder ->
+        val soft = placeholder.optional || placeholder.names.size > 1
+        placeholder.names.map { it to soft }
+    }
 
 /**
  * False when [template] uses a placeholder upstream's clients do not understand, so syncing it to

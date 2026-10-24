@@ -8,6 +8,14 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import com.nuvio.app.core.ui.navigationKey
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,13 +101,19 @@ fun PersonDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     var uiState by remember(personId) { mutableStateOf<PersonDetailUiState>(PersonDetailUiState.Loading) }
+    var loadAttempt by remember(personId) { mutableStateOf(0) }
     val watchedUiState by remember {
         WatchedRepository.ensureLoaded()
         WatchedRepository.uiState
     }.collectAsStateWithLifecycle()
     val resolvedAvatarTransitionKey = avatarTransitionKey ?: castAvatarSharedTransitionKey(personId)
+    // Esc / Backspace / gamepad B / a rebound Back key: every other screen maps them itself, and this
+    // one never did, so only the on-screen arrow could leave it. Key events only reach a focused
+    // subtree, so the page takes focus when it opens.
+    val rootFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { rootFocusRequester.requestFocus() } }
 
-    LaunchedEffect(personId) {
+    LaunchedEffect(personId, loadAttempt) {
         uiState = PersonDetailUiState.Loading
         val detail = TmdbMetadataService.fetchPersonDetail(
             personId = personId,
@@ -115,7 +129,19 @@ fun PersonDetailScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(MaterialTheme.colorScheme.background)
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.navigationKey()) {
+                    Key.Escape, Key.Backspace -> {
+                        onBack()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .focusRequester(rootFocusRequester)
+            .focusable(),
     ) {
         when (val state = uiState) {
             is PersonDetailUiState.Loading -> PersonDetailSkeleton(
@@ -130,7 +156,8 @@ fun PersonDetailScreen(
                 message = state.message,
                 onRetry = {
                     uiState = PersonDetailUiState.Loading
-                    // Retry will be triggered by the LaunchedEffect above if we reset
+                    // Resetting the state alone never re-ran the load; the effect is keyed on this.
+                    loadAttempt++
                 },
             )
             is PersonDetailUiState.Success -> PersonDetailContent(

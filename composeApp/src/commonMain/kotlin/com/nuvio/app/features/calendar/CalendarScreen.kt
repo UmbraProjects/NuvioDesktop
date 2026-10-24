@@ -5,35 +5,38 @@ import com.nuvio.app.features.player.appShortcutMatches
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,50 +49,53 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import com.nuvio.app.core.ui.navigationKey
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
-import com.nuvio.app.core.ui.NuvioBottomSheetDivider
 import com.nuvio.app.core.ui.NuvioScreenHeader
+import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.core.ui.nuvioPanelBackdrop
 import com.nuvio.app.features.mdblist.MdbListCalendarRepository
-import com.nuvio.app.features.trakt.TraktCalendarEntry
 import com.nuvio.app.features.simkl.SimklCalendarRepository
 import com.nuvio.app.features.tracking.CalendarSource
 import com.nuvio.app.features.tracking.CalendarSourceRepository
 import com.nuvio.app.features.tracking.TrackingProviderRegistry
 import com.nuvio.app.features.tracking.resolveCalendarSource
+import com.nuvio.app.features.trakt.TraktCalendarEntry
 import com.nuvio.app.features.trakt.TraktCalendarRepository
 import com.nuvio.app.features.trakt.TraktPlatformClock
 import com.nuvio.app.features.trakt.addMonth
 import com.nuvio.app.features.trakt.calendarDaysInMonth
 import com.nuvio.app.features.trakt.dayOfWeekSundayZero
 import com.nuvio.app.features.trakt.epochMsToUtcDate
+import com.nuvio.app.features.watched.WatchedRepository
 import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.calendar_connect_mdblist
@@ -108,16 +114,36 @@ private val WEEKDAY_LABELS = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "
 private val WEEKDAY_FULL = arrayOf(
     "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 )
-private const val MONTH_GRID_MAX_WIDTH_DP = 760
-private const val CELL_ASPECT = 0.68f // poster-ish width/height
-private val CELL_GAP = 4.dp
+private const val MONTH_GRID_MAX_WIDTH_DP = 1040
+private const val CELL_ASPECT = 0.75f // 3:4, as the tracker site draws its days
+private const val GRID_WEEKS = 6
+private val CELL_GAP = 8.dp
+private val PANEL_WIDTH = 380.dp
+private val PANEL_GAP = 32.dp
 
-/** A tapped day, shown in the day-detail (selection) panel. */
-private data class CalendarDaySelection(
-    val dateKey: String,
-    val entries: List<TraktCalendarEntry>,
-)
+/** The locale's first weekday (Monday in most places, Sunday in the US); 0 = Sunday. */
+private val WEEK_START: Int = runCatching {
+    (java.util.Calendar.getInstance().firstDayOfWeek - 1).coerceIn(0, 6)
+}.getOrDefault(1)
 
+/** One day cell of the six-week grid; days of the neighbouring months have a non-zero [monthDelta]. */
+private data class GridDay(val year: Int, val month: Int, val day: Int, val monthDelta: Int) {
+    val key: String get() = dateKey(year, month, day)
+}
+
+/** What the day panel shows per row: one entry, or a show's episodes dropped together. */
+private data class CalendarRowGroup(val entries: List<TraktCalendarEntry>) {
+    val first: TraktCalendarEntry get() = entries.first()
+}
+
+/**
+ * The calendar, after the Nuvio Tracker site's: a fixed six-week grid of posters with the
+ * focused day's line-up in a panel beside it.
+ *
+ * Keyboard (HTPC/remote): arrows move the focused day and the panel follows it; Shift+Left/Right
+ * change month; Home jumps to today; Enter moves into the panel (Up/Down, Enter opens, Left or
+ * Back returns to the grid).
+ */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun CalendarScreen(
@@ -151,8 +177,13 @@ fun CalendarScreen(
                 TraktCalendarRepository.ensureLoaded()
                 TraktCalendarRepository.uiState
             }
+            CalendarSource.NUVIO -> {
+                NuvioCalendarRepository.ensureLoaded()
+                NuvioCalendarRepository.uiState
+            }
         }
     }.collectAsStateWithLifecycle()
+    val watchedState by WatchedRepository.uiState.collectAsStateWithLifecycle()
 
     val screenFocusRequester = remember { FocusRequester() }
     var calendarHasFocus by remember { mutableStateOf(false) }
@@ -178,9 +209,11 @@ fun CalendarScreen(
     val today = remember(uiState.hasLoaded) { epochMsToUtcDate(TraktPlatformClock.nowEpochMs()) }
     val todayKey = remember(today) { dateKey(today.year, today.month, today.day) }
 
-    // Saveable so returning from a media-info screen restores the last viewed month/cell.
+    // Saveable so returning from a media-info screen restores the last viewed month/cell/row.
     var monthOffset by rememberSaveable { mutableIntStateOf(0) }
     var focusedDay by rememberSaveable { mutableIntStateOf(today.day) }
+    var panelFocused by rememberSaveable { mutableStateOf(false) }
+    var focusedRow by rememberSaveable { mutableIntStateOf(0) }
 
     val displayed = remember(today.year, today.month, monthOffset) {
         addMonth(today.year, today.month, monthOffset)
@@ -188,18 +221,56 @@ fun CalendarScreen(
     val displayYear = displayed.first
     val displayMonth = displayed.second
     val totalDays = calendarDaysInMonth(displayYear, displayMonth)
+    val focusedKey = dateKey(displayYear, displayMonth, focusedDay.coerceIn(1, totalDays))
 
-    var selectedDay by remember { mutableStateOf<CalendarDaySelection?>(null) }
-
-    fun goToMonth(delta: Int) {
+    // A show's episodes, and whether each is watched, as rows per day.
+    val isWatched: (TraktCalendarEntry) -> Boolean = remember(watchedState.watchedKeys) {
+        { entry ->
+            if (entry.type == "movie") {
+                WatchedRepository.isWatched(id = entry.contentId, type = "movie")
+            } else {
+                entry.seasonNumber != null && entry.episodeNumber != null &&
+                    WatchedRepository.isWatched(
+                        id = entry.contentId,
+                        type = entry.type,
+                        season = entry.seasonNumber,
+                        episode = entry.episodeNumber,
+                    )
+            }
+        }
+    }
+    val focusedGroups = remember(uiState.entriesByDate, focusedKey) {
+        groupedRows(uiState.entriesByDate[focusedKey].orEmpty())
+    }
+    fun goToMonth(delta: Int, day: Int? = null) {
         val newOffset = monthOffset + delta
         val (y, m) = addMonth(today.year, today.month, newOffset)
         monthOffset = newOffset
-        focusedDay = (if (newOffset == 0) today.day else 1).coerceIn(1, calendarDaysInMonth(y, m))
+        focusedDay = (day ?: if (newOffset == 0) today.day else 1).coerceIn(1, calendarDaysInMonth(y, m))
+        panelFocused = false
+        focusedRow = 0
     }
 
-    fun openDay(key: String, entries: List<TraktCalendarEntry>) {
-        if (entries.isNotEmpty()) selectedDay = CalendarDaySelection(dateKey = key, entries = entries)
+    // Arrows walk the grid as it's drawn: past the first or last day they carry on into the
+    // neighbouring month, whose days are already showing at the edges.
+    fun moveFocus(delta: Int) {
+        val target = focusedDay + delta
+        when {
+            target < 1 -> {
+                val (py, pm) = addMonth(displayYear, displayMonth, -1)
+                goToMonth(-1, calendarDaysInMonth(py, pm) + target)
+            }
+            target > totalDays -> goToMonth(1, target - totalDays)
+            else -> {
+                focusedDay = target
+                focusedRow = 0
+            }
+        }
+    }
+
+    fun open(group: CalendarRowGroup) {
+        navigatingAway = true
+        onItemClick?.invoke(group.first)
     }
 
     // Page months in on demand so the user can go arbitrarily far forward/back.
@@ -211,19 +282,21 @@ fun CalendarScreen(
                 SimklCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
             CalendarSource.TRAKT ->
                 TraktCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
+            CalendarSource.NUVIO ->
+                NuvioCalendarRepository.ensureMonthsAround(displayYear, displayMonth)
         }
     }
 
     // Keyboard-focus keeper. On fast back-navigation the focus node may not be attached yet, or
     // focus gets stolen by the nav transition after a one-shot requestFocus — which left keyboard
-    // nav dead until a mouse click. While no sheet is open and the calendar doesn't hold focus,
-    // keep re-requesting until it sticks (re-runs whenever calendarHasFocus flips).
-    LaunchedEffect(selectedDay, calendarHasFocus, navigatingAway) {
-        if (selectedDay == null && !calendarHasFocus && !navigatingAway) {
+    // nav dead until a mouse click. While the calendar doesn't hold focus, keep re-requesting
+    // until it sticks (re-runs whenever calendarHasFocus flips).
+    LaunchedEffect(calendarHasFocus, navigatingAway) {
+        if (!calendarHasFocus && !navigatingAway) {
             repeat(25) {
                 runCatching { screenFocusRequester.requestFocus() }
                 delay(48)
-                if (calendarHasFocus || selectedDay != null || navigatingAway) return@LaunchedEffect
+                if (calendarHasFocus || navigatingAway) return@LaunchedEffect
             }
         }
     }
@@ -240,7 +313,6 @@ fun CalendarScreen(
             }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                if (selectedDay != null) return@onPreviewKeyEvent false
                 val navKey = event.navigationKey()
                 when {
                     appShortcutMatches(AppShortcutAction.OpenCalendar, event) ||
@@ -250,21 +322,25 @@ fun CalendarScreen(
                     }
                     event.isShiftPressed && navKey == Key.DirectionLeft -> { goToMonth(-1); true }
                     event.isShiftPressed && navKey == Key.DirectionRight -> { goToMonth(1); true }
-                    navKey == Key.DirectionLeft -> {
-                        focusedDay = (focusedDay - 1).coerceAtLeast(1); true
+                    event.key == Key.MoveHome -> { goToMonth(-monthOffset, today.day); true }
+
+                    panelFocused -> when (navKey) {
+                        Key.DirectionUp -> { focusedRow = (focusedRow - 1).coerceAtLeast(0); true }
+                        Key.DirectionDown -> { focusedRow = (focusedRow + 1).coerceAtMost(focusedGroups.lastIndex); true }
+                        Key.Enter, Key.NumPadEnter -> { focusedGroups.getOrNull(focusedRow)?.let(::open); true }
+                        Key.DirectionLeft, Key.Escape, Key.Back, Key.Backspace -> { panelFocused = false; true }
+                        else -> false
                     }
-                    navKey == Key.DirectionRight -> {
-                        focusedDay = (focusedDay + 1).coerceAtMost(totalDays); true
-                    }
-                    navKey == Key.DirectionUp -> {
-                        focusedDay = (focusedDay - 7).coerceAtLeast(1); true
-                    }
-                    navKey == Key.DirectionDown -> {
-                        focusedDay = (focusedDay + 7).coerceAtMost(totalDays); true
-                    }
+
+                    navKey == Key.DirectionLeft -> { moveFocus(-1); true }
+                    navKey == Key.DirectionRight -> { moveFocus(1); true }
+                    navKey == Key.DirectionUp -> { moveFocus(-7); true }
+                    navKey == Key.DirectionDown -> { moveFocus(7); true }
                     navKey == Key.Enter || navKey == Key.NumPadEnter -> {
-                        val key = dateKey(displayYear, displayMonth, focusedDay)
-                        openDay(key, uiState.entriesByDate[key].orEmpty())
+                        if (focusedGroups.isNotEmpty()) {
+                            panelFocused = true
+                            focusedRow = focusedRow.coerceIn(0, focusedGroups.lastIndex)
+                        }
                         true
                     }
                     else -> false
@@ -289,102 +365,170 @@ fun CalendarScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        MonthNavHeader(
-            year = displayYear,
-            month = displayMonth,
-            onPrev = { goToMonth(-1) },
-            onNext = { goToMonth(1) },
-        )
+        // The grid sized to fit, the month controls centred over it, and the day panel right
+        // beside it — the whole group centred in the window, as on the tracker site.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            val navHeight = 44.dp + 16.dp
+            val weekdayHeaderHeight = 24.dp + 4.dp
+            val availWidth = (maxWidth - PANEL_WIDTH - PANEL_GAP).coerceIn(0.dp, MONTH_GRID_MAX_WIDTH_DP.dp)
+            val availHeight = (maxHeight - navHeight - weekdayHeaderHeight).coerceAtLeast(0.dp)
+            val cellWByWidth = (availWidth - CELL_GAP * 6) / 7
+            val cellHByHeight = (availHeight - CELL_GAP * (GRID_WEEKS - 1)) / GRID_WEEKS
+            val cellW = minOf(cellWByWidth, cellHByHeight * CELL_ASPECT).coerceAtLeast(8.dp)
+            val cellH = cellW / CELL_ASPECT
+            val gridWidth = cellW * 7 + CELL_GAP * 6
+            val notConnected = !uiState.isAuthenticated && uiState.hasLoaded
+            val firstLoad = uiState.isLoading && uiState.entriesByDate.isEmpty()
+            val failed = uiState.errorMessage != null && uiState.entriesByDate.isEmpty()
+            val showGrid = !notConnected && !firstLoad && !failed
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
-            when {
-                !uiState.isAuthenticated && uiState.hasLoaded -> {
-                    CalendarMessage(
-                        when (calendarSource) {
-                            CalendarSource.MDBLIST ->
-                                stringResource(Res.string.calendar_connect_mdblist)
-                            CalendarSource.SIMKL ->
-                                "Connect your SIMKL account to see your calendar."
-                            CalendarSource.TRAKT ->
-                                stringResource(Res.string.calendar_connect_trakt)
-                        },
-                    )
-                }
-
-                uiState.isLoading && uiState.entriesByDate.isEmpty() -> {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 80.dp),
-                    )
-                }
-
-                uiState.errorMessage != null && uiState.entriesByDate.isEmpty() -> {
-                    CalendarMessage(stringResource(Res.string.calendar_load_failed))
-                }
-
-                else -> {
-                    MonthCalendar(
+            Row(
+                modifier = Modifier.fillMaxHeight().align(Alignment.TopCenter),
+                horizontalArrangement = Arrangement.spacedBy(PANEL_GAP),
+            ) {
+                Column(modifier = Modifier.width(gridWidth).fillMaxHeight()) {
+                    MonthNavHeader(
                         year = displayYear,
                         month = displayMonth,
+                        isThisMonth = monthOffset == 0,
+                        onPrev = { goToMonth(-1) },
+                        onNext = { goToMonth(1) },
+                        onToday = { goToMonth(-monthOffset, today.day) },
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    when {
+                        notConnected -> CalendarMessage(
+                            when (calendarSource) {
+                                CalendarSource.MDBLIST -> stringResource(Res.string.calendar_connect_mdblist)
+                                CalendarSource.SIMKL -> "Connect your SIMKL account to see your calendar."
+                                CalendarSource.TRAKT -> stringResource(Res.string.calendar_connect_trakt)
+                                // The local calendar needs no account, so never reports one missing.
+                                CalendarSource.NUVIO -> ""
+                            },
+                        )
+                        firstLoad -> Box(
+                            modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
+                            contentAlignment = Alignment.TopCenter,
+                        ) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        }
+                        failed -> CalendarMessage(stringResource(Res.string.calendar_load_failed))
+                        else -> MonthCalendar(
+                            year = displayYear,
+                            month = displayMonth,
+                            cellWidth = cellW,
+                            cellHeight = cellH,
+                            todayKey = todayKey,
+                            focusedKey = focusedKey,
+                            entriesByDate = uiState.entriesByDate,
+                            isWatched = isWatched,
+                            onDayClick = { day ->
+                                if (day.monthDelta != 0) {
+                                    goToMonth(day.monthDelta, day.day)
+                                } else {
+                                    focusedDay = day.day
+                                    focusedRow = 0
+                                    panelFocused = false
+                                }
+                            },
+                        )
+                    }
+                }
+                if (showGrid) {
+                    DayPanel(
+                        dayKey = focusedKey,
                         todayKey = todayKey,
-                        focusedDay = focusedDay,
-                        entriesByDate = uiState.entriesByDate,
-                        onDaySelected = ::openDay,
+                        groups = focusedGroups,
+                        focusedRow = focusedRow.takeIf { panelFocused },
+                        isWatched = isWatched,
+                        onOpen = ::open,
+                        // Its heading lines up with the month controls.
+                        modifier = Modifier.width(PANEL_WIDTH).fillMaxHeight().padding(top = 4.dp),
                     )
                 }
             }
         }
     }
-
-    selectedDay?.let { selection ->
-        CalendarDayDialog(
-            selection = selection,
-            onDismiss = { selectedDay = null },
-            onItemClick = { entry ->
-                navigatingAway = true
-                onItemClick?.invoke(entry)
-            },
-        )
-    }
 }
 
+/** Previous / month and year / next, centred over the grid; Today at the grid's right edge when away from it. */
 @Composable
 private fun MonthNavHeader(
     year: Int,
     month: Int,
+    isThisMonth: Boolean,
     onPrev: () -> Unit,
     onNext: () -> Unit,
+    onToday: () -> Unit,
 ) {
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+    Box(modifier = Modifier.fillMaxWidth().height(44.dp)) {
         Row(
-            modifier = Modifier.widthIn(max = MONTH_GRID_MAX_WIDTH_DP.dp).fillMaxWidth(),
+            modifier = Modifier.align(Alignment.Center),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            IconButton(onClick = onPrev) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-                    contentDescription = stringResource(Res.string.calendar_previous_month),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            StepButton(
+                icon = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                description = stringResource(Res.string.calendar_previous_month),
+                onClick = onPrev,
+            )
             Text(
                 text = "${MONTH_NAMES[month - 1]} $year",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                modifier = Modifier.width(220.dp),
             )
-            IconButton(onClick = onNext) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = stringResource(Res.string.calendar_next_month),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            StepButton(
+                icon = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                description = stringResource(Res.string.calendar_next_month),
+                onClick = onNext,
+            )
         }
+        if (!isThisMonth) {
+            PillButton(text = "Today", onClick = onToday, modifier = Modifier.align(Alignment.CenterEnd))
+        }
+    }
+}
+
+@Composable
+private fun StepButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.06f))
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(imageVector = icon, contentDescription = description, tint = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@Composable
+private fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.06f))
+            .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand).clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
@@ -404,228 +548,230 @@ private fun CalendarMessage(text: String) {
 }
 
 /**
- * Lays the whole month out to fit the available area (no scrolling). Cell size is derived
- * from both the available width and height so the last week never gets cut off, while keeping
- * a portrait poster shape.
+ * Always six weeks, leading and trailing days of the neighbouring months included, so the grid
+ * (and everything around it) stays the same size from month to month. The caller sizes the cells
+ * so all six weeks fit without scrolling, at the tracker's 3:4 day shape.
  */
 @Composable
 private fun MonthCalendar(
     year: Int,
     month: Int,
+    cellWidth: Dp,
+    cellHeight: Dp,
     todayKey: String,
-    focusedDay: Int,
+    focusedKey: String,
     entriesByDate: Map<String, List<TraktCalendarEntry>>,
-    onDaySelected: (String, List<TraktCalendarEntry>) -> Unit,
+    isWatched: (TraktCalendarEntry) -> Boolean,
+    onDayClick: (GridDay) -> Unit,
 ) {
-    BoxWithConstraints(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter,
-    ) {
-        val weekdayHeaderHeight = 22.dp
-        val leadingBlanks = dayOfWeekSundayZero(year, month, 1)
-        val totalDays = calendarDaysInMonth(year, month)
-        val weeks = (leadingBlanks + totalDays + 6) / 7
-
-        val availWidth = maxWidth.coerceAtMost(MONTH_GRID_MAX_WIDTH_DP.dp)
-        val availHeight = (maxHeight - weekdayHeaderHeight - 8.dp).coerceAtLeast(0.dp)
-        val cellWByWidth = (availWidth - CELL_GAP * 6) / 7
-        val cellHByHeight = (availHeight - CELL_GAP * (weeks - 1)) / weeks
-        val cellW = minOf(cellWByWidth, cellHByHeight * CELL_ASPECT).coerceAtLeast(8.dp)
-        val cellH = cellW / CELL_ASPECT
-        val gridWidth = cellW * 7 + CELL_GAP * 6
-
-        Column(modifier = Modifier.width(gridWidth)) {
+    val days = remember(year, month) { sixWeeks(year, month) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(24.dp),
+            horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
+        ) {
+            for (i in 0 until 7) {
+                Text(
+                    text = WEEKDAY_LABELS[(WEEK_START + i) % 7],
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(cellWidth),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        for (week in 0 until GRID_WEEKS) {
             Row(
-                modifier = Modifier.fillMaxWidth().height(weekdayHeaderHeight),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
             ) {
-                WEEKDAY_LABELS.forEach { label ->
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.width(cellW),
+                for (dow in 0 until 7) {
+                    val day = days[week * 7 + dow]
+                    val key = day.key
+                    val entries = entriesByDate[key].orEmpty()
+                    DayCell(
+                        day = day,
+                        width = cellWidth,
+                        height = cellHeight,
+                        isToday = key == todayKey,
+                        isPast = key < todayKey,
+                        isFocused = key == focusedKey,
+                        entries = entries,
+                        allWatched = entries.isNotEmpty() && entries.all(isWatched),
+                        onClick = { onDayClick(day) },
                     )
                 }
             }
-
-            for (week in 0 until weeks) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
-                ) {
-                    for (dow in 0 until 7) {
-                        val cellIndex = week * 7 + dow
-                        val dayNumber = cellIndex - leadingBlanks + 1
-                        Box(modifier = Modifier.width(cellW)) {
-                            if (dayNumber in 1..totalDays) {
-                                val key = dateKey(year, month, dayNumber)
-                                val entries = entriesByDate[key].orEmpty()
-                                DayCell(
-                                    dayNumber = dayNumber,
-                                    cellHeight = cellH,
-                                    isToday = key == todayKey,
-                                    isFocused = dayNumber == focusedDay,
-                                    entries = entries,
-                                    onClick = if (entries.isNotEmpty()) {
-                                        { onDaySelected(key, entries) }
-                                    } else {
-                                        null
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-                if (week < weeks - 1) Spacer(modifier = Modifier.height(CELL_GAP))
-            }
+            if (week < GRID_WEEKS - 1) Spacer(modifier = Modifier.height(CELL_GAP))
         }
     }
 }
 
+private val PAST_POSTER_FILTER = ColorFilter.colorMatrix(
+    ColorMatrix().apply {
+        setToSaturation(0.75f)
+        timesAssign(ColorMatrix(floatArrayOf(
+            0.8f, 0f, 0f, 0f, 0f,
+            0f, 0.8f, 0f, 0f, 0f,
+            0f, 0f, 0.8f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f,
+        )))
+    },
+)
+
 @Composable
 private fun DayCell(
-    dayNumber: Int,
-    cellHeight: Dp,
+    day: GridDay,
+    width: Dp,
+    height: Dp,
     isToday: Boolean,
+    isPast: Boolean,
     isFocused: Boolean,
     entries: List<TraktCalendarEntry>,
-    onClick: (() -> Unit)?,
+    allWatched: Boolean,
+    onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(8.dp)
-    val primary = MaterialTheme.colorScheme.primary
-    val firstEntry = entries.firstOrNull()
-
-    // Distinguish "another episode of the same show" from "another show".
-    val displayedShowId = firstEntry?.contentId
-    val sameShowEpisodeCount = if (displayedShowId == null) {
-        0
-    } else {
-        entries.count { it.contentId == displayedShowId }
-    }
-    val otherShowCount = entries.map { it.contentId }.distinct().size - 1
-
-    val borderModifier = when {
+    val shape = RoundedCornerShape(10.dp)
+    val first = entries.firstOrNull()
+    val titles = entries.map { it.contentId }.distinct().size
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    val outline = when {
         isFocused -> Modifier.border(3.dp, Color.White, shape)
-        isToday -> Modifier.border(2.dp, primary, shape)
+        isToday -> Modifier.border(2.dp, MaterialTheme.nuvio.colors.accent, shape)
+        hovered -> Modifier.border(2.dp, Color.White.copy(alpha = 0.35f), shape)
         else -> Modifier
     }
+    val compact = width < 70.dp
 
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(cellHeight)
+            .size(width, height)
+            .alpha(if (day.monthDelta != 0) 0.4f else 1f)
             .clip(shape)
             .background(
-                if (firstEntry == null) {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
+                if (first == null) Color.White.copy(alpha = 0.035f)
+                else MaterialTheme.colorScheme.surfaceVariant,
             )
-            .then(borderModifier)
-            .then(
-                if (onClick != null) Modifier.clickable { onClick() } else Modifier,
-            ),
+            .then(outline)
+            .hoverable(hover)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(onClick = onClick),
     ) {
-        if (firstEntry?.posterUrl != null) {
+        if (first?.posterUrl != null) {
             NuvioAsyncImage(
-                model = firstEntry.posterUrl,
-                contentDescription = firstEntry.title,
+                model = first.posterUrl,
+                contentDescription = first.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                colorFilter = if (isPast) PAST_POSTER_FILTER else null,
             )
-            // Light scrim behind the day number so it stays readable over the poster.
+        }
+        if (first != null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.55f),
-                            0.35f to Color.Transparent,
+                            0f to Color.Black.copy(alpha = 0.6f),
+                            0.38f to Color.Transparent,
                         ),
                     ),
             )
         }
 
-        // Day number, top-left.
         Text(
-            text = dayNumber.toString(),
-            style = MaterialTheme.typography.labelMedium,
+            text = day.day.toString(),
+            fontSize = if (compact) 12.sp else 14.sp,
             fontWeight = FontWeight.Bold,
-            color = if (firstEntry != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
+            color = if (first != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.TopStart).padding(start = if (compact) 5.dp else 9.dp, top = if (compact) 4.dp else 6.dp),
         )
 
-        // Badges, top-right. Blue = other shows; white (below it) = extra episodes of this show.
-        Column(
-            modifier = Modifier.align(Alignment.TopEnd).padding(3.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            if (otherShowCount > 0) {
-                CalendarBadge(
-                    text = "+$otherShowCount",
-                    background = primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                )
+        if (allWatched && !compact) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xEB16161A)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("✓", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.nuvio.colors.accent)
             }
-            if (sameShowEpisodeCount > 1) {
-                // White (vs blue) is what tells you these are extra episodes of the same show.
-                CalendarBadge(
-                    text = "+${sameShowEpisodeCount - 1}",
-                    background = Color.White,
-                    contentColor = Color.Black,
+        }
+
+        if (titles > 1) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(if (compact) 3.dp else 6.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.nuvio.colors.background.copy(alpha = 0.82f))
+                    .padding(horizontal = if (compact) 5.dp else 7.dp, vertical = if (compact) 1.dp else 2.dp),
+            ) {
+                Text(
+                    text = "+${titles - 1}",
+                    fontSize = if (compact) 10.sp else 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
                 )
             }
         }
     }
 }
 
+/** The focused day's line-up, beside the grid. */
 @Composable
-private fun CalendarBadge(
-    text: String,
-    background: Color,
-    contentColor: Color,
+private fun DayPanel(
+    dayKey: String,
+    todayKey: String,
+    groups: List<CalendarRowGroup>,
+    focusedRow: Int?,
+    isWatched: (TraktCalendarEntry) -> Boolean,
+    onOpen: (CalendarRowGroup) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(background)
-            .padding(horizontal = 4.dp, vertical = 1.dp),
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = contentColor,
-            maxLines = 1,
-        )
+    val listState = rememberLazyListState()
+    LaunchedEffect(dayKey) { listState.scrollToItem(0) }
+    KeepRowInView(listState, focusedRow)
+    Column(modifier = modifier) {
+        DayHeading(dayKey, todayKey)
+        if (groups.isEmpty()) {
+            Text(
+                text = "Nothing airing.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        } else {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
+                itemsIndexed(groups, key = { _, g -> g.rowKey() }) { index, group ->
+                    EntryRow(
+                        group = group,
+                        isFocused = index == focusedRow,
+                        isWatched = isWatched,
+                        onClick = { onOpen(group) },
+                    )
+                }
+            }
+        }
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
+/** Keeps the keyboard-focused row in view, scrolling by the minimal amount. */
 @Composable
-private fun CalendarDayDialog(
-    selection: CalendarDaySelection,
-    onDismiss: () -> Unit,
-    onItemClick: (TraktCalendarEntry) -> Unit,
-) {
-    val focusRequester = remember { FocusRequester() }
-    val listState = rememberLazyListState()
-    var focusedRow by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        runCatching { focusRequester.requestFocus() }
-    }
-    // Keep the keyboard-focused row in view, scrolling by the minimal amount (reveal from the
-    // top or bottom edge) rather than always jumping it to the top on every keypress.
-    LaunchedEffect(focusedRow) {
+private fun KeepRowInView(listState: LazyListState, index: Int?) {
+    LaunchedEffect(index) {
+        val target = index ?: return@LaunchedEffect
         val info = listState.layoutInfo
-        val visible = info.visibleItemsInfo.firstOrNull { it.index == focusedRow }
+        val visible = info.visibleItemsInfo.firstOrNull { it.index == target }
         if (visible == null) {
-            listState.animateScrollToItem(focusedRow.coerceAtLeast(0))
+            listState.animateScrollToItem(target.coerceAtLeast(0))
         } else {
             val above = visible.offset - info.viewportStartOffset
             val below = (visible.offset + visible.size) - info.viewportEndOffset
@@ -635,67 +781,130 @@ private fun CalendarDayDialog(
             }
         }
     }
+}
 
-    fun confirm(index: Int) {
-        selection.entries.getOrNull(index)?.let { onItemClick(it) }
-        onDismiss()
+@Composable
+private fun DayHeading(dayKey: String, todayKey: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = dayHeading(dayKey, todayKey),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+        )
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+        Spacer(Modifier.height(6.dp))
     }
+}
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+@Composable
+private fun EntryRow(
+    group: CalendarRowGroup,
+    isFocused: Boolean,
+    isWatched: (TraktCalendarEntry) -> Boolean,
+    onClick: () -> Unit,
+) {
+    val e = group.first
+    val last = group.entries.last()
+    val many = group.entries.size > 1
+    val isMovie = e.type == "movie"
+    val time = calendarAirTimeLabel(e.airAt).orEmpty()
+    val what = when {
+        isMovie -> "Film release"
+        many -> "S${e.seasonNumber} · E${e.episodeNumber}–E${last.episodeNumber} · ${group.entries.size} episodes"
+        e.seasonNumber != null && e.episodeNumber != null ->
+            "S${e.seasonNumber} · E${e.episodeNumber}" + (e.episodeTitle?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
+        else -> null
+    }
+    val watched = group.entries.all(isWatched)
+    val finale = group.entries.any { it.isFinale }
+    val premiere = !isMovie && e.episodeNumber == 1
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    val accent = MaterialTheme.nuvio.colors.accent
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                when {
+                    isFocused -> accent.copy(alpha = 0.18f)
+                    hovered -> Color.White.copy(alpha = 0.05f)
+                    else -> Color.Transparent
+                },
+            )
+            .then(if (isFocused) Modifier.border(2.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(14.dp)) else Modifier)
+            .hoverable(hover)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
+        Text(
+            text = time,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.width(48.dp),
+        )
+        Box(
             modifier = Modifier
-                .widthIn(max = 520.dp)
-                .fillMaxWidth(0.92f)
-                .focusRequester(focusRequester)
-                .focusable()
-                .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when (event.navigationKey()) {
-                        Key.DirectionUp -> {
-                            focusedRow = (focusedRow - 1).coerceAtLeast(0); true
-                        }
-                        Key.DirectionDown -> {
-                            focusedRow = (focusedRow + 1).coerceAtMost(selection.entries.lastIndex); true
-                        }
-                        Key.Enter, Key.NumPadEnter -> {
-                            confirm(focusedRow); true
-                        }
-                        Key.Escape, Key.Back, Key.Backspace -> {
-                            onDismiss(); true
-                        }
-                        else -> false
-                    }
-                }
-                .nuvioPanelBackdrop(
-                    MaterialTheme.nuvio.colors.surfaceSheet,
-                    RoundedCornerShape(16.dp),
-                ),
-            shape = RoundedCornerShape(16.dp),
-            color = Color.Transparent,
+                .size(width = 46.dp, height = 69.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
-            Column {
-                Text(
-                    text = formatDayHeader(selection.dateKey),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            if (e.posterUrl != null) {
+                NuvioAsyncImage(
+                    model = e.posterUrl,
+                    contentDescription = e.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
                 )
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 480.dp),
+            }
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = e.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            what?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (premiere || finale || watched) {
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    itemsIndexed(selection.entries) { index, entry ->
-                        if (index > 0) NuvioBottomSheetDivider()
-                        CalendarDayRow(
-                            entry = entry,
-                            isFocused = index == focusedRow,
-                            onClick = { confirm(index) },
+                    if (premiere) {
+                        CalendarChip(
+                            text = if (e.seasonNumber == 1) "Series premiere" else "Season premiere",
+                            background = accent.copy(alpha = 0.28f),
+                            content = Color.White,
+                        )
+                    }
+                    if (finale) {
+                        CalendarChip(text = "Finale", background = Color.White.copy(alpha = 0.1f), content = Color(0xFFD4D4D8))
+                    }
+                    if (watched) {
+                        Text(
+                            text = "✓ Watched",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = accent,
                         )
                     }
                 }
@@ -705,72 +914,87 @@ private fun CalendarDayDialog(
 }
 
 @Composable
-private fun CalendarDayRow(
-    entry: TraktCalendarEntry,
-    isFocused: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
+private fun CalendarChip(text: String, background: Color, content: Color) {
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                if (isFocused) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent,
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clip(RoundedCornerShape(8.dp))
+            .background(background)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(width = 48.dp, height = 72.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        ) {
-            if (entry.posterUrl != null) {
-                NuvioAsyncImage(
-                    model = entry.posterUrl,
-                    contentDescription = entry.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
+        Text(text = text, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = content, maxLines = 1)
+    }
+}
+
+/** A show's episodes on one day (a whole season dropped at once) as one row, in airing order. */
+private fun groupedRows(entries: List<TraktCalendarEntry>): List<CalendarRowGroup> {
+    val out = mutableListOf<MutableList<TraktCalendarEntry>>()
+    val at = mutableMapOf<String, MutableList<TraktCalendarEntry>>()
+    entries
+        // A source can list the same episode twice; one row each, and unique lazy keys.
+        .distinctBy { it.rowKeyOf() }
+        .sortedWith(compareBy<TraktCalendarEntry>({ it.airAt ?: "~" }, { it.title }, { it.seasonNumber ?: 0 }, { it.episodeNumber ?: 0 }))
+        .forEach { e ->
+            if (e.type == "movie" || e.seasonNumber == null) {
+                out += mutableListOf(e)
+                return@forEach
             }
+            val k = "${e.contentId}|${e.seasonNumber}"
+            at[k]?.add(e) ?: mutableListOf(e).also { at[k] = it; out += it }
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = entry.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            entrySubtitle(entry)?.let { subtitle ->
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+    return out.map { group -> CalendarRowGroup(group.sortedBy { it.episodeNumber ?: 0 }) }
+}
+
+private fun TraktCalendarEntry.rowKeyOf(): String = "$contentId|$type|$seasonNumber|$episodeNumber"
+
+private fun CalendarRowGroup.rowKey(): String = first.rowKeyOf()
+
+/** The days of the six-week grid around [year]/[month], starting on the locale's first weekday. */
+private fun sixWeeks(year: Int, month: Int): List<GridDay> {
+    val lead = (dayOfWeekSundayZero(year, month, 1) - WEEK_START + 7) % 7
+    val (py, pm) = addMonth(year, month, -1)
+    val (ny, nm) = addMonth(year, month, 1)
+    val prevDays = calendarDaysInMonth(py, pm)
+    val days = calendarDaysInMonth(year, month)
+    return List(GRID_WEEKS * 7) { i ->
+        val n = i - lead + 1
+        when {
+            n < 1 -> GridDay(py, pm, prevDays + n, -1)
+            n > days -> GridDay(ny, nm, n - days, 1)
+            else -> GridDay(year, month, n, 0)
         }
     }
 }
 
-private fun entrySubtitle(entry: TraktCalendarEntry): String? {
-    val season = entry.seasonNumber ?: return null
-    val episode = entry.episodeNumber ?: return null
-    val code = "S${season}E$episode"
-    return entry.episodeTitle?.takeIf { it.isNotBlank() }?.let { "$code · $it" } ?: code
+/** "Today · Monday 12 October", "Tomorrow · …", "Yesterday · …", else the date. */
+private fun dayHeading(key: String, todayKey: String): String {
+    val year = key.substring(0, 4).toIntOrNull() ?: return key
+    val month = key.substring(5, 7).toIntOrNull() ?: return key
+    val day = key.substring(8, 10).toIntOrNull() ?: return key
+    val date = "${WEEKDAY_FULL[dayOfWeekSundayZero(year, month, day)]} $day ${MONTH_NAMES[month - 1]}"
+    val diff = runCatching {
+        java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(todayKey), java.time.LocalDate.parse(key))
+    }.getOrNull()
+    return when (diff) {
+        0L -> "Today · $date"
+        1L -> "Tomorrow · $date"
+        -1L -> "Yesterday · $date"
+        else -> date
+    }
 }
 
-private fun formatDayHeader(dateKey: String): String {
-    val year = dateKey.substring(0, 4).toIntOrNull() ?: return dateKey
-    val month = dateKey.substring(5, 7).toIntOrNull() ?: return dateKey
-    val day = dateKey.substring(8, 10).toIntOrNull() ?: return dateKey
-    val dow = dayOfWeekSundayZero(year, month, day)
-    return "${WEEKDAY_FULL[dow]}, ${MONTH_NAMES[month - 1]} $day"
+/**
+ * The local clock time of an airing ("21:00"), or null when the source gave no real time —
+ * a bare date, or a midnight placeholder in the source's own offset.
+ */
+internal fun calendarAirTimeLabel(airAt: String?): String? {
+    val raw = airAt?.trim()?.takeIf { 'T' in it } ?: return null
+    if (raw.substringAfter('T').startsWith("00:00:00")) return null
+    val instant = runCatching { java.time.OffsetDateTime.parse(raw).toInstant() }
+        .recoverCatching { java.time.Instant.parse(raw) }
+        .getOrNull() ?: return null
+    return java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+        .withZone(java.time.ZoneId.systemDefault())
+        .format(instant)
 }
 
 private fun dateKey(year: Int, month: Int, day: Int): String {

@@ -18,6 +18,7 @@ import kotlin.math.roundToInt
 class IgdbClient : AutoCloseable {
     private val http = HttpClient(CIO) {
         expectSuccess = false
+        install(com.nuvio.app.core.perf.perfTelemetryPlugin("igdb"))
     }
     private val json = Json { ignoreUnknownKeys = true }
     private var token: CachedToken? = null

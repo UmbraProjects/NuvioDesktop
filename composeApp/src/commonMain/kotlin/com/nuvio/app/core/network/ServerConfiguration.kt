@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 data class ServerCapabilities(
     val emailPasswordAuth: Boolean,
     val tvLogin: Boolean,
+    val watchParty: Boolean = false,
 )
 
 data class ServerConfiguration(
@@ -73,6 +74,7 @@ internal fun officialConfiguration() = ServerConfiguration(
     capabilities = ServerCapabilities(
         emailPasswordAuth = true,
         tvLogin = true,
+        watchParty = true,
     ),
     isCustom = false,
     // Upstream also carries a SupabaseConfig.FALLBACK_URL here. This fork's build.gradle.kts

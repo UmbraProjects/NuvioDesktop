@@ -7,20 +7,25 @@ package com.nuvio.app.core.build
  * layer does not need to know it exists.
  */
 object StartupReadySignal {
-    @Volatile
-    private var listener: (() -> Unit)? = null
+    // Several listeners: the class preloader's learning run and deferred startup work both wait here.
+    private val listeners = mutableListOf<() -> Unit>()
 
-    @Volatile
     private var fired = false
 
     fun onHomeReady(block: () -> Unit) {
-        if (fired) block() else listener = block
+        val runNow = synchronized(listeners) {
+            if (!fired) listeners += block
+            fired
+        }
+        if (runNow) block()
     }
 
     fun notifyHomeReady() {
-        if (fired) return
-        fired = true
-        listener?.invoke()
-        listener = null
+        val toRun = synchronized(listeners) {
+            if (fired) return
+            fired = true
+            listeners.toList().also { listeners.clear() }
+        }
+        toRun.forEach { it() }
     }
 }

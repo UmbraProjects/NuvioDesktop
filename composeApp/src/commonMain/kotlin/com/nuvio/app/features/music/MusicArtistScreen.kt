@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.library.MusicAddToLibraryButton
 
 /** An artist: their picture and name, and the albums YouTube Music lists for them. A tap opens the album. */
 @Composable
@@ -75,13 +76,16 @@ private fun ArtistContent(artist: MusicArtist, onAlbumClick: (String) -> Unit) {
             ) {
                 MusicCover(artist.thumbnailUrl, artist.name, size = 112.dp, circle = true)
                 Spacer(Modifier.width(16.dp))
-                Text(
-                    text = artist.name,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = colors.textPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = artist.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = colors.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    MusicAddToLibraryButton(artistId = artist.browseId)
+                }
             }
         }
         item {

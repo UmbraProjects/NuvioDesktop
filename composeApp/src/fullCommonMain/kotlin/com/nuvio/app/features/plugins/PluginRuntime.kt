@@ -10,11 +10,12 @@ import com.fleeksoft.ksoup.nodes.Document
 import com.fleeksoft.ksoup.nodes.Element
 import com.fleeksoft.ksoup.select.Elements
 import com.nuvio.app.features.addons.httpRequestRaw
+import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.newSingleThreadContext
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -64,6 +65,13 @@ private const val PLAYBACK_STARTUP_HOLD_CAP_MS = 30_000L
 // Caps the JS heap of a single scraper so a runaway allocation surfaces as a catchable JS error
 // instead of exhausting the process. Generous: response bodies are already capped at 1 MB each.
 private const val PLUGIN_MEMORY_LIMIT_BYTES = 128L * 1024 * 1024
+
+// Each runtime's thread stack, and QuickJS's recursion limit inside it. The gap leaves room for
+// the JNI / Kotlin frames below the JS entry point and for host calls made from deep in JS, so
+// QuickJS always throws "stack overflow" before the thread actually runs out. Reserved, not
+// committed: an idle scraper costs only the pages it touched.
+private const val PLUGIN_THREAD_STACK_BYTES = 16L * 1024 * 1024
+private const val PLUGIN_JS_MAX_STACK_BYTES = 4L * 1024 * 1024
 
 // Each scraper gets its own QuickJS runtime, and separate runtimes are independent native state, so
 // running them at the same time is fine — the access violations that forced this to 1 came from
@@ -125,7 +133,11 @@ internal object PluginRuntime {
     // updated concurrently, and [sentinelRuntime] is never closed so the count never reaches zero
     // and the cache-clearing branch is unreachable. Evaluation itself stays concurrent.
     private val runtimeLifecycleLock = Any()
-    private val sentinelRuntime: QuickJs by lazy { QuickJs.create(jobDispatcher = pluginDispatcher) }
+    // The first create loads the native library, so the patched one is selected here.
+    private val sentinelRuntime: QuickJs by lazy {
+        QuickJsNativeLibrary.select()
+        QuickJs.create(jobDispatcher = pluginDispatcher)
+    }
 
     /**
      * The library's `quickJs(dispatcher) { }` DSL with the runtime's creation and close serialised
@@ -207,13 +219,21 @@ internal object PluginRuntime {
      * thread, so throughput is unchanged. The thread costs about a tenth of a millisecond to start
      * against a scraper that then spends seconds on the network, and [runtimeSlots] already bounds
      * how many can exist at once.
+     *
+     * The thread gets an explicit [PLUGIN_THREAD_STACK_BYTES] stack, with QuickJS's own limit
+     * ([PLUGIN_JS_MAX_STACK_BYTES]) well inside it. With the platform default the two were about
+     * the same size, so deep recursion in a big plugin (CinemaCity parsing a full sitemap) could
+     * run off the real stack before QuickJS noticed. The JVM build survived that by luck; the
+     * native build aborted the whole app (2026-10-17). Now it is a JS `InternalError` either way.
      */
-    @OptIn(DelicateCoroutinesApi::class)
     private suspend fun <T> withConfinedRuntimeThread(
         scraperId: String,
         block: suspend (CoroutineDispatcher) -> T,
     ): T {
-        val confined = newSingleThreadContext("plugin-runtime-$scraperId")
+        val executor = Executors.newSingleThreadExecutor { task ->
+            Thread(null, task, "plugin-runtime-$scraperId", PLUGIN_THREAD_STACK_BYTES).apply { isDaemon = true }
+        }
+        val confined = executor.asCoroutineDispatcher()
         return try {
             withContext(confined) { block(confined) }
         } finally {
@@ -229,13 +249,15 @@ internal object PluginRuntime {
             withConfinedRuntimeThread(scraperId) { confined ->
                 withTimeout(PLUGIN_TIMEOUT_MS) {
                     var layoutJson: String? = null
+                    val timers = PluginTimers()
                     withPluginRuntime(confined) {
                         applyPluginRuntimeLimits()
                         // onSettings implementations fetch remote option lists and parse them, so
                         // they need the same host API surface the scraper entry point gets.
-                        registerPluginBindings(scraperId, PluginDomCache())
+                        registerPluginBindings(scraperId, PluginDomCache(), timers)
                         function("__capture_settings_result") { args ->
                             layoutJson = args.getOrNull(0)?.toString()
+                            timers.cancelAll()
                             null
                         }
 
@@ -273,6 +295,7 @@ internal object PluginRuntime {
         runtimeDispatcher: CoroutineDispatcher,
     ): List<PluginRuntimeResult> {
         val dom = PluginDomCache()
+        val timers = PluginTimers()
         // Null until the plugin actually reports, so "returned no streams" and "never reported at
         // all" stay distinguishable. They used to share the initial "[]", which made a dropped
         // result completely silent — `parseJsonResults` only complains when the payload is
@@ -285,10 +308,15 @@ internal object PluginRuntime {
         try {
             withPluginRuntime(runtimeDispatcher) {
                 applyPluginRuntimeLimits()
-                registerPluginBindings(scraperId, dom)
+                registerPluginBindings(scraperId, dom, timers)
 
                 function("__capture_result") { args ->
                     resultJson = args.getOrNull(0)?.toString() ?: "[]"
+                    // The run is over once the result is in. evaluate() waits for every pending
+                    // async job, so a leftover timer (the losing side of a Promise.race timeout,
+                    // an interval nobody cleared) would otherwise hold the runtime slot until it
+                    // fired.
+                    timers.cancelAll()
                     null
                 }
 
@@ -336,6 +364,7 @@ internal object PluginRuntime {
 
     private fun QuickJs.applyPluginRuntimeLimits() {
         memoryLimit = PLUGIN_MEMORY_LIMIT_BYTES
+        maxStackSize = PLUGIN_JS_MAX_STACK_BYTES
         evaluationTimeoutMillis = PLUGIN_JS_EXECUTION_TIMEOUT_MS
     }
 
@@ -345,11 +374,13 @@ internal object PluginRuntime {
         (function() {
             $code
         })();
-    """.trimIndent()
+    """.trimIndent().withUndefinedCompletion()
 
     /** Everything the polyfill in [buildPolyfillCode] expects to find on the host side. */
-    private fun QuickJs.registerPluginBindings(scraperId: String, dom: PluginDomCache) {
-        define("console") {
+    private fun QuickJs.registerPluginBindings(scraperId: String, dom: PluginDomCache, timers: PluginTimers) {
+        // Not `console` itself: a host-defined global is locked, and the polyfill wraps this one
+        // in the `console` plugins see so logged objects arrive as text.
+        define("__host_console") {
             function("log") { args ->
                 log.d { "Plugin:$scraperId ${args.joinToString(" ") { it?.toString() ?: "null" }}" }
                 null
@@ -399,6 +430,23 @@ internal object PluginRuntime {
                 if (host != null && reason != null) PluginHostFailureCache.recordFailure(host, reason)
                 failedFetchResult(url, error.message ?: "Fetch failed")
             }
+        }
+
+        // Backs setTimeout/setInterval in the polyfill. Resolves true when the delay elapsed and
+        // false when the timer was cleared first, so a cleared timer releases evaluate() at once
+        // instead of keeping it waiting out the full delay.
+        asyncFunction("__native_timer_wait") { args ->
+            val id = (args.getOrNull(0) as? Number)?.toInt() ?: return@asyncFunction false
+            val delayMs = (args.getOrNull(1) as? Number)?.toDouble()
+                ?.takeIf { it.isFinite() && it > 0 }
+                ?.toLong()
+                ?: 0L
+            timers.await(id, delayMs)
+        }
+
+        function("__native_timer_cancel") { args ->
+            (args.getOrNull(0) as? Number)?.toInt()?.let(timers::cancel)
+            null
         }
 
         function("__crypto_digest_hex") { args ->
@@ -568,6 +616,42 @@ internal object PluginRuntime {
 
         private fun encodeIds(ids: List<String>): String =
             "[" + ids.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" } + "]"
+    }
+
+    /**
+     * Pending timer waits for one QuickJS runtime. Like [PluginDomCache] it needs no locking: the
+     * bindings that touch it run on that runtime's own confined thread. A timer is cancelled by
+     * completing its signal; [cancelAll] also refuses every later wait, so an interval that
+     * re-arms itself cannot keep the run alive after it finished.
+     */
+    private class PluginTimers {
+        private val pending = mutableMapOf<Int, CompletableDeferred<Unit>>()
+        // clearTimeout can run before the async wait binding has started and registered itself.
+        private val cancelledEarly = mutableSetOf<Int>()
+        private var disposed = false
+
+        suspend fun await(id: Int, delayMs: Long): Boolean {
+            if (disposed || cancelledEarly.remove(id)) return false
+            val signal = CompletableDeferred<Unit>()
+            pending[id] = signal
+            return try {
+                withTimeoutOrNull(delayMs) { signal.await() } == null && !disposed
+            } finally {
+                pending.remove(id)
+            }
+        }
+
+        fun cancel(id: Int) {
+            val signal = pending.remove(id)
+            if (signal != null) signal.complete(Unit) else if (!disposed) cancelledEarly += id
+        }
+
+        fun cancelAll() {
+            disposed = true
+            pending.values.forEach { it.complete(Unit) }
+            pending.clear()
+            cancelledEarly.clear()
+        }
     }
 
     private fun failedFetchResult(url: String, statusText: String): String = JsonObject(
@@ -778,7 +862,19 @@ internal object PluginRuntime {
     private fun buildPolyfillPrelude(scraperId: String, settingsJson: String): String = """
         globalThis.SCRAPER_ID = "$scraperId";
         globalThis.SCRAPER_SETTINGS = $settingsJson;
-    """.trimIndent()
+    """.trimIndent().withUndefinedCompletion()
+
+    /**
+     * Ends a script whose value nobody reads with `void 0`, so `evaluate` hands back `undefined`.
+     *
+     * quickjs-kt converts a script's completion value into a Java object. An assignment's value is
+     * the assigned object (`SCRAPER_SETTINGS = {...}`), so every run built a `LinkedHashMap` through
+     * JNI only to throw it away. On the native build that JNI call failed (`NoSuchMethodError:
+     * LinkedHashMap.put`), and with it every plugin, so none of them ever returned streams there
+     * (2026-10-17). Not for the getStreams / settings calls: their value is the promise `evaluate`
+     * waits on.
+     */
+    private fun String.withUndefinedCompletion(): String = "$this\n;void 0;"
 
     // Compiled once per process. Every scraper run starts a fresh runtime, and parsing ~25 KB of
     // polyfill source each time was pure repeated work — on a slow CPU with a few hundred scrapers
@@ -792,17 +888,42 @@ internal object PluginRuntime {
     private suspend fun QuickJs.evaluatePolyfill(scraperId: String, settingsJson: String) {
         evaluate<Any?>(buildPolyfillPrelude(scraperId, settingsJson))
         val bytecode = cachedStaticPolyfillBytecode
-            ?: runCatching { compile(STATIC_POLYFILL_CODE, "polyfill.js", false) }
+            ?: runCatching { compile(STATIC_POLYFILL_CODE.withUndefinedCompletion(), "polyfill.js", false) }
                 .onFailure { error -> log.w(error) { "Static polyfill bytecode compile failed; evaluating source" } }
                 .getOrNull()
                 ?.also { cachedStaticPolyfillBytecode = it }
-        if (bytecode != null) evaluate<Any?>(bytecode) else evaluate<Any?>(STATIC_POLYFILL_CODE)
+        if (bytecode != null) evaluate<Any?>(bytecode) else evaluate<Any?>(STATIC_POLYFILL_CODE.withUndefinedCompletion())
     }
 
     private val STATIC_POLYFILL_CODE: String = """
             if (typeof globalThis.global === 'undefined') globalThis.global = globalThis;
             if (typeof globalThis.window === 'undefined') globalThis.window = globalThis;
             if (typeof globalThis.self === 'undefined') globalThis.self = globalThis;
+
+            // Objects reach the host console as text. quickjs-kt would otherwise convert every
+            // logged object into a Java map or list: a cyclic one throws "circular reference" and
+            // on the native build any object throws (see withUndefinedCompletion), so a plugin's
+            // debug log failed the whole scrape. The host binding is `__host_console` because a
+            // host-defined global and its methods are locked and could not be wrapped in place.
+            (function() {
+                var hostConsole = globalThis.__host_console;
+                function asText(value) {
+                    if (value === null || value === undefined) return value;
+                    if (typeof value !== 'object' && typeof value !== 'function') return value;
+                    if (value instanceof Error || typeof value === 'function') return String(value);
+                    try { return JSON.stringify(value); } catch (e) { return String(value); }
+                }
+                var textConsole = {};
+                ['log', 'error', 'warn', 'info', 'debug'].forEach(function(level) {
+                    var write = hostConsole[level];
+                    textConsole[level] = function() {
+                        var args = [];
+                        for (var i = 0; i < arguments.length; i++) args.push(asText(arguments[i]));
+                        return write.apply(hostConsole, args);
+                    };
+                });
+                globalThis.console = textConsole;
+            })();
 
             var fetch = async function(url, options) {
                 options = options || {};
@@ -835,6 +956,49 @@ internal object PluginRuntime {
                     }
                 };
             };
+
+            if (typeof setTimeout === 'undefined') {
+                var __timerSeq = 0;
+                var __activeTimers = {};
+                var __runTimerCallback = function(callback, args) {
+                    try {
+                        callback.apply(globalThis, args);
+                    } catch (e) {
+                        console.error("timer callback error:", e && e.message ? e.message : e);
+                    }
+                };
+                var __startTimer = function(callback, delay, args, repeat) {
+                    var id = ++__timerSeq;
+                    if (typeof callback !== 'function') return id;
+                    var ms = Number(delay) || 0;
+                    // Browsers clamp repeating timers; a 0 ms interval would otherwise spin.
+                    if (repeat && ms < 4) ms = 4;
+                    __activeTimers[id] = true;
+                    var arm = function() {
+                        __native_timer_wait(id, ms).then(function(fired) {
+                            if (!fired || !__activeTimers[id]) return;
+                            if (!repeat) delete __activeTimers[id];
+                            __runTimerCallback(callback, args);
+                            if (repeat && __activeTimers[id]) arm();
+                        });
+                    };
+                    arm();
+                    return id;
+                };
+                var __clearTimer = function(id) {
+                    if (!__activeTimers[id]) return;
+                    delete __activeTimers[id];
+                    __native_timer_cancel(id);
+                };
+                globalThis.setTimeout = function(callback, delay) {
+                    return __startTimer(callback, delay, Array.prototype.slice.call(arguments, 2), false);
+                };
+                globalThis.setInterval = function(callback, delay) {
+                    return __startTimer(callback, delay, Array.prototype.slice.call(arguments, 2), true);
+                };
+                globalThis.clearTimeout = __clearTimer;
+                globalThis.clearInterval = __clearTimer;
+            }
 
             if (typeof AbortSignal === 'undefined') {
                 var AbortSignal = function() { this.aborted = false; this.reason = undefined; this._listeners = []; };

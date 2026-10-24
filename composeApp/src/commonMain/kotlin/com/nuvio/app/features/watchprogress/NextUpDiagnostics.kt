@@ -56,7 +56,7 @@ object NextUpDiagnostics {
         val verdict = when {
             !remoteSourceActive -> "local source — full watched history seeds Up Next"
             seedFromNuvioSyncEnabled -> "remote source + seedNextUpFromNuvioSync ON — watched history still seeds Up Next"
-            else -> "remote source + seedNextUpFromNuvioSync OFF — watched history DISCARDED as a seed"
+            else -> "remote source + seedNextUpFromNuvioSync OFF — only the source's own imported history seeds"
         }
         emit(
             key = "source-gate",
@@ -147,7 +147,7 @@ object NextUpDiagnostics {
                 key = "suppressed:${dropped.content.id}",
                 line = "DROPPED@in-progress-suppression ${dropped.content.id} " +
                     "seed=S${dropped.seasonNumber}E${dropped.episodeNumber} " +
-                    "— a partially watched episode is newer than this completed seed",
+                    "— a partially watched episode at or after this seed was touched after it was completed",
             )
         }
     }

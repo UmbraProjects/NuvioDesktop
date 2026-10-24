@@ -275,10 +275,18 @@ def add_svp_runtime_probe(clip, method, target_fps):
                 target_prop = f.props.get("_TargetFPS", "missing")
             except Exception as e:
                 interp_method = f"prop-error:{e}"
+            colour = "missing"
+            try:
+                colour = (
+                    f"matrix={f.props.get('_Matrix', '-')} range={f.props.get('_ColorRange', '-')} "
+                    f"primaries={f.props.get('_Primaries', '-')} transfer={f.props.get('_Transfer', '-')}"
+                )
+            except Exception as e:
+                colour = f"prop-error:{e}"
             log_svp_diag(
                 f"frame_request n={n}, count={diagnostic_frame_count}, "
                 f"method={method}, frame_prop_method={interp_method}, "
-                f"source_prop={source_prop}, target_prop={target_prop}, "
+                f"source_prop={source_prop}, target_prop={target_prop}, {colour}, "
                 f"output_clip_fps={clip_fps_text(clip)}, target_fps={fmt_fps(target_fps)}"
             )
         return clip

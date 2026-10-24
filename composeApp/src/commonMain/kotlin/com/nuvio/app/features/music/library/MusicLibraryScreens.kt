@@ -1,0 +1,714 @@
+package com.nuvio.app.features.music.library
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioAlertDialog
+import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.MusicCdSleeve
+import com.nuvio.app.features.music.MusicCover
+import com.nuvio.app.features.music.MusicMessage
+
+// region Library tab
+
+/** The artists in the library, as a grid. Opening one goes through [onArtistClick] with its library id. */
+@Composable
+fun MusicLibraryGrid(
+    onArtistClick: (artistId: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
+    val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    var showSources by remember { mutableStateOf(false) }
+
+    Column(modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = when (val n = state.artists.size) {
+                    0 -> "No artists yet"
+                    1 -> "1 artist"
+                    else -> "$n artists"
+                },
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textSecondary,
+                modifier = Modifier.weight(1f),
+            )
+            LibraryIconAction(Icons.Rounded.Refresh, "Refresh all artists", enabled = state.artists.isNotEmpty()) {
+                MusicLibraryRepository.refreshAll()
+            }
+            LibraryIconAction(Icons.Rounded.Settings, "Artwork sources") { showSources = true }
+        }
+        state.errorMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = colors.warning, modifier = Modifier.padding(horizontal = 16.dp))
+        }
+        if (state.artists.isEmpty() && state.working.isEmpty()) {
+            MusicMessage("Open an artist from Search and choose Add to library. Every album, single and EP comes with it, with artwork and details.")
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(150.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // An artist being added that has not appeared yet (the first network call is still out).
+                val pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }
+                items(pending.entries.toList(), key = { "pending:${it.key}" }) { (_, progress) ->
+                    LibraryTileFrame(onClick = null) {
+                        Box(Modifier.size(112.dp).clip(CircleShape).background(colors.surfaceElevated))
+                        Text("Adding…", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                        Text(progress.status, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 2, textAlign = TextAlign.Center)
+                    }
+                }
+                items(state.artists, key = { it.id }) { artist ->
+                    LibraryTileFrame(onClick = { onArtistClick(artist.id) }) {
+                        MusicCover(artist.art.thumb, artist.name, size = 112.dp, circle = true)
+                        Text(
+                            artist.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val working = state.working[artist.id]
+                        Text(
+                            text = working?.status ?: "${artist.releases.size} release${if (artist.releases.size == 1) "" else "s"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (working != null) colors.accent else colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSources) {
+        ArtworkSourcesDialog(
+            settings = state.settings,
+            onSave = {
+                MusicLibraryRepository.updateSettings(it)
+                showSources = false
+            },
+            onDismiss = { showSources = false },
+        )
+    }
+}
+
+@Composable
+private fun LibraryTileFrame(onClick: (() -> Unit)?, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun LibraryIconAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = description, tint = if (enabled) colors.textSecondary else colors.textDisabled, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun ArtworkSourcesDialog(
+    settings: MusicLibrarySettings,
+    onSave: (MusicLibrarySettings) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    var fanart by remember { mutableStateOf(settings.fanartApiKey) }
+    var audioDb by remember { mutableStateOf(settings.audioDbKey) }
+    NuvioAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Artwork sources") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Details and covers come from YouTube Music, MusicBrainz, Deezer, TheAudioDB and the Cover Art Archive with no setup. " +
+                        "Fanart.tv adds HD logos, banners, backgrounds and CD art, and needs a free personal key from fanart.tv (Account, Your API keys).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+                Text("Fanart.tv API key", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
+                NuvioTextField(value = fanart, onValueChange = { fanart = it.trim() }, modifier = Modifier.fillMaxWidth(), placeholder = "Optional", secret = true)
+                Text("TheAudioDB API key", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
+                NuvioTextField(
+                    value = audioDb,
+                    onValueChange = { audioDb = it.trim() },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Optional (the shared test key is used when empty)",
+                    secret = true,
+                )
+                Text(
+                    "Keys apply the next time an artist is added or refreshed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(MusicLibrarySettings(fanart, audioDb)) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+// endregion
+
+// region Add button
+
+/**
+ * The Add to library control for an artist page. Shows the step it is on while the artist is being
+ * filled in, and turns into a check when the artist is in the library.
+ */
+@Composable
+fun MusicAddToLibraryButton(
+    artistId: String,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
+    val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    val inLibrary = state.contains(artistId)
+    val working = state.working[artistId]
+    val shape = RoundedCornerShape(22.dp)
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(shape)
+            .then(
+                if (inLibrary || working != null) Modifier.border(1.dp, colors.accent, shape)
+                else Modifier.background(colors.accent),
+            )
+            .clickable(enabled = !inLibrary && working == null) { MusicLibraryRepository.add(artistId) }
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val tint = if (inLibrary || working != null) colors.accent else colors.onAccent
+        Icon(
+            imageVector = if (inLibrary) Icons.Rounded.Check else Icons.Rounded.Add,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = when {
+                working != null -> "Adding…"
+                inLibrary -> "In library"
+                else -> "Add to library"
+            },
+            style = MaterialTheme.typography.titleMedium,
+            color = tint,
+        )
+    }
+}
+
+// endregion
+
+// region Artist page
+
+/**
+ * An artist in the library: backdrop, logo and clear art, biography, facts, links, and every
+ * release grouped as albums, EPs, singles and so on. A tap on a release opens its details; from
+ * there a release YouTube Music has opens as an album to play.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MusicLibraryArtistScreen(
+    artistId: String,
+    onBack: () -> Unit,
+    onAlbumClick: (browseId: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
+    val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    val artist = state.artist(artistId)
+    var playableOnly by rememberSaveable { mutableStateOf(false) }
+    var bioExpanded by rememberSaveable { mutableStateOf(false) }
+    var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmRemove by remember { mutableStateOf(false) }
+
+    if (artist == null) {
+        Column(modifier.fillMaxSize().background(colors.background).padding(top = 12.dp)) {
+            Box(Modifier.padding(horizontal = 16.dp)) { NuvioBackButton(onClick = onBack) }
+            MusicMessage("This artist is not in your library.")
+        }
+        return
+    }
+
+    val working = state.working[artist.id]
+    val sections = artist.sections.map { (kind, list) ->
+        kind to if (playableOnly) list.filter { it.isPlayable } else list
+    }.filter { it.second.isNotEmpty() }
+    val uriHandler = LocalUriHandler.current
+
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(160.dp),
+        modifier = modifier.fillMaxSize().background(colors.background),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) { ArtistHero(artist, onBack) }
+
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ActionPill(if (working != null) working.status else "Refresh", enabled = working == null) {
+                        MusicLibraryRepository.refresh(artist.id)
+                    }
+                    ActionPill(if (playableOnly) "Showing playable only" else "Show playable only", selected = playableOnly) {
+                        playableOnly = !playableOnly
+                    }
+                    ActionPill("Remove from library") { confirmRemove = true }
+                }
+                ArtistFacts(artist)
+                artist.biography?.let { bio ->
+                    Text(
+                        text = bio,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                        maxLines = if (bioExpanded) Int.MAX_VALUE else 5,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable { bioExpanded = !bioExpanded },
+                    )
+                    Text(
+                        text = (if (bioExpanded) "Show less" else "Read more") +
+                            (artist.biographySource?.let { "  ·  from $it" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.accent,
+                        modifier = Modifier.clickable { bioExpanded = !bioExpanded },
+                    )
+                }
+                if (artist.links.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        artist.links.forEach { link ->
+                            ActionPill(link.label) { runCatching { uriHandler.openUri(link.url) } }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (sections.isEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                MusicMessage(if (working != null) "Looking up releases…" else "No releases found.")
+            }
+        }
+        sections.forEach { (kind, releases) ->
+            item(span = { GridItemSpan(maxLineSpan) }, key = "header:${kind.name}") {
+                Text(
+                    text = "${kind.pluralLabel} · ${releases.size}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp),
+                )
+            }
+            items(releases) { release ->
+                Box(Modifier.padding(horizontal = 6.dp)) {
+                    ReleaseTile(release, onClick = { selectedKey = release.key })
+                }
+            }
+        }
+
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            if (artist.sources.isNotEmpty()) {
+                Text(
+                    text = "Metadata from ${artist.sources.joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+                )
+            }
+        }
+    }
+
+    selectedKey?.let { key ->
+        artist.releases.firstOrNull { it.key == key }?.let { release ->
+            ReleaseDialog(
+                artist = artist,
+                release = release,
+                onOpen = release.ytBrowseId?.let { id ->
+                    {
+                        selectedKey = null
+                        onAlbumClick(id)
+                    }
+                },
+                onDismiss = { selectedKey = null },
+            )
+        }
+    }
+
+    if (confirmRemove) {
+        NuvioAlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            title = { Text("Remove ${artist.name}?") },
+            text = { Text("The artist and its saved details leave your library. Nothing else changes.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemove = false
+                    MusicLibraryRepository.remove(artist.id)
+                    onBack()
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Keep") } },
+        )
+    }
+}
+
+@Composable
+private fun ArtistHero(artist: LibraryArtist, onBack: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val backdrop = artist.art.bestBackground ?: artist.art.banner ?: artist.art.thumb
+    Box(Modifier.fillMaxWidth().height(340.dp)) {
+        if (backdrop != null) {
+            NuvioAsyncImage(
+                model = backdrop,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.55f,
+            )
+        }
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0.0f to Color.Black.copy(alpha = 0.25f),
+                    0.55f to Color.Transparent,
+                    1.0f to colors.background,
+                ),
+            ),
+        )
+        // Clear art stands at the right, over the backdrop, as the artist cut out on nothing.
+        artist.art.bestClearArt?.let { art ->
+            NuvioAsyncImage(
+                model = art,
+                contentDescription = null,
+                modifier = Modifier.align(Alignment.BottomEnd).height(300.dp).fillMaxWidth(0.4f),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.BottomEnd,
+            )
+        }
+        Box(Modifier.padding(start = 16.dp, top = 12.dp)) { NuvioBackButton(onClick = onBack) }
+        Column(
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 12.dp, end = 16.dp).fillMaxWidth(0.6f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            val logo = artist.art.bestLogo
+            if (logo != null) {
+                NuvioAsyncImage(
+                    model = logo,
+                    contentDescription = artist.name,
+                    modifier = Modifier.height(96.dp).fillMaxWidth(),
+                    contentScale = ContentScale.Fit,
+                    alignment = Alignment.CenterStart,
+                )
+            } else {
+                Text(
+                    artist.name,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            val line = listOfNotNull(
+                artist.type,
+                artist.country,
+                artist.beginYear?.let { begin -> if (artist.ended && artist.endYear != null) "$begin–${artist.endYear}" else "since $begin" },
+                artist.genres.take(3).joinToString(" / ").takeIf { it.isNotEmpty() },
+            ).joinToString(" · ")
+            if (line.isNotEmpty()) {
+                Text(line, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ArtistFacts(artist: LibraryArtist) {
+    val facts = listOfNotNull(
+        artist.area?.let { "From" to it },
+        artist.style?.let { "Style" to it },
+        artist.mood?.let { "Mood" to it },
+        artist.fans?.let { "Deezer fans" to formatCount(it) },
+        artist.rating?.let { "Rating" to "${(it * 10).toInt() / 10.0} / 5" },
+        artist.disambiguation?.let { "Note" to it },
+        artist.tags.takeIf { it.isNotEmpty() }?.let { "Tags" to it.take(6).joinToString(", ") },
+    )
+    if (facts.isEmpty()) return
+    val colors = MaterialTheme.nuvio.colors
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        facts.forEach { (label, value) ->
+            Column {
+                Text(label, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+                Text(value, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+            }
+        }
+    }
+}
+
+internal fun formatCount(n: Long): String = when {
+    n >= 1_000_000 -> "${n / 100_000 / 10.0}M"
+    n >= 1_000 -> "${n / 100 / 10.0}K"
+    else -> n.toString()
+}
+
+@Composable
+private fun ActionPill(text: String, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(20.dp)
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = when {
+            !enabled -> colors.textDisabled
+            selected -> colors.onAccent
+            else -> colors.textPrimary
+        },
+        modifier = Modifier
+            .clip(shape)
+            .background(if (selected) colors.accent else colors.surfaceCard)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun ReleaseTile(release: LibraryRelease, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            ReleaseCover(release, Modifier.fillMaxSize())
+            if (!release.isPlayable) {
+                Text(
+                    "Not on YouTube Music",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+        }
+        Text(
+            release.title,
+            style = MaterialTheme.typography.titleSmall,
+            color = if (release.isPlayable) colors.textPrimary else colors.textSecondary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        val sub = listOfNotNull(
+            release.year,
+            release.trackCount?.let { "$it track${if (it == 1) "" else "s"}" },
+            release.secondaryTypes.firstOrNull(),
+        ).joinToString(" · ")
+        if (sub.isNotEmpty()) {
+            Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** A release's cover, falling through its candidate URLs if one fails to load. */
+@Composable
+private fun ReleaseCover(release: LibraryRelease, modifier: Modifier) {
+    val colors = MaterialTheme.nuvio.colors
+    val covers = release.art.covers
+    var index by remember(release.key, covers) { mutableStateOf(0) }
+    Box(modifier.clip(RoundedCornerShape(8.dp)).background(colors.surfaceElevated), contentAlignment = Alignment.Center) {
+        val url = covers.getOrNull(index)
+        if (url != null) {
+            NuvioAsyncImage(
+                model = url,
+                contentDescription = release.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onError = { if (index < covers.lastIndex) index++ },
+            )
+        }
+    }
+}
+
+// endregion
+
+// region Release details
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReleaseDialog(
+    artist: LibraryArtist,
+    release: LibraryRelease,
+    onOpen: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val minutes = release.durationSeconds?.let { it / 60 }
+    val facts = listOfNotNull(
+        "Type" to (release.secondaryTypes.takeIf { it.isNotEmpty() }?.let { "${release.kind.label} · ${it.joinToString(", ")}" } ?: release.kind.label),
+        (release.releaseDate ?: release.year)?.let { "Released" to it },
+        release.trackCount?.let { "Tracks" to it.toString() },
+        minutes?.takeIf { it > 0 }?.let { "Length" to "$it min" },
+        release.label?.let { "Label" to it },
+        release.genres.takeIf { it.isNotEmpty() }?.let { "Genre" to it.joinToString(", ") },
+        release.style?.let { "Style" to it },
+        release.mood?.let { "Mood" to it },
+        release.explicit?.takeIf { it }?.let { "Content" to "Explicit" },
+        release.upc?.let { "UPC" to it },
+    )
+    NuvioAlertDialog(
+        onDismissRequest = onDismiss,
+        maxWidth = 640.dp,
+        title = { Text(release.title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // The disc turns while the details are open: this is where the CD art is seen.
+                    MusicCdSleeve(
+                        coverUrl = release.art.cover,
+                        cdArtUrl = release.art.cdArt,
+                        spinning = true,
+                        size = 150.dp,
+                        peek = 0.45f,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(artist.name, style = MaterialTheme.typography.titleMedium, color = colors.textSecondary)
+                        facts.forEach { (label, value) ->
+                            Row {
+                                Text("$label  ", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                                Text(value, style = MaterialTheme.typography.bodySmall, color = colors.textPrimary)
+                            }
+                        }
+                    }
+                }
+                release.description?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 12, overflow = TextOverflow.Ellipsis)
+                }
+                if (onOpen == null) {
+                    Text(
+                        "YouTube Music has no matching release, so it can't be played from here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textMuted,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (onOpen != null) TextButton(onClick = onOpen) { Text("Open album") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+// endregion
+
+// region CD art lookup
+
+/**
+ * The printed-disc image for the album with YouTube Music id [albumBrowseId], when that album is a
+ * release of an artist in the library and a source had its CD art. Null otherwise, and the spinner
+ * then draws a disc with the cover as its face.
+ */
+@Composable
+fun rememberCdArtFor(albumBrowseId: String?): String? {
+    LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
+    val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    return remember(albumBrowseId, state.artists) {
+        albumBrowseId?.let { id ->
+            state.artists.firstNotNullOfOrNull { artist ->
+                artist.releases.firstOrNull { it.ytBrowseId == id }?.art?.cdArt
+            }
+        }
+    }
+}
+
+// endregion

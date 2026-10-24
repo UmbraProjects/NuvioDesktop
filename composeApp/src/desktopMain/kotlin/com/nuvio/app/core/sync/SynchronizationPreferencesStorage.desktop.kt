@@ -16,7 +16,7 @@ internal actual object SynchronizationPreferencesStorage {
      */
     actual fun loadPayload(): String? {
         store.getString(PayloadKey)?.let { return it }
-        if (!DesktopStorage.isFreshInstall) return null
+        if (!DesktopStorage.isFreshAccount) return null
         val payload = """{"appearanceEnabled":true}"""
         store.putString(PayloadKey, payload)
         return payload

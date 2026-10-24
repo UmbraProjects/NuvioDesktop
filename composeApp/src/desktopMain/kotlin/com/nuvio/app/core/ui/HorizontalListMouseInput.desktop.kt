@@ -21,7 +21,10 @@ internal actual fun Modifier.horizontalListMouseInput(
     onFocusRequest: () -> Unit,
     treatPlainScrollAsHorizontal: Boolean,
 ): Modifier = composed {
-    val touchSlopPx = with(LocalDensity.current) { 8.dp.toPx() }
+    // A mouse click is rarely perfectly still, and at 8 dp a small hand movement during a click on a
+    // card or chip turned it into a drag that ate the release (2026-10-19 (ChipClick) trace: chip
+    // clicks with 6-18 px of travel did nothing). Dragging is deliberate, so it needs a real distance.
+    val touchSlopPx = with(LocalDensity.current) { 24.dp.toPx() }
 
     this.pointerInput(state, touchSlopPx) {
         awaitPointerEventScope {
@@ -44,7 +47,11 @@ internal actual fun Modifier.horizontalListMouseInput(
                         if (change.pressed) {
                             val dragAmount = change.positionChange().x
                             accumulatedDrag += dragAmount
-                            if (!isDragging && abs(accumulatedDrag) > touchSlopPx) {
+                            // A row whose items all fit has nothing to drag: never take a click
+                            // from it for a scroll that cannot happen.
+                            if (!isDragging && abs(accumulatedDrag) > touchSlopPx &&
+                                (state.canScrollForward || state.canScrollBackward)
+                            ) {
                                 isDragging = true
                             }
                             if (isDragging) {

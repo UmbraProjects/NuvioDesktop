@@ -1,6 +1,8 @@
 package com.nuvio.app.features.tmdb
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.calendar.MovieReleaseDate
+import com.nuvio.app.features.calendar.pickMovieCalendarDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -335,6 +337,23 @@ object TmdbService {
         return homeDate
     }
 
+    /**
+     * The one date a movie goes on the calendar, as ISO `yyyy-MM-dd`, past or future; the order is
+     * [pickMovieCalendarDate]'s, shared with the SIMKL calendar. Null without a key or any such date.
+     */
+    suspend fun fetchMovieCalendarDate(tmdbId: Int): String? {
+        val apiKey = currentApiKey() ?: return null
+        val body = fetchReleaseDates(tmdbId, apiKey) ?: return null
+        return pickMovieCalendarDate(
+            body.results.flatMap { country ->
+                country.releaseDates.mapNotNull { release ->
+                    release.releaseDate.take(10).takeIf(::isIsoDate)
+                        ?.let { MovieReleaseDate(country.country.uppercase(), release.type, it) }
+                }
+            },
+        )
+    }
+
     private val releaseDatesMutex = Mutex()
     private val releaseDatesCache = mutableMapOf<Int, Pair<TmdbReleaseStatusDatesResponse, Long>>()
 
@@ -507,20 +526,33 @@ object TmdbService {
         }
     }
 
-    private suspend fun imdbToTmdb(imdbId: String, mediaType: String, apiKey: String): String? {
+    private suspend fun imdbToTmdb(imdbId: String, mediaType: String, apiKey: String): String? =
+        (lookupImdbToTmdb(imdbId, mediaType, apiKey) as? ImdbToTmdbLookup.Found)?.tmdbId
+
+    /**
+     * [imdbToTmdb] with the miss explained: TMDB answering "no such title" is a fact a caller can
+     * rely on, a failed request is not. The hide-watched index needs the difference to know when it
+     * has covered the whole history.
+     */
+    internal suspend fun lookupImdbToTmdb(imdbId: String, mediaType: String): ImdbToTmdbLookup {
+        val apiKey = currentApiKey() ?: return ImdbToTmdbLookup.Unavailable
+        return lookupImdbToTmdb(imdbId, mediaType, apiKey)
+    }
+
+    private suspend fun lookupImdbToTmdb(imdbId: String, mediaType: String, apiKey: String): ImdbToTmdbLookup {
         val normalizedType = normalizeMediaType(mediaType)
         val cacheKey = "$imdbId:$normalizedType"
-        cachedTmdbId(cacheKey)?.let { return it }
+        cachedTmdbId(cacheKey)?.let { return ImdbToTmdbLookup.Found(it) }
 
         return withExternalIdLookupLock(cacheKey) {
             // Re-check: whoever held the lock may have resolved this while we queued behind them.
-            cachedTmdbId(cacheKey)?.let { return@withExternalIdLookupLock it }
+            cachedTmdbId(cacheKey)?.let { return@withExternalIdLookupLock ImdbToTmdbLookup.Found(it) }
 
             val body = fetch<TmdbFindResponse>(
                 endpoint = "find/$imdbId",
                 apiKey = apiKey,
                 query = mapOf("external_source" to "imdb_id"),
-            ) ?: return@withExternalIdLookupLock null
+            ) ?: return@withExternalIdLookupLock ImdbToTmdbLookup.Unavailable
 
             val resultId = when (normalizedType) {
                 "movie" -> body.movieResults.firstOrNull()?.id
@@ -529,15 +561,20 @@ object TmdbService {
             }?.takeIf { it > 0 }?.toString()
 
             if (resultId != null) {
-                cacheMutex.withLock {
+                val learned = cacheMutex.withLock {
                     imdbToTmdbCache[cacheKey] = resultId
-                    tmdbToImdbCache["$resultId:$normalizedType"] = imdbId
+                    val isNew = tmdbToImdbCache.put("$resultId:$normalizedType", imdbId) != imdbId
+                    if (isNew) externalIdCacheDirty = true
+                    isNew
                 }
+                // Persisted like the other direction: the stored map is TMDB→IMDb and is read back
+                // into both, so this mapping survives the launch too.
+                if (learned) scheduleExternalIdCacheWrite()
+                ImdbToTmdbLookup.Found(resultId)
             } else {
                 log.d { "No TMDB ID found for $imdbId ($normalizedType)" }
+                ImdbToTmdbLookup.NotFound
             }
-
-            resultId
         }
     }
 
@@ -810,12 +847,17 @@ object TmdbService {
      * Canonical title for a TMDB id. Used when local data knows *which* title something is but not
      * what it is called — some watch-history rows carry an empty name.
      */
+    /** Titles by `type:id`, for the session: Discover asks for every series seed on each build. */
+    private val titleCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     suspend fun fetchTitle(tmdbId: Int, mediaType: String): String? {
         val apiKey = currentApiKey() ?: return null
         if (tmdbId <= 0) return null
         val endpoint = if (normalizeMediaType(mediaType) == "tv") "tv/$tmdbId" else "movie/$tmdbId"
+        titleCache[endpoint]?.let { return it }
         val body = fetch<TmdbPosterResponse>(endpoint = endpoint, apiKey = apiKey) ?: return null
         return (body.title ?: body.name)?.trim()?.takeIf { it.isNotBlank() }
+            ?.also { titleCache[endpoint] = it }
     }
 
     /** Poster URL for a TMDB id, used when a match was made by id (no poster path in hand). */
@@ -841,8 +883,54 @@ object TmdbService {
         )
     }
 
+    /** Main-season episode counts by `tmdbId`, for the session; see [fetchSeasonEpisodeCounts]. */
+    private val seasonCountsCache = java.util.concurrent.ConcurrentHashMap<Int, List<TmdbSeasonEpisodeCount>>()
+
+    /** TMDB `episode_number`s of one season, keyed `"<tmdbId>:<season>"`, for the session. */
+    private val seasonEpisodeNumbersCache = java.util.concurrent.ConcurrentHashMap<String, List<Int>>()
+
     /**
-     * Every textless backdrop TMDB holds for a title, best-rated first: the "extra fanart".
+     * Episode count of every season of a TV show, in season order, specials (season 0) left out.
+     *
+     * Used to place an anime entry's absolute episode inside TMDB's seasons: a single kitsu entry
+     * such as One Piece numbers 1100+ episodes on its own, while TMDB splits the run into arcs.
+     */
+    internal suspend fun fetchSeasonEpisodeCounts(tmdbId: Int): List<TmdbSeasonEpisodeCount>? {
+        if (tmdbId <= 0) return null
+        seasonCountsCache[tmdbId]?.let { return it }
+        val apiKey = currentApiKey() ?: return null
+        val body = fetch<TmdbTvSeasonsResponse>(endpoint = "tv/$tmdbId", apiKey = apiKey) ?: return null
+        val counts = body.seasons
+            .filter { it.seasonNumber > 0 && it.episodeCount > 0 }
+            .sortedBy { it.seasonNumber }
+            .map { TmdbSeasonEpisodeCount(season = it.seasonNumber, episodeCount = it.episodeCount) }
+            .takeIf { it.isNotEmpty() }
+            ?: return null
+        seasonCountsCache[tmdbId] = counts
+        return counts
+    }
+
+    /**
+     * TMDB's own `episode_number` for each episode of a season, in order.
+     *
+     * Usually 1..n, but not always: TMDB numbers One Piece absolutely inside its arc seasons
+     * (season 6 runs 144-195), and its episode endpoints answer only to that number.
+     */
+    suspend fun fetchSeasonEpisodeNumbers(tmdbId: Int, season: Int): List<Int>? {
+        if (tmdbId <= 0 || season < 0) return null
+        val key = "$tmdbId:$season"
+        seasonEpisodeNumbersCache[key]?.let { return it }
+        val apiKey = currentApiKey() ?: return null
+        val body = fetch<TmdbSeasonEpisodesResponse>(endpoint = "tv/$tmdbId/season/$season", apiKey = apiKey)
+            ?: return null
+        val numbers = body.episodes.map { it.episodeNumber }.takeIf { it.isNotEmpty() } ?: return null
+        seasonEpisodeNumbersCache[key] = numbers
+        return numbers
+    }
+
+    /**
+     * fork:preshow - every textless backdrop TMDB holds for a title, best-rated first: the "extra
+     * fanart". Response shapes are in TmdbBackdrops.kt.
      *
      * Textless (`include_image_language=null`) on purpose: language-tagged backdrops usually have
      * the title baked in, which would fight the pre-show's own text. Falls back to all languages
@@ -924,6 +1012,7 @@ private data class TmdbReleaseStatusDatesResponse(
 
 @Serializable
 private data class TmdbReleaseStatusDatesCountry(
+    @SerialName("iso_3166_1") val country: String = "",
     @SerialName("release_dates") val releaseDates: List<TmdbReleaseStatusDate> = emptyList(),
 )
 
@@ -987,18 +1076,6 @@ private data class TmdbGenreListResponse(
     val genres: List<TmdbGenre> = emptyList(),
 )
 
-@Serializable
-private data class TmdbBackdropListResponse(
-    val backdrops: List<TmdbBackdropEntry> = emptyList(),
-)
-
-@Serializable
-private data class TmdbBackdropEntry(
-    @SerialName("file_path") val filePath: String? = null,
-    @SerialName("aspect_ratio") val aspectRatio: Double = 0.0,
-    @SerialName("vote_average") val voteAverage: Double = 0.0,
-)
-
 /** Ready-to-use image URLs for a TMDB title. */
 data class TmdbArtwork(
     val poster: String?,
@@ -1026,6 +1103,8 @@ data class TmdbSearchResult(
     @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
     @SerialName("vote_average") val voteAverage: Double = 0.0,
     @SerialName("vote_count") val voteCount: Int = 0,
+    /** ISO 3166-1 codes. Tv search results carry it; movie search results don't. */
+    @SerialName("origin_country") val originCountry: List<String> = emptyList(),
 ) {
     val displayTitle: String
         get() = (title ?: name).orEmpty()
@@ -1060,6 +1139,29 @@ internal fun buildTmdbUrl(
     }
 }
 
+internal data class TmdbSeasonEpisodeCount(val season: Int, val episodeCount: Int)
+
+@Serializable
+private data class TmdbTvSeasonsResponse(
+    val seasons: List<TmdbTvSeasonSummary> = emptyList(),
+)
+
+@Serializable
+private data class TmdbTvSeasonSummary(
+    @SerialName("season_number") val seasonNumber: Int = -1,
+    @SerialName("episode_count") val episodeCount: Int = 0,
+)
+
+@Serializable
+private data class TmdbSeasonEpisodesResponse(
+    val episodes: List<TmdbSeasonEpisodeNumber> = emptyList(),
+)
+
+@Serializable
+private data class TmdbSeasonEpisodeNumber(
+    @SerialName("episode_number") val episodeNumber: Int,
+)
+
 @Serializable
 private data class TmdbFindResponse(
     @SerialName("movie_results") val movieResults: List<TmdbExternalResult> = emptyList(),
@@ -1076,3 +1178,14 @@ private data class TmdbExternalIdsResponse(
     @SerialName("imdb_id") val imdbId: String? = null,
     @SerialName("tvdb_id") val tvdbId: Int? = null,
 )
+
+/** The outcome of an IMDb→TMDB lookup; see [TmdbService.lookupImdbToTmdb]. */
+internal sealed interface ImdbToTmdbLookup {
+    data class Found(val tmdbId: String) : ImdbToTmdbLookup
+
+    /** TMDB answered and has no title for this IMDb id. */
+    data object NotFound : ImdbToTmdbLookup
+
+    /** No answer: no API key, a failed request, or an unreadable response. */
+    data object Unavailable : ImdbToTmdbLookup
+}

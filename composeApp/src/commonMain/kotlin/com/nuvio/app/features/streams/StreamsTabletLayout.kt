@@ -3,9 +3,26 @@ package com.nuvio.app.features.streams
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -403,7 +420,13 @@ private fun ActiveScrapersStatusBlock(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                        .background(
+                            if (LocalStreamCardStyle.current == StreamCardStyle.Glass) {
+                                StreamGlass.Rest
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                            },
+                        )
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
                     Text(
@@ -418,5 +441,231 @@ private fun ActiveScrapersStatusBlock(
                 }
             }
         }
+    }
+}
+
+/**
+ * The source list as a self-contained panel: what is being played, then the same resume banner,
+ * provider chips, scraper status and list as the full-screen layout. No artwork of its own — it
+ * sits in the details hero or over a dimmed screen, both of which already show the title.
+ */
+@Composable
+internal fun PanelStreamsLayout(
+    isEpisode: Boolean,
+    contentId: String?,
+    contentType: String?,
+    title: String,
+    seasonNumber: Int?,
+    episodeNumber: Int?,
+    episodeTitle: String?,
+    uiState: StreamsUiState,
+    debridEnabled: Boolean,
+    appendInstantServiceToDefaultName: Boolean,
+    resumePositionMs: Long?,
+    resumeProgressFraction: Float?,
+    providerListState: LazyListState,
+    streamListState: LazyListState,
+    focusedStream: StreamItem?,
+    onStreamSelected: (stream: StreamItem, resumePositionMs: Long?, resumeProgressFraction: Float?) -> Unit,
+    onStreamLongPress: (StreamItem) -> Unit,
+    onRefresh: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+    /**
+     * Docked in the details hero: barely-there cards, and the content held to a readable width
+     * at the start of the area rather than stretched across all of it.
+     */
+    glass: Boolean = false,
+    twoColumns: Boolean = false,
+    /** False when the panel is too narrow for two columns; the layout toggle is hidden. */
+    twoColumnsFit: Boolean = true,
+    displayGroups: List<AddonStreamGroup>? = null,
+    showHtpcChip: Boolean = false,
+) {
+    val resumeText = resumeLabel(resumePositionMs, resumeProgressFraction)
+    CompositionLocalProvider(
+        LocalStreamCardStyle provides if (glass) StreamCardStyle.Glass else StreamCardStyle.Solid,
+    ) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            // Two columns earn the extra width; one column reads better held narrower.
+            .then(if (glass) Modifier.widthIn(max = if (twoColumns) 1120.dp else 760.dp) else Modifier),
+    ) {
+        // Docked, the details page around the panel already names the show and the episode (whose
+        // card is outlined), so the panel opens straight on the chips.
+        if (!glass) Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                // The provider chips and the list below both inset 12dp; matching it puts the
+                // title's first letter over the "All" chip.
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                // The episode is the one thing a docked panel must name: the episode row below it
+                // can be scrolled to a different season than the one being played.
+                if (isEpisode && seasonNumber != null && episodeNumber != null) {
+                    Text(
+                        text = stringResource(
+                            Res.string.streams_episode_title_with_name,
+                            seasonNumber,
+                            episodeNumber,
+                            episodeTitle?.takeIf { it.isNotBlank() }
+                                ?: stringResource(Res.string.streams_episode_fallback_title),
+                        ),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = listOfNotNull(title, resumeText).joinToString(" \u2022 "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (resumeText != null) {
+                            Text(
+                                text = " \u2022 $resumeText",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        ProviderFilterRow(
+            groups = uiState.groups,
+            selectedFilter = uiState.selectedFilter,
+            listState = providerListState,
+            onFilterSelected = { addonId -> StreamsRepository.selectFilter(addonId) },
+            showHtpcChip = showHtpcChip,
+            trailing = {
+                // Shows the layout a click switches to.
+                if (twoColumnsFit) PanelHeaderIconButton(
+                    icon = if (twoColumns) Icons.Rounded.ViewAgenda else Icons.Rounded.GridView,
+                    contentDescription = if (twoColumns) "Single column" else "Two columns",
+                    onClick = { StreamBadgeSettingsRepository.setListTwoColumns(!twoColumns) },
+                )
+                PanelHeaderIconButton(
+                    icon = Icons.Rounded.Refresh,
+                    contentDescription = stringResource(Res.string.streams_refresh),
+                    onClick = onRefresh,
+                )
+                PanelHeaderIconButton(
+                    icon = Icons.Rounded.Close,
+                    contentDescription = stringResource(Res.string.action_close),
+                    onClick = onClose,
+                )
+            },
+        )
+
+        ActiveScrapersStatusBlock(
+            groups = uiState.groups,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+
+        StreamList(
+            uiState = uiState,
+            displayGroups = displayGroups,
+            debridEnabled = debridEnabled,
+            appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
+            onStreamSelected = onStreamSelected,
+            onStreamLongPress = onStreamLongPress,
+            resumePositionMs = resumePositionMs,
+            resumeProgressFraction = resumeProgressFraction,
+            listState = streamListState,
+            focusedStream = focusedStream,
+            isEpisode = isEpisode,
+            contentId = contentId,
+            contentType = contentType,
+            modifier = Modifier
+                .weight(1f)
+                .scrollEdgeFade(streamListState),
+            columns = if (twoColumns) 2 else 1,
+        )
+    }
+    }
+}
+
+/**
+ * Fades the list out where it is cut off — the bottom while more rows follow, the top once
+ * scrolled — so it runs into its surroundings instead of ending on a hard line.
+ */
+private fun Modifier.scrollEdgeFade(state: LazyListState, fade: Dp = 48.dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val fadePx = fade.toPx().coerceAtMost(size.height / 2f)
+        if (state.canScrollBackward) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color.Black),
+                    startY = 0f,
+                    endY = fadePx,
+                ),
+                size = Size(size.width, fadePx),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+        if (state.canScrollForward) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Black, Color.Transparent),
+                    startY = size.height - fadePx,
+                    endY = size.height,
+                ),
+                topLeft = Offset(0f, size.height - fadePx),
+                size = Size(size.width, fadePx),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }
+
+@Composable
+private fun PanelHeaderIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(
+                if (LocalStreamCardStyle.current == StreamCardStyle.Glass) {
+                    StreamGlass.Rest
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                },
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }

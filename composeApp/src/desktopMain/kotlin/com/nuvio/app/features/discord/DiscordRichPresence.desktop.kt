@@ -233,7 +233,9 @@ internal actual object DiscordRichPresencePlatform {
     private fun discordIpcPipeCandidates(): List<String> {
         val osName = System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT)
         return if (osName.contains("win")) {
-            (0..9).map { "\\\\?\\pipe\\discord-ipc-$it" }
+            // `\\.\pipe\`, not `\\?\pipe\`: since JDK 25 java.io normalises the `\\?\` prefix
+            // away, leaving the relative path `pipe\discord-ipc-N`, so every pipe looked absent.
+            (0..9).map { "\\\\.\\pipe\\discord-ipc-$it" }
         } else {
             if (unsupportedOsLogged.compareAndSet(false, true)) {
                 println("[nuvio-discord] Discord Rich Presence IPC is currently implemented for Windows desktop only.")

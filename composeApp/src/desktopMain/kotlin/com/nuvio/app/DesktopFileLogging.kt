@@ -32,6 +32,20 @@ fun desktopDebugLoggingRequested(): Boolean {
     return marker || env || devRun
 }
 
+/**
+ * Optimisation-pass telemetry (`(PerfNet)`, `(PerfStore)`, `(PerfWork)`, `(PerfScreen)`): a file
+ * named `perf-log` in the Nuvio data directory, or `NUVIO_PERF_LOG` set. Separate from debug-log
+ * on purpose - it writes a few summary lines per 30 s, not a line per event.
+ */
+fun desktopPerfLoggingSource(): String? {
+    val marker = runCatching { DesktopStorage.rootDir.resolve("perf-log").toFile().exists() }.getOrDefault(false)
+    return when {
+        marker -> "perf-log marker"
+        !System.getenv("NUVIO_PERF_LOG").isNullOrBlank() -> "NUVIO_PERF_LOG"
+        else -> null
+    }
+}
+
 private val desktopFileLoggingConfigured = AtomicBoolean(false)
 
 /**
@@ -198,22 +212,41 @@ private fun enableSafepointLog(logDirectory: File) {
     }
 }
 
+/**
+ * The packaged app runs under jpackage's windowed launcher, which gives the JVM no console: its
+ * stdout/stderr handles are invalid, so every write to [console] throws "The handle is invalid"
+ * inside the PrintStream, which swallows it. Each of those is a fresh IOException with a filled-in
+ * stack — on the UI thread, a Compose stack hundreds of frames deep — for every log line. The launch
+ * stall sampler caught it in the middle of Home's first composition. So the console is dropped for
+ * good the first time its PrintStream reports a failed write; the file sink never depended on it,
+ * and a real console (a Gradle or IDE run) never fails and keeps getting everything.
+ */
 private class TeeOutputStream(
-    private val console: OutputStream,
+    private val console: PrintStream,
     private val logSink: RotatingLogSink,
 ) : OutputStream() {
+    @Volatile
+    private var consoleAlive = true
+
+    private inline fun toConsole(block: PrintStream.() -> Unit) {
+        if (!consoleAlive) return
+        console.block()
+        // checkError() also flushes; true once any write to the console has failed.
+        if (console.checkError()) consoleAlive = false
+    }
+
     override fun write(value: Int) {
-        console.write(value)
+        toConsole { write(value) }
         logSink.write(byteArrayOf(value.toByte()), 0, 1)
     }
 
     override fun write(bytes: ByteArray, offset: Int, length: Int) {
-        console.write(bytes, offset, length)
+        toConsole { write(bytes, offset, length) }
         logSink.write(bytes, offset, length)
     }
 
     override fun flush() {
-        console.flush()
+        toConsole { flush() }
         logSink.flush()
     }
 }

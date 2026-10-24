@@ -1,6 +1,7 @@
 package com.nuvio.app.features.watched
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.effectiveEpisodeNumber
@@ -9,6 +10,7 @@ import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.WatchProgressSource
+import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.trakt.shouldUseTraktProgress
 import com.nuvio.app.features.watching.sync.SupabaseWatchedSyncAdapter
 import com.nuvio.app.features.watching.sync.TraktWatchedSyncAdapter
@@ -91,6 +93,15 @@ object WatchedRepository {
 
     private var publishedAliasVersion = -1L
 
+    /**
+     * What the Continue Watching provider's import reported, so Up Next can tell its history apart
+     * from the rest of the store (see [WatchedUiState.sourceHistoryKeys]). In memory only: the
+     * startup import refills it within seconds, and until then tagged rows still answer. Guarded by
+     * [itemsLock].
+     */
+    private var sourceHistoryProvider: String? = null
+    private var sourceHistoryKeys: Set<String> = emptySet()
+
     private fun idWithAliases(id: String): Set<String> = setOf(id) + WatchedIdAliases.aliasesOf(id)
 
     private fun itemSnapshot(): List<WatchedItem> = synchronized(itemsLock) { itemsByKey.values.toList() }
@@ -114,7 +125,11 @@ object WatchedRepository {
     fun clearLocalState() {
         hasLoaded = false
         currentProfileId = 1
-        synchronized(itemsLock) { itemsByKey.clear() }
+        synchronized(itemsLock) {
+            itemsByKey.clear()
+            sourceHistoryProvider = null
+            sourceHistoryKeys = emptySet()
+        }
         lastSuccessfulPushEpochMs = 0L
         deltaCursorEventId = 0L
         deltaInitialized = false
@@ -124,7 +139,11 @@ object WatchedRepository {
     private fun loadFromDisk(profileId: Int) {
         currentProfileId = profileId
         hasLoaded = true
-        synchronized(itemsLock) { itemsByKey.clear() }
+        synchronized(itemsLock) {
+            itemsByKey.clear()
+            sourceHistoryProvider = null
+            sourceHistoryKeys = emptySet()
+        }
 
         val payload = WatchedStorage.loadPayload(profileId).orEmpty().trim()
         if (payload.isNotEmpty()) {
@@ -149,6 +168,7 @@ object WatchedRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
+        PerfTelemetry.count("WatchedRepository.pullFromServer")
         TraktAuthRepository.ensureLoaded(profileId)
         TraktSettingsRepository.ensureLoaded()
         currentProfileId = profileId
@@ -187,6 +207,37 @@ object WatchedRepository {
     }
 
     /**
+     * Reads what changed in the Nuvio Sync watched store since the last pull.
+     *
+     * For the foreground pull. Warm starts never run [pullFromServer] (only a fresh sign-in or a
+     * profile switch does), and the foreground pull used to refresh library and progress only, so
+     * ticks written by another client — the phone app, nuvio.tv, the tracker site — never arrived
+     * until the next sign-in. A delta read is one RPC that returns nothing when nothing changed.
+     *
+     * Skipped when Trakt owns watched history ([activeRemoteWatchedAdapter]): its full pull is
+     * the costly one and runs from the progress refresh. Provider history import is not done here
+     * either; that has its own request budget and its own foreground caller.
+     */
+    suspend fun pullNuvioSyncChanges(profileId: Int) {
+        PerfTelemetry.count("WatchedRepository.pullNuvioSyncChanges")
+        ensureLoaded()
+        if (profileId != currentProfileId) return
+        if (activeRemoteWatchedAdapter() != null) return
+        val pullStartedEpochMs = WatchedClock.nowEpochMs()
+        runCatching {
+            pullSupabaseDeltaFromServer(
+                profileId = profileId,
+                localBeforePull = itemSnapshot().map(WatchedItem::normalizedMarkedAt),
+                lastPushEpochMs = lastSuccessfulPushEpochMs,
+                pullStartedEpochMs = pullStartedEpochMs,
+            )
+        }.onFailure { e ->
+            if (e is CancellationException) throw e
+            log.e(e) { "Failed to pull watched changes from server" }
+        }
+    }
+
+    /**
      * Imports the Continue Watching provider's history without touching the Nuvio Sync store.
      *
      * SIMKL, MDBList and Floppy are the user's own connections and have nothing to do with whether
@@ -205,6 +256,7 @@ object WatchedRepository {
         force: Boolean = false,
         rereadInFull: Boolean = false,
     ) {
+        PerfTelemetry.count("WatchedRepository.pullConnectedProviderHistory")
         ensureLoaded()
         // This path is silent unless it throws, which made "imported nothing" and "never ran"
         // indistinguishable from the log. Every early return now says which gate closed.
@@ -273,6 +325,14 @@ object WatchedRepository {
             return false
         }
         var changed = withdrawForeignImportedHistory(importProviderId)
+        // Set when only the source-history keys moved: republish, nothing to persist.
+        var sourceKeysChanged = synchronized(itemsLock) {
+            val owner = importProviderId?.storageId
+            if (sourceHistoryProvider == owner) return@synchronized false
+            sourceHistoryProvider = owner
+            sourceHistoryKeys = emptySet()
+            true
+        }
         if (provider != null) {
             // A provider may skip its own fetch when the service reports nothing has changed. That
             // is the right default for a poll and the wrong one for a resync the user asked for,
@@ -284,7 +344,8 @@ object WatchedRepository {
             val holdsImport = synchronized(itemsLock) {
                 itemsByKey.values.any { item -> item.importedFrom == provider.providerId.storageId }
             }
-            if (rereadInFull || !holdsImport) provider.invalidateChangeDetection()
+            val fullRead = rereadInFull || !holdsImport
+            if (fullRead) provider.invalidateChangeDetection()
             val remoteItems = try {
                 provider.pull(profileId = profileId, pageSize = watchedItemsPageSize)
             } catch (error: CancellationException) {
@@ -303,7 +364,20 @@ object WatchedRepository {
                         "(local before merge = ${itemsByKey.size})"
                 }
                 val resets = provider.consumeHistoryResets()
+                // Alias keys too: an imported row that duplicates the user's own row under another id
+                // is dropped below in favour of that row, which is still this provider's history.
+                val reportedKeys = imported.mapTo(linkedSetOf()) { item ->
+                    watchedItemKey(item.type, item.id, item.season, item.episode)
+                } + aliasedWatchedKeys(imported, WatchedIdAliases::aliasesOf)
                 synchronized(itemsLock) {
+                    // A delta read only carries what changed, so it adds to what earlier reads
+                    // reported; a full read replaces it. Rows the provider later drops leave the
+                    // store itself, so a stale key here never resurrects anything.
+                    val nextKeys = if (fullRead) reportedKeys else sourceHistoryKeys + reportedKeys
+                    if (nextKeys != sourceHistoryKeys) {
+                        sourceHistoryKeys = nextKeys
+                        sourceKeysChanged = true
+                    }
                     val merged = dropAliasedImportDuplicates(
                         items = mergeWatchedItemsAdditively(itemsByKey.values, imported),
                         aliasesOf = WatchedIdAliases::aliasesOf,
@@ -326,8 +400,9 @@ object WatchedRepository {
                 }
             }
         }
-        if (!changed && publishedAliasVersion != WatchedIdAliases.version && profileId == currentProfileId) {
-            // Only the alias keys moved: republish so the other id space answers, nothing to persist.
+        val aliasesMoved = publishedAliasVersion != WatchedIdAliases.version
+        if (!changed && (aliasesMoved || sourceKeysChanged) && profileId == currentProfileId) {
+            // Only alias or source-history keys moved: republish so they answer, nothing to persist.
             publish()
         }
         if (changed && profileId == currentProfileId) {
@@ -574,6 +649,11 @@ object WatchedRepository {
     }
 
     fun markWatched(items: Collection<WatchedItem>) {
+        // Marking an episode is a sign you're back on the show, as finishing one in the player is,
+        // so a Next Up card you dismissed for it comes back.
+        items.filter { it.isEpisode }.map { it.id }.distinct().forEach {
+            ContinueWatchingPreferencesRepository.removeDismissedNextUpKeysForContent(it)
+        }
         markWatched(items = items, remoteSync = WatchedRemoteSync.Manual)
     }
 
@@ -872,6 +952,7 @@ object WatchedRepository {
     }
 
     private fun publish() {
+        val (sourceProvider, sourceKeys) = synchronized(itemsLock) { sourceHistoryProvider to sourceHistoryKeys }
         val items = itemSnapshot()
             .map(WatchedItem::normalizedMarkedAt)
             .sortedByDescending { it.markedAtEpochMs }
@@ -888,6 +969,8 @@ object WatchedRepository {
             items = items,
             watchedKeys = watchedKeys,
             isLoaded = true,
+            sourceHistoryProvider = sourceProvider,
+            sourceHistoryKeys = sourceKeys,
         )
     }
 
@@ -1134,6 +1217,33 @@ internal fun watchedUnmarkDeleteTargets(
 ): List<WatchedItem> = requestedItems
     .associateBy { item -> watchedItemKey(item.type, item.id, item.season, item.episode) }
     .map { (key, requested) -> removedByKey[key] ?: requested }
+
+/**
+ * The rows of [items] that are [providerStorageId]'s own history: tagged as imported from it, or
+ * reported by its last import ([sourceHistoryKeys], meaningful only while [sourceHistoryProvider]
+ * is that same provider).
+ *
+ * This is what Up Next may always seed from while that provider is the Continue Watching source.
+ * Discarding it with the rest of the local history left a source that supplies no completed seeds
+ * of its own (MDBList: paused sessions only) with no next-up rows at all.
+ */
+internal fun sourceProviderWatchedItems(
+    items: Collection<WatchedItem>,
+    providerStorageId: String?,
+    sourceHistoryProvider: String?,
+    sourceHistoryKeys: Set<String>,
+): List<WatchedItem> {
+    if (providerStorageId == null) return emptyList()
+    val keys = if (sourceHistoryProvider.equals(providerStorageId, ignoreCase = true)) {
+        sourceHistoryKeys
+    } else {
+        emptySet()
+    }
+    return items.filter { item ->
+        item.importedFrom.equals(providerStorageId, ignoreCase = true) ||
+            watchedItemKey(item.type, item.id, item.season, item.episode) in keys
+    }
+}
 
 internal fun mergeWatchedItemsAdditively(
     localItems: Collection<WatchedItem>,

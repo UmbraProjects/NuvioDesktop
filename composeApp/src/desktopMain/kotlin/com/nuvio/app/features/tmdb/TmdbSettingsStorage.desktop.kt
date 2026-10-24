@@ -27,6 +27,8 @@ internal actual object TmdbSettingsStorage {
     private const val useCollectionsKey = "tmdb_use_collections"
     private const val resolveFilenameCatalogsKey = "tmdb_resolve_filename_catalogs"
     private const val heroImageSourceKey = "tmdb_hero_image_source"
+    // Desktop-fork setting like the hero routing above: local, not in the portable sync group.
+    private const val showEnrichmentKey = "tmdb_show_enrichment"
     // Filename catalog resolution and hero image routing are desktop-fork features. Keep those
     // keys local even when the portable TMDB group is enabled. (The custom poster service, once
     // here too, now has its own store — CustomPosterSettingsStorage migrates its keys out.)
@@ -80,6 +82,8 @@ internal actual object TmdbSettingsStorage {
     actual fun saveResolveFilenameCatalogs(enabled: Boolean) = saveBoolean(resolveFilenameCatalogsKey, enabled)
     actual fun loadHeroImageSource(): String? = loadString(heroImageSourceKey)
     actual fun saveHeroImageSource(source: String) = saveString(heroImageSourceKey, source)
+    actual fun loadShowEnrichment(): String? = loadString(showEnrichmentKey)
+    actual fun saveShowEnrichment(value: String) = saveString(showEnrichmentKey, value)
 
     private fun loadString(key: String): String? = store.getString(ProfileScopedKey.of(key))
     private fun saveString(key: String, value: String) = store.putString(ProfileScopedKey.of(key), value)

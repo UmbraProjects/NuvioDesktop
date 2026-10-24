@@ -6,19 +6,36 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaExternalRating
 import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.core.storage.CoalescingCachePersister
+import com.nuvio.app.core.storage.decodeJsonMap
+import com.nuvio.app.core.storage.encodeJsonMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+
+/**
+ * Both MDBList caches (ratings, hero cast) live in one ~2.8 MB properties file, and every write
+ * rewrites all of it. The default 3 s window still wrote it 5 times in a 4-minute browse (14 MB);
+ * these are caches, and the exit path flushes them, so a longer window costs nothing.
+ */
+internal const val MDBLIST_CACHE_WRITE_DELAY_MS = 30_000L
 
 object MdbListMetadataService {
     const val CACHE_VERSION = 4
@@ -59,13 +76,23 @@ object MdbListMetadataService {
         "myanimelist" to PROVIDER_MAL,
     )
 
-    private const val FOUND_TTL_MS = 7L * 24L * 60L * 60L * 1000L
-    private const val NOT_FOUND_TTL_MS = 7L * 24L * 60L * 60L * 1000L
+    // How long a fetched answer stands depends on where the title is in its release; see
+    // [MdbListRatingsFreshness].
     // Short-lived negative cache for transient failures (5xx / empty body / parse / transport). A
     // handful of titles that keep failing must not be re-requested on every hero scroll; the short
     // TTL still lets them recover on the next browse a little later.
     private const val ERROR_TTL_MS = 30L * 60L * 1000L
     private const val RATE_LIMIT_BACKOFF_MS = 30L * 60L * 1000L
+    /** What every found answer was cached for before adaptive refresh; see [legacyFetchedAtMs]. */
+    private const val LEGACY_FOUND_TTL_MS = 7L * 24L * 60L * 60L * 1000L
+
+    // The idle sweep: ratings that are due on titles whose extras are not, refreshed in bulk once
+    // Home is up and then every few hours, so details and hero lookups mostly hit fresh cache. It
+    // stops while the key's remaining daily requests are at the reserve, leaving them for browsing.
+    private const val SWEEP_FIRST_DELAY_MS = 60_000L
+    private const val SWEEP_INTERVAL_MS = 6L * 60L * 60L * 1000L
+    private const val SWEEP_QUOTA_RESERVE = 100
+    private const val SWEEP_BATCH_GAP_MS = 3_000L
 
     @kotlin.concurrent.Volatile
     private var cache: MutableMap<String, CachedRatings>? = null
@@ -78,6 +105,7 @@ object MdbListMetadataService {
     // the fetch, a mid-flight cancellation dropped an already-issued request without caching it —
     // wasting API quota and forcing an identical re-fetch on the next visit.
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var sweepStarted = false
 
     fun shouldFetchForMeta(
         meta: MetaDetails,
@@ -109,6 +137,7 @@ object MdbListMetadataService {
             lookup = lookup,
             mediaType = mediaType,
             apiKey = apiKey,
+            refreshDays = settings::refreshDays,
         )
         val ratings = enrichment.ratings.filter { it.source in enabledProviders }
 
@@ -129,7 +158,7 @@ object MdbListMetadataService {
             cache = mutableMapOf()
             inFlightRequests.clear()
         }
-        runCatching { MdbListRatingsCacheStorage.save("{}") }
+        runCatching { MdbListRatingsCacheStorage.clearRatings() }
             .onFailure { error -> log.w { "Failed to clear MDBList ratings cache: ${error.message}" } }
     }
 
@@ -137,35 +166,61 @@ object MdbListMetadataService {
         lookup: MdbListLookup,
         mediaType: String,
         apiKey: String,
+        refreshDays: (MdbListRefreshTier) -> Double,
     ): MdbListEnrichmentData {
         val cacheKey = "v$CACHE_VERSION:${lookup.provider}:$mediaType:${lookup.id}"
         val now = LibraryClock.nowEpochMs()
         ensureCacheLoadedOffCaller()
         val pending = cacheMutex.withLock {
             val loaded = ensureCacheLoaded()
-            loaded[cacheKey]?.let { entry ->
-                if (entry.expiresAtMs > now) {
+            val cached = loaded[cacheKey]
+            cached?.let { entry ->
+                // Ratings cached before they carried site links are fetched once more, so the title
+                // page's badges open the title itself rather than a site search.
+                val missingLinks = !entry.hasLinks && entry.ratings.isNotEmpty()
+                if (entry.expiresAtMs(cacheKey, refreshDays) > now && !missingLinks) {
                     return MdbListEnrichmentData(
                         entry.ratings.withRottenTomatoesCertification(entry.keywords),
                         entry.keywords,
                     )
                 }
             }
-            if (rateLimitedUntilMs > now) return MdbListEnrichmentData()
+            if (rateLimitedUntilMs > now) return cached?.toEnrichment() ?: MdbListEnrichmentData()
+            // Ratings alone are due and the extras still stand: refresh in bulk.
+            val bulkFrom = cached?.takeIf {
+                MdbListBulkRatings.supports(lookup.provider) &&
+                    MdbListBulkRatings.isAvailable(now) &&
+                    !it.extrasDue(cacheKey, now)
+            }
             inFlightRequests[cacheKey] ?: CompletableDeferred<MdbListEnrichmentData>().also { deferred ->
                 inFlightRequests[cacheKey] = deferred
                 // Own the fetch on the service scope, not the caller. A caller that scrolls away or
                 // times out then cancels only its own await() below — the request it already issued
                 // still completes and is cached for the next visit.
                 serviceScope.launch {
-                    performFetchAndCache(
-                        cacheKey = cacheKey,
-                        lookup = lookup,
-                        mediaType = mediaType,
-                        apiKey = apiKey,
-                        requestedAtMs = now,
-                        deferred = deferred,
-                    )
+                    if (bulkFrom != null) {
+                        performBulkRefresh(
+                            cacheKey = cacheKey,
+                            lookup = lookup,
+                            mediaType = mediaType,
+                            apiKey = apiKey,
+                            requestedAtMs = now,
+                            refreshDays = refreshDays,
+                            stale = bulkFrom,
+                            deferred = deferred,
+                        )
+                    } else {
+                        performFetchAndCache(
+                            cacheKey = cacheKey,
+                            lookup = lookup,
+                            mediaType = mediaType,
+                            apiKey = apiKey,
+                            requestedAtMs = now,
+                            refreshDays = refreshDays,
+                            stale = cached,
+                            deferred = deferred,
+                        )
+                    }
                 }
             }
         }
@@ -178,6 +233,8 @@ object MdbListMetadataService {
         mediaType: String,
         apiKey: String,
         requestedAtMs: Long,
+        refreshDays: (MdbListRefreshTier) -> Double,
+        stale: CachedRatings?,
         deferred: CompletableDeferred<MdbListEnrichmentData>,
     ) {
         val enrichment = try {
@@ -188,7 +245,7 @@ object MdbListMetadataService {
                 rateLimitedUntilMs = LibraryClock.nowEpochMs() + RATE_LIMIT_BACKOFF_MS
                 inFlightRequests.remove(cacheKey)
             }
-            deferred.complete(MdbListEnrichmentData())
+            deferred.complete(stale?.toEnrichment() ?: MdbListEnrichmentData())
             return
         } catch (error: CancellationException) {
             // Only reached if the service scope itself is torn down (app shutdown).
@@ -217,12 +274,165 @@ object MdbListMetadataService {
 
         cacheMutex.withLock {
             val loaded = ensureCacheLoaded()
-            val ttl = if (enrichment.ratings.isNotEmpty() || enrichment.keywords.isNotEmpty()) FOUND_TTL_MS else NOT_FOUND_TTL_MS
-            loaded[cacheKey] = CachedRatings(ratings = enrichment.ratings, keywords = enrichment.keywords, expiresAtMs = requestedAtMs + ttl)
+            val entry = CachedRatings(
+                ratings = enrichment.ratings,
+                keywords = enrichment.keywords,
+                expiresAtMs = 0L,
+                hasLinks = enrichment.hasLinks,
+                fetchedAtMs = requestedAtMs,
+                releaseFacts = enrichment.releaseFacts,
+                extrasFetchedAtMs = requestedAtMs,
+            )
+            // The stored expiry is only what pruning goes by; a lookup recomputes it from the
+            // facts, so a changed refresh pace reaches titles already cached.
+            loaded[cacheKey] = entry.copy(expiresAtMs = entry.expiresAtMs(cacheKey, refreshDays))
             persister.schedule()
             inFlightRequests.remove(cacheKey)
         }
         deferred.complete(enrichment)
+    }
+
+    /**
+     * Ratings for a title whose extras still stand, from a shared bulk request. Keywords, the digital
+     * date and the extras clock stay as cached; the release facts take the answer's status, release
+     * date and seasons. A title the bulk answer leaves out, or a failed bulk request, goes to the
+     * single lookup instead.
+     */
+    private suspend fun performBulkRefresh(
+        cacheKey: String,
+        lookup: MdbListLookup,
+        mediaType: String,
+        apiKey: String,
+        requestedAtMs: Long,
+        refreshDays: (MdbListRefreshTier) -> Double,
+        stale: CachedRatings,
+        deferred: CompletableDeferred<MdbListEnrichmentData>,
+    ) {
+        val outcome = try {
+            MdbListBulkRatings.fetch(lookup.provider, mediaType, lookup.id, apiKey)
+        } catch (error: CancellationException) {
+            cacheMutex.withLock { inFlightRequests.remove(cacheKey) }
+            deferred.completeExceptionally(error)
+            throw error
+        }
+        when (outcome) {
+            is MdbListBulkRatings.Outcome.Found -> {
+                val title = outcome.title
+                val updated = cacheMutex.withLock {
+                    val loaded = ensureCacheLoaded()
+                    val base = loaded[cacheKey] ?: stale
+                    val entry = base.copy(
+                        ratings = ratingsOf(title, mediaType),
+                        hasLinks = true,
+                        fetchedAtMs = requestedAtMs,
+                        extrasFetchedAtMs = base.extrasFetchedAtMs ?: base.fetchedAtMs ?: requestedAtMs,
+                        releaseFacts = MdbListRatingsFreshness.mergeBulkFacts(
+                            old = base.releaseFacts,
+                            isShow = mediaType != "movie",
+                            status = title.status,
+                            releasedMs = MdbListRatingsFreshness.parseDateMs(title.released),
+                            seasons = title.seasons.mapNotNull { it.toFact() },
+                            nowMs = requestedAtMs,
+                        ),
+                    )
+                    val stored = entry.copy(expiresAtMs = entry.expiresAtMs(cacheKey, refreshDays))
+                    loaded[cacheKey] = stored
+                    persister.schedule()
+                    inFlightRequests.remove(cacheKey)
+                    stored
+                }
+                deferred.complete(updated.toEnrichment())
+            }
+            MdbListBulkRatings.Outcome.RateLimited -> {
+                log.w { "MDBList rate limit hit (bulk); backing off for 30 minutes" }
+                cacheMutex.withLock {
+                    rateLimitedUntilMs = LibraryClock.nowEpochMs() + RATE_LIMIT_BACKOFF_MS
+                    inFlightRequests.remove(cacheKey)
+                }
+                deferred.complete(stale.toEnrichment())
+            }
+            MdbListBulkRatings.Outcome.Missing,
+            MdbListBulkRatings.Outcome.Failed,
+            -> performFetchAndCache(
+                cacheKey = cacheKey,
+                lookup = lookup,
+                mediaType = mediaType,
+                apiKey = apiKey,
+                requestedAtMs = requestedAtMs,
+                refreshDays = refreshDays,
+                stale = stale,
+                deferred = deferred,
+            )
+        }
+    }
+
+    /** Starts the idle bulk sweep once; see [SWEEP_INTERVAL_MS]. */
+    fun startStaleSweep() {
+        synchronized(this) {
+            if (sweepStarted) return
+            sweepStarted = true
+        }
+        serviceScope.launch {
+            delay(SWEEP_FIRST_DELAY_MS)
+            while (isActive) {
+                try {
+                    refreshStaleInBulk()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    log.w { "Stale sweep failed: ${error.message}" }
+                }
+                delay(SWEEP_INTERVAL_MS)
+            }
+        }
+    }
+
+    /** Refreshes, in bulk, every cached title whose ratings are due and whose extras are not. */
+    internal suspend fun refreshStaleInBulk(): Int {
+        MdbListSettingsRepository.ensureLoaded()
+        val settings = MdbListSettingsRepository.snapshot()
+        if (!settings.enabled || !settings.hasApiKey) return 0
+        val apiKey = settings.apiKey.trim()
+        ensureCacheLoadedOffCaller()
+        val now = LibraryClock.nowEpochMs()
+        if (!MdbListBulkRatings.isAvailable(now) || rateLimitedUntilMs > now) return 0
+        val due = cacheMutex.withLock {
+            ensureCacheLoaded().mapNotNull { (key, entry) ->
+                if (entry.fetchedAtMs == null || key in inFlightRequests) return@mapNotNull null
+                if (entry.expiresAtMs(key, settings::refreshDays) > now || entry.extrasDue(key, now)) {
+                    return@mapNotNull null
+                }
+                parseCacheKey(key)?.takeIf { MdbListBulkRatings.supports(it.first.provider) }
+            }
+        }
+        if (due.isEmpty()) return 0
+        val batches = due.groupBy { (lookup, type) -> lookup.provider to type }.values
+            .flatMap { it.chunked(MdbListBulkRatings.MAX_IDS) }
+        var refreshed = 0
+        for (batch in batches) {
+            val left = MdbListQuota.remaining
+            if (left != null && left <= SWEEP_QUOTA_RESERVE) {
+                log.i { "Stale sweep paused at the quota reserve ($left left)" }
+                break
+            }
+            coroutineScope {
+                batch.map { (lookup, type) ->
+                    async { fetchEnrichmentData(lookup, type, apiKey, settings::refreshDays) }
+                }.awaitAll()
+            }
+            refreshed += batch.size
+            delay(SWEEP_BATCH_GAP_MS)
+        }
+        log.i { "Stale sweep: $refreshed of ${due.size} due titles in ${batches.size} batches" }
+        return refreshed
+    }
+
+    /** `v4:imdb:movie:tt0068646` → the lookup and media type it was cached under. */
+    internal fun parseCacheKey(key: String): Pair<MdbListLookup, String>? {
+        val parts = key.split(':', limit = 4)
+        if (parts.size != 4 || parts[0] != "v$CACHE_VERSION") return null
+        if (parts[3].isBlank()) return null
+        return MdbListLookup(provider = parts[1], id = parts[3]) to parts[2]
     }
 
     private suspend fun fetchFromApi(
@@ -238,6 +448,7 @@ object MdbListMetadataService {
             headers = mapOf("Accept" to "application/json"),
             body = "",
         )
+        MdbListQuota.record(response.headers)
         if (response.status == 404) {
             return MdbListEnrichmentData()
         }
@@ -248,21 +459,41 @@ object MdbListMetadataService {
             error("HTTP ${response.status}")
         }
         val payload = response.body.takeIf { it.isNotBlank() } ?: error("Empty response body")
+        return parseEnrichment(payload, mediaType)
+    }
+
+    /** One MDBList title response → ratings (with their site links) and keywords. */
+    internal fun parseEnrichment(payload: String, mediaType: String): MdbListEnrichmentData {
         val parsed = json.decodeFromString<MdbListRatingsResponse>(payload)
-        val ratings = parsed.ratings.mapNotNull { item ->
+        val ratings = ratingsOf(parsed, mediaType)
+        val keywords = parsed.keywords.mapNotNull { it.name }.filter { it.isNotBlank() }
+        return MdbListEnrichmentData(
+            ratings.withRottenTomatoesCertification(keywords),
+            keywords,
+            hasLinks = true,
+            releaseFacts = parsed.toReleaseFacts(isShow = mediaType != "movie"),
+        )
+    }
+
+    /** A title answer's ratings, each with its site link. */
+    internal fun ratingsOf(parsed: MdbListRatingsResponse, mediaType: String): List<MetaExternalRating> {
+        val ids = parsed.ids?.toIds()
+        return parsed.ratings.mapNotNull { item ->
             val providerId = providerIdForSource(item.source) ?: return@mapNotNull null
             val value = item.value ?: return@mapNotNull null
-            MetaExternalRating(source = providerId, value = value)
+            MetaExternalRating(
+                source = providerId,
+                value = value,
+                url = ratingLinkFromMdbList(providerId, item.sitePath(), ids, isMovie = mediaType == "movie"),
+            )
         }
-        val keywords = parsed.keywords.mapNotNull { it.name }.filter { it.isNotBlank() }
-        return MdbListEnrichmentData(ratings.withRottenTomatoesCertification(keywords), keywords)
     }
 
     /**
-     * Same burst as the hero cast cache next door, into the same 3.4 MB properties file — batched
-     * for the same reason. See [CoalescingCachePersister].
+     * Same burst as the hero cast cache next door — batched for the same reason. See
+     * [CoalescingCachePersister]. Each write streams the whole map to its own file (encodeJsonMap).
      */
-    private val persister = CoalescingCachePersister(tag = "mdbListRatings") {
+    private val persister = CoalescingCachePersister(tag = "mdbListRatings", writeDelayMs = MDBLIST_CACHE_WRITE_DELAY_MS) {
         val snapshot = cacheMutex.withLock { ensureCacheLoaded().toMap() }
         persistCache(snapshot)
     }
@@ -286,14 +517,21 @@ object MdbListMetadataService {
         cache?.let { return it }
         val loaded = mutableMapOf<String, CachedRatings>()
         runCatching {
-            MdbListRatingsCacheStorage.load()?.let { raw ->
-                json.decodeFromString<Map<String, CachedRatingsDto>>(raw).forEach { (key, dto) ->
-                    loaded[key] = CachedRatings(
-                        ratings = dto.ratings.map { MetaExternalRating(source = it.source, value = it.value) },
-                        keywords = dto.keywords,
+            MdbListRatingsCacheStorage.readRatings { input ->
+                json.decodeJsonMap(input, CachedRatingsDto.serializer())
+            }?.forEach { (key, dto) ->
+                loaded[key] = CachedRatings(
+                    ratings = dto.ratings.map { MetaExternalRating(source = it.source, value = it.value, url = it.url) },
+                    keywords = dto.keywords,
+                    expiresAtMs = dto.expiresAtMs,
+                    hasLinks = dto.hasLinks,
+                    fetchedAtMs = dto.fetchedAtMs ?: legacyFetchedAtMs(
+                        found = dto.ratings.isNotEmpty() || dto.keywords.isNotEmpty(),
                         expiresAtMs = dto.expiresAtMs,
-                    )
-                }
+                    ),
+                    releaseFacts = dto.releaseFacts,
+                    extrasFetchedAtMs = dto.extrasFetchedAtMs,
+                )
             }
         }.onFailure { error ->
             log.w { "Failed to load MDBList ratings cache: ${error.message}" }
@@ -310,15 +548,32 @@ object MdbListMetadataService {
         return loaded
     }
 
+    /**
+     * When an entry from before adaptive refresh was fetched. Those builds cached every found answer
+     * for [LEGACY_FOUND_TTL_MS] and stored only the expiry, so the fetch time is the expiry minus
+     * that. Without it a cached title has no clock to refresh in bulk by, and every one of them
+     * (2,285 on this install) would go back to a single lookup as it expired. Failures and
+     * not-found answers stay as stored: they are refetched singly either way.
+     */
+    internal fun legacyFetchedAtMs(found: Boolean, expiresAtMs: Long): Long? =
+        if (found) expiresAtMs - LEGACY_FOUND_TTL_MS else null
+
     private fun persistCache(entries: Map<String, CachedRatings>) {
-        val dto = entries.mapValues { (_, entry) ->
-            CachedRatingsDto(
-                ratings = entry.ratings.map { MetaExternalRatingDto(source = it.source, value = it.value) },
-                keywords = entry.keywords,
-                expiresAtMs = entry.expiresAtMs,
-            )
+        runCatching {
+            MdbListRatingsCacheStorage.writeRatings { output ->
+                json.encodeJsonMap(output, entries, CachedRatingsDto.serializer()) { entry ->
+                    CachedRatingsDto(
+                        ratings = entry.ratings.map { MetaExternalRatingDto(source = it.source, value = it.value, url = it.url) },
+                        keywords = entry.keywords,
+                        expiresAtMs = entry.expiresAtMs,
+                        hasLinks = entry.hasLinks,
+                        fetchedAtMs = entry.fetchedAtMs,
+                        releaseFacts = entry.releaseFacts,
+                        extrasFetchedAtMs = entry.extrasFetchedAtMs,
+                    )
+                }
+            }
         }
-        runCatching { MdbListRatingsCacheStorage.save(json.encodeToString(dto)) }
             .onFailure { error -> log.w { "Failed to save MDBList ratings cache: ${error.message}" } }
     }
 
@@ -396,40 +651,146 @@ private class MdbListRateLimitedException : RuntimeException()
 internal data class MdbListEnrichmentData(
     val ratings: List<MetaExternalRating> = emptyList(),
     val keywords: List<String> = emptyList(),
+    /** Fetched since ratings carried their site links. */
+    val hasLinks: Boolean = false,
+    /** Where the title is in its release; decides how long this answer is cached. */
+    val releaseFacts: MdbListReleaseFacts? = null,
 )
 
-private data class CachedRatings(
+internal data class CachedRatings(
     val ratings: List<MetaExternalRating>,
     val keywords: List<String> = emptyList(),
     val expiresAtMs: Long,
-)
+    val hasLinks: Boolean = false,
+    /** Set on a successful fetch; failures and entries from before adaptive refresh have none. */
+    val fetchedAtMs: Long? = null,
+    val releaseFacts: MdbListReleaseFacts? = null,
+    /** When keywords, the digital date and episode dates were last fetched; falls back to [fetchedAtMs]. */
+    val extrasFetchedAtMs: Long? = null,
+) {
+    private val found: Boolean get() = ratings.isNotEmpty() || keywords.isNotEmpty()
+
+    /** Whether the next refresh has to be the single lookup, the only one that carries the extras. */
+    fun extrasDue(cacheKey: String, nowMs: Long): Boolean {
+        val extrasAt = extrasFetchedAtMs ?: fetchedAtMs ?: return true
+        // Found before release facts were kept (a single lookup always stores them): the keywords
+        // are cached and stand, and the first bulk answer supplies the facts the rules below need.
+        if (found && releaseFacts == null) {
+            return extrasAt + MdbListRatingsFreshness.EXTRAS_SETTLED_TTL_DAYS * 24L * 60L * 60L * 1000L <= nowMs
+        }
+        return extrasAt + MdbListRatingsFreshness.extrasTtlMs(releaseFacts, found, extrasAt, cacheKey) <= nowMs
+    }
+
+    fun toEnrichment() = MdbListEnrichmentData(ratings.withRottenTomatoesCertification(keywords), keywords)
+
+    /** Under the refresh intervals in force now; [expiresAtMs] as stored when it can't be redone. */
+    fun expiresAtMs(cacheKey: String, refreshDays: (MdbListRefreshTier) -> Double): Long {
+        val fetchedAt = fetchedAtMs ?: return expiresAtMs
+        return fetchedAt + MdbListRatingsFreshness.ttlMs(
+            facts = releaseFacts,
+            found = found,
+            nowMs = fetchedAt,
+            cacheKey = cacheKey,
+            days = refreshDays,
+        )
+    }
+}
 
 @Serializable
 private data class CachedRatingsDto(
     val ratings: List<MetaExternalRatingDto>,
     val keywords: List<String> = emptyList(),
     val expiresAtMs: Long,
+    val hasLinks: Boolean = false,
+    val fetchedAtMs: Long? = null,
+    val releaseFacts: MdbListReleaseFacts? = null,
+    val extrasFetchedAtMs: Long? = null,
 )
 
 @Serializable
 private data class MetaExternalRatingDto(
     val source: String,
     val value: Double,
+    val url: String? = null,
 )
 
 @Serializable
-private data class MdbListRatingsResponse(
+internal data class MdbListRatingsResponse(
     val ratings: List<MdbListRatingItem> = emptyList(),
     val keywords: List<MdbListKeywordItem> = emptyList(),
+    val ids: MdbListIdsDto? = null,
+    val status: String? = null,
+    val released: String? = null,
+    @SerialName("released_digital") val releasedDigital: String? = null,
+    @SerialName("last_episode") val lastEpisode: MdbListEpisodeRefDto? = null,
+    @SerialName("next_episode") val nextEpisode: MdbListEpisodeRefDto? = null,
+    val seasons: List<MdbListSeasonDto> = emptyList(),
+) {
+    fun toReleaseFacts(isShow: Boolean) = MdbListReleaseFacts(
+        isShow = isShow,
+        status = status,
+        releasedMs = MdbListRatingsFreshness.parseDateMs(released),
+        digitalMs = MdbListRatingsFreshness.parseDateMs(releasedDigital),
+        lastEpisodeMs = MdbListRatingsFreshness.parseDateMs(lastEpisode?.airDate),
+        lastEpisodeSeason = lastEpisode?.season,
+        nextEpisodeMs = MdbListRatingsFreshness.parseDateMs(nextEpisode?.airDate),
+        nextEpisodeSeason = nextEpisode?.season,
+    )
+}
+
+@Serializable
+internal data class MdbListSeasonDto(
+    @SerialName("season_number") val number: Int? = null,
+    @SerialName("air_date") val airDate: String? = null,
+    @SerialName("episode_count") val episodeCount: Int? = null,
+) {
+    fun toFact(): MdbListSeasonFact? =
+        number?.let { MdbListSeasonFact(it, MdbListRatingsFreshness.parseDateMs(airDate), episodeCount) }
+}
+
+@Serializable
+internal data class MdbListEpisodeRefDto(
+    val season: Int? = null,
+    @SerialName("air_date") val airDate: String? = null,
+)
+
+/** The title's ids on other sites; numbers or strings depending on the site, so read loosely. */
+@Serializable
+internal data class MdbListIdsDto(
+    val imdb: JsonPrimitive? = null,
+    val tmdb: JsonPrimitive? = null,
+    val trakt: JsonPrimitive? = null,
+    val mal: JsonPrimitive? = null,
+) {
+    fun toIds() = MdbListIds(
+        imdb = imdb?.contentOrNull?.takeIf { it.startsWith("tt") },
+        tmdb = tmdb?.contentOrNull?.takeIf { it.isNotBlank() && it != "0" },
+        trakt = trakt?.contentOrNull?.takeIf { it.isNotBlank() && it != "0" },
+        mal = mal?.contentOrNull?.takeIf { it.isNotBlank() && it != "0" },
+    )
+}
+
+internal data class MdbListIds(
+    val imdb: String? = null,
+    val tmdb: String? = null,
+    val trakt: String? = null,
+    val mal: String? = null,
 )
 
 @Serializable
-private data class MdbListRatingItem(
+internal data class MdbListRatingItem(
     val source: String? = null,
     val value: Double? = null,
-)
+    /**
+     * The title's path on that site (`/tv/ted_lasso`) for the sites MDBList knows it for. Not always
+     * a string: IMDb's is a bare number, so it is read loosely and only a string is used.
+     */
+    val url: JsonElement? = null,
+) {
+    fun sitePath(): String? = (url as? JsonPrimitive)?.takeIf { it.isString }?.content
+}
 
 @Serializable
-private data class MdbListKeywordItem(
+internal data class MdbListKeywordItem(
     val name: String? = null,
 )

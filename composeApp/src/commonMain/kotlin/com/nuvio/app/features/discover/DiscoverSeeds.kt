@@ -52,14 +52,7 @@ fun collapseWatchedToSeedCandidates(
             DiscoverSeedCandidate(
                 parentId = newest.id,
                 type = newest.type.trim().lowercase(),
-                // The newest row is the right source for *when*, but not always for *what*: some
-                // watch-history rows are written with an empty name, so take the title from the
-                // most recent row that actually has one. May still be blank when every row for a
-                // title lacks a name — DiscoverSeedService recovers those from TMDB.
-                title = rows.sortedByDescending { it.markedAtEpochMs }
-                    .firstOrNull { it.name.isNotBlank() }
-                    ?.name
-                    .orEmpty(),
+                title = seedTitle(rows),
                 lastWatchedAtEpochMs = newest.markedAtEpochMs,
                 // Distinct episodes, not rows: the same episode can appear twice when a tracking
                 // provider import lands on top of a local mark.
@@ -69,6 +62,32 @@ fun collapseWatchedToSeedCandidates(
             )
         }
         .sortedByDescending { it.lastWatchedAtEpochMs }
+}
+
+/**
+ * The title a group of watch-history rows belongs to.
+ *
+ * The newest row is the right source for *when*, but not always for *what*: some rows are written
+ * with an empty name, and an episode row's name is sometimes the *episode's* title rather than the
+ * show's — SIMKL-imported history is written that way, which is how Friends became "Because you
+ * watched The Last One (2)". So: the newest named title-level row; else a name two or more episode
+ * rows share (a show's name repeats across its episodes, episode titles don't); else blank, which
+ * DiscoverSeedService recovers from TMDB.
+ */
+private fun seedTitle(rows: List<WatchedItem>): String {
+    val newestFirst = rows.sortedByDescending { it.markedAtEpochMs }
+    newestFirst.firstOrNull { it.name.isNotBlank() && it.season == null && it.episode == null }
+        ?.let { return it.name }
+    val episodeNames = newestFirst.filter { it.episode != null }.map { it.name.trim() }.filter(String::isNotEmpty)
+    if (episodeNames.isEmpty()) {
+        // A film, or a show's rows with no episode numbers: the name is the title's own.
+        return newestFirst.firstOrNull { it.name.isNotBlank() }?.name.orEmpty()
+    }
+    return episodeNames.groupingBy { it }.eachCount()
+        .filterValues { it >= 2 }
+        .maxByOrNull { it.value }
+        ?.key
+        .orEmpty()
 }
 
 private fun seedGroupKey(type: String, id: String): String =

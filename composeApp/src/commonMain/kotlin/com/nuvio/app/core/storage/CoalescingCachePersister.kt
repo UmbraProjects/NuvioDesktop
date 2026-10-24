@@ -9,6 +9,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.Volatile
+
+/**
+ * When a scheduled cache write may run. Desktop installs "nobody is using the app" (no input, no
+ * self-running animation, see IdleHeapCollector): a write re-encodes and rewrites a whole cache, and
+ * the MDBList store alone is 6.5-13 MB per write, so made mid-scroll its tens of MB of short-lived
+ * memory brought the natural full GCs forward (2026-10-19 heap dump: one 15M-char JSON buffer in
+ * flight; writes every 15-60 s while browsing catalogs). Waited on for at most [MaxQuietWaitMs].
+ */
+internal object CachePersistGate {
+    const val MaxQuietWaitMs = 5 * 60_000L
+
+    @Volatile
+    var awaitQuietMoment: suspend () -> Unit = {}
+}
 
 /**
  * Batches "rewrite the whole cache" work so a burst of changes costs one write instead of one each.
@@ -63,6 +79,7 @@ internal class CoalescingCachePersister(
                 if (scheduled != null) return@withLock
                 scheduled = scope.launch {
                     delay(writeDelayMs)
+                    withTimeoutOrNull(CachePersistGate.MaxQuietWaitMs) { CachePersistGate.awaitQuietMoment() }
                     writeIfDirty()
                 }
             }

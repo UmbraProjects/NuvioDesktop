@@ -3,10 +3,7 @@ package com.nuvio.app.features.music
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
-import kotlin.math.abs
 
 class LyricsTest {
     @Test
@@ -87,53 +84,5 @@ class LyricsTest {
         assertEquals(listOf("https://x/1.jpg", "https://x/3.jpg"), fanartFromAudioDb(body, "ren"))
         assertEquals(emptyList(), fanartFromAudioDb("""{"artists":null}""", "Ren"))
         assertEquals(emptyList(), fanartFromAudioDb("not json", "Ren"))
-    }
-}
-
-class LyricTimingTest {
-    private val lines = parseLrc(
-        "[00:05.00] hold me now\n[00:10.00]\n[00:20.00] la la la la la la\n[00:25.00] la la la la la la\n[00:30.00] la la la la la la\n[00:40.00] oh!",
-    )
-
-    @Test
-    fun sweepFinishesBeforeANextLineThatIsFarOff() {
-        assertEquals(0f, lineProgress(lines, 0, 5_000L))
-        assertEquals(1f, lineProgress(lines, 0, 9_000L))
-        assertEquals(0f, lineProgress(lines, 0, 1_000L))
-    }
-
-    @Test
-    fun sweepNeverRunsPastTheNextLine() {
-        assertTrue(sungEndMs(lines, 2) <= 25_000L)
-    }
-
-    @Test
-    fun wordsShareTheSweepByLength() {
-        val words = lyricWords("a longer word")
-        assertEquals(3, words.size)
-        assertEquals(0f, words.first().from)
-        assertEquals(1f, words.last().to)
-        assertTrue(words[1].to - words[1].from > words[0].to - words[0].from)
-        assertTrue(abs(wordProgress(LyricWord("x", 0.2f, 0.4f), 0.3f) - 0.5f) < 0.001f)
-        assertEquals(emptyList(), lyricWords("   "))
-    }
-
-    @Test
-    fun repeatedHooksAreChorusAndOneOffsAreNot() {
-        assertEquals(setOf(2, 3, 4), chorusLineIndices(lines))
-    }
-
-    @Test
-    fun shoutedOrHeldShortLinesAreEmphasis() {
-        assertTrue(isEmphasisLine(lines, 5))
-        assertTrue(isEmphasisLine(lines, 0))
-        assertFalse(isEmphasisLine(lines, 2))
-        assertFalse(isEmphasisLine(lines, 1))
-    }
-
-    @Test
-    fun gapProgressRunsFromStampToNextStamp() {
-        assertEquals(0.5f, gapProgress(lines, 1, 15_000L))
-        assertEquals(moodHue("Seven Sins"), moodHue("seven sins"))
     }
 }

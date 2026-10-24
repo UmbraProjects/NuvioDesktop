@@ -26,7 +26,17 @@ import nuvio.composeapp.generated.resources.api_keys_onboarding_tmdb_label
 import nuvio.composeapp.generated.resources.setup_wizard_keys_mdblist_benefit
 import nuvio.composeapp.generated.resources.setup_wizard_keys_tmdb_benefit
 import nuvio.composeapp.generated.resources.setup_wizard_keys_where
+import nuvio.composeapp.generated.resources.settings_tmdb_key_check_checking
+import nuvio.composeapp.generated.resources.settings_tmdb_key_check_rejected
+import nuvio.composeapp.generated.resources.settings_tmdb_key_check_unreachable
+import nuvio.composeapp.generated.resources.settings_tmdb_key_check_valid
+import nuvio.composeapp.generated.resources.settings_tmdb_key_check_wrong_type
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import com.nuvio.app.features.tmdb.TmdbApiKeyCheck
+import com.nuvio.app.features.tmdb.TmdbApiKeyStatus
+import kotlinx.coroutines.delay
 import com.nuvio.app.core.ui.accentBrush
 
 private const val TMDB_API_KEY_URL = "https://www.themoviedb.org/settings/api"
@@ -69,6 +79,7 @@ internal fun ApiKeySetupContent(
             helpUrl = TMDB_API_KEY_URL,
             style = style,
             onChange = onTmdbApiKeyChange,
+            checksTmdbKey = true,
         )
         ApiKeyField(
             value = mdbListApiKey,
@@ -89,6 +100,7 @@ private fun ApiKeyField(
     helpUrl: String,
     style: ApiKeySetupStyle,
     onChange: (String) -> Unit,
+    checksTmdbKey: Boolean = false,
 ) {
     val tokens = MaterialTheme.nuvio
     val uriHandler = LocalUriHandler.current
@@ -130,9 +142,14 @@ private fun ApiKeyField(
                 ) {
                     Text(stringResource(Res.string.action_save))
                 }
+                if (checksTmdbKey) TmdbApiKeyStatusLine(apiKey = value)
             }
 
             ApiKeySetupStyle.Staged -> {
+                if (checksTmdbKey) {
+                    // Staged fields change on every keystroke, so wait for the typing to stop.
+                    TmdbApiKeyStatusLine(apiKey = normalizedDraft, debounceMs = STAGED_KEY_CHECK_DEBOUNCE_MS)
+                }
                 Text(
                     text = stringResource(Res.string.setup_wizard_keys_where),
                     style = MaterialTheme.typography.bodySmall.accentBrush(),
@@ -144,3 +161,41 @@ private fun ApiKeyField(
         }
     }
 }
+
+/**
+ * One line under a TMDB key field saying whether TMDB accepts the key, so a wrong one is caught
+ * where it is typed rather than later as empty TMDB collections and a log full of 401s.
+ */
+@Composable
+internal fun TmdbApiKeyStatusLine(
+    apiKey: String,
+    modifier: Modifier = Modifier,
+    debounceMs: Long = 0L,
+) {
+    val tokens = MaterialTheme.nuvio
+    var status by remember(apiKey) { mutableStateOf<TmdbApiKeyStatus?>(null) }
+    LaunchedEffect(apiKey) {
+        if (apiKey.isBlank()) return@LaunchedEffect
+        if (debounceMs > 0) delay(debounceMs)
+        status = TmdbApiKeyStatus.Checking
+        status = TmdbApiKeyCheck.check(apiKey)
+    }
+    val current = status ?: return
+    val text = when (current) {
+        TmdbApiKeyStatus.Checking -> stringResource(Res.string.settings_tmdb_key_check_checking)
+        TmdbApiKeyStatus.Valid -> stringResource(Res.string.settings_tmdb_key_check_valid)
+        TmdbApiKeyStatus.Rejected -> stringResource(Res.string.settings_tmdb_key_check_rejected)
+        TmdbApiKeyStatus.WrongKeyType -> stringResource(Res.string.settings_tmdb_key_check_wrong_type)
+        TmdbApiKeyStatus.Unreachable -> stringResource(Res.string.settings_tmdb_key_check_unreachable)
+    }
+    val isProblem = current == TmdbApiKeyStatus.Rejected || current == TmdbApiKeyStatus.WrongKeyType
+    Text(
+        text = text,
+        modifier = modifier,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (isProblem) MaterialTheme.colorScheme.error else tokens.colors.textSecondary,
+        fontWeight = if (isProblem) FontWeight.SemiBold else null,
+    )
+}
+
+private const val STAGED_KEY_CHECK_DEBOUNCE_MS = 700L

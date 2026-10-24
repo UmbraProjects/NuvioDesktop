@@ -32,9 +32,16 @@ object GamepadSettingsRepository {
     const val MIN_REPEAT_INTERVAL_MS = 60
     const val MAX_REPEAT_INTERVAL_MS = 250
 
+    /**
+     * Off by default: with it on, every click into a text field raises the panel, which a desk user
+     * with a real keyboard would find in the way. It is for the couch, with only a mouse to hand.
+     */
+    const val DEFAULT_MOUSE_KEYBOARD = false
+
     private const val KEY_ENABLED = "gamepad_enabled"
     private const val KEY_DEAD_ZONE = "gamepad_dead_zone_pct"
     private const val KEY_REPEAT_INTERVAL = "gamepad_repeat_interval_ms"
+    private const val KEY_MOUSE_KEYBOARD = "osk_mouse_enabled"
 
     private val store = DesktopStorage.store("nuvio_gamepad")
 
@@ -52,6 +59,13 @@ object GamepadSettingsRepository {
     @Volatile
     var repeatIntervalMs: Int = DEFAULT_REPEAT_INTERVAL_MS
         private set
+
+    /**
+     * Not read by the poll thread, but kept with the pad settings because it is the same panel —
+     * and deliberately independent of [enabled], since the point is that no controller is needed.
+     */
+    private val _mouseKeyboardState = MutableStateFlow(DEFAULT_MOUSE_KEYBOARD)
+    val mouseKeyboardState: StateFlow<Boolean> = _mouseKeyboardState.asStateFlow()
 
     private val _enabledState = MutableStateFlow(DEFAULT_ENABLED)
     val enabledState: StateFlow<Boolean> = _enabledState.asStateFlow()
@@ -81,6 +95,7 @@ object GamepadSettingsRepository {
             .coerceIn(MIN_DEAD_ZONE, MAX_DEAD_ZONE)
         repeatIntervalMs = (store.getInt(scoped(KEY_REPEAT_INTERVAL)) ?: DEFAULT_REPEAT_INTERVAL_MS)
             .coerceIn(MIN_REPEAT_INTERVAL_MS, MAX_REPEAT_INTERVAL_MS)
+        _mouseKeyboardState.value = store.getBoolean(scoped(KEY_MOUSE_KEYBOARD)) ?: DEFAULT_MOUSE_KEYBOARD
         publish()
     }
 
@@ -111,6 +126,18 @@ object GamepadSettingsRepository {
         publish()
     }
 
+    fun setMouseKeyboard(value: Boolean) {
+        ensureLoaded()
+        if (_mouseKeyboardState.value == value) return
+        _mouseKeyboardState.value = value
+        if (value == DEFAULT_MOUSE_KEYBOARD) {
+            store.remove(scoped(KEY_MOUSE_KEYBOARD))
+        } else {
+            store.putBoolean(scoped(KEY_MOUSE_KEYBOARD), value)
+        }
+    }
+
+    /** Controller tunables only — the mouse keyboard has its own section and is not a pad setting. */
     fun resetAll() {
         ensureLoaded()
         listOf(KEY_ENABLED, KEY_DEAD_ZONE, KEY_REPEAT_INTERVAL).forEach { store.remove(scoped(it)) }

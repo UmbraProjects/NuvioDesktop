@@ -16,9 +16,6 @@ object MusicPlayback {
     /** Whether the full-window lyric view is open. [MusicNowPlayingHost] draws it. */
     val nowPlayingOpen = MutableStateFlow(false)
 
-    /** Lyric effects (sweep, glow, blur, aurora) on, or the calm list for a weak machine. Lasts the session. */
-    val lyricEffects = MutableStateFlow(true)
-
     /** How big the music video is. Only a real video leaves [MusicVideoView.Bar]; [MusicPlayerHost] resets it. */
     val videoView = MutableStateFlow(MusicVideoView.Bar)
 

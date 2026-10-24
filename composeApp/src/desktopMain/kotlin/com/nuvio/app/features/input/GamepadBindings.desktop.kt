@@ -24,6 +24,9 @@ actual fun gamepadRepeatIntervalRange(): IntRange =
 
 actual fun resetGamepadSettings() = GamepadSettingsRepository.resetAll()
 
+actual fun mouseKeyboardState(): StateFlow<Boolean> = GamepadSettingsRepository.mouseKeyboardState
+actual fun setMouseKeyboard(enabled: Boolean) = GamepadSettingsRepository.setMouseKeyboard(enabled)
+
 actual fun gamepadMappingRows(): List<GamepadMappingRow> = GamepadButton.entries.map { button ->
     val binding = GamepadDefaults.binding(button)
     GamepadMappingRow(

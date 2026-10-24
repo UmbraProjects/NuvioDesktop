@@ -44,6 +44,7 @@ import nuvio.composeapp.generated.resources.unit_bytes_b
 import nuvio.composeapp.generated.resources.unit_bytes_gb
 import nuvio.composeapp.generated.resources.unit_bytes_kb
 import nuvio.composeapp.generated.resources.unit_bytes_mb
+import nuvio.composeapp.generated.resources.unit_bytes_tb
 import org.jetbrains.compose.resources.getString
 
 fun localizedMediaTypeLabel(type: String): String {
@@ -136,6 +137,7 @@ fun localizedShortMonthName(month: Int): String =
 
 fun localizedByteUnit(unit: String): String =
     when (unit) {
+        "TB" -> resourceString("TB") { getString(Res.string.unit_bytes_tb) }
         "GB" -> resourceString("GB") { getString(Res.string.unit_bytes_gb) }
         "MB" -> resourceString("MB") { getString(Res.string.unit_bytes_mb) }
         "KB" -> resourceString("KB") { getString(Res.string.unit_bytes_kb) }

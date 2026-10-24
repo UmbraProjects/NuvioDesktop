@@ -1,0 +1,39 @@
+# Nuvio fork merge - progress checkpoint (2026-10-24)
+
+Target: upstream 1.16.0 (windows-tv-adaptive) + your music-library fork, with your code moved into
+modules and only small tagged hooks (`// fork:<module>`) left in upstream files.
+Find every hook with: `grep -rn "fork:" composeApp/src`
+
+## Done so far
+- Started from pristine upstream 1.16.0 and added all 94 of your new files (music, preroll/pre-show,
+  themesong, trailer quality, tests).
+- Found a Stage 1 omission: `composeApp/build.gradle.kts` is changed by you (music source-dir wiring,
+  official-backend fallback, CI escape hatches). Upstream did not touch it, so yours is taken as is.
+- 22 files taken from you directly (upstream unchanged) or merged cleanly by 3-way merge.
+- Strings: your 32 strings moved to `values/strings_preshow.xml` (upstream already uses
+  `strings_party.xml`), so `strings.xml` no longer conflicts. No ID collisions.
+- Trailer-quality module, relocated out of upstream files:
+  - `details/HeroTrailerRanking.kt` - `rankHeroTrailers` built on upstream's `selectHeroTrailer`
+    (so upstream's new language-first ranking is kept; no edit to HeroTrailerSelector.kt).
+  - `trailer/SharpestTrailerResolver.kt` - the "find a sharper upload" logic; `HeroTrailerMetadataService`
+    now needs only a ~6 line hook.
+  - `fullCommonMain/.../trailer/YouTubeInnerTube.kt` - YouTube search + YouTube Music requests as
+    extension functions; `InAppYouTubeExtractor` carries only a 3-line session accessor and the
+    height/reliable stamp. Ported to upstream's new nullable API key.
+
+## Update (later session)
+Items 1-5 of the old to-do list are done: HomeHeroTrailerSurface (helper: PreshowPlaybackSupport.kt),
+NativePlayerController initMpvOptions + controls.js/css/Bridge merge, MusicPlayerSurface, App.kt
+(hooks + features/music/MusicAppHooks.kt + features/preroll/PrerollGateHook.kt), MetaDetailsScreen
+(themesong/DetailsThemeSong.kt), TmdbService.fetchBackdropUrls (tmdb/TmdbBackdrops.kt), CHANGELOG (both kept).
+
+## Still to do
+- Semantic review of clean merges (Settings*, StreamsScreen, ServerConfiguration).
+- Compile locally; fix whatever the compiler finds. Hook inventory: grep -rn "fork:" composeApp/src
+
+## Known limits / decisions
+- This sandbox cannot reach Maven/Gradle, so NOTHING has been compiled. Build and run your logic tests locally.
+- YouTube search now sends a fixed web client version constant instead of scraping it (see
+  `YouTubeInnerTube.kt`); bump if YouTube rejects it.
+- The tree in this zip is INCOMPLETE: files listed under "Still to do" are still upstream's version or your
+  old version and will not compile until finished.

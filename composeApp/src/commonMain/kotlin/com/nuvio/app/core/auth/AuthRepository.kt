@@ -41,10 +41,12 @@ object AuthRepository {
 
         val savedAnonId = AuthStorage.loadAnonymousUserId()
         if (savedAnonId != null) {
-            _state.value = AuthState.Authenticated(
-                userId = savedAnonId,
-                email = null,
-                isAnonymous = true,
+            publishAuthenticated(
+                AuthState.Authenticated(
+                    userId = savedAnonId,
+                    email = null,
+                    isAnonymous = true,
+                ),
             )
         }
 
@@ -54,10 +56,12 @@ object AuthRepository {
                 when (status) {
                     is SessionStatus.Authenticated -> {
                         val user = status.session.user
-                        _state.value = AuthState.Authenticated(
-                            userId = user?.id ?: "",
-                            email = user?.email,
-                            isAnonymous = false,
+                        publishAuthenticated(
+                            AuthState.Authenticated(
+                                userId = user?.id ?: "",
+                                email = user?.email,
+                                isAnonymous = false,
+                            ),
                         )
                     }
                     is SessionStatus.NotAuthenticated -> {
@@ -79,11 +83,31 @@ object AuthRepository {
         _error.value = null
         val userId = Uuid.random().toString()
         AuthStorage.saveAnonymousUserId(userId)
-        _state.value = AuthState.Authenticated(
-            userId = userId,
-            email = null,
-            isAnonymous = true,
+        publishAuthenticated(
+            AuthState.Authenticated(
+                userId = userId,
+                email = null,
+                isAnonymous = true,
+            ),
         )
+    }
+
+    /**
+     * Every sign-in goes through here. When the account already has its own settings on this PC
+     * (or must not use the folder in use), the app restarts into them and this session never
+     * reports the sign-in, so nothing starts syncing into the wrong account's folder.
+     */
+    private fun publishAuthenticated(authenticated: AuthState.Authenticated) {
+        val current = _state.value
+        if (current is AuthState.Authenticated && current.userId == authenticated.userId) {
+            _state.value = authenticated
+            return
+        }
+        if (PlatformAccountScope.onAuthenticated(authenticated.userId)) {
+            log.i { "Restarting into the signed-in account's own settings" }
+            return
+        }
+        _state.value = authenticated
     }
 
     suspend fun signUpWithEmail(email: String, password: String): Result<Unit> = runCatching {
@@ -111,7 +135,11 @@ object AuthRepository {
             ?: getString(Res.string.auth_sign_in_failed)
     }
 
-    suspend fun signOut(): Result<Unit> = runCatching {
+    /**
+     * Ends the session. Desktop keeps this account's settings in its own folder for next time,
+     * unless [erase], which removes them — sign-ins and keys included — from the PC.
+     */
+    suspend fun signOut(erase: Boolean = false): Result<Unit> = runCatching {
         _error.value = null
         val wasAnonymous = AuthStorage.loadAnonymousUserId() != null
         AuthStorage.clearAnonymousUserId()
@@ -119,7 +147,7 @@ object AuthRepository {
             SupabaseProvider.client.auth.signOut()
         }
         _state.value = AuthState.Unauthenticated
-        LocalAccountDataCleaner.wipe()
+        if (!PlatformAccountScope.onSignedOut(erase)) LocalAccountDataCleaner.wipe()
     }.onFailure { e ->
         log.e(e) { "Sign-out failed" }
         _error.value = e.message ?: getString(Res.string.auth_sign_out_failed)
@@ -129,7 +157,7 @@ object AuthRepository {
      * Drops the local session without the full sign-out wipe, so the account can be re-created
      * against a different backend.
      *
-     * [signOut] deliberately runs [LocalAccountDataCleaner.wipe]; a server switch must NOT, because
+     * [signOut] leaves this account's settings folder (or erases it); a server switch must NOT, because
      * the user is moving their client between backends rather than leaving an account, and the local
      * library/progress is what they expect to push to the new server.
      */
@@ -143,6 +171,7 @@ object AuthRepository {
         initialized = false
         AuthStorage.clearAnonymousUserId()
         SupabaseProvider.client.auth.clearSession()
+        PlatformAccountScope.onServerSwitch()
         _state.value = AuthState.Unauthenticated
         log.i { "Local session cleared, ready to switch servers" }
     }.onFailure { e ->
@@ -169,7 +198,7 @@ object AuthRepository {
         _error.value = null
         SupabaseProvider.client.functions.invoke("delete-account")
         SupabaseProvider.client.auth.signOut()
-        LocalAccountDataCleaner.wipe()
+        if (!PlatformAccountScope.onSignedOut(erase = true)) LocalAccountDataCleaner.wipe()
     }.onFailure { e ->
         log.e(e) { "Account deletion failed" }
         _error.value = e.message ?: getString(Res.string.auth_account_deletion_failed)

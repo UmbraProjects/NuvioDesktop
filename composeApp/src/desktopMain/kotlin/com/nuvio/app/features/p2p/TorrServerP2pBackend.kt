@@ -1,7 +1,9 @@
 package com.nuvio.app.features.p2p
 
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.downloads.isSafeVideoDownloadReference
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.build.PackagedResources
 import com.nuvio.app.core.storage.DesktopStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -493,7 +495,9 @@ internal object TorrServerP2pBackend : DesktopP2pBackend {
                     .timeout(Duration.ofSeconds(5))
                     .GET()
                     .build()
-                val response = healthClient.send(request, HttpResponse.BodyHandlers.discarding())
+                val response = PerfTelemetry.timedHttp("torrserver", request.method(), request.uri().toString(), { it.statusCode() }) {
+                    healthClient.send(request, HttpResponse.BodyHandlers.discarding())
+                }
                 response.statusCode() in 200..299
             } catch (_: Exception) {
                 false
@@ -513,6 +517,9 @@ internal object TorrServerP2pBackend : DesktopP2pBackend {
                 try {
                     if (!proc.waitFor(3_000L, TimeUnit.MILLISECONDS) && isProcessAlive(proc)) {
                         proc.destroyForcibly()
+                        // destroyForcibly only asks; until the process is gone it still holds
+                        // its lock on config.db, which a portable switch copies next startup.
+                        proc.waitFor(2_000L, TimeUnit.MILLISECONDS)
                     }
                 } catch (_: Exception) {
                     proc.destroyForcibly()
@@ -578,9 +585,16 @@ internal object TorrServerP2pBackend : DesktopP2pBackend {
                 File("vendor/TorrServer/dist/${platform.binaryName}"),
             )
 
+        /**
+         * Installs a content-addressed copy of the bundled binary under the data directory and
+         * returns it. A packaged build ships the binary under `<install>\resources\` rather than
+         * in the app jar (see [com.nuvio.app.core.build.PackagedResources]); wherever it comes
+         * from the digest is the same, so the installed path — and with it any firewall rule a
+         * user already granted — doesn't change.
+         */
         private fun extractBundledBinary(platform: DesktopTorrServerPlatform): File? {
-            val resource = "/torrserver/${platform.resourceDir}/${platform.binaryName}"
-            val digest = TorrServerP2pBackend::class.java.getResourceAsStream(resource)?.use(::sha256) ?: return null
+            val resource = "torrserver/${platform.resourceDir}/${platform.binaryName}"
+            val digest = PackagedResources.open(resource)?.use(::sha256) ?: return null
             cleanupLegacyTempBinaries(platform)
 
             val dir = DesktopStorage.rootDir.resolve("torrserver/bin/${platform.resourceDir}").toFile().apply {
@@ -596,7 +610,7 @@ internal object TorrServerP2pBackend : DesktopP2pBackend {
         }
 
         private fun installBundledBinary(resource: String, destination: File) {
-            val source = TorrServerP2pBackend::class.java.getResourceAsStream(resource)
+            val source = PackagedResources.open(resource)
                 ?: throw P2pStreamingException("Bundled TorrServer resource disappeared: $resource")
             val temporary = Files.createTempFile(destination.parentFile.toPath(), ".TorrServer-", ".tmp")
             try {
@@ -850,7 +864,9 @@ internal object TorrServerP2pBackend : DesktopP2pBackend {
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build()
-            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+            val response = PerfTelemetry.timedHttp("torrserver", request.method(), request.uri().toString(), { it.statusCode() }) {
+                client.send(request, HttpResponse.BodyHandlers.ofString())
+            }
             if (response.statusCode() !in 200..299) return null
             val responseBody = response.body().orEmpty()
             return if (responseBody.isBlank()) {

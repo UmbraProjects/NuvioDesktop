@@ -345,8 +345,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         }
     }
 
+    val iptvControlState = rememberIptvControlState()
     val playerControlsState = PlayerControlsState(
-        title = title,
+        // Live TV: the playing channel, which channel up/down changes after launch.
+        title = iptvControlState?.channelLabel ?: title,
+        iptv = iptvControlState,
         episodeText = episodeText,
         streamTitle = activeStreamTitle,
         streamFilename = activeStreamFilename.orEmpty(),
@@ -367,6 +370,18 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         // reads as messy clutter in the pause card, so it is intentionally not used as a fallback.
         pauseOverlayDescription = activePauseDescription.orEmpty(),
         pauseOverlaySourceEnabled = playerSettingsUiState.desktopPauseOverlaySourceEnabled,
+        pauseOverlayCast = remember(playerMetaCast) {
+            playerMetaCast
+                .filter { it.name.isNotBlank() }
+                .take(PauseOverlayCastLimit)
+                .map { person ->
+                    PlayerControlCastItem(
+                        name = person.name,
+                        role = person.role.orEmpty(),
+                        photo = person.photo.orEmpty(),
+                    )
+                }
+        },
         resizeModeLabel = stringResource(resizeMode.labelRes),
         playbackSpeedLabel = formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed),
         subtitlesLabel = stringResource(Res.string.compose_player_subs),
@@ -398,6 +413,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 DesktopAnimeMode.Off.label
             },
         desktopAnimeSvpEnabled = playerSettingsUiState.desktopAnimeSvpEnabled,
+        rtxVsrEnabled = playerSettingsUiState.effectiveRtxVsrEnabled,
+        rtxTrueHdrEnabled = playerSettingsUiState.effectiveRtxTrueHdrEnabled,
         playbackInfoPanelEnabled = playerSettingsUiState.desktopPlaybackInfoPanelEnabled,
         activeSubtitleLabel = activePlaybackSubtitleLabel(),
         // The native decoder stands down while Seekr has (or is still fetching) this playback's
@@ -407,6 +424,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             bufferPreset = playerSettingsUiState.desktopBufferPreset,
             sourceUrl = activeSourceUrl,
             isTorrent = activeTorrentInfoHash != null,
+            seekrServiceOff = SeekrPreviews.serviceDisabled,
         ),
         seekrVttUrl = seekrTrack?.vttUrl.orEmpty(),
         seekrScale = seekrTrack?.scale ?: 1.0,
@@ -457,6 +475,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         noneLabel = stringResource(Res.string.compose_player_none),
         fetchSubtitlesLabel = stringResource(Res.string.compose_player_fetch_subtitles),
         downloadSubtitleLabel = stringResource(Res.string.compose_player_download_subtitle),
+        autoSyncedSubtitleLabel = stringResource(Res.string.compose_player_subtitle_auto_synced),
         subtitleDelayLabel = stringResource(Res.string.compose_player_subtitle_delay),
         resetLabel = stringResource(Res.string.compose_player_reset),
         autoSyncLabel = stringResource(Res.string.compose_player_auto_sync),
@@ -525,6 +544,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         officialHudEnabled = playerSettingsUiState.desktopOfficialHudEnabled,
         seekHandleEnabled = playerSettingsUiState.desktopSeekHandleEnabled,
         hudVignetteEnabled = playerSettingsUiState.desktopHudVignetteEnabled,
+        hiddenHudButtons = playerSettingsUiState.desktopHiddenHudButtons.sorted().joinToString(","),
         alwaysShowClock = playerSettingsUiState.desktopAlwaysShowClockEnabled,
         playbackSpeedFineIncrementsEnabled = playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled,
         playbackSpeedToggleLow = playerSettingsUiState.playbackSpeedToggleLow,
@@ -546,8 +566,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 ) &&
             !activeSubmitIntroImdbId().isNullOrBlank(),
         showVideoSettings = isIos,
-        showSources = activeVideoId != null,
-        showEpisodes = isSeries,
+        showSources = activeVideoId != null && !isIptvPlayback,
+        showEpisodes = isSeries && !isIptvPlayback,
         showExternalPlayer = args.onOpenInExternalPlayer != null,
         durationMs = playbackSnapshot.durationMs,
         positionMs = displayedPositionMs,
@@ -659,6 +679,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             (nextEpisodeForControls?.hasAired == true && !manualSwitchIsNonSequential),
         playlistPeekTitle = playlistPeek.first,
         playlistPeekItems = playlistPeek.second,
+        party = rememberPartyControlsState(),
     )
 
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
@@ -813,7 +834,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     ) {
                         lastMeaningfulPlaybackSnapshot = snapshot
                     }
-                    playbackSnapshot = snapshot
+                    // While the party sync nudges the speed by a few percent, report the party's
+                    // rate so the HUD and the party never see the nudge as a speed change.
+                    playbackSnapshot = if (partyRateNudge != null) snapshot.copy(playbackSpeed = partyBaseRate()) else snapshot
+                    playbackSnapshotMark = kotlin.time.TimeSource.Monotonic.markNow()
                     if (!snapshot.isLoading) initialLoadCompleted = true
                     if (!snapshot.isLoading && !defaultPlaybackSpeedApplied && !isProviderDiagnosticVideoPlayback) {
                         defaultPlaybackSpeedApplied = true
@@ -838,6 +862,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     // its synthetic last-frame position to the EOF/autoplay effects.
                     playbackSourceFailureActive = true
                     PlaybackErrorLog.error(playbackAttemptId, activeSourceUrl, message)
+                    if (isIptvPlayback) {
+                        handleIptvPlaybackError(message, playbackFailedToast)
+                        return@PlatformPlayerSurface
+                    }
 
                     val isRateLimited =
                         playbackErrorFailure(message) == PlaybackSourceFailure.DebridRateLimited
@@ -903,7 +931,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             )
         }
 
-        RenderPlayerControls(displayedPositionMs = displayedPositionMs, isEpisode = isEpisode)
+        // Desktop playback always draws the native HTML HUD over the mpv surface. These Compose
+        // controls only ever sat underneath it, and showed through for the frame or two before
+        // the surface and its launch shield went up (seen on Continue Watching's last-link launch).
+        if (!isDesktop) {
+            RenderPlayerControls(displayedPositionMs = displayedPositionMs, isEpisode = isEpisode)
+        }
         RenderPlaybackOverlays(
             runtime = runtime,
             displayedPositionMs = displayedPositionMs,
@@ -1055,6 +1088,10 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
 }
 
 private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControlsAction): Boolean {
+    if (handleIptvControlsAction(action)) return true
+    // Playback and seek actions normally fall through to mpv (return false). In a watch party they
+    // run here instead, so they can be shared with the party, or refused when only the host
+    // controls playback.
     when (action) {
         PlayerControlsAction.ToggleChrome -> {
             if (playerControlsLocked) {
@@ -1074,28 +1111,40 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             args.onBack()
         }
         PlayerControlsAction.TogglePlayback -> {
-            prepareTogglePlaybackForNativeFallback()
-            return false
+            if (isPartySynced) togglePlayback() else {
+                prepareTogglePlaybackForNativeFallback()
+                return false
+            }
         }
         PlayerControlsAction.KeyboardTogglePlayback -> {
-            prepareTogglePlaybackForNativeFallback(revealControls = false)
-            return false
+            if (isPartySynced) togglePlayback(revealControls = false) else {
+                prepareTogglePlaybackForNativeFallback(revealControls = false)
+                return false
+            }
         }
         PlayerControlsAction.SeekBack -> {
-            prepareSeekByForNativeFallback(-seekStepMs)
-            return false
+            if (isPartySynced) seekBy(-seekStepMs) else {
+                prepareSeekByForNativeFallback(-seekStepMs)
+                return false
+            }
         }
         PlayerControlsAction.KeyboardSeekBack -> {
-            prepareSeekByForNativeFallback(-seekStepMs, revealControls = false)
-            return false
+            if (isPartySynced) seekBy(-seekStepMs, revealControls = false) else {
+                prepareSeekByForNativeFallback(-seekStepMs, revealControls = false)
+                return false
+            }
         }
         PlayerControlsAction.SeekForward -> {
-            prepareSeekByForNativeFallback(seekStepMs)
-            return false
+            if (isPartySynced) seekBy(seekStepMs) else {
+                prepareSeekByForNativeFallback(seekStepMs)
+                return false
+            }
         }
         PlayerControlsAction.KeyboardSeekForward -> {
-            prepareSeekByForNativeFallback(seekStepMs, revealControls = false)
-            return false
+            if (isPartySynced) seekBy(seekStepMs, revealControls = false) else {
+                prepareSeekByForNativeFallback(seekStepMs, revealControls = false)
+                return false
+            }
         }
         PlayerControlsAction.ResizeMode -> cycleResizeMode()
         PlayerControlsAction.Speed -> cyclePlaybackSpeed()
@@ -1138,18 +1187,24 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
         }
         PlayerControlsAction.HeroTrailerMute -> Unit
         PlayerControlsAction.DoubleTapSeekBack -> {
-            prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Backward)
-            return false
+            if (isPartySynced) partyDoubleTapSeek(PlayerSeekDirection.Backward) else {
+                prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Backward)
+                return false
+            }
         }
         PlayerControlsAction.DoubleTapSeekForward -> {
-            prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Forward)
-            return false
+            if (isPartySynced) partyDoubleTapSeek(PlayerSeekDirection.Forward) else {
+                prepareDoubleTapSeekForNativeFallback(PlayerSeekDirection.Forward)
+                return false
+            }
         }
     }
     return true
 }
 
 private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: Double): Boolean {
+    if (handlePartyControlsEvent(type, value)) return true
+    if (handleIptvControlsEvent(type, value)) return true
     when (type) {
         "revealChrome" -> {
             if (!playerControlsLocked) {
@@ -1287,10 +1342,8 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             autoPlaySelectedEpisode(previous)
         }
         "setPlaybackSpeed" -> {
-            val speed = value.toFloat().coerceIn(0.5f, 4f)
-            playerController?.setPlaybackSpeed(speed)
-            sessionPlaybackSpeed = speed
-            playbackSnapshot = playbackSnapshot.copy(playbackSpeed = speed)
+            if (partyBlocksControl()) return true
+            applyUserPlaybackSpeed(value.toFloat().coerceIn(0.5f, 4f))
         }
         "enableP2pForPlayerControls" -> enableP2pForPlayerControls()
         "cancelP2pForPlayerControls" -> {
@@ -1334,7 +1387,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             useCustomSubtitles = true
             markSubtitleChosenByViewer()
             persistAddonSubtitlePreference(addon)
-            playerController?.setSubtitleUri(addon.url)
+            loadAddonSubtitle(addon)
             secondarySubtitleSelectionApplied = false
             applySecondarySubtitleSelectionIfNeeded()
         }
@@ -1492,6 +1545,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             when (value.toInt()) {
                 1 -> PlayerResizeMode.Fill
                 2 -> PlayerResizeMode.Zoom
+                3 -> PlayerResizeMode.AutoCrop
                 else -> PlayerResizeMode.Fit
             },
         )
@@ -1662,8 +1716,10 @@ private fun PlayerScreenRuntime.handlePlayerControlsScrubChange(positionMs: Long
 private fun PlayerScreenRuntime.handlePlayerControlsScrubFinished(positionMs: Long) {
     isScrubbingTimeline = false
     scrubbingPositionMs = null
-    playerController?.seekTo(positionMs)
+    val targetMs = if (isPartyControlLocked) ownSeekTarget(positionMs) ?: return else positionMs
+    playerController?.seekTo(targetMs)
     scheduleProgressSyncAfterSeek()
+    publishPartyPlayback(positionMs = targetMs)
 }
 
 private fun PlayerScreenRuntime.openInExternalPlayer() {
@@ -1994,6 +2050,7 @@ private fun PlayerScreenRuntime.buildPlayerControlAddonSubtitleItems(): List<Pla
             addonName = subtitle.addonName.orEmpty(),
             isSelected = subtitle.id == selectedAddonSubtitleId || subtitle.url == selectedAddonSubtitleId,
             isDownloading = subtitle.id.ifBlank { subtitle.url } == downloadingAddonSubtitleId,
+            isAutoSynced = automaticallySyncedSubtitle?.first == subtitle.url,
         )
     }
 
@@ -2010,6 +2067,9 @@ private fun PlayerScreenRuntime.buildPlayerControlSubtitleCueItems(): List<Playe
 // Cues delivered to the scrollable HUD list: enough to recover from heavy desync (±30 lines
 // around the capture point is minutes of dialogue) while keeping the controls JSON small.
 private const val PLAYER_CONTROLS_SUBTITLE_CUE_WINDOW = 60
+
+// Top-billed names on the pause overlay, laid out as a two-column grid of five rows.
+private const val PauseOverlayCastLimit = 10
 
 private fun PlayerScreenRuntime.playerControlsNearestSubtitleCues(): List<SubtitleSyncCue> {
     val capturedPositionMs = subtitleAutoSyncState.capturedPositionMs ?: return emptyList()
@@ -2031,6 +2091,10 @@ private fun formatPlayerControlsCueTimestamp(timeMs: Long): String {
 @Composable
 private fun PlayerScreenRuntime.buildPlayerControlEpisodeItems(): List<PlayerControlEpisodeItem> {
     val items = mutableListOf<PlayerControlEpisodeItem>()
+    val fillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsState()
+    val fillerKinds = if (fillerSettings.showBadges) playerFillerKinds else emptyMap()
+    val fillerText = stringResource(Res.string.anime_episode_badge_filler)
+    val mixedText = stringResource(Res.string.anime_episode_badge_mixed)
     val current = playerMetaVideos.resolveSeriesEpisodePosition(
         parentMetaId = parentMetaId,
         videoId = activeVideoId,
@@ -2065,10 +2129,20 @@ private fun PlayerScreenRuntime.buildPlayerControlEpisodeItems(): List<PlayerCon
                 episode = episode,
                 isCurrent = current?.video == video,
                 isWatched = isWatched,
-            ),
+            ).withFillerKind(fillerKinds[video.id], fillerText, mixedText),
         )
     }
     return items
+}
+
+private fun PlayerControlEpisodeItem.withFillerKind(
+    kind: com.nuvio.app.features.details.filler.AnimeEpisodeKind?,
+    fillerText: String,
+    mixedText: String,
+): PlayerControlEpisodeItem = when (kind) {
+    com.nuvio.app.features.details.filler.AnimeEpisodeKind.Filler -> copy(fillerKind = "filler", fillerLabel = fillerText)
+    com.nuvio.app.features.details.filler.AnimeEpisodeKind.MixedCanonFiller -> copy(fillerKind = "mixed", fillerLabel = mixedText)
+    else -> this
 }
 
 @Composable
@@ -2273,7 +2347,7 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
             useCustomSubtitles = true
             markSubtitleChosenByViewer()
             persistAddonSubtitlePreference(addon)
-            playerController?.setSubtitleUri(addon.url)
+            loadAddonSubtitle(addon)
             secondarySubtitleSelectionApplied = false
             applySecondarySubtitleSelectionIfNeeded()
         },

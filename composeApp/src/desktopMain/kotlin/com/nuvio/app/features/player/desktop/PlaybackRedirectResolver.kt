@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player.desktop
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.features.player.isPlaybackPlaceholderUrl
 import kotlinx.coroutines.Dispatchers
@@ -164,7 +165,10 @@ internal object PlaybackRedirectResolver {
         val normalized = sourceUrl.trim()
         val isHttp = normalized.startsWith("http://", ignoreCase = true) ||
             normalized.startsWith("https://", ignoreCase = true)
-        if (!isHttp || isDirectMediaHost(normalized)) {
+        // IPTV: a probe would open a live stream outside the proxy (an ISP-blocked provider then
+        // hangs it for the full timeout) and spend the account's only connection on a 1-connection
+        // Xtream plan; the provider's URLs are already the playable ones.
+        if (!isHttp || isDirectMediaHost(normalized) || com.nuvio.app.features.iptv.IptvPlaybackSession.isIptvUrl(normalized)) {
             return@withContext PlaybackRedirectResolution.unchanged(
                 normalized,
                 PlaybackRedirectResolution.Outcome.Skipped,
@@ -296,7 +300,10 @@ internal object PlaybackRedirectResolver {
         // Match what mpv will send so a resolver that keys on the UA sees one client, not two.
         if (!hasUserAgent) builder.header("User-Agent", DESKTOP_PLAYBACK_FALLBACK_USER_AGENT)
 
-        val response = client.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
+        val request = builder.build()
+        val response = PerfTelemetry.timedHttp("redirect-probe", request.method(), request.uri().toString(), { it.statusCode() }) {
+            client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+        }
         runCatching { response.body().close() }
         val headers = response.headers()
         return ProbeResponse(

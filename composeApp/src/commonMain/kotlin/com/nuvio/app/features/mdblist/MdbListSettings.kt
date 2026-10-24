@@ -23,7 +23,17 @@ data class MdbListSettings(
     val useLetterboxd: Boolean = true,
     val useAudience: Boolean = true,
     val useMal: Boolean = true,
+    val refreshPreset: MdbListRefreshPreset = MdbListRefreshPreset.Auto,
+    /** Custom intervals the user set; a tier missing here falls back to its default. */
+    val customRefreshDays: Map<MdbListRefreshTier, Double> = emptyMap(),
 ) {
+    /** The ratings refresh interval in force for [tier], in days. */
+    fun refreshDays(tier: MdbListRefreshTier): Double = when (refreshPreset) {
+        MdbListRefreshPreset.Custom -> customRefreshDays[tier] ?: tier.defaultDays
+        MdbListRefreshPreset.Auto -> tier.defaultDays * MdbListQuota.autoScale()
+        else -> tier.defaultDays * (refreshPreset.scale ?: 1.0)
+    }
+
     val hasApiKey: Boolean
         get() = apiKey.isNotBlank()
 

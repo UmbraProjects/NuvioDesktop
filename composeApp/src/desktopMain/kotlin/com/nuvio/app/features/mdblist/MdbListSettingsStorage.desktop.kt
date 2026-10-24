@@ -24,6 +24,8 @@ internal actual object MdbListSettingsStorage {
     private const val useLetterboxdKey = "mdblist_use_letterboxd"
     private const val useAudienceKey = "mdblist_use_audience"
     private const val useMalKey = "mdblist_use_mal"
+    private const val refreshPresetKey = "mdblist_refresh_preset"
+    private const val customRefreshDaysKey = "mdblist_custom_refresh_days"
     private val syncKeys = listOf(
         enabledKey,
         trackingEnabledKey,
@@ -38,6 +40,8 @@ internal actual object MdbListSettingsStorage {
         useLetterboxdKey,
         useAudienceKey,
         useMalKey,
+        refreshPresetKey,
+        customRefreshDaysKey,
     )
     private val store = DesktopStorage.store("nuvio_mdblist_settings")
 
@@ -67,6 +71,10 @@ internal actual object MdbListSettingsStorage {
     actual fun saveUseAudience(enabled: Boolean) = saveBoolean(useAudienceKey, enabled)
     actual fun loadUseMal(): Boolean? = loadBoolean(useMalKey)
     actual fun saveUseMal(enabled: Boolean) = saveBoolean(useMalKey, enabled)
+    actual fun loadRefreshPreset(): String? = loadString(refreshPresetKey)
+    actual fun saveRefreshPreset(value: String) = saveString(refreshPresetKey, value)
+    actual fun loadCustomRefreshDays(): String? = loadString(customRefreshDaysKey)
+    actual fun saveCustomRefreshDays(value: String) = saveString(customRefreshDaysKey, value)
 
     private fun loadString(key: String): String? = store.getString(ProfileScopedKey.of(key))
     private fun saveString(key: String, value: String) = store.putString(ProfileScopedKey.of(key), value)
@@ -87,6 +95,8 @@ internal actual object MdbListSettingsStorage {
         loadUseLetterboxd()?.let { put(useLetterboxdKey, encodeSyncBoolean(it)) }
         loadUseAudience()?.let { put(useAudienceKey, encodeSyncBoolean(it)) }
         loadUseMal()?.let { put(useMalKey, encodeSyncBoolean(it)) }
+        loadRefreshPreset()?.let { put(refreshPresetKey, encodeSyncString(it)) }
+        loadCustomRefreshDays()?.let { put(customRefreshDaysKey, encodeSyncString(it)) }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
@@ -104,5 +114,7 @@ internal actual object MdbListSettingsStorage {
         payload.decodeSyncBoolean(useLetterboxdKey)?.let(::saveUseLetterboxd)
         payload.decodeSyncBoolean(useAudienceKey)?.let(::saveUseAudience)
         payload.decodeSyncBoolean(useMalKey)?.let(::saveUseMal)
+        payload.decodeSyncString(refreshPresetKey)?.let(::saveRefreshPreset)
+        payload.decodeSyncString(customRefreshDaysKey)?.let(::saveCustomRefreshDays)
     }
 }

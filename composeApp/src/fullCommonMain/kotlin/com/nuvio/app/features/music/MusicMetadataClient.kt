@@ -74,6 +74,34 @@ object MusicMetadataClient {
     }
 
     /**
+     * Every album, single and EP of the artist. The artist page itself lists only the first few of
+     * each; its "more" buttons name the full lists, which are fetched here. Empty on failure.
+     */
+    suspend fun artistReleases(browseId: String): List<MusicAlbumSummary> {
+        if (!browseId.startsWith("UC")) return emptyList()
+        return cached("releases:$browseId") {
+            val body = TrailerPlaybackResolver.musicRequest("browse", mapOf("browseId" to browseId))
+                ?: return@cached null
+            val artist = parseArtist(body, browseId) ?: return@cached null
+            val self = MusicArtistRef(artist.name, browseId)
+            val found = ArrayList<MusicAlbumSummary>()
+            for (shelf in parseArtistShelves(body, self)) {
+                found += shelf.items
+                val moreId = shelf.moreBrowseId ?: continue
+                val params = buildMap<String, Any?> {
+                    put("browseId", moreId)
+                    shelf.moreParams?.let { put("params", it) }
+                }
+                TrailerPlaybackResolver.musicRequest("browse", params)
+                    ?.let { found += parseAlbumGrid(it, self, shelf.title) }
+            }
+            // A page with no shelves still has whatever tiles parseArtist finds.
+            if (found.isEmpty()) found += artist.albums
+            found.distinctBy { it.browseId }.takeIf { it.isNotEmpty() }
+        }.orEmpty()
+    }
+
+    /**
      * The music video that goes with the audio track [videoId], or null when YouTube Music links
      * none. A miss here means "ask the ranker", not "there is no video".
      */

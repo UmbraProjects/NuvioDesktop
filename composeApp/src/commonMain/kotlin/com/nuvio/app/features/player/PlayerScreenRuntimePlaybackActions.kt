@@ -14,6 +14,7 @@ import com.nuvio.app.features.tracking.TrackingScrobbleDispatch
 import com.nuvio.app.features.tracking.TrackingScrobbleEvent
 import com.nuvio.app.features.tracking.TrackingScrobbleWatchedProgressThresholdPercent
 import com.nuvio.app.features.tracking.buildTrackingMediaReference
+import com.nuvio.app.features.watching.domain.isShortPlaceholderDuration
 import com.nuvio.app.features.watchprogress.WatchProgressClock
 import com.nuvio.app.features.watchprogress.WatchProgressCompletionPercentThreshold
 import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
@@ -297,6 +298,8 @@ private fun PlayerScreenRuntime.prepareTrackingScrobbleStart(
     viaSeek: Boolean,
 ): (suspend () -> Unit)? {
     if (progressTrackingDisabled) return null
+    // Debrid placeholders and error clips run under two minutes; never tell trackers about them.
+    if (isShortPlaceholderDuration(playbackSnapshot.durationMs)) return null
     if (hasRequestedScrobbleStartForCurrentItem) return null
     hasRequestedScrobbleStartForCurrentItem = true
     val requestGeneration = scrobbleStartRequestGeneration + 1L
@@ -307,6 +310,11 @@ private fun PlayerScreenRuntime.prepareTrackingScrobbleStart(
     return prepared@{
         if (requestGeneration != scrobbleStartRequestGeneration || !hasRequestedScrobbleStartForCurrentItem) {
             // Reset so a subsequent start call is not permanently blocked.
+            hasRequestedScrobbleStartForCurrentItem = false
+            return@prepared
+        }
+        // The duration may only have arrived since the start was prepared.
+        if (isShortPlaceholderDuration(playbackSnapshot.durationMs)) {
             hasRequestedScrobbleStartForCurrentItem = false
             return@prepared
         }
@@ -348,6 +356,7 @@ private fun PlayerScreenRuntime.prepareTrackingScrobbleStop(
     paused: Boolean = false,
 ): (suspend () -> Unit)? {
     if (progressTrackingDisabled) return null
+    if (isShortPlaceholderDuration(playbackSnapshot.durationMs)) return null
     val provided = progressPercent
     if (!hasRequestedScrobbleStartForCurrentItem && (provided ?: 0f) < 80f) return null
 
@@ -584,7 +593,11 @@ internal fun isResumeReached(
  * and the auto-accept setting), so all three leave the player in the same state.
  */
 internal fun PlayerScreenRuntime.acceptSkipInterval(interval: SkipInterval) {
-    playerController?.seekTo(activeSkipLanding(interval).targetMs)
+    val requestedMs = activeSkipLanding(interval).targetMs
+    // In a host-only party a member may only skip backwards (falling behind), never ahead.
+    val targetMs = if (isPartyControlLocked) ownSeekTarget(requestedMs) ?: return else requestedMs
+    playerController?.seekTo(targetMs)
+    publishPartyPlayback(positionMs = targetMs)
     scheduleProgressSyncAfterSeek()
     skipIntervalDismissed = true
     offerSkipSubmissionAfterSkip(interval)

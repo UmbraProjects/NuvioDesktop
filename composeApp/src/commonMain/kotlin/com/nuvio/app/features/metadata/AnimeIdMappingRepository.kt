@@ -184,6 +184,19 @@ internal object AnimeIdMappingRepository {
         )
     }
 
+    /**
+     * The anime-list entries for one TMDB title, or empty when the list doesn't know it as anime.
+     * A tv show's entries are its per-season kitsu/mal splits (SAO is one TMDB show, many entries).
+     */
+    fun entriesForTmdb(tmdbId: Int, isTv: Boolean): List<AnimeIdMapping> {
+        val index = loadIndex()
+        return (if (isTv) index.byTmdbTv[tmdbId] else index.byTmdbMovie[tmdbId]).orEmpty()
+    }
+
+    /** The anime-list entries carrying [imdbId] (`tt…`), or empty when the list doesn't know it. */
+    fun entriesForImdb(imdbId: String): List<AnimeIdMapping> =
+        loadIndex().byImdb[imdbId.trim().lowercase()].orEmpty()
+
     private fun AnimeIdMapping.hasNativeAnimeId(): Boolean =
         kitsuId != null || malId != null || anilistId != null || anidbId != null
 

@@ -50,6 +50,7 @@ private val desktopHttpClient = OkHttpClient.Builder()
     .writeTimeout(60, TimeUnit.SECONDS)
     .followRedirects(true)
     .followSslRedirects(true)
+    .eventListenerFactory(com.nuvio.app.core.perf.PerfOkHttpEventListenerFactory("http"))
     .build()
 
 private const val MAX_RAW_RESPONSE_BODY_BYTES = 1024 * 1024
