@@ -15,17 +15,15 @@ private data class StoredContinueWatchingPreferences(
     val style: ContinueWatchingSectionStyle = ContinueWatchingSectionStyle.Card,
     @SerialName("click_action")
     val clickAction: ContinueWatchingClickAction = ContinueWatchingClickAction.PLAY,
-    @SerialName("source_shortcut")
-    val sourceShortcut: ContinueWatchingSourceShortcut = ContinueWatchingSourceShortcut.CORNER,
     val upNextFromFurthestEpisode: Boolean = true,
     @SerialName("use_episode_thumbnails_in_cw")
     val useEpisodeThumbnails: Boolean = true,
     @SerialName("show_unaired_next_up")
     val showUnairedNextUp: Boolean = true,
     @SerialName("separate_next_up_row")
-    val separateNextUpRow: Boolean = true,
+    val separateNextUpRow: Boolean = false,
     @SerialName("separate_upcoming_row")
-    val separateUpcomingRow: Boolean = true,
+    val separateUpcomingRow: Boolean = false,
     val seedNextUpFromNuvioSync: Boolean = false,
     @SerialName("blur_continue_watching_next_up")
     val blurNextUp: Boolean = false,
@@ -103,7 +101,6 @@ object ContinueWatchingPreferencesRepository {
                 isVisible = stored.isVisible,
                 style = stored.style,
                 clickAction = stored.clickAction,
-                sourceShortcut = stored.sourceShortcut,
                 upNextFromFurthestEpisode = stored.upNextFromFurthestEpisode,
                 useEpisodeThumbnails = stored.useEpisodeThumbnails,
                 showUnairedNextUp = stored.showUnairedNextUp,
@@ -136,13 +133,6 @@ object ContinueWatchingPreferencesRepository {
         ensureLoaded()
         if (_uiState.value.clickAction == action) return
         _uiState.value = _uiState.value.copy(clickAction = action)
-        persist()
-    }
-
-    fun setSourceShortcut(shortcut: ContinueWatchingSourceShortcut) {
-        ensureLoaded()
-        if (_uiState.value.sourceShortcut == shortcut) return
-        _uiState.value = _uiState.value.copy(sourceShortcut = shortcut)
         persist()
     }
 
@@ -231,7 +221,6 @@ object ContinueWatchingPreferencesRepository {
                     isVisible = _uiState.value.isVisible,
                     style = _uiState.value.style,
                     clickAction = _uiState.value.clickAction,
-                    sourceShortcut = _uiState.value.sourceShortcut,
                     upNextFromFurthestEpisode = _uiState.value.upNextFromFurthestEpisode,
                     useEpisodeThumbnails = _uiState.value.useEpisodeThumbnails,
                     showUnairedNextUp = _uiState.value.showUnairedNextUp,

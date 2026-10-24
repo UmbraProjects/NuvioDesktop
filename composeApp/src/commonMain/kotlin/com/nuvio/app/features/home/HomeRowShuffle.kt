@@ -120,18 +120,11 @@ internal fun rollHomeRowShuffleKeys(
 }
 
 /**
- * Session-scoped shuffle state for one surface's rows: which rows are shuffled, in what order, and
- * which are mid-deal while their pool is being deepened.
- *
- * The surface supplies its published rows and its own pager, because each surface keeps its rows in
- * its own repository — Home in [HomeRepository], collection folders in FolderDetailRepository.
+ * Session-scoped shuffle state for home rows: which rows are shuffled, in what order, and which are
+ * mid-deal while their pool is being deepened.
  */
-open class RowShuffleController(
-    tag: String,
-    private val publishedSections: () -> List<HomeCatalogSection>,
-    private val deepenRow: suspend (sectionKey: String, targetItems: Int, maxPages: Int) -> Int,
-) {
-    private val log = Logger.withTag(tag)
+object HomeRowShuffleState {
+    private val log = Logger.withTag("HomeRowShuffle")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _orders = MutableStateFlow<Map<String, HomeRowShuffleOrder>>(emptyMap())
@@ -156,7 +149,7 @@ open class RowShuffleController(
             log.d { "shuffle skipped ($sectionKey): already dealing" }
             return
         }
-        val section = publishedSections().firstOrNull { it.key == sectionKey }
+        val section = HomeRepository.uiState.value.sections.firstOrNull { it.key == sectionKey }
         if (section == null) {
             log.d { "shuffle skipped ($sectionKey): section is not in the published state" }
             return
@@ -168,8 +161,13 @@ open class RowShuffleController(
         _shuffling.update { it + sectionKey }
         jobs[sectionKey] = scope.launch {
             try {
-                val pooled = deepenRow(sectionKey, HOME_ROW_SHUFFLE_POOL_TARGET, HOME_ROW_SHUFFLE_MAX_PAGES)
-                val current = publishedSections().firstOrNull { it.key == sectionKey }
+                val pooled = HomeRepository.deepenRowForShuffle(
+                    sectionKey = sectionKey,
+                    targetItems = HOME_ROW_SHUFFLE_POOL_TARGET,
+                    maxPages = HOME_ROW_SHUFFLE_MAX_PAGES,
+                )
+                val current = HomeRepository.uiState.value.sections
+                    .firstOrNull { it.key == sectionKey }
                 if (current == null) {
                     log.i { "shuffle dropped ($sectionKey): section vanished while deepening" }
                     return@launch
@@ -223,10 +221,3 @@ open class RowShuffleController(
         _shuffling.value = emptySet()
     }
 }
-
-/** Shuffle state for the home content rows. */
-object HomeRowShuffleState : RowShuffleController(
-    tag = "HomeRowShuffle",
-    publishedSections = { HomeRepository.uiState.value.sections },
-    deepenRow = HomeRepository::deepenRowForShuffle,
-)

@@ -45,8 +45,6 @@ import com.nuvio.app.features.settings.SettingsGroupDivider
 import com.nuvio.app.features.settings.SettingsModernSlider
 import com.nuvio.app.features.settings.SettingsSwitchRow
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.settings_home_backdrop_auto_framing
-import nuvio.composeapp.generated.resources.settings_home_backdrop_auto_framing_description
 import nuvio.composeapp.generated.resources.settings_home_backdrop_vertical_position
 import nuvio.composeapp.generated.resources.settings_home_backdrop_vertical_position_description
 import nuvio.composeapp.generated.resources.settings_home_display_mode_adaptive
@@ -77,6 +75,10 @@ import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_description
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_sound
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_sound_description
+import nuvio.composeapp.generated.resources.setup_mode_adaptive
+import nuvio.composeapp.generated.resources.setup_mode_adaptive_ambient
+import nuvio.composeapp.generated.resources.setup_mode_basic
+import nuvio.composeapp.generated.resources.setup_mode_tv
 import nuvio.composeapp.generated.resources.setup_wizard_experience_subtitle
 import nuvio.composeapp.generated.resources.setup_wizard_experience_title
 import nuvio.composeapp.generated.resources.setup_wizard_experience_tv_badge
@@ -94,6 +96,8 @@ import nuvio.composeapp.generated.resources.setup_wizard_trailers_area
 import nuvio.composeapp.generated.resources.setup_wizard_trailers_start
 import nuvio.composeapp.generated.resources.setup_wizard_trailers_start_auto
 import nuvio.composeapp.generated.resources.setup_wizard_trailers_title
+import org.jetbrains.compose.resources.DrawableResource
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.accentBrush
 
@@ -164,6 +168,20 @@ internal fun WizardExperienceStep(
     }
 }
 
+/**
+ * Bundled captures of each mode.
+ *
+ * Deliberately real screenshots rather than a drawn schematic: the shape of each mode has not
+ * meaningfully changed in many releases, so a slightly dated capture still communicates far more
+ * than a diagram. They are thumbnails in the cards and open full size on click.
+ */
+internal fun HomeDisplayMode.screenshot(): DrawableResource = when (this) {
+    HomeDisplayMode.Basic -> Res.drawable.setup_mode_basic
+    HomeDisplayMode.Adaptive -> Res.drawable.setup_mode_adaptive
+    HomeDisplayMode.AdaptiveAmbient -> Res.drawable.setup_mode_adaptive_ambient
+    HomeDisplayMode.TvMode -> Res.drawable.setup_mode_tv
+}
+
 @Composable
 private fun DisplayModeCard(
     mode: HomeDisplayMode,
@@ -209,7 +227,7 @@ private fun DisplayModeCard(
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                painter = setupModeScreenshotPainter(mode),
+                painter = painterResource(mode.screenshot()),
                 contentDescription = mode.label(),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
@@ -271,7 +289,7 @@ internal fun ModePreviewLightbox(mode: HomeDisplayMode, onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
         ) {
             Image(
-                painter = setupModeScreenshotPainter(mode),
+                painter = painterResource(mode.screenshot()),
                 contentDescription = mode.label(),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
@@ -303,24 +321,14 @@ private fun ModeTuning(
     SettingsGroup(isTablet = true) {
         when (draft.displayMode) {
             HomeDisplayMode.Adaptive, HomeDisplayMode.AdaptiveAmbient -> {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_home_backdrop_auto_framing),
-                    description = stringResource(Res.string.settings_home_backdrop_auto_framing_description),
-                    checked = draft.adaptiveHeroAutoFraming,
-                    isTablet = true,
-                    onCheckedChange = { value -> onDraftChange { it.copy(adaptiveHeroAutoFraming = value) } },
+                WizardSliderRow(
+                    title = stringResource(Res.string.settings_home_backdrop_vertical_position),
+                    description = stringResource(Res.string.settings_home_backdrop_vertical_position_description),
+                    value = draft.adaptiveHeroVerticalBias,
+                    valueRange = -1f..1f,
+                    onValueChange = { value -> onDraftChange { it.copy(adaptiveHeroVerticalBias = value) } },
                 )
                 SettingsGroupDivider(isTablet = true)
-                if (!draft.adaptiveHeroAutoFraming) {
-                    WizardSliderRow(
-                        title = stringResource(Res.string.settings_home_backdrop_vertical_position),
-                        description = stringResource(Res.string.settings_home_backdrop_vertical_position_description),
-                        value = draft.adaptiveHeroVerticalBias,
-                        valueRange = -1f..1f,
-                        onValueChange = { value -> onDraftChange { it.copy(adaptiveHeroVerticalBias = value) } },
-                    )
-                    SettingsGroupDivider(isTablet = true)
-                }
                 WizardSliderRow(
                     title = stringResource(Res.string.settings_home_hero_height),
                     description = stringResource(Res.string.settings_home_hero_height_description),

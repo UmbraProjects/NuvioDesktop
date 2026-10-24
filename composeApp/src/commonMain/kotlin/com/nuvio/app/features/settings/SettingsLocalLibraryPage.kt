@@ -293,7 +293,7 @@ private fun LocalLibraryFoldersSection(isTablet: Boolean) {
     val state by LocalLibraryRepository.uiState.collectAsState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) { LocalLibraryRepository.scanIfNotScannedThisSession() }
+    LaunchedEffect(Unit) { LocalLibraryRepository.ensureLoaded() }
 
     fun addFolder(type: LocalFolderType, isAnime: Boolean) {
         scope.launch {

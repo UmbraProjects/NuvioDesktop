@@ -23,16 +23,6 @@ import kotlinx.coroutines.launch
 private const val FOREGROUND_PULL_DELAY_MS = 2500L
 private const val FOREGROUND_PULL_MIN_INTERVAL_MS = 30 * 60_000L
 
-/**
- * Floor for a *forced* foreground pull. Upstream forces one on every app resume, which on mobile is
- * rare; on desktop the trigger is window focus, which fires on every alt-tab. The pull refreshes the
- * active tracking-provider library too, so one evening of switching windows cost a `/sync/activities`
- * request against the user's SIMKL daily quota every 16-60 seconds (eight in five minutes, measured).
- * The FIRST focus after launch is deliberately not held back: warm starts enter with
- * `syncOnEnter = false`, so that pull is the session's only Nuvio-sync read.
- */
-private const val FOREGROUND_PULL_FORCED_MIN_INTERVAL_MS = 5 * 60_000L
-
 object SyncManager {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val log = Logger.withTag("SyncManager")
@@ -98,7 +88,6 @@ object SyncManager {
         val now = TraktPlatformClock.nowEpochMs()
         if (!force && foregroundPullJob?.isActive == true) return
         if (!force && now - lastForegroundPullAtMs < FOREGROUND_PULL_MIN_INTERVAL_MS) return
-        if (force && now - lastForegroundPullAtMs < FOREGROUND_PULL_FORCED_MIN_INTERVAL_MS) return
 
         foregroundPullJob = scope.launch {
             if (!force) {
@@ -115,7 +104,7 @@ object SyncManager {
 
     private fun pullForegroundForProfile(profileId: Int) {
         scope.launch {
-            log.i { "pullForegroundForProfile($profileId) — syncing watch progress + watched + library" }
+            log.i { "pullForegroundForProfile($profileId) — syncing watch progress + library" }
 
             launch {
                 runCatching { LibraryRepository.pullFromServer(profileId) }
@@ -125,13 +114,6 @@ object SyncManager {
             launch {
                 runCatching { WatchProgressRepository.pullFromServer(profileId) }
                     .onFailure { log.e(it) { "Foreground watch progress pull failed" } }
-            }
-
-            // Warm starts never run pullAllForProfile, so without this, watched ticks from other
-            // clients only arrived on the next sign-in or profile switch.
-            launch {
-                runCatching { WatchedRepository.pullNuvioSyncChanges(profileId) }
-                    .onFailure { log.e(it) { "Foreground watched pull failed" } }
             }
         }
     }

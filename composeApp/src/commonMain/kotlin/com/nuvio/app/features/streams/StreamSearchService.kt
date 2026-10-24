@@ -10,6 +10,7 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginScraper
+import com.nuvio.app.features.plugins.pluginContentId
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -173,31 +174,7 @@ internal object StreamSearchService {
                     episode = effectiveEpisode,
                     episodeTitlesByCoordinate = episodeTitles,
                     seriesTitle = seriesTitle,
-                ).let { streams ->
-                    if (!streams.hasPlayableStream() && AnimeFranchiseEpisodeLocator.appliesTo(resolved)) {
-                        animeFranchiseFallbackStreams(
-                            franchiseVideoId = AnimeFranchiseEpisodeLocator.franchiseVideoId(
-                                identity = resolved,
-                                type = type,
-                                parentMetaId = parentMetaId,
-                            ),
-                            manifest = addon.manifest,
-                            type = type,
-                            seriesTitle = seriesTitle,
-                            fetch = { fallbackUrl -> httpGetTextWithHeaders(fallbackUrl, STREAM_METADATA_REQUEST_HEADERS) },
-                            parse = { fallbackPayload ->
-                                StreamParser.parse(
-                                    payload = fallbackPayload,
-                                    addonName = addon.addonName,
-                                    addonId = addon.addonId,
-                                    addonLogo = addon.manifest.logoUrl,
-                                )
-                            },
-                        ) ?: streams
-                    } else {
-                        streams
-                    }
-                }
+                )
             }.fold(
                 onSuccess = { streams ->
                     AddonStreamGroup(
@@ -224,19 +201,16 @@ internal object StreamSearchService {
 
         suspend fun fetchScraperInner(scraper: PluginScraper): AddonStreamGroup {
             val groupId = "plugin:${scraper.id}"
-            val pluginTarget = resolved.pluginEpisodeTarget(
-                if (AnimeTmdbEpisodeLocator.appliesTo(resolved)) {
-                    runCatchingUnlessCancelled { AnimeTmdbEpisodeLocator.locate(resolved) }.getOrNull()
-                } else {
-                    null
-                },
-            )
             return PluginRepository.executeScraper(
                 scraper = scraper,
-                tmdbId = pluginTarget.contentId,
+                tmdbId = pluginContentId(
+                    videoId = effectiveVideoId,
+                    season = effectiveSeason,
+                    episode = effectiveEpisode,
+                ),
                 mediaType = type,
-                season = pluginTarget.season,
-                episode = pluginTarget.episode,
+                season = effectiveSeason,
+                episode = effectiveEpisode,
             ).fold(
                 onSuccess = { runtimeResults ->
                     AddonStreamGroup(

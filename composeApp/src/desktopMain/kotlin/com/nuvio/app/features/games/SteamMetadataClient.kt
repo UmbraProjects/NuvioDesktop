@@ -41,10 +41,7 @@ import java.util.Locale
 class SteamMetadataClient(
     private val artwork: SteamArtworkClient = SteamArtworkClient(),
 ) : AutoCloseable {
-    private val http = HttpClient(CIO) {
-        expectSuccess = false
-        install(com.nuvio.app.core.perf.perfTelemetryPlugin("steam-meta"))
-    }
+    private val http = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /**

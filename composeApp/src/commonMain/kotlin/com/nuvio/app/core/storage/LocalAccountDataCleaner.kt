@@ -21,7 +21,7 @@ import com.nuvio.app.features.search.SearchRepository
 import com.nuvio.app.features.settings.ThemeSettingsRepository
 import com.nuvio.app.features.streams.StreamContextStore
 import com.nuvio.app.features.streams.StreamBadgeSettingsRepository
-import com.nuvio.app.features.streams.StreamPickerController
+import com.nuvio.app.features.streams.StreamLaunchStore
 import com.nuvio.app.features.streams.StreamPrefetchCache
 import com.nuvio.app.features.streams.StreamPrefetchService
 import com.nuvio.app.features.streams.StreamsRepository
@@ -52,7 +52,6 @@ internal object LocalAccountDataCleaner {
         CollectionMobileSettingsRepository.clearLocalState()
         CollectionRepository.clearLocalState()
         com.nuvio.app.features.playlist.PlaylistRepository.clearLocalState()
-        com.nuvio.app.features.iptv.IptvRepository.clearLocalState()
         ThemeSettingsRepository.clearLocalState()
         PosterCardStyleRepository.clearLocalState()
         TraktAuthRepository.clearLocalState()
@@ -70,7 +69,7 @@ internal object LocalAccountDataCleaner {
         com.nuvio.app.features.search.SearchHistoryRepository.onProfileChanged()
         SubtitleRepository.clear()
         PlayerLaunchStore.clear()
-        StreamPickerController.reset()
+        StreamLaunchStore.clear()
         StreamContextStore.clear()
     }
 }

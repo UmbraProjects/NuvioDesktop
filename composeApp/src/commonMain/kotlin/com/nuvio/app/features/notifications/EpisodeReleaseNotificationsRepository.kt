@@ -2,7 +2,6 @@ package com.nuvio.app.features.notifications
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.deeplink.buildMetaDeepLinkUrl
-import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.library.LibraryItem
@@ -238,7 +237,6 @@ object EpisodeReleaseNotificationsRepository {
     }
 
     fun refreshAsync() {
-        PerfTelemetry.count("EpisodeReleaseNotificationsRepository.refreshAsync")
         ensureLoaded()
         scope.launch {
             refreshScheduledNotifications()

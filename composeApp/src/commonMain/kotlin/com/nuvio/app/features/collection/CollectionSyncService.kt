@@ -4,7 +4,6 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
-import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.profiles.ProfileRepository
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
@@ -45,7 +44,6 @@ object CollectionSyncService {
     }
 
     suspend fun pullFromServer(profileId: Int) {
-        PerfTelemetry.count("CollectionSyncService.pullFromServer")
         runCatching {
             val params = buildJsonObject {
                 put("p_profile_id", profileId)

@@ -36,8 +36,6 @@ import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_bad
 import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_badge_off
 import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_badge_out_of_hundred
 import nuvio.composeapp.generated.resources.settings_poster_landscape_rating_badge_out_of_ten
-import nuvio.composeapp.generated.resources.settings_poster_portrait_rating_badge
-import nuvio.composeapp.generated.resources.settings_poster_portrait_rating_badge_description
 import nuvio.composeapp.generated.resources.settings_poster_landscape_text_titles
 import nuvio.composeapp.generated.resources.settings_poster_landscape_text_titles_description
 import nuvio.composeapp.generated.resources.settings_poster_radius_classic
@@ -78,7 +76,6 @@ internal fun PosterCardStyleControls(
     collectionsPortraitPostersEnabled: Boolean,
     landscapeTextTitlesEnabled: Boolean,
     landscapeRatingBadgeScale: PosterRatingBadgeScale,
-    portraitRatingBadgeScale: PosterRatingBadgeScale,
     posterHighlightMode: PosterHighlightMode,
     hideLabelsEnabled: Boolean,
     zoomActionPreviewEnabled: Boolean,
@@ -89,7 +86,6 @@ internal fun PosterCardStyleControls(
     onCollectionsPortraitPostersChange: (Boolean) -> Unit,
     onLandscapeTextTitlesChange: (Boolean) -> Unit,
     onLandscapeRatingBadgeScaleChange: (PosterRatingBadgeScale) -> Unit,
-    onPortraitRatingBadgeScaleChange: (PosterRatingBadgeScale) -> Unit,
     onHideLabelsChange: (Boolean) -> Unit,
 ) {
     val widthOptions = listOf(
@@ -194,19 +190,6 @@ internal fun PosterCardStyleControls(
                 SettingsScrollAnchor.searchKey("poster-landscape-rating-badge"),
             ),
             onSelected = onLandscapeRatingBadgeScaleChange,
-        )
-        SettingsGroupDivider(isTablet = isTablet)
-        SettingsChoiceRow(
-            title = stringResource(Res.string.settings_poster_portrait_rating_badge),
-            description = stringResource(Res.string.settings_poster_portrait_rating_badge_description),
-            options = ratingBadgeScaleOptions(),
-            selectedValue = portraitRatingBadgeScale,
-            enabled = !catalogLandscapeModeEnabled,
-            isTablet = isTablet,
-            modifier = Modifier.settingsScrollAnchor(
-                SettingsScrollAnchor.searchKey("poster-portrait-rating-badge"),
-            ),
-            onSelected = onPortraitRatingBadgeScaleChange,
         )
         SettingsGroupDivider(isTablet = isTablet)
         SettingsSwitchRow(

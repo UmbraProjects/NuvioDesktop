@@ -31,7 +31,7 @@ data class CustomThemeSettings(
 }
 
 object ThemeSettingsRepository {
-    private val _selectedTheme = MutableStateFlow(AppTheme.OCEAN)
+    private val _selectedTheme = MutableStateFlow(AppTheme.WHITE)
     val selectedTheme: StateFlow<AppTheme> = _selectedTheme.asStateFlow()
 
     private val _customTheme = MutableStateFlow(CustomThemeSettings())
@@ -99,7 +99,7 @@ object ThemeSettingsRepository {
 
     fun clearLocalState() {
         hasLoaded = false
-        _selectedTheme.value = AppTheme.OCEAN
+        _selectedTheme.value = AppTheme.WHITE
         _customTheme.value = CustomThemeSettings()
         _accentGradientDirection.value = AccentGradientDirection.Default
         _amoledEnabled.value = false
@@ -115,7 +115,7 @@ object ThemeSettingsRepository {
         _desktopDiscoverTabVisible.value = true
         _desktopAppUiScalePercent.value = 0
         _desktopAppUiScaleAppliesToDetails.value = true
-        NativeTabBridge.publishAccentColor(ThemeColors.Ocean.nativeAccentHex)
+        NativeTabBridge.publishAccentColor(ThemeColors.White.nativeAccentHex)
         NativeTabBridge.publishLiquidGlassEnabled(false)
         _appFontFamily.value = ""
         _selectedAppLanguage.value = AppLanguage.ENGLISH
@@ -149,10 +149,10 @@ object ThemeSettingsRepository {
             try {
                 AppTheme.valueOf(stored)
             } catch (_: IllegalArgumentException) {
-                AppTheme.OCEAN
+                AppTheme.WHITE
             }
         } else {
-            AppTheme.OCEAN
+            AppTheme.WHITE
         }
         _selectedTheme.value = theme
         NativeTabBridge.publishAccentColor(theme.nativeTabAccentHex(_customTheme.value))

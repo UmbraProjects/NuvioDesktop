@@ -1,12 +1,5 @@
 package com.nuvio.app.features.player
 
-import com.nuvio.app.features.details.filler.episodeCodeWithKind
-import com.nuvio.app.features.details.filler.label
-import com.nuvio.app.features.details.episodeGroupKeyFor
-import com.nuvio.app.features.details.episodeGroupSeason
-import com.nuvio.app.features.details.episodeGroupSortKey
-import com.nuvio.app.features.details.episodeRangeLabel
-import com.nuvio.app.features.details.withEpisodeRanges
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -209,9 +202,6 @@ private fun EpisodesListSubView(
     onDismiss: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val fillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsStateWithLifecycle()
-    val fillerResults by com.nuvio.app.features.details.filler.AnimeFillerRepository.results.collectAsStateWithLifecycle()
-    val fillerKinds = if (fillerSettings.showBadges) fillerResults[parentMetaId].orEmpty() else emptyMap()
 
     val currentPosition = remember(episodes, parentMetaId, currentVideoId, currentSeason, currentEpisode) {
         episodes.resolveSeriesEpisodePosition(
@@ -221,28 +211,18 @@ private fun EpisodesListSubView(
             episodeNumber = currentEpisode,
         )
     }
-    // Keys are seasons, or episode ranges for seasons too long to list whole (see EpisodeRangeGroups).
     val groupedEpisodes = remember(episodes) {
         episodes
             .filter { it.playbackEpisodeNumber() != null }
-            .sortedBy { it.playbackEpisodeNumber() ?: 0 }
             .groupBy { it.playbackSeasonNumber()?.coerceAtLeast(0) ?: 0 }
-            .withEpisodeRanges()
     }
     val availableSeasons = remember(groupedEpisodes) {
-        val regular = groupedEpisodes.keys.filter { it > 0 }.sortedBy(::episodeGroupSortKey)
+        val regular = groupedEpisodes.keys.filter { it > 0 }.sorted()
         val specials = groupedEpisodes.keys.filter { it == 0 }
         regular + specials
     }
-    val hasSeveralRealSeasons = remember(availableSeasons) {
-        availableSeasons.mapTo(mutableSetOf()) { it.episodeGroupSeason() }.count { it > 0 } > 1
-    }
     var selectedSeason by remember(currentPosition, currentSeason, availableSeasons) {
-        val playingGroup = currentPosition?.let { position ->
-            groupedEpisodes.entries.firstOrNull { (_, groupEpisodes) -> position.video in groupEpisodes }?.key
-        }
-        val resolvedCurrentSeason = playingGroup
-            ?: groupedEpisodes.episodeGroupKeyFor(currentPosition?.seasonNumber ?: currentSeason, currentEpisode)
+        val resolvedCurrentSeason = currentPosition?.seasonNumber ?: currentSeason
         mutableIntStateOf(
             when {
                 resolvedCurrentSeason != null && resolvedCurrentSeason in availableSeasons -> resolvedCurrentSeason
@@ -275,9 +255,11 @@ private fun EpisodesListSubView(
 
     LaunchedEffect(selectedSeason, seasonEpisodes, currentPosition) {
         if (seasonEpisodes.isEmpty()) return@LaunchedEffect
-        val activeEpisodeIndex = currentPosition
-            ?.let { position -> seasonEpisodes.indexOfFirst { episode -> episode == position.video } }
-            ?: -1
+        val activeEpisodeIndex = if (selectedSeason == currentPosition?.seasonNumber) {
+            seasonEpisodes.indexOfFirst { episode -> episode == currentPosition.video }
+        } else {
+            -1
+        }
         val targetIndex = activeEpisodeIndex.takeIf { it >= 0 } ?: 0
         if (hasPositionedEpisodeList) {
             episodeListState.animateScrollToItem(targetIndex)
@@ -320,19 +302,17 @@ private fun EpisodesListSubView(
                 horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap),
             ) {
                 items(availableSeasons, key = { season -> season }) { season ->
-                    val rangeLabel = groupedEpisodes.episodeRangeLabel(season)
-                    val label = when {
-                        rangeLabel != null && hasSeveralRealSeasons -> "S${season.episodeGroupSeason()} · $rangeLabel"
-                        rangeLabel != null -> rangeLabel
-                        season == 0 -> stringResource(Res.string.episodes_specials)
-                        else -> stringResource(Res.string.episodes_season, season)
+                    val label = if (season == 0) {
+                        stringResource(Res.string.episodes_specials)
+                    } else {
+                        stringResource(Res.string.episodes_season, season)
                     }
                     AddonFilterChip(
                         label = label,
                         isSelected = selectedSeason == season,
                         onClick = {
                             selectedSeason = season
-                            onSeasonSelected(season.episodeGroupSeason())
+                            onSeasonSelected(season)
                         },
                     )
                 }
@@ -390,7 +370,6 @@ private fun EpisodesListSubView(
                             isCurrent = isCurrent,
                             isWatched = isWatched,
                             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
-                            fillerKind = fillerKinds[episode.id],
                             onClick = { onEpisodeSelected(episode) },
                         )
                     }
@@ -406,7 +385,6 @@ private fun EpisodeRow(
     isCurrent: Boolean,
     isWatched: Boolean,
     blurUnwatchedEpisodes: Boolean,
-    fillerKind: com.nuvio.app.features.details.filler.AnimeEpisodeKind? = null,
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -432,7 +410,6 @@ private fun EpisodeRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
     ) {
-        val fillerLabel = fillerKind.label()
         // Thumbnail
         if (episode.thumbnail != null) {
             AsyncImage(
@@ -467,9 +444,9 @@ private fun EpisodeRow(
                         append(stringResource(Res.string.compose_player_episode_code_episode_only, episodeNumber))
                     }
                 }
-                if (episodeLabel.isNotBlank() || fillerLabel != null) {
+                if (episodeLabel.isNotBlank()) {
                     Text(
-                        text = episodeCodeWithKind(episodeLabel, fillerLabel),
+                        text = episodeLabel,
                         color = tokens.colors.textMuted,
                         fontSize = NuvioTokens.Type.labelXs,
                         fontWeight = FontWeight.SemiBold,

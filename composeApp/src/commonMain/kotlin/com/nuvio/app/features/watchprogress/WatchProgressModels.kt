@@ -33,18 +33,6 @@ enum class ContinueWatchingClickAction {
     DETAILS,
 }
 
-/**
- * Where a Continue Watching card shows its source shortcut: the opposite of what a plain click
- * does with streams. With Reuse Last Link on it opens the source picker; otherwise it replays the
- * last link. [CENTER] is a large Stremio-style button over the artwork.
- */
-@Serializable
-enum class ContinueWatchingSourceShortcut {
-    OFF,
-    CORNER,
-    CENTER,
-}
-
 internal fun ContinueWatchingClickAction.opensDetails(canOpenDetails: Boolean): Boolean =
     this == ContinueWatchingClickAction.DETAILS && canOpenDetails
 
@@ -228,12 +216,11 @@ data class ContinueWatchingPreferencesUiState(
     val isVisible: Boolean = true,
     val style: ContinueWatchingSectionStyle = ContinueWatchingSectionStyle.Card,
     val clickAction: ContinueWatchingClickAction = ContinueWatchingClickAction.PLAY,
-    val sourceShortcut: ContinueWatchingSourceShortcut = ContinueWatchingSourceShortcut.CORNER,
     val upNextFromFurthestEpisode: Boolean = true,
     val useEpisodeThumbnails: Boolean = true,
     val showUnairedNextUp: Boolean = true,
-    val separateNextUpRow: Boolean = true,
-    val separateUpcomingRow: Boolean = true,
+    val separateNextUpRow: Boolean = false,
+    val separateUpcomingRow: Boolean = false,
     /**
      * Whether Up Next may also be seeded from the Nuvio Sync watched history when a *remote*
      * Continue Watching source is selected.

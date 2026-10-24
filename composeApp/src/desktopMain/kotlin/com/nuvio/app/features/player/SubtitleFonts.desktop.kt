@@ -19,10 +19,6 @@ private val systemSubtitleFontFamilies: List<String> by lazy {
             .distinct()
             .sortedBy { it.lowercase() }
             .toList()
-    }.onFailure { error ->
-        // Never silent: this is usually AWT's font manager failing its static init, which then
-        // breaks every later AWT font use (the tray menu) with "Could not initialize class".
-        co.touchlab.kermit.Logger.withTag("SubtitleFonts").e(error) { "AWT font enumeration failed" }
     }.getOrDefault(emptyList())
     listOf("") + families
 }

@@ -40,7 +40,4 @@ internal expect object DownloadsPlatformDownloader {
 
     /** Usable free space on the volume backing [destinationDirOverride], or null if unknown. */
     fun usableSpaceBytes(destinationDirOverride: String? = null): Long?
-
-    /** Total capacity of the volume backing [destinationDirOverride], or null if unknown. */
-    fun totalSpaceBytes(destinationDirOverride: String? = null): Long?
 }

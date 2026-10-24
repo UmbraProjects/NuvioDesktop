@@ -79,36 +79,21 @@ import com.nuvio.app.core.ui.desktopHorizontalListNavigation
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.features.details.EpisodeRatingsVisibility
-import com.nuvio.app.features.details.filler.AnimeEpisodeKind
-import com.nuvio.app.features.details.filler.AnimeFillerRepository
-import com.nuvio.app.features.details.filler.AnimeFillerSettings
-import com.nuvio.app.features.details.filler.AnimeEpisodeKindLabel
-import com.nuvio.app.features.details.filler.episodeCodeWithKind
-import com.nuvio.app.features.details.filler.label
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaEpisodeCardStyle
 import com.nuvio.app.features.details.MetaTrailer
 import com.nuvio.app.features.details.MetaVideo
-import com.nuvio.app.features.details.SameCastLabelPlacement
 import com.nuvio.app.features.details.SeasonViewMode
 import com.nuvio.app.features.details.SeasonViewModeStorage
 import com.nuvio.app.features.details.effectiveEpisodeNumber
 import com.nuvio.app.features.details.effectiveSeasonNumber
 import com.nuvio.app.features.details.formatRuntimeFromMinutes
-import com.nuvio.app.features.details.isReleasedBy
 import com.nuvio.app.features.details.metaVideoSeasonEpisodeComparator
 import com.nuvio.app.features.details.matchingEpisodeSearch
 import com.nuvio.app.features.details.normalizeSeasonNumber
-import com.nuvio.app.features.details.episodeGroupKeyFor
-import com.nuvio.app.features.details.episodeGroupSeason
-import com.nuvio.app.features.details.episodeGroupSortKey
-import com.nuvio.app.features.details.episodeRangeLabel
-import com.nuvio.app.features.details.isEpisodeRangeKey
-import com.nuvio.app.features.details.withEpisodeRanges
 import com.nuvio.app.features.details.progressForEpisodeVideo
 import com.nuvio.app.features.details.seasonSortKey
 import com.nuvio.app.features.home.MetaPreview
-import com.nuvio.app.features.watchprogress.CurrentDateProvider
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.features.watching.application.WatchingState
@@ -123,13 +108,6 @@ private val log = Logger.withTag("SeriesContent")
 private const val TRAILER_SELECTOR_SEASON = Int.MIN_VALUE
 private const val COLLECTION_SELECTOR_SEASON = Int.MAX_VALUE - 1
 private const val MORE_LIKE_THIS_SELECTOR_SEASON = Int.MAX_VALUE
-private const val SAME_CAST_SELECTOR_SEASON = Int.MAX_VALUE - 2
-
-/** The tab name for the main cast's other work (literal: see nuviodesktop-build-facts on new string keys). */
-private const val SAME_CAST_TAB_LABEL = "Same Cast"
-
-/** The line under a landscape card when its reason is shown below it. */
-private val COMPACT_REASON_BELOW_HEIGHT = 22.dp
 
 @Composable
 fun DetailSeriesContent(
@@ -154,7 +132,6 @@ fun DetailSeriesContent(
     focusedTrailerIndex: Int? = null,
     focusedCollectionIndex: Int? = null,
     focusedMoreLikeThisIndex: Int? = null,
-    focusedSameCastIndex: Int? = null,
     compactDesktopLayout: Boolean = false,
     trailers: List<MetaTrailer> = emptyList(),
     onTrailerClick: ((MetaTrailer) -> Unit)? = null,
@@ -163,12 +140,7 @@ fun DetailSeriesContent(
     onCollectionItemClick: ((MetaPreview) -> Unit)? = null,
     moreLikeThis: List<MetaPreview> = emptyList(),
     onMoreLikeThisClick: ((MetaPreview) -> Unit)? = null,
-    sameCast: List<MetaPreview> = emptyList(),
-    onSameCastClick: ((MetaPreview) -> Unit)? = null,
-    sameCastLabelPlacement: SameCastLabelPlacement = SameCastLabelPlacement.AUTO,
     episodeSearchQuery: String = "",
-    /** Playback video id the source picker is open for; its card is outlined. */
-    pickingSourceVideoId: String? = null,
 ) {
     val hasVideos = meta.videos.isNotEmpty()
     if (meta.type != "series" && !hasVideos) return
@@ -177,9 +149,6 @@ fun DetailSeriesContent(
     // episode numbers (no season), and sibling Kitsu/MAL entries can map onto one franchise; a
     // plain season/episode set loses both of those identities and omits the downloaded badge.
     val localLibraryState by LocalLibraryRepository.uiState.collectAsStateWithLifecycle()
-    val fillerSettings by AnimeFillerSettings.state.collectAsStateWithLifecycle()
-    val fillerResults by AnimeFillerRepository.results.collectAsStateWithLifecycle()
-    val fillerKinds = if (fillerSettings.showBadges) fillerResults[meta.id].orEmpty() else emptyMap()
     val downloadedEpisodeVideoIds = remember(localLibraryState.items, meta.id, meta.videos) {
         meta.videos.mapNotNullTo(mutableSetOf()) { episode ->
             val videoId = episode.playbackVideoId(meta.id)
@@ -229,13 +198,11 @@ fun DetailSeriesContent(
                         progressByVideoId = progressByVideoId,
                         episodeRatings = episodeRatings,
                         episodeRatingsVisibility = episodeRatingsVisibility,
-                        fillerKinds = fillerKinds,
                         blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                         downloadedEpisodeVideoIds = downloadedEpisodeVideoIds,
                         focusedEpisodeIndex = focusedEpisodeIndex,
                         onEpisodeClick = onEpisodeClick,
                         onEpisodeLongPress = onEpisodeLongPress,
-                        pickingSourceVideoId = pickingSourceVideoId,
                     )
                 }
             }
@@ -276,7 +243,6 @@ fun DetailSeriesContent(
             withSeasonOrEp
                 .sortedWith(metaVideoSeasonEpisodeComparator)
                 .groupBy { normalizeSeasonNumber(it.effectiveSeasonNumber()) }
-                .withEpisodeRanges()
         } else if (meta.type != "series" && meta.videos.isNotEmpty()) {
             // For non-series types (e.g. "other"), show videos without season/episode as a flat list
             mapOf(normalizeSeasonNumber(null) to meta.videos)
@@ -302,20 +268,7 @@ fun DetailSeriesContent(
         return
     }
 
-    val seasons = groupedEpisodes.keys.sortedBy(::episodeGroupSortKey)
-    // Range chips name their episodes; with several real seasons they also need the season.
-    val hasSeveralRealSeasons = remember(seasons) {
-        seasons.mapTo(mutableSetOf()) { it.episodeGroupSeason() }.count { it > 0 } > 1
-    }
-    val groupLabel: (Int) -> String = { key ->
-        groupedEpisodes.episodeRangeLabel(key)
-            ?.let { range -> if (hasSeveralRealSeasons) "S${key.episodeGroupSeason()} · $range" else range }
-            ?: key.label(collectionTitle)
-    }
-    // Long-pressing a range acts on its real season (mark watched, recap), as a season chip does.
-    val onGroupLongPress: ((Int) -> Unit)? = onSeasonLongPress?.let { handler ->
-        { key -> handler(key.episodeGroupSeason()) }
-    }
+    val seasons = groupedEpisodes.keys.sortedBy(::seasonSortKey)
     val effectiveEpisodeCardStyle = if (episodeCardStyle == MetaEpisodeCardStyle.List) {
         MetaEpisodeCardStyle.Horizontal
     } else {
@@ -324,15 +277,14 @@ fun DetailSeriesContent(
     val mergeTrailersIntoSelector = compactDesktopLayout && trailers.isNotEmpty() && onTrailerClick != null
     val mergeCollectionIntoSelector = compactDesktopLayout && collectionItems.isNotEmpty() && onCollectionItemClick != null
     val mergeMoreLikeThisIntoSelector = compactDesktopLayout && moreLikeThis.isNotEmpty() && onMoreLikeThisClick != null
-    val mergeSameCastIntoSelector = compactDesktopLayout && sameCast.isNotEmpty() && onSameCastClick != null
     val selectorSeasons = buildList {
         if (mergeTrailersIntoSelector) add(TRAILER_SELECTOR_SEASON)
         addAll(seasons)
         if (mergeCollectionIntoSelector) add(COLLECTION_SELECTOR_SEASON)
         if (mergeMoreLikeThisIntoSelector) add(MORE_LIKE_THIS_SELECTOR_SEASON)
-        if (mergeSameCastIntoSelector) add(SAME_CAST_SELECTOR_SEASON)
     }
-    val defaultSeason = groupedEpisodes.episodeGroupKeyFor(preferredSeasonNumber, preferredEpisodeNumber)
+    val defaultSeason = preferredSeasonNumber
+        ?.takeIf { it in groupedEpisodes }
         ?: seasons.first()
     var selectedSeasonOverride by rememberSaveable(meta.id) { mutableStateOf<Int?>(null) }
     val currentSeason = externalSelectedSeason
@@ -363,15 +315,13 @@ fun DetailSeriesContent(
                         sizing = sizing,
                         focusedSeasonIndex = focusedSeasonIndex,
                         collectionTitle = collectionTitle,
-                        groupLabel = groupLabel,
                         onSelect = onSeasonSelect,
-                        onLongPress = onGroupLongPress?.let { handler ->
+                        onLongPress = onSeasonLongPress?.let { handler ->
                             { season ->
                                 if (
                                     season != TRAILER_SELECTOR_SEASON &&
                                     season != COLLECTION_SELECTOR_SEASON &&
-                                    season != MORE_LIKE_THIS_SELECTOR_SEASON &&
-                                    season != SAME_CAST_SELECTOR_SEASON
+                                    season != MORE_LIKE_THIS_SELECTOR_SEASON
                                 ) {
                                     handler(season)
                                 }
@@ -429,18 +379,16 @@ fun DetailSeriesContent(
                                         currentSeason = currentSeason,
                                         sizing = sizing,
                                         focusedSeasonIndex = focusedSeasonIndex,
-                                        groupLabel = groupLabel,
                                         onSelect = onSeasonSelect,
-                                        onLongPress = onGroupLongPress,
+                                        onLongPress = onSeasonLongPress,
                                     )
                                     SeasonViewMode.Text -> SeasonTextChipScrollRow(
                                         seasons = seasons,
                                         currentSeason = currentSeason,
                                         sizing = sizing,
                                         focusedSeasonIndex = focusedSeasonIndex,
-                                        groupLabel = groupLabel,
                                         onSelect = onSeasonSelect,
-                                        onLongPress = onGroupLongPress,
+                                        onLongPress = onSeasonLongPress,
                                     )
                                 }
                             }
@@ -450,9 +398,8 @@ fun DetailSeriesContent(
                                 currentSeason = currentSeason,
                                 sizing = sizing,
                                 focusedSeasonIndex = focusedSeasonIndex,
-                                groupLabel = groupLabel,
                                 onSelect = onSeasonSelect,
-                                onLongPress = onGroupLongPress,
+                                onLongPress = onSeasonLongPress,
                             )
                         }
                     }
@@ -474,8 +421,6 @@ fun DetailSeriesContent(
             ) { seasonForContent ->
                 val sectionTitle = if (meta.type != "series" && seasons.size == 1 && seasonForContent <= 0) {
                     stringResource(Res.string.details_videos)
-                } else if (seasonForContent.isEpisodeRangeKey()) {
-                    "${stringResource(Res.string.settings_meta_episodes)} ${groupLabel(seasonForContent)}"
                 } else {
                     seasonForContent.label(collectionTitle)
                 }
@@ -511,15 +456,6 @@ fun DetailSeriesContent(
                         )
                         return@Column
                     }
-                    if (seasonForContent == SAME_CAST_SELECTOR_SEASON && mergeSameCastIntoSelector) {
-                        CompactMetaPreviewLandscapeRow(
-                            items = sameCast,
-                            onItemClick = onSameCastClick,
-                            focusedItemIndex = focusedSameCastIndex,
-                            reasonPlacement = sameCastLabelPlacement,
-                        )
-                        return@Column
-                    }
                     val seasonEpisodes = groupedEpisodes.getValue(seasonForContent)
                     if (effectiveEpisodeCardStyle == MetaEpisodeCardStyle.Horizontal) {
                         EpisodeHorizontalRow(
@@ -533,7 +469,6 @@ fun DetailSeriesContent(
                             progressByVideoId = progressByVideoId,
                             episodeRatings = episodeRatings,
                             episodeRatingsVisibility = episodeRatingsVisibility,
-                            fillerKinds = fillerKinds,
                             blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                             downloadedEpisodeVideoIds = downloadedEpisodeVideoIds,
                             // Only resume-scroll to the preferred episode on the season the
@@ -543,14 +478,10 @@ fun DetailSeriesContent(
                             // row's own episode-number match decide where to land (otherwise the list
                             // was stuck at episode 1 for those titles).
                             preferredEpisodeNumber = preferredEpisodeNumber
-                                ?.takeIf {
-                                    preferredSeasonNumber == null ||
-                                        seasonForContent.episodeGroupSeason() == preferredSeasonNumber
-                                },
+                                ?.takeIf { preferredSeasonNumber == null || seasonForContent == preferredSeasonNumber },
                             focusedEpisodeIndex = focusedEpisodeIndex,
                             onEpisodeClick = onEpisodeClick,
                             onEpisodeLongPress = onEpisodeLongPress,
-                            pickingSourceVideoId = pickingSourceVideoId,
                         )
                     } else {
                         Column(
@@ -572,7 +503,6 @@ fun DetailSeriesContent(
                                         progressEntry = episodeProgressEntry,
                                         imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
                                         episodeRatingsVisibility = episodeRatingsVisibility,
-                                        fillerKind = fillerKinds[episode.id],
                                         isDownloaded = episode.playbackVideoId(meta.id) in downloadedEpisodeVideoIds,
                                         isWatched = episodeProgressEntry?.isEffectivelyCompleted == true ||
                                             WatchingState.isEpisodeWatched(
@@ -612,20 +542,15 @@ fun DetailCompactMediaSelector(
     focusedTrailerIndex: Int? = null,
     focusedCollectionIndex: Int? = null,
     focusedMoreLikeThisIndex: Int? = null,
-    sameCast: List<MetaPreview> = emptyList(),
-    onSameCastClick: (MetaPreview) -> Unit = {},
-    focusedSameCastIndex: Int? = null,
-    sameCastLabelPlacement: SameCastLabelPlacement = SameCastLabelPlacement.AUTO,
 ) {
     val tabs = buildList {
         if (trailers.isNotEmpty()) add(CompactMediaSelectorTab.Trailers)
         if (collectionItems.isNotEmpty()) add(CompactMediaSelectorTab.Collection)
         if (moreLikeThis.isNotEmpty()) add(CompactMediaSelectorTab.MoreLikeThis)
-        if (sameCast.isNotEmpty()) add(CompactMediaSelectorTab.SameCast)
     }
     if (tabs.isEmpty()) return
 
-    var selectedTabOverride by rememberSaveable(trailers.size, collectionItems.size, moreLikeThis.size, sameCast.size) {
+    var selectedTabOverride by rememberSaveable(trailers.size, collectionItems.size, moreLikeThis.size) {
         mutableStateOf<CompactMediaSelectorTab?>(null)
     }
     val selectedTab = selectedTabKey
@@ -668,12 +593,6 @@ fun DetailCompactMediaSelector(
                 onItemClick = onMoreLikeThisClick,
                 focusedItemIndex = focusedMoreLikeThisIndex,
             )
-            CompactMediaSelectorTab.SameCast -> CompactMetaPreviewLandscapeRow(
-                items = sameCast,
-                onItemClick = onSameCastClick,
-                focusedItemIndex = focusedSameCastIndex,
-                reasonPlacement = sameCastLabelPlacement,
-            )
         }
     }
 }
@@ -681,15 +600,13 @@ fun DetailCompactMediaSelector(
 private enum class CompactMediaSelectorTab {
     Trailers,
     Collection,
-    MoreLikeThis,
-    SameCast;
+    MoreLikeThis;
 
     val selectorKey: Int
         get() = when (this) {
             Trailers -> TRAILER_SELECTOR_SEASON
             Collection -> COLLECTION_SELECTOR_SEASON
             MoreLikeThis -> MORE_LIKE_THIS_SELECTOR_SEASON
-            SameCast -> SAME_CAST_SELECTOR_SEASON
         }
 
     companion object {
@@ -698,7 +615,6 @@ private enum class CompactMediaSelectorTab {
                 TRAILER_SELECTOR_SEASON -> Trailers
                 COLLECTION_SELECTOR_SEASON -> Collection
                 MORE_LIKE_THIS_SELECTOR_SEASON -> MoreLikeThis
-                SAME_CAST_SELECTOR_SEASON -> SameCast
                 else -> null
             }
     }
@@ -744,7 +660,6 @@ private fun CompactMediaSelectorTabRow(
                                 ?.takeIf { it.isNotBlank() }
                                 ?: stringResource(Res.string.settings_meta_collection)
                             CompactMediaSelectorTab.MoreLikeThis -> stringResource(Res.string.details_more_like_this)
-                            CompactMediaSelectorTab.SameCast -> SAME_CAST_TAB_LABEL
                         },
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 14.sp,
@@ -820,7 +735,6 @@ private fun SeasonTextChipScrollRow(
     onLongPress: ((Int) -> Unit)?,
     focusedSeasonIndex: Int? = null,
     collectionTitle: String? = null,
-    groupLabel: (Int) -> String = { it.label(collectionTitle) },
     // True in the fixed-height desktop hero overlay, which never scrolls vertically, so a
     // plain mouse wheel over this row can scroll it horizontally without requiring Shift.
     // False in the regular (tablet/mobile/tab-layout) vertically-scrolling season list, where
@@ -890,7 +804,7 @@ private fun SeasonTextChipScrollRow(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = groupLabel(season),
+                        text = season.label(collectionTitle),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = sizing.seasonChipTextSize,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
@@ -917,7 +831,6 @@ private fun SeasonPosterScrollRow(
     onSelect: (Int) -> Unit,
     onLongPress: ((Int) -> Unit)?,
     focusedSeasonIndex: Int? = null,
-    groupLabel: (Int) -> String = { it.label() },
 ) {
     val seasonListState = rememberLazyListState()
     var hasPositionedSeasonRow by remember(seasons) { mutableStateOf(false) }
@@ -958,7 +871,7 @@ private fun SeasonPosterScrollRow(
         itemsIndexed(seasons, key = { _, season -> season }) { index, season ->
             NuvioShelfItemSlot(focused = index == focusedSeasonIndex) {
                 SeasonPosterButton(
-                    label = groupLabel(season),
+                    label = season.label(),
                     imageUrl = groupedEpisodes[season]
                         .orEmpty()
                         .firstNotNullOfOrNull { episode -> episode.seasonPoster }
@@ -1067,8 +980,6 @@ private fun EpisodeHorizontalRow(
     progressByVideoId: Map<String, WatchProgressEntry>,
     episodeRatings: Map<Pair<Int, Int>, Double>,
     episodeRatingsVisibility: EpisodeRatingsVisibility,
-    /** AnimeFillerList categories by video id; empty for non-anime or with badges off. */
-    fillerKinds: Map<String, AnimeEpisodeKind> = emptyMap(),
     blurUnwatchedEpisodes: Boolean,
     /** Playback video ids that resolve to a file in the local library. */
     downloadedEpisodeVideoIds: Set<String>,
@@ -1077,7 +988,6 @@ private fun EpisodeHorizontalRow(
     compactDesktopLayout: Boolean = false,
     onEpisodeClick: ((MetaVideo) -> Unit)?,
     onEpisodeLongPress: ((MetaVideo) -> Unit)?,
-    pickingSourceVideoId: String? = null,
 ) {
     val rowMetrics = rememberEpisodeHorizontalCardMetrics(maxWidthDp, compactDesktopLayout)
     val listState = rememberLazyListState()
@@ -1159,7 +1069,6 @@ private fun EpisodeHorizontalRow(
                     progressEntry = episodeProgressEntry,
                     imdbRating = episode.seasonEpisodeKey()?.let { episodeRatings[it] },
                     episodeRatingsVisibility = episodeRatingsVisibility,
-                    fillerKind = fillerKinds[episode.id],
                     isDownloaded = episodeVideoId in downloadedEpisodeVideoIds,
                     isWatched = episodeProgressEntry?.isEffectivelyCompleted == true ||
                         WatchingState.isEpisodeWatched(
@@ -1170,8 +1079,6 @@ private fun EpisodeHorizontalRow(
                         ),
                     blurUnwatchedEpisodes = blurUnwatchedEpisodes,
                     metrics = rowMetrics,
-                    isPickingSource = pickingSourceVideoId != null &&
-                        (pickingSourceVideoId == episodeVideoId || pickingSourceVideoId == episode.id),
                     onClick = { onEpisodeClick?.invoke(episode) },
                     onLongPress = { onEpisodeLongPress?.invoke(episode) },
                 )
@@ -1210,13 +1117,10 @@ private fun EpisodeHorizontalCard(
     progressEntry: WatchProgressEntry?,
     imdbRating: Double?,
     episodeRatingsVisibility: EpisodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL,
-    fillerKind: AnimeEpisodeKind? = null,
     isWatched: Boolean,
     isDownloaded: Boolean,
     blurUnwatchedEpisodes: Boolean,
     metrics: EpisodeHorizontalCardMetrics,
-    /** The source picker beside the row is open for this episode. */
-    isPickingSource: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
 ) {
@@ -1235,12 +1139,8 @@ private fun EpisodeHorizontalCard(
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .nuvioCardDepth(cardShape, NuvioCardDepthSurface.Episodes)
             .border(
-                width = if (isPickingSource) 2.dp else 1.dp,
-                color = if (isPickingSource) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    Color.White.copy(alpha = 0.12f)
-                },
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.12f),
                 shape = cardShape,
             )
             .combinedClickable(
@@ -1252,9 +1152,7 @@ private fun EpisodeHorizontalCard(
     ) {
         val imageUrl = video.thumbnail ?: fallbackImage
         val shouldBlurArtwork = blurUnwatchedEpisodes && !isWatched
-        if (video.awaitsStill()) {
-            EpisodeNoStillPlaceholder(contentAlignment = Alignment.Top, modifier = Modifier.padding(top = metrics.cardHeight * 0.14f))
-        } else if (imageUrl != null) {
+        if (imageUrl != null) {
             AsyncImage(
                 model = imageUrl,
                 contentDescription = video.title,
@@ -1309,7 +1207,6 @@ private fun EpisodeHorizontalCard(
             Spacer(modifier = Modifier.weight(1f))
             CardOverlayBadge(
                 text = video.episodeBadge(),
-                kind = fillerKind.label(),
                 textSize = metrics.badgeTextSize,
                 radius = metrics.badgeRadius,
                 horizontalPadding = metrics.badgeHorizontalPadding,
@@ -1599,21 +1496,12 @@ private fun CompactMetaPreviewLandscapeRow(
     items: List<MetaPreview>,
     onItemClick: (MetaPreview) -> Unit,
     focusedItemIndex: Int? = null,
-    /** Where a card's [MetaPreview.recommendationReason] goes ("With Hugh Laurie" on Same Cast). */
-    reasonPlacement: SameCastLabelPlacement = SameCastLabelPlacement.ON_POSTER,
 ) {
     if (items.isEmpty()) return
 
     val listState = rememberLazyListState()
-    val reasonBelow: (MetaPreview) -> Boolean = { item ->
-        !item.recommendationReason.isNullOrBlank() &&
-            reasonPlacement.isBelow(artFromPosterService = !item.landscapePoster.isNullOrBlank())
-    }
-    // A label below takes its height out of the card, so the row stays the height the fixed hero
-    // overlay was laid out for; every card shrinks alike so the row stays even.
-    val anyReasonBelow = items.any(reasonBelow)
     val cardWidth = 330.dp
-    val cardHeight = if (anyReasonBelow) 196.dp - COMPACT_REASON_BELOW_HEIGHT else 196.dp
+    val cardHeight = 196.dp
     val itemSpacing = 14.dp
     val itemExtentPx = with(LocalDensity.current) { (cardWidth + itemSpacing).toPx() }
 
@@ -1653,27 +1541,12 @@ private fun CompactMetaPreviewLandscapeRow(
             key = { index, item -> "${item.type}:${item.id}:$index" },
         ) { index, item ->
             NuvioShelfItemSlot(focused = index == focusedItemIndex) {
-                Column(modifier = Modifier.width(cardWidth)) {
-                    CompactMetaPreviewLandscapeCard(
-                        item = item,
-                        width = cardWidth,
-                        height = cardHeight,
-                        onClick = { onItemClick(item) },
-                        showReason = !reasonBelow(item),
-                    )
-                    if (anyReasonBelow) {
-                        Text(
-                            text = item.recommendationReason?.takeIf { reasonBelow(item) }.orEmpty(),
-                            modifier = Modifier
-                                .height(COMPACT_REASON_BELOW_HEIGHT)
-                                .padding(start = 4.dp, top = 5.dp),
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 15.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
+                CompactMetaPreviewLandscapeCard(
+                    item = item,
+                    width = cardWidth,
+                    height = cardHeight,
+                    onClick = { onItemClick(item) },
+                )
             }
         }
     }
@@ -1685,8 +1558,6 @@ private fun CompactMetaPreviewLandscapeCard(
     width: Dp,
     height: Dp,
     onClick: () -> Unit,
-    /** False when the row draws the reason below the card instead. */
-    showReason: Boolean = true,
 ) {
     Box(
         modifier = Modifier
@@ -1706,13 +1577,7 @@ private fun CompactMetaPreviewLandscapeCard(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )
-        // Why the title is in this row ("With Laurie & Wilde" on Same Cast). Drawn as a pill so it
-        // survives poster-service art, which carries its own title and gets nothing else on top.
-        val reason = item.recommendationReason?.takeIf { it.isNotBlank() && showReason }
-        if (artIncludesTitle) {
-            reason?.let { CompactLandscapeReasonPill(it, Modifier.align(Alignment.TopStart).padding(10.dp)) }
-            return@Box
-        }
+        if (artIncludesTitle) return@Box
 
         Box(
             modifier = Modifier
@@ -1749,7 +1614,6 @@ private fun CompactMetaPreviewLandscapeCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            reason?.let { CompactLandscapeReasonPill(it) }
             item.description?.takeIf { it.isNotBlank() }?.let { description ->
                 Text(
                     text = description,
@@ -1758,7 +1622,7 @@ private fun CompactMetaPreviewLandscapeCard(
                         lineHeight = 15.sp,
                     ),
                     color = Color.White.copy(alpha = 0.82f),
-                    maxLines = if (reason != null) 1 else 2,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -1777,21 +1641,6 @@ private fun CompactMetaPreviewLandscapeCard(
             }
         }
     }
-}
-
-@Composable
-private fun CompactLandscapeReasonPill(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text = text,
-        modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(Color.Black.copy(alpha = 0.62f))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
-        color = Color.White,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
 }
 
 @Composable
@@ -2044,11 +1893,9 @@ private fun CardOverlayBadge(
     radius: Dp,
     horizontalPadding: Dp,
     verticalPadding: Dp,
-    kind: AnimeEpisodeKindLabel? = null,
 ) {
     EpisodeCodeBadge(
         text = text,
-        kind = kind,
         textSize = textSize,
         radius = radius,
         horizontalPadding = horizontalPadding,
@@ -2066,10 +1913,7 @@ private fun EpisodeCodeBadge(
     verticalPadding: Dp,
     backgroundAlpha: Float,
     modifier: Modifier = Modifier,
-    /** AnimeFillerList verdict appended to the code: "S5E2 · Filler". */
-    kind: AnimeEpisodeKindLabel? = null,
 ) {
-    val label = remember(text, kind) { episodeCodeWithKind(text, kind) }
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(radius))
@@ -2077,7 +1921,7 @@ private fun EpisodeCodeBadge(
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
     ) {
         Text(
-            text = label,
+            text = text,
             style = MaterialTheme.typography.labelMedium.copy(
                 fontSize = textSize,
                 fontWeight = FontWeight.SemiBold,
@@ -2158,7 +2002,6 @@ private fun EpisodeListCard(
     progressEntry: WatchProgressEntry?,
     imdbRating: Double?,
     episodeRatingsVisibility: EpisodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL,
-    fillerKind: AnimeEpisodeKind? = null,
     isWatched: Boolean,
     isDownloaded: Boolean,
     blurUnwatchedEpisodes: Boolean,
@@ -2204,9 +2047,7 @@ private fun EpisodeListCard(
             ) {
                 val imageUrl = video.thumbnail ?: fallbackImage
                 val shouldBlurArtwork = blurUnwatchedEpisodes && !isWatched
-                if (video.awaitsStill()) {
-                    EpisodeNoStillPlaceholder(clockSize = 32.dp, label = null)
-                } else if (imageUrl != null) {
+                if (imageUrl != null) {
                     AsyncImage(
                         model = imageUrl,
                         contentDescription = video.title,
@@ -2233,7 +2074,6 @@ private fun EpisodeListCard(
 
                 EpisodeCodeBadge(
                     text = video.episodeBadge(),
-                    kind = fillerKind.label(),
                     textSize = sizing.badgeTextSize,
                     radius = sizing.badgeRadius,
                     horizontalPadding = sizing.badgeHorizontalPadding,
@@ -2542,8 +2382,6 @@ private fun Int.label(collectionTitle: String? = null): String =
             ?: runBlocking { getString(Res.string.settings_meta_collection) }
     } else if (this == MORE_LIKE_THIS_SELECTOR_SEASON) {
         runBlocking { getString(Res.string.details_more_like_this) }
-    } else if (this == SAME_CAST_SELECTOR_SEASON) {
-        SAME_CAST_TAB_LABEL
     } else if (this <= 0) {
         runBlocking { getString(Res.string.episodes_specials) }
     } else {
@@ -2580,10 +2418,3 @@ private fun formatEpisodeRating(rating: Double): String {
     val tenth = (roundedTenths % 10).absoluteValue
     return "$whole.$tenth"
 }
-
-/**
- * An episode that hasn't aired and has no still of its own yet: it gets the ticking-clock
- * placeholder rather than the show's backdrop. Aired episodes missing a still keep the backdrop.
- */
-private fun MetaVideo.awaitsStill(): Boolean =
-    thumbnail.isNullOrBlank() && !isReleasedBy(CurrentDateProvider.todayIsoDate())

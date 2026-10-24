@@ -129,11 +129,6 @@ class PosterZoomOverlayAction(
      * presentations ignore it.
      */
     val group: Int = 0,
-    /**
-     * [NuvioContextMenu] dims a disabled row and skips it for clicks and focus (the text fields'
-     * Cut/Copy with nothing selected); the other presentations ignore it.
-     */
-    val enabled: Boolean = true,
 )
 
 private enum class PosterZoomPhase {

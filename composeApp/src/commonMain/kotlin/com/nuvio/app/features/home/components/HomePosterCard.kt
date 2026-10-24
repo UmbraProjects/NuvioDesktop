@@ -43,19 +43,13 @@ fun HomePosterCard(
         landscapePosterUrl = item.landscapePoster,
     )
     val isRandomPlayCard = item.randomPlayCategoryOrNull() != null
-    val ratingBadgeText = when {
-        isRandomPlayCard -> null
-        isLandscapeMode -> posterRatingBadgeText(
+    val ratingBadgeText = if (isLandscapeMode && !isRandomPlayCard) {
+        posterRatingBadgeText(
             rawRating = item.imdbRating,
             scale = posterCardStyle.landscapeRatingBadgeScale,
         )
-        // A custom poster service (RPDB-style templates) swaps `poster` and keeps the original in
-        // posterFallback; its art usually prints ratings already, so a second badge would double up.
-        item.posterFallback != null && item.posterFallback != item.poster -> null
-        else -> posterRatingBadgeText(
-            rawRating = item.imdbRating,
-            scale = posterCardStyle.portraitRatingBadgeScale,
-        )
+    } else {
+        null
     }
 
     // Plan §5/§18: an AI row's per-item reason is the whole reason that row exists, and until now

@@ -43,7 +43,6 @@ private data class DiscoveryDocument(
 private data class DiscoveryCapabilities(
     @SerialName("email_password_auth") val emailPasswordAuth: Boolean = false,
     @SerialName("tv_login") val tvLogin: Boolean = false,
-    @SerialName("watch_party") val watchParty: Boolean = false,
 )
 
 internal object ServerDiscoveryPolicy {
@@ -92,7 +91,6 @@ internal object ServerDiscoveryPolicy {
             capabilities = ServerCapabilities(
                 emailPasswordAuth = payload.capabilities.emailPasswordAuth,
                 tvLogin = payload.capabilities.tvLogin,
-                watchParty = payload.capabilities.watchParty,
             ),
             isCustom = true,
             discoveryUrl = discoveryUrl,

@@ -1,0 +1,178 @@
+package com.nuvio.app.features.music
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/**
+ * These fixtures are hand-built to the shape YouTube Music's responses have (as ytmusicapi reads
+ * them), not captured from the live service. Phase 0 should add real saved responses beside them;
+ * until then they pin the parsers' behaviour, including what happens when the shape is wrong.
+ */
+class MusicParsersTest {
+    private val albumSearch = """
+    {"contents":{"tabbedSearchResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[
+      {"musicShelfRenderer":{"contents":[
+        {"musicResponsiveListItemRenderer":{
+          "thumbnail":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img/small","width":60},{"url":"https://img/large","width":226}]}}},
+          "navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_abc123"}},
+          "flexColumns":[
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Random Access Memories"}]}}},
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[
+              {"text":"Album"},{"text":" • "},
+              {"text":"Daft Punk","navigationEndpoint":{"browseEndpoint":{"browseId":"UCartist1"}}},
+              {"text":" • "},{"text":"2013"}]}}}
+          ]}},
+        {"musicResponsiveListItemRenderer":{
+          "flexColumns":[
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Some Song"}]}}},
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Song"}]}}}
+          ]}}
+      ]}}
+    ]}}}}]}}}
+    """
+
+    @Test
+    fun albumSearchReadsTitleArtistYearAndLargestThumbnail() {
+        val albums = parseAlbumSearch(albumSearch)
+        assertEquals(1, albums.size)
+        val a = albums.single()
+        assertEquals("MPREb_abc123", a.browseId)
+        assertEquals("Random Access Memories", a.title)
+        assertEquals("Album", a.kind)
+        assertEquals("2013", a.year)
+        assertEquals(listOf(MusicArtistRef("Daft Punk", "UCartist1")), a.artists)
+        assertEquals("https://img/large", a.thumbnailUrl)
+    }
+
+    @Test
+    fun albumSearchSkipsNonAlbumsAndSurvivesGarbage() {
+        assertTrue(parseAlbumSearch("not json").isEmpty())
+        assertTrue(parseAlbumSearch("{}").isEmpty())
+        assertTrue(parseAlbumSearch("[1,2,3]").isEmpty())
+    }
+
+    @Test
+    fun artistSearchNeedsAChannelId() {
+        val body = """
+        {"a":{"musicResponsiveListItemRenderer":{"navigationEndpoint":{"browseEndpoint":{"browseId":"UC123"}},
+          "flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Daft Punk"}]}}}]}},
+         "b":{"musicResponsiveListItemRenderer":{"navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_x"}},
+          "flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"An Album"}]}}}]}}}
+        """
+        assertEquals(listOf(MusicArtistSummary("UC123", "Daft Punk", null)), parseArtistSearch(body))
+    }
+
+    private fun trackItem(index: Int, id: String, title: String, duration: String, greyed: Boolean = false) = """
+        {"musicResponsiveListItemRenderer":{
+          ${if (greyed) "\"musicItemRendererDisplayPolicy\":\"MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT\"," else ""}
+          "playlistItemData":{"videoId":"$id"},
+          "index":{"runs":[{"text":"$index"}]},
+          "flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"$title"}]}}}],
+          "fixedColumns":[{"musicResponsiveListItemFixedColumnRenderer":{"text":{"runs":[{"text":"$duration"}]}}}]}}
+    """
+
+    private val albumPage = """
+    {"contents":{"twoColumnBrowseResultsRenderer":{
+      "tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[{"musicResponsiveHeaderRenderer":{
+        "title":{"runs":[{"text":"Random Access Memories"}]},
+        "subtitle":{"runs":[{"text":"Album"},{"text":" • "},{"text":"2013"}]},
+        "straplineTextOne":{"runs":[{"text":"Daft Punk","navigationEndpoint":{"browseEndpoint":{"browseId":"UCartist1"}}}]},
+        "thumbnail":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img/cover"}]}}}
+      }}]}}}}],
+      "secondaryContents":{"sectionListRenderer":{"contents":[{"musicShelfRenderer":{"contents":[
+        ${trackItem(1, "AAAAAAAAAAA", "Give Life Back to Music", "4:34")},
+        ${trackItem(2, "BBBBBBBBBBB", "The Game of Love", "5:21")},
+        ${trackItem(3, "CCCCCCCCCCC", "Removed Track", "3:00", greyed = true)}
+      ]}}]}},
+      "x":{"watchEndpoint":{"videoId":"AAAAAAAAAAA","playlistId":"OLAK5uy_example"}}
+    }}}
+    """
+
+    @Test
+    fun albumPageReadsHeaderTracksAndGreyedOutOnes() {
+        val album = assertNotNull(parseAlbum(albumPage, "MPREb_abc123"))
+        assertEquals("Random Access Memories", album.title)
+        assertEquals("Album", album.kind)
+        assertEquals("2013", album.year)
+        assertEquals("Daft Punk", album.artists.single().name)
+        assertEquals("https://img/cover", album.thumbnailUrl)
+        assertEquals("OLAK5uy_example", album.audioPlaylistId)
+        assertEquals(listOf("AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC"), album.tracks.map { it.videoId })
+        assertEquals(listOf(274, 321, 180), album.tracks.map { it.durationSeconds })
+        assertEquals(listOf(1, 2, 3), album.tracks.map { it.trackNumber })
+        assertEquals(listOf(true, true, false), album.tracks.map { it.isAvailable })
+        // A track with no artists of its own takes the album's.
+        assertEquals("Daft Punk", album.tracks.first().artists.single().name)
+    }
+
+    @Test
+    fun albumWithoutTitleOrTracksIsNull() {
+        assertNull(parseAlbum("{}", "MPREb_x"))
+        assertNull(parseAlbum("nope", "MPREb_x"))
+        val noTracks = """{"musicResponsiveHeaderRenderer":{"title":{"runs":[{"text":"Empty"}]}}}"""
+        assertNull(parseAlbum(noTracks, "MPREb_x"))
+    }
+
+    @Test
+    fun artistPageListsAlbumsOnly() {
+        val body = """
+        {"header":{"musicImmersiveHeaderRenderer":{"title":{"runs":[{"text":"Daft Punk"}]}}},
+         "contents":[
+          {"musicTwoRowItemRenderer":{"title":{"runs":[{"text":"Discovery","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_disc"}}}]},
+            "subtitle":{"runs":[{"text":"Album"},{"text":" • "},{"text":"2001"}]},
+            "thumbnailRenderer":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://img/d"}]}}}}},
+          {"musicTwoRowItemRenderer":{"title":{"runs":[{"text":"A Playlist","navigationEndpoint":{"browseEndpoint":{"browseId":"VLPL123"}}}]}}}
+         ]}
+        """
+        val artist = assertNotNull(parseArtist(body, "UC123"))
+        assertEquals("Daft Punk", artist.name)
+        val album = artist.albums.single()
+        assertEquals("MPREb_disc", album.browseId)
+        assertEquals("2001", album.year)
+        assertEquals("Album", album.kind)
+        assertEquals("https://img/d", album.thumbnailUrl)
+    }
+
+    private fun panel(id: String, type: String, title: String, length: String, counterpart: String = "") = """
+        {"playlistPanelVideoRenderer":{"videoId":"$id","title":{"runs":[{"text":"$title"}]},"lengthText":{"runs":[{"text":"$length"}]},
+          "navigationEndpoint":{"watchEndpoint":{"watchEndpointMusicSupportedConfigs":{"watchEndpointMusicConfig":{"musicVideoType":"$type"}}}}
+          $counterpart}}
+    """
+
+    @Test
+    fun counterpartIsTheLinkedVideo() {
+        val linked = ""","counterpart":[{"counterpartRenderer":${panel("VVVVVVVVVVV", "MUSIC_VIDEO_TYPE_OMV", "Give Life Back to Music (Official Video)", "4:40")}}]"""
+        val body = """{"contents":[${panel("AAAAAAAAAAA", "MUSIC_VIDEO_TYPE_ATV", "Give Life Back to Music", "4:34", linked)}]}"""
+        val track = parseWatchNext(body).single()
+        assertEquals(MusicVideoType.ArtTrack, track.videoType)
+        assertEquals("VVVVVVVVVVV", track.counterpart?.videoId)
+        val c = assertNotNull(parseCounterpart(body, "AAAAAAAAAAA"))
+        assertEquals("VVVVVVVVVVV", c.videoId)
+        assertEquals(MusicVideoType.OfficialVideo, c.videoType)
+        assertEquals(280, c.durationSeconds)
+    }
+
+    @Test
+    fun counterpartOfAnArtTrackWithoutALinkIsNull() {
+        val body = """{"contents":[${panel("AAAAAAAAAAA", "MUSIC_VIDEO_TYPE_ATV", "Track", "3:00")}]}"""
+        assertNull(parseCounterpart(body, "AAAAAAAAAAA"))
+    }
+
+    @Test
+    fun anOfficialVideoIsItsOwnCounterpart() {
+        val body = """{"contents":[${panel("VVVVVVVVVVV", "MUSIC_VIDEO_TYPE_OMV", "Video", "4:00")}]}"""
+        val c = assertNotNull(parseCounterpart(body, "VVVVVVVVVVV"))
+        assertEquals("VVVVVVVVVVV", c.videoId)
+        assertEquals(MusicVideoType.OfficialVideo, c.videoType)
+        assertEquals(240, c.durationSeconds)
+    }
+
+    @Test
+    fun unknownTrackIsNull() {
+        assertNull(parseCounterpart("""{"contents":[]}""", "AAAAAAAAAAA"))
+        assertNull(parseCounterpart("garbage", "AAAAAAAAAAA"))
+    }
+}

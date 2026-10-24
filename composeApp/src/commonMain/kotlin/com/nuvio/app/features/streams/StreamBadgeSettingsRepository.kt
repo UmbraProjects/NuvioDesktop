@@ -19,11 +19,6 @@ data class StreamBadgeSettingsUiState(
     val badgePlacement: StreamBadgePlacement = StreamBadgePlacement.BOTTOM,
     val listSortOrder: StreamListSortOrder = StreamListSortOrder.DEFAULT,
     val listCachedFirst: Boolean = false,
-    /**
-     * The source picker's list in two columns. A preference rather than a fixed layout: compact
-     * stream formatters fit side by side, raw release filenames do not.
-     */
-    val listTwoColumns: Boolean = false,
 )
 
 enum class StreamBadgePlacement {
@@ -48,7 +43,6 @@ object StreamBadgeSettingsRepository {
     private var badgePlacement = StreamBadgePlacement.BOTTOM
     private var listSortOrder = StreamListSortOrder.DEFAULT
     private var listCachedFirst = false
-    private var listTwoColumns = false
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -67,7 +61,6 @@ object StreamBadgeSettingsRepository {
         badgePlacement = StreamBadgePlacement.BOTTOM
         listSortOrder = StreamListSortOrder.DEFAULT
         listCachedFirst = false
-        listTwoColumns = false
         _uiState.value = StreamBadgeSettingsUiState()
     }
 
@@ -181,14 +174,6 @@ object StreamBadgeSettingsRepository {
         StreamBadgeSettingsStorage.saveStreamListCachedFirst(enabled)
     }
 
-    fun setListTwoColumns(enabled: Boolean) {
-        ensureLoaded()
-        if (listTwoColumns == enabled) return
-        listTwoColumns = enabled
-        publish()
-        StreamBadgeSettingsStorage.saveStreamListTwoColumns(enabled)
-    }
-
     private fun loadFromDisk() {
         hasLoaded = true
         val storedRules = parseStreamBadgeRules(StreamBadgeSettingsStorage.loadStreamBadgeRules())
@@ -211,7 +196,6 @@ object StreamBadgeSettingsRepository {
             ?.let { stored -> StreamListSortOrder.entries.firstOrNull { it.name == stored } }
             ?: StreamListSortOrder.DEFAULT
         listCachedFirst = StreamBadgeSettingsStorage.loadStreamListCachedFirst() ?: false
-        listTwoColumns = StreamBadgeSettingsStorage.loadStreamListTwoColumns() ?: false
         if (legacyRules != null) {
             saveStreamBadgeRules()
             StreamBadgeSettingsStorage.clearLegacyDebridStreamBadgeRules()
@@ -227,7 +211,6 @@ object StreamBadgeSettingsRepository {
             badgePlacement = badgePlacement,
             listSortOrder = listSortOrder,
             listCachedFirst = listCachedFirst,
-            listTwoColumns = listTwoColumns,
         )
     }
 

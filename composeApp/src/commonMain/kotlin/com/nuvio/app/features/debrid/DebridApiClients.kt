@@ -134,27 +134,28 @@ internal object TorboxApiClient {
         )
 
     suspend fun listCloudTorrents(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
-        listCloudItems(apiKey, "torrents")
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/torrents/mylist",
+            apiKey = apiKey,
+            allowLargeResponse = true,
+        )
 
     suspend fun listCloudUsenet(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
-        listCloudItems(apiKey, "usenet")
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/usenet/mylist",
+            apiKey = apiKey,
+            allowLargeResponse = true,
+        )
 
     suspend fun listCloudWebDownloads(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
-        listCloudItems(apiKey, "webdl")
-
-    // mylist stops at 1,000 items per call, so larger libraries are read page by page.
-    private suspend fun listCloudItems(
-        apiKey: String,
-        kind: String,
-    ): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
-        fetchTorboxCloudPages(pageSize = 1000) { offset, limit ->
-            request(
-                method = "GET",
-                url = "$BASE_URL/v1/api/$kind/mylist?offset=$offset&limit=$limit",
-                apiKey = apiKey,
-                allowLargeResponse = true,
-            )
-        }
+        request(
+            method = "GET",
+            url = "$BASE_URL/v1/api/webdl/mylist",
+            apiKey = apiKey,
+            allowLargeResponse = true,
+        )
 
     suspend fun requestDownloadLink(
         apiKey: String,
@@ -563,25 +564,6 @@ object DebridCredentialValidator {
         val normalized = apiKey.trim()
         if (normalized.isBlank()) return false
         return DebridProviderApis.apiFor(providerId)?.validateApiKey(normalized) == true
-    }
-}
-
-internal suspend fun fetchTorboxCloudPages(
-    pageSize: Int,
-    fetchPage: suspend (offset: Int, limit: Int) -> DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>>,
-): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> {
-    val items = mutableListOf<TorboxCloudItemDto>()
-    var offset = 0
-    while (true) {
-        val response = fetchPage(offset, pageSize)
-        val envelope = response.body
-        if (!response.isSuccessful || envelope == null || envelope.success == false) return response
-        val page = envelope.data.orEmpty()
-        items.addAll(page)
-        if (page.size < pageSize) {
-            return response.copy(body = envelope.copy(data = items), rawBody = "")
-        }
-        offset += page.size
     }
 }
 

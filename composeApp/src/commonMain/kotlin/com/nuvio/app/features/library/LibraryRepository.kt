@@ -2,7 +2,6 @@ package com.nuvio.app.features.library
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.auth.AuthRepository
-import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.network.SupabaseProvider
@@ -243,7 +242,6 @@ object LibraryRepository {
     }
 
     suspend fun pullFromServer(profileId: Int) {
-        PerfTelemetry.count("LibraryRepository.pullFromServer")
         currentProfileId = profileId
 
         activeLibraryProvider()?.let { provider ->
@@ -361,15 +359,6 @@ object LibraryRepository {
         } else {
             itemsById.values.any { it.id == id }
         }
-    }
-
-    /**
-     * The profile's own Nuvio library, whichever service the Library screen is showing — the
-     * local calendar follows what is saved in Nuvio, not a provider's watchlist.
-     */
-    internal fun nuvioLibraryItems(): List<LibraryItem> {
-        ensureLoaded()
-        return itemsById.values.toList()
     }
 
     fun savedItem(id: String): LibraryItem? {

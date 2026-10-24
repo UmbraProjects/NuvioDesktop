@@ -84,15 +84,11 @@ object LocalLibraryRepository {
     // starting a second scan) under a load that is already in flight.
     private val loadLock = Any()
 
-    /**
-     * Loads the cached library only — no folder scan. Library folders usually sit on a big HDD,
-     * and scanning at launch spun it up on every start even when nothing would look at local
-     * files. The first screen that shows the library calls [scanIfNotScannedThisSession].
-     */
     fun ensureLoaded() {
         synchronized(loadLock) {
             if (hasLoaded) return
             loadFromDisk(ProfileRepository.activeProfileId)
+            if (folders.isNotEmpty()) rescan()
         }
     }
 
@@ -100,19 +96,9 @@ object LocalLibraryRepository {
         synchronized(loadLock) {
             if (newProfileId == profileId && hasLoaded) return
             scanJob?.cancel()
-            scannedThisSession = false
             loadFromDisk(newProfileId)
+            if (folders.isNotEmpty()) rescan()
         }
-    }
-
-    @Volatile
-    private var scannedThisSession = false
-
-    /** One background scan per session, started by the screens that show local items. */
-    fun scanIfNotScannedThisSession() {
-        ensureLoaded()
-        if (scannedThisSession || folders.isEmpty()) return
-        rescan()
     }
 
     private fun loadFromDisk(profileId: Int) {
@@ -217,7 +203,6 @@ object LocalLibraryRepository {
             return
         }
         scanJob?.cancel()
-        scannedThisSession = true
         publish(isScanning = true)
         scanJob = scope.launch {
             val scanned = mutableListOf<LocalMediaItem>()

@@ -50,8 +50,7 @@ object CalendarPrewarm {
         val source = resolveCalendarSource(CalendarSourceRepository.selectedSource()) { providerId ->
             providerId in connected
         }
-        val providerId = source.providerId
-        if (providerId != null && providerId !in connected) {
+        if (source.providerId !in connected) {
             log.d { "skipped: calendar source $source is not connected" }
             return
         }
@@ -60,7 +59,6 @@ object CalendarPrewarm {
             CalendarSource.MDBLIST -> MdbListCalendarRepository.ensureLoaded()
             CalendarSource.SIMKL -> SimklCalendarRepository.ensureLoaded()
             CalendarSource.TRAKT -> TraktCalendarRepository.ensureLoaded()
-            CalendarSource.NUVIO -> NuvioCalendarRepository.ensureLoaded()
         }
     }
 }

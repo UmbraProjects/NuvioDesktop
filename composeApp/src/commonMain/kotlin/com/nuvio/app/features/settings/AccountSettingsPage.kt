@@ -33,7 +33,6 @@ import com.nuvio.app.features.setup.FirstRunWizardController
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.NuvioSurfaceCard
 import com.nuvio.app.core.ui.NuvioToastController
-import com.nuvio.app.core.storage.PortableMode
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsSyncService
 import com.nuvio.app.features.updater.AppUpdaterController
@@ -43,14 +42,6 @@ import com.nuvio.app.features.updater.updateChannelLabel
 import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.settings_portable_mode
-import nuvio.composeapp.generated.resources.settings_portable_mode_description
-import nuvio.composeapp.generated.resources.settings_portable_mode_disable_message
-import nuvio.composeapp.generated.resources.settings_portable_mode_disable_title
-import nuvio.composeapp.generated.resources.settings_portable_mode_enable_message
-import nuvio.composeapp.generated.resources.settings_portable_mode_enable_title
-import nuvio.composeapp.generated.resources.settings_portable_mode_failed
-import nuvio.composeapp.generated.resources.settings_portable_mode_restart
 import nuvio.composeapp.generated.resources.settings_account_run_wizard
 import nuvio.composeapp.generated.resources.settings_account_run_wizard_description
 import nuvio.composeapp.generated.resources.settings_account_setup
@@ -65,13 +56,9 @@ import nuvio.composeapp.generated.resources.settings_account_not_signed_in
 import nuvio.composeapp.generated.resources.settings_account_sign_out
 import nuvio.composeapp.generated.resources.settings_account_sign_out_confirm_message
 import nuvio.composeapp.generated.resources.settings_account_sign_out_confirm_title
-import nuvio.composeapp.generated.resources.settings_account_sign_out_erase
 import nuvio.composeapp.generated.resources.settings_account_status
 import nuvio.composeapp.generated.resources.settings_account_status_anonymous
 import nuvio.composeapp.generated.resources.settings_account_status_signed_in
-import nuvio.composeapp.generated.resources.settings_backup_import
-import nuvio.composeapp.generated.resources.settings_backup_import_description
-import nuvio.composeapp.generated.resources.settings_backup_import_restart_manually
 import nuvio.composeapp.generated.resources.settings_backup_saved
 import nuvio.composeapp.generated.resources.settings_backup_section
 import nuvio.composeapp.generated.resources.settings_backup_with_credentials
@@ -128,7 +115,6 @@ private fun AccountSettingsBody(
         SynchronizationPreferencesRepository.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var showSignOutConfirm by remember { mutableStateOf(false) }
-    var pendingPortableMode by remember { mutableStateOf<Boolean?>(null) }
     val pullPortableSettingsIfSignedIn: () -> Unit = {
         val state = authState
         if (state is AuthState.Authenticated && !state.isAnonymous) {
@@ -379,23 +365,6 @@ private fun AccountSettingsBody(
                             }
                         },
                     )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    val restartManuallyMessage = stringResource(Res.string.settings_backup_import_restart_manually)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.settings_backup_import),
-                        description = stringResource(Res.string.settings_backup_import_description),
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("import-settings")),
-                        onClick = {
-                            when (val result = DesktopSettingsBackup.import()) {
-                                is DesktopSettingsImportResult.Staged ->
-                                    if (!result.restarting) NuvioToastController.show(restartManuallyMessage)
-                                is DesktopSettingsImportResult.Failed ->
-                                    NuvioToastController.show(result.message)
-                                DesktopSettingsImportResult.Cancelled -> Unit
-                            }
-                        },
-                    )
                 }
             }
         }
@@ -469,44 +438,8 @@ private fun AccountSettingsBody(
                         },
                     )
                 }
-                if (PortableMode.isSupported) {
-                    SettingsGroup(isTablet = isTablet) {
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_portable_mode),
-                            description = stringResource(Res.string.settings_portable_mode_description),
-                            checked = PortableMode.isEnabled,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(
-                                SettingsScrollAnchor.searchKey("portable-mode"),
-                            ),
-                            // The switch only reflects where this session's data lives; flipping
-                            // it asks first, because the change is a restart and a data move.
-                            onCheckedChange = { value -> pendingPortableMode = value },
-                        )
-                    }
-                }
             }
         }
-    }
-
-    pendingPortableMode?.let { enable ->
-        val failedMessage = stringResource(Res.string.settings_portable_mode_failed)
-        NuvioStatusModal(
-            title = stringResource(
-                if (enable) Res.string.settings_portable_mode_enable_title else Res.string.settings_portable_mode_disable_title,
-            ),
-            message = stringResource(
-                if (enable) Res.string.settings_portable_mode_enable_message else Res.string.settings_portable_mode_disable_message,
-            ),
-            isVisible = true,
-            confirmText = stringResource(Res.string.settings_portable_mode_restart),
-            dismissText = stringResource(Res.string.action_cancel),
-            onConfirm = {
-                pendingPortableMode = null
-                if (!PortableMode.setEnabledAndRestart(enable)) NuvioToastController.show(failedMessage)
-            },
-            onDismiss = { pendingPortableMode = null },
-        )
     }
 
     NuvioStatusModal(
@@ -520,11 +453,6 @@ private fun AccountSettingsBody(
             scope.launch { AuthRepository.signOut() }
         },
         onDismiss = { showSignOutConfirm = false },
-        secondaryText = stringResource(Res.string.settings_account_sign_out_erase),
-        onSecondary = {
-            showSignOutConfirm = false
-            scope.launch { AuthRepository.signOut(erase = true) }
-        },
     )
 }
 

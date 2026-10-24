@@ -161,30 +161,12 @@ internal fun LazyListScope.homescreenSettingsContent(
                         currentMode == HomeDisplayMode.AdaptiveAmbient
                     ) {
                         SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_home_backdrop_auto_framing),
-                            description = stringResource(
-                                Res.string.settings_home_backdrop_auto_framing_description,
-                            ),
-                            checked = homeSettings.adaptiveHeroAutoFraming,
+                        AdaptiveHeroVerticalBiasRow(
+                            bias = adaptiveHeroVerticalBias,
                             enabled = heroEnabled,
                             isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(
-                                SettingsScrollAnchor.searchKey("home-adaptive-hero-auto-framing"),
-                            ),
-                            onCheckedChange = HomeCatalogSettingsRepository::setAdaptiveHeroAutoFraming,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroPosition),
                         )
-                        // The manual position only applies with automatic framing off; showing it
-                        // alongside would read as a second control over the same crop.
-                        if (!homeSettings.adaptiveHeroAutoFraming) {
-                            SettingsGroupDivider(isTablet = isTablet)
-                            AdaptiveHeroVerticalBiasRow(
-                                bias = adaptiveHeroVerticalBias,
-                                enabled = heroEnabled,
-                                isTablet = isTablet,
-                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AdaptiveHeroPosition),
-                            )
-                        }
                         SettingsGroupDivider(isTablet = isTablet)
                         AdaptiveHeroHeightRow(
                             enabled = heroEnabled,
@@ -241,19 +223,6 @@ internal fun LazyListScope.homescreenSettingsContent(
                                 SettingsScrollAnchor.searchKey("home-tv-full-backdrop"),
                             ),
                             onCheckedChange = HomeCatalogSettingsRepository::setTvFullBackdropEnabled,
-                        )
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_home_tv_ambient_background),
-                            description = stringResource(
-                                Res.string.settings_home_tv_ambient_background_description,
-                            ),
-                            checked = homeSettings.tvAmbientBackgroundEnabled,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(
-                                SettingsScrollAnchor.searchKey("home-tv-ambient-background"),
-                            ),
-                            onCheckedChange = HomeCatalogSettingsRepository::setTvAmbientBackgroundEnabled,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(
@@ -550,9 +519,6 @@ internal fun LazyListScope.homescreenSettingsContent(
                 )
             }
         }
-    }
-    item {
-        ConfidentSearchSettingsSection(isTablet = isTablet)
     }
     item {
         // Catalogs are always eligible; collections qualify only when they or their

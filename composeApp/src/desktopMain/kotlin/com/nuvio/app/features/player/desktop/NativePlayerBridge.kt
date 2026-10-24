@@ -114,15 +114,6 @@ internal object NativePlayerBridge {
     external fun setSubtitleDelayMs(handle: Long, delayMs: Int)
 
     /**
-     * Decodes [durationSeconds] of the playing audio from [startSeconds] to raw 16 kHz mono float32
-     * PCM in [outputPath], with a throwaway headless mpv on its own connection. Blocks; 0 = written.
-     */
-    external fun decodeSpeechSpot(handle: Long, startSeconds: Double, durationSeconds: Double, outputPath: String): Int
-
-    /** The playing source's size over its duration; negative when unknown. */
-    external fun speechSourceBytesPerSecond(handle: Long): Double
-
-    /**
      * mpv's `sub-ass-override` level for ASS/SSA tracks ("no", "yes", "scale" or "force") plus the
      * `sub-scale` factor that goes with it.
      *
@@ -169,22 +160,10 @@ internal object NativePlayerBridge {
     external fun systemIdleMs(): Long
 
     /**
-     * Holds (or releases) a keep-awake request for the display and system while a video plays.
-     * Leaves [systemIdleMs] alone, so the screensaver's idle clock is unaffected.
-     */
-    external fun setWindowsDisplaySleepInhibited(inhibited: Boolean): Boolean
-
-    /**
      * Whether the foreground window belongs to this process. AWT's `Window.isActive` cannot be
      * trusted for this while focus sits in the WebView2 HUD (a non-AWT child of the frame).
      */
     external fun isForegroundProcess(): Boolean
-
-    /**
-     * Whether Windows HDR is on for the monitor [windowHwnd] sits on. False when that monitor
-     * cannot be matched, never a guess from another display. See `DesktopHdrUiCompensation`.
-     */
-    external fun isWindowDisplayHdr(windowHwnd: Long): Boolean
 
     val controlsPageUrl: String by lazy { controlsPageAssets.url }
     private val controlsPageAssets: ControlsPageAssets by lazy { exportControlsPageAssets() }
@@ -415,19 +394,27 @@ internal object NativePlayerBridge {
         val root = File(System.getProperty("java.io.tmpdir"), "nuvio-player-ui").apply { mkdirs() }
         val fontsDir = root.resolve("fonts").apply { mkdirs() }
         val htmlFile = root.resolve("controls.html")
+        val cssText = readTextResource("/player-ui/controls.css")
+            .replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces())
+        val jsText = readTextResource("/player-ui/controls.js")
+        // The page names its stylesheet and script with a hand-maintained `?v=` key. WebView2 keeps
+        // a disk cache across launches and treats an unchanged URL as unchanged content, so when a
+        // release edited controls.css/js without remembering to bump that key, the old files kept
+        // being served from cache (a stale pre-show HUD showed the mute icon again). The key is now
+        // taken from the content itself, so the URL changes exactly when the files do.
+        val assetVersion = java.security.MessageDigest.getInstance("SHA-256")
+            .digest((cssText + "\u0000" + jsText).toByteArray(Charsets.UTF_8))
+            .take(6)
+            .joinToString("") { "%02x".format(it) }
         writeTextIfChanged(
             target = htmlFile,
-            text = readTextResource("/player-ui/controls.html"),
+            text = readTextResource("/player-ui/controls.html")
+                .replace(Regex("""(controls\.(?:css|js))\?v=[^"'\s>]*""")) { match ->
+                    "${match.groupValues[1]}?v=$assetVersion"
+                },
         )
-        writeTextIfChanged(
-            target = root.resolve("controls.css"),
-            text = readTextResource("/player-ui/controls.css")
-                .replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces()),
-        )
-        copyResourceIfChanged(
-            resource = "/player-ui/controls.js",
-            target = root.resolve("controls.js"),
-        )
+        writeTextIfChanged(target = root.resolve("controls.css"), text = cssText)
+        writeTextIfChanged(target = root.resolve("controls.js"), text = jsText)
         copyResourceIfChanged(
             resource = "/composeResources/nuvio.composeapp.generated.resources/font/jetbrains_sans_regular.ttf",
             target = fontsDir.resolve("jetbrains_sans_regular.ttf"),

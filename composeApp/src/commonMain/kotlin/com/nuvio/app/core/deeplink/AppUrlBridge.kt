@@ -1,7 +1,6 @@
 package com.nuvio.app.core.deeplink
 
-import com.nuvio.app.features.party.PARTY_CODE_LENGTH
-import com.nuvio.app.features.party.normalizePartyCode
+import com.nuvio.app.features.trakt.handleTraktAuthCallbackUrl
 import io.ktor.http.Url
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,11 +14,6 @@ sealed interface AppDeepLink {
     ) : AppDeepLink
 
     data object Downloads : AppDeepLink
-
-    /** A watch-party invite: `nuvio://party/CODE`, or the `https://nuvio.tv/party/CODE` share link. */
-    data class Party(
-        val code: String,
-    ) : AppDeepLink
 }
 
 object AppDeepLinkRepository {
@@ -43,6 +37,7 @@ fun handleAppUrl(url: String) {
     val normalizedUrl = url.trim()
     if (normalizedUrl.isBlank()) return
 
+    handleTraktAuthCallbackUrl(normalizedUrl)
     AppDeepLinkRepository.handleUrl(normalizedUrl)
 }
 
@@ -58,13 +53,8 @@ fun buildMetaDeepLinkUrl(
 
 fun buildDownloadsDeepLinkUrl(): String = "nuvio://downloads"
 
-internal fun parseAppDeepLink(url: String): AppDeepLink? {
+private fun parseAppDeepLink(url: String): AppDeepLink? {
     val parsedUrl = runCatching { Url(url) }.getOrNull() ?: return null
-    val pathSegments = parsedUrl.segments.map(String::trim).filter(String::isNotBlank)
-    if (parsedUrl.protocol.name.equals("https", ignoreCase = true)) {
-        val isInvite = parsedUrl.host.lowercase() == "nuvio.tv" && pathSegments.firstOrNull() == "party"
-        return if (isInvite) partyDeepLink(pathSegments.getOrNull(1)) else null
-    }
     if (!parsedUrl.protocol.name.equals("nuvio", ignoreCase = true)) return null
 
     return when (parsedUrl.host.lowercase()) {
@@ -76,11 +66,6 @@ internal fun parseAppDeepLink(url: String): AppDeepLink? {
 
         "downloads" -> AppDeepLink.Downloads
 
-        "party" -> partyDeepLink(pathSegments.firstOrNull() ?: parsedUrl.parameters["code"])
-
         else -> null
     }
 }
-
-private fun partyDeepLink(code: String?): AppDeepLink.Party? =
-    code?.let(::normalizePartyCode)?.takeIf { it.length == PARTY_CODE_LENGTH }?.let(AppDeepLink::Party)

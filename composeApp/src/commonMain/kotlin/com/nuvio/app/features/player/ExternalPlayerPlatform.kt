@@ -26,8 +26,6 @@ data class ExternalPlayerPlaybackRequest(
     val season: Int? = null,
     val episode: Int? = null,
     val episodeTitle: String? = null,
-    /** Set when the launch's progress should be recorded; the platform reads the player for it. */
-    val tracking: ExternalPlaybackTracking? = null,
 ) {
     /**
      * Builds a display title for external players.

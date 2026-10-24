@@ -35,6 +35,7 @@ import com.nuvio.app.features.discover.proposeAiDiscoverRows
 import com.nuvio.app.features.discover.AiDiscoverPreset
 import com.nuvio.app.features.discover.AiDiscoverRow
 import com.nuvio.app.features.discover.DISCOVER_AI_ANTHROPIC_BASE_URL
+import com.nuvio.app.features.discover.DISCOVER_AI_GROQ_BASE_URL
 import com.nuvio.app.features.discover.DiscoverAiError
 import com.nuvio.app.features.discover.DiscoverAiException
 import com.nuvio.app.features.discover.DiscoverAiGenerator
@@ -53,6 +54,8 @@ import nuvio.composeapp.generated.resources.settings_ai_recap_enabled
 import nuvio.composeapp.generated.resources.settings_ai_recap_enabled_description
 import nuvio.composeapp.generated.resources.settings_ai_recap_model_knowledge
 import nuvio.composeapp.generated.resources.settings_ai_recap_model_knowledge_description
+import nuvio.composeapp.generated.resources.settings_ai_trivia_enabled
+import nuvio.composeapp.generated.resources.settings_ai_trivia_enabled_description
 import nuvio.composeapp.generated.resources.settings_discover_ai_add_row
 import nuvio.composeapp.generated.resources.settings_discover_ai_add_row_description
 import nuvio.composeapp.generated.resources.settings_discover_ai_base_url
@@ -105,6 +108,7 @@ import nuvio.composeapp.generated.resources.settings_discover_ai_prompt
 import nuvio.composeapp.generated.resources.settings_discover_ai_prompt_placeholder
 import nuvio.composeapp.generated.resources.settings_discover_ai_provider
 import nuvio.composeapp.generated.resources.settings_discover_ai_provider_anthropic
+import nuvio.composeapp.generated.resources.settings_discover_ai_provider_groq
 import nuvio.composeapp.generated.resources.settings_discover_ai_provider_openai
 import nuvio.composeapp.generated.resources.settings_discover_ai_row_limit
 import nuvio.composeapp.generated.resources.settings_discover_ai_row_remove
@@ -533,6 +537,10 @@ internal fun DiscoverAiProviderSection(isTablet: Boolean) {
                         stringResource(Res.string.settings_discover_ai_provider_openai),
                     ),
                     SettingsChoiceOption(
+                        DiscoverAiProvider.Groq,
+                        stringResource(Res.string.settings_discover_ai_provider_groq),
+                    ),
+                    SettingsChoiceOption(
                         DiscoverAiProvider.Anthropic,
                         stringResource(Res.string.settings_discover_ai_provider_anthropic),
                     ),
@@ -589,20 +597,29 @@ internal fun DiscoverAiProviderSection(isTablet: Boolean) {
         }
     }
 
-    val consentTarget = consentPromptFor ?: return
+    AiConsentDialog(target = consentPromptFor, onDismiss = { consentPromptFor = null })
+}
+
+/**
+ * The consent dialog shared by every switch that sends the user's key and film details to their own
+ * AI provider. Shown while [target] is non-null; accepting turns on only the feature that asked.
+ */
+@Composable
+internal fun AiConsentDialog(target: AiConsentTarget?, onDismiss: () -> Unit) {
+    val consentTarget = target ?: return
     NuvioModalDialog(
-        onDismissRequest = { consentPromptFor = null },
+        onDismissRequest = { onDismiss() },
         title = stringResource(Res.string.settings_discover_ai_consent_title),
         subtitle = null,
         maxWidth = 560.dp,
         modifier = Modifier.width(560.dp),
         actions = {
-            TextButton(onClick = { consentPromptFor = null }) {
+            TextButton(onClick = { onDismiss() }) {
                 Text(stringResource(Res.string.action_done))
             }
             TextButton(
                 onClick = {
-                    consentPromptFor = null
+                    onDismiss()
                     DiscoverAiSettingsRepository.setConsentGiven(true)
                     // Accepting turns on only the switch that asked. Consent covers both features
                     // from here — it is about the key leaving this PC — but agreeing to that is not
@@ -610,6 +627,7 @@ internal fun DiscoverAiProviderSection(isTablet: Boolean) {
                     when (consentTarget) {
                         AiConsentTarget.Rows -> DiscoverAiSettingsRepository.setEnabled(true)
                         AiConsentTarget.Recap -> DiscoverAiSettingsRepository.setRecapEnabled(true)
+                        AiConsentTarget.Trivia -> DiscoverAiSettingsRepository.setTriviaEnabled(true)
                     }
                 },
             ) { Text(stringResource(Res.string.settings_discover_ai_consent_accept)) }
@@ -620,6 +638,7 @@ internal fun DiscoverAiProviderSection(isTablet: Boolean) {
                 Res.string.settings_discover_ai_consent_body,
                 when (DiscoverAiSettingsRepository.snapshot().provider) {
                     DiscoverAiProvider.Anthropic -> DISCOVER_AI_ANTHROPIC_BASE_URL
+                    DiscoverAiProvider.Groq -> DISCOVER_AI_GROQ_BASE_URL
                     DiscoverAiProvider.OpenAiCompat ->
                         DiscoverAiSettingsRepository.snapshot().effectiveBaseUrl
                 },
@@ -632,7 +651,7 @@ internal fun DiscoverAiProviderSection(isTablet: Boolean) {
 }
 
 /** Which switch opened the shared consent dialog. */
-private enum class AiConsentTarget { Rows, Recap }
+internal enum class AiConsentTarget { Rows, Recap, Trivia }
 
 /** Each failure says what to do about it — they need different things from the user. */
 internal suspend fun discoverAiErrorMessage(error: Throwable): String =

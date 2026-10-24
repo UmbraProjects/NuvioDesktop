@@ -9,8 +9,6 @@ import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.TimeSource
 
 internal data class PlayerSurfaceGestureCallbacks(
     val onSurfaceTap: State<(Offset) -> Unit>,
@@ -112,12 +110,8 @@ internal fun PlayerScreenRuntime.adjustVolume(deltaFraction: Float) {
     showVolumeFeedback(level)
 }
 
-internal fun PlayerScreenRuntime.togglePlayback(revealControls: Boolean = true) {
+internal fun PlayerScreenRuntime.togglePlayback() {
     resetPausedOverlayBackoff()
-    if (isPartyControlLocked) {
-        toggleOwnPlayback()
-        return
-    }
     if (playbackSnapshot.isPlaying) {
         shouldPlay = false
         playerController?.pause()
@@ -128,16 +122,12 @@ internal fun PlayerScreenRuntime.togglePlayback(revealControls: Boolean = true) 
         shouldPlay = true
         playerController?.play()
     }
-    if (revealControls) controlsVisible = true
-    publishPartyPlayback(positionMs = if (playbackSnapshot.isEnded) 0L else currentPlaybackPositionMs())
+    controlsVisible = true
 }
 
 internal fun PlayerScreenRuntime.prepareTogglePlaybackForNativeFallback(revealControls: Boolean = true) {
     resetPausedOverlayBackoff()
-    // Take the engine's own decision, not the 500 ms snapshot: the snapshot lags a recent toggle
-    // and reports "not playing" while loading, and the playWhenReady effect would then write the
-    // opposite of what the native toggle just queued, undoing the click.
-    shouldPlay = playerController?.toggleWouldPlay() ?: !playbackSnapshot.isPlaying
+    shouldPlay = !playbackSnapshot.isPlaying
     if (revealControls) {
         controlsVisible = true
     }
@@ -153,25 +143,9 @@ private fun PlayerScreenRuntime.resetPausedOverlayBackoff() {
     pausedOverlayInteractionSignal++
 }
 
-internal fun PlayerScreenRuntime.seekBy(offsetMs: Long, revealControls: Boolean = true) {
-    if (!isPartySynced) {
-        playerController?.seekBy(offsetMs)
-        applySeekByControlFeedback(offsetMs, revealControls)
-        return
-    }
-    // In a party the target is absolute, so everyone lands on the same frame. Repeated presses
-    // build on the last target rather than on a position mpv has not reported yet.
-    val fromMs = pendingSeekTarget
-        ?.takeIf { (_, mark) -> mark.elapsedNow() < PendingSeekWindow }
-        ?.first
-        ?: currentPlaybackPositionMs()
-    val requestedMs = (fromMs + offsetMs).coerceAtLeast(0L)
-        .let { if (playbackSnapshot.durationMs > 0L) it.coerceAtMost(playbackSnapshot.durationMs) else it }
-    val targetMs = if (isPartyControlLocked) ownSeekTarget(requestedMs) ?: return else requestedMs
-    pendingSeekTarget = targetMs to TimeSource.Monotonic.markNow()
-    playerController?.seekTo(targetMs)
-    applySeekByControlFeedback(offsetMs, revealControls)
-    publishPartyPlayback(positionMs = targetMs)
+internal fun PlayerScreenRuntime.seekBy(offsetMs: Long) {
+    playerController?.seekBy(offsetMs)
+    applySeekByControlFeedback(offsetMs)
 }
 
 internal fun PlayerScreenRuntime.prepareSeekByForNativeFallback(
@@ -199,11 +173,6 @@ internal fun PlayerScreenRuntime.prepareDoubleTapSeekForNativeFallback(direction
     handleDoubleTapSeek(direction, sendToController = false)
 }
 
-/** Watch party: the double-tap seek done here instead of natively, so it can be shared. */
-internal fun PlayerScreenRuntime.partyDoubleTapSeek(direction: PlayerSeekDirection) {
-    handleDoubleTapSeek(direction, sendToController = true)
-}
-
 private fun PlayerScreenRuntime.handleDoubleTapSeek(
     direction: PlayerSeekDirection,
     sendToController: Boolean,
@@ -220,8 +189,10 @@ private fun PlayerScreenRuntime.handleDoubleTapSeek(
             amountMs = stepMs,
         )
     }
+    accumulatedSeekState = nextState
+
     val maxDurationMs = playbackSnapshot.durationMs.takeIf { it > 0L }
-    val requestedPositionMs = when (direction) {
+    val targetPositionMs = when (direction) {
         PlayerSeekDirection.Backward -> {
             (nextState.baselinePositionMs - nextState.amountMs).coerceAtLeast(0L)
         }
@@ -230,15 +201,8 @@ private fun PlayerScreenRuntime.handleDoubleTapSeek(
             maxDurationMs?.let { unclamped.coerceAtMost(it) } ?: unclamped
         }
     }
-    val targetPositionMs = if (sendToController && isPartyControlLocked) {
-        ownSeekTarget(requestedPositionMs) ?: return
-    } else {
-        requestedPositionMs
-    }
-    accumulatedSeekState = nextState
     if (sendToController) {
         playerController?.seekTo(targetPositionMs)
-        publishPartyPlayback(positionMs = targetPositionMs)
     }
     scheduleProgressSyncAfterSeek()
     showSeekFeedback(direction, nextState.amountMs)
@@ -264,36 +228,36 @@ internal fun PlayerScreenRuntime.setPlayerResizeMode(nextMode: PlayerResizeMode)
             PlayerResizeMode.Fit -> resizeModeFitLabel
             PlayerResizeMode.Fill -> resizeModeFillLabel
             PlayerResizeMode.Zoom -> resizeModeZoomLabel
-            PlayerResizeMode.AutoCrop -> resizeModeAutoCropLabel
         },
     )
     controlsVisible = true
 }
 
 internal fun PlayerScreenRuntime.cyclePlaybackSpeed() {
-    if (partyBlocksControl()) return
     val speeds = listOf(1f, 1.25f, 1.5f, 2f, 3f, 4f)
     val current = playbackSnapshot.playbackSpeed
     val next = speeds.firstOrNull { it > current + 0.01f } ?: speeds.first()
-    applyUserPlaybackSpeed(next)
+    playerController?.setPlaybackSpeed(next)
+    sessionPlaybackSpeed = next
+    playbackSnapshot = playbackSnapshot.copy(playbackSpeed = next)
     showGestureMessage(formatPlaybackSpeedLabel(next))
     controlsVisible = true
 }
 
 /** Flips between the two speeds of the Playback settings range. */
 internal fun PlayerScreenRuntime.togglePlaybackSpeed(showFeedback: Boolean = true) {
-    if (partyBlocksControl()) return
     val next = nextToggledPlaybackSpeed(
         current = playbackSnapshot.playbackSpeed,
         low = playerSettingsUiState.playbackSpeedToggleLow,
         high = playerSettingsUiState.playbackSpeedToggleHigh,
     )
-    applyUserPlaybackSpeed(next)
+    playerController?.setPlaybackSpeed(next)
+    sessionPlaybackSpeed = next
+    playbackSnapshot = playbackSnapshot.copy(playbackSpeed = next)
     if (showFeedback) showGestureMessage(formatPlaybackSpeedLabel(next))
 }
 
 internal fun PlayerScreenRuntime.adjustPlaybackSpeedStep(direction: Int, showFeedback: Boolean = true) {
-    if (partyBlocksControl()) return
     val current = playbackSnapshot.playbackSpeed
     val step = direction.coerceIn(-1, 1)
     val next = if (playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled) {
@@ -304,17 +268,10 @@ internal fun PlayerScreenRuntime.adjustPlaybackSpeedStep(direction: Int, showFee
         val currentIndex = speeds.indices.minByOrNull { index -> abs(speeds[index] - current) } ?: 0
         speeds[(currentIndex + step).coerceIn(speeds.indices)]
     }
-    applyUserPlaybackSpeed(next)
+    playerController?.setPlaybackSpeed(next)
+    sessionPlaybackSpeed = next
+    playbackSnapshot = playbackSnapshot.copy(playbackSpeed = next)
     if (showFeedback) showGestureMessage(formatPlaybackSpeedLabel(next))
-}
-
-/** A speed the viewer chose (not a party sync nudge), shared with the party when there is one. */
-internal fun PlayerScreenRuntime.applyUserPlaybackSpeed(speed: Float) {
-    partyRateNudge = null
-    playerController?.setPlaybackSpeed(speed)
-    sessionPlaybackSpeed = speed
-    playbackSnapshot = playbackSnapshot.copy(playbackSpeed = speed)
-    publishPartyPlayback(rate = speed)
 }
 
 @Composable
@@ -346,5 +303,3 @@ internal fun PlayerScreenRuntime.rememberSurfaceGestureCallbacks(): PlayerSurfac
         playerControlsLocked = rememberUpdatedState(playerControlsLocked),
     )
 }
-
-private val PendingSeekWindow = 1_500.milliseconds

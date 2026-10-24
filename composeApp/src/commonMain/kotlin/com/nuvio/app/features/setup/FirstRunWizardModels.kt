@@ -28,7 +28,6 @@ internal enum class FirstRunWizardStep {
  */
 internal data class FirstRunWizardDraft(
     val displayMode: HomeDisplayMode = HomeDisplayMode.Adaptive,
-    val adaptiveHeroAutoFraming: Boolean = homeDefaults.adaptiveHeroAutoFraming,
     val adaptiveHeroVerticalBias: Float = homeDefaults.adaptiveHeroVerticalBias,
     val adaptiveHeroHeightMultiplier: Float = homeDefaults.adaptiveHeroHeightMultiplier,
     val smoothScrollingEnabled: Boolean = true,

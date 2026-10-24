@@ -1,34 +1,23 @@
 package com.nuvio.app.features.details
 
-/**
- * The trailer the hero plays by itself. Language first: the list can hold every language TMDB has
- * (48 and 56 entries for two films, 2026-10-16), and ranking by "official, then newest" alone put a
- * newer foreign-language trailer ahead of the English one for an English title. A trailer in
- * [preferredLanguage] wins, one whose language is unknown comes next, any other language last.
- */
-internal fun selectHeroTrailer(
-    trailers: List<MetaTrailer>,
-    preferredLanguage: String? = com.nuvio.app.features.tmdb.TmdbSettingsRepository.snapshot().language,
-): MetaTrailer? {
-    val wanted = preferredLanguage?.substringBefore('-')?.lowercase()?.takeIf(String::isNotBlank)
-    return trailers
-        .asSequence()
-        .filter { it.isPlayableYouTubeTrailerCandidate() }
-        .maxWithOrNull(
-            compareBy<MetaTrailer>(
-                { it.languageRank(wanted) },
-                { it.heroTrailerPriority() },
-                { it.publishedAt.orEmpty() },
-                { it.size ?: 0 },
-                { it.name },
-            ),
-        )
-}
+internal fun selectHeroTrailer(trailers: List<MetaTrailer>): MetaTrailer? =
+    rankHeroTrailers(trailers).firstOrNull()
 
-private fun MetaTrailer.languageRank(wanted: String?): Int {
-    val own = language?.substringBefore('-')?.lowercase()?.takeIf(String::isNotBlank) ?: return 1
-    return if (wanted == null || own == wanted) 2 else 0
-}
+/**
+ * Every playable YouTube trailer, best first by the same ordering [selectHeroTrailer] uses, with
+ * one entry per video. The runners-up are the alternatives to try when the first upload is low
+ * resolution.
+ */
+internal fun rankHeroTrailers(trailers: List<MetaTrailer>): List<MetaTrailer> =
+    trailers
+        .filter { it.isPlayableYouTubeTrailerCandidate() }
+        .sortedWith(
+            compareByDescending<MetaTrailer> { it.heroTrailerPriority() }
+                .thenByDescending { it.publishedAt.orEmpty() }
+                .thenByDescending { it.size ?: 0 }
+                .thenByDescending { it.name },
+        )
+        .distinctBy { it.key }
 
 internal fun MetaTrailer.youtubePlaybackUrl(): String =
     key.takeIf { it.startsWith("http://") || it.startsWith("https://") }

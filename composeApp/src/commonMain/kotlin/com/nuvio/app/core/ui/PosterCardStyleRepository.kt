@@ -69,10 +69,9 @@ private data class StoredPosterCardStylePreferences(
     val collectionsPortraitPostersEnabled: Boolean = false,
     val landscapeTextTitlesEnabled: Boolean = false,
     val landscapeRatingBadgeScale: String = "OutOfTen",
-    val portraitRatingBadgeScale: String = "Off",
     val posterHighlightMode: String = "Off",
     val hideLabelsEnabled: Boolean = false,
-    val depthEnabled: Boolean = true,
+    val depthEnabled: Boolean = false,
     val depthEdgeStrength: Int = 42,
     val depthSheenStrength: Int = 10,
     val depthEdgeCoverage: Int = 64,
@@ -95,12 +94,10 @@ data class PosterCardStyleUiState(
     val landscapeTextTitlesEnabled: Boolean = false,
     /** Corner rating badge on landscape cards, using whatever score the row's catalog supplied. */
     val landscapeRatingBadgeScale: PosterRatingBadgeScale = PosterRatingBadgeScale.OutOfTen,
-    /** The same badge on portrait posters. Off by default: posters often carry their own art text. */
-    val portraitRatingBadgeScale: PosterRatingBadgeScale = PosterRatingBadgeScale.Off,
     /** Ring drawn around the highlighted poster in addition to its magnification. */
     val posterHighlightMode: PosterHighlightMode = PosterHighlightMode.Off,
     val hideLabelsEnabled: Boolean = false,
-    val depthEnabled: Boolean = true,
+    val depthEnabled: Boolean = false,
     val depthEdgeStrength: Int = 42,
     val depthSheenStrength: Int = 10,
     val depthEdgeCoverage: Int = 64,
@@ -189,13 +186,6 @@ object PosterCardStyleRepository {
         ensureLoaded()
         if (_uiState.value.landscapeRatingBadgeScale == scale) return
         _uiState.value = _uiState.value.copy(landscapeRatingBadgeScale = scale)
-        persist()
-    }
-
-    fun setPortraitRatingBadgeScale(scale: PosterRatingBadgeScale) {
-        ensureLoaded()
-        if (_uiState.value.portraitRatingBadgeScale == scale) return
-        _uiState.value = _uiState.value.copy(portraitRatingBadgeScale = scale)
         persist()
     }
 
@@ -327,10 +317,6 @@ object PosterCardStyleRepository {
                 landscapeRatingBadgeScale = PosterRatingBadgeScale.fromStoredName(
                     stored.landscapeRatingBadgeScale,
                 ),
-                // fromStoredName falls back to OutOfTen, which suits landscape; portrait is opt-in.
-                portraitRatingBadgeScale = PosterRatingBadgeScale.entries
-                    .firstOrNull { it.name == stored.portraitRatingBadgeScale }
-                    ?: PosterRatingBadgeScale.Off,
                 posterHighlightMode = PosterHighlightMode.fromStoredName(stored.posterHighlightMode),
                 hideLabelsEnabled = stored.hideLabelsEnabled,
                 depthEnabled = stored.depthEnabled,
@@ -361,7 +347,6 @@ object PosterCardStyleRepository {
                     collectionsPortraitPostersEnabled = _uiState.value.collectionsPortraitPostersEnabled,
                     landscapeTextTitlesEnabled = _uiState.value.landscapeTextTitlesEnabled,
                     landscapeRatingBadgeScale = _uiState.value.landscapeRatingBadgeScale.name,
-                    portraitRatingBadgeScale = _uiState.value.portraitRatingBadgeScale.name,
                     posterHighlightMode = _uiState.value.posterHighlightMode.name,
                     hideLabelsEnabled = _uiState.value.hideLabelsEnabled,
                     depthEnabled = _uiState.value.depthEnabled,

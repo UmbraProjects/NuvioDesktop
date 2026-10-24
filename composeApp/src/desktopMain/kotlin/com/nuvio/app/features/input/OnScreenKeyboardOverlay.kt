@@ -25,7 +25,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,16 +51,11 @@ internal fun OnScreenKeyboardOverlay() {
             TextInputFocusTracker.active,
             GamepadSettingsRepository.connected,
             GamepadSettingsRepository.enabledState,
-            GamepadSettingsRepository.mouseKeyboardState,
-        ) { focused, connected, enabled, mouseKeyboard -> Triple(focused, connected && enabled, mouseKeyboard) }
-            .collect { (focused, padAvailable, mouseKeyboard) ->
+        ) { focused, connected, enabled -> focused to (connected && enabled) }
+            .collect { (focused, padAvailable) ->
                 // usedRecently keeps the panel away from someone who clicked into a settings field
-                // with the mouse while a controller happens to be plugged in — unless they asked
-                // for exactly that, because a mouse is all they have on the couch.
-                OnScreenKeyboard.onTextFocusChanged(
-                    focused,
-                    mouseKeyboard || (padAvailable && GamepadInput.usedRecently()),
-                )
+                // with the mouse while a controller happens to be plugged in.
+                OnScreenKeyboard.onTextFocusChanged(focused, padAvailable && GamepadInput.usedRecently())
             }
     }
 
@@ -81,8 +75,6 @@ private fun OnScreenKeyboardPanel() {
     val tokens = MaterialTheme.nuvio
     val selection by OnScreenKeyboard.selection.collectAsState()
     val caps by OnScreenKeyboard.caps.collectAsState()
-    val padEnabled by GamepadSettingsRepository.enabledState.collectAsState()
-    val padConnected by GamepadSettingsRepository.connected.collectAsState()
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -123,13 +115,7 @@ private fun OnScreenKeyboardPanel() {
                 }
             }
             Text(
-                // Pad legend only when a pad could have opened this; a mouse-only user cannot press
-                // any of those buttons.
-                text = if (padEnabled && padConnected) {
-                    "A Select   ·   B Delete   ·   X Space   ·   Y Caps   ·   LB/RB Caret   ·   Start Done   ·   Back Close"
-                } else {
-                    "Click a key to type   ·   Done to finish"
-                },
+                text = "A Select   ·   B Delete   ·   X Space   ·   Y Caps   ·   LB/RB Caret   ·   Start Done   ·   Back Close",
                 style = MaterialTheme.typography.bodySmall,
                 color = tokens.colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -171,9 +157,7 @@ private fun KeyCell(
                 color = if (isCapsOn && !selected) tokens.colors.accent else tokens.colors.borderDefault,
                 shape = shape,
             )
-            // Mouse users get the same keys. The field being typed into must keep focus, since the
-            // synthetic keystrokes go to whatever holds it — so a click must never take it.
-            .focusProperties { canFocus = false }
+            // Mouse users get the same keys. Costs nothing, and makes the panel testable by hand.
             .clickable { OnScreenKeyboard.press(key) },
         contentAlignment = Alignment.Center,
     ) {

@@ -5,7 +5,6 @@ import com.nuvio.app.core.auth.AuthRepository
 import com.nuvio.app.core.auth.AuthState
 import com.nuvio.app.core.auth.isAnonymous
 import com.nuvio.app.core.network.SupabaseProvider
-import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.collection.CollectionMobileSettingsRepository
 import com.nuvio.app.features.collection.CollectionRepository
@@ -171,7 +170,6 @@ object ProfileRepository {
     }
 
     suspend fun pullProfiles() {
-        PerfTelemetry.count("ProfileRepository.pullProfiles")
         if (AuthRepository.state.value.isAnonymous) {
             if (!_state.value.isLoaded) {
                 _state.value = _state.value.copy(isLoaded = true)
@@ -262,7 +260,6 @@ object ProfileRepository {
         SearchHistoryRepository.onProfileChanged()
         CollectionRepository.onProfileChanged()
         com.nuvio.app.features.playlist.PlaylistRepository.onProfileChanged()
-        com.nuvio.app.features.iptv.IptvRepository.onProfileChanged()
         CollectionMobileSettingsRepository.onProfileChanged()
         DownloadsRepository.onProfileChanged()
         com.nuvio.app.features.librarypvr.LibraryPvrRepository.onProfileChanged()
@@ -453,7 +450,6 @@ object ProfileRepository {
     }
 
     suspend fun pullProfileLocks(): List<ProfileLockState> {
-        PerfTelemetry.count("ProfileRepository.pullProfileLocks")
         return runCatching {
             val result = SupabaseProvider.client.postgrest.rpc("sync_pull_profile_locks")
             result.decodeList<ProfileLockState>()

@@ -23,7 +23,6 @@ import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SportsEsports
-import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Tune
@@ -47,8 +46,6 @@ import nuvio.composeapp.generated.resources.compose_settings_page_advanced
 import nuvio.composeapp.generated.resources.compose_settings_page_appearance
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_games
-import nuvio.composeapp.generated.resources.iptv_settings_page
-import nuvio.composeapp.generated.resources.iptv_settings_description
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
@@ -109,7 +106,6 @@ internal fun LazyListScope.settingsRootContent(
     onStreamsClick: () -> Unit,
     onLocalLibraryClick: () -> Unit,
     onGamesClick: () -> Unit,
-    onIptvClick: () -> Unit,
     onAutoDownloadsClick: () -> Unit,
     onAppearanceClick: () -> Unit,
     onAdvancedClick: () -> Unit,
@@ -227,14 +223,6 @@ internal fun LazyListScope.settingsRootContent(
                         icon = Icons.Rounded.SportsEsports,
                         isTablet = isTablet,
                         onClick = onGamesClick,
-                    )
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsNavigationRow(
-                        title = stringResource(Res.string.iptv_settings_page),
-                        description = stringResource(Res.string.iptv_settings_description),
-                        icon = Icons.Rounded.LiveTv,
-                        isTablet = isTablet,
-                        onClick = onIptvClick,
                     )
                     if (showDownloadsEntry) {
                         SettingsGroupDivider(isTablet = isTablet)

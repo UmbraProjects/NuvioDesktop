@@ -1,6 +1,5 @@
 package com.nuvio.app.features.trailer
 
-import com.nuvio.app.core.perf.PerfTelemetry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URI
@@ -72,10 +71,7 @@ internal object TrailerExtractionPlatform {
             }
         }
 
-        val request = requestBuilder.build()
-        val response = PerfTelemetry.timedHttp("trailer", request.method(), request.uri().toString(), { it.statusCode() }) {
-            httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-        }
+        val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())
         val status = response.statusCode()
         TrailerRequestResponse(
             ok = status in 200..299,
@@ -100,14 +96,31 @@ internal object TrailerExtractionPlatform {
         // adaptive URLs 403 the open-ended `Range: bytes=<pos>-` that ffmpeg opens with, and
         // stop serving after ~63 seconds of media; VISIONOS URLs have neither restriction.
         // If that client preference is ever dropped, adaptive playback breaks again.
-        if (bestVideo != null && bestAudio != null) {
-            return TrailerPlaybackSource(videoUrl = bestVideo.url, audioUrl = bestAudio.url)
-        }
-
         val manifestUrl = bestManifest?.manifestUrl
         val progressiveUrl = bestProgressive?.url
+        // Fallback chain used when the preferred source is refused at open time: HLS manifest,
+        // then the muxed progressive stream.
+        val progressiveSource = progressiveUrl?.let { TrailerPlaybackSource(videoUrl = it) }
+        val manifestSource = manifestUrl?.let {
+            TrailerPlaybackSource(videoUrl = it, fallback = progressiveSource)
+        }
+        val fallbackChain = manifestSource ?: progressiveSource
+
+        if (bestVideo != null && bestAudio != null) {
+            return TrailerPlaybackSource(
+                videoUrl = bestVideo.url,
+                audioUrl = bestAudio.url,
+                fallback = fallbackChain,
+            )
+        }
+
         val videoUrl = manifestUrl ?: progressiveUrl
-        return videoUrl?.let { TrailerPlaybackSource(videoUrl = it, audioUrl = null) }
-            ?: bestVideo?.url?.let { TrailerPlaybackSource(videoUrl = it, audioUrl = null) }
+        return videoUrl?.let {
+            TrailerPlaybackSource(
+                videoUrl = it,
+                audioUrl = null,
+                fallback = if (manifestUrl != null) progressiveSource else null,
+            )
+        } ?: bestVideo?.url?.let { TrailerPlaybackSource(videoUrl = it, audioUrl = null) }
     }
 }

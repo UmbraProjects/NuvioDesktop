@@ -168,20 +168,15 @@ internal fun PlayerScreenRuntime.restorePersistedTrackPreferenceIfNeeded() {
             } else {
                 null
             }
-            // An addon subtitle is added to the loaded file, so wait for the player to have one.
-            // A cached subtitle list can arrive before mpv has loaded the file (or before the
-            // controller exists); restoring then marked the row selected while the add went
-            // nowhere, and with the restore spent nothing retried it.
-            val playerReadyForSubtitle = playerController != null && !playbackSnapshot.isLoading
-            if (restoredSubtitle != null && playerReadyForSubtitle) {
+            if (restoredSubtitle != null) {
                 selectedAddonSubtitleId = restoredSubtitle.id.ifBlank { restoredSubtitle.url }
                 selectedSubtitleIndex = -1
                 useCustomSubtitles = true
-                loadAddonSubtitle(restoredSubtitle)
+                playerController?.setSubtitleUri(restoredSubtitle.url)
                 preferredSubtitleSelectionApplied = true
             } else {
-                waitingForPersistedAddonSubtitle = (restoredSubtitle != null) ||
-                    (fetchKey != null && completedAutoAddonSubtitleFetchForKey != fetchKey)
+                waitingForPersistedAddonSubtitle = fetchKey != null &&
+                    completedAutoAddonSubtitleFetchForKey != fetchKey
             }
         }
     }
@@ -407,7 +402,7 @@ internal fun PlayerScreenRuntime.applyPreferredAddonSubtitleIfReady() {
         selectedAddonSubtitleId = addon.id.ifBlank { addon.url }
         selectedSubtitleIndex = -1
         useCustomSubtitles = true
-        loadAddonSubtitle(addon, allowBetterMatch = true)
+        playerController?.setSubtitleUri(addon.url)
     }
     preferredSubtitleSelectionApplied = true
 }
@@ -521,7 +516,7 @@ internal fun PlayerScreenRuntime.cycleSubtitleTrackFromKeyboard() {
         useCustomSubtitles = true
         markSubtitleChosenByViewer()
         persistAddonSubtitlePreference(subtitle)
-        loadAddonSubtitle(subtitle)
+        playerController?.setSubtitleUri(subtitle.url)
         secondarySubtitleSelectionApplied = false
         applySecondarySubtitleSelectionIfNeeded()
         showGestureMessage("Subtitles: ${subtitle.display.ifBlank { subtitle.language }}")

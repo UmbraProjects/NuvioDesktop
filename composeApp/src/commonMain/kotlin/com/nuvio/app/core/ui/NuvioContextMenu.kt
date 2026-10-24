@@ -127,31 +127,11 @@ fun NuvioContextMenu(
     actions: List<PosterZoomOverlayAction>,
     onDismiss: () -> Unit,
 ) {
-    NuvioContextMenu(
-        positionProvider = remember(windowPosition) { CursorMenuPositionProvider(windowPosition) },
-        actions = actions,
-        onDismiss = onDismiss,
-    )
-}
-
-/**
- * [NuvioContextMenu] placed by [positionProvider]; text fields anchor it to their own bounds.
- * [liveActions] lets rows change while open, for menus whose availability settles after opening
- * (a text field learns whether the clipboard holds text a moment later); the row count must not.
- */
-@Composable
-internal fun NuvioContextMenu(
-    positionProvider: PopupPositionProvider,
-    actions: List<PosterZoomOverlayAction>,
-    onDismiss: () -> Unit,
-    liveActions: Boolean = false,
-) {
     // A context menu shows a snapshot of the moment it was invoked; don't let repository updates
     // while it is open relabel or reorder the rows under the pointer.
-    val snapshotActions = remember { actions }
-    val frozenActions = if (liveActions) actions else snapshotActions
+    val frozenActions = remember { actions }
     val fadeIn = remember { Animatable(0f) }
-    val rowFocus = remember(frozenActions.size) { List(frozenActions.size) { FocusRequester() } }
+    val rowFocus = remember(frozenActions) { List(frozenActions.size) { FocusRequester() } }
     val menuFocus = remember { FocusRequester() }
     val focusedIndex = remember { intArrayOf(-1) }
     // Opened by a held select key: the keyboard owns the menu until the mouse is actually moved.
@@ -164,25 +144,17 @@ internal fun NuvioContextMenu(
     // preview is anchored to.
     DisposableEffect(Unit) {
         PosterZoomOverlayCoordinator.show()
-        ContextMenuReopen.opened()
-        onDispose {
-            PosterZoomOverlayCoordinator.hide()
-            ContextMenuReopen.closed()
-        }
+        onDispose { PosterZoomOverlayCoordinator.hide() }
     }
     LaunchedEffect(Unit) {
         // Falls back to the panel if the row cannot take focus: a menu with nothing focused would
         // leave the keyboard with no way in at all.
-        val firstEnabled = frozenActions.indexOfFirst { it.enabled }
-        val rowFocused = openedByKeyboard && firstEnabled >= 0 &&
-            runCatching { rowFocus[firstEnabled].requestFocus() }.isSuccess
+        val rowFocused = openedByKeyboard && rowFocus.isNotEmpty() &&
+            runCatching { rowFocus[0].requestFocus() }.isSuccess
         if (!rowFocused) runCatching { menuFocus.requestFocus() }
         fadeIn.animateTo(1f, tween(durationMillis = 110, easing = NuvioTokens.Motion.standard))
     }
     PlatformBackHandler(enabled = true, onBack = onDismiss)
-    // Its screen can stay composed under a pushed one (KeptAliveLayer); a popup would stay on top.
-    val covered = LocalScreenCovered.current
-    LaunchedEffect(covered) { if (covered) onDismiss() }
 
     fun select(action: PosterZoomOverlayAction) {
         action.onSelected()
@@ -190,18 +162,16 @@ internal fun NuvioContextMenu(
     }
 
     fun moveFocus(step: Int) {
-        if (frozenActions.none { it.enabled }) return
-        var next = when {
+        if (rowFocus.isEmpty()) return
+        val next = when {
             focusedIndex[0] < 0 -> if (step > 0) 0 else rowFocus.lastIndex
             else -> (focusedIndex[0] + step).mod(rowFocus.size)
         }
-        // Disabled rows are stepped over.
-        while (!frozenActions[next].enabled) next = (next + step).mod(rowFocus.size)
         runCatching { rowFocus[next].requestFocus() }
     }
 
-    if (!covered) Popup(
-        popupPositionProvider = positionProvider,
+    Popup(
+        popupPositionProvider = remember(windowPosition) { CursorMenuPositionProvider(windowPosition) },
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
@@ -300,15 +270,9 @@ private fun ContextMenuRow(
     val hovered by interactionSource.collectIsHoveredAsState()
     val focused by interactionSource.collectIsFocusedAsState()
     LaunchedEffect(focused) { if (focused) onFocused() }
-    val enabled = action.enabled
-    val highlighted = enabled && (focused || (hovered && pointerEngaged()))
-    val labelColor = when {
-        !enabled -> Color.White.copy(alpha = 0.34f)
-        action.isDestructive -> MaterialTheme.nuvio.colors.danger
-        else -> Color.White
-    }
+    val highlighted = focused || (hovered && pointerEngaged())
+    val labelColor = if (action.isDestructive) MaterialTheme.nuvio.colors.danger else Color.White
     val iconTint = when {
-        !enabled -> Color.White.copy(alpha = 0.26f)
         action.isDestructive -> MaterialTheme.nuvio.colors.danger
         highlighted -> MaterialTheme.colorScheme.primary
         else -> Color.White.copy(alpha = 0.76f)
@@ -323,7 +287,7 @@ private fun ContextMenuRow(
             )
             // Hovering moves keyboard focus too, so arrow keys continue from under the pointer
             // and only one row is ever lit.
-            .pointerInput(enabled) {
+            .pointerInput(Unit) {
                 awaitPointerEventScope {
                     var focusedByPointer = false
                     while (true) {
@@ -331,7 +295,7 @@ private fun ContextMenuRow(
                             // Move as well as Enter: on a keyboard-opened menu the cursor may
                             // already be over this row when the first real move engages it.
                             PointerEventType.Enter, PointerEventType.Move -> {
-                                if (enabled && !focusedByPointer && pointerEngaged()) {
+                                if (!focusedByPointer && pointerEngaged()) {
                                     focusedByPointer = true
                                     runCatching { focusRequester.requestFocus() }
                                 }
@@ -343,9 +307,8 @@ private fun ContextMenuRow(
             }
             .focusRequester(focusRequester)
             .hoverable(interactionSource)
-            // A disabled clickable is also not focusable, so arrow keys and Tab pass over it.
-            .clickable(interactionSource = interactionSource, indication = null, enabled = enabled, onClick = onClick)
-            .secondaryClick(onSecondaryClick?.takeIf { enabled })
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .secondaryClick(onSecondaryClick)
             .padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -370,7 +333,7 @@ private fun ContextMenuRow(
  * Opens down-right of the cursor like a Windows menu, flipping to the other side of the cursor
  * rather than sliding over it when it would run off the window.
  */
-internal class CursorMenuPositionProvider(
+private class CursorMenuPositionProvider(
     private val cursor: IntOffset,
 ) : PopupPositionProvider {
     override fun calculatePosition(
@@ -397,10 +360,10 @@ internal class CursorMenuPositionProvider(
     }
 }
 
-internal val ContextMenuFill = Color(0xFA18191D)
+private val ContextMenuFill = Color(0xFA18191D)
 private val ContextMenuMinWidth = 220.dp
 private val ContextMenuMaxWidth = 380.dp
-internal val ContextMenuRowHeight = 38.dp
+private val ContextMenuRowHeight = 38.dp
 
 /**
  * The bottom-sheet presentation of the same action list: [header] above, one row per action, and

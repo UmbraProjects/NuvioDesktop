@@ -36,19 +36,6 @@ interface PlayerEngineController {
     fun clearExternalSubtitleAndSelect(trackIndex: Int)
     fun applySubtitleStyle(style: SubtitleStyleState) {}
     fun setSubtitleDelayMs(delayMs: Int) {}
-
-    /**
-     * Decodes [durationSeconds] of the playing audio track from media time [startSeconds] to 16 kHz
-     * mono PCM, reading the source separately from playback (audio-referenced subtitle sync).
-     * Blocking. Null when unsupported or unreadable.
-     */
-    fun decodeSpeechSpot(startSeconds: Double, durationSeconds: Double): FloatArray? = null
-
-    /** Whether [decodeSpeechSpot] can work for the current source. */
-    val supportsSpeechSpots: Boolean get() = false
-
-    /** Average bytes per second of the playing source, when known. */
-    fun sourceBytesPerSecond(): Double? = null
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}
 
     /**
@@ -56,14 +43,6 @@ interface PlayerEngineController {
      * cache, A/V sync…). Only the desktop mpv engine implements it; other platforms no-op.
      */
     fun setDiagnosticsOverlayEnabled(enabled: Boolean) {}
-
-    /**
-     * Whether a play/pause toggle issued now would start playback, decided from the engine's own
-     * current state rather than the periodic playback snapshot. Engines that toggle natively
-     * return the exact decision their toggle makes, so callers that track intent agree with it.
-     * Null when the platform cannot tell.
-     */
-    fun toggleWouldPlay(): Boolean? = null
     /** Shows a short, non-blocking notification over the player when the platform supports it. */
     fun showTransientMessage(title: String, value: String) {}
 
@@ -85,51 +64,6 @@ interface PlayerEngineController {
 data class PlayerChapter(
     val startTime: Double,
     val title: String,
-)
-
-/**
- * What the HUD shows for a live channel. Times arrive pre-formatted in the user's clock; the HUD
- * itself works out how far behind live it is from mpv's position and buffered end.
- */
-data class PlayerControlIptvState(
-    /** "4  BBC One". */
-    val channelLabel: String,
-    val nowTitle: String = "",
-    /** "21:00 – 22:00". */
-    val nowTimeLabel: String = "",
-    /** Share of the current programme already aired, 0..1; negative when unknown. */
-    val nowProgress: Float = -1f,
-    /** "Next 22:00  Weather". */
-    val nextLabel: String = "",
-    val liveLabel: String = "LIVE",
-    val goLiveLabel: String = "Go live",
-    val previousChannelLabel: String = "Previous channel",
-    val nextChannelLabel: String = "Next channel",
-    /** Under the clock, where films show "ends at": live TV never ends, so it is the way out. */
-    val exitLabel: String = "Exit",
-    /** How far back the rewind buffer reaches, for the live seek bar's left end. */
-    val rewindWindowMs: Long = 0L,
-    val channelsLabel: String = "Channels",
-    val groupsLabel: String = "Categories",
-    /** Placeholder of the switcher's search box. */
-    val searchLabel: String = "Search channels",
-    /** The channel switcher's categories (Favourites, Recently watched, All, then the provider's). */
-    val groups: List<PlayerControlIptvGroup> = emptyList(),
-    /** The selected category's channels; only sent while the switcher is open. */
-    val channels: List<PlayerControlIptvChannel> = emptyList(),
-    /** "Showing 600 of 57,053. Pick a category to see the rest.", when the list was cut. */
-    val channelsNote: String = "",
-)
-
-data class PlayerControlIptvGroup(val index: Int, val name: String, val count: Int, val selected: Boolean)
-
-data class PlayerControlIptvChannel(
-    val uid: Int,
-    val num: Int,
-    val name: String,
-    val logo: String,
-    val nowTitle: String,
-    val playing: Boolean,
 )
 
 enum class PlayerControlsAction {
@@ -175,8 +109,6 @@ data class PlayerControlsState(
     val pauseOverlayDescription: String = "",
     // Opt-in: adds the playing source as the overlay's bottom row, reusing streamTitle/providerName.
     val pauseOverlaySourceEnabled: Boolean = false,
-    // Top-billed cast for the pause overlay's top-left block; empty hides it.
-    val pauseOverlayCast: List<PlayerControlCastItem> = emptyList(),
     val resizeModeLabel: String = "Fit",
     val playbackSpeedLabel: String = "1x",
     val subtitlesLabel: String = "Subs",
@@ -202,9 +134,6 @@ data class PlayerControlsState(
     val desktopColorGamma: Int = 0,
     val desktopAnimeModeLabel: String = "Off",
     val desktopAnimeSvpEnabled: Boolean = false,
-    // The RTX rows in the player menu: the saved setting or this session's toggle of it.
-    val rtxVsrEnabled: Boolean = false,
-    val rtxTrueHdrEnabled: Boolean = false,
     /** Opt-in "what am I actually watching" summary, shown when playback starts. */
     val playbackInfoPanelEnabled: Boolean = false,
     /**
@@ -220,8 +149,6 @@ data class PlayerControlsState(
     val seekrScale: Double = 1.0,
     /** Drives the HUD's seek button/command-palette labels so they name the real jump distance. */
     val seekStepSeconds: Int = 10,
-    /** Live TV: the HUD's live mode (LIVE badge, now/next, channel buttons); null for anything else. */
-    val iptv: PlayerControlIptvState? = null,
     val tapToUnlockLabel: String = "Tap to unlock",
     val playbackErrorTitle: String = "Playback error",
     val playbackErrorMessage: String = "",
@@ -258,7 +185,6 @@ data class PlayerControlsState(
     val noneLabel: String = "None",
     val fetchSubtitlesLabel: String = "Tap to fetch subtitles",
     val downloadSubtitleLabel: String = "Download subtitle",
-    val autoSyncedSubtitleLabel: String = "Synced by Auto Sync",
     val subtitleDelayLabel: String = "Subtitle Delay",
     val resetLabel: String = "Reset",
     val autoSyncLabel: String = "Auto Sync",
@@ -320,8 +246,6 @@ data class PlayerControlsState(
     val officialHudEnabled: Boolean = false,
     val seekHandleEnabled: Boolean = true,
     val hudVignetteEnabled: Boolean = true,
-    // Comma-separated controls.html `data-command`s the user hid from the HUD.
-    val hiddenHudButtons: String = "",
     val alwaysShowClock: Boolean = false,
     val playbackSpeedFineIncrementsEnabled: Boolean = false,
     val playbackSpeedToggleLow: Float = 1f,
@@ -362,8 +286,6 @@ data class PlayerControlsState(
     // Playlist mode: hovering the title shows a short window of the playlist around this entry.
     val playlistPeekTitle: String = "",
     val playlistPeekItems: List<PlayerControlPlaylistItem> = emptyList(),
-    // Watch party: the HUD's party button, top status pill and party panel.
-    val party: PlayerControlPartyState = PlayerControlPartyState(),
     val showSubmitIntro: Boolean = false,
     val showVideoSettings: Boolean = false,
     val showSources: Boolean = false,
@@ -435,50 +357,37 @@ data class PlayerControlsState(
      * sheet the user has since dismissed.
      */
     val sourcesPanelOpen: Boolean = false,
-    /** Desktop only: hero-trailer overlay state; see [PlayerHeroTrailerState]. */
-    val heroTrailer: PlayerHeroTrailerState = PlayerHeroTrailerState(),
+    /**
+     * Desktop only: when true the native controls overlay hides all chrome and renders just
+     * the hero-trailer fade gradients (used by the TV-mode home hero trailer surface).
+     */
+    val heroTrailerMode: Boolean = false,
+    /** Desktop only: background color (e.g. "#121212") the hero-trailer fade blends toward. */
+    val heroTrailerBackgroundColor: String = "",
+    /** Desktop only: hero metadata rendered over the full-bleed trailer (logo/title/meta/desc). */
+    val heroTrailerLogoUrl: String = "",
+    val heroTrailerTitle: String = "",
+    val heroTrailerMeta: String = "",
+    val heroTrailerDescription: String = "",
+    val heroTrailerMuted: Boolean = true,
+    /** Desktop only: hero-trailer volume (0..100) reflected by the overlay volume slider. */
+    val heroTrailerVolume: Int = 0,
+    /**
+     * Desktop only: which screen edge holds the navigation chrome while a home hero trailer plays
+     * ("top" for the floating top bar, "left" for the sidebar, "none" to disable). The heavyweight
+     * native video surface paints over the Compose navbar, so when the pointer enters this edge
+     * band the overlay tells Kotlin to dismiss the trailer, uncovering the navbar.
+     */
+    val heroTrailerNavDismissEdge: String = "none",
+    /**
+     * Desktop only: the top nav-dismiss band height as a fraction of the trailer surface height.
+     * The overlay surface matches the hero region, so a fraction scales with the hero size — the
+     * small (and user-resizable) adaptive hero needs a tighter band than TV mode's full-viewport
+     * hero, or moving onto the strip at all trips the dismiss.
+     */
+    val heroTrailerNavDismissBandFraction: Float = 0.22f,
     /** Desktop only: reflects the stream-failover setting in the player context-menu toggle. */
     val streamFailoverEnabled: Boolean = false,
-)
-// PlayerControlsState is close to the JVM's 255-slot method-signature limit: its synthetic
-// default-arguments constructor adds an int mask per 32 params, a marker and `this`, and Long/Double
-// take two slots. Going over still compiles but fails class loading (ClassFormatError: Too many
-// arguments in method signature). Group new fields into holders like the one below.
-
-/**
- * Desktop only: state for the native controls overlay when it renders a hero trailer (home or
- * details) instead of the player HUD. Serialised flat as `heroTrailer*` fields for controls.js.
- */
-data class PlayerHeroTrailerState(
-    /**
-     * When true the native controls overlay hides all chrome and renders just the hero-trailer
-     * fade gradients (used by the TV-mode home hero trailer surface).
-     */
-    val enabled: Boolean = false,
-    /** Background color (e.g. "#121212") the hero-trailer fade blends toward. */
-    val backgroundColor: String = "",
-    /** Hero metadata rendered over the full-bleed trailer (logo/title/meta/desc). */
-    val logoUrl: String = "",
-    val title: String = "",
-    val meta: String = "",
-    val description: String = "",
-    val muted: Boolean = true,
-    /** Hero-trailer volume (0..100) reflected by the overlay volume slider. */
-    val volume: Int = 0,
-    /**
-     * Which screen edge holds the navigation chrome while a home hero trailer plays ("top" for the
-     * floating top bar, "left" for the sidebar, "none" to disable). The heavyweight native video
-     * surface paints over the Compose navbar, so when the pointer enters this edge band the overlay
-     * tells Kotlin to dismiss the trailer, uncovering the navbar.
-     */
-    val navDismissEdge: String = "none",
-    /**
-     * The top nav-dismiss band height as a fraction of the trailer surface height. The overlay
-     * surface matches the hero region, so a fraction scales with the hero size — the small (and
-     * user-resizable) adaptive hero needs a tighter band than TV mode's full-viewport hero, or
-     * moving onto the strip at all trips the dismiss.
-     */
-    val navDismissBandFraction: Float = 0.22f,
 )
 
 /**
@@ -512,48 +421,6 @@ private fun String?.cleanMpvMediaTitlePart(): String? =
         ?.takeIf(String::isNotBlank)
 
 /** One row of the HUD's playlist peek. [state] is "played", "current", "next" or "upcoming". */
-/**
- * Everything the HUD shows for a watch party, with its labels already localized (the HUD has no
- * string resources). Built by `rememberPartyControlsState` in PlayerScreenRuntimeParty.kt.
- */
-data class PlayerControlPartyState(
-    /** Watch parties exist on this server: show the party button. */
-    val available: Boolean = false,
-    val active: Boolean = false,
-    /** Bumped by Kotlin to open the party panel (a token, so a closed panel stays closed). */
-    val openPanelToken: Int = 0,
-    val busy: Boolean = false,
-    val connected: Boolean = true,
-    val isHost: Boolean = false,
-    val canControl: Boolean = true,
-    val hostOnly: Boolean = false,
-    val sharing: Boolean = false,
-    val canShareStream: Boolean = false,
-    /** True when the player shows what the party is watching. */
-    val sameMedia: Boolean = true,
-    val code: String = "",
-    val pillMessage: String = "",
-    val behindTitle: String = "",
-    val elsewhereTitle: String = "",
-    val startNote: String = "",
-    val members: List<PlayerControlPartyMember> = emptyList(),
-    val labels: Map<String, String> = emptyMap(),
-)
-
-data class PlayerControlPartyMember(
-    val index: Int,
-    val name: String,
-    val initials: String,
-    val color: String,
-    val avatarUrl: String,
-    val status: String,
-    /** "watching", "busy", "away" or "offline": the presence dot's colour. */
-    val presence: String,
-    val isHost: Boolean,
-    val isSelf: Boolean,
-    val canRemove: Boolean,
-)
-
 data class PlayerControlPlaylistItem(
     val position: Int,
     val title: String,
@@ -612,17 +479,6 @@ data class PlayerControlEpisodeItem(
     val episode: Int = 0,
     val isCurrent: Boolean = false,
     val isWatched: Boolean = false,
-    /** AnimeFillerList verdict: "filler", "mixed", or blank (canon, unknown, or display turned off). */
-    val fillerKind: String = "",
-    /** Localized label for [fillerKind], appended to the code on the HUD card ("S5E2 · Filler"). */
-    val fillerLabel: String = "",
-)
-
-/** A cast member on the desktop pause overlay. [photo] is a portrait URL, blank when unknown. */
-data class PlayerControlCastItem(
-    val name: String = "",
-    val role: String = "",
-    val photo: String = "",
 )
 
 data class PlayerControlAddonSubtitleItem(
@@ -633,8 +489,6 @@ data class PlayerControlAddonSubtitleItem(
     val addonName: String = "",
     val isSelected: Boolean = false,
     val isDownloading: Boolean = false,
-    /** Playing as the retimed copy made by automatic subtitle sync. */
-    val isAutoSynced: Boolean = false,
 )
 
 /**

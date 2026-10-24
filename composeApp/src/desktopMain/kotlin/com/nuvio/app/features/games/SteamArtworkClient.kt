@@ -53,10 +53,7 @@ import java.io.File
  * hero nor the store-page background that every game after it carries.
  */
 class SteamArtworkClient : AutoCloseable {
-    private val http = HttpClient(CIO) {
-        expectSuccess = false
-        install(com.nuvio.app.core.perf.perfTelemetryPlugin("steam-art"))
-    }
+    private val http = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val appIdCacheLock = Mutex()
     private val appIdCache = mutableMapOf<SteamGameReference, Long?>()

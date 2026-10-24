@@ -275,15 +275,16 @@ private fun CalendarSourceRow(isTablet: Boolean) {
     val connected by TrackingProviderRegistry.connectedProviderIds.collectAsStateWithLifecycle()
 
     val labels = CalendarSource.entries.associateWith { source ->
-        when (source) {
-            CalendarSource.TRAKT -> stringResource(Res.string.settings_calendar_source_trakt)
-            CalendarSource.SIMKL -> stringResource(Res.string.settings_calendar_source_simkl)
-            CalendarSource.MDBLIST -> stringResource(Res.string.settings_calendar_source_mdblist)
-            CalendarSource.NUVIO -> "Nuvio (your library and watch history)"
-        }
+        stringResource(
+            when (source) {
+                CalendarSource.TRAKT -> Res.string.settings_calendar_source_trakt
+                CalendarSource.SIMKL -> Res.string.settings_calendar_source_simkl
+                CalendarSource.MDBLIST -> Res.string.settings_calendar_source_mdblist
+            },
+        )
     }
 
-    val isSelectionConnected = selected.providerId?.let { it in connected } ?: true
+    val isSelectionConnected = selected.providerId in connected
     SettingsChoiceRow(
         title = stringResource(Res.string.settings_calendar_source_title),
         description = if (isSelectionConnected) {

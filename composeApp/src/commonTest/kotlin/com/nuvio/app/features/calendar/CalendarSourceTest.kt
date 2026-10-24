@@ -64,18 +64,10 @@ class CalendarSourceTest {
     }
 
     @Test
-    fun `with nothing connected the local calendar is used`() {
+    fun `with nothing connected the selection is kept so the connect prompt names it`() {
         assertEquals(
-            CalendarSource.NUVIO,
+            CalendarSource.MDBLIST,
             resolveCalendarSource(CalendarSource.MDBLIST) { false },
-        )
-    }
-
-    @Test
-    fun `the local calendar is kept even when a provider is connected`() {
-        assertEquals(
-            CalendarSource.NUVIO,
-            resolveCalendarSource(CalendarSource.NUVIO) { true },
         )
     }
 }

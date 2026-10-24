@@ -442,9 +442,6 @@ fun NuvioStatusModal(
     dismissText: String? = null,
     onConfirm: () -> Unit,
     onDismiss: (() -> Unit)? = null,
-    /** An alternative to [confirmText], shown between dismiss and confirm. */
-    secondaryText: String? = null,
-    onSecondary: (() -> Unit)? = null,
 ) {
     if (!isVisible) return
     val tokens = MaterialTheme.nuvio
@@ -493,20 +490,6 @@ fun NuvioStatusModal(
                             ),
                         ) {
                             Text(dismissText)
-                        }
-                        Spacer(modifier = Modifier.width(NuvioTokens.Space.s10))
-                    }
-                    if (secondaryText != null && onSecondary != null) {
-                        Button(
-                            onClick = onSecondary,
-                            enabled = !isBusy,
-                            shape = tokens.shapes.button,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = tokens.colors.surfaceCard,
-                                contentColor = tokens.colors.textPrimary,
-                            ),
-                        ) {
-                            Text(secondaryText)
                         }
                         Spacer(modifier = Modifier.width(NuvioTokens.Space.s10))
                     }

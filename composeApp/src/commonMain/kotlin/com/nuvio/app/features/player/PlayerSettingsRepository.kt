@@ -69,7 +69,7 @@ data class PlayerSettingsUiState(
     val defaultPlaybackSpeed: Float = 1f,
     val mouseMoveRevealsControlsEnabled: Boolean = true,
     val desktopLegacyHudEnabled: Boolean = false,
-    val desktopMinimalHudEnabled: Boolean = true,
+    val desktopMinimalHudEnabled: Boolean = false,
     val desktopUltraHudEnabled: Boolean = false,
     val desktopOfficialHudEnabled: Boolean = false,
     // Minimal layout only: each control group sits on its own translucent pill.
@@ -78,8 +78,6 @@ data class PlayerSettingsUiState(
     val desktopSeekHandleEnabled: Boolean = true,
     // The dark top/bottom edge gradients that fade in with the HUD so its controls stay legible.
     val desktopHudVignetteEnabled: Boolean = true,
-    // HUD buttons the user switched off, by their controls.html `data-command`.
-    val desktopHiddenHudButtons: Set<String> = emptySet(),
     val desktopAlwaysShowClockEnabled: Boolean = false,
     // Adds the playing source (release name + provider) as the bottom row of the paused metadata
     // overlay. Off by default: the raw release strings are noisy, and only some viewers want them.
@@ -113,7 +111,7 @@ data class PlayerSettingsUiState(
     val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
     val preferredAudioLanguage: String = AudioLanguageOption.DEVICE,
     val secondaryPreferredAudioLanguage: String? = null,
-    val preferredSubtitleLanguage: String = SubtitleLanguageOption.DEVICE,
+    val preferredSubtitleLanguage: String = SubtitleLanguageOption.NONE,
     val secondaryPreferredSubtitleLanguage: String? = null,
     val dualSubtitlesEnabled: Boolean = false,
     val preferredSubtitleTrackKind: SubtitleTrackKind = SubtitleTrackKind.DEFAULT,
@@ -136,13 +134,6 @@ data class PlayerSettingsUiState(
     val decoderPriority: Int = 1,
     val nvidiaRtxSuperResolutionEnabled: Boolean = false,
     val nvidiaRtxHdrEnabled: Boolean = false,
-    val nvidiaRtxHdrAnimeEnabled: Boolean = false,
-    /**
-     * True HDR also while Anime4K or a custom shader runs (never SVP: a CPU filter cannot feed the
-     * GPU video processor). Off by default; it was held back as likely to look poor, and is here
-     * because people asked to judge that for themselves.
-     */
-    val nvidiaRtxHdrAnimeShadersEnabled: Boolean = false,
     val mapDV7ToHevc: Boolean = false,
     val tunnelingEnabled: Boolean = false,
     val streamAutoPlayMode: StreamAutoPlayMode = StreamAutoPlayMode.MANUAL,
@@ -155,7 +146,6 @@ data class PlayerSettingsUiState(
     val skipAutoAcceptMode: SkipAutoAcceptMode = SkipAutoAcceptMode.MANUAL,
     val skipMovieCreditsToPostCredits: Boolean = false,
     val stripSdhSubtitles: Boolean = false,
-    val automaticSubtitleSyncEnabled: Boolean = true,
     val animeSkipEnabled: Boolean = false,
     val animeSkipClientId: String = "",
     val introDbApiKey: String = "",
@@ -208,10 +198,6 @@ data class PlayerSettingsUiState(
     val desktopRendererApi: DesktopRendererApi = DesktopRendererApi.D3D11,
     /** Desktop diagnostics: frame-budget telemetry. Off unless someone is investigating. */
     val desktopPerformanceLoggingEnabled: Boolean = false,
-    /** Desktop: render the interface every vsync while focused, so VRR displays hold one refresh rate. */
-    val desktopSteadyFramePacingEnabled: Boolean = false,
-    /** Desktop: pre-correct the interface's fades for Windows HDR's SDR conversion while it is on. */
-    val desktopHdrUiCompensationEnabled: Boolean = true,
     val desktopLowVramMode: DesktopLowVramMode = DesktopLowVramMode.Auto,
     val desktopAnimeMode: DesktopAnimeMode = DesktopAnimeMode.Off,
     val desktopAnimeModeAutoEnabled: Boolean = false,
@@ -233,11 +219,6 @@ data class PlayerSettingsUiState(
     val desktopAnimeSessionOverride: DesktopAnimeSessionOverride? = null,
     // In-memory only: F7 turned SVP on this session, so it applies even to undetected content.
     val desktopAnimeSvpSessionForced: Boolean = false,
-    // In-memory only: the player menu's RTX VSR / True HDR toggles for this session. Null follows
-    // the saved setting. Kept out of the saved settings because those re-attach the player.
-    // A forced-on True HDR also skips its anime and anime-shader opt-ins: the user asked for it.
-    val desktopRtxVsrSessionOverride: Boolean? = null,
-    val desktopRtxTrueHdrSessionOverride: Boolean? = null,
     val desktopCustomShaderPaths: String = "",
     val desktopCustomShaderSelectedPath: String = "",
     // Bitstream/passthrough of compressed audio (AC3/DTS/E-AC3/TrueHD/DTS-HD) to a receiver.
@@ -280,13 +261,12 @@ object PlayerSettingsRepository {
     private var defaultPlaybackSpeed = 1f
     private var mouseMoveRevealsControlsEnabled = true
     private var desktopLegacyHudEnabled = false
-    private var desktopMinimalHudEnabled = true
+    private var desktopMinimalHudEnabled = false
     private var desktopUltraHudEnabled = false
     private var desktopOfficialHudEnabled = false
     private var desktopMinimalHudPillsEnabled = false
     private var desktopSeekHandleEnabled = true
     private var desktopHudVignetteEnabled = true
-    private var desktopHiddenHudButtons: Set<String> = emptySet()
     private var desktopAlwaysShowClockEnabled = false
     private var desktopPauseOverlaySourceEnabled = false
     private var desktopPlaybackSpeedFineIncrementsEnabled = false
@@ -304,7 +284,7 @@ object PlayerSettingsRepository {
     private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
     private var preferredAudioLanguage = AudioLanguageOption.DEVICE
     private var secondaryPreferredAudioLanguage: String? = null
-    private var preferredSubtitleLanguage = SubtitleLanguageOption.DEVICE
+    private var preferredSubtitleLanguage = SubtitleLanguageOption.NONE
     private var secondaryPreferredSubtitleLanguage: String? = null
     private var dualSubtitlesEnabled = false
     private var preferredSubtitleTrackKind = SubtitleTrackKind.DEFAULT
@@ -321,8 +301,6 @@ object PlayerSettingsRepository {
     private var decoderPriority = 1
     private var nvidiaRtxSuperResolutionEnabled = false
     private var nvidiaRtxHdrEnabled = false
-    private var nvidiaRtxHdrAnimeEnabled = false
-    private var nvidiaRtxHdrAnimeShadersEnabled = false
     private var mapDV7ToHevc = false
     private var tunnelingEnabled = false
     private var streamAutoPlayMode = StreamAutoPlayMode.MANUAL
@@ -335,7 +313,6 @@ object PlayerSettingsRepository {
     private var skipAutoAcceptMode = SkipAutoAcceptMode.MANUAL
     private var skipMovieCreditsToPostCredits = false
     private var stripSdhSubtitles = false
-    private var automaticSubtitleSyncEnabled = true
     private var animeSkipEnabled = false
     private var animeSkipClientId = ""
     private var introDbApiKey = ""
@@ -377,8 +354,6 @@ object PlayerSettingsRepository {
     private var desktopBufferPreset = DesktopBufferPreset.Balanced
     private var desktopRendererApi = DesktopRendererApi.D3D11
     private var desktopPerformanceLoggingEnabled = false
-    private var desktopSteadyFramePacingEnabled = false
-    private var desktopHdrUiCompensationEnabled = true
     private var desktopLowVramMode = DesktopLowVramMode.Auto
     private var desktopAnimeMode = DesktopAnimeMode.Off
     private var desktopAnimeModeAutoEnabled = false
@@ -390,8 +365,6 @@ object PlayerSettingsRepository {
     // Session-only state; deliberately has no PlayerSettingsStorage backing.
     private var desktopAnimeSessionOverride: DesktopAnimeSessionOverride? = null
     private var desktopAnimeSvpSessionForced = false
-    private var desktopRtxVsrSessionOverride: Boolean? = null
-    private var desktopRtxTrueHdrSessionOverride: Boolean? = null
     private var desktopCustomShaderPaths = ""
     private var desktopCustomShaderSelectedPath = ""
     private var desktopAudioPassthroughEnabled = false
@@ -428,13 +401,12 @@ object PlayerSettingsRepository {
         defaultPlaybackSpeed = 1f
         mouseMoveRevealsControlsEnabled = true
         desktopLegacyHudEnabled = false
-        desktopMinimalHudEnabled = true
+        desktopMinimalHudEnabled = false
         desktopUltraHudEnabled = false
         desktopOfficialHudEnabled = false
         desktopMinimalHudPillsEnabled = false
         desktopSeekHandleEnabled = true
         desktopHudVignetteEnabled = true
-        desktopHiddenHudButtons = emptySet()
         desktopAlwaysShowClockEnabled = false
         desktopPauseOverlaySourceEnabled = false
         desktopPlaybackSpeedFineIncrementsEnabled = false
@@ -452,7 +424,7 @@ object PlayerSettingsRepository {
         externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
         preferredAudioLanguage = AudioLanguageOption.DEVICE
         secondaryPreferredAudioLanguage = null
-        preferredSubtitleLanguage = SubtitleLanguageOption.DEVICE
+        preferredSubtitleLanguage = SubtitleLanguageOption.NONE
         secondaryPreferredSubtitleLanguage = null
         dualSubtitlesEnabled = false
         preferredSubtitleTrackKind = SubtitleTrackKind.DEFAULT
@@ -469,8 +441,6 @@ object PlayerSettingsRepository {
         decoderPriority = 1
         nvidiaRtxSuperResolutionEnabled = false
         nvidiaRtxHdrEnabled = false
-        nvidiaRtxHdrAnimeEnabled = false
-        nvidiaRtxHdrAnimeShadersEnabled = false
         mapDV7ToHevc = false
         tunnelingEnabled = false
         streamAutoPlayMode = StreamAutoPlayMode.MANUAL
@@ -483,7 +453,6 @@ object PlayerSettingsRepository {
         skipAutoAcceptMode = SkipAutoAcceptMode.MANUAL
         skipMovieCreditsToPostCredits = false
         stripSdhSubtitles = false
-        automaticSubtitleSyncEnabled = true
         animeSkipEnabled = false
         animeSkipClientId = ""
         introDbApiKey = ""
@@ -525,8 +494,6 @@ object PlayerSettingsRepository {
         desktopBufferPreset = DesktopBufferPreset.Balanced
         desktopRendererApi = DesktopRendererApi.D3D11
         desktopPerformanceLoggingEnabled = false
-        desktopSteadyFramePacingEnabled = false
-        desktopHdrUiCompensationEnabled = true
         desktopLowVramMode = DesktopLowVramMode.Auto
         desktopAnimeMode = DesktopAnimeMode.Off
         desktopAnimeModeAutoEnabled = false
@@ -537,8 +504,6 @@ object PlayerSettingsRepository {
         desktopPlaybackInfoPanelEnabled = false
         desktopAnimeSessionOverride = null
         desktopAnimeSvpSessionForced = false
-        desktopRtxVsrSessionOverride = null
-        desktopRtxTrueHdrSessionOverride = null
         desktopCustomShaderPaths = ""
         desktopCustomShaderSelectedPath = ""
         desktopAudioPassthroughEnabled = false
@@ -565,25 +530,13 @@ object PlayerSettingsRepository {
             ?: PlayerResizeMode.Fit
         defaultPlaybackSpeed = PlayerSettingsStorage.loadDefaultPlaybackSpeed() ?: 1f
         mouseMoveRevealsControlsEnabled = PlayerSettingsStorage.loadMouseMoveRevealsControlsEnabled() ?: true
-        val storedLegacyHud = PlayerSettingsStorage.loadDesktopLegacyHudEnabled()
-        val storedUltraHud = PlayerSettingsStorage.loadDesktopUltraHudEnabled()
-        val storedOfficialHud = PlayerSettingsStorage.loadDesktopOfficialHudEnabled()
-        desktopLegacyHudEnabled = storedLegacyHud ?: false
-        // Minimal is the default layout, but only when no layout was ever stored: an install that
-        // predates the minimal flag and picked Legacy/Ultra/Official must keep that pick.
-        desktopMinimalHudEnabled = PlayerSettingsStorage.loadDesktopMinimalHudEnabled()
-            ?: (storedLegacyHud == null && storedUltraHud == null && storedOfficialHud == null)
-        desktopUltraHudEnabled = storedUltraHud ?: false
-        desktopOfficialHudEnabled = storedOfficialHud ?: false
+        desktopLegacyHudEnabled = PlayerSettingsStorage.loadDesktopLegacyHudEnabled() ?: false
+        desktopMinimalHudEnabled = PlayerSettingsStorage.loadDesktopMinimalHudEnabled() ?: false
+        desktopUltraHudEnabled = PlayerSettingsStorage.loadDesktopUltraHudEnabled() ?: false
+        desktopOfficialHudEnabled = PlayerSettingsStorage.loadDesktopOfficialHudEnabled() ?: false
         desktopMinimalHudPillsEnabled = PlayerSettingsStorage.loadDesktopMinimalHudPillsEnabled() ?: false
         desktopSeekHandleEnabled = PlayerSettingsStorage.loadDesktopSeekHandleEnabled() ?: true
         desktopHudVignetteEnabled = PlayerSettingsStorage.loadDesktopHudVignetteEnabled() ?: true
-        desktopHiddenHudButtons = PlayerSettingsStorage.loadDesktopHiddenHudButtons()
-            ?.split(',')
-            ?.map(String::trim)
-            ?.filter(String::isNotEmpty)
-            ?.toSet()
-            .orEmpty()
         // Four stored flags, one layout: official beats ultra beats minimal beats legacy if several
         // were ever set.
         if (desktopOfficialHudEnabled) desktopUltraHudEnabled = false
@@ -626,7 +579,7 @@ object PlayerSettingsRepository {
             normalizeLanguageCode(PlayerSettingsStorage.loadSecondaryPreferredAudioLanguage())
         preferredSubtitleLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadPreferredSubtitleLanguage())
-                ?: SubtitleLanguageOption.DEVICE
+                ?: SubtitleLanguageOption.NONE
         secondaryPreferredSubtitleLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadSecondaryPreferredSubtitleLanguage())
         dualSubtitlesEnabled = PlayerSettingsStorage.loadDualSubtitlesEnabled() ?: false
@@ -689,8 +642,7 @@ object PlayerSettingsRepository {
         decoderPriority = PlayerSettingsStorage.loadDecoderPriority() ?: 1
         nvidiaRtxSuperResolutionEnabled = PlayerSettingsStorage.loadNvidiaRtxSuperResolutionEnabled() ?: false
         nvidiaRtxHdrEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrEnabled() ?: false
-        nvidiaRtxHdrAnimeEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrAnimeEnabled() ?: false
-        nvidiaRtxHdrAnimeShadersEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrAnimeShadersEnabled() ?: false
+        nvidiaRtxHdrEnabled = PlayerSettingsStorage.loadNvidiaRtxHdrEnabled() ?: false
         mapDV7ToHevc = PlayerSettingsStorage.loadMapDV7ToHevc() ?: false
         tunnelingEnabled = PlayerSettingsStorage.loadTunnelingEnabled() ?: false
         streamAutoPlayMode = PlayerSettingsStorage.loadStreamAutoPlayMode()
@@ -728,7 +680,6 @@ object PlayerSettingsRepository {
             ?: SkipAutoAcceptMode.MANUAL
         skipMovieCreditsToPostCredits = PlayerSettingsStorage.loadSkipMovieCreditsToPostCredits() ?: false
         stripSdhSubtitles = PlayerSettingsStorage.loadStripSdhSubtitles() ?: false
-        automaticSubtitleSyncEnabled = PlayerSettingsStorage.loadAutomaticSubtitleSyncEnabled() ?: true
         animeSkipEnabled = PlayerSettingsStorage.loadAnimeSkipEnabled() ?: false
         animeSkipClientId = PlayerSettingsStorage.loadAnimeSkipClientId() ?: ""
         introDbApiKey = PlayerSettingsStorage.loadIntroDbApiKey() ?: ""
@@ -795,8 +746,6 @@ object PlayerSettingsRepository {
             ?.let { runCatching { DesktopRendererApi.valueOf(it) }.getOrNull() }
             ?: DesktopRendererApi.D3D11
         desktopPerformanceLoggingEnabled = PlayerSettingsStorage.loadDesktopPerformanceLogging() ?: false
-        desktopSteadyFramePacingEnabled = PlayerSettingsStorage.loadDesktopSteadyFramePacing() ?: false
-        desktopHdrUiCompensationEnabled = PlayerSettingsStorage.loadDesktopHdrUiCompensation() ?: true
         desktopLowVramMode = PlayerSettingsStorage.loadDesktopLowVramMode()
             ?.let { runCatching { DesktopLowVramMode.valueOf(it) }.getOrNull() }
             ?: DesktopLowVramMode.Auto
@@ -825,16 +774,12 @@ object PlayerSettingsRepository {
         desktopCustomShaderPaths = PlayerSettingsStorage.loadDesktopCustomShaderPaths().orEmpty()
         desktopCustomShaderSelectedPath = PlayerSettingsStorage.loadDesktopCustomShaderSelectedPath().orEmpty()
         val legacyCustomShadersEnabled = PlayerSettingsStorage.loadDesktopCustomShadersEnabled() ?: false
-        if (legacyCustomShadersEnabled) {
-            if (desktopCustomShaderPaths.isNotBlank() &&
-                desktopAnimeMode != DesktopAnimeMode.CustomShader
-            ) {
-                desktopAnimeMode = DesktopAnimeMode.CustomShader
-                PlayerSettingsStorage.saveDesktopAnimeMode(DesktopAnimeMode.CustomShader.name)
-            }
-            // One-shot: the old flag was never cleared, so this forced the mode back to
-            // CustomShader on every launch and undid any later choice of Off or a preset.
-            PlayerSettingsStorage.saveDesktopCustomShadersEnabled(false)
+        if (legacyCustomShadersEnabled &&
+            desktopCustomShaderPaths.isNotBlank() &&
+            desktopAnimeMode != DesktopAnimeMode.CustomShader
+        ) {
+            desktopAnimeMode = DesktopAnimeMode.CustomShader
+            PlayerSettingsStorage.saveDesktopAnimeMode(DesktopAnimeMode.CustomShader.name)
         }
         desktopAudioPassthroughEnabled = PlayerSettingsStorage.loadDesktopAudioPassthroughEnabled() ?: false
         desktopSeekThumbnailMode = PlayerSettingsStorage.loadDesktopSeekThumbnailMode()
@@ -925,15 +870,6 @@ object PlayerSettingsRepository {
         desktopHudVignetteEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopHudVignetteEnabled(enabled)
-    }
-
-    fun setDesktopHudButtonHidden(command: String, hidden: Boolean) {
-        ensureLoaded()
-        val next = if (hidden) desktopHiddenHudButtons + command else desktopHiddenHudButtons - command
-        if (next == desktopHiddenHudButtons) return
-        desktopHiddenHudButtons = next
-        publish()
-        PlayerSettingsStorage.saveDesktopHiddenHudButtons(next.sorted().joinToString(","))
     }
 
     fun setDesktopHudLayout(layout: DesktopHudLayout) {
@@ -1306,22 +1242,6 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveNvidiaRtxHdrEnabled(enabled)
     }
 
-    fun setNvidiaRtxHdrAnimeEnabled(enabled: Boolean) {
-        ensureLoaded()
-        if (nvidiaRtxHdrAnimeEnabled == enabled) return
-        nvidiaRtxHdrAnimeEnabled = enabled
-        publish()
-        PlayerSettingsStorage.saveNvidiaRtxHdrAnimeEnabled(enabled)
-    }
-
-    fun setNvidiaRtxHdrAnimeShadersEnabled(enabled: Boolean) {
-        ensureLoaded()
-        if (nvidiaRtxHdrAnimeShadersEnabled == enabled) return
-        nvidiaRtxHdrAnimeShadersEnabled = enabled
-        publish()
-        PlayerSettingsStorage.saveNvidiaRtxHdrAnimeShadersEnabled(enabled)
-    }
-
     fun setMapDV7ToHevc(enabled: Boolean) {
         ensureLoaded()
         if (mapDV7ToHevc == enabled) return
@@ -1418,14 +1338,6 @@ object PlayerSettingsRepository {
         stripSdhSubtitles = enabled
         publish()
         PlayerSettingsStorage.saveStripSdhSubtitles(enabled)
-    }
-
-    fun setAutomaticSubtitleSyncEnabled(enabled: Boolean) {
-        ensureLoaded()
-        if (automaticSubtitleSyncEnabled == enabled) return
-        automaticSubtitleSyncEnabled = enabled
-        publish()
-        PlayerSettingsStorage.saveAutomaticSubtitleSyncEnabled(enabled)
     }
 
     fun setAnimeSkipEnabled(enabled: Boolean) {
@@ -1744,7 +1656,6 @@ object PlayerSettingsRepository {
             desktopMinimalHudPillsEnabled = desktopMinimalHudPillsEnabled,
             desktopSeekHandleEnabled = desktopSeekHandleEnabled,
             desktopHudVignetteEnabled = desktopHudVignetteEnabled,
-            desktopHiddenHudButtons = desktopHiddenHudButtons,
             desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
             desktopPauseOverlaySourceEnabled = desktopPauseOverlaySourceEnabled,
             desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,
@@ -1779,8 +1690,6 @@ object PlayerSettingsRepository {
             decoderPriority = decoderPriority,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
             nvidiaRtxHdrEnabled = nvidiaRtxHdrEnabled,
-            nvidiaRtxHdrAnimeEnabled = nvidiaRtxHdrAnimeEnabled,
-            nvidiaRtxHdrAnimeShadersEnabled = nvidiaRtxHdrAnimeShadersEnabled,
             mapDV7ToHevc = mapDV7ToHevc,
             tunnelingEnabled = tunnelingEnabled,
             streamAutoPlayMode = streamAutoPlayMode,
@@ -1793,7 +1702,6 @@ object PlayerSettingsRepository {
             skipAutoAcceptMode = skipAutoAcceptMode,
             skipMovieCreditsToPostCredits = skipMovieCreditsToPostCredits,
             stripSdhSubtitles = stripSdhSubtitles,
-            automaticSubtitleSyncEnabled = automaticSubtitleSyncEnabled,
             animeSkipEnabled = animeSkipEnabled,
             animeSkipClientId = animeSkipClientId,
             introDbApiKey = introDbApiKey,
@@ -1835,8 +1743,6 @@ object PlayerSettingsRepository {
             desktopBufferPreset = desktopBufferPreset,
             desktopRendererApi = desktopRendererApi,
             desktopPerformanceLoggingEnabled = desktopPerformanceLoggingEnabled,
-            desktopSteadyFramePacingEnabled = desktopSteadyFramePacingEnabled,
-            desktopHdrUiCompensationEnabled = desktopHdrUiCompensationEnabled,
             desktopLowVramMode = desktopLowVramMode,
             desktopAnimeMode = desktopAnimeMode,
             desktopAnimeModeAutoEnabled = desktopAnimeModeAutoEnabled,
@@ -1847,8 +1753,6 @@ object PlayerSettingsRepository {
             desktopPlaybackInfoPanelEnabled = desktopPlaybackInfoPanelEnabled,
             desktopAnimeSessionOverride = desktopAnimeSessionOverride,
             desktopAnimeSvpSessionForced = desktopAnimeSvpSessionForced,
-            desktopRtxVsrSessionOverride = desktopRtxVsrSessionOverride,
-            desktopRtxTrueHdrSessionOverride = desktopRtxTrueHdrSessionOverride,
             desktopCustomShaderPaths = desktopCustomShaderPaths,
             desktopCustomShaderSelectedPath = desktopCustomShaderSelectedPath,
             desktopAudioPassthroughEnabled = desktopAudioPassthroughEnabled,
@@ -1958,23 +1862,6 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveDesktopPerformanceLogging(enabled)
     }
 
-    /** Applies immediately: the window's pacing effect reads it from [uiState]. */
-    fun setDesktopSteadyFramePacing(enabled: Boolean) {
-        ensureLoaded()
-        if (desktopSteadyFramePacingEnabled == enabled) return
-        desktopSteadyFramePacingEnabled = enabled
-        publish()
-        PlayerSettingsStorage.saveDesktopSteadyFramePacing(enabled)
-    }
-
-    fun setDesktopHdrUiCompensation(enabled: Boolean) {
-        ensureLoaded()
-        if (desktopHdrUiCompensationEnabled == enabled) return
-        desktopHdrUiCompensationEnabled = enabled
-        publish()
-        PlayerSettingsStorage.saveDesktopHdrUiCompensation(enabled)
-    }
-
     fun setDesktopRendererApi(api: DesktopRendererApi) {
         ensureLoaded()
         if (desktopRendererApi == api) return
@@ -2065,28 +1952,10 @@ object PlayerSettingsRepository {
         publish()
     }
 
-    fun setDesktopRtxVsrSessionOverride(enabled: Boolean?) {
-        ensureLoaded()
-        if (desktopRtxVsrSessionOverride == enabled) return
-        desktopRtxVsrSessionOverride = enabled
-        publish()
-    }
-
-    fun setDesktopRtxTrueHdrSessionOverride(enabled: Boolean?) {
-        ensureLoaded()
-        if (desktopRtxTrueHdrSessionOverride == enabled) return
-        desktopRtxTrueHdrSessionOverride = enabled
-        publish()
-    }
-
     fun clearDesktopAnimeSessionState() {
-        if (desktopAnimeSessionOverride == null && !desktopAnimeSvpSessionForced &&
-            desktopRtxVsrSessionOverride == null && desktopRtxTrueHdrSessionOverride == null
-        ) return
+        if (desktopAnimeSessionOverride == null && !desktopAnimeSvpSessionForced) return
         desktopAnimeSessionOverride = null
         desktopAnimeSvpSessionForced = false
-        desktopRtxVsrSessionOverride = null
-        desktopRtxTrueHdrSessionOverride = null
         publish()
     }
 
@@ -2243,13 +2112,3 @@ object PlayerSettingsRepository {
         }
     }
 }
-
-// The RTX settings as the player applies them: the menu's session toggle wins over the saved one.
-val PlayerSettingsUiState.effectiveRtxVsrEnabled: Boolean
-    get() = desktopRtxVsrSessionOverride ?: nvidiaRtxSuperResolutionEnabled
-val PlayerSettingsUiState.effectiveRtxTrueHdrEnabled: Boolean
-    get() = desktopRtxTrueHdrSessionOverride ?: nvidiaRtxHdrEnabled
-val PlayerSettingsUiState.effectiveRtxTrueHdrAnimeEnabled: Boolean
-    get() = desktopRtxTrueHdrSessionOverride == true || nvidiaRtxHdrAnimeEnabled
-val PlayerSettingsUiState.effectiveRtxTrueHdrAnimeShadersEnabled: Boolean
-    get() = desktopRtxTrueHdrSessionOverride == true || nvidiaRtxHdrAnimeShadersEnabled

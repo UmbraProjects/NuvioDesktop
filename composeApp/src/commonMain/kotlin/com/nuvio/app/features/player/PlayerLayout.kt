@@ -10,7 +10,6 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.compose_player_resize_auto_crop
 import nuvio.composeapp.generated.resources.compose_player_resize_fill
 import nuvio.composeapp.generated.resources.compose_player_resize_fit
 import nuvio.composeapp.generated.resources.compose_player_resize_zoom
@@ -129,8 +128,7 @@ internal fun PlayerResizeMode.next(): PlayerResizeMode =
     when (this) {
         PlayerResizeMode.Fit -> PlayerResizeMode.Fill
         PlayerResizeMode.Fill -> PlayerResizeMode.Zoom
-        PlayerResizeMode.Zoom -> PlayerResizeMode.AutoCrop
-        PlayerResizeMode.AutoCrop -> PlayerResizeMode.Fit
+        PlayerResizeMode.Zoom -> PlayerResizeMode.Fit
     }
 
 internal val PlayerResizeMode.labelRes: StringResource
@@ -138,7 +136,6 @@ internal val PlayerResizeMode.labelRes: StringResource
         PlayerResizeMode.Fit -> Res.string.compose_player_resize_fit
         PlayerResizeMode.Fill -> Res.string.compose_player_resize_fill
         PlayerResizeMode.Zoom -> Res.string.compose_player_resize_zoom
-        PlayerResizeMode.AutoCrop -> Res.string.compose_player_resize_auto_crop
     }
 
 internal fun formatPlaybackTime(positionMs: Long): String {

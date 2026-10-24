@@ -9,7 +9,6 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_header
-import nuvio.composeapp.generated.resources.party_title
 import nuvio.composeapp.generated.resources.compose_settings_category_about
 import nuvio.composeapp.generated.resources.compose_settings_category_general
 import nuvio.composeapp.generated.resources.compose_settings_page_account
@@ -20,7 +19,6 @@ import nuvio.composeapp.generated.resources.compose_settings_page_content_discov
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
 import nuvio.composeapp.generated.resources.compose_settings_page_continue_watching
 import nuvio.composeapp.generated.resources.compose_settings_page_games
-import nuvio.composeapp.generated.resources.iptv_settings_page
 import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
@@ -49,6 +47,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_lights
 import nuvio.composeapp.generated.resources.compose_settings_page_seekr
 import nuvio.composeapp.generated.resources.compose_settings_page_discord_presence
 import nuvio.composeapp.generated.resources.compose_settings_page_screensaver
+import nuvio.composeapp.generated.resources.compose_settings_page_preshow
 import nuvio.composeapp.generated.resources.settings_account
 import org.jetbrains.compose.resources.StringResource
 
@@ -87,11 +86,6 @@ internal enum class SettingsPage(
         category = SettingsCategory.About,
         parentPage = Root,
     ),
-    WatchParty(
-        titleRes = Res.string.party_title,
-        category = SettingsCategory.Account,
-        parentPage = Root,
-    ),
     Playback(
         titleRes = Res.string.compose_settings_page_playback,
         category = SettingsCategory.General,
@@ -122,11 +116,6 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Root,
     ),
-    Iptv(
-        titleRes = Res.string.iptv_settings_page,
-        category = SettingsCategory.General,
-        parentPage = Root,
-    ),
     AutoDownloads(
         titleRes = Res.string.compose_settings_page_auto_downloads,
         category = SettingsCategory.General,
@@ -154,6 +143,11 @@ internal enum class SettingsPage(
     ),
     Screensaver(
         titleRes = Res.string.compose_settings_page_screensaver,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    Preshow(
+        titleRes = Res.string.compose_settings_page_preshow,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

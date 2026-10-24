@@ -1,7 +1,6 @@
 package com.nuvio.app.features.player.desktop
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.core.perf.PerfTelemetry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URI
@@ -193,9 +192,7 @@ internal object TorBoxNodeHop {
             .header("User-Agent", userAgent)
             .GET()
             .build()
-        val response = PerfTelemetry.timedHttp("torbox-probe", request.method(), request.uri().toString(), { it.statusCode() }) {
-            client.send(request, HttpResponse.BodyHandlers.ofInputStream())
-        }
+        val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())
         runCatching { response.body().close() }
         return response.statusCode()
     }

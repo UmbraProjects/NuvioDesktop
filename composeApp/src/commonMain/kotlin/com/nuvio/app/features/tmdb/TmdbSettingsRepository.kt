@@ -26,7 +26,6 @@ object TmdbSettingsRepository {
     private var useCollections = true
     private var resolveFilenameCatalogs = true
     private var heroImageSource = HeroImageSource.Addon
-    private var showEnrichment = TmdbShowEnrichment.SourceAware
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -181,14 +180,6 @@ object TmdbSettingsRepository {
         TmdbHeroImageService.clearCache()
     }
 
-    fun setShowEnrichment(value: TmdbShowEnrichment) {
-        ensureLoaded()
-        if (showEnrichment == value) return
-        showEnrichment = value
-        publish()
-        TmdbSettingsStorage.saveShowEnrichment(value.name)
-    }
-
     private fun setBoolean(
         current: Boolean,
         next: Boolean,
@@ -223,9 +214,6 @@ object TmdbSettingsRepository {
         heroImageSource = TmdbSettingsStorage.loadHeroImageSource()
             ?.let { name -> HeroImageSource.entries.firstOrNull { it.name == name } }
             ?: HeroImageSource.Addon
-        showEnrichment = TmdbSettingsStorage.loadShowEnrichment()
-            ?.let { name -> TmdbShowEnrichment.entries.firstOrNull { it.name == name } }
-            ?: TmdbShowEnrichment.SourceAware
         publish()
     }
 
@@ -247,7 +235,6 @@ object TmdbSettingsRepository {
             useCollections = useCollections,
             resolveFilenameCatalogs = resolveFilenameCatalogs,
             heroImageSource = heroImageSource,
-            showEnrichment = showEnrichment,
         )
     }
 }

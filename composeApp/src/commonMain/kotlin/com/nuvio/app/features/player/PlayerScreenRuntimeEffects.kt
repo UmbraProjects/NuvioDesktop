@@ -1,6 +1,5 @@
 package com.nuvio.app.features.player
 
-import com.nuvio.app.features.details.filler.isSkippableFiller
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -95,15 +94,9 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     }
 
     LaunchedEffect(parentMetaType, parentMetaId) {
-        // A live channel has no addon metadata; asking for it is a wasted round of addon requests.
-        if (isIptvPlayback) return@LaunchedEffect
-        val peeked = MetaDetailsRepository.peek(parentMetaType, parentMetaId)
-        playerMetaVideos = peeked?.videos ?: emptyList()
-        playerMetaCast = peeked?.cast ?: emptyList()
-        if (playerMetaVideos.isEmpty() || playerMetaCast.isEmpty()) {
-            val fetched = MetaDetailsRepository.fetch(parentMetaType, parentMetaId)
-            if (playerMetaVideos.isEmpty()) playerMetaVideos = fetched?.videos ?: emptyList()
-            if (playerMetaCast.isEmpty()) playerMetaCast = fetched?.cast ?: emptyList()
+        playerMetaVideos = MetaDetailsRepository.peek(parentMetaType, parentMetaId)?.videos ?: emptyList()
+        if (playerMetaVideos.isEmpty()) {
+            playerMetaVideos = MetaDetailsRepository.fetch(parentMetaType, parentMetaId)?.videos ?: emptyList()
         }
     }
 
@@ -111,29 +104,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         val currentMeta = metaUiState.meta ?: return@LaunchedEffect
         if (currentMeta.type == parentMetaType && currentMeta.id == parentMetaId) {
             playerMetaVideos = currentMeta.videos
-            if (currentMeta.cast.isNotEmpty()) playerMetaCast = currentMeta.cast
         }
-    }
-
-    val animeFillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsState()
-    LaunchedEffect(parentMetaType, parentMetaId, playerMetaVideos, animeFillerSettings) {
-        if (!isSeries || playerMetaVideos.isEmpty() ||
-            !com.nuvio.app.features.details.filler.AnimeFillerSettings.lookupWanted()
-        ) {
-            playerFillerKinds = emptyMap()
-            return@LaunchedEffect
-        }
-        val meta = MetaDetailsRepository.peek(parentMetaType, parentMetaId)
-        val trusted = meta?.imdbTmdbIdentityTrusted ?: true
-        playerFillerKinds = com.nuvio.app.features.details.filler.AnimeFillerRepository.episodeKinds(
-            lookup = com.nuvio.app.features.details.filler.AnimeFillerLookup(
-                metaId = parentMetaId,
-                imdbId = meta?.imdbId?.takeIf { trusted },
-                tmdbId = meta?.tmdbId?.takeIf { trusted },
-                malId = meta?.malId,
-            ),
-            videos = playerMetaVideos,
-        )
     }
 
     LaunchedEffect(currentStreamBingeGroup, parentMetaId) {
@@ -350,18 +321,6 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         subtitleAutoSyncState = SubtitleAutoSyncUiState()
     }
 
-    LaunchedEffect(activeSourceUrl, activeSourceHeaders, playerSettingsUiState.automaticSubtitleSyncEnabled) {
-        automaticallySyncedSubtitle = null
-        val sourceUrl = activeSourceUrl ?: return@LaunchedEffect
-        // Live TV has no fixed timeline to sync against, and each read would take one of the
-        // provider's few connections.
-        if (playerSettingsUiState.automaticSubtitleSyncEnabled && !isIptvPlayback &&
-            (sourceUrl.startsWith("http://", ignoreCase = true) || sourceUrl.startsWith("https://", ignoreCase = true))
-        ) {
-            prefetchAutomaticSubtitleSyncIndex(sourceUrl, activeSourceHeaders)
-        }
-    }
-
     LaunchedEffect(playerController, subtitleStyle) {
         playerController?.applySubtitleStyle(subtitleStyle)
     }
@@ -478,11 +437,6 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             initialSeekApplied = true
             return@LaunchedEffect
         }
-        // A watch party with a running clock positions the player itself (BindPartyEffects).
-        if (isPartySynced && com.nuvio.app.features.party.PartyRepository.playback.value != null) {
-            initialSeekApplied = true
-            return@LaunchedEffect
-        }
         // Desktop mpv applies both absolute and percentage resume positions in its loadfile
         // command, before the first frame. Mobile engines still need this duration-based seek.
         if (isDesktop && (activeInitialPositionMs > 0L || progressFraction != null)) {
@@ -496,11 +450,9 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
 
     BindPlayerUiVisibilityEffects()
     BindPlayerMetadataAndSkipEffects()
-    BindPartyEffects()
     BindDiscordRichPresenceEffect()
     BindLightsEffect()
     BindStreamFailoverWatchdogEffect()
-    BindIptvLiveEffects()
 
     DisposableEffect(playbackSession.videoId, activeSourceUrl, activeSourceAudioUrl) {
         val effectVideoId = playbackSession.videoId
@@ -1218,7 +1170,6 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
 
 @Composable
 private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
-    val animeFillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsState()
     LaunchedEffect(activeVideoId, activeSeasonNumber, activeEpisodeNumber, parentMetaId, parentMetaType) {
         parentalWarnings = emptyList()
         showParentalGuide = false
@@ -1246,7 +1197,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         sourceUrl = activeSourceUrl,
         isTorrent = activeTorrentInfoHash != null,
         apiKey = playerSettingsUiState.seekrApiKey,
-        seekrServiceOff = SeekrPreviews.serviceDisabled,
     )
     LaunchedEffect(
         activeVideoId,
@@ -1300,7 +1250,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val season = activeSeasonNumber
         val episode = activeEpisodeNumber
         val vid = activeVideoId ?: return@LaunchedEffect
-        if (isIptvPlayback) return@LaunchedEffect // no intro/outro timings exist for live TV
 
         launch {
             // Which provider chain this playback belongs to is decided by its id, before anything
@@ -1463,20 +1412,11 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         if (!acceptsCreditsToScene && !playerSettingsUiState.skipAutoAcceptMode.accepts(interval)) {
             return@LaunchedEffect
         }
-        // A host-only party member follows the host's skips instead of making their own.
-        if (isPartyControlLocked) return@LaunchedEffect
         if (!autoAcceptedSkipIntervals.add(interval.identityKey())) return@LaunchedEffect
         acceptSkipInterval(interval)
     }
 
-    LaunchedEffect(
-        playerMetaVideos,
-        activeVideoId,
-        activeSeasonNumber,
-        activeEpisodeNumber,
-        playerFillerKinds,
-        animeFillerSettings.skipFiller,
-    ) {
+    LaunchedEffect(playerMetaVideos, activeVideoId, activeSeasonNumber, activeEpisodeNumber) {
         // A playlist decides what plays next, not the show: binge would otherwise carry on into
         // the following episode instead of the playlist's next entry.
         if (!isSeries || playerMetaVideos.isEmpty() || isPlaylistPlayback) {
@@ -1485,8 +1425,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         }
         val curSeason = activeSeasonNumber
         val curEpisode = activeEpisodeNumber ?: return@LaunchedEffect
-        val fillerKinds = playerFillerKinds
-        val skipFiller = animeFillerSettings.skipFiller && fillerKinds.isNotEmpty()
         val nextVideo = resolveAutoPlayEpisode(
             videos = playerMetaVideos,
             currentVideoId = activeVideoId,
@@ -1494,11 +1432,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             currentSeason = curSeason,
             currentEpisode = curEpisode,
             mode = autoPlayMode,
-            isSkipped = if (skipFiller) {
-                { video -> fillerKinds.isSkippableFiller(video.id) }
-            } else {
-                null
-            },
         )
         val nextEpisode = nextVideo?.playbackEpisodeNumber()
         nextEpisodeInfo = if (nextVideo != null && nextEpisode != null) {
@@ -1904,8 +1837,6 @@ internal fun isTrustworthyPlaybackEnd(
 ): Boolean =
     isEnded &&
         durationMs > 0L &&
-        // An error clip or debrid placeholder ending is not the episode ending.
-        !com.nuvio.app.features.watching.domain.isShortPlaceholderDuration(durationMs) &&
         positionMs >= (durationMs - NEXT_EPISODE_EOF_POSITION_TOLERANCE_MS).coerceAtLeast(0L) &&
         lastTrustedPositionMs > 0L &&
         lastTrustedPositionMs >=
@@ -1928,17 +1859,14 @@ private fun resolveAutoPlayEpisode(
     currentSeason: Int?,
     currentEpisode: Int?,
     mode: PlayerAutoPlayMode,
-    /** Episodes autoplay passes over (skip-filler); null skips nothing. */
-    isSkipped: ((MetaVideo) -> Boolean)? = null,
 ): MetaVideo? {
     if (mode != PlayerAutoPlayMode.RandomEpisode) {
-        return PlayerNextEpisodeRules.resolveNextEpisodeSkipping(
+        return PlayerNextEpisodeRules.resolveNextEpisode(
             videos = videos,
             currentSeason = currentSeason,
             currentEpisode = currentEpisode,
             currentVideoId = currentVideoId,
             parentMetaId = parentMetaId,
-            isSkipped = isSkipped,
         )
     }
 
@@ -1950,8 +1878,7 @@ private fun resolveAutoPlayEpisode(
     val mainSeasonEpisodes = airedEpisodes.filter { video ->
         video.playbackSeasonNumber()?.let { it > 0 } == true
     }
-    val unskipped = mainSeasonEpisodes.ifEmpty { airedEpisodes }
-    val randomPool = isSkipped?.let { skip -> unskipped.filterNot(skip).ifEmpty { unskipped } } ?: unskipped
+    val randomPool = mainSeasonEpisodes.ifEmpty { airedEpisodes }
     val currentVideo = videos.resolveSeriesEpisodePosition(
         parentMetaId = parentMetaId,
         videoId = currentVideoId,
@@ -2065,7 +1992,6 @@ internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message:
         activeSourceIdentityKey = stream.playerSourceIdentityKey()
         activeStreamTitle = stream.streamLabel
         activeStreamFilename = stream.mediaFilename
-        activeStream = stream
         activeStreamSubtitle = stream.streamSubtitle
         activeProviderName = stream.addonName
         activeProviderAddonId = stream.addonId

@@ -12,8 +12,4 @@ internal actual object HomeCatalogSettingsStorage {
     actual fun savePayload(payload: String) {
         store.putString(ProfileScopedKey.of("home_catalog_settings"), payload)
     }
-
-    actual fun savePayload(payload: String, profileId: Int) {
-        store.putString(ProfileScopedKey.of("home_catalog_settings", profileId), payload)
-    }
 }

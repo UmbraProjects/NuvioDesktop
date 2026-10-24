@@ -2,7 +2,6 @@ package com.nuvio.app.features.streams
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.build.AppFeaturePolicy
-import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.buildAddonResourceUrl
 import com.nuvio.app.features.addons.enabledAddons
@@ -16,6 +15,7 @@ import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.player.PlaybackStartTrace
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
+import com.nuvio.app.features.plugins.pluginContentId
 import com.nuvio.app.features.plugins.PluginsUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +33,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 object StreamsRepository {
@@ -85,7 +84,6 @@ object StreamsRepository {
     }
 
     fun load(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false, preferLocalStreams: Boolean = false) {
-        PerfTelemetry.count("StreamsRepository.load")
         load(
             preferLocalStreams = preferLocalStreams,
             type = type,
@@ -100,7 +98,6 @@ object StreamsRepository {
     }
 
     fun reload(type: String, videoId: String, parentMetaId: String? = null, title: String? = null, season: Int? = null, episode: Int? = null, manualSelection: Boolean = false, preferLocalStreams: Boolean = false) {
-        PerfTelemetry.count("StreamsRepository.reload")
         load(
             preferLocalStreams = preferLocalStreams,
             type = type,
@@ -395,12 +392,6 @@ object StreamsRepository {
         )
         activeJob = scope.launch {
             val completions = Channel<StreamLoadCompletion>(capacity = Channel.BUFFERED)
-            // Native anime episodes: TMDB coordinates for plugin scrapers and the addon fallback.
-            val animeTmdbLocation = if (AnimeTmdbEpisodeLocator.appliesTo(resolvedEpisode)) {
-                async { runCatchingUnlessCancelled { AnimeTmdbEpisodeLocator.locate(resolvedEpisode) }.getOrNull() }
-            } else {
-                null
-            }
             val pluginRemainingByAddonId = pluginProviderGroups
                 .associate { it.addonId to it.scrapers.size }
                 .toMutableMap()
@@ -690,33 +681,7 @@ object StreamsRepository {
                         if (removedCount > 0) {
                             log.d { "Filtered $removedCount explicit episode mismatches from $displayName" }
                         }
-                        if (!streams.hasPlayableStream() && AnimeFranchiseEpisodeLocator.appliesTo(resolvedEpisode)) {
-                            animeFranchiseFallbackStreams(
-                                franchiseVideoId = AnimeFranchiseEpisodeLocator.franchiseVideoId(
-                                    identity = resolvedEpisode,
-                                    type = type,
-                                    parentMetaId = parentMetaId,
-                                ),
-                                manifest = addon.manifest,
-                                type = type,
-                                seriesTitle = MetaDetailsRepository.seriesTitleFor(
-                                    type = type,
-                                    id = parentMetaId ?: videoId,
-                                ) ?: title,
-                                fetch = { fallbackUrl -> httpGetTextWithHeaders(fallbackUrl, STREAM_METADATA_REQUEST_HEADERS) },
-                                parse = { fallbackPayload ->
-                                    StreamParser.parse(
-                                        payload = fallbackPayload,
-                                        addonName = displayName,
-                                        addonId = addon.addonId,
-                                        addonLogo = addon.manifest.logoUrl,
-                                    )
-                                },
-                            )?.also { log.d { "Anime IMDb-numbering fallback found ${it.size} streams from $displayName" } }
-                                ?: streams
-                        } else {
-                            streams
-                        }
+                        streams
                     }.fold(
                         onSuccess = { streams ->
                             log.d { "Got ${streams.size} streams from ${displayName}" }
@@ -766,13 +731,16 @@ object StreamsRepository {
                             return@launch
                         }
 
-                        val pluginTarget = resolvedEpisode.pluginEpisodeTarget(animeTmdbLocation?.await())
                         val completion = PluginRepository.executeScraper(
                             scraper = scraper,
-                            tmdbId = pluginTarget.contentId,
+                            tmdbId = pluginContentId(
+                                videoId = effectiveVideoId,
+                                season = effectiveSeason,
+                                episode = effectiveEpisode,
+                            ),
                             mediaType = type,
-                            season = pluginTarget.season,
-                            episode = pluginTarget.episode,
+                            season = effectiveSeason,
+                            episode = effectiveEpisode,
                         ).fold(
                             onSuccess = { results ->
                                 StreamLoadCompletion.PluginScraper(
@@ -789,9 +757,6 @@ object StreamsRepository {
                                 )
                             },
                             onFailure = { error ->
-                                // Logged, not only shown: every plugin failing on the native build
-                                // (a missing JNI registration, 2026-10-17) left no trace in the log.
-                                log.w(error) { "plugin scraper failed: ${scraper.name}" }
                                 StreamLoadCompletion.PluginScraper(
                                     addonId = providerGroup.addonId,
                                     streams = emptyList(),

@@ -22,7 +22,6 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
-import com.nuvio.app.features.player.PlayerHeroTrailerState
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
@@ -159,13 +158,11 @@ actual fun HeroTrailerPlayerSurface(
         playbackRevealReady = false
         controller.updateControls(
             PlayerControlsState(
+                heroTrailerMode = true,
+                heroTrailerBackgroundColor = "#000000",
                 isLoading = true,
-                heroTrailer = PlayerHeroTrailerState(
-                    enabled = true,
-                    backgroundColor = "#000000",
-                    muted = muted,
-                    volume = effectiveVolume,
-                ),
+                heroTrailerMuted = muted,
+                heroTrailerVolume = effectiveVolume,
             ),
         )
         detailHeroTrailerSurfaceLog.i {
@@ -193,13 +190,11 @@ actual fun HeroTrailerPlayerSurface(
     LaunchedEffect(controller, sourceUrl, muted, effectiveVolume) {
         controller.updateControls(
             PlayerControlsState(
+                heroTrailerMode = true,
+                heroTrailerBackgroundColor = "#000000",
                 isLoading = true,
-                heroTrailer = PlayerHeroTrailerState(
-                    enabled = true,
-                    backgroundColor = "#000000",
-                    muted = muted,
-                    volume = effectiveVolume,
-                ),
+                heroTrailerMuted = muted,
+                heroTrailerVolume = effectiveVolume,
             ),
         )
         controller.setMpvProperty("mute", if (muted) "yes" else "no")
@@ -222,7 +217,7 @@ actual fun HeroTrailerPlayerSurface(
         var readyReported = false
         var endedReported = false
         while (true) {
-            val snapshot = controller.snapshotOffUiThread()
+            val snapshot = controller.snapshot()
             if (
                 playWhenReady &&
                 (firstPaintComplete || hasPaintedOnce) &&

@@ -23,12 +23,13 @@ import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.details.HeroTrailerAudioState
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
-import com.nuvio.app.features.player.PlayerHeroTrailerState
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import com.nuvio.app.features.player.desktop.TRAILER_AUDIO_NORMALIZATION_FILTER
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val trailerSurfaceLog = Logger.withTag("HomeHeroTrailerSurface")
 
@@ -63,6 +64,8 @@ actual fun HomeHeroTrailerSurface(
     onNavChromeDismiss: () -> Unit,
     onVolumeChange: (Int) -> Unit,
     onSurfaceDisposed: () -> Unit,
+    normalizeAudio: Boolean,
+    preshow: Boolean,
 ) {
     val supported = DesktopHostOs.current == DesktopHostOs.WINDOWS ||
         DesktopHostOs.current == DesktopHostOs.MACOS
@@ -72,8 +75,10 @@ actual fun HomeHeroTrailerSurface(
     val latestOnNavChromeDismiss = rememberUpdatedState(onNavChromeDismiss)
     val latestOnVolumeChange = rememberUpdatedState(onVolumeChange)
     val latestOnSurfaceDisposed = rememberUpdatedState(onSurfaceDisposed)
-    // The settings toggle gates sound on/off; the shared slider sets the level.
-    val effectiveVolume = if (muted) 0 else volume.coerceIn(0, 100)
+    // The settings toggle gates sound on/off; the shared slider sets the level. The pre-show has
+    // neither: it always plays at one fixed level, whatever the shared hero state says.
+    val effectiveVolume = if (preshow) PRESHOW_VOLUME else if (muted) 0 else volume.coerceIn(0, 100)
+    val effectiveMuted = !preshow && muted
 
     if (!supported) {
         LaunchedEffect(sourceUrl) {
@@ -176,27 +181,25 @@ actual fun HomeHeroTrailerSurface(
         )
     }
 
-    LaunchedEffect(controller, sourceUrl, backgroundHex) {
+    LaunchedEffect(controller, sourceUrl, backgroundHex, normalizeAudio) {
         playbackRevealReady = false
         // Push hero-trailer overlay state first so attach() forwards it to the controls page.
         controller.updateControls(
             PlayerControlsState(
+                heroTrailerMode = true,
+                heroTrailerBackgroundColor = backgroundHex,
+                heroTrailerLogoUrl = logoUrl?.takeIf { it.isNotBlank() }.orEmpty(),
+                heroTrailerTitle = title,
+                heroTrailerMeta = meta,
+                heroTrailerDescription = description,
                 isLoading = true,
-                heroTrailer = PlayerHeroTrailerState(
-                    enabled = true,
-                    backgroundColor = backgroundHex,
-                    logoUrl = logoUrl?.takeIf { it.isNotBlank() }.orEmpty(),
-                    title = title,
-                    meta = meta,
-                    description = description,
-                    muted = muted,
-                    volume = effectiveVolume,
-                    navDismissEdge = navDismissEdge,
-                    navDismissBandFraction = navDismissBandFraction,
-                ),
+                heroTrailerMuted = effectiveMuted,
+                heroTrailerVolume = effectiveVolume,
+                heroTrailerNavDismissEdge = navDismissEdge,
+                heroTrailerNavDismissBandFraction = navDismissBandFraction,
             ),
         )
-        trailerSurfaceLog.i { "attach video=${sourceUrl.take(80)} audio=${sourceAudioUrl?.take(60)} muted=$muted vol=$effectiveVolume" }
+        trailerSurfaceLog.i { "attach video=${sourceUrl.take(80)} audio=${sourceAudioUrl?.take(60)} muted=$effectiveMuted vol=$effectiveVolume preshow=$preshow" }
         controller.attach(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl?.takeIf { it.isNotBlank() },
@@ -215,30 +218,51 @@ actual fun HomeHeroTrailerSurface(
             },
             // Tells the controls page it is a passive hero surface from the very first script
             // run, so it never grabs keyboard focus (which would break TV navigation).
-            controlsPageUrlSuffix = "?heroTrailer=1",
+            controlsPageUrlSuffix = if (preshow) "?heroTrailer=1&preshow=1" else "?heroTrailer=1",
+            // Volume, mute and the loudness filter go in as init options so the very first audio
+            // frame already has them. As runtime properties they replay after create(), which
+            // rebuilds the audio chain once playback has begun (an audible dip at clip start).
+            initMpvOptions = buildList {
+                add("mute=${if (effectiveMuted) "yes" else "no"}")
+                add("volume=$effectiveVolume")
+                // A very short fade-in sits after the normaliser, which would otherwise lift the
+                // quiet start back up and undo it. It only has to take the click off the first
+                // sample: a long one is heard as every item opening quietly. It is a filter rather
+                // than a volume ramp so it is sample-accurate and cannot be missed if the UI
+                // thread is busy at clip start.
+                val chain = buildList {
+                    if (normalizeAudio) add(TRAILER_AUDIO_NORMALIZATION_FILTER)
+                    if (preshow) add("afade=t=in:st=0:d=${PRESHOW_FADE_IN_MS / 1000.0}")
+                }
+                when (chain.size) {
+                    0 -> Unit
+                    1 -> add("af=${chain.single()}")
+                    else -> add("af=lavfi=[${chain.joinToString(",")}]")
+                }
+            },
         )
     }
 
     // mpv "mute"/"volume" properties queue until the handle exists, so they survive the async attach.
-    LaunchedEffect(controller, sourceUrl, muted, effectiveVolume) {
+    LaunchedEffect(controller, sourceUrl, effectiveMuted, effectiveVolume) {
+        // The pre-show level never changes after attach, and the init options already set it.
+        if (preshow) return@LaunchedEffect
         controller.updateControls(
             PlayerControlsState(
+                heroTrailerMode = true,
+                heroTrailerBackgroundColor = backgroundHex,
+                heroTrailerLogoUrl = logoUrl?.takeIf { it.isNotBlank() }.orEmpty(),
+                heroTrailerTitle = title,
+                heroTrailerMeta = meta,
+                heroTrailerDescription = description,
                 isLoading = true,
-                heroTrailer = PlayerHeroTrailerState(
-                    enabled = true,
-                    backgroundColor = backgroundHex,
-                    logoUrl = logoUrl?.takeIf { it.isNotBlank() }.orEmpty(),
-                    title = title,
-                    meta = meta,
-                    description = description,
-                    muted = muted,
-                    volume = effectiveVolume,
-                    navDismissEdge = navDismissEdge,
-                    navDismissBandFraction = navDismissBandFraction,
-                ),
+                heroTrailerMuted = effectiveMuted,
+                heroTrailerVolume = effectiveVolume,
+                heroTrailerNavDismissEdge = navDismissEdge,
+                heroTrailerNavDismissBandFraction = navDismissBandFraction,
             ),
         )
-        controller.setMpvProperty("mute", if (muted) "yes" else "no")
+        controller.setMpvProperty("mute", if (effectiveMuted) "yes" else "no")
         controller.setMpvProperty("volume", effectiveVolume.toString())
         // Reflect programmatic ([ / ]) volume changes on the overlay slider immediately.
         controller.setHeroTrailerVolume(effectiveVolume)
@@ -248,8 +272,8 @@ actual fun HomeHeroTrailerSurface(
     // hero rather than a pillarboxed PIP window. panscan queues until the handle exists.
     LaunchedEffect(controller, sourceUrl) {
         controller.setMpvProperty("panscan", "1.0")
-        // Trailer loudness is wildly inconsistent between uploads; smooth it out in real time.
-        controller.setMpvProperty("af", TRAILER_AUDIO_NORMALIZATION_FILTER)
+        // The loudness filter (trailers only) is an init option on attach, not set here: changing
+        // `af` on a live stream rebuilds the audio chain.
     }
 
     LaunchedEffect(controller, playWhenReady) {
@@ -259,8 +283,26 @@ actual fun HomeHeroTrailerSurface(
     LaunchedEffect(controller, sourceUrl, playWhenReady) {
         var endedReported = false
         var readyReported = false
+        var stallReported = false
+        var fadeOutStarted = false
+        var lastPositionMs = -1L
+        var lastProgressAtMs = System.currentTimeMillis()
         while (true) {
-            val snapshot = controller.snapshotOffUiThread()
+            val snapshot = controller.snapshot()
+            // A googlevideo connection reset can leave mpv "reconnecting" forever with no error and
+            // no end-of-file, which holds a pre-show on a frozen frame. No progress for a while
+            // counts as a failed playback, so the caller retries the fallback source or moves on.
+            val nowMs = System.currentTimeMillis()
+            if (snapshot.positionMs != lastPositionMs) {
+                lastPositionMs = snapshot.positionMs
+                lastProgressAtMs = nowMs
+            }
+            val stallLimitMs = if (readyReported) TRAILER_STALL_MS else TRAILER_START_STALL_MS
+            if (playWhenReady && !stallReported && !endedReported && nowMs - lastProgressAtMs > stallLimitMs) {
+                stallReported = true
+                trailerSurfaceLog.w { "playback stalled for ${nowMs - lastProgressAtMs}ms at ${snapshot.positionMs}ms" }
+                latestOnError.value()
+            }
             // A first paint can be a static startup frame while mpv is still buffering.
             // Reveal only once playback is genuinely advancing, keeping the artwork visible
             // through that otherwise noticeable frozen-frame interval.
@@ -275,6 +317,28 @@ actual fun HomeHeroTrailerSurface(
                 playbackRevealReady = true
                 trailerSurfaceLog.i { "playback moving; reveal at ${snapshot.positionMs}ms" }
                 latestOnReady.value()
+            }
+            // Pre-show only: ease the last second out instead of cutting the audio at end of file.
+            // It needs the duration, which a live stream may not report; then it simply ends as before.
+            if (
+                preshow &&
+                readyReported &&
+                !fadeOutStarted &&
+                snapshot.durationMs > PRESHOW_FADE_MS * 3 &&
+                snapshot.positionMs >= snapshot.durationMs - PRESHOW_FADE_MS
+            ) {
+                fadeOutStarted = true
+                launch {
+                    val startedNs = System.nanoTime()
+                    while (true) {
+                        val progress = ((System.nanoTime() - startedNs) / 1_000_000.0 / PRESHOW_FADE_MS).coerceIn(0.0, 1.0)
+                        // Squared so the steps stay small where the ear is most sensitive.
+                        val gain = (1.0 - progress) * (1.0 - progress)
+                        controller.setMpvProperty("volume", (PRESHOW_VOLUME * gain).roundToInt().toString())
+                        if (progress >= 1.0) break
+                        delay(25L)
+                    }
+                }
             }
             if (snapshot.isEnded && !endedReported) {
                 endedReported = true
@@ -300,6 +364,18 @@ actual fun HomeHeroTrailerSurface(
         }
     }
 }
+
+/** Pre-show items play at one fixed, full level; the loudness filter evens them out. */
+private const val PRESHOW_VOLUME = 100
+
+/** Length of the pre-show fade out at the end of an item. */
+private const val PRESHOW_FADE_MS = 1_000L
+
+/** Fade in at the start of an item: just long enough to avoid a click, short enough not to be a dip. */
+private const val PRESHOW_FADE_IN_MS = 120L
+
+private const val TRAILER_STALL_MS = 10_000L
+private const val TRAILER_START_STALL_MS = 20_000L
 
 private fun Color.toHeroTrailerHex(): String {
     fun channel(value: Float): String =

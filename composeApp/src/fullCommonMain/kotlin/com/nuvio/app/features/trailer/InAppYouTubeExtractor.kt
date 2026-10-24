@@ -18,6 +18,14 @@ internal const val TRAILER_REQUEST_TIMEOUT_MS = 20_000L
 
 private const val EXTRACTOR_TIMEOUT_MS = 30_000L
 
+/** Stable, always-available video used only to obtain a watch config when search runs first. */
+private const val SEARCH_SEED_VIDEO_ID = "jNQXAC9IVRw"
+private const val FALLBACK_WEB_CLIENT_VERSION = "2.20260101.00.00"
+
+/** YouTube Music's web client (WEB_REMIX). The version only has to look current; verify in the spike. */
+private const val MUSIC_CLIENT_ID = "67"
+private const val MUSIC_CLIENT_VERSION = "1.20260101.01.00"
+
 /**
  * How long a cached watch config is trusted. `visitorData` is a session token that YouTube
  * eventually retires; when it does, every client answers LOGIN_REQUIRED. Three hours keeps
@@ -25,19 +33,12 @@ private const val EXTRACTOR_TIMEOUT_MS = 30_000L
  * is recovered by the one-shot refresh retry rather than by this bound.
  */
 private const val WATCH_CONFIG_TTL_MS = 3L * 60L * 60L * 1000L
-
-/**
- * How long the watch page is left alone after it answers 429. A 429 there means YouTube is
- * throttling this IP's page loads; retrying on every hero rotation is what keeps it throttled.
- * The player API is a separate endpoint and usually still answers, so extraction carries on
- * with a keyless session meanwhile.
- */
-internal const val WATCH_PAGE_BACKOFF_MS = 10L * 60L * 1000L
 private const val PREFERRED_SEPARATE_CLIENT = "visionos"
 
 private val VIDEO_ID_REGEX = Regex("^[a-zA-Z0-9_-]{11}$")
 private val API_KEY_REGEX = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"")
 private val VISITOR_DATA_REGEX = Regex("\"VISITOR_DATA\":\"([^\"]+)\"")
+private val CLIENT_VERSION_REGEX = Regex("\"INNERTUBE_CONTEXT_CLIENT_VERSION\":\"([^\"]+)\"")
 private val QUALITY_LABEL_REGEX = Regex("(\\d{2,4})p")
 
 private data class YouTubeClient(
@@ -52,6 +53,7 @@ private data class YouTubeClient(
 private data class WatchConfig(
     val apiKey: String?,
     val visitorData: String?,
+    val clientVersion: String? = null,
 )
 
 internal data class StreamCandidate(
@@ -156,20 +158,7 @@ private val CLIENTS = listOf(
     ),
 )
 
-internal typealias TrailerRequester = suspend (
-    url: String,
-    method: String,
-    headers: Map<String, String>,
-    body: String?,
-    timeoutMillis: Long,
-) -> TrailerRequestResponse
-
-class InAppYouTubeExtractor internal constructor(
-    private val performRequest: TrailerRequester,
-    private val nowMs: () -> Long,
-) {
-    constructor() : this(TrailerExtractionPlatform::performRequest, LibraryClock::nowEpochMs)
-
+class InAppYouTubeExtractor {
     private val log = Logger.withTag(TRAILER_EXTRACTOR_TAG)
 
     /**
@@ -181,14 +170,11 @@ class InAppYouTubeExtractor internal constructor(
     private var cachedConfig: CachedWatchConfig? = null
     private val configMutex = Mutex()
 
-    /** Epoch ms before which the watch page is not requested; set when it answers 429. */
-    private var watchPageBackoffUntilMs = 0L
-
-    /** [apiKey] is null for a keyless session bootstrapped from the player API. */
     private data class CachedWatchConfig(
-        val apiKey: String?,
+        val apiKey: String,
         val visitorData: String?,
         val fetchedAtMs: Long,
+        val clientVersion: String? = null,
     )
 
     suspend fun extractPlaybackSource(youtubeUrl: String): TrailerResolution = withContext(Dispatchers.Default) {
@@ -229,10 +215,6 @@ class InAppYouTubeExtractor internal constructor(
      *
      * The requested video's own watch page is used, so the first extraction costs exactly what
      * it always did and no placeholder video ID is needed.
-     *
-     * When the page is unusable — throttled (429), any other error, or a page without the key
-     * such as a consent interstitial — extraction falls back to a keyless session from
-     * [bootstrapKeylessConfig] rather than failing.
      */
     private suspend fun ensureWatchConfig(videoId: String, forceRefresh: Boolean): CachedWatchConfig =
         configMutex.withLock {
@@ -240,77 +222,39 @@ class InAppYouTubeExtractor internal constructor(
                 cachedConfig?.takeIf { !it.isStale() }?.let { return@withLock it }
             }
 
-            if (nowMs() < watchPageBackoffUntilMs) {
-                // A forced refresh still deserves a new session; it just can't come from the page.
-                if (!forceRefresh) cachedConfig?.let { return@withLock it }
-                return@withLock bootstrapKeylessConfig(videoId)
-            }
-
-            val watchResponse = performRequest(
-                "https://www.youtube.com/watch?v=$videoId&hl=en",
-                "GET",
-                TrailerExtractionPlatform.defaultHeaders,
-                null,
-                TRAILER_REQUEST_TIMEOUT_MS,
+            val watchResponse = TrailerExtractionPlatform.performRequest(
+                url = "https://www.youtube.com/watch?v=$videoId&hl=en",
+                method = "GET",
+                headers = TrailerExtractionPlatform.defaultHeaders,
+                body = null,
+                timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
             )
             if (!watchResponse.ok) {
-                if (watchResponse.status == 429) {
-                    watchPageBackoffUntilMs = nowMs() + WATCH_PAGE_BACKOFF_MS
-                    log.w { "Watch page throttled (429); skipping it for ${WATCH_PAGE_BACKOFF_MS / 60_000} min" }
-                }
                 // A stale config still usually works; failing outright would turn a transient
                 // network blip into an unplayable trailer.
                 cachedConfig?.let { stale ->
                     log.w { "Watch page failed (${watchResponse.status}), reusing cached config" }
                     return@withLock stale
                 }
-                log.w { "Watch page failed (${watchResponse.status}), using a keyless session" }
-                return@withLock bootstrapKeylessConfig(videoId)
+                throw IllegalStateException("Failed to fetch watch page (${watchResponse.status})")
             }
 
             val parsed = getWatchConfig(watchResponse.body)
-            val apiKey = parsed.apiKey ?: run {
-                log.w { "Watch page had no INNERTUBE_API_KEY, using a keyless session" }
-                return@withLock bootstrapKeylessConfig(videoId)
-            }
+            val apiKey = parsed.apiKey
+                ?: throw IllegalStateException("Unable to extract INNERTUBE_API_KEY")
             CachedWatchConfig(
                 apiKey = apiKey,
                 visitorData = parsed.visitorData,
-                fetchedAtMs = nowMs(),
+                fetchedAtMs = LibraryClock.nowEpochMs(),
+                clientVersion = parsed.clientVersion,
             ).also {
                 cachedConfig = it
                 log.i { "Watch config cached (visitorData=${!it.visitorData.isNullOrBlank()})" }
             }
         }
 
-    /**
-     * Builds a session without the watch page. The player API needs no key, but a request
-     * without `visitorData` answers LOGIN_REQUIRED — while still issuing a fresh `visitorData`
-     * in `responseContext`. One throwaway player call therefore yields a session that every
-     * client then accepts. Caller holds [configMutex].
-     */
-    private suspend fun bootstrapKeylessConfig(videoId: String): CachedWatchConfig {
-        val response = fetchPlayerResponse(
-            apiKey = null,
-            videoId = videoId,
-            client = CLIENTS.first(),
-            visitorData = null,
-        )
-        val visitorData = response.objectValue("responseContext")?.stringValue("visitorData")
-            ?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("Unable to bootstrap a keyless YouTube session")
-        return CachedWatchConfig(
-            apiKey = null,
-            visitorData = visitorData,
-            fetchedAtMs = nowMs(),
-        ).also {
-            cachedConfig = it
-            log.i { "Keyless watch config cached" }
-        }
-    }
-
     private fun CachedWatchConfig.isStale(): Boolean =
-        nowMs() - fetchedAtMs > WATCH_CONFIG_TTL_MS
+        LibraryClock.nowEpochMs() - fetchedAtMs > WATCH_CONFIG_TTL_MS
 
     private suspend fun extractPlaybackSourceInternal(
         youtubeUrl: String,
@@ -469,7 +413,9 @@ class InAppYouTubeExtractor internal constructor(
         log.i {
             "Selected trailer streams adaptive=${bestVideo?.height ?: 0}p/${bestVideo?.fps ?: 0}fps " +
                 "progressive=${bestProgressive?.height ?: 0}p manifest=${bestManifest?.height ?: 0}p " +
-                "separateAudio=${bestAudio != null}"
+                "separateAudio=${bestAudio != null} " +
+                "clients[video=${bestVideo?.client} audio=${bestAudio?.client} " +
+                "progressive=${bestProgressive?.client} manifest=${bestManifest?.client}]"
         }
 
         val source = TrailerExtractionPlatform.buildPlaybackSource(
@@ -478,9 +424,115 @@ class InAppYouTubeExtractor internal constructor(
             bestVideo = bestVideo,
             bestAudio = bestAudio,
         )
-        return source?.let { TrailerResolution.Available(it) }
+        // The upload's real ceiling, so uploads of the same trailer can be compared: the HLS ladder
+        // often tops out above the adaptive rendition that is picked for playback.
+        val tallest = maxOf(bestManifest?.height ?: 0, bestVideo?.height ?: 0, bestProgressive?.height ?: 0)
+        val reliable = bestVideo?.client == PREFERRED_SEPARATE_CLIENT || bestManifest?.client == PREFERRED_SEPARATE_CLIENT
+        return source?.let { TrailerResolution.Available(it.copy(heightPx = tallest, reliable = reliable)) }
             ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
     }
+
+    /**
+     * Searches YouTube for videos matching [query] through the same InnerTube session the player
+     * requests use. Best effort: any failure is an empty list, so a trailer still plays from the
+     * listed uploads when search is unavailable. Quality is not in search results; callers resolve
+     * the hits they care about and compare heights.
+     */
+    suspend fun searchVideos(query: String): List<YouTubeSearchHit> = withContext(Dispatchers.Default) {
+        runCatching {
+            withTimeout(EXTRACTOR_TIMEOUT_MS) {
+                // The config is per session, so it is normally cached by the time a search is
+                // needed; a known-good video id seeds it when nothing has been extracted yet.
+                val config = ensureWatchConfig(SEARCH_SEED_VIDEO_ID, forceRefresh = false)
+                val clientVersion = config.clientVersion ?: FALLBACK_WEB_CLIENT_VERSION
+                val headers = buildMap {
+                    putAll(TrailerExtractionPlatform.defaultHeaders)
+                    put("content-type", "application/json")
+                    put("origin", "https://www.youtube.com")
+                    put("x-youtube-client-name", "1")
+                    put("x-youtube-client-version", clientVersion)
+                    if (!config.visitorData.isNullOrBlank()) put("x-goog-visitor-id", config.visitorData)
+                }
+                val payload = jsonObjectOf(
+                    "query" to query,
+                    // Restricts results to videos (no channels, playlists or shorts shelves).
+                    "params" to "EgIQAQ==",
+                    "context" to jsonObjectOf(
+                        "client" to jsonObjectOf(
+                            "clientName" to "WEB",
+                            "clientVersion" to clientVersion,
+                            "hl" to "en",
+                            "gl" to "US",
+                        ),
+                    ),
+                )
+                val response = TrailerExtractionPlatform.performRequest(
+                    url = "https://www.youtube.com/youtubei/v1/search?key=${encodeUrlComponent(config.apiKey)}",
+                    method = "POST",
+                    headers = headers,
+                    body = payload.toString(),
+                    timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+                )
+                if (!response.ok) {
+                    log.w { "YouTube search failed (${response.status}) for \"$query\": ${response.body.take(160)}" }
+                    return@withTimeout emptyList()
+                }
+                parseYouTubeSearchHits(response.body).also {
+                    log.i { "YouTube search \"$query\": ${it.size} videos" }
+                }
+            }
+        }.onFailure {
+            log.w { "YouTube search failed for \"$query\": ${it.message}" }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * POSTs [params] to YouTube Music's InnerTube [endpoint] ("search", "browse", "next") as the
+     * WEB_REMIX client and returns the response body, or null on any failure. It rides on the same
+     * session as [searchVideos] (API key and visitor data from the watch page), so the music
+     * client needs no session handling of its own.
+     */
+    internal suspend fun musicRequest(endpoint: String, params: Map<String, Any?>): String? =
+        withContext(Dispatchers.Default) {
+            runCatching {
+                withTimeout(EXTRACTOR_TIMEOUT_MS) {
+                    val config = ensureWatchConfig(SEARCH_SEED_VIDEO_ID, forceRefresh = false)
+                    val headers = buildMap {
+                        putAll(TrailerExtractionPlatform.defaultHeaders)
+                        put("content-type", "application/json")
+                        put("origin", "https://music.youtube.com")
+                        put("x-youtube-client-name", MUSIC_CLIENT_ID)
+                        put("x-youtube-client-version", MUSIC_CLIENT_VERSION)
+                        if (!config.visitorData.isNullOrBlank()) put("x-goog-visitor-id", config.visitorData)
+                    }
+                    val payload = jsonObjectOf(
+                        *params.map { it.key to it.value }.toTypedArray(),
+                        "context" to jsonObjectOf(
+                            "client" to jsonObjectOf(
+                                "clientName" to "WEB_REMIX",
+                                "clientVersion" to MUSIC_CLIENT_VERSION,
+                                "hl" to "en",
+                                "gl" to "US",
+                            ),
+                        ),
+                    )
+                    val response = TrailerExtractionPlatform.performRequest(
+                        url = "https://music.youtube.com/youtubei/v1/$endpoint?key=${encodeUrlComponent(config.apiKey)}&prettyPrint=false",
+                        method = "POST",
+                        headers = headers,
+                        body = payload.toString(),
+                        timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+                    )
+                    if (!response.ok) {
+                        log.w { "YouTube Music $endpoint failed (${response.status}): ${response.body.take(160)}" }
+                        return@withTimeout null
+                    }
+                    response.body
+                }
+            }.onFailure {
+                log.w { "YouTube Music $endpoint failed: ${it.message}" }
+            }.getOrNull()
+        }
 
     /**
      * Reads YouTube's own explanation for why a video has no streamable formats. The reason
@@ -510,13 +562,12 @@ class InAppYouTubeExtractor internal constructor(
     }
 
     private suspend fun fetchPlayerResponse(
-        apiKey: String?,
+        apiKey: String,
         videoId: String,
         client: YouTubeClient,
         visitorData: String?,
     ): JsonObject {
-        val endpoint = "https://www.youtube.com/youtubei/v1/player" +
-            apiKey?.let { "?key=${encodeUrlComponent(it)}" }.orEmpty()
+        val endpoint = "https://www.youtube.com/youtubei/v1/player?key=${encodeUrlComponent(apiKey)}"
 
         val headers = buildMap {
             putAll(TrailerExtractionPlatform.defaultHeaders)
@@ -538,7 +589,13 @@ class InAppYouTubeExtractor internal constructor(
             ),
         )
 
-        val response = performRequest(endpoint, "POST", headers, payload.toString(), TRAILER_REQUEST_TIMEOUT_MS)
+        val response = TrailerExtractionPlatform.performRequest(
+            url = endpoint,
+            method = "POST",
+            headers = headers,
+            body = payload.toString(),
+            timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+        )
 
         if (!response.ok) {
             val preview = response.body.take(200)
@@ -550,12 +607,12 @@ class InAppYouTubeExtractor internal constructor(
     }
 
     private suspend fun parseHlsManifest(manifestUrl: String): ManifestBestVariant? {
-        val response = performRequest(
-            manifestUrl,
-            "GET",
-            TrailerExtractionPlatform.defaultHeaders,
-            null,
-            TRAILER_REQUEST_TIMEOUT_MS,
+        val response = TrailerExtractionPlatform.performRequest(
+            url = manifestUrl,
+            method = "GET",
+            headers = TrailerExtractionPlatform.defaultHeaders,
+            body = null,
+            timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
         )
         if (!response.ok) {
             throw IllegalStateException("Failed to fetch HLS manifest (${response.status})")
@@ -636,7 +693,8 @@ class InAppYouTubeExtractor internal constructor(
     private fun getWatchConfig(html: String): WatchConfig {
         val apiKey = API_KEY_REGEX.find(html)?.groupValues?.getOrNull(1)
         val visitorData = VISITOR_DATA_REGEX.find(html)?.groupValues?.getOrNull(1)
-        return WatchConfig(apiKey = apiKey, visitorData = visitorData)
+        val clientVersion = CLIENT_VERSION_REGEX.find(html)?.groupValues?.getOrNull(1)
+        return WatchConfig(apiKey = apiKey, visitorData = visitorData, clientVersion = clientVersion)
     }
 
     private fun parseHlsAttributeList(line: String): Map<String, String> {

@@ -8,6 +8,16 @@ const isHeroTrailerSurface = (() => {
   }
 })();
 
+// The pre-show pipeline plays each clip and trailer as a plain video: a Skip button and nothing else
+// (no mute, no volume slider). Known from the page URL, like the hero-trailer flag above.
+const isPreshowSurface = (() => {
+  try {
+    return new URLSearchParams(location.search).get("preshow") === "1";
+  } catch (_err) {
+    return false;
+  }
+})();
+
 const root = document.getElementById("playerRoot");
 const contextMenu = document.getElementById("contextMenu");
 const seek = document.getElementById("seek");
@@ -37,8 +47,6 @@ const pauseTitle = document.getElementById("pauseTitle");
 const pauseSource = document.getElementById("pauseSource");
 const pauseSourceTitle = document.getElementById("pauseSourceTitle");
 const pauseSourceProvider = document.getElementById("pauseSourceProvider");
-const pauseCast = document.getElementById("pauseCast");
-const pauseCastList = document.getElementById("pauseCastList");
 const pauseEpisodeLine = document.getElementById("pauseEpisodeLine");
 const pauseEpisodeInfo = document.getElementById("pauseEpisodeInfo");
 const pauseEpisodeSeparator = document.getElementById("pauseEpisodeSeparator");
@@ -48,7 +56,6 @@ const toggle = document.getElementById("toggle");
 const toggleIcon = document.getElementById("toggleIcon");
 const lockIcon = document.getElementById("lockIcon");
 const title = document.getElementById("title");
-const titleBadges = document.getElementById("titleBadges");
 const episode = document.getElementById("episode");
 const streamTitle = document.getElementById("streamTitle");
 const providerName = document.getElementById("providerName");
@@ -131,25 +138,6 @@ const sourcesButton = document.getElementById("sourcesButton");
 const episodesButton = document.getElementById("episodesButton");
 const episodeNotch = document.getElementById("episodeNotch");
 const episodeNotchLabel = document.getElementById("episodeNotchLabel");
-const iptvNow = document.getElementById("iptvNow");
-const iptvNowTime = document.getElementById("iptvNowTime");
-const iptvNowTitle = document.getElementById("iptvNowTitle");
-const iptvNowTrack = document.getElementById("iptvNowTrack");
-const iptvNowFill = document.getElementById("iptvNowFill");
-const iptvNext = document.getElementById("iptvNext");
-const iptvLiveBadge = document.getElementById("iptvLiveBadge");
-const iptvLiveLabel = document.getElementById("iptvLiveLabel");
-const iptvLiveBehind = document.getElementById("iptvLiveBehind");
-const iptvNumber = document.getElementById("iptvNumber");
-const iptvChannelModal = document.getElementById("iptvChannelModal");
-const iptvGroupButton = document.getElementById("iptvGroupButton");
-const iptvChannelCloseButton = document.getElementById("iptvChannelCloseButton");
-const iptvPanelNote = document.getElementById("iptvPanelNote");
-const iptvChannelList = document.getElementById("iptvChannelList");
-const iptvGroupList = document.getElementById("iptvGroupList");
-const iptvChannelsButton = document.getElementById("iptvChannelsButton");
-const iptvChannelsLabel = document.getElementById("iptvChannelsLabel");
-const iptvSearchInput = document.getElementById("iptvSearchInput");
 const sourceNotch = document.getElementById("sourceNotch");
 const lockedLabel = document.getElementById("lockedLabel");
 const audioModal = document.getElementById("audioModal");
@@ -318,8 +306,6 @@ let state = {
   desktopColorProfileLabel: "Neutral",
   desktopAnimeModeLabel: "Off",
   desktopAnimeSvpEnabled: false,
-  rtxVsrEnabled: false,
-  rtxTrueHdrEnabled: false,
   seekThumbnailsEnabled: true,
   seekrVttUrl: "",
   seekrScale: 1,
@@ -358,8 +344,6 @@ let state = {
   subtitleAddonsTabLabel: "Addons",
   subtitleStyleTabLabel: "Style",
   downloadSubtitleLabel: "Download subtitle",
-  autoSyncedSubtitleLabel: "Synced by Auto Sync",
-  pauseOverlayCast: [],
   noneLabel: "None",
   fetchSubtitlesLabel: "Tap to fetch subtitles",
   subtitleDelayLabel: "Subtitle Delay",
@@ -573,13 +557,6 @@ let submitIntroDraft = {
   status: "",
 };
 let hasReceivedPlayerControls = false;
-// mpv's loading state from the native playerUpdate push; null until the first push arrives.
-let nativeIsLoading = null;
-// The spinner appears only once loading has lasted this long, and hides at once. In-cache seeks
-// finish in 10–40 ms; showing the spinner for each was the "lag" felt on every local seek.
-const BUFFERING_SHOW_DELAY_MS = 250;
-let bufferingWantedSince = 0;
-let bufferingShowTimer = 0;
 let parentalGuideRunId = 0;
 let parentalGuideStartedKey = "";
 let parentalGuideCompletedKey = "";
@@ -736,40 +713,10 @@ const chromeInteractionSelector = [
   ".modal-layer",
   ".skip-prompt",
   ".next-episode-card",
-  ".party-pill",
   "#heroTrailerChrome",
 ].join(",");
 
-// Play/pause intent from the HUD itself, shown at once and held briefly. The real state arrives
-// from two producers (the native mpv push and Kotlin's controls push) at different latencies, so
-// rapid toggling used to show whichever stale copy landed last until both caught up.
-const PLAY_INTENT_HOLD_MS = 900;
-let playIntent = null;
-let playIntentAt = 0;
-let playIntentTimer = 0;
-const displayedIsPlaying = () => {
-  if (playIntent !== null && performance.now() - playIntentAt < PLAY_INTENT_HOLD_MS) return playIntent;
-  playIntent = null;
-  return Boolean(state.isPlaying);
-};
-const notePlayToggleIntent = () => {
-  playIntent = !displayedIsPlaying();
-  playIntentAt = performance.now();
-  window.clearTimeout(playIntentTimer);
-  // Re-render once the hold lapses so the icon settles on the confirmed state.
-  playIntentTimer = window.setTimeout(() => renderChrome(), PLAY_INTENT_HOLD_MS + 20);
-  renderChrome();
-};
-
-// Rewriting a <use> href rebuilds its shadow instance even when the value is unchanged. A redraw
-// landing between press and release then removes the element that was pressed, and Chromium drops
-// the click — which is how play/pause "missed" clicks once state pushes made redraws frequent.
-const setIconHref = (icon, href) => {
-  if (icon && icon.getAttribute("href") !== href) icon.setAttribute("href", href);
-};
-
 const send = (type, value = 0) => {
-  if ((type === "toggle" || type === "keyboardToggle") && !state.isLocked) notePlayToggleIntent();
   const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
   if (bridge) {
     bridge.postMessage({ type, value });
@@ -1005,16 +952,12 @@ const applyMinimalHudTimeLayout = enabled => {
   if (enabled) {
     minimalTime.insertBefore(positionLabel, minimalTimeSeparator);
     minimalTime.appendChild(durationLabel);
-    // Live TV's badge follows the time into the control row. Left alone at the end of this
-    // layout's slim, edge-to-edge seek row it had no column of its own and sat over the controls.
-    minimalTime.after(iptvLiveBadge);
     minimalTime.setAttribute("aria-hidden", "false");
     return;
   }
   const timelineRow = timeline.parentElement;
   timelineRow.insertBefore(positionLabel, timeline);
   timelineRow.appendChild(durationLabel);
-  timelineRow.appendChild(iptvLiveBadge);
   minimalTime.setAttribute("aria-hidden", "true");
 };
 
@@ -1040,12 +983,6 @@ const applyUltraHudLayout = enabled => {
 };
 
 const setProgress = (positionMs, durationMs) => {
-  // Live TV: positions arrive absolute; draw them against the rewind window.
-  const liveWindow = iptvLiveWindow();
-  if (liveWindow) {
-    positionMs = Math.max(0, positionMs - liveWindow.start);
-    durationMs = liveWindow.end - liveWindow.start;
-  }
   const percent = durationMs > 0 ? Math.max(0, Math.min(100, positionMs / durationMs * 100)) : 0;
   seek.value = Math.round(percent * 10);
   seek.style.setProperty("--progress", `${percent}%`);
@@ -1060,9 +997,7 @@ const setProgress = (positionMs, durationMs) => {
     pipSeek.style.setProperty("--progress", `${percent}%`);
     pipSeek.style.setProperty("--buffered", `${bufferedPercent}%`);
   }
-  positionLabel.textContent = liveWindow
-    ? `-${formatTime(Math.max(0, durationMs - positionMs))}`
-    : formatTime(positionMs);
+  positionLabel.textContent = formatTime(positionMs);
   // Read through the same helper the click handler uses, so a countdown keeps counting down as
   // playback advances rather than freezing at whatever it read when the label was tapped.
   durationLabel.textContent = durationLabelText(durationMs, positionMs);
@@ -1453,66 +1388,8 @@ const syncPauseMetadataTimer = showOpening => {
   }, prefersReducedMotion ? 1 : 4000);
 };
 
-const castInitials = name => String(name || "")
-  .split(/\s+/)
-  .filter(Boolean)
-  .slice(0, 2)
-  .map(part => part[0].toUpperCase())
-  .join("");
-
-// renderChrome runs on every state push; rebuild the cast rows only when the cast itself changes,
-// so portraits are not refetched and do not flicker while the overlay is up.
-let pauseCastRenderKey = "";
-const renderPauseCast = () => {
-  const cast = (Array.isArray(state.pauseOverlayCast) ? state.pauseOverlayCast : [])
-    .filter(member => String(member?.name || "").trim());
-  pauseCast.hidden = cast.length === 0;
-  const key = JSON.stringify(cast.map(member => [member.name, member.role, member.photo]));
-  if (key === pauseCastRenderKey) return;
-  pauseCastRenderKey = key;
-  pauseCastList.replaceChildren(...cast.map(member => {
-    const row = document.createElement("li");
-    row.className = "pause-cast-member";
-    const initials = () => {
-      const badge = document.createElement("span");
-      badge.className = "pause-cast-photo";
-      badge.setAttribute("aria-hidden", "true");
-      badge.textContent = castInitials(member.name);
-      return badge;
-    };
-    const photoUrl = String(member.photo || "").trim();
-    if (photoUrl) {
-      const photo = document.createElement("img");
-      photo.className = "pause-cast-photo";
-      photo.alt = "";
-      photo.decoding = "async";
-      photo.addEventListener("error", () => photo.replaceWith(initials()), { once: true });
-      photo.src = photoUrl;
-      row.appendChild(photo);
-    } else {
-      row.appendChild(initials());
-    }
-    const text = document.createElement("span");
-    text.className = "pause-cast-text";
-    const name = document.createElement("span");
-    name.className = "pause-cast-name";
-    name.textContent = member.name;
-    text.appendChild(name);
-    const roleText = String(member.role || "").trim();
-    if (roleText) {
-      const role = document.createElement("span");
-      role.className = "pause-cast-role";
-      role.textContent = roleText;
-      text.appendChild(role);
-    }
-    row.appendChild(text);
-    return row;
-  }));
-};
-
 const renderPauseMetadataOverlay = showOpening => {
   syncPauseMetadataTimer(showOpening);
-  renderPauseCast();
 
   const logoUrl = usableLogoSource(pauseLogo, state.pauseOverlayLogo);
   const titleText = String(state.title || "").trim();
@@ -1571,10 +1448,6 @@ const normalizedOpeningProgress = () => {
 const playbackErrorText = () => String(state.playbackErrorMessage || "").trim();
 
 const rangePositionMs = (input = seek) => {
-  const liveWindow = iptvLiveWindow();
-  if (liveWindow) {
-    return Math.round(liveWindow.start + (liveWindow.end - liveWindow.start) * Number(input.value) / 1000);
-  }
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   return durationMs > 0 ? Math.round(durationMs * Number(input.value) / 1000) : 0;
 };
@@ -1689,313 +1562,6 @@ subtitleHexModal.addEventListener("click", event => {
   if (event.target === subtitleHexModal) closeSubtitleHexPrompt();
 });
 
-// --- Watch party -------------------------------------------------------------------------------
-// The party pill and panel. Kotlin sends `state.party` (PlayerControlPartyState) with every label
-// already localized, and hears clicks as `party*` events (handlePartyControlsEvent). The panel is
-// rebuilt only when its data changes, because render() runs on every position tick.
-const partyButton = document.getElementById("partyButton");
-const partyButtonLabel = document.getElementById("partyButtonLabel");
-const partyPill = document.getElementById("partyPill");
-const partyPillAvatars = document.getElementById("partyPillAvatars");
-const partyPillText = document.getElementById("partyPillText");
-const partyModal = document.getElementById("partyModal");
-const partyPanelTitle = document.getElementById("partyPanelTitle");
-const partyCloseButton = document.getElementById("partyCloseButton");
-const partyBody = document.getElementById("partyBody");
-const PartyPillMaxAvatars = 4;
-// "" | "end" | "remove:<member index>": the inline confirmation the panel is showing.
-let partyConfirm = "";
-let partyPillSignature = "";
-let partyPanelSignature = "";
-
-const currentParty = () => (state.party && typeof state.party === "object" ? state.party : {});
-const partyLabel = (key, fallback = "") => {
-  const labels = currentParty().labels || {};
-  return labels[key] || fallback;
-};
-
-const partyElement = (tag, className, text) => {
-  const element = document.createElement(tag);
-  if (className) element.className = className;
-  if (text != null) element.textContent = text;
-  return element;
-};
-
-const partyButtonElement = (label, className, onClick, disabled = false) => {
-  const button = partyElement("button", `panel-button ${className || ""}`.trim(), label);
-  button.type = "button";
-  button.disabled = disabled;
-  button.addEventListener("click", event => {
-    event.stopPropagation();
-    button.blur();
-    onClick();
-  });
-  return button;
-};
-
-const partyAvatarElement = (member, className = "") => {
-  const avatar = partyElement("span", `party-avatar ${className}`.trim());
-  if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(member.color || "")) avatar.style.background = member.color;
-  avatar.appendChild(partyElement("span", "party-avatar-initials", member.initials || "?"));
-  if (/^https:\/\//i.test(member.avatarUrl || "")) {
-    const image = new Image();
-    image.className = "party-avatar-image";
-    image.alt = "";
-    image.referrerPolicy = "no-referrer";
-    image.addEventListener("error", () => image.remove());
-    image.src = member.avatarUrl;
-    avatar.appendChild(image);
-  }
-  return avatar;
-};
-
-const renderPartyChrome = (isChromeHidden, pictureInPictureActive) => {
-  const party = currentParty();
-  const partyTitle = partyLabel("title", "Watch party");
-  setVisible(partyButton, Boolean(party.available) && !state.heroTrailerMode);
-  partyButton.classList.toggle("selected", Boolean(party.active));
-  partyButtonLabel.textContent = partyTitle;
-  if (partyButton.dataset.tooltip !== partyTitle) {
-    partyButton.dataset.tooltip = partyTitle;
-    partyButton.setAttribute("aria-label", partyTitle);
-  }
-
-  const message = party.pillMessage || "";
-  const visible = Boolean(party.active) &&
-    !pictureInPictureActive &&
-    !state.isLocked &&
-    !state.heroTrailerMode &&
-    activeModal !== "party" &&
-    (Boolean(message) || !isChromeHidden);
-  partyPill.classList.toggle("visible", visible);
-  partyPill.setAttribute("aria-hidden", visible ? "false" : "true");
-  partyPill.tabIndex = visible ? 0 : -1;
-
-  const members = Array.isArray(party.members) ? party.members : [];
-  const signature = JSON.stringify([members.map(m => [m.name, m.avatarUrl, m.color, m.presence]), message]);
-  if (signature === partyPillSignature) return;
-  partyPillSignature = signature;
-  partyPillAvatars.replaceChildren();
-  members.slice(0, PartyPillMaxAvatars).forEach(member => {
-    partyPillAvatars.appendChild(partyAvatarElement(member, "small"));
-  });
-  if (members.length > PartyPillMaxAvatars) {
-    partyPillAvatars.appendChild(partyElement("span", "party-avatar small party-avatar-more", `+${members.length - PartyPillMaxAvatars}`));
-  }
-  partyPillText.textContent = message;
-  partyPillText.hidden = !message;
-};
-
-const partySwitchRow = (title, description, checked, eventType, note = "") => {
-  const row = partyElement("button", "party-switch-row");
-  row.type = "button";
-  row.setAttribute("role", "switch");
-  row.setAttribute("aria-checked", checked ? "true" : "false");
-  const text = partyElement("span", "party-switch-text");
-  text.appendChild(partyElement("span", "party-switch-title", title));
-  text.appendChild(partyElement("span", "party-switch-description", description));
-  if (note) text.appendChild(partyElement("span", "party-note", note));
-  row.appendChild(text);
-  const track = partyElement("span", `party-switch${checked ? " on" : ""}`);
-  track.appendChild(partyElement("span", "party-switch-thumb"));
-  row.appendChild(track);
-  row.addEventListener("click", event => {
-    event.stopPropagation();
-    row.blur();
-    send(eventType, checked ? 0 : 1);
-  });
-  return row;
-};
-
-const partyConfirmBlock = (title, message, confirmLabel, onConfirm) => {
-  const block = partyElement("div", "party-confirm");
-  block.appendChild(partyElement("div", "party-section-title", title));
-  if (message) block.appendChild(partyElement("div", "party-text", message));
-  const actions = partyElement("div", "modal-actions");
-  actions.appendChild(partyButtonElement(partyLabel("cancel", "Cancel"), "", () => {
-    partyConfirm = "";
-    renderPartyModal();
-  }));
-  actions.appendChild(partyButtonElement(confirmLabel, "primary danger", () => {
-    partyConfirm = "";
-    onConfirm();
-  }));
-  block.appendChild(actions);
-  return block;
-};
-
-const renderPartyStart = (party, body) => {
-  const hero = partyElement("div", "party-hero");
-  hero.appendChild(partyElement("div", "party-start-title", partyLabel("startTitle", "Watch together")));
-  hero.appendChild(partyElement("div", "party-text", partyLabel("startDescription")));
-  body.appendChild(hero);
-  if (party.startNote) {
-    body.appendChild(partyElement("div", "party-note", party.startNote));
-  } else {
-    body.appendChild(partyButtonElement(
-      partyLabel("startAction", "Start watch party"),
-      "primary party-wide",
-      () => send("partyStart", 0),
-      Boolean(party.busy),
-    ));
-  }
-  body.appendChild(partyElement("div", "party-note", partyLabel("experimental")));
-};
-
-const renderPartyMembers = (party, body) => {
-  const members = Array.isArray(party.members) ? party.members : [];
-  const section = partyElement("div", "party-section");
-  section.appendChild(partyElement("div", "form-label", partyLabel("seats")));
-  members.forEach(member => {
-    if (partyConfirm === `remove:${member.index}`) {
-      section.appendChild(partyConfirmBlock(
-        partyLabel("removeTitle", "Remove {name}?").replace("{name}", member.name),
-        partyLabel("removeMessage"),
-        partyLabel("remove", "Remove"),
-        () => send("partyRemoveMember", Number(member.index)),
-      ));
-      return;
-    }
-    const row = partyElement("div", "party-member");
-    const avatar = partyAvatarElement(member);
-    avatar.appendChild(partyElement("span", `party-presence ${member.presence || "offline"}`));
-    row.appendChild(avatar);
-    const text = partyElement("div", "party-member-text");
-    const nameRow = partyElement("div", "party-member-name");
-    nameRow.appendChild(partyElement("span", "", member.isSelf ? `${member.name} (${partyLabel("you", "You")})` : member.name));
-    if (member.isHost) nameRow.appendChild(partyElement("span", "party-chip", partyLabel("host", "Host")));
-    text.appendChild(nameRow);
-    text.appendChild(partyElement("div", "party-member-status", member.status || ""));
-    row.appendChild(text);
-    if (member.canRemove) {
-      row.appendChild(partyButtonElement(partyLabel("remove", "Remove"), "", () => {
-        partyConfirm = `remove:${member.index}`;
-        renderPartyModal();
-      }));
-    }
-    section.appendChild(row);
-  });
-  body.appendChild(section);
-};
-
-const renderPartyActive = (party, body) => {
-  if (party.behindTitle) {
-    const behind = partyElement("div", "party-section");
-    behind.appendChild(partyElement("div", "party-text strong", party.behindTitle));
-    behind.appendChild(partyButtonElement(partyLabel("catchUp", "Catch up"), "primary party-wide", () => {
-      send("partyCatchUp", 0);
-      closePlayerModal();
-    }));
-    body.appendChild(behind);
-  }
-
-  const code = partyElement("div", "party-code-row");
-  const codeText = partyElement("div", "party-code-text");
-  codeText.appendChild(partyElement("div", "form-label", partyLabel("codeLabel", "Party code")));
-  codeText.appendChild(partyElement("div", "party-code", party.code || ""));
-  if (!party.connected) codeText.appendChild(partyElement("div", "party-note", partyLabel("reconnecting", "")));
-  code.appendChild(codeText);
-  code.appendChild(partyButtonElement(partyLabel("copyInvite", "Copy invite"), "", () => send("partyCopyInvite", 0)));
-  body.appendChild(code);
-
-  renderPartyMembers(party, body);
-
-  if (party.isHost) {
-    const settings = partyElement("div", "party-section");
-    settings.appendChild(partySwitchRow(
-      partyLabel("hostOnlyTitle"),
-      partyLabel("hostOnlyDescription"),
-      Boolean(party.hostOnly),
-      "partyHostOnly",
-    ));
-    settings.appendChild(partySwitchRow(
-      partyLabel("shareTitle"),
-      partyLabel("shareDescription"),
-      Boolean(party.sharing),
-      "partySharing",
-      party.sharing && !party.canShareStream ? partyLabel("shareUnavailable") : "",
-    ));
-    body.appendChild(settings);
-  } else if (party.hostOnly) {
-    body.appendChild(partyElement("div", "party-note", partyLabel("hostOnlyNote")));
-  }
-
-  if (!party.sameMedia && party.elsewhereTitle) {
-    const elsewhere = partyElement("div", "party-section");
-    elsewhere.appendChild(partyElement("div", "party-text strong", party.elsewhereTitle));
-    elsewhere.appendChild(partyButtonElement(partyLabel("watchWithParty", "Watch with the party"), "primary party-wide", () => {
-      closePlayerModal();
-      send("partyWatchWithParty", 0);
-    }));
-    if (party.canControl) {
-      elsewhere.appendChild(partyButtonElement(partyLabel("playForEveryone", "Play this for everyone"), "party-wide", () => {
-        send("partyPlayForEveryone", 0);
-      }));
-    }
-    body.appendChild(elsewhere);
-  }
-
-  if (partyConfirm === "end") {
-    body.appendChild(partyConfirmBlock(
-      partyLabel("endTitle", "End the watch party?"),
-      partyLabel("endMessage"),
-      partyLabel("end", "End for everyone"),
-      () => {
-        send("partyEnd", 0);
-        closePlayerModal();
-      },
-    ));
-    return;
-  }
-  const actions = partyElement("div", "party-actions");
-  actions.appendChild(partyButtonElement(partyLabel("leave", "Leave party"), "", () => {
-    send("partyLeave", 0);
-    closePlayerModal();
-  }));
-  if (party.isHost) {
-    actions.appendChild(partyButtonElement(partyLabel("end", "End for everyone"), "danger", () => {
-      partyConfirm = "end";
-      renderPartyModal();
-    }));
-  }
-  body.appendChild(actions);
-};
-
-const renderPartyModal = () => {
-  const party = currentParty();
-  if (!party.active && partyConfirm) partyConfirm = "";
-  const signature = JSON.stringify([party, partyConfirm]);
-  if (signature === partyPanelSignature) return;
-  partyPanelSignature = signature;
-  partyPanelTitle.textContent = partyLabel("title", "Watch party");
-  partyCloseButton.textContent = partyLabel("close", "Close");
-  const scrollTop = partyBody.scrollTop;
-  partyBody.replaceChildren();
-  if (party.active) {
-    renderPartyActive(party, partyBody);
-  } else {
-    renderPartyStart(party, partyBody);
-  }
-  partyBody.scrollTop = scrollTop;
-};
-
-const openPartyModal = () => {
-  partyConfirm = "";
-  partyPanelSignature = "";
-  openPlayerModal("party");
-  send("partyPanelOpened", 0);
-};
-
-partyPill.addEventListener("click", event => {
-  event.stopPropagation();
-  partyPill.blur();
-  openPartyModal();
-});
-partyCloseButton.addEventListener("click", event => {
-  event.stopPropagation();
-  closePlayerModal();
-});
-
 const modalByName = {
   audio: audioModal,
   subtitles: subtitleModal,
@@ -2003,8 +1569,6 @@ const modalByName = {
   episodes: episodesModal,
   submitIntro: submitIntroModal,
   p2pConsent: p2pConsentModal,
-  party: partyModal,
-  iptvChannels: iptvChannelModal,
 };
 const modalElements = Object.values(modalByName);
 const modalCloseTimers = new Map();
@@ -2061,15 +1625,6 @@ const closePlayerModal = (notifyDismiss = false, animated = true) => {
   // used for the playing item.
   if (closingModal === "sources") {
     send("sourcesPanelClosed", 0);
-  }
-  if (closingModal === "party") {
-    partyConfirm = "";
-    send("partyPanelClosed", 0);
-  }
-  if (closingModal === "iptvChannels") {
-    resetIptvSearch();
-    if (document.activeElement === iptvSearchInput) focusShortcutRoot();
-    send("iptvPanelOpen", 0);
   }
   if (keyboardPanelMode && closingModal === keyboardPanelMode) {
     keyboardPanelMode = "";
@@ -2285,7 +1840,6 @@ const contextMenuItems = [
         { label: "Fit", action: "resizeMode:0", selectedField: "resizeModeLabel" },
         { label: "Fill", action: "resizeMode:1", selectedField: "resizeModeLabel" },
         { label: "Zoom", action: "resizeMode:2", selectedField: "resizeModeLabel" },
-        { label: "Auto crop", action: "resizeMode:3", selectedField: "resizeModeLabel" },
       ] },
       { label: "Video settings", children: [
         { label: "Auto", action: "send:selectDesktopHdrMode:0", selectedField: "desktopHdrModeLabel" },
@@ -2303,9 +1857,6 @@ const contextMenuItems = [
       ] },
       { label: "Anime shader", dynamicKey: "animeShaders", children: [] },
       { label: "SVP interpolation", action: "send:keyboardCycleAnimeSvp", toggleKey: "desktopAnimeSvpEnabled" },
-      // This session only; the saved defaults stay in Settings > Playback. Neither runs with SVP.
-      { label: "RTX Super Resolution", action: "send:toggleRtxVsr", toggleKey: "rtxVsrEnabled" },
-      { label: "RTX True HDR", action: "send:toggleRtxTrueHdr", toggleKey: "rtxTrueHdrEnabled" },
       { label: "Advanced (mpv)", dynamicKey: "mpvOptions", children: [] },
       { label: "UI scale", children: uiScalePresetItems },
       { label: "Controls layout", children: hudLayoutItems },
@@ -2636,23 +2187,13 @@ const openSubtitleContextTab = tab => {
   send("subtitleTab", tab);
 };
 
-// Auto crop needs a few frames (~10 s) before the bars come off, so its pill says so and stays
-// up longer; otherwise picking it looks like nothing happened.
-const showAspectPill = label => {
-  if (label === "Auto crop") {
-    window.nuvioShowPresetPill("Aspect ratio", "Auto crop · detecting bars, ~10s", 4000);
-  } else {
-    window.nuvioShowPresetPill("Aspect ratio", label);
-  }
-};
-
 const cycleAspectFromControls = () => {
-  const modes = ["Fit", "Fill", "Zoom", "Auto crop"];
+  const modes = ["Fit", "Fill", "Zoom"];
   const currentIndex = Math.max(0, modes.findIndex(mode => mode.toLowerCase() === String(state.resizeModeLabel || "Fit").toLowerCase()));
   const next = modes[(currentIndex + 1) % modes.length];
   state = { ...state, resizeModeLabel: next };
   if (resizeLabel) resizeLabel.textContent = next;
-  showAspectPill(next);
+  window.nuvioShowPresetPill("Aspect ratio", next);
   send("resize", 0);
 };
 
@@ -2686,11 +2227,11 @@ const executeContextAction = action => {
   }
   if (kind === "resizeMode") {
     const index = Number(parts.shift() || 0);
-    const label = ["Fit", "Fill", "Zoom", "Auto crop"][index] || "Fit";
+    const label = ["Fit", "Fill", "Zoom"][index] || "Fit";
     state = { ...state, resizeModeLabel: label };
     if (resizeLabel) resizeLabel.textContent = label;
     refreshContextMenuIndicators();
-    showAspectPill(label);
+    window.nuvioShowPresetPill("Aspect ratio", label);
     send("selectResizeMode", index);
     return;
   }
@@ -3356,7 +2897,6 @@ const renderAddonSubtitleList = () => {
     Boolean(state.isLoadingAddonSubtitles),
     state.fetchSubtitlesLabel || "",
     state.downloadSubtitleLabel || "",
-    state.autoSyncedSubtitleLabel || "",
     items.map(item => [
       item.index,
       item.id,
@@ -3365,7 +2905,6 @@ const renderAddonSubtitleList = () => {
       item.addonName,
       Boolean(item.isSelected),
       Boolean(item.isDownloading),
-      Boolean(item.isAutoSynced),
     ]),
   ]);
   if (nextRenderKey === addonSubtitleListRenderKey) return;
@@ -3434,21 +2973,6 @@ const renderAddonSubtitleList = () => {
       copy.appendChild(detail);
     }
     row.appendChild(copy);
-    if (item.isAutoSynced) {
-      const syncedLabel = state.autoSyncedSubtitleLabel || "Synced by Auto Sync";
-      const synced = document.createElement("span");
-      synced.className = "subtitle-synced-badge";
-      synced.setAttribute("role", "img");
-      synced.setAttribute("aria-label", syncedLabel);
-      synced.title = syncedLabel;
-      const syncedIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      syncedIcon.setAttribute("aria-hidden", "true");
-      const syncedUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-      syncedUse.setAttribute("href", "#icon-synced");
-      syncedIcon.appendChild(syncedUse);
-      synced.appendChild(syncedIcon);
-      row.appendChild(synced);
-    }
     const download = document.createElement("button");
     download.type = "button";
     download.className = "subtitle-download-button";
@@ -4248,13 +3772,6 @@ const appendEpisodeRow = (container, item, keyboardIndex) => {
     const code = document.createElement("span");
     code.className = "episode-code";
     code.textContent = item.code;
-    // AnimeFillerList verdict rides on the code pill: "S5E2 · Filler".
-    if (item.fillerKind && item.fillerLabel) {
-      const filler = document.createElement("span");
-      filler.className = `episode-filler ${item.fillerKind === "mixed" ? "mixed" : "filler"}`;
-      filler.textContent = ` · ${item.fillerLabel}`;
-      code.appendChild(filler);
-    }
     top.appendChild(code);
   }
   if (item.isCurrent) {
@@ -4593,7 +4110,6 @@ const renderActiveModal = () => {
   if (activeModal === "episodes") renderEpisodesModal();
   if (activeModal === "submitIntro") renderSubmitIntroModal();
   if (activeModal === "p2pConsent") renderP2pConsentModal();
-  if (activeModal === "party") renderPartyModal();
 };
 
 window.nuvioNativeViewportChanged = () => {
@@ -5008,324 +4524,10 @@ if (metadataSection) {
   metadataSection.addEventListener("mouseleave", () => setPlaylistPeekOpen(false));
 }
 
-const debouncedBuffering = wanted => {
-  if (!wanted) {
-    bufferingWantedSince = 0;
-    if (bufferingShowTimer) {
-      clearTimeout(bufferingShowTimer);
-      bufferingShowTimer = 0;
-    }
-    return false;
-  }
-  const now = performance.now();
-  if (!bufferingWantedSince) bufferingWantedSince = now;
-  const remaining = BUFFERING_SHOW_DELAY_MS - (now - bufferingWantedSince);
-  if (remaining <= 0) return true;
-  if (!bufferingShowTimer) {
-    bufferingShowTimer = setTimeout(() => {
-      bufferingShowTimer = 0;
-      renderChrome();
-    }, remaining + 1);
-  }
-  return false;
-};
-
-// Live TV --------------------------------------------------------------------------------------
-// A live stream's position only ever grows, so the seek bar covers the rewind window instead of a
-// film's length: from the earliest point seen on this channel (no further back than the buffer
-// reaches, `rewindWindowMs`) to the end of what has been received (`bufferedMs`, absolute, from
-// playerUpdate), which is the live edge. Within a few seconds of the edge counts as live; further
-// back, the badge shows the gap and jumps to the edge when clicked.
-const IPTV_LIVE_SLACK_MS = 10000;
-let iptvWindowChannel = "";
-let iptvEarliestSeenMs = null;
-
-const iptvBehindLiveMs = () => {
-  const positionMs = Math.max(0, Number(state.positionMs) || 0);
-  const bufferedMs = Math.max(0, Number(state.bufferedMs) || 0);
-  return bufferedMs > positionMs ? bufferedMs - positionMs : 0;
-};
-
-// [start, end] of the live seek bar in absolute stream time, or null when not live TV.
-const iptvLiveWindow = () => {
-  const iptv = state.iptv;
-  if (!iptv) return null;
-  const positionMs = Math.max(0, Number(state.positionMs) || 0);
-  const end = Math.max(positionMs, Number(state.bufferedMs) || 0);
-  // A new channel (or a reconnect that restarted the clock) starts a new window.
-  if (iptv.channelLabel !== iptvWindowChannel || iptvEarliestSeenMs === null || positionMs + 5000 < iptvEarliestSeenMs) {
-    iptvWindowChannel = iptv.channelLabel;
-    iptvEarliestSeenMs = positionMs;
-  }
-  iptvEarliestSeenMs = Math.min(iptvEarliestSeenMs, positionMs);
-  const reach = Math.max(60000, Number(iptv.rewindWindowMs) || 0);
-  const start = Math.max(iptvEarliestSeenMs, end - reach);
-  return { start, end: Math.max(end, start + 1000) };
-};
-
-const renderIptvLive = () => {
-  const iptv = state.iptv || null;
-  root.classList.toggle("iptv-live", Boolean(iptv));
-  setVisible(iptvNow, Boolean(iptv && (iptv.nowTitle || iptv.nextLabel)));
-  setVisible(iptvLiveBadge, Boolean(iptv));
-  setVisible(iptvChannelsButton, Boolean(iptv));
-  if (!iptv) return;
-  // The previous/next buttons beside play change channel.
-  document.querySelectorAll(".episode-skip").forEach(button => {
-    setVisible(button, true);
-    const label = button.dataset.command === "previousEpisode" ? iptv.previousChannelLabel : iptv.nextChannelLabel;
-    if (label) {
-      button.setAttribute("aria-label", label);
-      button.dataset.tooltip = label;
-    }
-  });
-  if (iptv.channelsLabel) {
-    iptvChannelsLabel.textContent = iptv.channelsLabel;
-    iptvChannelsButton.setAttribute("aria-label", iptv.channelsLabel);
-    iptvChannelsButton.dataset.tooltip = iptv.channelsLabel;
-  }
-  iptvNowTime.textContent = iptv.nowTimeLabel || "";
-  iptvNowTitle.textContent = iptv.nowTitle || "";
-  const progress = Number(iptv.nowProgress);
-  setVisible(iptvNowTrack, Boolean(iptv.nowTitle) && progress >= 0);
-  iptvNowFill.style.width = `${Math.max(0, Math.min(1, progress || 0)) * 100}%`;
-  iptvNext.textContent = iptv.nextLabel || "";
-  const behindMs = iptvBehindLiveMs();
-  const behind = behindMs > IPTV_LIVE_SLACK_MS;
-  iptvLiveBadge.classList.toggle("behind", behind);
-  iptvLiveLabel.textContent = behind ? (iptv.goLiveLabel || "Go live") : (iptv.liveLabel || "LIVE");
-  iptvLiveBehind.textContent = "";
-  iptvLiveBadge.title = behind ? (iptv.goLiveLabel || "Go live") : "";
-  if (activeModal === "iptvChannels") renderIptvPanel();
-};
-
-iptvLiveBadge.addEventListener("click", event => {
-  event.stopPropagation();
-  if (!state.iptv || iptvBehindLiveMs() <= IPTV_LIVE_SLACK_MS) return;
-  // Just short of the received end, so mpv lands on data it has rather than waiting for more.
-  const target = Math.max(0, (Number(state.bufferedMs) || 0) - 2000);
-  send("scrubFinish", target);
-});
-
-// Typing a channel number: digits collect in a box and the number is sent after a pause.
-let iptvDigits = "";
-let iptvDigitsTimer = null;
-window.nuvioIptvDigit = digit => {
-  if (!state.iptv) return;
-  if (iptvDigits.length >= 5) iptvDigits = "";
-  iptvDigits += String(Math.max(0, Math.min(9, Number(digit) || 0)));
-  iptvNumber.textContent = iptvDigits;
-  iptvNumber.classList.add("visible");
-  clearTimeout(iptvDigitsTimer);
-  iptvDigitsTimer = setTimeout(() => {
-    const number = Number(iptvDigits);
-    iptvDigits = "";
-    iptvNumber.classList.remove("visible");
-    if (number > 0) send("iptvChannelNumber", number);
-  }, 1400);
-};
-
-// Channel switcher (GoatTV's side panel): the channels of one category, the categories, or the
-// channels matching a search. The channel list only arrives while the panel is open
-// ("iptvPanelOpen"), so Kotlin never pushes a 50,000-channel list with every state update.
-// The search runs in Kotlin over the whole playlist; the bridge only carries numbers, so the query
-// rides in the event name ("iptvPanelSearch:<query>").
-let iptvPanelShowingGroups = false;
-let iptvPanelIndex = 0;
-let iptvPanelSignature = "";
-let iptvPanelScrollToPlaying = false;
-let iptvSearchQuery = "";
-let iptvSearchTimer = null;
-// Arrow keys typed into the search box highlight rows the same way the keyboard panel mode does.
-let iptvSearchKeyboard = false;
-
-const sendIptvSearch = query => {
-  clearTimeout(iptvSearchTimer);
-  iptvSearchTimer = null;
-  const trimmed = String(query || "").trim().slice(0, 80);
-  if (trimmed === iptvSearchQuery) return;
-  iptvSearchQuery = trimmed;
-  iptvPanelScrollToPlaying = !trimmed;
-  iptvPanelIndex = 0;
-  send(`iptvPanelSearch:${trimmed}`, 0);
-  if (iptvPanelShowingGroups) iptvPanelShowGroups(false);
-};
-
-const resetIptvSearch = () => {
-  clearTimeout(iptvSearchTimer);
-  iptvSearchTimer = null;
-  iptvSearchQuery = "";
-  iptvSearchKeyboard = false;
-  if (iptvSearchInput) iptvSearchInput.value = "";
-};
-
-const iptvPanelRows = () => (iptvPanelShowingGroups ? iptvGroupList : iptvChannelList).children;
-
-const iptvPanelHighlight = (scroll = true) => {
-  const rows = iptvPanelRows();
-  if (!rows.length) return;
-  iptvPanelIndex = Math.max(0, Math.min(rows.length - 1, iptvPanelIndex));
-  const showFocus = Boolean(keyboardPanelMode) || iptvSearchKeyboard;
-  Array.from(rows).forEach((row, index) => row.classList.toggle("keyboard-focus", showFocus && index === iptvPanelIndex));
-  if (scroll) rows[iptvPanelIndex].scrollIntoView({ block: "nearest" });
-};
-
-const iptvPanelShowGroups = showGroups => {
-  iptvPanelShowingGroups = showGroups;
-  setVisible(iptvGroupList, showGroups);
-  setVisible(iptvChannelList, !showGroups);
-  const rows = Array.from(iptvPanelRows());
-  const selected = rows.findIndex(row => row.classList.contains(showGroups ? "selected" : "playing"));
-  iptvPanelIndex = selected >= 0 ? selected : 0;
-  iptvPanelHighlight();
-};
-
-const renderIptvPanel = () => {
-  const iptv = state.iptv;
-  if (!iptv) return;
-  const groups = Array.isArray(iptv.groups) ? iptv.groups : [];
-  const channels = Array.isArray(iptv.channels) ? iptv.channels : [];
-  const selectedGroup = groups.find(group => group.selected);
-  iptvGroupButton.textContent = selectedGroup ? selectedGroup.name : (iptv.groupsLabel || "Categories");
-  iptvGroupButton.title = iptv.groupsLabel || "Categories";
-  iptvChannelCloseButton.textContent = state.panelCloseLabel || "Close";
-  if (iptvSearchInput) iptvSearchInput.placeholder = iptv.searchLabel || "Search channels";
-  iptvPanelNote.textContent = iptv.channelsNote || "";
-  setVisible(iptvPanelNote, Boolean(iptv.channelsNote));
-  const signature = JSON.stringify([groups.map(g => [g.index, g.count, g.selected]), channels.map(c => [c.uid, c.nowTitle, c.playing])]);
-  if (signature === iptvPanelSignature) return;
-  iptvPanelSignature = signature;
-  iptvGroupList.replaceChildren(...groups.map(group => {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "iptv-group-row" + (group.selected ? " selected" : "");
-    const name = document.createElement("span");
-    name.textContent = group.name;
-    const count = document.createElement("span");
-    count.className = "iptv-group-count";
-    count.textContent = String(group.count);
-    row.append(name, count);
-    row.addEventListener("click", event => {
-      event.stopPropagation();
-      iptvPickGroup(Number(group.index));
-    });
-    return row;
-  }));
-  iptvChannelList.replaceChildren(...channels.map(channel => {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "iptv-row" + (channel.playing ? " playing" : "");
-    const num = document.createElement("span");
-    num.className = "iptv-row-num";
-    num.textContent = String(channel.num);
-    const logo = document.createElement("img");
-    logo.className = "iptv-row-logo";
-    logo.alt = "";
-    logo.loading = "lazy";
-    if (channel.logo) logo.src = channel.logo;
-    else logo.style.visibility = "hidden";
-    logo.addEventListener("error", () => { logo.style.visibility = "hidden"; });
-    const text = document.createElement("span");
-    text.className = "iptv-row-text";
-    const name = document.createElement("span");
-    name.className = "iptv-row-name";
-    name.textContent = channel.name;
-    const now = document.createElement("span");
-    now.className = "iptv-row-now";
-    now.textContent = channel.nowTitle || "";
-    text.append(name, now);
-    row.append(num, logo, text);
-    row.addEventListener("click", event => {
-      event.stopPropagation();
-      send("iptvPanelPlay", Number(channel.uid));
-    });
-    return row;
-  }));
-  if (iptvPanelScrollToPlaying && channels.length) {
-    iptvPanelScrollToPlaying = false;
-    const playingIndex = channels.findIndex(channel => channel.playing);
-    iptvPanelIndex = playingIndex >= 0 ? playingIndex : 0;
-    const row = iptvChannelList.children[iptvPanelIndex];
-    if (row) row.scrollIntoView({ block: "center" });
-  }
-  iptvPanelHighlight(false);
-};
-
-const iptvPickGroup = index => {
-  // A category replaces the search.
-  if (iptvSearchQuery) {
-    resetIptvSearch();
-    send("iptvPanelSearch:", 0);
-  }
-  iptvPanelScrollToPlaying = true;
-  send("iptvPanelGroup", index);
-  iptvPanelShowGroups(false);
-};
-
-const openIptvPanel = keyboard => {
-  if (!state.iptv) return;
-  iptvPanelSignature = "";
-  iptvPanelScrollToPlaying = true;
-  resetIptvSearch();
-  openPlayerModal("iptvChannels");
-  if (keyboard) {
-    keyboardPanelMode = "iptvChannels";
-    send("keyboardPanelOpened", 0);
-  }
-  send("iptvPanelOpen", 1);
-  iptvPanelShowGroups(false);
-  renderIptvPanel();
-};
-
-const handleIptvPanelKey = code => {
-  const rows = iptvPanelRows();
-  if (code === "ArrowUp") { iptvPanelIndex -= 1; iptvPanelHighlight(); return; }
-  if (code === "ArrowDown") { iptvPanelIndex += 1; iptvPanelHighlight(); return; }
-  if (code === "ArrowLeft") { if (!iptvPanelShowingGroups) iptvPanelShowGroups(true); return; }
-  if (code === "ArrowRight") { if (iptvPanelShowingGroups) iptvPanelShowGroups(false); return; }
-  if (code === "Enter" && rows[iptvPanelIndex]) rows[iptvPanelIndex].click();
-};
-
-iptvGroupButton.addEventListener("click", event => {
-  event.stopPropagation();
-  iptvPanelShowGroups(!iptvPanelShowingGroups);
-});
-iptvChannelCloseButton.addEventListener("click", event => {
-  event.stopPropagation();
-  closePlayerModal(true);
-});
-if (iptvSearchInput) {
-  iptvSearchInput.addEventListener("click", event => event.stopPropagation());
-  iptvSearchInput.addEventListener("input", () => {
-    clearTimeout(iptvSearchTimer);
-    iptvSearchTimer = setTimeout(() => sendIptvSearch(iptvSearchInput.value), 220);
-  });
-  iptvSearchInput.addEventListener("keydown", event => {
-    if (event.code === "ArrowUp" || event.code === "ArrowDown" || event.code === "Enter" || event.code === "NumpadEnter") {
-      // The keyboard panel mode already routes these from the document handler.
-      if (keyboardPanelMode) return;
-      event.preventDefault();
-      event.stopPropagation();
-      // Enter acts on what is typed now, not what the debounce will send in a moment.
-      if (iptvSearchTimer) sendIptvSearch(iptvSearchInput.value);
-      iptvSearchKeyboard = true;
-      handleIptvPanelKey(event.code === "NumpadEnter" ? "Enter" : event.code);
-      return;
-    }
-    if (event.code === "Escape" && iptvSearchInput.value) {
-      // First Escape clears the search; the next closes the panel as usual.
-      event.preventDefault();
-      event.stopPropagation();
-      iptvSearchInput.value = "";
-      sendIptvSearch("");
-    }
-  });
-}
-
 const renderChrome = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   const positionMs = isScrubbing ? scrubPositionMs : Math.max(0, Number(state.positionMs) || 0);
-  const isPlaying = displayedIsPlaying();
+  const isPlaying = Boolean(state.isPlaying);
   const showError = renderPlaybackError();
   const pictureInPictureActive = Boolean(state.pictureInPictureActive);
   // PiP takes the raw scale floor (see updateViewportUiScale); re-derive the scale on entry/exit.
@@ -5336,7 +4538,6 @@ const renderChrome = () => {
   root.classList.toggle("locked", Boolean(state.isLocked));
   root.classList.toggle("episode-panel-open", activeModal === "episodes");
   root.classList.toggle("source-panel-open", activeModal === "sources");
-  root.classList.toggle("iptv-panel-open", activeModal === "iptvChannels");
   // The layouts are exclusive; the repository never sets two at once, but the HUD must not depend
   // on it, and a stale payload mid-switch would otherwise stack two rule sets for a frame.
   const officialHud = Boolean(state.officialHudEnabled);
@@ -5352,7 +4553,6 @@ const renderChrome = () => {
   root.classList.toggle("official-hud", officialHud);
   root.classList.toggle("seek-handle-hidden", state.seekHandleEnabled === false);
   root.classList.toggle("vignette-hidden", state.hudVignetteEnabled === false);
-  applyHiddenHudButtons(state.hiddenHudButtons);
   // The official bar also reads the time as one "position / duration" readout, right-aligned.
   applyMinimalHudTimeLayout(minimalHud || officialHud);
   applyUltraHudLayout(ultraHud);
@@ -5386,7 +4586,6 @@ const renderChrome = () => {
   syncParentalGuide(showOpening || showError);
 
   title.textContent = state.title || "";
-  renderTitleBadges();
   renderPlaylistPeek();
   setText(episode, normalizeEpisodeDisplayText(state.episodeText));
   setText(streamTitle, state.streamTitle);
@@ -5402,12 +4601,7 @@ const renderChrome = () => {
   // The Sources sheet leaves the picture uncovered and stays open across a swap, so buffering
   // must still show through it; every other modal hides the spinner as before.
   const modalHidesBuffering = Boolean(activeModal) && activeModal !== "sources";
-  // The spinner follows mpv's own loading state once it arrives: the Compose feed's isLoading is
-  // a 500 ms-old snapshot that re-raised the spinner after a short seek had already finished.
-  const spinnerLoading = nativeIsLoading === null ? state.isLoading : nativeIsLoading;
-  const showBuffering = debouncedBuffering(
-    Boolean(!showError && spinnerLoading && !state.isLocked && !modalHidesBuffering && !showOpening),
-  );
+  const showBuffering = Boolean(!showError && state.isLoading && !state.isLocked && !modalHidesBuffering && !showOpening);
   bufferingStatus.classList.toggle("visible", showBuffering);
   bufferingStatus.setAttribute("aria-hidden", showBuffering ? "false" : "true");
 
@@ -5417,17 +4611,14 @@ const renderChrome = () => {
   setVisible(sourcesButton, Boolean(state.showSources));
   setVisible(episodesButton, Boolean(state.showEpisodes));
   setVisible(episodeNotch, Boolean(state.showEpisodes));
-  renderPartyChrome(isChromeHidden, pictureInPictureActive);
   const sourceNotchPosition = ["left", "hidden"].includes(state.sourceNotchPosition)
     ? state.sourceNotchPosition
     : "right";
   root.classList.toggle("source-notch-left", sourceNotchPosition === "left");
   sourceNotchHoverOpens = state.sourceNotchHoverEnabled !== false;
   root.classList.toggle("notifications-top", state.notificationPosition === "top-center");
-  // Live TV keeps the notch: it opens the channel switcher there.
-  setVisible(sourceNotch, Boolean(state.showSources || state.iptv) && sourceNotchPosition !== "hidden");
+  setVisible(sourceNotch, Boolean(state.showSources) && sourceNotchPosition !== "hidden");
   document.querySelectorAll(".episode-skip").forEach(button => setVisible(button, Boolean(state.showEpisodes)));
-  renderIptvLive();
   scheduleActionOverflowSync();
 
   const playPauseLabel = isPlaying ? state.pauseLabel : state.playLabel;
@@ -5435,10 +4626,10 @@ const renderChrome = () => {
     toggle.setAttribute("aria-label", playPauseLabel || (isPlaying ? "Pause" : "Play"));
   }
   if (toggleIcon) {
-    setIconHref(toggleIcon, isPlaying ? "#icon-pause" : "#icon-play");
+    toggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
   }
   lockButton.setAttribute("aria-label", state.isLocked ? state.unlockLabel : state.lockLabel);
-  setIconHref(lockIcon, state.isLocked ? "#icon-lock-open" : "#icon-lock");
+  lockIcon.setAttribute("href", state.isLocked ? "#icon-lock-open" : "#icon-lock");
   backButton.setAttribute("aria-label", state.closeLabel || "Close player");
   const submitIntroButtonLabel = state.submitIntroLabel || "Submit Intro";
   submitIntroButton.setAttribute("aria-label", submitIntroButtonLabel);
@@ -5456,7 +4647,7 @@ const renderChrome = () => {
   const pictureInPicturePlaybackLabel = isPlaying ? (state.pauseLabel || "Pause") : (state.playLabel || "Play");
   pictureInPicturePlayButton.setAttribute("aria-label", pictureInPicturePlaybackLabel);
   pictureInPicturePlayButton.setAttribute("title", pictureInPicturePlaybackLabel);
-  setIconHref(pictureInPictureToggleIcon, isPlaying ? "#icon-pause" : "#icon-play");
+  pictureInPictureToggleIcon.setAttribute("href", isPlaying ? "#icon-pause" : "#icon-play");
   seek.disabled = Boolean(state.isLocked);
   setProgress(positionMs, durationMs);
   renderChapterMarkers(durationMs);
@@ -5487,10 +4678,7 @@ const updatePlayerClock = () => {
   const remainingWallMs = Math.max(0, durationMs - positionMs) / speed;
   const endTime = new Date(now.getTime() + remainingWallMs);
   const contentLabel = String(state.episodeText || "").trim() ? "Episode" : "Movie";
-  // Live TV never ends; the same spot (and its click, "back") is the way out.
-  playerEndTime.textContent = state.iptv
-    ? (state.iptv.exitLabel || state.closeLabel || "Exit")
-    : `${contentLabel} ends at ${playerClockFormatter.format(endTime)}`;
+  playerEndTime.textContent = `${contentLabel} ends at ${playerClockFormatter.format(endTime)}`;
 };
 window.setInterval(updatePlayerClock, 1000);
 
@@ -5520,6 +4708,23 @@ heroTrailerChrome.innerHTML =
   '</button>' +
   '<input id="heroTrailerVolumeSlider" class="hero-trailer-volume" type="range" min="0" max="100" step="1" value="0" aria-label="Trailer volume">';
 heroTrailerChrome.style.display = "none";
+if (isPreshowSurface) {
+  // Mute and the slider stay in the DOM (the code below updates them) but are hidden by CSS; the
+  // stop button becomes a labelled Skip, which sends the same Back action Kotlin already handles.
+  heroTrailerChrome.classList.add("preshow");
+  // Hidden here as well as in CSS, so the pre-show never shows a sound control even if a stale
+  // stylesheet is in play. They stay in the DOM because the code below updates them.
+  heroTrailerChrome
+    .querySelectorAll('[data-command="heroTrailerMute"], .hero-trailer-volume')
+    .forEach(el => el.style.setProperty("display", "none", "important"));
+  const skipButton = heroTrailerChrome.querySelector('[data-command="back"]');
+  if (skipButton) {
+    skipButton.setAttribute("aria-label", "Skip");
+    skipButton.innerHTML =
+      '<span class="hero-trailer-skip-label">Skip</span>' +
+      '<svg><use href="#icon-skip-next"></use></svg>';
+  }
+}
 root.appendChild(heroTrailerChrome);
 
 const heroTrailerLogo = heroTrailerContent.querySelector("#heroTrailerLogo");
@@ -5762,8 +4967,6 @@ const shortcutCommandForEvent = event => {
     speed_up: "keyboardSpeedUp",
     speed_down: "keyboardSpeedDown",
     toggle_speed: "keyboardSpeedToggle",
-    channel_up: "iptvChannelUp",
-    channel_down: "iptvChannelDown",
     next_subtitle: "keyboardNextSubtitle",
     next_audio: "keyboardNextAudio",
     open_sources: "keyboardOpenSources",
@@ -5833,7 +5036,7 @@ const syncPlayerVolumeControl = () => {
     // Fill width for the layouts that paint the played part of the track (the official bar).
     playerVolumeSlider.style.setProperty("--volume-position", `${Math.max(0, Math.min(100, localVolume / 2))}%`);
   }
-  setIconHref(playerVolumeIcon, volumeIconHref());
+  playerVolumeIcon?.setAttribute("href", volumeIconHref());
   if (volumeMuteButton) {
     const label = localMuted ? "Unmute" : "Mute";
     volumeMuteButton.setAttribute("aria-label", label);
@@ -5894,7 +5097,7 @@ window.nuvioSyncMute = muted => {
 const playbackInfoPanel = document.getElementById("playbackInfoPanel");
 const playbackInfoRows = document.getElementById("playbackInfoRows");
 const PLAYBACK_INFO_HOLD_MS = 6500;
-let playbackInfo = { session: "", hdr: "", svp: false, video: "", shader: "", quality: "" };
+let playbackInfo = { session: "", hdr: "", svp: false, video: "", shader: "" };
 // The session this panel has already been shown for. Showing is per playback attempt: a new file
 // (next episode, source switch) is a new start of playback and earns the panel again, while a
 // settings change that merely re-pushes the same session must not pop it back up.
@@ -5977,44 +5180,8 @@ window.nuvioSetPlaybackInfo = payload => {
     svp: Boolean(next.svp),
     video: String(next.video == null ? "" : next.video),
     shader: String(next.shader == null ? "" : next.shader),
-    quality: String(next.quality == null ? "" : next.quality),
   };
   renderPlaybackInfoPanel();
-  renderTitleBadges();
-};
-
-// Badges beside the title: the decoded quality (from the video-profile pass, so it is what mpv
-// is actually playing, not what the source name claims) and the subtitle in use. Runs on every
-// position tick, hence the signature check.
-let titleBadgesSignature = null;
-const renderTitleBadges = () => {
-  if (!titleBadges) return;
-  const badges = [];
-  const quality = String(playbackInfo.quality || "").trim();
-  const subtitle = String(state.activeSubtitleLabel || "").trim();
-  if (quality) badges.push({ kind: "quality", text: quality });
-  if (subtitle) badges.push({ kind: "subtitle", text: subtitle });
-  const signature = badges.map(badge => `${badge.kind}:${badge.text}`).join("|");
-  if (signature === titleBadgesSignature) return;
-  titleBadgesSignature = signature;
-  titleBadges.replaceChildren();
-  badges.forEach(badge => {
-    const element = document.createElement("span");
-    element.className = `title-badge title-badge-${badge.kind}`;
-    if (badge.kind === "subtitle") {
-      const icon = document.createElement("span");
-      icon.className = "title-badge-icon";
-      icon.textContent = "CC";
-      element.appendChild(icon);
-    }
-    const text = document.createElement("span");
-    text.className = "title-badge-text";
-    text.textContent = badge.text;
-    element.appendChild(text);
-    element.title = badge.text;
-    titleBadges.appendChild(element);
-  });
-  titleBadges.hidden = badges.length === 0;
 };
 
 const presetPill = document.getElementById("presetPill");
@@ -6137,19 +5304,6 @@ const setActionOverflowOpen = open => {
   noteChromeActivity(true);
 };
 
-// Buttons switched off in Settings > Playback. Only the HUD's own controls: the notches, the
-// locked-overlay unlock button and PiP's exit button share some commands and stay put.
-let appliedHiddenHudButtons = "";
-const applyHiddenHudButtons = value => {
-  const next = String(value || "");
-  if (next === appliedHiddenHudButtons) return;
-  appliedHiddenHudButtons = next;
-  const hidden = new Set(next.split(",").map(part => part.trim()).filter(Boolean));
-  document.querySelectorAll(".action[data-command], .side-control[data-command], .header-button[data-command]")
-    .forEach(button => button.classList.toggle("user-hidden", hidden.has(button.dataset.command)));
-  // render() schedules the overflow pass right after; its signature counts user-hidden buttons.
-};
-
 // Returns every collapsible button to the row in authored order, so a measurement always starts
 // from the uncollapsed layout.
 const restoreActionRowLayout = () => {
@@ -6184,7 +5338,7 @@ function syncActionRowOverflow() {
     Math.round(availableBefore),
     appliedCombinedUserScale,
     root.className,
-    overflowCapableActions.map(button => (button.hidden || button.classList.contains("user-hidden") ? "0" : "1")).join(""),
+    overflowCapableActions.map(button => (button.hidden ? "0" : "1")).join(""),
   ].join("|");
   if (signature === appliedActionOverflowSignature) return;
   appliedActionOverflowSignature = signature;
@@ -6316,13 +5470,6 @@ const clearPressedButton = () => {
 
 document.addEventListener("pointerdown", event => {
   const interactingWithChrome = isChromeInteractionTarget(event.target);
-  // Diagnostics: the bridge log pairs these with "hud input toggle", so a press that never
-  // becomes a toggle (chrome hidden, a double-click, a swallowed tap) shows up as a gap.
-  if (event.button === 0 && !isHeroTrailerSurface && !state.heroTrailerMode) {
-    const chromeHiddenOffset = root.classList.contains("chrome-hidden") ? 10 : 0;
-    if (event.target.closest("#toggle")) send("hudTrace", 1 + chromeHiddenOffset);
-    else if (!interactingWithChrome) send("hudTrace", 2 + chromeHiddenOffset);
-  }
   if (interactingWithChrome) {
     isChromePointerDown = true;
     isChromePointerInside = true;
@@ -6411,16 +5558,7 @@ document.querySelectorAll("[data-command]").forEach(button => {
       openPlayerModal("subtitles");
       return;
     }
-    if (command === "iptvChannels") {
-      openIptvPanel(false);
-      return;
-    }
     if (command === "sources") {
-      // Live TV's Sources notch is the channel switcher's: same edge, same hover rule.
-      if (state.iptv) {
-        if (activeModal !== "iptvChannels") openIptvPanel(false);
-        return;
-      }
       sourceFilterId = "";
       openPlayerModal("sources");
       send("sources", 0);
@@ -6454,10 +5592,6 @@ document.querySelectorAll("[data-command]").forEach(button => {
     }
     if (command === "submitIntro") {
       openPlayerModal("submitIntro");
-      return;
-    }
-    if (command === "party") {
-      openPartyModal();
       return;
     }
     send(command, 0);
@@ -6673,10 +5807,6 @@ episodeReloadButton.addEventListener("click", event => {
 });
 
 window.nuvioOpenKeyboardPanel = panel => {
-  if (panel === "iptvChannels") {
-    openIptvPanel(true);
-    return;
-  }
   if (panel === "sources") {
     keyboardPanelMode = "sources";
     send("keyboardPanelOpened", 0);
@@ -6709,10 +5839,6 @@ window.nuvioHandleKeyboardPanelKey = code => {
   if (!keyboardPanelMode) return;
   if (code === "Escape") {
     closePlayerModal(true);
-    return;
-  }
-  if (keyboardPanelMode === "iptvChannels") {
-    handleIptvPanelKey(code);
     return;
   }
   if (keyboardPanelMode === "sources") {
@@ -7054,12 +6180,6 @@ speedButton.addEventListener("contextmenu", event => {
 playerVolumeSlider.addEventListener("input", event => {
   event.stopPropagation();
   localVolume = Math.max(0, Math.min(200, Number(playerVolumeSlider.value) || 0));
-  // A non-zero volume unmutes mpv (NativePlayerController.setVolume), and nothing pushes that
-  // back here, so clear the local flag too or the icon stays on the muted glyph.
-  if (localMuted && localVolume > 0) {
-    localMuted = false;
-    refreshContextMenuIndicators();
-  }
   // Keep the glyph's wave count in step with the drag, as the keyboard path already does.
   syncPlayerVolumeControl();
   send("volumeSet", localVolume);
@@ -7104,7 +6224,6 @@ window.playerUpdate = update => {
     audioTracks,
     subtitleTracks,
   };
-  nativeIsLoading = state.isLoading;
   setContextMenuDynamicItems("subtitleTracks", subtitleTracks);
   setContextMenuDynamicItems("audioTracks", visibleAudioTracks());
   renderChrome();
@@ -7116,7 +6235,6 @@ window.playerUpdate = update => {
 
 window.playerControls = nextState => {
   const previousCloseToken = Number(state.closeModalsToken) || 0;
-  const previousPartyPanelToken = Number(currentParty().openPanelToken) || 0;
   const previousOpenSourcesToken = Number(state.openSourcesToken) || 0;
   state = { ...state, ...nextState };
   applyUiFontFamily(state.uiFontFamily);
@@ -7152,12 +6270,6 @@ window.playerControls = nextState => {
   if (openSourcesToken !== previousOpenSourcesToken) {
     sourceFilterId = "";
     openPlayerModal("sources");
-  }
-  // Kotlin asking for the party panel (the party moved to something this player cannot follow by
-  // itself). A token for the same reason as openSourcesToken.
-  const partyPanelToken = Number(currentParty().openPanelToken) || 0;
-  if (!isFirstPlayerControls && partyPanelToken !== previousPartyPanelToken && activeModal !== "party") {
-    openPartyModal();
   }
   // A stream swap rebuilds the native bridge and with it this whole HUD, so a Sources sheet that
   // was open when the user picked a stream is gone by the time the new stream opens. Kotlin keeps
@@ -7401,8 +6513,7 @@ document.addEventListener("keydown", event => {
   }
   if (event.key === "Escape") {
     event.preventDefault();
-    // Not "back": Kotlin may turn this into "leave fullscreen" (Escape goes windowed first).
-    send("escapeBack", 0);
+    send("back", 0);
     return;
   }
   if (playbackErrorText()) return;
@@ -7414,9 +6525,7 @@ document.addEventListener("keydown", event => {
     send("toggleFullscreen", 0);
     return;
   }
-  // In the channel search box Left/Right move the caret; Up/Down/Enter still walk the list.
-  const caretKey = isTextEntryTarget(event.target) && (event.code === "ArrowLeft" || event.code === "ArrowRight");
-  if (keyboardPanelMode && !caretKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter"].includes(event.code)) {
+  if (keyboardPanelMode && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter"].includes(event.code)) {
     event.preventDefault();
     window.nuvioHandleKeyboardPanelKey(event.code === "NumpadEnter" ? "Enter" : event.code);
     return;
@@ -7425,25 +6534,7 @@ document.addEventListener("keydown", event => {
     return;
   }
   const command = shortcutCommandForEvent(event);
-  // Live TV: a digit with no binding of its own starts or extends a channel number.
-  const digitMatch = /^(?:Digit|Numpad)([0-9])$/.exec(event.code);
-  if (state.iptv && !command && digitMatch && !event.ctrlKey && !event.altKey && !event.metaKey) {
-    event.preventDefault();
-    window.nuvioIptvDigit(Number(digitMatch[1]));
-    return;
-  }
   if (!command) {
-    return;
-  }
-  if (command === "iptvChannelUp" || command === "iptvChannelDown") {
-    event.preventDefault();
-    if (state.iptv) send("iptvChannel", command === "iptvChannelUp" ? 1 : -1);
-    return;
-  }
-  // Live TV has no sources or episodes panels; their keys open the channel switcher instead.
-  if (state.iptv && (command === "keyboardOpenSources" || command === "keyboardOpenEpisodes")) {
-    event.preventDefault();
-    openIptvPanel(true);
     return;
   }
   event.preventDefault();

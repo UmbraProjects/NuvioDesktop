@@ -52,11 +52,6 @@ expect object AppUpdaterPlatform {
 
     fun setIgnoredTag(tag: String?)
 
-    /** Epoch millis until which the automatic check stays quiet ("Remind me in…"), or null. */
-    fun getSnoozedUntilMs(): Long?
-
-    fun setSnoozedUntilMs(epochMs: Long?)
-
     /** Whether verified updates are applied in place (and the app restarted) automatically. */
     fun isInPlaceUpdateEnabled(): Boolean
 
