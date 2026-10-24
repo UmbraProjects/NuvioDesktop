@@ -25,8 +25,10 @@ jobs:
         shell: pwsh
         run: |
           C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm"
-          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv"
+          # gcc compiles the patched libquickjs.dll (buildWindowsQuickJs); mpv does not pull it in.
+          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-gcc"
           if (-not (Test-Path C:\msys64\ucrt64\bin\libmpv-2.dll)) { throw "libmpv-2.dll missing after install" }
+          if (-not (Test-Path C:\msys64\ucrt64\bin\gcc.exe)) { throw "gcc.exe missing after install" }
 
       # WebView2 SDK headers + loader, needed to compile player_bridge.dll.
       - name: Fetch WebView2 SDK

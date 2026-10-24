@@ -801,7 +801,13 @@ val buildWindowsQuickJs = tasks.register("buildWindowsQuickJs") {
         val msysBin = nuvioEngineMsys2Root.resolve("bin")
         val gcc = msysBin.resolve("gcc.exe")
         if (!gcc.isFile || !nuvioEngineJniIncludeDir.resolve("jni.h").isFile) {
-            logger.warn("Skipping QuickJS build; plugins will use quickjs-kt's bundled DLL. Missing: MSYS2 UCRT64 gcc under ${msysBin.absolutePath} or jni.h")
+            val missing = "MSYS2 UCRT64 gcc under ${msysBin.absolutePath} or jni.h"
+            // A silent skip is recorded as UP-TO-DATE (output absent), hiding the cause on later
+            // runs, so fail loudly when a distributable/package is being built.
+            if (gradle.startParameter.taskNames.any { "Distributable" in it || it.contains("package", ignoreCase = true) }) {
+                throw GradleException("QuickJS build needs a toolchain for a distributable. Missing: $missing")
+            }
+            logger.warn("Skipping QuickJS build; plugins will use quickjs-kt's bundled DLL. Missing: $missing")
             output.delete()
             return@doLast
         }
