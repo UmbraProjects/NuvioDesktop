@@ -50,6 +50,9 @@ object MusicPaletteResolver {
         }
     }
 
+    /** One image's colour as `0xRRGGBB`, or null (greyscale art, load error). Used for release covers. */
+    internal suspend fun sampleOne(context: PlatformContext, url: String): Int? = sample(context, listOf(url))
+
     /** The first source that yields a colour, as `0xRRGGBB`; null when none does (greyscale art, load errors). */
     private suspend fun sample(context: PlatformContext, sources: List<String>): Int? {
         val loader = SingletonImageLoader.get(context)

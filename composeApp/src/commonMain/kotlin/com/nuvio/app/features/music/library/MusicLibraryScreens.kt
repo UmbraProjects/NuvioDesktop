@@ -188,7 +188,7 @@ private fun LibraryTileFrame(onClick: (() -> Unit)?, content: @Composable androi
 }
 
 @Composable
-private fun LibraryIconAction(
+internal fun LibraryIconAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
     enabled: Boolean = true,
@@ -207,7 +207,7 @@ private fun LibraryIconAction(
 }
 
 @Composable
-private fun ArtworkSourcesDialog(
+internal fun ArtworkSourcesDialog(
     settings: MusicLibrarySettings,
     onSave: (MusicLibrarySettings) -> Unit,
     onDismiss: () -> Unit,
@@ -349,7 +349,6 @@ fun MusicArtistScreen(
     var showLinks by remember { mutableStateOf(false) }
     var demosOpen by rememberSaveable { mutableStateOf(false) }
     var playNotice by remember { mutableStateOf<String?>(null) }
-    val expandedSingles = remember { mutableStateMapOf<String, Boolean>() }
     val scope = rememberCoroutineScope()
     val catalog = remember { defaultMusicCatalog() }
 
@@ -404,70 +403,32 @@ fun MusicArtistScreen(
     val playTarget = latest?.takeIf { it.isPlayable }
     val shuffleTarget = artist.releases.filter { it.isPlayable && !it.isDemo() }.randomOrNull()
 
-    BoxWithConstraints(modifier.fillMaxSize().background(colors.background)) {
-        val wide = maxWidth >= 840.dp
-        ArtistBackdrop(artist)
-
-        val rail: @Composable () -> Unit = {
-            ArtistRail(
-                artist = artist,
-                discography = discography,
-                playTarget = playTarget,
-                canShuffle = shuffleTarget != null,
-                notice = playNotice,
-                saved = saved,
-                refreshing = working?.status,
-                onBack = onBack,
-                onPlay = { startPlayback(playTarget, shuffled = false) },
-                onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
-                onAbout = { showAbout = true },
-                onLinks = { showLinks = true },
-                onRefresh = { MusicLibraryRepository.refresh(artist.id) },
-                onRemove = { confirmRemove = true },
-            )
-        }
-        val pane: LazyListScope.() -> Unit = {
-            artistPane(
-                artist = artist,
-                latest = latest,
-                discography = discography,
-                filter = filter,
-                playableOnly = playableOnly,
-                demosOpen = demosOpen || filter == ReleaseFilter.Demos,
-                expandedSingles = expandedSingles,
-                working = working != null,
-                onPlayLatest = { startPlayback(latest, shuffled = false) },
-                onOpen = { selectedKey = it.key },
-                onPlayableOnly = { playableOnly = it },
-                onFilter = { filterName = it.name },
-                onToggleDemos = { demosOpen = !demosOpen },
-            )
-        }
-
-        if (wide) {
-            Row(Modifier.fillMaxSize()) {
-                Column(
-                    Modifier.width(360.dp).fillMaxHeight().verticalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 32.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) { rail() }
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    contentPadding = PaddingValues(start = 12.dp, end = 24.dp, top = 24.dp, bottom = 40.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                ) { pane() }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                item(key = "rail") { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { rail() } }
-                pane()
-            }
-        }
-    }
+    ArtistRoom(
+        artist = artist,
+        discography = discography,
+        latest = latest,
+        playTarget = playTarget,
+        canShuffle = shuffleTarget != null,
+        notice = playNotice,
+        saved = saved,
+        refreshing = working?.status,
+        working = working != null,
+        filter = filter,
+        playableOnly = playableOnly,
+        demosOpen = demosOpen || filter == ReleaseFilter.Demos,
+        onBack = onBack,
+        onPlay = { startPlayback(playTarget, shuffled = false) },
+        onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
+        onAbout = { showAbout = true },
+        onLinks = { showLinks = true },
+        onRefresh = { MusicLibraryRepository.refresh(artist.id) },
+        onRemove = { confirmRemove = true },
+        onOpen = { selectedKey = it.key },
+        onPlayableOnly = { playableOnly = it },
+        onFilter = { filterName = it.name },
+        onToggleDemos = { demosOpen = !demosOpen },
+        modifier = modifier.fillMaxSize(),
+    )
 
     selectedKey?.let { key ->
         artist.releases.firstOrNull { it.key == key }?.let { release ->
@@ -511,168 +472,10 @@ fun MusicArtistScreen(
 
 // region rail
 
-/** The backdrop is only atmosphere now: it fades out well before the content starts. */
-@Composable
-private fun ArtistBackdrop(artist: LibraryArtist) {
-    val colors = MaterialTheme.nuvio.colors
-    val backdrop = artist.art.bestBackground ?: artist.art.banner ?: return
-    Box(Modifier.fillMaxWidth().height(380.dp)) {
-        NuvioAsyncImage(
-            model = backdrop,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-            alpha = 0.32f,
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0.0f to Color.Black.copy(alpha = 0.2f), 1.0f to colors.background),
-            ),
-        )
-    }
-}
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ArtistRail(
-    artist: LibraryArtist,
-    discography: ArtistDiscography,
-    playTarget: LibraryRelease?,
-    canShuffle: Boolean,
-    notice: String?,
-    /** Which step a look-up is on while one runs, for a saved or an unsaved artist alike. */
-    refreshing: String?,
-    /** True for an artist in the library; false for one only previewed from Search. */
-    saved: Boolean,
-    onBack: () -> Unit,
-    onPlay: () -> Unit,
-    onShuffle: () -> Unit,
-    onAbout: () -> Unit,
-    onLinks: () -> Unit,
-    onRefresh: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    NuvioBackButton(onClick = onBack)
-
-    // The artist, cut out when a source has that; otherwise the photo, round.
-    val clearArt = artist.art.bestClearArt
-    val portrait = clearArt ?: artist.art.thumb
-    if (portrait != null) {
-        Box(Modifier.fillMaxWidth().height(if (clearArt != null) 230.dp else 150.dp), contentAlignment = Alignment.BottomStart) {
-            NuvioAsyncImage(
-                model = portrait,
-                contentDescription = null,
-                modifier = if (clearArt != null) Modifier.fillMaxSize() else Modifier.size(150.dp).clip(CircleShape),
-                contentScale = if (clearArt != null) ContentScale.Fit else ContentScale.Crop,
-                alignment = Alignment.BottomStart,
-            )
-        }
-    }
-
-    val logo = artist.art.bestLogo
-    if (logo != null) {
-        NuvioAsyncImage(
-            model = logo,
-            contentDescription = artist.name,
-            modifier = Modifier.height(72.dp).fillMaxWidth(),
-            contentScale = ContentScale.Fit,
-            alignment = Alignment.CenterStart,
-        )
-    } else {
-        Text(
-            artist.name,
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-            color = colors.textPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-
-    val headline = artistHeadline(artist)
-    if (headline.isNotEmpty()) {
-        Text(headline, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-    }
-    artist.disambiguation?.let {
-        Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
-    }
-
-    val stats = listOfNotNull(
-        artist.fans?.let { "${formatCount(it)} fans" },
-        "${discography.totalCount} releases",
-        "${discography.playableCount} playable".takeIf { discography.totalCount > 0 },
-    ).joinToString("  ·  ")
-    Text(stats, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        NuvioPrimaryButton(
-            text = "Play",
-            modifier = Modifier.width(128.dp),
-            height = 44.dp,
-            enabled = playTarget != null,
-            onClick = onPlay,
-        )
-        OutlinedAction(Icons.Rounded.Shuffle, "Shuffle", enabled = canShuffle, onClick = onShuffle)
-    }
-    MusicAddToLibraryButton(artistId = artist.id, onSavedClick = onRemove)
-    val playing = notice ?: playTarget?.let { "Plays ${it.title}${it.year?.let { y -> " ($y)" } ?: ""}" }
-    if (playing != null) {
-        Text(
-            playing,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (notice != null) colors.warning else colors.textMuted,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-
-    // Mood and style are the feel of the artist: shown as chips, not as label/value pairs.
-    val feel = (listOfNotNull(artist.mood, artist.style) + artist.tags.take(4))
-        .distinctBy { it.lowercase() }
-        .filterNot { tag -> artist.genres.any { it.equals(tag, ignoreCase = true) } }
-    if (feel.isNotEmpty()) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            feel.forEach { InfoChip(it) }
-        }
-    }
-
-    artist.biography?.let { bio ->
-        Column(
-            Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onAbout).padding(vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(bio, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 4, overflow = TextOverflow.Ellipsis)
-            Text("About ${artist.name}", style = MaterialTheme.typography.bodySmall, color = colors.accent)
-        }
-    }
-
-    val linkCount = groupLinks(artist.links).values.sumOf { it.size }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (linkCount > 0) ActionPill("Links · $linkCount", onClick = onLinks)
-        if (artist.biography == null) ActionPill("Details", onClick = onAbout)
-    }
-
-    // Housekeeping lives at the bottom, quiet. An unsaved artist has nothing to refresh; it just
-    // says what it is still reading. Removing is the Saved button.
-    if (saved) {
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = onRefresh, enabled = refreshing == null) { Text(refreshing ?: "Refresh") }
-        }
-    } else if (refreshing != null) {
-        Text(refreshing, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-    }
-    if (artist.sources.isNotEmpty()) {
-        Text(
-            "Metadata from ${artist.sources.joinToString(", ")}",
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.textMuted,
-        )
-    }
-}
 
 @Composable
-private fun InfoChip(text: String) {
+internal fun InfoChip(text: String) {
     val colors = MaterialTheme.nuvio.colors
     Text(
         text,
@@ -686,7 +489,7 @@ private fun InfoChip(text: String) {
 }
 
 @Composable
-private fun OutlinedAction(icon: ImageVector, text: String, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun OutlinedAction(icon: ImageVector, text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(22.dp)
     val tint = if (enabled) colors.textPrimary else colors.textDisabled
@@ -709,144 +512,11 @@ private fun OutlinedAction(icon: ImageVector, text: String, enabled: Boolean = t
 
 // region pane
 
-@OptIn(ExperimentalLayoutApi::class)
-private fun LazyListScope.artistPane(
-    artist: LibraryArtist,
-    latest: LibraryRelease?,
-    discography: ArtistDiscography,
-    filter: ReleaseFilter,
-    playableOnly: Boolean,
-    demosOpen: Boolean,
-    expandedSingles: MutableMap<String, Boolean>,
-    working: Boolean,
-    onPlayLatest: () -> Unit,
-    onOpen: (LibraryRelease) -> Unit,
-    onPlayableOnly: (Boolean) -> Unit,
-    onFilter: (ReleaseFilter) -> Unit,
-    onToggleDemos: () -> Unit,
-) {
-    if (latest != null) {
-        item(key = "latest") { LatestCard(latest, onPlay = onPlayLatest, onOpen = { onOpen(latest) }) }
-    }
 
-    item(key = "filters") {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SegmentedPair(
-                    left = "Playable ${discography.playableCount}",
-                    right = "All ${discography.totalCount}",
-                    rightSelected = !playableOnly,
-                    onSelect = { all -> onPlayableOnly(!all) },
-                )
-                Spacer(Modifier.width(8.dp))
-                ReleaseFilter.entries.forEach { f ->
-                    if (f == ReleaseFilter.All) return@forEach
-                    val n = discography.filterCounts[f] ?: return@forEach
-                    // Only worth a chip when it narrows something. Tapping the chosen one clears it.
-                    if (n == discography.totalCount && f != filter) return@forEach
-                    ActionPill("${f.label} $n", selected = f == filter) {
-                        onFilter(if (f == filter) ReleaseFilter.All else f)
-                    }
-                }
-            }
-            val anyDimmed = discography.eras.any { era -> (era.full + era.singles).any { !it.isPlayable } }
-            if (anyDimmed) {
-                Text(
-                    "Dimmed releases aren't on YouTube Music.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.nuvio.colors.textMuted,
-                )
-            }
-        }
-    }
 
-    if (discography.eras.isEmpty() && discography.demos.isEmpty()) {
-        item(key = "empty") {
-            MusicMessage(
-                when {
-                    working -> "Looking up releases…"
-                    playableOnly -> "Nothing here is on YouTube Music. Switch to All to see every release."
-                    else -> "No releases found."
-                },
-            )
-        }
-    }
-
-    discography.eras.forEach { era ->
-        item(key = "era:${era.year}") {
-            EraBlock(
-                era = era,
-                singlesExpanded = expandedSingles[era.year] == true,
-                onToggleSingles = { expandedSingles[era.year] = expandedSingles[era.year] != true },
-                onOpen = onOpen,
-            )
-        }
-    }
-
-    if (discography.demos.isNotEmpty()) {
-        item(key = "demos") {
-            DemosArchive(discography.demos, open = demosOpen, onToggle = onToggleDemos, onOpen = onOpen)
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun EraBlock(
-    era: Era,
-    singlesExpanded: Boolean,
-    onToggleSingles: () -> Unit,
-    onOpen: (LibraryRelease) -> Unit,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                era.year.ifEmpty { "Undated" },
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary,
-            )
-            Text(
-                "${era.count} release${if (era.count == 1) "" else "s"}",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textMuted,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
-        }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.borderDefault))
-        if (era.full.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                era.full.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }) }
-            }
-        }
-        if (era.singles.isNotEmpty()) {
-            val shown = if (singlesExpanded) era.singles else era.singles.take(SINGLES_COLLAPSED)
-            Column {
-                if (era.full.isNotEmpty()) {
-                    Text("Singles", style = MaterialTheme.typography.labelLarge, color = colors.textSecondary, modifier = Modifier.padding(bottom = 4.dp))
-                }
-                shown.forEach { group -> ReleaseRow(group, onClick = { onOpen(group.primary) }) }
-                if (era.singles.size > SINGLES_COLLAPSED) {
-                    Text(
-                        if (singlesExpanded) "Show fewer" else "Show ${era.singles.size - SINGLES_COLLAPSED} more",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.accent,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onToggleSingles).padding(horizontal = 8.dp, vertical = 8.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-private const val SINGLES_COLLAPSED = 4
 
 @Composable
-private fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: () -> Unit, onOpen: (LibraryRelease) -> Unit) {
+internal fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: () -> Unit, onOpen: (LibraryRelease) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
@@ -864,57 +534,11 @@ private fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: () 
     }
 }
 
-@Composable
-private fun LatestCard(release: LibraryRelease, onPlay: () -> Unit, onOpen: () -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(16.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(colors.surfaceCard)
-            .clickable(onClick = onOpen)
-            .padding(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ReleaseCover(release, Modifier.size(120.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("LATEST RELEASE", style = MaterialTheme.typography.labelSmall, color = colors.accent)
-            Text(
-                release.title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                releaseSubtitle(release),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.textSecondary,
-            )
-            Spacer(Modifier.height(6.dp))
-            if (release.isPlayable) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedAction(Icons.Rounded.PlayArrow, "Play", onClick = onPlay)
-                }
-            } else {
-                Text("Not on YouTube Music", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-            }
-        }
-    }
-}
 
-private fun releaseSubtitle(release: LibraryRelease): String = listOfNotNull(
-    release.extraTypes().firstOrNull()?.let { "${release.kind.label} · $it" } ?: release.kind.label,
-    release.year,
-    release.trackCount?.let { "$it track${if (it == 1) "" else "s"}" },
-).joinToString(" · ")
 
 /** A release as a card. Releases YouTube Music does not have are dimmed instead of stamped. */
 @Composable
-private fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit) {
+internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val release = group.primary
     Column(
@@ -955,7 +579,7 @@ private fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit) {
 
 /** A release as one line: singles, and everything in the demos archive. */
 @Composable
-private fun ReleaseRow(group: ReleaseGroup, onClick: () -> Unit) {
+internal fun ReleaseRow(group: ReleaseGroup, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val release = group.primary
     Row(
@@ -984,7 +608,7 @@ private fun ReleaseRow(group: ReleaseGroup, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SegmentedPair(left: String, right: String, rightSelected: Boolean, onSelect: (rightSelected: Boolean) -> Unit) {
+internal fun SegmentedPair(left: String, right: String, rightSelected: Boolean, onSelect: (rightSelected: Boolean) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(20.dp)
     Row(Modifier.clip(shape).background(colors.surfaceCard)) {
@@ -1095,7 +719,7 @@ internal fun formatCount(n: Long): String = when {
 }
 
 @Composable
-private fun ActionPill(text: String, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun ActionPill(text: String, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(20.dp)
     Text(
@@ -1116,7 +740,7 @@ private fun ActionPill(text: String, selected: Boolean = false, enabled: Boolean
 
 /** A release's cover, falling through its candidate URLs if one fails to load. */
 @Composable
-private fun ReleaseCover(release: LibraryRelease, modifier: Modifier) {
+internal fun ReleaseCover(release: LibraryRelease, modifier: Modifier) {
     val colors = MaterialTheme.nuvio.colors
     val covers = release.art.covers
     var index by remember(release.key, covers) { mutableStateOf(0) }
@@ -1130,6 +754,19 @@ private fun ReleaseCover(release: LibraryRelease, modifier: Modifier) {
                 contentScale = ContentScale.Crop,
                 onError = { if (index < covers.lastIndex) index++ },
             )
+        } else {
+            // No cover at all: a generated one, the title on the release's palette (else the app's surface).
+            val wash = release.palette?.let { Color(it.tint) } ?: colors.surfaceElevated
+            Box(Modifier.fillMaxSize().background(wash).padding(8.dp), contentAlignment = Alignment.BottomStart) {
+                Text(
+                    release.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                    color = colors.textPrimary,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

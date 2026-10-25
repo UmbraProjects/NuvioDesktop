@@ -83,7 +83,7 @@ private fun fold(list: List<LibraryRelease>): List<ReleaseGroup> =
         ReleaseGroup(primary = ordered.first(), versions = ordered)
     }
 
-private fun ReleaseGroup.matches(filter: ReleaseFilter): Boolean = when (filter) {
+internal fun ReleaseGroup.matches(filter: ReleaseFilter): Boolean = when (filter) {
     ReleaseFilter.All -> true
     ReleaseFilter.Albums -> kind == ReleaseKind.Album
     ReleaseFilter.EPs -> kind == ReleaseKind.EP

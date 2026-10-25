@@ -136,7 +136,9 @@ object MusicLibraryRepository {
             val without = state.artists.filterNot { it.id == artist.id }
             // A fill-in works from an older copy of the artist; it must not wipe a palette derived meanwhile.
             val palette = artist.palette ?: state.artist(artist.id)?.palette
-            state.copy(artists = sorted(without + artist.copy(palette = palette)))
+            // Release palettes survive a refresh too (phase 4).
+            val kept = artist.copy(palette = palette).keepingPalettesFrom(state.artist(artist.id))
+            state.copy(artists = sorted(without + kept))
         }
         persist()
     }
@@ -164,11 +166,33 @@ object MusicLibraryRepository {
         }
     }
 
+    /** Caches release palettes (by release key) for [artistId] in one write: on disk if saved, in memory if previewed. */
+    fun setReleasePalettes(artistId: String, palettes: Map<String, ArtworkPalette>) {
+        if (palettes.isEmpty()) return
+        ensureLoaded()
+        fun LibraryArtist.withPalettes() =
+            copy(releases = releases.map { r -> palettes[r.key]?.let { r.copy(palette = it) } ?: r })
+        val state = _state.value
+        when {
+            state.contains(artistId) -> {
+                _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) it.withPalettes() else it }) }
+                persist()
+            }
+            state.preview.containsKey(artistId) -> {
+                _state.update { s ->
+                    val held = s.preview[artistId] ?: return@update s
+                    s.copy(preview = s.preview + (artistId to held.withPalettes()))
+                }
+            }
+        }
+    }
+
     /** Stores a previewed artist, keeping a palette derived meanwhile. Never persisted. */
     private fun putPreview(artist: LibraryArtist) {
         _state.update { state ->
             val palette = artist.palette ?: state.preview[artist.id]?.palette
-            state.copy(preview = boundedPreview(state.preview, artist.copy(palette = palette)))
+            val kept = artist.copy(palette = palette).keepingPalettesFrom(state.preview[artist.id])
+            state.copy(preview = boundedPreview(state.preview, kept))
         }
     }
 

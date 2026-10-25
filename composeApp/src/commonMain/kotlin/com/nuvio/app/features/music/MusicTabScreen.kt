@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.features.music.library.MusicLibraryGrid
+import com.nuvio.app.features.music.library.MusicLibraryShelf
 import kotlinx.coroutines.delay
 
 private enum class MusicSearchKind { Albums, Artists }
@@ -128,8 +128,9 @@ fun MusicTabScreen(
         }
 
         if (section == MusicSection.Library) {
-            MusicLibraryGrid(
+            MusicLibraryShelf(
                 onArtistClick = onArtistClick,
+                onAlbumClick = onAlbumClick,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
             return@Column
