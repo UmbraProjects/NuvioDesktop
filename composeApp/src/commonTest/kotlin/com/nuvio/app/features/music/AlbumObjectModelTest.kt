@@ -86,4 +86,13 @@ class AlbumObjectModelTest {
         assertFalse(notes.isEmpty)
         assertTrue(buildLinerNotes(null, null).isEmpty)
     }
+
+    @Test
+    fun compilationsDoNotPreviewTheirBroadChannel() {
+        assertEquals("UC1", albumArtistToPreview(album(1)))
+        val various = album(1).copy(artists = listOf(MusicArtistRef("Various Artists", "UCvarious")))
+        assertNull(albumArtistToPreview(various))
+        assertNull(albumArtistToPreview(album(1).copy(artists = emptyList())))
+        assertNull(albumArtistToPreview(album(1).copy(artists = listOf(MusicArtistRef("Band", null)))))
+    }
 }

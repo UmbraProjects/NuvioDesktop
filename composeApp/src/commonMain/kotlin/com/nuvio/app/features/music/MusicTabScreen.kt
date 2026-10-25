@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.MusicLibraryShelf
 import kotlinx.coroutines.delay
 
@@ -67,7 +68,15 @@ fun MusicTabScreen(
     val colors = MaterialTheme.nuvio.colors
     var query by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf(MusicSearchKind.Albums) }
-    var section by rememberSaveable { mutableStateOf(MusicSection.Search) }
+    // Opens on the shelf when the person has saved artists, and on Search when there is nothing to show
+    // yet. Loading is synchronous and cheap, so the first frame is already the right one. A choice made
+    // here is remembered, so coming back to the tab lands where the person left it.
+    var section by rememberSaveable {
+        MusicLibraryRepository.ensureLoaded()
+        mutableStateOf(
+            if (MusicLibraryRepository.state.value.artists.isEmpty()) MusicSection.Search else MusicSection.Library,
+        )
+    }
     var results by remember { mutableStateOf<MusicSearchResults>(MusicSearchResults.Idle) }
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.

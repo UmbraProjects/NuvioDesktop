@@ -114,7 +114,7 @@ private fun AlbumContent(
     val reducedMotion = rememberMusicReducedMotion()
     // Looks the album's artist up in the background (not saved) so an album opened from Search gets
     // the same label, mood, CD art and palette as one from the library. A saved artist is left alone.
-    val albumArtistId = album.artists.firstOrNull()?.browseId
+    val albumArtistId = albumArtistToPreview(album)
     LaunchedEffect(albumArtistId) {
         albumArtistId?.let { MusicLibraryRepository.openPreview(it) }
     }
@@ -437,4 +437,16 @@ private fun TrackRow(
             color = if (track.isAvailable) colors.textMuted else colors.textDisabled,
         )
     }
+}
+
+/**
+ * The channel to look up in the background when [album] is opened, or null to skip it. Compilations
+ * credited to "Various Artists" (or to nobody linkable) would pull in a broad channel that is not the
+ * record's artist, so they get no look-up; every other album looks up its first artist, as before.
+ */
+internal fun albumArtistToPreview(album: MusicAlbum): String? {
+    val first = album.artists.firstOrNull() ?: return null
+    val name = first.name.trim().lowercase()
+    if (name == "various artists" || name == "various" || name == "va") return null
+    return first.browseId
 }
