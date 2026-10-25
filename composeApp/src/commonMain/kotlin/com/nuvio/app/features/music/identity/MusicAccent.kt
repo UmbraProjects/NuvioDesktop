@@ -37,7 +37,7 @@ val LocalArtistIdentity = staticCompositionLocalOf<ArtistIdentity?> { null }
  * agree; with nothing playing it is the artist being viewed ([viewedArtistId], or the owner of
  * [viewedAlbumBrowseId]). With neither, or an artist with no palette yet, or a light theme, the
  * app's own accent is left alone. The palette is derived in the background the first time it is
- * needed and then cached in the library.
+ * needed and then cached in the library (an artist only previewed from Search keeps it for the session).
  */
 @Composable
 fun MusicAccentScope(
@@ -56,7 +56,7 @@ fun MusicAccentScope(
 
     LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
 
-    val identity = remember(nowPlaying, library.artists, viewedArtistId, viewedAlbumBrowseId) {
+    val identity = remember(nowPlaying, library.artists, library.preview, viewedArtistId, viewedAlbumBrowseId) {
         (playingArtist(nowPlaying.track, nowPlaying.album, library) ?: viewedArtist(library, viewedArtistId, viewedAlbumBrowseId))?.identity()
     }
 
@@ -80,20 +80,20 @@ fun MusicAccentScope(
 
 private data class NowPlaying(val track: MusicTrack?, val album: MusicAlbum?)
 
-/** The library artist of the track or album now playing, matched by channel id and then by name. */
+/** The artist (saved, else previewed) of the track or album now playing, matched by channel id and then by name. */
 internal fun playingArtist(track: MusicTrack?, album: MusicAlbum?, library: MusicLibraryState): LibraryArtist? {
     val refs = track?.artists.orEmpty() + album?.artists.orEmpty()
     refs.forEach { ref ->
-        ref.browseId?.let(library::artist)?.let { return it }
+        ref.browseId?.let(library::artistOrPreview)?.let { return it }
     }
     refs.forEach { ref ->
-        library.artists.firstOrNull { it.name.equals(ref.name, ignoreCase = true) }?.let { return it }
+        (library.artists + library.preview.values).firstOrNull { it.name.equals(ref.name, ignoreCase = true) }?.let { return it }
     }
     return null
 }
 
 internal fun viewedArtist(library: MusicLibraryState, artistId: String?, albumBrowseId: String?): LibraryArtist? =
-    artistId?.let(library::artist) ?: albumBrowseId?.let(library::artistOfAlbum)
+    artistId?.let(library::artistOrPreview) ?: albumBrowseId?.let(library::artistOfAlbum)
 
 /** These tokens with the accent family swapped for one artist's colours; everything else, focus ring included, is untouched. */
 internal fun NuvioThemeTokens.withAccent(accent: Color, onAccent: Color): NuvioThemeTokens = copy(

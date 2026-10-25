@@ -39,13 +39,45 @@ data class MusicLibraryState(
     val settings: MusicLibrarySettings = MusicLibrarySettings(),
     /** Set when the last add failed outright (YouTube Music unreachable), cleared by the next try. */
     val errorMessage: String? = null,
+    /**
+     * Artists opened from Search (or from an album) that are not in the library: enriched in the
+     * background so their page looks like a saved artist's, but never written to disk. Bounded by
+     * [boundedPreview]; Add promotes one into [artists].
+     */
+    val preview: Map<String, LibraryArtist> = emptyMap(),
+    /** Previewed artists whose first look-up failed outright, so the page can offer a retry. */
+    val previewFailed: Set<String> = emptySet(),
 ) {
+    /** True only for a saved artist; a previewed one is not "in the library". */
     fun contains(artistId: String): Boolean = artists.any { it.id == artistId }
     fun artist(id: String): LibraryArtist? = artists.firstOrNull { it.id == id }
 
-    /** Library id of the artist that owns the YouTube Music album [browseId], if one does. */
+    /** The saved artist, else the previewed copy. What an artist page reads, so both doors show the same thing. */
+    fun artistOrPreview(id: String): LibraryArtist? = artist(id) ?: preview[id]
+
+    /** Library id of the artist (saved first, then previewed) that owns the YouTube Music album [browseId], if one does. */
     fun artistOfAlbum(browseId: String): LibraryArtist? =
-        artists.firstOrNull { artist -> artist.releases.any { it.ytBrowseId == browseId } }
+        (artists.asSequence() + preview.values.asSequence())
+            .firstOrNull { artist -> artist.releases.any { it.ytBrowseId == browseId } }
+}
+
+/** How many unsaved artists are kept for this session before the least recently touched is dropped. */
+internal const val MAX_PREVIEWS = 12
+
+/**
+ * [previews] with [artist] stored as the most recently touched entry, the oldest dropped past
+ * [max]. Pure, so the eviction rule is tested without the repository.
+ */
+internal fun boundedPreview(
+    previews: Map<String, LibraryArtist>,
+    artist: LibraryArtist,
+    max: Int = MAX_PREVIEWS,
+): Map<String, LibraryArtist> {
+    val next = LinkedHashMap(previews)
+    next.remove(artist.id)
+    next[artist.id] = artist
+    while (next.size > max) next.remove(next.keys.first())
+    return next
 }
 
 /**
@@ -109,12 +141,45 @@ object MusicLibraryRepository {
         persist()
     }
 
-    /** Caches the palette derived for [artistId]. Dropped when the artist has since been removed. */
+    /**
+     * Caches the palette derived for [artistId]: on disk for a saved artist, in memory for a
+     * previewed one. Dropped when the artist is neither (removed and evicted since).
+     */
     fun setArtistPalette(artistId: String, palette: ArtworkPalette) {
         ensureLoaded()
-        if (!_state.value.contains(artistId)) return
+        val state = _state.value
+        when {
+            state.contains(artistId) -> {
+                _state.update { s ->
+                    s.copy(artists = s.artists.map { if (it.id == artistId) it.copy(palette = palette) else it })
+                }
+                persist()
+            }
+            state.preview.containsKey(artistId) -> {
+                _state.update { s ->
+                    val held = s.preview[artistId] ?: return@update s
+                    s.copy(preview = s.preview + (artistId to held.copy(palette = palette)))
+                }
+            }
+        }
+    }
+
+    /** Stores a previewed artist, keeping a palette derived meanwhile. Never persisted. */
+    private fun putPreview(artist: LibraryArtist) {
         _state.update { state ->
-            state.copy(artists = state.artists.map { if (it.id == artistId) it.copy(palette = palette) else it })
+            val palette = artist.palette ?: state.preview[artist.id]?.palette
+            state.copy(preview = boundedPreview(state.preview, artist.copy(palette = palette)))
+        }
+    }
+
+    /** Moves a previewed artist into the saved library and writes it to disk. */
+    private fun promote(artist: LibraryArtist) {
+        _state.update { state ->
+            state.copy(
+                artists = sorted(state.artists.filterNot { it.id == artist.id } + artist.copy(addedAtEpochMs = LibraryClock.nowEpochMs())),
+                preview = state.preview - artist.id,
+                previewFailed = state.previewFailed - artist.id,
+            )
         }
         persist()
     }
@@ -131,9 +196,39 @@ object MusicLibraryRepository {
      */
     fun add(artistBrowseId: String, catalog: MusicCatalog = defaultMusicCatalog()) {
         ensureLoaded()
-        if (_state.value.contains(artistBrowseId) || jobs[artistBrowseId]?.isActive == true) return
+        val state = _state.value
+        if (state.contains(artistBrowseId)) return
+        val previewed = state.preview[artistBrowseId]
+        if (previewed != null) {
+            // Already looked up for the page: keep it, do not fetch it twice. A look-up still running
+            // carries on and now writes into the library; one cut short (removed mid-way) is resumed.
+            promote(previewed)
+            if (jobs[artistBrowseId]?.isActive != true && artistBrowseId !in completed) {
+                jobs[artistBrowseId] = scope.launch {
+                    fillIn(artistBrowseId, catalog, existing = _state.value.artist(artistBrowseId), preview = false)
+                }
+            }
+            return
+        }
+        // A preview that has not produced its first page yet has no Add button to press; nothing to do.
+        if (jobs[artistBrowseId]?.isActive == true) return
         _state.update { it.copy(errorMessage = null) }
-        jobs[artistBrowseId] = scope.launch { fillIn(artistBrowseId, catalog, existing = null) }
+        jobs[artistBrowseId] = scope.launch { fillIn(artistBrowseId, catalog, existing = null, preview = false) }
+    }
+
+    /**
+     * Looks the artist up for an artist page opened from Search (or from an album) without saving
+     * it. The page shows what YouTube Music lists at once and fills in as the other sources answer,
+     * exactly as a saved artist does. Does nothing for a saved artist, one already previewed or
+     * being looked up. Previews are session-only: closing the app forgets them.
+     */
+    fun openPreview(artistBrowseId: String, catalog: MusicCatalog = defaultMusicCatalog()) {
+        ensureLoaded()
+        val state = _state.value
+        if (state.contains(artistBrowseId) || state.preview.containsKey(artistBrowseId)) return
+        if (jobs[artistBrowseId]?.isActive == true) return
+        _state.update { it.copy(previewFailed = it.previewFailed - artistBrowseId) }
+        jobs[artistBrowseId] = scope.launch { fillIn(artistBrowseId, catalog, existing = null, preview = true) }
     }
 
     /** Looks the artist up again, keeping the old data where the sources now say nothing. */
@@ -141,7 +236,7 @@ object MusicLibraryRepository {
         ensureLoaded()
         val existing = _state.value.artist(artistId) ?: return
         if (jobs[artistId]?.isActive == true) return
-        jobs[artistId] = scope.launch { fillIn(artistId, catalog, existing) }
+        jobs[artistId] = scope.launch { fillIn(artistId, catalog, existing, preview = false) }
     }
 
     fun refreshAll(catalog: MusicCatalog = defaultMusicCatalog()) {
@@ -149,19 +244,45 @@ object MusicLibraryRepository {
         _state.value.artists.forEach { refresh(it.id, catalog) }
     }
 
+    /**
+     * Takes the artist out of the library. It stays on as a preview for this session, so the page
+     * that is open keeps showing it with Add instead of going blank.
+     */
     fun remove(artistId: String) {
         ensureLoaded()
         jobs.remove(artistId)?.cancel()
+        val removed = _state.value.artist(artistId)
         _state.update { it.copy(artists = it.artists.filterNot { a -> a.id == artistId }, working = it.working - artistId) }
+        removed?.let(::putPreview)
         persist()
     }
 
-    private suspend fun fillIn(artistId: String, catalog: MusicCatalog, existing: LibraryArtist?) {
+    /** Ids whose look-up ran to the end this session, so promoting a finished preview does not fetch it again. */
+    private val completed = HashSet<String>()
+
+    /**
+     * Looks an artist up and writes the result as it grows. A saved artist is written to the library;
+     * with [preview] an unsaved one goes to [MusicLibraryState.preview] instead. The destination is
+     * decided at every write, so an artist added mid-way continues into the library and one removed
+     * mid-way (a library job) stops being written.
+     */
+    private suspend fun fillIn(artistId: String, catalog: MusicCatalog, existing: LibraryArtist?, preview: Boolean) {
+        fun put(artist: LibraryArtist, onlyIfPresent: Boolean) {
+            when {
+                _state.value.contains(artist.id) -> replace(artist)
+                preview -> putPreview(artist)
+                else -> replace(artist, onlyIfPresent)
+            }
+        }
         try {
             setProgress(artistId, "Reading the artist page")
             val page = catalog.artist(artistId)
             if (page == null) {
-                if (existing == null) {
+                if (preview) {
+                    if (_state.value.artistOrPreview(artistId) == null) {
+                        _state.update { it.copy(previewFailed = it.previewFailed + artistId) }
+                    }
+                } else if (existing == null) {
                     _state.update { it.copy(errorMessage = "Couldn't reach YouTube Music to add this artist. Try again.") }
                 }
                 return
@@ -172,7 +293,7 @@ object MusicLibraryRepository {
 
             // Show something straight away: the artist with the releases YouTube Music lists.
             if (existing == null) {
-                replace(
+                put(
                     assembleArtist(
                         id = artistId,
                         name = page.name,
@@ -182,24 +303,30 @@ object MusicLibraryRepository {
                         addedAtEpochMs = addedAt,
                         nowEpochMs = now,
                     ),
+                    onlyIfPresent = false,
                 )
             }
 
             val enricher = MusicLibraryEnricher(_state.value.settings)
             val built = enricher.build(page, releases, addedAt, now) { setProgress(artistId, it) }
             val full = if (existing == null) built else keepWhereEmpty(built, existing)
-            replace(full, onlyIfPresent = true)
+            put(full, onlyIfPresent = true)
 
             setProgress(artistId, "Reading album details")
             val detailed = enricher.addReleaseDetails(full.releases) { partial ->
-                replace(full.copy(releases = partial), onlyIfPresent = true)
+                put(full.copy(releases = partial), onlyIfPresent = true)
             }
-            replace(full.copy(releases = detailed), onlyIfPresent = true)
+            put(full.copy(releases = detailed), onlyIfPresent = true)
+            completed.add(artistId)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            log.e(error) { "Adding artist $artistId failed" }
-            if (existing == null && !_state.value.contains(artistId)) {
+            log.e(error) { "Looking up artist $artistId failed" }
+            if (preview) {
+                if (_state.value.artistOrPreview(artistId) == null) {
+                    _state.update { it.copy(previewFailed = it.previewFailed + artistId) }
+                }
+            } else if (existing == null && !_state.value.contains(artistId)) {
                 _state.update { it.copy(errorMessage = "Couldn't add this artist. Try again.") }
             }
         } finally {

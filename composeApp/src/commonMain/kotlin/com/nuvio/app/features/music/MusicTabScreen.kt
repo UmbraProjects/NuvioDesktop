@@ -51,7 +51,8 @@ private const val TYPING_PAUSE_MS = 350L
 /**
  * The Music tab: one search box, with Albums and Artists as the two kinds of result. Searching
  * runs a moment after the last keystroke. Tapping a result opens its screen through [onAlbumClick]
- * or [onArtistClick]; this screen starts no playback itself.
+ * or [onArtistClick]; this screen starts no playback itself. A library artist opens through the
+ * same [onArtistClick] as a search result: both doors lead to one artist page.
  *
  * [topChromePadding] keeps the title clear of the floating top bar, like the other tabs.
  */
@@ -60,8 +61,6 @@ fun MusicTabScreen(
     onAlbumClick: (browseId: String) -> Unit,
     onArtistClick: (browseId: String) -> Unit,
     modifier: Modifier = Modifier,
-    /** Opens an artist of the library (by library id) on its own page. */
-    onLibraryArtistClick: (artistId: String) -> Unit = {},
     topChromePadding: Dp = 0.dp,
     catalog: MusicCatalog = remember { defaultMusicCatalog() },
 ) {
@@ -130,7 +129,7 @@ fun MusicTabScreen(
 
         if (section == MusicSection.Library) {
             MusicLibraryGrid(
-                onArtistClick = onLibraryArtistClick,
+                onArtistClick = onArtistClick,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
             return@Column

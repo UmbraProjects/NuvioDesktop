@@ -15,7 +15,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.nuvio.app.features.music.identity.MusicAccentScope
-import com.nuvio.app.features.music.library.MusicLibraryArtistScreen
+import com.nuvio.app.features.music.library.MusicArtistScreen
 import kotlinx.serialization.Serializable
 
 /*
@@ -25,19 +25,19 @@ import kotlinx.serialization.Serializable
  * small tagged hooks (`// fork:music`) and a merge of a new upstream release stays cheap.
  *
  * Hooks in App.kt: the `Music` tab in AppScreenTab and its navigation entries, the tab body
- * ([MusicTabHost]), the three routes ([musicRoutes]), the root player hosts ([MusicRootHosts]) and
+ * ([MusicTabHost]), the two routes ([musicRoutes]), the root player hosts ([MusicRootHosts]) and
  * the content inset that keeps the mini-player bar clear of the screens ([rememberMusicBarInset]).
  */
 
 @Serializable
 data class MusicAlbumRoute(val browseId: String)
 
+/**
+ * An artist, by YouTube Music channel id. The one artist route: Search results and the Library
+ * both open it (a library id is the channel id), and the page decides whether it is saved.
+ */
 @Serializable
 data class MusicArtistRoute(val browseId: String)
-
-/** An artist of the music library, by library id (the artist's YouTube Music channel id). */
-@Serializable
-data class MusicLibraryArtistRoute(val artistId: String)
 
 /**
  * The Music tab. Like Live TV it is its own screen, built and disposed with the tab, rather than a
@@ -52,7 +52,6 @@ fun MusicTabHost(
     MusicTabScreen(
         onAlbumClick = { navigate(MusicAlbumRoute(it)) },
         onArtistClick = { navigate(MusicArtistRoute(it)) },
-        onLibraryArtistClick = { navigate(MusicLibraryArtistRoute(it)) },
         modifier = modifier.fillMaxSize(),
         topChromePadding = topChromePadding ?: 0.dp,
     )
@@ -85,7 +84,7 @@ fun BoxScope.MusicRootHosts(hidden: Boolean) {
 }
 
 /**
- * The album, artist and library-artist pages. [guardedBack] is App.kt's guarded pop (one pop per
+ * The album and artist pages. [guardedBack] is App.kt's guarded pop (one pop per
  * entry, only while that entry is current); [navigate] is its resumed-only navigate.
  */
 fun NavGraphBuilder.musicRoutes(
@@ -108,18 +107,7 @@ fun NavGraphBuilder.musicRoutes(
         val route = backStackEntry.toRoute<MusicArtistRoute>()
         MusicAccentScope(viewedArtistId = route.browseId) {
             MusicArtistScreen(
-                browseId = route.browseId,
-                onBack = guardedBack(backStackEntry),
-                onAlbumClick = { navigate(MusicAlbumRoute(it)) },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-    composable<MusicLibraryArtistRoute> { backStackEntry ->
-        val route = backStackEntry.toRoute<MusicLibraryArtistRoute>()
-        MusicAccentScope(viewedArtistId = route.artistId) {
-            MusicLibraryArtistScreen(
-                artistId = route.artistId,
+                artistId = route.browseId,
                 onBack = guardedBack(backStackEntry),
                 onAlbumClick = { navigate(MusicAlbumRoute(it)) },
                 modifier = Modifier.fillMaxSize(),

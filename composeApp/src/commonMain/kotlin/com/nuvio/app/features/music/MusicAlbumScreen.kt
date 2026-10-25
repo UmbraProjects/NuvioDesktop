@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +54,7 @@ import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.LibraryAlbumInfo
+import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.rememberLibraryAlbumInfo
 
 /**
@@ -110,7 +112,13 @@ private fun AlbumContent(
     val state by player.state.collectAsStateWithLifecycle()
     var chosenMode by rememberSaveable(album.browseId) { mutableStateOf(player.state.value.mode) }
     var descriptionOpen by rememberSaveable(album.browseId) { mutableStateOf(false) }
-    // What the music library knows about this album: only set when it is a release of a library artist.
+    // Looks the album's artist up in the background (not saved) so an album opened from Search gets
+    // the same label, mood, CD art and palette as one from the library. A saved artist is left alone.
+    val albumArtistId = album.artists.firstOrNull()?.browseId
+    LaunchedEffect(albumArtistId) {
+        albumArtistId?.let { MusicLibraryRepository.openPreview(it) }
+    }
+    // What the music library knows about this album: set when it is a release of a saved or previewed artist.
     val info = rememberLibraryAlbumInfo(album.browseId)
 
     val loaded = state.holds(album)

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -252,34 +253,40 @@ private fun ArtworkSourcesDialog(
 // region Add button
 
 /**
- * The Add to library control for an artist page. Shows the step it is on while the artist is being
- * filled in, and turns into a check when the artist is in the library.
+ * The Add / Saved control of an artist page, the one difference between the two doors to it.
+ * Add saves the artist (a previewed one is kept as it is, not fetched again); Saved is its
+ * filled-in state and, when [onSavedClick] is given, takes it back out. While a saved artist is
+ * being filled in it shows the step it is on; a merely previewed artist's background look-up
+ * is not "adding", so the button stays a plain Add.
  */
 @Composable
 fun MusicAddToLibraryButton(
     artistId: String,
     modifier: Modifier = Modifier,
+    onSavedClick: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.nuvio.colors
     LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
     val inLibrary = state.contains(artistId)
-    val working = state.working[artistId]
+    val adding = inLibrary && state.working[artistId] != null
     val shape = RoundedCornerShape(22.dp)
     Row(
         modifier = modifier
             .height(44.dp)
             .clip(shape)
             .then(
-                if (inLibrary || working != null) Modifier.border(1.dp, colors.accent, shape)
+                if (inLibrary) Modifier.border(1.dp, colors.accent, shape)
                 else Modifier.background(colors.accent),
             )
-            .clickable(enabled = !inLibrary && working == null) { MusicLibraryRepository.add(artistId) }
+            .clickable(enabled = !inLibrary || (onSavedClick != null && !adding)) {
+                if (inLibrary) onSavedClick?.invoke() else MusicLibraryRepository.add(artistId)
+            }
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val tint = if (inLibrary || working != null) colors.accent else colors.onAccent
+        val tint = if (inLibrary) colors.accent else colors.onAccent
         Icon(
             imageVector = if (inLibrary) Icons.Rounded.Check else Icons.Rounded.Add,
             contentDescription = null,
@@ -288,8 +295,8 @@ fun MusicAddToLibraryButton(
         )
         Text(
             text = when {
-                working != null -> "Adding…"
-                inLibrary -> "In library"
+                adding -> "Adding…"
+                inLibrary -> "Saved"
                 else -> "Add to library"
             },
             style = MaterialTheme.typography.titleMedium,
@@ -303,27 +310,37 @@ fun MusicAddToLibraryButton(
 // region Artist page
 
 /**
- * An artist in the library, as a two-pane page.
+ * An artist, as a two-pane page. The one artist page of the Music tab: Search results and the
+ * Library both open it, and it looks the same from either door. The only difference is the
+ * Add / Saved control: a saved artist reads from the library, an unsaved one is looked up in the
+ * background (see [MusicLibraryRepository.openPreview]) and saved only when the person taps Add.
  *
  * Left rail: who they are (portrait, logo, one-line headline, tagline), the things to do (Play,
- * Shuffle), mood/style chips, a short bio and one Links button. Right pane: the newest release,
- * then every release as year "eras", with duplicate versions folded together and demos kept in an
- * archive. Under ~840dp wide the rail simply stacks above the pane.
+ * Shuffle, Add / Saved), mood/style chips, a short bio and one Links button. Right pane: the newest
+ * release, then every release as year "eras", with duplicate versions folded together and demos
+ * kept in an archive. Under ~840dp wide the rail simply stacks above the pane.
  *
+ * [artistId] is the artist's YouTube Music channel id, which is also its library id.
  * What [buildDiscography] does with the releases is in ArtistPageModel.kt.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MusicLibraryArtistScreen(
+fun MusicArtistScreen(
     artistId: String,
     onBack: () -> Unit,
     onAlbumClick: (browseId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
+    var attempt by remember { mutableStateOf(0) }
+    // Looks the artist up unless it is saved or already previewed; a Try again restarts it.
+    LaunchedEffect(artistId, attempt) {
+        MusicLibraryRepository.ensureLoaded()
+        MusicLibraryRepository.openPreview(artistId)
+    }
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
-    val artist = state.artist(artistId)
+    val artist = state.artistOrPreview(artistId)
+    val saved = state.contains(artistId)
     var playableOnly by rememberSaveable { mutableStateOf(false) }
     var filterName by rememberSaveable { mutableStateOf(ReleaseFilter.All.name) }
     var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -339,7 +356,17 @@ fun MusicLibraryArtistScreen(
     if (artist == null) {
         Column(modifier.fillMaxSize().background(colors.background).padding(top = 12.dp)) {
             Box(Modifier.padding(horizontal = 16.dp)) { NuvioBackButton(onClick = onBack) }
-            MusicMessage("This artist is not in your library.")
+            if (artistId in state.previewFailed) {
+                MusicMessage(
+                    text = "Couldn't load this artist.",
+                    actionLabel = "Try again",
+                    onAction = { attempt++ },
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = colors.accent)
+                }
+            }
         }
         return
     }
@@ -388,6 +415,7 @@ fun MusicLibraryArtistScreen(
                 playTarget = playTarget,
                 canShuffle = shuffleTarget != null,
                 notice = playNotice,
+                saved = saved,
                 refreshing = working?.status,
                 onBack = onBack,
                 onPlay = { startPlayback(playTarget, shuffled = false) },
@@ -472,8 +500,8 @@ fun MusicLibraryArtistScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmRemove = false
+                    // The page stays: the artist turns back into an unsaved one, with Add.
                     MusicLibraryRepository.remove(artist.id)
-                    onBack()
                 }) { Text("Remove") }
             },
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Keep") } },
@@ -512,7 +540,10 @@ private fun ArtistRail(
     playTarget: LibraryRelease?,
     canShuffle: Boolean,
     notice: String?,
+    /** Which step a look-up is on while one runs, for a saved or an unsaved artist alike. */
     refreshing: String?,
+    /** True for an artist in the library; false for one only previewed from Search. */
+    saved: Boolean,
     onBack: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
@@ -584,6 +615,7 @@ private fun ArtistRail(
         )
         OutlinedAction(Icons.Rounded.Shuffle, "Shuffle", enabled = canShuffle, onClick = onShuffle)
     }
+    MusicAddToLibraryButton(artistId = artist.id, onSavedClick = onRemove)
     val playing = notice ?: playTarget?.let { "Plays ${it.title}${it.year?.let { y -> " ($y)" } ?: ""}" }
     if (playing != null) {
         Text(
@@ -621,10 +653,14 @@ private fun ArtistRail(
         if (artist.biography == null) ActionPill("Details", onClick = onAbout)
     }
 
-    // Housekeeping lives at the bottom, quiet.
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        TextButton(onClick = onRefresh, enabled = refreshing == null) { Text(refreshing ?: "Refresh") }
-        TextButton(onClick = onRemove) { Text("Remove from library") }
+    // Housekeeping lives at the bottom, quiet. An unsaved artist has nothing to refresh; it just
+    // says what it is still reading. Removing is the Saved button.
+    if (saved) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = onRefresh, enabled = refreshing == null) { Text(refreshing ?: "Refresh") }
+        }
+    } else if (refreshing != null) {
+        Text(refreshing, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
     }
     if (artist.sources.isNotEmpty()) {
         Text(
@@ -1199,18 +1235,17 @@ private fun ReleaseDialog(
 fun rememberCdArtFor(albumBrowseId: String?): String? {
     LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
-    return remember(albumBrowseId, state.artists) {
+    return remember(albumBrowseId, state.artists, state.preview) {
         albumBrowseId?.let { id ->
-            state.artists.firstNotNullOfOrNull { artist ->
-                artist.releases.firstOrNull { it.ytBrowseId == id }?.art?.cdArt
-            }
+            state.artistOfAlbum(id)?.releases?.firstOrNull { it.ytBrowseId == id }?.art?.cdArt
         }
     }
 }
 
 /**
  * What the library knows about the album with YouTube Music id `albumBrowseId`: the release (label,
- * genres, mood, description, CD art...) and the artist it belongs to.
+ * genres, mood, description, CD art...) and the artist it belongs to. [artist] may be an unsaved,
+ * previewed artist: an album opened from Search shows the same details once its artist is looked up.
  */
 data class LibraryAlbumInfo(val artist: LibraryArtist, val release: LibraryRelease) {
     /** The artist's other releases YouTube Music can play, one per record, newest first. */
@@ -1222,14 +1257,14 @@ data class LibraryAlbumInfo(val artist: LibraryArtist, val release: LibraryRelea
             .take(10)
 }
 
-/** The [LibraryAlbumInfo] for an album, or null when it is not a release of an artist in the library. */
+/** The [LibraryAlbumInfo] for an album, or null when it is not a release of a saved or previewed artist. */
 @Composable
 fun rememberLibraryAlbumInfo(albumBrowseId: String?): LibraryAlbumInfo? {
     LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
-    return remember(albumBrowseId, state.artists) {
+    return remember(albumBrowseId, state.artists, state.preview) {
         albumBrowseId?.let { id ->
-            state.artists.firstNotNullOfOrNull { artist ->
+            state.artistOfAlbum(id)?.let { artist ->
                 artist.releases.firstOrNull { it.ytBrowseId == id }?.let { LibraryAlbumInfo(artist, it) }
             }
         }
