@@ -18,6 +18,16 @@ const isPreshowSurface = (() => {
   }
 })();
 
+// fork:music - The music player draws its own controls and wants the bare picture: no stop button, volume pill or
+// fade scrim from the hero-trailer chrome (they showed up shrunk inside the mini-player thumbnail).
+const isChromelessSurface = (() => {
+  try {
+    return new URLSearchParams(location.search).get("chromeless") === "1";
+  } catch (_err) {
+    return false;
+  }
+})();
+
 const root = document.getElementById("playerRoot");
 const contextMenu = document.getElementById("contextMenu");
 const seek = document.getElementById("seek");
@@ -5684,6 +5694,12 @@ const applyHeroTrailer = () => {
   if (lastCursorHidden) {
     lastCursorHidden = false;
     send("cursorVisibility", 1);
+  }
+  if (isChromelessSurface) { // fork:music
+    heroTrailerFade.style.display = "none";
+    heroTrailerContent.style.display = "none";
+    heroTrailerChrome.style.display = "none";
+    return;
   }
   const { r, g, b } = parseHeroTrailerRgb(state.heroTrailerBackgroundColor);
   const opaque = `rgb(${r}, ${g}, ${b})`;

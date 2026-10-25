@@ -56,6 +56,13 @@ private val editionNoise = Regex(
 internal fun LibraryRelease.isDemo(): Boolean =
     secondaryTypes.any { it.equals("Demo", ignoreCase = true) } || demoWord.containsMatchIn(title)
 
+/**
+ * Secondary types worth printing beside the kind. MusicBrainz tags a live album as kind Live *and*
+ * secondary type "Live"; printing both gave "Live · Live".
+ */
+internal fun LibraryRelease.extraTypes(): List<String> =
+    secondaryTypes.filterNot { it.equals(kind.label, ignoreCase = true) }
+
 /** Two releases with the same key are the same record listed twice by different sources. */
 internal fun LibraryRelease.dedupeKey(): String {
     val cleanTitle = editionNoise.replace(title, "").lowercase().filter { it.isLetterOrDigit() }
@@ -83,6 +90,16 @@ private fun ReleaseGroup.matches(filter: ReleaseFilter): Boolean = when (filter)
     ReleaseFilter.Singles -> kind == ReleaseKind.Single
     ReleaseFilter.Other -> kind == ReleaseKind.Compilation || kind == ReleaseKind.Live || kind == ReleaseKind.Other
     ReleaseFilter.Demos -> false // demos never share a card list with the rest
+}
+
+/**
+ * How many cards an artist has once versions are folded and demos are counted too. This is the one
+ * definition of "releases" for every screen: the library grid used the raw list (66 for an artist
+ * whose page said 64).
+ */
+internal fun countReleaseCards(releases: List<LibraryRelease>): Int {
+    val (demoReleases, regularReleases) = releases.partition { it.isDemo() }
+    return fold(regularReleases).size + fold(demoReleases).size
 }
 
 internal fun buildDiscography(
@@ -125,7 +142,7 @@ internal fun buildDiscography(
         eras = eras,
         demos = shownDemos.sortedByDescending { it.primary.sortDate() },
         playableCount = (regular + demos).count { it.isPlayable },
-        totalCount = regular.size + demos.size,
+        totalCount = regular.size + demos.size, // same rule as countReleaseCards
         filterCounts = filterCounts,
     )
 }

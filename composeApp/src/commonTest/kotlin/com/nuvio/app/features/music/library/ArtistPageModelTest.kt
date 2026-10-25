@@ -148,4 +148,26 @@ class ArtistPageModelTest {
         )
         assertEquals("hip hop / rapcore / Rap · United Kingdom · since 1990", artistHeadline(a))
     }
+
+
+    @Test
+    fun releaseCountIsTheSameForTheGridAndThePage() {
+        val releases = listOf(
+            release("a", "Asylum"),
+            release("b", "Asylum (Deluxe Edition)"), // same record listed twice by two sources
+            release("c", "Demos Vol 1", year = "2020"),
+            release("d", "Hurricane", ReleaseKind.Single, "2025"),
+        )
+        val total = buildDiscography(releases, playableOnly = false, filter = ReleaseFilter.All).totalCount
+        assertEquals(3, countReleaseCards(releases))
+        assertEquals(total, countReleaseCards(releases))
+        assertTrue(countReleaseCards(releases) < releases.size)
+    }
+
+    @Test
+    fun aSecondaryTypeThatRepeatsTheKindIsNotPrintedTwice() {
+        assertEquals(emptyList(), release("a", "Live at X", ReleaseKind.Live, types = listOf("Live")).extraTypes())
+        assertEquals(listOf("Remix"), release("b", "Y", ReleaseKind.Live, types = listOf("live", "Remix")).extraTypes())
+        assertEquals(listOf("Soundtrack"), release("c", "Z", ReleaseKind.Album, types = listOf("Soundtrack")).extraTypes())
+    }
 }

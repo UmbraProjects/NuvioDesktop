@@ -127,7 +127,7 @@ actual fun MusicPlayerSurface(
                 log.w { "playback error on load $loadId: $message" }
                 latestOnError.value(loadId)
             },
-            controlsPageUrlSuffix = "?heroTrailer=1",
+            controlsPageUrlSuffix = "?heroTrailer=1&chromeless=1",
             initMpvOptions = listOf("volume=${volume.coerceIn(0, 100)}"),
         )
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")

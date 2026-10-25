@@ -146,8 +146,9 @@ fun MusicLibraryGrid(
                             overflow = TextOverflow.Ellipsis,
                         )
                         val working = state.working[artist.id]
+                        val releaseCount = remember(artist.releases) { countReleaseCards(artist.releases) }
                         Text(
-                            text = working?.status ?: "${artist.releases.size} release${if (artist.releases.size == 1) "" else "s"}",
+                            text = working?.status ?: "$releaseCount release${if (releaseCount == 1) "" else "s"}",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (working != null) colors.accent else colors.textSecondary,
                             maxLines = 1,
@@ -870,7 +871,7 @@ private fun LatestCard(release: LibraryRelease, onPlay: () -> Unit, onOpen: () -
 }
 
 private fun releaseSubtitle(release: LibraryRelease): String = listOfNotNull(
-    release.secondaryTypes.firstOrNull()?.let { "${release.kind.label} · $it" } ?: release.kind.label,
+    release.extraTypes().firstOrNull()?.let { "${release.kind.label} · $it" } ?: release.kind.label,
     release.year,
     release.trackCount?.let { "$it track${if (it == 1) "" else "s"}" },
 ).joinToString(" · ")
@@ -908,7 +909,7 @@ private fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit) {
         val sub = listOfNotNull(
             release.kind.label.takeIf { it != "Album" },
             release.trackCount?.let { "$it track${if (it == 1) "" else "s"}" },
-            release.secondaryTypes.firstOrNull(),
+            release.extraTypes().firstOrNull(),
         ).joinToString(" · ")
         if (sub.isNotEmpty()) {
             Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
