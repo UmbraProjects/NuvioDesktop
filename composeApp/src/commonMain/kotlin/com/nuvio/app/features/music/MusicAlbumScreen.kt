@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,7 +30,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Shuffle
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +48,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPrimaryButton
@@ -97,6 +103,7 @@ fun MusicAlbumScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AlbumContent(
     album: MusicAlbum,
@@ -127,20 +134,45 @@ private fun AlbumContent(
 
     val playing = loaded && state.isPlaying
     val discOut = discChoice ?: playing
-    val rail: @Composable () -> Unit = {
-        AlbumHeader(
+    // Board 3: the object (case, disc and its two toggles) on the left, everything about the record on the right.
+    val objectPanel: @Composable (Dp) -> Unit = { caseSize ->
+        AlbumObjectPanel(
             album = album,
             info = info,
             flipped = flipped,
             discOut = discOut,
             discSpinning = discOut && playing,
             reducedMotion = reducedMotion,
+            caseSize = caseSize,
             onFlip = { flipped = !flipped },
             onDisc = { discChoice = !discOut },
-            onArtistClick = onArtistClick,
         )
+    }
+    val facts: @Composable () -> Unit = {
+        AlbumFacts(album = album, info = info, onArtistClick = onArtistClick)
+        info?.release?.let { release ->
+            // Liner notes: label and date, genre chips with the mood in the accent, the description.
+            AlbumLinerNotes(
+                notes = buildLinerNotes(release, album.year),
+                descriptionOpen = descriptionOpen,
+                onToggleDescription = { descriptionOpen = !descriptionOpen },
+            )
+            // Where the library and YouTube Music disagree is worth a line: it explains a "missing" song.
+            val listed = release.trackCount
+            if (listed != null && listed != album.tracks.size) {
+                Text(
+                    "Your library lists $listed tracks for this release; YouTube Music has ${album.tracks.size}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
+            }
+        }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
                 NuvioPrimaryButton(
                     text = when {
                         !loaded -> "Play"
@@ -163,15 +195,15 @@ private fun AlbumContent(
                         else player.play(album, trackIndex = randomPlayableIndex(album), mode = mode, shuffled = true)
                     },
                 )
+                MusicSegmented(
+                    options = listOf(MusicPlayMode.Audio to "Audio", MusicPlayMode.Video to "Video"),
+                    selected = mode,
+                    onSelect = { picked ->
+                        chosenMode = picked
+                        if (loaded) player.switchMode(picked)
+                    },
+                )
             }
-            MusicSegmented(
-                options = listOf(MusicPlayMode.Audio to "Audio", MusicPlayMode.Video to "Video"),
-                selected = mode,
-                onSelect = { picked ->
-                    chosenMode = picked
-                    if (loaded) player.switchMode(picked)
-                },
-            )
             val note = when {
                 loaded && state.notice != null -> state.notice
                 mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
@@ -182,23 +214,6 @@ private fun AlbumContent(
                     text = note,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (loaded && state.notice != null) colors.warning else colors.textSecondary,
-                )
-            }
-        }
-        info?.release?.let { release ->
-            // Liner notes: label and date, genre chips with the mood in the accent, the description.
-            AlbumLinerNotes(
-                notes = buildLinerNotes(release, album.year),
-                descriptionOpen = descriptionOpen,
-                onToggleDescription = { descriptionOpen = !descriptionOpen },
-            )
-            // Where the library and YouTube Music disagree is worth a line: it explains a "missing" song.
-            val listed = release.trackCount
-            if (listed != null && listed != album.tracks.size) {
-                Text(
-                    "Your library lists $listed tracks for this release; YouTube Music has ${album.tracks.size}.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textMuted,
                 )
             }
         }
@@ -263,22 +278,30 @@ private fun AlbumContent(
         if (maxWidth >= 840.dp) {
             Row(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.width(360.dp).fillMaxHeight().verticalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 32.dp),
+                    Modifier.width(520.dp).fillMaxHeight().verticalScroll(rememberScrollState())
+                        .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) { rail() }
+                ) { objectPanel(340.dp) }
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    contentPadding = PaddingValues(start = 12.dp, end = 24.dp, top = 12.dp, bottom = 40.dp),
-                ) { pane() }
+                    contentPadding = PaddingValues(start = 12.dp, end = 32.dp, top = 16.dp, bottom = 40.dp),
+                ) {
+                    item(key = "facts") {
+                        Column(Modifier.padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { facts() }
+                    }
+                    pane()
+                }
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
             ) {
-                item(key = "rail") {
-                    Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { rail() }
+                item(key = "object") {
+                    Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { objectPanel(240.dp) }
+                }
+                item(key = "facts") {
+                    Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { facts() }
                 }
                 pane()
             }
@@ -286,28 +309,21 @@ private fun AlbumContent(
     }
 }
 
+/** The object itself and its two toggles, with a line saying where the art comes from. */
 @Composable
-private fun AlbumHeader(
+private fun AlbumObjectPanel(
     album: MusicAlbum,
     info: LibraryAlbumInfo?,
     flipped: Boolean,
     discOut: Boolean,
     discSpinning: Boolean,
     reducedMotion: Boolean,
+    caseSize: Dp,
     onFlip: () -> Unit,
     onDisc: () -> Unit,
-    onArtistClick: (String) -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val artistId = album.artists.firstOrNull()?.browseId
-    val minutes = album.tracks.sumOf { it.durationSeconds } / 60
-    val meta = listOfNotNull(
-        album.kind,
-        album.year,
-        "${album.tracks.size} track${if (album.tracks.size == 1) "" else "s"}",
-        "$minutes min".takeIf { minutes > 0 },
-    ).joinToString(" · ")
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // The case turns to its back cover and the disc slides out of it; both snap under reduced motion.
         AlbumObject(
             album = album,
@@ -316,36 +332,70 @@ private fun AlbumHeader(
             discOut = discOut,
             discSpinning = discSpinning,
             reducedMotion = reducedMotion,
-            size = 260.dp,
+            size = caseSize,
             peek = 0.3f,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AlbumObjectButton(if (flipped) "Flip to front" else "Flip to back", onFlip)
-            AlbumObjectButton(if (discOut) "Slide disc in" else "Slide disc out", onDisc)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AlbumObjectButton(if (flipped) "Show front" else "Flip to back", onFlip, selected = flipped)
+            AlbumObjectButton(if (discOut) "Slide disc in" else "Slide disc out", onDisc, selected = discOut)
         }
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = album.title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = colors.textPrimary,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (album.artists.isNotEmpty()) {
+        Text(
+            "Cover, back and disc come from TheAudioDB and Fanart.tv. Missing art falls back to a drawn back and disc.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textMuted,
+        )
+    }
+}
+
+/** Kicker, serif title, artist line (photo, name, label, date) and the length line, as on board 3. */
+@Composable
+private fun AlbumFacts(album: MusicAlbum, info: LibraryAlbumInfo?, onArtistClick: (String) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val artistId = album.artists.firstOrNull()?.browseId
+    val minutes = album.tracks.sumOf { it.durationSeconds } / 60
+    val kicker = listOfNotNull(
+        album.kind,
+        album.year,
+        "${album.tracks.size} track${if (album.tracks.size == 1) "" else "s"}",
+        "$minutes min".takeIf { minutes > 0 },
+    ).joinToString(" · ").uppercase()
+    val notes = buildLinerNotes(info?.release, album.year)
+    val credit = listOfNotNull(notes.label, notes.date, "Explicit".takeIf { notes.explicit }).joinToString(" · ")
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = kicker,
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.accent,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.6.sp,
+        )
+        Text(
+            text = album.title,
+            style = MaterialTheme.typography.displaySmall,
+            fontFamily = FontFamily.Serif,
+            color = colors.textPrimary,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (album.artists.isNotEmpty()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = if (artistId != null) Modifier.clip(RoundedCornerShape(8.dp)).clickable { onArtistClick(artistId) } else Modifier,
+            ) {
+                info?.artist?.art?.thumb?.let { MusicCover(it, description = null, size = 30.dp, circle = true) }
                 Text(
                     text = album.artists.joinToString(", ") { it.name },
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = if (artistId != null) colors.accent else colors.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = if (artistId != null) {
-                        Modifier.clip(RoundedCornerShape(4.dp)).clickable { onArtistClick(artistId) }
-                    } else {
-                        Modifier
-                    },
                 )
+                if (credit.isNotEmpty()) {
+                    Text("· $credit", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
-            Text(text = meta, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
         }
     }
 }
@@ -389,12 +439,12 @@ private fun TrackRow(
             .clip(RoundedCornerShape(8.dp))
             .background(if (current) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
             .clickable(enabled = track.isAvailable, onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(32.dp), contentAlignment = Alignment.CenterStart) {
             if (current) {
-                Icon(Icons.Rounded.VolumeUp, contentDescription = "Now playing", tint = colors.accent, modifier = Modifier.size(18.dp))
+                MusicEqualiser(colors.accent, modifier = Modifier.semantics { contentDescription = "Now playing" })
             } else {
                 Text(
                     text = track.trackNumber.takeIf { it > 0 }?.toString().orEmpty(),
@@ -419,13 +469,13 @@ private fun TrackRow(
                 // A credit chip for the featured artist(s), as on board 3.
                 val chip = RoundedCornerShape(8.dp)
                 Text(
-                    text = "feat. $credit",
+                    text = credit,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (track.isAvailable) colors.accent else colors.textDisabled,
+                    color = if (track.isAvailable) colors.textSecondary else colors.textDisabled,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp).clip(chip)
-                        .background((if (track.isAvailable) colors.accent else colors.textDisabled).copy(alpha = 0.12f))
+                        .background(Color.White.copy(alpha = 0.10f))
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }

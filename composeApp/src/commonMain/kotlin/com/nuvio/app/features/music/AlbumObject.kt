@@ -40,6 +40,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -149,100 +151,109 @@ internal fun AlbumObject(
     }
 }
 
-/** The back cover drawn from data: title and artist, the tracklist, label and date, a barcode graphic. */
+/**
+ * The back cover drawn from data, as on board 3: a warm dark ground in the artist's accent, the
+ * title in the display face, the tracklist in two columns, label and date, and a barcode graphic.
+ */
 @Composable
 private fun GeneratedBackCover(back: BackCover, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(6.dp)
+    val ground = lerp(colors.background, colors.accent, 0.16f)
+    val paper = lerp(colors.textPrimary, colors.accent, 0.12f)
+    val half = (back.lines.size + 1) / 2
     Column(
         modifier = modifier
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(colors.surfaceElevated, colors.background)))
+            .background(Brush.linearGradient(listOf(ground, colors.background)))
             .border(1.dp, colors.borderDefault, shape)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(horizontal = 22.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             back.title,
-            color = colors.textPrimary,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
+            color = colors.accent,
+            fontFamily = FontFamily.Serif,
+            fontSize = 26.sp,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        if (back.artist.isNotEmpty()) {
-            Text(back.artist, color = colors.accent, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.height(6.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            back.lines.forEach { line ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        line.number.toString().padStart(2, '0'),
-                        color = colors.textMuted,
-                        fontSize = 10.sp,
-                        modifier = Modifier.width(22.dp),
-                    )
-                    Text(
-                        line.title,
-                        color = colors.textSecondary,
-                        fontSize = 10.5.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(line.duration, color = colors.textMuted, fontSize = 10.sp)
+        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            listOf(back.lines.take(half), back.lines.drop(half)).forEach { column ->
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    column.forEach { line ->
+                        Row {
+                            Text(
+                                line.number.toString(),
+                                color = colors.accent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.width(20.dp),
+                            )
+                            Text(line.title, color = paper, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
                 }
             }
-            if (back.hiddenCount > 0) {
-                Text("+ ${back.hiddenCount} more", color = colors.textMuted, fontSize = 10.sp)
-            }
+        }
+        if (back.hiddenCount > 0) {
+            Text("+ ${back.hiddenCount} more", color = colors.textMuted, fontSize = 10.sp)
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
-                back.credit.orEmpty(),
-                color = colors.textMuted,
-                fontSize = 10.sp,
-                maxLines = 2,
+                listOf(back.artist, back.credit).filter { !it.isNullOrEmpty() }.joinToString("\n"),
+                color = colors.textSecondary,
+                fontSize = 10.5.sp,
+                lineHeight = 15.sp,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(end = 8.dp),
             )
-            Barcode(back.barcode, Modifier.width(84.dp).height(34.dp))
+            Barcode(back.barcode, paper, Modifier.width(96.dp).height(38.dp))
         }
     }
 }
 
 @Composable
-private fun Barcode(bars: List<Int>, modifier: Modifier = Modifier) {
-    Canvas(modifier.clip(RoundedCornerShape(2.dp)).background(Color.White)) {
+private fun Barcode(bars: List<Int>, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
         val total = bars.sum().coerceAtLeast(1)
-        val unit = size.width * 0.9f / total
-        var x = size.width * 0.05f
+        val unit = size.width / total
+        var x = 0f
         bars.forEachIndexed { i, w ->
             val width = w * unit
-            if (i % 2 == 0) {
-                drawRect(Color.Black, topLeft = Offset(x, size.height * 0.1f), size = Size(width, size.height * 0.8f))
-            }
+            if (i % 2 == 0) drawRect(color, topLeft = Offset(x, 0f), size = Size(width, size.height))
             x += width
         }
     }
 }
 
-/** An outlined pill for the album object's two toggles ("Flip to back", "Slide disc out"). */
+/** A pill for the album object's two toggles ("Flip to back", "Slide disc out"); filled while [selected]. */
 @Composable
-internal fun AlbumObjectButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun AlbumObjectButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false) {
     val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(22.dp)
     Text(
         text,
-        style = MaterialTheme.typography.labelLarge,
-        color = colors.textPrimary,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = if (selected) colors.background else colors.textPrimary,
         modifier = modifier
+            .height(44.dp)
             .clip(shape)
+            .background(if (selected) colors.textPrimary else Color.Black.copy(alpha = 0.35f))
             .border(1.dp, colors.borderDefault, shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 7.dp),
+            .padding(horizontal = 20.dp, vertical = 11.dp),
     )
+}
+
+/** Three small bars for the track that is playing. Still, so it needs no reduced-motion rule. */
+@Composable
+internal fun MusicEqualiser(color: Color, modifier: Modifier = Modifier) {
+    Row(modifier.height(14.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+        listOf(14.dp, 8.dp, 11.dp).forEach { h -> Box(Modifier.width(3.dp).height(h).background(color)) }
+    }
 }
 
 /** Soft ambient backdrop for the album page: the cover, blurred and dimmed, fading into the page. */
@@ -259,7 +270,12 @@ internal fun AlbumAmbientBackdrop(coverUrl: String?, modifier: Modifier = Modifi
         )
         Box(
             Modifier.fillMaxSize().background(
-                Brush.verticalGradient(listOf(Color.Transparent, colors.background.copy(alpha = 0.92f))),
+                Brush.horizontalGradient(
+                    0f to colors.background.copy(alpha = 0.1f),
+                    0.48f to colors.background.copy(alpha = 0.7f),
+                    0.76f to colors.background,
+                    1f to colors.background,
+                ),
             ),
         )
     }
@@ -280,25 +296,8 @@ internal fun AlbumLinerNotes(
     val colors = MaterialTheme.nuvio.colors
     if (notes.isEmpty) return
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        val credit = listOfNotNull(notes.label, notes.date, "Explicit".takeIf { notes.explicit }).joinToString(" · ")
-        if (credit.isNotEmpty()) {
-            Text(credit, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-        }
         if (notes.genres.isNotEmpty() || notes.mood != null) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                notes.mood?.let { mood ->
-                    val shape = RoundedCornerShape(16.dp)
-                    Text(
-                        mood,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = colors.accent,
-                        modifier = Modifier
-                            .clip(shape)
-                            .background(colors.accent.copy(alpha = 0.14f))
-                            .border(1.dp, colors.accent.copy(alpha = 0.5f), shape)
-                            .padding(horizontal = 12.dp, vertical = 5.dp),
-                    )
-                }
                 notes.genres.forEach { genre ->
                     val shape = RoundedCornerShape(16.dp)
                     Text(
@@ -307,6 +306,16 @@ internal fun AlbumLinerNotes(
                         color = colors.textPrimary,
                         modifier = Modifier.clip(shape).border(1.dp, colors.borderDefault, shape)
                             .padding(horizontal = 12.dp, vertical = 5.dp),
+                    )
+                }
+                notes.mood?.let { mood ->
+                    val shape = RoundedCornerShape(16.dp)
+                    Text(
+                        mood,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onAccent,
+                        modifier = Modifier.clip(shape).background(colors.accent).padding(horizontal = 14.dp, vertical = 6.dp),
                     )
                 }
             }

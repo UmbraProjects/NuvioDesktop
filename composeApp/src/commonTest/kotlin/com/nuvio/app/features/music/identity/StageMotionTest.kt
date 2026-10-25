@@ -37,4 +37,12 @@ class StageMotionTest {
         assertTrue(stageMotionSpec(MotionProfile.Driven, false).caption.startsWith("Driven"))
         assertTrue(stageMotionSpec(MotionProfile.Driven, true).caption.contains("Reduced"))
     }
+
+    @Test
+    fun captionUsesTheMoodWhenThereIsOne() {
+        val calm = stageMotionSpec(MotionProfile.Calm, false)
+        assertEquals("Motion profile: Passionate → slow drift, slow breath", stageMotionCaption("Passionate", calm))
+        assertEquals("Motion profile: Calm · slow drift", stageMotionCaption("  ", calm))
+        assertEquals("Reduced motion · still", stageMotionCaption("Passionate", stageMotionSpec(MotionProfile.Calm, true)))
+    }
 }

@@ -40,6 +40,19 @@ val MusicMiniPlayerHeight: Dp = 72.dp
 
 private val BarThumbnailWidth = 128.dp
 private val ExpandedHeaderHeight = 48.dp
+private val ExpandedFrameTop = 16.dp
+
+/** Room kept under the framed video for its title line. */
+private val ExpandedCaptionRoom = 84.dp
+
+private data class ExpandedFrame(val width: Dp, val height: Dp)
+
+/** The 16:9 frame of the expanded video: about 70% of the width (as on board 4), as tall as the space leaves. */
+private fun expandedFrame(windowWidth: Dp, windowHeight: Dp): ExpandedFrame {
+    val room = (windowHeight - ExpandedHeaderHeight - MusicMiniPlayerHeight - ExpandedFrameTop - ExpandedCaptionRoom).coerceAtLeast(1.dp)
+    val width = minOf(windowWidth * 0.72f, room * (16f / 9f))
+    return ExpandedFrame(width, width * (9f / 16f))
+}
 
 /**
  * Plays [MusicPlayback.player] and draws the mini-player bar. Place it once, at the app root, over
@@ -116,14 +129,13 @@ fun MusicPlayerHost(
             view == MusicVideoView.Bar ->
                 Modifier.align(Alignment.BottomStart).size(BarThumbnailWidth, MusicMiniPlayerHeight)
             view == MusicVideoView.Expanded -> {
-                // Framed 16:9 in the middle, so the ambient glow shows round it (mpv letterboxes any other shape inside).
-                val areaHeight = (windowHeight - ExpandedHeaderHeight - MusicMiniPlayerHeight).coerceAtLeast(1.dp)
-                val frameWidth = minOf(maxWidth * 0.92f, areaHeight * (16f / 9f))
-                val frameHeight = frameWidth * (9f / 16f)
+                // Framed 16:9 near the top with room for the title under it, so the ambient glow shows
+                // round it (mpv letterboxes any other shape inside the frame).
+                val frame = expandedFrame(maxWidth, windowHeight)
                 Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = ExpandedHeaderHeight + (areaHeight - frameHeight) / 2)
-                    .size(frameWidth, frameHeight)
+                    .padding(top = ExpandedHeaderHeight + ExpandedFrameTop)
+                    .size(frame.width, frame.height)
             }
             else ->
                 Modifier
@@ -133,10 +145,20 @@ fun MusicPlayerHost(
         }
         // Behind the framed video (conditional group, so the surface below keeps its place in the composition).
         if (big && view == MusicVideoView.Expanded) {
+            val frame = expandedFrame(maxWidth, windowHeight)
             MusicAccentScope {
                 MusicVideoAmbient(
                     coverUrl = state.album?.thumbnailUrl,
+                    title = state.track?.title.orEmpty(),
+                    subtitle = listOfNotNull(
+                        (state.track?.artists?.takeIf { it.isNotEmpty() } ?: state.album?.artists.orEmpty())
+                            .joinToString(", ") { it.name }.takeIf { it.isNotBlank() },
+                        state.album?.title,
+                        state.album?.year,
+                    ).joinToString(" · "),
                     modifier = Modifier.fillMaxSize().padding(top = ExpandedHeaderHeight, bottom = MusicMiniPlayerHeight),
+                    captionStart = (maxWidth - frame.width) / 2,
+                    captionTop = ExpandedFrameTop + frame.height + 18.dp,
                 )
             }
         }

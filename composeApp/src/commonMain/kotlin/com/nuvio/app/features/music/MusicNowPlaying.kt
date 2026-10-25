@@ -37,11 +37,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,8 +67,10 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,6 +82,7 @@ import com.nuvio.app.features.music.identity.MusicAccentScope
 import com.nuvio.app.features.music.identity.StageMotionSpec
 import com.nuvio.app.features.music.identity.identity
 import com.nuvio.app.features.music.identity.playingArtist
+import com.nuvio.app.features.music.identity.stageMotionCaption
 import com.nuvio.app.features.music.identity.stageMotionSpec
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.rememberCdArtFor
@@ -224,13 +227,20 @@ private fun MusicNowPlayingScreen(
                         Text(
                             track?.title.orEmpty(),
                             color = Color.White,
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Serif,
+                            fontSize = 44.sp,
+                            lineHeight = 46.sp,
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Text(artist, color = Color.White.copy(alpha = 0.75f), fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            listOfNotNull(artist.takeIf { it.isNotBlank() }, album?.title, album?.year).joinToString(" · "),
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 16.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                         val chips = listOfNotNull(libraryArtist?.mood) + libraryArtist?.genres.orEmpty().take(2)
                         if (chips.isNotEmpty()) {
                             Spacer(Modifier.height(12.dp))
@@ -239,7 +249,7 @@ private fun MusicNowPlayingScreen(
                             }
                         }
                         Spacer(Modifier.height(10.dp))
-                        Text(spec.caption, color = Color.White.copy(alpha = 0.45f), fontSize = 12.sp)
+                        Text(stageMotionCaption(libraryArtist?.mood, spec), color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
                     }
                     LyricsPane(
                         lyrics, state.positionMs, onSeek, reduced,
@@ -310,8 +320,14 @@ private fun StageTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = onClose) {
-            Icon(Icons.Rounded.Close, contentDescription = "Close lyrics", tint = Color.White)
+        Row(
+            Modifier.height(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)).clickable(onClick = onClose)
+                .padding(start = 12.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Text("Collapse", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         }
         Text(
             title,
@@ -333,29 +349,32 @@ private fun StageTopBar(
 
 @Composable
 private fun StageChip(text: String, accented: Boolean) {
-    val accent = MaterialTheme.nuvio.colors.accent
+    val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(14.dp)
     Text(
         text,
-        fontSize = 12.sp,
-        color = if (accented) accent else Color.White.copy(alpha = 0.85f),
+        fontSize = 13.sp,
+        fontWeight = if (accented) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (accented) colors.onAccent else Color.White.copy(alpha = 0.9f),
         modifier = Modifier
             .clip(shape)
-            .background(if (accented) accent.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.08f))
-            .border(1.dp, if (accented) accent.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.18f), shape)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .then(
+                if (accented) Modifier.background(colors.accent)
+                else Modifier.border(1.dp, Color.White.copy(alpha = 0.3f), shape),
+            )
+            .padding(horizontal = 14.dp, vertical = 6.dp),
     )
 }
 
 /** The artist's logo; with none (or one that fails to load) their name is set in text. */
 @Composable
-private fun StageLogo(url: String?, name: String) {
+private fun StageLogo(url: String?, name: String, maxHeight: Dp = 72.dp) {
     var failed by remember(url) { mutableStateOf(false) }
     if (url != null && !failed) {
         NuvioAsyncImage(
             model = url,
             contentDescription = name,
-            modifier = Modifier.heightIn(max = 72.dp).widthIn(max = 300.dp),
+            modifier = Modifier.heightIn(max = maxHeight).widthIn(max = 300.dp),
             contentScale = ContentScale.Fit,
             alignment = Alignment.CenterStart,
             onError = { failed = true },
@@ -372,7 +391,15 @@ private fun StageLogo(url: String?, name: String) {
  * is not possible here. Under reduced motion the glow holds still.
  */
 @Composable
-internal fun MusicVideoAmbient(coverUrl: String?, modifier: Modifier = Modifier) {
+internal fun MusicVideoAmbient(
+    coverUrl: String?,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    /** Where the caption starts: level with the framed video's left edge, and just under its bottom edge. */
+    captionStart: Dp = 0.dp,
+    captionTop: Dp = 0.dp,
+) {
     val identity = LocalArtistIdentity.current
     val reduced = rememberMusicReducedMotion()
     val spec = remember(identity?.motion, reduced) { stageMotionSpec(identity?.motion ?: MotionProfile.Steady, reduced) }
@@ -388,6 +415,21 @@ internal fun MusicVideoAmbient(coverUrl: String?, modifier: Modifier = Modifier)
         }
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
         StageGlow(color = MaterialTheme.nuvio.colors.accent, spec = spec)
+        // Title and artist under the video, with the artist's logo beside them. The logo cannot sit
+        // over the picture itself: the video is a native surface that nothing can be drawn on top of.
+        Row(
+            Modifier.padding(start = captionStart, top = captionTop),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column {
+                Text(title, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            identity?.logoUrl?.let { StageLogo(it, identity?.name.orEmpty(), maxHeight = 40.dp) }
+        }
     }
 }
 
@@ -491,6 +533,10 @@ private fun FanartBackdrop(images: List<String>, coverUrl: String?, spec: StageM
                             .graphicsLayer {
                                 scaleX = push.value
                                 scaleY = push.value
+                                // The picture also slides a little as it grows, like the mock's drift.
+                                val span = spec.scaleTo - spec.scaleFrom
+                                val progress = if (span > 0f) ((push.value - spec.scaleFrom) / span).coerceIn(0f, 1f) else 0f
+                                translationX = -spec.slideDp * density * progress
                             },
                         contentScale = ContentScale.Crop,
                     )
