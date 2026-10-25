@@ -243,7 +243,7 @@ internal fun ArtworkSourcesDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(MusicLibrarySettings(fanart, audioDb)) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(settings.copy(fanartApiKey = fanart, audioDbKey = audioDb)) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

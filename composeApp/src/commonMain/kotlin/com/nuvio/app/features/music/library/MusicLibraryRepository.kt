@@ -27,6 +27,8 @@ data class MusicLibrarySettings(
     val fanartApiKey: String = "",
     /** A TheAudioDB key. Empty uses the public test key "123", which works but is rate limited. */
     val audioDbKey: String = "",
+    /** Stage and album motion off: no drift, pulse, cycling or spinning disc. Applies to the whole Music section. */
+    val reducedMotion: Boolean = false,
 )
 
 /** What is happening to one artist while it is added or refreshed. */

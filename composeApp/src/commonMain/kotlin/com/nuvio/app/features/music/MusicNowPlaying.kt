@@ -3,25 +3,36 @@ package com.nuvio.app.features.music
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -31,12 +42,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,8 +57,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -55,13 +73,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.identity.LocalArtistIdentity
+import com.nuvio.app.features.music.identity.MotionProfile
+import com.nuvio.app.features.music.identity.MusicAccentScope
+import com.nuvio.app.features.music.identity.StageMotionSpec
+import com.nuvio.app.features.music.identity.identity
+import com.nuvio.app.features.music.identity.playingArtist
+import com.nuvio.app.features.music.identity.stageMotionSpec
+import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.rememberCdArtFor
 import kotlinx.coroutines.delay
 
 /** Lines light up this long before their stamp, so the eye is on the line as it is sung. */
 private const val NOW_PLAYING_LYRIC_LEAD_MS = 250L
-private const val FANART_HOLD_MS = 14_000L
-private const val FANART_PUSH_MS = 16_000
 
 private sealed interface LyricsUi {
     data object Loading : LyricsUi
@@ -69,10 +94,16 @@ private sealed interface LyricsUi {
     data object Missing : LyricsUi
 }
 
+private enum class StageView { Stage, Video }
+
 /**
- * The full-window "lyric video": artist fanart drifting behind the words, the line being sung lit
- * and centred, a tap on a line seeks to it. Sits over the app but under the mini-player, which
- * keeps its controls. Opened by [MusicPlayback.nowPlayingOpen].
+ * The Now Playing stage (board 4): artist fanart drifting behind the words, the artist's cut-out
+ * and logo, the spinning disc, the line being sung lit in the artist's accent and centred; a tap on a
+ * line seeks to it. Sits over the app but under the mini-player, which keeps its controls. Opened by
+ * [MusicPlayback.nowPlayingOpen].
+ *
+ * How it moves comes from the artist's mood (slow drift for calm, a tighter pulse for driven; see
+ * [stageMotionSpec]) and is switched off by the reduced-motion setting.
  */
 @Composable
 fun MusicNowPlayingHost(
@@ -92,22 +123,29 @@ fun MusicNowPlayingHost(
         exit = fadeOut(tween(200)),
         modifier = modifier,
     ) {
-        MusicNowPlayingScreen(
-            state = state,
-            onSeek = player::seekTo,
-            onClose = { MusicPlayback.nowPlayingOpen.value = false },
-            modifier = Modifier.fillMaxSize().padding(bottom = MusicMiniPlayerHeight),
-        )
+        // Wears the playing artist's accent, as the mini-player under it does.
+        MusicAccentScope {
+            MusicNowPlayingScreen(
+                state = state,
+                player = player,
+                onSeek = player::seekTo,
+                onClose = { MusicPlayback.nowPlayingOpen.value = false },
+                modifier = Modifier.fillMaxSize().padding(bottom = MusicMiniPlayerHeight),
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MusicNowPlayingScreen(
     state: MusicPlayerState,
+    player: MusicPlayer,
     onSeek: (Long) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.nuvio.colors
     val track = state.track
     val album = state.album
     val artist = (track?.artists?.takeIf { it.isNotEmpty() } ?: album?.artists.orEmpty())
@@ -120,26 +158,66 @@ private fun MusicNowPlayingScreen(
         value = if (found != null) LyricsUi.Ready(found) else LyricsUi.Missing
     }
     val cdArt = rememberCdArtFor(album?.browseId)
-    val fanart by produceState(emptyList<String>(), primaryArtist) {
-        value = ArtistFanartRepository.forArtist(primaryArtist)
+
+    // The artist as the library knows them (saved, else previewed): logo, cut-out, backgrounds, mood.
+    val library by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    val libraryArtist = remember(track, album, library.artists, library.preview) { playingArtist(track, album, library) }
+    val identity = remember(libraryArtist) { libraryArtist?.identity() }
+    val fetchedFanart by produceState(emptyList<String>(), primaryArtist, identity?.backgrounds?.isEmpty()) {
+        value = if (identity?.backgrounds.isNullOrEmpty()) ArtistFanartRepository.forArtist(primaryArtist) else emptyList()
+    }
+    val backgrounds = identity?.backgrounds.orEmpty().ifEmpty { fetchedFanart }
+
+    val reduced = rememberMusicReducedMotion()
+    val spec = remember(identity?.motion, reduced) { stageMotionSpec(identity?.motion ?: MotionProfile.Steady, reduced) }
+
+    // Asking for Video from here: the mode switch is asynchronous, so the video opens once it has landed.
+    var wantVideo by remember { mutableStateOf(false) }
+    var noticeAtRequest by remember { mutableStateOf<String?>(null) }
+    val realVideo = state.mode == MusicPlayMode.Video && !state.lyricVideo
+    LaunchedEffect(wantVideo, state.mode, state.lyricVideo, state.notice) {
+        if (!wantVideo) return@LaunchedEffect
+        when {
+            realVideo -> {
+                wantVideo = false
+                MusicPlayback.setVideoView(MusicVideoView.Expanded)
+            }
+            // A new line from the player ("No video for this track") means the switch did not happen.
+            state.notice != null && state.notice != noticeAtRequest -> wantVideo = false
+        }
+    }
+    // Never leave the request armed: a video that turns up much later must not pop open by itself.
+    LaunchedEffect(wantVideo) {
+        if (wantVideo) {
+            delay(15_000)
+            wantVideo = false
+        }
     }
 
     Box(modifier.background(Color.Black)) {
-        FanartBackdrop(images = fanart, coverUrl = album?.thumbnailUrl)
+        FanartBackdrop(images = backgrounds, coverUrl = album?.thumbnailUrl, spec = spec)
+        StageGlow(color = colors.accent, spec = spec)
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 860.dp
+            val cutout = identity?.cutoutUrl.takeIf { wide }
+            if (cutout != null) StageCutout(cutout, Modifier.align(Alignment.BottomEnd).fillMaxHeight(0.94f).widthIn(max = 460.dp))
             if (wide) {
                 Row(
-                    Modifier.fillMaxSize().padding(horizontal = 56.dp, vertical = 40.dp),
+                    Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 72.dp, bottom = 32.dp),
                     horizontalArrangement = Arrangement.spacedBy(48.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.width(300.dp * 1.3f)) {
+                        StageLogo(identity?.logoUrl, identity?.name ?: primaryArtist)
+                        Spacer(Modifier.height(18.dp))
                         MusicCdSleeve(
                             coverUrl = album?.thumbnailUrl,
                             cdArtUrl = cdArt,
-                            spinning = state.isPlaying,
-                            size = 300.dp,
+                            spinning = state.isPlaying && spec.discSpins,
+                            slideOut = state.isPlaying || reduced,
+                            secondsPerTurn = spec.discSecondsPerTurn,
+                            instant = reduced,
+                            size = 280.dp,
                             peek = 0.3f,
                         )
                         Spacer(Modifier.height(20.dp))
@@ -153,11 +231,23 @@ private fun MusicNowPlayingScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(artist, color = Color.White.copy(alpha = 0.75f), fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        val chips = listOfNotNull(libraryArtist?.mood) + libraryArtist?.genres.orEmpty().take(2)
+                        if (chips.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                chips.forEachIndexed { i, chip -> StageChip(chip, accented = i == 0 && libraryArtist?.mood != null) }
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text(spec.caption, color = Color.White.copy(alpha = 0.45f), fontSize = 12.sp)
                     }
-                    LyricsPane(lyrics, state.positionMs, onSeek, Modifier.weight(1f).fillMaxSize())
+                    LyricsPane(
+                        lyrics, state.positionMs, onSeek, reduced,
+                        Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null) 200.dp else 0.dp),
+                    )
                 }
             } else {
-                Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp)) {
+                Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 64.dp, bottom = 24.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Cover(album?.thumbnailUrl, Modifier.size(64.dp))
                         Column {
@@ -166,14 +256,162 @@ private fun MusicNowPlayingScreen(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    LyricsPane(lyrics, state.positionMs, onSeek, Modifier.weight(1f).fillMaxWidth())
+                    LyricsPane(lyrics, state.positionMs, onSeek, reduced, Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
-        IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(12.dp)) {
-            Icon(Icons.Rounded.Close, contentDescription = "Close lyrics", tint = Color.White)
+        StageTopBar(
+            title = album?.title.orEmpty(),
+            view = if (state.mode == MusicPlayMode.Video) StageView.Video else StageView.Stage,
+            reduced = reduced,
+            canFullscreen = realVideo,
+            onClose = onClose,
+            onView = { picked ->
+                when {
+                    picked == StageView.Stage -> if (state.mode == MusicPlayMode.Video) player.switchMode(MusicPlayMode.Audio)
+                    realVideo -> MusicPlayback.setVideoView(MusicVideoView.Expanded)
+                    state.mode == MusicPlayMode.Audio -> {
+                        noticeAtRequest = state.notice
+                        wantVideo = true
+                        player.switchMode(MusicPlayMode.Video)
+                    }
+                }
+            },
+            onToggleMotion = { setMusicReducedMotion(!reduced) },
+            onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Fullscreen) },
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+        state.notice?.let { note ->
+            Text(
+                note,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 60.dp),
+            )
         }
     }
+}
+
+/** Collapse, the album, the Stage / Video switch, the motion switch and Fullscreen (when there is a real video). */
+@Composable
+private fun StageTopBar(
+    title: String,
+    view: StageView,
+    reduced: Boolean,
+    canFullscreen: Boolean,
+    onClose: () -> Unit,
+    onView: (StageView) -> Unit,
+    onToggleMotion: () -> Unit,
+    onFullscreen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        IconButton(onClick = onClose) {
+            Icon(Icons.Rounded.Close, contentDescription = "Close lyrics", tint = Color.White)
+        }
+        Text(
+            title,
+            color = Color.White.copy(alpha = 0.8f),
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        MusicSegmented(
+            options = listOf(StageView.Stage to "Stage", StageView.Video to "Video"),
+            selected = view,
+            onSelect = onView,
+        )
+        MusicTextChip(if (reduced) "Motion: reduced" else "Motion: full", onToggleMotion)
+        if (canFullscreen) MusicTextChip("Fullscreen", onFullscreen)
+    }
+}
+
+@Composable
+private fun StageChip(text: String, accented: Boolean) {
+    val accent = MaterialTheme.nuvio.colors.accent
+    val shape = RoundedCornerShape(14.dp)
+    Text(
+        text,
+        fontSize = 12.sp,
+        color = if (accented) accent else Color.White.copy(alpha = 0.85f),
+        modifier = Modifier
+            .clip(shape)
+            .background(if (accented) accent.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.08f))
+            .border(1.dp, if (accented) accent.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.18f), shape)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+/** The artist's logo; with none (or one that fails to load) their name is set in text. */
+@Composable
+private fun StageLogo(url: String?, name: String) {
+    var failed by remember(url) { mutableStateOf(false) }
+    if (url != null && !failed) {
+        NuvioAsyncImage(
+            model = url,
+            contentDescription = name,
+            modifier = Modifier.heightIn(max = 72.dp).widthIn(max = 300.dp),
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.CenterStart,
+            onError = { failed = true },
+        )
+    } else if (name.isNotBlank()) {
+        Text(name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * Video mode's atmosphere: a blurred, saturated copy of the album cover with the artist's glow over it,
+ * filling the space around the framed video. The picture is the cover, not the video itself: the
+ * video is drawn by a native surface whose pixels the app cannot read, so a colour sampled from it
+ * is not possible here. Under reduced motion the glow holds still.
+ */
+@Composable
+internal fun MusicVideoAmbient(coverUrl: String?, modifier: Modifier = Modifier) {
+    val identity = LocalArtistIdentity.current
+    val reduced = rememberMusicReducedMotion()
+    val spec = remember(identity?.motion, reduced) { stageMotionSpec(identity?.motion ?: MotionProfile.Steady, reduced) }
+    Box(modifier.background(Color.Black)) {
+        if (coverUrl != null) {
+            NuvioAsyncImage(
+                model = coverUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().blur(90.dp).graphicsLayer { alpha = 0.7f },
+                contentScale = ContentScale.Crop,
+                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.6f) }),
+            )
+        }
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
+        StageGlow(color = MaterialTheme.nuvio.colors.accent, spec = spec)
+    }
+}
+
+/** The artist cut out on nothing, standing in front of the backdrop and fading into it on the left. */
+@Composable
+private fun StageCutout(url: String, modifier: Modifier = Modifier) {
+    var failed by remember(url) { mutableStateOf(false) }
+    if (failed) return
+    NuvioAsyncImage(
+        model = url,
+        contentDescription = null,
+        modifier = modifier
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    Brush.horizontalGradient(0f to Color.Transparent, 0.35f to Color.Black),
+                    blendMode = BlendMode.DstIn,
+                )
+            },
+        contentScale = ContentScale.Fit,
+        alignment = Alignment.BottomEnd,
+        onError = { failed = true },
+    )
 }
 
 @Composable
@@ -185,27 +423,65 @@ private fun Cover(url: String?, modifier: Modifier) {
     }
 }
 
+/** A warm glow in the artist's accent behind the stage that breathes at the motion profile's pace, and holds still when reduced. */
+@Composable
+internal fun StageGlow(color: Color, spec: StageMotionSpec) {
+    val breath = if (spec.animated && spec.pulseMs > 0) {
+        val transition = rememberInfiniteTransition(label = "stageGlow")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(spec.pulseMs / 2, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "breath",
+        ).value
+    } else {
+        0.5f
+    }
+    val alpha = (0.20f + spec.pulseDepth * (breath - 0.5f)).coerceIn(0f, 1f)
+    Box(
+        Modifier.fillMaxSize().background(
+            Brush.radialGradient(
+                colors = listOf(color.copy(alpha = alpha), Color.Transparent),
+                radius = 1100f,
+            ),
+        ),
+    )
+}
+
 /**
- * Fanart that crossfades every few seconds while each picture pushes in slowly. With no fanart the
- * album cover stands in, blurred, so the view is never a flat black.
+ * Fanart that crossfades every [StageMotionSpec.holdMs] while each picture drifts from
+ * [StageMotionSpec.scaleFrom] to [StageMotionSpec.scaleTo]. With no fanart the album cover stands in,
+ * blurred, so the view is never a flat black. When the spec is not animated the first picture stays
+ * put, still.
  */
 @Composable
-private fun FanartBackdrop(images: List<String>, coverUrl: String?) {
+private fun FanartBackdrop(images: List<String>, coverUrl: String?, spec: StageMotionSpec) {
     val usingCover = images.isEmpty()
     val pool = if (usingCover) listOfNotNull(coverUrl) else images
     var index by remember(pool) { mutableIntStateOf(0) }
-    LaunchedEffect(pool) {
-        while (pool.size > 1) {
-            delay(FANART_HOLD_MS)
+    LaunchedEffect(pool, spec.animated, spec.holdMs) {
+        while (spec.animated && pool.size > 1) {
+            delay(spec.holdMs)
             index = (index + 1) % pool.size
         }
     }
     Box(Modifier.fillMaxSize()) {
         if (pool.isNotEmpty()) {
-            Crossfade(targetState = index.coerceIn(0, pool.size - 1), animationSpec = tween(1800), label = "fanart") { i ->
+            Crossfade(
+                targetState = index.coerceIn(0, pool.size - 1),
+                animationSpec = tween(if (spec.animated) 1800 else 0),
+                label = "fanart",
+            ) { i ->
                 key(pool[i]) {
-                    val push = remember { Animatable(1f) }
-                    LaunchedEffect(Unit) { push.animateTo(1.1f, tween(FANART_PUSH_MS, easing = LinearEasing)) }
+                    val push = remember { Animatable(spec.scaleFrom) }
+                    LaunchedEffect(spec.animated, spec.scaleFrom, spec.scaleTo, spec.driftMs) {
+                        if (spec.animated) {
+                            push.snapTo(spec.scaleFrom)
+                            push.animateTo(spec.scaleTo, tween(spec.driftMs, easing = LinearEasing))
+                        } else {
+                            push.snapTo(spec.scaleFrom)
+                        }
+                    }
                     NuvioAsyncImage(
                         model = pool[i],
                         contentDescription = null,
@@ -231,7 +507,7 @@ private fun FanartBackdrop(images: List<String>, coverUrl: String?) {
 }
 
 @Composable
-private fun LyricsPane(ui: LyricsUi, positionMs: Long, onSeek: (Long) -> Unit, modifier: Modifier) {
+private fun LyricsPane(ui: LyricsUi, positionMs: Long, onSeek: (Long) -> Unit, reduced: Boolean, modifier: Modifier) {
     Box(modifier, contentAlignment = Alignment.Center) {
         when (ui) {
             LyricsUi.Loading -> Unit
@@ -239,7 +515,7 @@ private fun LyricsPane(ui: LyricsUi, positionMs: Long, onSeek: (Long) -> Unit, m
             is LyricsUi.Ready -> when (val lyrics = ui.lyrics) {
                 Lyrics.Instrumental -> Message("Instrumental")
                 is Lyrics.Plain -> PlainLyrics(lyrics.lines)
-                is Lyrics.Synced -> SyncedLyrics(lyrics.lines, positionMs, onSeek)
+                is Lyrics.Synced -> SyncedLyrics(lyrics.lines, positionMs, onSeek, reduced)
             }
         }
     }
@@ -266,14 +542,16 @@ private fun PlainLyrics(lines: List<String>) {
 }
 
 @Composable
-private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long, onSeek: (Long) -> Unit) {
+private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long, onSeek: (Long) -> Unit, reduced: Boolean) {
+    val accent = MaterialTheme.nuvio.colors.accent
     val active = activeLyricIndex(lines, positionMs + NOW_PLAYING_LYRIC_LEAD_MS)
     val listState = rememberLazyListState()
     // Keep the sung line a third of the way down: far enough from the top to see what is coming.
     LaunchedEffect(active, lines) {
         if (active >= 0) {
             val height = listState.layoutInfo.viewportSize.height
-            listState.animateScrollToItem(active, scrollOffset = -(height / 3))
+            if (reduced) listState.scrollToItem(active, scrollOffset = -(height / 3))
+            else listState.animateScrollToItem(active, scrollOffset = -(height / 3))
         }
     }
     LazyColumn(
@@ -288,11 +566,12 @@ private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long, onSeek: (Long
                 kotlin.math.abs(index - active) == 1 -> 0.6f
                 else -> 0.35f
             }
-            val alpha by animateFloatAsState(target, tween(350), label = "lineAlpha")
-            val scale by animateFloatAsState(if (index == active) 1.1f else 1f, tween(300), label = "lineScale")
+            val alpha by animateFloatAsState(target, tween(if (reduced) 0 else 350), label = "lineAlpha")
+            val scale by animateFloatAsState(if (index == active && !reduced) 1.1f else 1f, tween(if (reduced) 0 else 300), label = "lineScale")
             Text(
                 text = line.text.ifBlank { "♪" },
-                color = Color.White.copy(alpha = alpha),
+                // The line being sung is lit in the artist's accent.
+                color = (if (index == active) accent else Color.White).copy(alpha = alpha),
                 fontSize = 30.sp,
                 lineHeight = 38.sp,
                 fontWeight = FontWeight.Bold,

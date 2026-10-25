@@ -2,6 +2,7 @@ package com.nuvio.app.features.music
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -222,11 +223,16 @@ fun MusicCdSleeve(
     modifier: Modifier = Modifier,
     size: Dp = 200.dp,
     peek: Float = 0.38f,
+    /** Whether the disc sits out of the sleeve. Defaults to following [spinning]; the album object sets it apart. */
+    slideOut: Boolean = spinning,
+    secondsPerTurn: Float = 2.4f,
+    /** Snap instead of sliding (reduced motion). */
+    instant: Boolean = false,
 ) {
     val discSize = size * 0.96f
     val out by animateDpAsState(
-        targetValue = if (spinning) size * peek else size * 0.06f,
-        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+        targetValue = if (slideOut) size * peek else size * 0.06f,
+        animationSpec = if (instant) snap() else tween(durationMillis = 650, easing = FastOutSlowInEasing),
         label = "discSlide",
     )
     Box(modifier.width(size * (1f + peek)).height(size), contentAlignment = Alignment.CenterStart) {
@@ -234,6 +240,7 @@ fun MusicCdSleeve(
             coverUrl = coverUrl,
             cdArtUrl = cdArtUrl,
             spinning = spinning,
+            secondsPerTurn = secondsPerTurn,
             size = discSize,
             modifier = Modifier.offset(x = out + (size - discSize) / 2),
         )

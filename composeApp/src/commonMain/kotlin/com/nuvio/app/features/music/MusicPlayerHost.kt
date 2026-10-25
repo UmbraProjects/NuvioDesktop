@@ -114,17 +114,30 @@ fun MusicPlayerHost(
             !videoVisible -> Modifier.align(Alignment.BottomStart).size(1.dp)
             view == MusicVideoView.Bar ->
                 Modifier.align(Alignment.BottomStart).size(BarThumbnailWidth, MusicMiniPlayerHeight)
-            view == MusicVideoView.Expanded ->
+            view == MusicVideoView.Expanded -> {
+                // Framed 16:9 in the middle, so the ambient glow shows round it (mpv letterboxes any other shape inside).
+                val areaHeight = (windowHeight - ExpandedHeaderHeight - MusicMiniPlayerHeight).coerceAtLeast(1.dp)
+                val frameWidth = minOf(maxWidth * 0.92f, areaHeight * (16f / 9f))
+                val frameHeight = frameWidth * (9f / 16f)
                 Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = ExpandedHeaderHeight)
-                    .fillMaxWidth()
-                    .height((windowHeight - ExpandedHeaderHeight - MusicMiniPlayerHeight).coerceAtLeast(1.dp))
+                    .align(Alignment.TopCenter)
+                    .padding(top = ExpandedHeaderHeight + (areaHeight - frameHeight) / 2)
+                    .size(frameWidth, frameHeight)
+            }
             else ->
                 Modifier
                     .align(Alignment.TopStart)
                     .fillMaxWidth()
                     .height((windowHeight - MusicMiniPlayerHeight).coerceAtLeast(1.dp))
+        }
+        // Behind the framed video (conditional group, so the surface below keeps its place in the composition).
+        if (big && view == MusicVideoView.Expanded) {
+            MusicAccentScope {
+                MusicVideoAmbient(
+                    coverUrl = state.album?.thumbnailUrl,
+                    modifier = Modifier.fillMaxSize().padding(top = ExpandedHeaderHeight, bottom = MusicMiniPlayerHeight),
+                )
+            }
         }
         // First, and always at this spot, so the native player is never torn down by a size change.
         MusicPlayerSurface(

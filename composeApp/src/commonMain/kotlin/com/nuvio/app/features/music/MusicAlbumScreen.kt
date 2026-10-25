@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -79,12 +77,10 @@ fun MusicAlbumScreen(
     var attempt by remember { mutableStateOf(0) }
     val load = rememberMusicLoad(browseId, attempt) { catalog.album(browseId) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(top = 12.dp),
-    ) {
+    Box(modifier.fillMaxSize().background(colors.background)) {
+    // The cover, blurred, as the page's atmosphere (it does not move, so reduced motion needs nothing).
+    if (load is MusicLoad.Loaded) AlbumAmbientBackdrop(load.value.thumbnailUrl)
+    Column(Modifier.fillMaxSize().padding(top = 12.dp)) {
         Box(Modifier.padding(horizontal = 16.dp)) { NuvioBackButton(onClick = onBack) }
         when (load) {
             MusicLoad.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -98,9 +94,9 @@ fun MusicAlbumScreen(
             is MusicLoad.Loaded -> AlbumContent(load.value, onArtistClick, onAlbumClick, player)
         }
     }
+    }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AlbumContent(
     album: MusicAlbum,
@@ -112,6 +108,10 @@ private fun AlbumContent(
     val state by player.state.collectAsStateWithLifecycle()
     var chosenMode by rememberSaveable(album.browseId) { mutableStateOf(player.state.value.mode) }
     var descriptionOpen by rememberSaveable(album.browseId) { mutableStateOf(false) }
+    var flipped by rememberSaveable(album.browseId) { mutableStateOf(false) }
+    // null follows playback (the disc comes out while the album plays); a tap on the button takes over.
+    var discChoice by rememberSaveable(album.browseId) { mutableStateOf<Boolean?>(null) }
+    val reducedMotion = rememberMusicReducedMotion()
     // Looks the album's artist up in the background (not saved) so an album opened from Search gets
     // the same label, mood, CD art and palette as one from the library. A saved artist is left alone.
     val albumArtistId = album.artists.firstOrNull()?.browseId
@@ -125,8 +125,20 @@ private fun AlbumContent(
     // While this album plays, the player's mode is the truth: a failed switch to video leaves it on audio.
     val mode = if (loaded) state.mode else chosenMode
 
+    val playing = loaded && state.isPlaying
+    val discOut = discChoice ?: playing
     val rail: @Composable () -> Unit = {
-        AlbumHeader(album, info, spinning = loaded && state.isPlaying, onArtistClick = onArtistClick)
+        AlbumHeader(
+            album = album,
+            info = info,
+            flipped = flipped,
+            discOut = discOut,
+            discSpinning = discOut && playing,
+            reducedMotion = reducedMotion,
+            onFlip = { flipped = !flipped },
+            onDisc = { discChoice = !discOut },
+            onArtistClick = onArtistClick,
+        )
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 NuvioPrimaryButton(
@@ -174,28 +186,12 @@ private fun AlbumContent(
             }
         }
         info?.release?.let { release ->
-            // The feel of the record, from the library: genre, style and mood as chips.
-            val feel = (release.genres + listOfNotNull(release.style, release.mood)).distinctBy { it.lowercase() }
-            if (feel.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    feel.forEach { AlbumChip(it) }
-                }
-            }
-            release.description?.let { text ->
-                Column(
-                    Modifier.clip(RoundedCornerShape(10.dp)).clickable { descriptionOpen = !descriptionOpen }.padding(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                        maxLines = if (descriptionOpen) Int.MAX_VALUE else 4,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(if (descriptionOpen) "Show less" else "Read more", style = MaterialTheme.typography.bodySmall, color = colors.accent)
-                }
-            }
+            // Liner notes: label and date, genre chips with the mood in the accent, the description.
+            AlbumLinerNotes(
+                notes = buildLinerNotes(release, album.year),
+                descriptionOpen = descriptionOpen,
+                onToggleDescription = { descriptionOpen = !descriptionOpen },
+            )
             // Where the library and YouTube Music disagree is worth a line: it explains a "missing" song.
             val listed = release.trackCount
             if (listed != null && listed != album.tracks.size) {
@@ -291,22 +287,18 @@ private fun AlbumContent(
 }
 
 @Composable
-private fun AlbumChip(text: String) {
+private fun AlbumHeader(
+    album: MusicAlbum,
+    info: LibraryAlbumInfo?,
+    flipped: Boolean,
+    discOut: Boolean,
+    discSpinning: Boolean,
+    reducedMotion: Boolean,
+    onFlip: () -> Unit,
+    onDisc: () -> Unit,
+    onArtistClick: (String) -> Unit,
+) {
     val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(16.dp)
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = colors.textPrimary,
-        modifier = Modifier.clip(shape).border(1.dp, colors.borderDefault, shape).padding(horizontal = 12.dp, vertical = 5.dp),
-    )
-}
-
-@Composable
-private fun AlbumHeader(album: MusicAlbum, info: LibraryAlbumInfo?, spinning: Boolean, onArtistClick: (String) -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    // CD art is only known for releases in the music library; any other album gets a drawn disc.
-    val cdArt = info?.release?.art?.cdArt
     val artistId = album.artists.firstOrNull()?.browseId
     val minutes = album.tracks.sumOf { it.durationSeconds } / 60
     val meta = listOfNotNull(
@@ -315,12 +307,22 @@ private fun AlbumHeader(album: MusicAlbum, info: LibraryAlbumInfo?, spinning: Bo
         "${album.tracks.size} track${if (album.tracks.size == 1) "" else "s"}",
         "$minutes min".takeIf { minutes > 0 },
     ).joinToString(" · ")
-    // Release details the library has and YouTube Music does not.
-    val credit = info?.release?.let { r ->
-        listOfNotNull(r.label, r.releaseDate, "Explicit".takeIf { r.explicit == true }).joinToString(" · ")
-    }?.takeIf { it.isNotEmpty() }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        MusicCdSleeve(album.thumbnailUrl, cdArt, spinning = spinning, size = 200.dp, peek = 0.34f)
+        // The case turns to its back cover and the disc slides out of it; both snap under reduced motion.
+        AlbumObject(
+            album = album,
+            release = info?.release,
+            flipped = flipped,
+            discOut = discOut,
+            discSpinning = discSpinning,
+            reducedMotion = reducedMotion,
+            size = 260.dp,
+            peek = 0.3f,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            AlbumObjectButton(if (flipped) "Flip to front" else "Flip to back", onFlip)
+            AlbumObjectButton(if (discOut) "Slide disc in" else "Slide disc out", onDisc)
+        }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = album.title,
@@ -344,9 +346,6 @@ private fun AlbumHeader(album: MusicAlbum, info: LibraryAlbumInfo?, spinning: Bo
                 )
             }
             Text(text = meta, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-            if (credit != null) {
-                Text(text = credit, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-            }
         }
     }
 }
@@ -417,12 +416,17 @@ private fun TrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
             if (credit != null) {
+                // A credit chip for the featured artist(s), as on board 3.
+                val chip = RoundedCornerShape(8.dp)
                 Text(
-                    text = credit,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (track.isAvailable) colors.textSecondary else colors.textDisabled,
+                    text = "feat. $credit",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (track.isAvailable) colors.accent else colors.textDisabled,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp).clip(chip)
+                        .background((if (track.isAvailable) colors.accent else colors.textDisabled).copy(alpha = 0.12f))
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }
         }

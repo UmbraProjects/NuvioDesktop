@@ -337,7 +337,8 @@ internal fun parseAudioDbAlbums(body: String): List<AudioDbAlbum> =
             art = ReleaseArtwork(
                 covers = listOfNotNull(httpsUrl(a.text("strAlbumThumbHQ")), httpsUrl(a.text("strAlbumThumb"))),
                 cdArt = httpsUrl(a.text("strAlbumCDart")),
-                back = httpsUrl(a.text("strAlbumBack")),
+                // TheAudioDB calls the back cover strAlbumThumbBack; strAlbumBack is kept as a second name in case a response uses it.
+                back = httpsUrl(a.text("strAlbumThumbBack") ?: a.text("strAlbumBack")),
                 spine = httpsUrl(a.text("strAlbumSpine")),
                 case3d = httpsUrl(a.text("strAlbum3DCase")),
             ),
