@@ -77,6 +77,14 @@ data class StreamBadgeRules(
         ).normalized()
     }
 
+    /**
+     * The rules the player badges use: [sourceUrl] picks one of the imported packs, blank means
+     * the same pack as the stream list. A pack written for release names may not suit decoded
+     * media, so the player can use another (upstream 83e528f00).
+     */
+    fun forPlayer(sourceUrl: String): StreamBadgeRules =
+        if (sourceUrl.isBlank()) normalized() else setActiveSource(sourceUrl)
+
     fun removeSource(sourceUrl: String): StreamBadgeRules =
         copy(imports = imports.filterNot { it.sourceUrl.equals(sourceUrl.trim(), ignoreCase = true) }).normalized()
 

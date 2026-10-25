@@ -18,6 +18,9 @@ import com.nuvio.app.features.party.presenceState
 import com.nuvio.app.features.party.statusRes
 import com.nuvio.app.core.ui.copyPlainTextToClipboard
 import com.nuvio.app.features.party.PartyAction
+import com.nuvio.app.features.party.PartyChat
+import com.nuvio.app.features.party.PartyChatStatus
+import com.nuvio.app.features.party.partyChatRows
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.party.PartyCorrection
 import com.nuvio.app.features.party.PartyEvent
@@ -452,6 +455,48 @@ internal fun PlayerScreenRuntime.rememberPartyControlsState(): PlayerControlPart
         else -> ""
     }
     val canShareStream = currentPartyStream() != null
+    val chatMessages by PartyChat.messages.collectAsStateWithLifecycle()
+    val chatUnread by PartyChat.unread.collectAsStateWithLifecycle()
+    val chatOpen = party != null && showPartyPanel && partyChatTabOpen
+    DisposableEffect(chatOpen) {
+        PartyChat.setOpen(chatOpen)
+        onDispose { PartyChat.setOpen(false) }
+    }
+    // A message from someone else while the chat is not on screen: shown briefly in the HUD's
+    // pill, so it can be read without opening the panel. History loaded on joining is not.
+    val latestMessage = chatMessages.lastOrNull()
+    val seenKey = remember(party?.id) { mutableListOf<String?>(null) }
+    LaunchedEffect(latestMessage?.key, party?.id) {
+        val message = latestMessage ?: return@LaunchedEffect
+        val firstSeen = seenKey[0] == null
+        seenKey[0] = message.key
+        if (firstSeen || message.mine || chatOpen || message.id == null) return@LaunchedEffect
+        playerController?.showTransientMessage(message.name.ifBlank { getString(Res.string.party_title) }, message.body)
+    }
+    val chatRows = remember(chatMessages, showPartyPanel, party) {
+        if (party == null || !showPartyPanel) {
+            emptyList()
+        } else {
+            partyChatRows(chatMessages).takeLast(PARTY_CHAT_HUD_LIMIT).map { row ->
+                val message = row.message
+                val member = party.member(message.memberId)
+                val name = member?.displayName ?: message.name
+                PlayerControlChatMessage(
+                    key = message.key,
+                    name = name,
+                    initials = name.partyInitials(),
+                    color = (member?.avatarColor ?: message.avatarColor).orEmpty(),
+                    avatarUrl = (member?.avatarUrl ?: message.avatarUrl).orEmpty(),
+                    body = message.body,
+                    time = if (row.showTime) formatPartyChatTime(message.sentAt) else "",
+                    mine = message.mine,
+                    sending = message.status == PartyChatStatus.Sending,
+                    failed = message.status == PartyChatStatus.Failed,
+                    startsGroup = row.startsGroup,
+                )
+            }
+        }
+    }
     val members = remember(party, statusLabels, behindMs) {
         party?.members.orEmpty().mapIndexed { index, member ->
             val isSelf = member.id == party?.memberId
@@ -495,8 +540,18 @@ internal fun PlayerScreenRuntime.rememberPartyControlsState(): PlayerControlPart
         startNote = startNote,
         members = members,
         labels = labels,
+        chatUnread = if (party != null) chatUnread else 0,
+        chatMessages = chatRows,
     )
 }
+
+private val PartyChatTimeFormat: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+
+private fun formatPartyChatTime(epochMs: Long): String =
+    runCatching {
+        java.time.Instant.ofEpochMilli(epochMs).atZone(java.time.ZoneId.systemDefault()).format(PartyChatTimeFormat)
+    }.getOrDefault("")
 
 @Composable
 private fun rememberPartyHudLabels(party: ActiveParty?): Map<String, String> {
@@ -529,6 +584,13 @@ private fun rememberPartyHudLabels(party: ActiveParty?): Map<String, String> {
     val remove = stringResource(Res.string.action_remove)
     val cancel = stringResource(Res.string.action_cancel)
     val reconnecting = stringResource(Res.string.party_reconnecting)
+    val tabParty = stringResource(Res.string.party_tab_party)
+    val tabChat = stringResource(Res.string.party_tab_chat)
+    val chatEmptyTitle = stringResource(Res.string.party_chat_empty_title)
+    val chatEmptyMessage = stringResource(Res.string.party_chat_empty_message)
+    val chatPlaceholder = stringResource(Res.string.party_chat_placeholder)
+    val chatSend = stringResource(Res.string.party_chat_send)
+    val chatNotSent = stringResource(Res.string.party_chat_not_sent)
     return remember(seats, removeTitle, title) {
         mapOf(
             "title" to title,
@@ -561,6 +623,13 @@ private fun rememberPartyHudLabels(party: ActiveParty?): Map<String, String> {
             "removeMessage" to removeMessage,
             "cancel" to cancel,
             "reconnecting" to reconnecting,
+            "tabParty" to tabParty,
+            "tabChat" to tabChat,
+            "chatEmptyTitle" to chatEmptyTitle,
+            "chatEmptyMessage" to chatEmptyMessage,
+            "chatPlaceholder" to chatPlaceholder,
+            "chatSend" to chatSend,
+            "chatNotSent" to chatNotSent,
         )
     }
 }
@@ -602,9 +671,22 @@ internal fun PlayerScreenRuntime.openPartyPanel() {
 
 /** Clicks in the HUD's party pill and panel. Returns true when [type] was a party event. */
 internal fun PlayerScreenRuntime.handlePartyControlsEvent(type: String, value: Double): Boolean {
+    // Text rides in the event name, as the IPTV search does: the bridge carries a type and a number.
+    if (type.startsWith(PARTY_CHAT_SEND_EVENT)) {
+        PartyChat.send(type.removePrefix(PARTY_CHAT_SEND_EVENT))
+        return true
+    }
+    if (type.startsWith(PARTY_CHAT_RETRY_EVENT)) {
+        PartyChat.retry(type.removePrefix(PARTY_CHAT_RETRY_EVENT))
+        return true
+    }
     when (type) {
+        "partyChatTab" -> partyChatTabOpen = value > 0.5
         "partyPanelOpened" -> showPartyPanel = true
-        "partyPanelClosed" -> showPartyPanel = false
+        "partyPanelClosed" -> {
+            showPartyPanel = false
+            partyChatTabOpen = false
+        }
         "partyStart" -> startParty()
         "partyCopyInvite" -> {
             val party = PartyRepository.state.value.party ?: return true
@@ -689,3 +771,7 @@ private val CORRECTION_INTERVAL = 500.milliseconds
 private const val MAX_SEEK_LEAD_MS = 3_000L
 private const val BEHIND_DISPLAY_STEP_MS = 1_000L
 private const val DESCRIPTION_LIMIT = 600
+
+private const val PARTY_CHAT_SEND_EVENT = "partyChatSend:"
+private const val PARTY_CHAT_RETRY_EVENT = "partyChatRetry:"
+private const val PARTY_CHAT_HUD_LIMIT = 60

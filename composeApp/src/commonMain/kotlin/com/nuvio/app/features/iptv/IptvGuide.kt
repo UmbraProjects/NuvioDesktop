@@ -1,5 +1,7 @@
 package com.nuvio.app.features.iptv
 
+import com.nuvio.app.core.ui.NuvioGlass
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -166,8 +168,9 @@ private fun GuideRow(
                 .width(GuideChannelColumnWidth)
                 .fillMaxHeight()
                 .padding(end = 6.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (keyboardFocused) tokens.colors.surfaceElevated else tokens.colors.surface.copy(alpha = 0.7f))
+                .iptvGlass(NuvioGlass.Shape, raised = keyboardFocused)
+                // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
+                .clip(NuvioGlass.Shape)
                 .then(if (keyboardFocused) Modifier.border(1.5.dp, tokens.colors.borderFocus, RoundedCornerShape(10.dp)) else Modifier)
                 .clickable(onClick = onPlay)
                 .padding(horizontal = 10.dp),
@@ -255,14 +258,16 @@ private fun GuideCell(
             .width(width)
             .fillMaxHeight()
             .padding(end = 3.dp)
-            .clip(shape)
-            .background(
-                when {
-                    focused || hovered -> tokens.colors.surfaceElevated
-                    live -> tokens.colors.accent.copy(alpha = 0.22f)
-                    else -> tokens.colors.surface.copy(alpha = if (past) 0.35f else 0.6f)
-                },
+            // Glass like the rest of Live TV; a programme already over is dimmed with it.
+            .alpha(if (past && !(focused || hovered)) 0.6f else 1f)
+            .iptvGlass(
+                shape,
+                raised = focused || hovered,
+                selected = live && !(focused || hovered),
+                selectedTint = tokens.colors.accent.copy(alpha = 0.22f),
             )
+            // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
+            .clip(shape)
             .then(if (focused) Modifier.border(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp)

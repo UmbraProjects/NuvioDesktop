@@ -120,6 +120,8 @@ internal fun LazyListScope.mdbListSettingsContent(
         }
     }
 
+    mdbListLibraryListsSection(isTablet = isTablet, settings = settings)
+
     item {
         SettingsSection(
             title = stringResource(Res.string.settings_mdb_section_api_key),
@@ -181,6 +183,7 @@ internal fun LazyListScope.mdbListSettingsContent(
                 )
             }
             if (settings.refreshPreset == MdbListRefreshPreset.Custom) {
+                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSectionNote(
                     text = stringResource(Res.string.settings_mdb_refresh_custom_note),
                     isTablet = isTablet,
@@ -310,7 +313,7 @@ private fun MdbListApiKeyRow(
 }
 
 @Composable
-private fun MdbListInfoRow(
+internal fun MdbListInfoRow(
     isTablet: Boolean,
     text: String,
 ) {

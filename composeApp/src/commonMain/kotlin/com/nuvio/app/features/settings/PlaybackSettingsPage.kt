@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.build.AppFeaturePolicy
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -16,6 +17,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -26,7 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -63,6 +66,7 @@ import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.features.addons.AddonRepository
 import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.player.AddonSubtitleStartupMode
+import com.nuvio.app.features.player.DESKTOP_INVERSE_TONE_MAPPING_PEAK_RANGE
 import com.nuvio.app.features.player.SubtitleTrackKind
 import com.nuvio.app.features.player.AudioLanguageOption
 import com.nuvio.app.features.player.AudioRejectKeyword
@@ -146,6 +150,7 @@ import kotlin.math.roundToInt
 import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.player.skip.SkipAutoAcceptMode
 import com.nuvio.app.core.ui.accentBrush
+import com.nuvio.app.core.ui.nuvio
 
 internal fun LazyListScope.playbackSettingsContent(
     isTablet: Boolean,
@@ -162,6 +167,7 @@ internal fun LazyListScope.playbackSettingsContent(
     tunnelingEnabled: Boolean,
     useLibass: Boolean,
     libassRenderType: String,
+    group: PlaybackSettingsGroup = PlaybackSettingsGroup.All,
 ) {
     // One lazy item per top-level section rather than one item holding the whole page: that
     // composed all ~400 rows (and resolved every one of their strings) in a single frame on every
@@ -169,7 +175,7 @@ internal fun LazyListScope.playbackSettingsContent(
     // the largest is about a fifth of the page. Settings search still reaches rows further down
     // (SeekSettingsAnchorIntoView walks the list until the target mounts). The conditions mirror
     // the ones inside each section so a hidden section leaves no gap.
-    playbackSettingsParts().forEach { part ->
+    playbackSettingsParts(group).forEach { part ->
         item(key = "playback-settings-$part") {
         PlaybackSettingsSection(
             part = part,
@@ -194,18 +200,44 @@ internal fun LazyListScope.playbackSettingsContent(
 
 private const val PlaybackSettingsFirstPart = 1
 
-private fun playbackSettingsParts(): List<Int> = buildList {
-    if (isWindows) add(0)
-    add(1)
-    if (isDesktop) add(2)
-    add(3)
-    add(4)
-    if (P2pSettingsRepository.isVisible) add(5)
-    add(6)
-    add(7)
-    if (isIos) add(8)
-    add(9)
-    add(10)
+/**
+ * The playback settings are split over three pages; each draws its own subset of the sections.
+ * Mobile keeps them all on one page.
+ */
+internal enum class PlaybackSettingsGroup {
+    /** How the picture and sound are produced: RTX, renderer, HDR, colour, audio output, shaders. */
+    VideoAudio,
+
+    /** What you see and use while watching: the overlay, subtitles and languages, skip, next up. */
+    Player,
+
+    /** Which source plays: P2P, stream selection and auto-play. Drawn on the Streams page. */
+    Streams,
+    All,
+}
+
+// Part numbers are the `if (part == n)` blocks in PlaybackSettingsSection; the order here is the
+// order on the page.
+private fun playbackSettingsParts(group: PlaybackSettingsGroup): List<Int> = buildList {
+    val all = group == PlaybackSettingsGroup.All
+    if (all || group == PlaybackSettingsGroup.VideoAudio) {
+        if (isWindows) add(0)
+        if (isDesktop) add(11)
+        if (isDesktop) add(2)
+        if (isIos) add(8)
+    }
+    if (all || group == PlaybackSettingsGroup.Player) {
+        add(1)
+        add(3)
+        add(4)
+        add(9)
+        add(10)
+    }
+    if (all || group == PlaybackSettingsGroup.Streams) {
+        if (P2pSettingsRepository.isVisible) add(5)
+        add(6)
+        add(7)
+    }
 }
 
 private fun formatStep(value: Float): String {
@@ -258,33 +290,6 @@ fun calculateSteps(
     return (totalSteps - 1).coerceAtLeast(0)
 }
 
-/** How far the slider readout is pulled down toward its slider. */
-private val ValueBoxSliderNudge = 4.dp
-
-@Composable
-fun ValueBox(
-    text: String,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        // Nudged toward the slider it labels. A plain offset rather than tighter column spacing:
-        // most of the gap is the text's own line leading plus the slider's touch-target padding,
-        // neither of which the arrangement can reach, and an offset moves the glyph without
-        // changing the height the column reserves.
-        modifier = modifier.offset(y = ValueBoxSliderNudge),
-        contentAlignment = Alignment.CenterStart
-    ) {
-        Text(
-            text = text,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyMedium.accentBrush(),
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
 @Composable
 internal fun SettingsSliderRow(
     title: String,
@@ -312,7 +317,7 @@ internal fun SettingsSliderRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = 8.dp)
+            .padding(horizontal = horizontalPadding, vertical = if (isTablet) DesktopRowVerticalPadding else 8.dp)
             .alpha(if (enabled) 1f else 0.55f),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -322,12 +327,10 @@ internal fun SettingsSliderRow(
             isTablet = isTablet,
             modifier = Modifier.weight(1f),
         )
-        Column(
-            modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            modifier = Modifier.width(if (isTablet) DesktopControlWidth else 220.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ValueBox(text = displayedValueText)
             SettingsModernSlider(
                 value = sliderValue.coerceIn(valueRange.first.toFloat(), valueRange.last.toFloat()),
                 onValueChange = { if (enabled) sliderValue = snapToStep(it, step.toFloat()) },
@@ -337,7 +340,8 @@ internal fun SettingsSliderRow(
                 enabled = enabled,
                 valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
                 steps = calculateSteps(valueRange.first.toFloat(), valueRange.last.toFloat(), step.toFloat()),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
+                valueLabel = displayedValueText,
             )
         }
     }
@@ -408,7 +412,7 @@ internal fun SettingsRangeSliderRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = 8.dp)
+            .padding(horizontal = horizontalPadding, vertical = if (isTablet) DesktopRowVerticalPadding else 8.dp)
             .alpha(if (enabled) 1f else 0.55f),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -418,14 +422,10 @@ internal fun SettingsRangeSliderRow(
             isTablet = isTablet,
             modifier = Modifier.weight(1f),
         )
-        Column(
-            modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            modifier = Modifier.width(if (isTablet) DesktopControlWidth else 220.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ValueBox(
-                text = valueTextForRange(displayedLow, displayedHigh),
-            )
             SettingsModernRangeSlider(
                 lowValue = lowSliderValue.coerceIn(valueRange.first.toFloat(), valueRange.last.toFloat()),
                 highValue = highSliderValue.coerceIn(valueRange.first.toFloat(), valueRange.last.toFloat()),
@@ -456,7 +456,8 @@ internal fun SettingsRangeSliderRow(
                 enabled = enabled,
                 valueRange = valueRange.first.toFloat()..valueRange.last.toFloat(),
                 steps = calculateSteps(valueRange.first.toFloat(), valueRange.last.toFloat(), step.toFloat()),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
+                valueLabel = valueTextForRange(displayedLow, displayedHigh),
             )
         }
     }
@@ -556,18 +557,18 @@ private fun SubtitleColorDropdownRow(
         ?: SubtitleColorOption(selectedColor, subtitleColorLabel(selectedColor))
     var expanded by remember { mutableStateOf(false) }
     var showCustomColorDialog by remember { mutableStateOf(false) }
-    val controlWidth = if (isTablet) 210.dp else 260.dp
+    val controlWidth = if (isTablet) DesktopControlWidth else 260.dp
     val triggerShape = RoundedCornerShape(
         topStart = 8.dp,
-        topEnd = 8.dp,
-        bottomStart = if (expanded) 0.dp else 8.dp,
-        bottomEnd = if (expanded) 0.dp else 8.dp,
+        topEnd = SettingsGlassRadius,
+        bottomStart = if (expanded) 0.dp else SettingsGlassRadius,
+        bottomEnd = if (expanded) 0.dp else SettingsGlassRadius,
     )
     val menuShape = RoundedCornerShape(
         topStart = 0.dp,
         topEnd = 0.dp,
-        bottomStart = 8.dp,
-        bottomEnd = 8.dp,
+        bottomStart = SettingsGlassRadius,
+        bottomEnd = SettingsGlassRadius,
     )
     Row(
         modifier = Modifier
@@ -585,12 +586,14 @@ private fun SubtitleColorDropdownRow(
         )
         Box(modifier = Modifier.width(controlWidth)) {
             Surface(
+                // The settings dropdown glass; see SettingsDropdownTrigger.
                 modifier = Modifier
                     .fillMaxWidth()
+                    .ditheredBackground(SettingsSectionGlassFill, triggerShape)
                     .clickable(enabled = enabled) { expanded = true },
                 shape = triggerShape,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                color = Color.Transparent,
+                border = BorderStroke(1.dp, SettingsSectionGlassEdge),
             ) {
                 Row(
                     modifier = Modifier
@@ -608,9 +611,10 @@ private fun SubtitleColorDropdownRow(
                         modifier = Modifier.weight(1f),
                     )
                     Icon(
-                        imageVector = Icons.Rounded.ArrowDropDown,
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MaterialTheme.nuvio.colors.textMuted,
+                        modifier = Modifier.size(20.dp).rotate(if (expanded) 180f else 0f),
                     )
                 }
             }
@@ -619,10 +623,10 @@ private fun SubtitleColorDropdownRow(
                 onDismissRequest = { expanded = false },
                 modifier = Modifier.width(controlWidth),
                 shape = menuShape,
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = MaterialTheme.nuvio.colors.background,
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                border = BorderStroke(1.dp, SettingsSectionGlassEdge),
             ) {
                 options.forEach { option ->
                     val selected = option.color.toStorageHexString() == selectedOption.color.toStorageHexString()
@@ -1233,7 +1237,19 @@ private fun PlaybackSettingsSection(
                             isTablet = isTablet,
                             onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackInfoPanelEnabled,
                         )
-                        SettingsGroupDivider(isTablet = isTablet)
+                    }
+                }
+            }
+        }
+        // The technical half of the old Player section - picture, renderer and audio output - which
+        // lives on this (Video & Audio) page while the overlay half moved to the Player page.
+        if (part == 11) {
+            if (isDesktop) {
+                SettingsSection(
+                    title = stringResource(Res.string.settings_playback_section_picture_audio),
+                    isTablet = isTablet,
+                ) {
+                    SettingsGroup(isTablet = isTablet) {
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_hdr_mode),
                             description = autoPlayPlayerSettings.desktopHdrMode.description,
@@ -1243,6 +1259,29 @@ private fun PlaybackSettingsSection(
                             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HdrMode),
                             onSelected = PlayerSettingsRepository::setDesktopHdrMode,
                         )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_inverse_tone_mapping),
+                            description = stringResource(Res.string.settings_playback_desktop_inverse_tone_mapping_desc),
+                            checked = autoPlayPlayerSettings.desktopInverseToneMappingEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopInverseToneMappingEnabled,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.InverseToneMapping),
+                        )
+                        if (autoPlayPlayerSettings.desktopInverseToneMappingEnabled) {
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSliderRow(
+                                title = stringResource(Res.string.settings_playback_desktop_inverse_tone_mapping_peak),
+                                description = stringResource(Res.string.settings_playback_desktop_inverse_tone_mapping_peak_desc),
+                                value = autoPlayPlayerSettings.desktopInverseToneMappingPeakNits,
+                                valueText = "${autoPlayPlayerSettings.desktopInverseToneMappingPeakNits} nits",
+                                valueTextForValue = { "$it nits" },
+                                valueRange = DESKTOP_INVERSE_TONE_MAPPING_PEAK_RANGE,
+                                step = 50,
+                                isTablet = isTablet,
+                                onValueChange = PlayerSettingsRepository::setDesktopInverseToneMappingPeakNits,
+                            )
+                        }
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_color_profile),
@@ -2299,6 +2338,16 @@ private fun PlaybackSettingsSection(
                             )
                         }
                     }
+                    // Not under the prefetch switch: it fills from any search, prefetch or not.
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_cw_stream_cache),
+                        description = stringResource(Res.string.settings_playback_cw_stream_cache_description),
+                        checked = autoPlayPlayerSettings.streamCwCacheEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("cw-stream-cache")),
+                        onCheckedChange = PlayerSettingsRepository::setStreamCwCacheEnabled,
+                    )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_reuse_last_link),
@@ -2482,12 +2531,10 @@ private fun PlaybackSettingsSection(
                             Int.MAX_VALUE -> stringResource(Res.string.settings_playback_timeout_unlimited)
                             else -> stringResource(Res.string.settings_playback_timeout_seconds, displayedTimeout)
                         }
-                        Column(
-                            modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        Row(
+                            modifier = Modifier.width(if (isTablet) DesktopControlWidth else 220.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ValueBox(text = displayedTimeoutLabel)
                             SettingsModernSlider(
                                 value = sliderValue,
                                 onValueChange = {
@@ -2505,7 +2552,8 @@ private fun PlaybackSettingsSection(
                                 },
                                 valueRange = 0f..maxIndex,
                                 steps = calculateSteps(0f, maxIndex, 1f),
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.weight(1f),
+                                valueLabel = displayedTimeoutLabel,
                             )
                         }
                     }
@@ -2783,6 +2831,17 @@ private fun PlaybackSettingsSection(
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BingeMode),
                         onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayNextEpisodeEnabled,
                     )
+                    if (autoPlayPlayerSettings.streamAutoPlayNextEpisodeEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_preload_next_episode),
+                            description = stringResource(Res.string.settings_playback_preload_next_episode_description),
+                            checked = autoPlayPlayerSettings.preloadNextEpisodeSources,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("preload-next-episode")),
+                            onCheckedChange = PlayerSettingsRepository::setPreloadNextEpisodeSources,
+                        )
+                    }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_prefer_binge_group),
@@ -2856,17 +2915,10 @@ private fun PlaybackSettingsSection(
                                 }
                                 var sliderValue by remember(thresholdPercent) { mutableFloatStateOf(thresholdPercent) }
                                 var lastHapticPercent by remember(thresholdPercent) { mutableStateOf(thresholdPercent) }
-                                Column(
-                                    modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                Row(
+                                    modifier = Modifier.width(if (isTablet) DesktopControlWidth else 220.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    ValueBox(
-                                        text = stringResource(
-                                            Res.string.settings_playback_threshold_percentage_value,
-                                            formatStep(sliderValue),
-                                        ),
-                                    )
                                     SettingsModernSlider(
                                         value = sliderValue,
                                         onValueChange = {
@@ -2883,7 +2935,11 @@ private fun PlaybackSettingsSection(
                                         },
                                         valueRange = 97f..100f,
                                         steps = calculateSteps(97f, 100f, 0.5f),
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier.weight(1f),
+                                        valueLabel = stringResource(
+                                            Res.string.settings_playback_threshold_percentage_value,
+                                            formatStep(sliderValue),
+                                        ),
                                     )
                                 }
                             }
@@ -2911,17 +2967,10 @@ private fun PlaybackSettingsSection(
                                 }
                                 var sliderValue by remember(thresholdMinutes) { mutableFloatStateOf(thresholdMinutes) }
                                 var lastHapticMin by remember(thresholdMinutes) { mutableStateOf(thresholdMinutes) }
-                                Column(
-                                    modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                Row(
+                                    modifier = Modifier.width(if (isTablet) DesktopControlWidth else 220.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    ValueBox(
-                                        text = stringResource(
-                                            Res.string.settings_playback_minutes_value,
-                                            formatStep(sliderValue),
-                                        ),
-                                    )
                                     SettingsModernSlider(
                                         value = sliderValue,
                                         onValueChange = {
@@ -2938,7 +2987,11 @@ private fun PlaybackSettingsSection(
                                         },
                                         valueRange = 0f..3.5f,
                                         steps = calculateSteps(0f, 3.5f, 0.5f),
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier.weight(1f),
+                                        valueLabel = stringResource(
+                                            Res.string.settings_playback_minutes_value,
+                                            formatStep(sliderValue),
+                                        ),
                                     )
                                 }
                             }

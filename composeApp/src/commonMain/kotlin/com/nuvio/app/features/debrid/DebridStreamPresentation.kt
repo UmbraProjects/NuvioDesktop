@@ -32,10 +32,10 @@ object DebridStreamPresentation {
 
             val shouldFormatStreams = settings.hasCustomStreamFormatting ||
                 debridStreams.any { stream -> stream.badges.isNotEmpty() }
-            val presentedDebridStreams = applyPreferences(debridStreams, settings, scoring)
-                .map { stream ->
+            val presentedDebridStreams = applyPreferencesWithFacts(debridStreams, settings, scoring)
+                .map { (stream, facts) ->
                     if (shouldFormatStreams) {
-                        formatter.format(stream, settings)
+                        formatter.format(stream, settings, facts)
                     } else {
                         stream
                     }
@@ -55,7 +55,14 @@ object DebridStreamPresentation {
         streams: List<StreamItem>,
         settings: DebridSettings,
         scoring: StreamScoring? = null,
-    ): List<StreamItem> {
+    ): List<StreamItem> = applyPreferencesWithFacts(streams, settings, scoring).map { it.first }
+
+    /** [applyPreferences], keeping each stream's facts so formatting does not compute them again. */
+    internal fun applyPreferencesWithFacts(
+        streams: List<StreamItem>,
+        settings: DebridSettings,
+        scoring: StreamScoring? = null,
+    ): List<Pair<StreamItem, DebridStreamFacts>> {
         val preferences = DebridStreamMetadata.effectivePreferences(settings)
         val matchedStreams = streams.map { it to DebridStreamMetadata.facts(it, preferences) }
             .filter { (_, facts) -> facts.matchesFilters(preferences) }
@@ -76,7 +83,6 @@ object DebridStreamPresentation {
         }
 
         return applyLimits(orderedStreams, preferences)
-            .map { it.first }
     }
 
     internal val StreamItem.isManagedDebridStream: Boolean

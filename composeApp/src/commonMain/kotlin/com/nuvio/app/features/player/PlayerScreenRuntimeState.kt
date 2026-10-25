@@ -248,6 +248,10 @@ internal class PlayerScreenRuntime(
 
     // Watch party (PlayerScreenRuntimeParty.kt). showPartyPanel mirrors the HUD's party modal.
     var showPartyPanel by mutableStateOf(false)
+    /** The HUD's stream info panel is open (PlayerScreenRuntimeStreamInfo.kt). */
+    var showStreamInfo by mutableStateOf(false)
+    /** The party panel's Chat tab is the one showing (reported by the HUD). */
+    var partyChatTabOpen by mutableStateOf(false)
     var partyPanelOpenToken by mutableStateOf(0)
     var partyBehind by mutableStateOf(false)
     var partyBehindMs by mutableStateOf<Long?>(null)
@@ -343,6 +347,8 @@ internal class PlayerScreenRuntime(
     // playback attempt must not release it.
     var nextEpisodeAdvanceTargetVideoId by mutableStateOf<String?>(null)
     var nextEpisodeThresholdStableSamples by mutableStateOf(0)
+    /** The next episode Preload Next Episode Sources already asked about, so it asks once. */
+    var nextEpisodePreloadRequestedFor by mutableStateOf<String?>(null)
     var pendingP2pSwitch by mutableStateOf<PendingPlayerP2pSwitch?>(null)
     var credentialRefreshJob by mutableStateOf<Job?>(null)
     var credentialRefreshAttemptedSourceUrl by mutableStateOf<String?>(null)

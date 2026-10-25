@@ -44,7 +44,8 @@ fun librarySourceModeFromStorage(value: String?): LibrarySourceMode =
 @Serializable
 enum class MoreLikeThisSourcePreference {
     TRAKT,
-    TMDB;
+    TMDB,
+    SIMKL;
 
     companion object {
         fun fromStorage(value: String?): MoreLikeThisSourcePreference =

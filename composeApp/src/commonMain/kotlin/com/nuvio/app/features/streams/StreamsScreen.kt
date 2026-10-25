@@ -2139,6 +2139,7 @@ internal fun StreamList(
                         is StreamListEntry.SectionHeader -> StreamSectionHeader(
                             addonName = entry.addonName,
                             isLoading = entry.isLoading,
+                            cachedAtMs = entry.cachedAtMs,
                         )
 
                         is StreamListEntry.SourceHeader -> StreamSourceHeader(sourceName = entry.sourceName)
@@ -2279,6 +2280,8 @@ internal sealed interface StreamListEntry {
         override val key: String,
         val addonName: String,
         val isLoading: Boolean,
+        /** Oldest Continue Watching cache time among the section's rows; null when all are live. */
+        val cachedAtMs: Long? = null,
     ) : StreamListEntry
 
     data class SourceHeader(
@@ -2401,6 +2404,8 @@ internal fun buildStreamListEntries(
                 key = uniqueKey("header:${group.addonId}"),
                 addonName = group.addonName,
                 isLoading = group.isLoading,
+                cachedAtMs = group.streams.minOfOrNull { it.cachedAtMs ?: Long.MAX_VALUE }
+                    ?.takeIf { it != Long.MAX_VALUE },
             )
         }
 
@@ -2479,6 +2484,7 @@ private fun StreamSectionHeader(
     addonName: String,
     isLoading: Boolean,
     modifier: Modifier = Modifier,
+    cachedAtMs: Long? = null,
 ) {
     Row(
         modifier = modifier
@@ -2495,6 +2501,15 @@ private fun StreamSectionHeader(
             ),
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
         )
+        Spacer(modifier = Modifier.weight(1f))
+        cachedAtMs?.let { at ->
+            Text(
+                text = cachedAgoLabel(at),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = if (isLoading) 10.dp else 0.dp),
+            )
+        }
         AnimatedVisibility(visible = isLoading, enter = fadeIn(), exit = fadeOut()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(
@@ -2510,6 +2525,17 @@ private fun StreamSectionHeader(
                 )
             }
         }
+    }
+}
+
+/** "Cached 2d ago" for a section whose rows came from the Continue Watching cache. */
+@Composable
+private fun cachedAgoLabel(cachedAtMs: Long): String {
+    val ageMinutes = ((System.currentTimeMillis() - cachedAtMs) / 60_000L).coerceAtLeast(0L)
+    return when {
+        ageMinutes < 60L -> stringResource(Res.string.streams_cached_minutes_ago, ageMinutes.toInt())
+        ageMinutes < 24L * 60L -> stringResource(Res.string.streams_cached_hours_ago, (ageMinutes / 60L).toInt())
+        else -> stringResource(Res.string.streams_cached_days_ago, (ageMinutes / (24L * 60L)).toInt())
     }
 }
 

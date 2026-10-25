@@ -1178,11 +1178,8 @@ private fun TmdbSourcePickerScreen(
                 SettingsSection(
                     title = stringResource(Res.string.collections_editor_tmdb_presets),
                     isTablet = true,
+                    subtitle = stringResource(Res.string.collections_editor_tmdb_help_presets),
                 ) {
-                    SettingsSectionNote(
-                        text = stringResource(Res.string.collections_editor_tmdb_help_presets),
-                        isTablet = true,
-                    )
                     SettingsGroup(isTablet = true) {
                         TmdbCollectionSourceResolver.presets().forEachIndexed { index, preset ->
                             if (index > 0) SettingsGroupDivider(isTablet = true)
@@ -1234,11 +1231,8 @@ private fun TmdbFiltersSection(state: CollectionEditorUiState) {
     SettingsSection(
         title = stringResource(Res.string.collections_editor_tmdb_filters),
         isTablet = true,
+        subtitle = stringResource(Res.string.collections_editor_tmdb_filters_helper),
     ) {
-        SettingsSectionNote(
-            text = stringResource(Res.string.collections_editor_tmdb_filters_helper),
-            isTablet = true,
-        )
         SettingsGroup(isTablet = true) {
             EditorFilterRow(
                 label = stringResource(Res.string.collections_editor_tmdb_genres),

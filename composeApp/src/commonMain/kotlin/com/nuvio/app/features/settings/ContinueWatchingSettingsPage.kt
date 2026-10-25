@@ -61,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.draw.alpha
@@ -182,6 +183,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     ),
                     onSelected = ContinueWatchingPreferencesRepository::setClickAction,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
                 val preferences by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
                 SettingsChoiceRow(
                     title = stringResource(Res.string.settings_continue_watching_source_shortcut_title),
@@ -446,10 +448,12 @@ private fun ContinueWatchingStyleOption(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        color = if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-        } else {
-            MaterialTheme.colorScheme.surface
+        // On desktop the tiles sit inside the glass section card, so an unselected tile is clear and
+        // lets the card's glass show; an opaque surface here read as an older, solid panel.
+        color = when {
+            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+            isTablet -> Color.Transparent
+            else -> MaterialTheme.colorScheme.surface
         },
         shape = shape,
     ) {

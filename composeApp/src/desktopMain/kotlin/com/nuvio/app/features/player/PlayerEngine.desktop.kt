@@ -33,6 +33,9 @@ import com.nuvio.app.features.player.desktop.DESKTOP_INTERPOLATION_OVERRIDE_KEY
 import com.nuvio.app.features.player.desktop.DESKTOP_SHARPEN_OVERRIDE_KEY
 import com.nuvio.app.features.player.desktop.desktopDebandGrain
 import com.nuvio.app.features.player.desktop.desktopInterpolationProperties
+import com.nuvio.app.features.player.desktop.desktopCustomMpvOptionNames
+import com.nuvio.app.features.player.desktop.desktopInverseToneMappingProperties
+import com.nuvio.app.features.player.desktop.shouldEnableDesktopInverseToneMapping
 import com.nuvio.app.features.player.desktop.desktopTargetContrast
 import com.nuvio.app.features.player.desktop.desktopCasSharpness
 import com.nuvio.app.features.player.desktop.desktopShaderChainWithSharpen
@@ -1008,7 +1011,7 @@ private fun NativePlayerSurface(
                 // Anime4K chain compiling took 1.08 s, all of it a frozen player (2026-10-19 soak).
                 // The collector still waits, so profiles apply in order and the acknowledgement
                 // below still follows its profile.
-                val animeProfile = withContext(Dispatchers.IO) { controller.withVideoProfile {
+                val (animeProfile, inverseToneMappingActive) = withContext(Dispatchers.IO) { controller.withVideoProfile {
                     applyDesktopVideoProfile(
                         controller = controller,
                         hdrMode = settings.desktopHdrMode,
@@ -1017,7 +1020,7 @@ private fun NativePlayerSurface(
                         isHdr = isHdr,
                     )
                     controller.applyDesktopBufferPreset(settings.desktopBufferPreset)
-                    applyDesktopAnimeProfile(
+                    val profile = applyDesktopAnimeProfile(
                         controller = controller,
                         mode = settings.desktopAnimeMode,
                         autoEnabled = settings.desktopAnimeModeAutoEnabled,
@@ -1044,24 +1047,42 @@ private fun NativePlayerSurface(
                         customShaderPaths = settings.desktopCustomShaderPaths,
                         customShaderSelectedPath = settings.desktopCustomShaderSelectedPath,
                     )
+                    // After the anime profile, which is what knows whether True HDR ended up running.
+                    val inverseToneMapping = shouldEnableDesktopInverseToneMapping(
+                        enabled = settings.desktopInverseToneMappingEnabled,
+                        isHdr = isHdr,
+                        displayHdr = videoState.displayHdr,
+                        rtxTrueHdrActive = profile.rtxTrueHdrActive,
+                    )
+                    desktopInverseToneMappingProperties(
+                        active = inverseToneMapping,
+                        peakNits = settings.desktopInverseToneMappingPeakNits,
+                        customOptionNames = desktopCustomMpvOptionNames(settings.desktopCustomMpvOptions),
+                    ).forEach { (key, value) -> controller.setMpvProperty(key, value) }
+                    profile to inverseToneMapping
                 } }
                 // The outcome, not just the inputs above: whether a chain actually took is the
                 // only thing a bug report about shaders can be checked against, and deriving it
                 // from the inputs by hand is exactly the step that gets it wrong.
                 System.out.println(
                     "Desktop anime profile applied: shader=${animeProfile.shaderLabel ?: "none"}, " +
-                        "svp=${videoState.svpActive}",
+                        "svp=${videoState.svpActive}, rtxTrueHdr=${animeProfile.rtxTrueHdrActive}, " +
+                        "inverseToneMapping=$inverseToneMappingActive",
                 )
                 // Same pass, same inputs: the info panel reports what was just applied rather than
                 // re-deriving it from the settings, which would disagree with the picture whenever a
                 // preset didn't actually take (SDR file + HDR mode, live action + anime preset).
                 controller.setPlaybackInfo(
                     session = "$playbackAttemptId:${sourceUrl.hashCode()}",
-                    hdrLabel = desktopHdrInfoLabel(
-                        isHdr = isHdr,
-                        hdrMode = settings.desktopHdrMode,
-                        displayHdr = videoState.displayHdr,
-                    ),
+                    hdrLabel = if (inverseToneMappingActive) {
+                        "SDR Expanded to HDR (mpv)"
+                    } else {
+                        desktopHdrInfoLabel(
+                            isHdr = isHdr,
+                            hdrMode = settings.desktopHdrMode,
+                            displayHdr = videoState.displayHdr,
+                        )
+                    },
                     svpActive = videoState.svpActive,
                     // Both, not one or the other: a shader chain runs on top of the colour preset,
                     // it does not replace it.
@@ -1078,6 +1099,36 @@ private fun NativePlayerSurface(
                     controller.completeSvpStartupProfile()
                 }
             }
+    }
+
+    // Player badges (upstream 344117e73): the badge pack matched against what mpv is actually
+    // decoding, shown in the title block. Polled because the inputs arrive at different moments
+    // (frame size, then the track list, then an audio switch at any time); each read is a cached
+    // JSON string from the bridge, and the HUD is only told when the result changes.
+    LaunchedEffect(controller, playbackAttemptId, sourceUrl) {
+        var lastSent: List<com.nuvio.app.features.streams.StreamBadge>? = null
+        com.nuvio.app.features.streams.StreamBadgeSettingsRepository.ensureLoaded()
+        while (true) {
+            val settings = com.nuvio.app.features.streams.StreamBadgeSettingsRepository.uiState.value
+            // Read every tick even with badges off: it also records the decoded frame for the
+            // stream info panel (NativePlayerController.playingMediaFacts()).
+            val size = videoSourceSize.value
+            val facts = controller.playingMediaFacts(
+                width = size?.width,
+                height = size?.height,
+                isHdr = videoIsHdr.value == true,
+            )
+            val badges = if (settings.showInPlayer) {
+                facts?.let { playerBadges(it, settings.rules.forPlayer(settings.playerBadgeSource)) }.orEmpty()
+            } else {
+                emptyList()
+            }
+            if (badges != lastSent) {
+                lastSent = badges
+                controller.setPlayerBadges(badges)
+            }
+            kotlinx.coroutines.delay(PLAYER_BADGES_POLL_MS)
+        }
     }
 
     LaunchedEffect(controller) {
@@ -1183,6 +1234,8 @@ private data class DesktopAnimeProfileResult(
     /** Active shader chain's display name, or null when the picture is running ungraded by one. */
     val shaderLabel: String?,
     val svpActive: Boolean,
+    /** RTX True HDR is in the vf chain, including the copy the native side swaps in when SVP skips. */
+    val rtxTrueHdrActive: Boolean = false,
 )
 
 /**
@@ -1676,7 +1729,14 @@ private fun applyDesktopAnimeProfile(
         controller.setMpvProperty("scale-blur", "1.05")
         controller.setMpvProperty("deband-threshold", "45")
         controller.setMpvProperty("deband-grain", desktopDebandGrain(filmGrain, "20"))
-        controller.setDesktopShaderChain(customShaderChain)
+        // Same chroma realign pass the Anime4K chain gets under True HDR; see chromaRealignPath.
+        controller.setDesktopShaderChain(
+            if (shaderTrueHdrVf.isNotEmpty()) {
+                listOfNotNull(DesktopAnimeShaders.chromaRealignPath(), customShaderChain).joinToString(";")
+            } else {
+                customShaderChain
+            },
+        )
 
         controller.setSvpBypassVideoFilters("")
         controller.setMpvProperty(
@@ -1688,6 +1748,7 @@ private fun applyDesktopAnimeProfile(
             shaderLabel = customShaderChain.customShaderDisplayName(customShaderPaths)
                 ?.withTrueHdrSuffix(shaderTrueHdrVf.isNotEmpty()),
             svpActive = svpActive,
+            rtxTrueHdrActive = shaderTrueHdrVf.isNotEmpty(),
         )
     }
 
@@ -1719,7 +1780,11 @@ private fun applyDesktopAnimeProfile(
             requestedPreset != null -> "Anime4K off — 4K source"
             else -> "Shader off — 4K source"
         }
-        return DesktopAnimeProfileResult(shaderLabel = skippedLabel, svpActive = svpActive)
+        return DesktopAnimeProfileResult(
+            shaderLabel = skippedLabel,
+            svpActive = svpActive,
+            rtxTrueHdrActive = trueHdrActive || (svpActive && trueHdrActiveWithoutSvp),
+        )
     }
 
     // Anime-tuned scaling + deband (Stremio-Kai's anime-sdr base profile).
@@ -1760,6 +1825,7 @@ private fun applyDesktopAnimeProfile(
     return DesktopAnimeProfileResult(
         shaderLabel = "Anime4K ${effectivePreset.label}".withTrueHdrSuffix(shaderTrueHdrVf.isNotEmpty()),
         svpActive = svpActive,
+        rtxTrueHdrActive = shaderTrueHdrVf.isNotEmpty(),
     )
 }
 
@@ -1836,3 +1902,5 @@ private val EXPIRED_PINNED_LINK_STATUS =
 
 private fun looksLikeExpiredPinnedLink(message: String): Boolean =
     EXPIRED_PINNED_LINK_STATUS.containsMatchIn(message)
+
+private const val PLAYER_BADGES_POLL_MS = 2_000L

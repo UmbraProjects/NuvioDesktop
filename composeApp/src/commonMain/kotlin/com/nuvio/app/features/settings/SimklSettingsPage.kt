@@ -175,93 +175,61 @@ private fun SimklConnectionCard(
         showPinDialog = false
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = stringResource(Res.string.settings_simkl_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        val showsConnection = uiState.mode == SimklConnectionMode.CONNECTED || uiState.isReconnecting
-        if (showsConnection) {
-            uiState.username?.let { name ->
-                Text(
-                    text = stringResource(Res.string.settings_simkl_connected_as_format, name),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold).accentBrush(),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            // Literal strings: newly added resource keys do not always resolve (see build notes).
-            val reconnectReason = when {
-                uiState.needsReconnect ->
-                    "SIMKL is no longer accepting this connection. It may have been removed from your " +
-                        "SIMKL Connected Apps, or gone unused for six months. Your history and lists are " +
-                        "kept; reconnect to resume syncing."
-                uiState.isLegacyConnection ->
-                    "Connected with SIMKL's older sign-in method, which SIMKL is retiring around April 2027. " +
-                        "Paste the Client ID of a new SIMKL app above, then reconnect once. Sign-in opens " +
-                        "simkl.com in your browser, so Nuvio never sees your password, and your watch " +
-                        "history stays where it is. Everything keeps working until you do."
-                else -> null
-            }
-            reconnectReason?.let { reason ->
-                Text(
-                    text = reason,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (uiState.needsReconnect) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            uiState.errorMessage?.let { error ->
-                Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (reconnectReason != null) {
-                    if (uiState.isLoading) {
-                        CircularProgressIndicator()
-                    } else {
-                        Button(onClick = SimklAuthRepository::onConnectRequested) {
-                            Text("Reconnect")
-                        }
-                    }
-                }
-                Button(
-                    onClick = SimklAuthRepository::onDisconnectRequested,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-                ) {
-                    Text(stringResource(Res.string.settings_simkl_disconnect))
-                }
-            }
+    // One settings row: the account state as title and description, the action in the control
+    // column where every other row keeps its switch or dropdown.
+    val showsConnection = uiState.mode == SimklConnectionMode.CONNECTED || uiState.isReconnecting
+    // Literal strings: newly added resource keys do not always resolve (see build notes).
+    val reconnectReason = when {
+        !showsConnection -> null
+        uiState.needsReconnect ->
+            "SIMKL is no longer accepting this connection. It may have been removed from your " +
+                "SIMKL Connected Apps, or gone unused for six months. Your history and lists are " +
+                "kept; reconnect to resume syncing."
+        uiState.isLegacyConnection ->
+            "Connected with SIMKL's older sign-in method, which SIMKL is retiring around April 2027. " +
+                "Paste the Client ID of a new SIMKL app above, then reconnect once. Sign-in opens " +
+                "simkl.com in your browser, so Nuvio never sees your password, and your watch " +
+                "history stays where it is. Everything keeps working until you do."
+        else -> null
+    }
+    val description = listOfNotNull(
+        reconnectReason ?: stringResource(Res.string.settings_simkl_description),
+        uiState.errorMessage,
+    ).joinToString(" ")
+    SettingsActionRow(
+        title = if (showsConnection) {
+            uiState.username?.let { stringResource(Res.string.settings_simkl_connected_as_format, it) } ?: "Connected"
         } else {
-            if (uiState.isLoading) {
-                CircularProgressIndicator()
-            } else {
-                uiState.errorMessage?.let { error ->
-                    Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Button(onClick = SimklAuthRepository::onConnectRequested) {
-                    Text(stringResource(Res.string.settings_simkl_connect))
-                }
+            "Not connected"
+        },
+        description = description,
+        descriptionColor = if (uiState.needsReconnect || uiState.errorMessage != null) {
+            MaterialTheme.colorScheme.error
+        } else {
+            null
+        },
+        isTablet = isTablet,
+    ) {
+        if (showsConnection) {
+            if (reconnectReason != null) {
+                SettingsGlassButton(
+                    text = "Reconnect",
+                    onClick = SimklAuthRepository::onConnectRequested,
+                    accent = true,
+                    loading = uiState.isLoading,
+                )
             }
+            SettingsGlassButton(
+                text = stringResource(Res.string.settings_simkl_disconnect),
+                onClick = SimklAuthRepository::onDisconnectRequested,
+            )
+        } else {
+            SettingsGlassButton(
+                text = stringResource(Res.string.settings_simkl_connect),
+                onClick = SimklAuthRepository::onConnectRequested,
+                accent = true,
+                loading = uiState.isLoading,
+            )
         }
     }
 

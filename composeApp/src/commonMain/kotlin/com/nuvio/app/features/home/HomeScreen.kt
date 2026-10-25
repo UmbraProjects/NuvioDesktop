@@ -141,6 +141,7 @@ import com.nuvio.app.features.details.HeroTrailerAudioState
 import com.nuvio.app.features.metadata.isAnimeSeasonArtUrl
 import com.nuvio.app.features.details.SeriesPrimaryAction
 import com.nuvio.app.features.details.seriesPrimaryAction
+import com.nuvio.app.features.streams.CwStreamCache
 import com.nuvio.app.features.streams.StreamPrefetchService
 import com.nuvio.app.features.home.components.ImmersiveRowDirection
 import com.nuvio.app.features.home.components.immersiveRowBodyEnter
@@ -1724,6 +1725,8 @@ fun HomeScreen(
     LaunchedEffect(continueWatchingRowItems, nextUpRowItems, contentMode) {
         if (contentMode is HomeContentMode.Normal) {
             PlaylistContinueWatchingSnapshot.publish(continueWatchingRowItems, nextUpRowItems)
+            // Which titles the Continue Watching stream cache may keep, and which it can let go.
+            CwStreamCache.onContinueWatchingRows(continueWatchingRowItems + nextUpRowItems)
         }
     }
 

@@ -138,10 +138,16 @@ internal object DesktopAnimeShaders {
      */
     fun shaderChain(preset: DesktopAnimeMode, lumaOnly: Boolean = false): String {
         val names = presetShaderNames[preset] ?: return ""
-        return names
-            .mapNotNull { if (lumaOnly) exportedLumaOnlyPath(it) else exportedPath(it) }
-            .joinToString(";")
+        val chain = names.mapNotNull { if (lumaOnly) exportedLumaOnlyPath(it) else exportedPath(it) }
+        if (chain.isEmpty()) return ""
+        return (if (lumaOnly) listOfNotNull(chromaRealignPath()) + chain else chain).joinToString(";")
     }
+
+    /**
+     * The pass that lines chroma back up with luma, run ahead of any chain that True HDR feeds: the
+     * NVIDIA video processor expands the chroma there, not mpv. See Nuvio_Chroma_Realign.glsl.
+     */
+    fun chromaRealignPath(): String? = exportedPath("Nuvio_Chroma_Realign")
 
     /**
      * The bundled CAS sharpen shader behind the player's Sharpen menu (mpv's own `sharpen` is

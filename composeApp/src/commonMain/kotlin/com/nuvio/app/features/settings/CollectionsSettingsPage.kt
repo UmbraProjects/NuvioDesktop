@@ -88,6 +88,11 @@ private fun CollectionsSettingsSection(
     SettingsSection(
         title = stringResource(Res.string.collections_header),
         isTablet = isTablet,
+        subtitle = stringResource(
+            Res.string.collections_count_summary,
+            collections.size,
+            collections.sumOf { it.folders.size },
+        ),
         actions = {
             IconButton(onClick = {
                 clipboardManager.setText(AnnotatedString(CollectionRepository.exportToJson()))
@@ -112,16 +117,8 @@ private fun CollectionsSettingsSection(
             )
         },
     ) {
-        // Laid out like the Homescreen catalog section: a summary line under the heading, then
-        // one divider-separated row per collection, dragged by the row itself.
-        SettingsSectionNote(
-            text = stringResource(
-                Res.string.collections_count_summary,
-                collections.size,
-                collections.sumOf { it.folders.size },
-            ),
-            isTablet = isTablet,
-        )
+        // Laid out like the Homescreen catalog section: the summary as the heading's subtitle,
+        // then one divider-separated row per collection, dragged by the row itself.
         if (collections.isNotEmpty()) {
             CollectionSettingsList(
                 collections = collections,

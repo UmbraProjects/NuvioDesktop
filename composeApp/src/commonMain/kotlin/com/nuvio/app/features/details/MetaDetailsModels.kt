@@ -89,6 +89,7 @@ internal fun MetaDetails.allKeywords(): List<String> =
 enum class MoreLikeThisSource {
     TMDB,
     TRAKT,
+    SIMKL,
 }
 
 data class MetaExternalRating(

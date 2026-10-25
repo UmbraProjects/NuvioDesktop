@@ -1259,6 +1259,16 @@ fun resolveDesktopChannel(override: String?, logger: org.gradle.api.logging.Logg
  * configuration cache on, a timestamp captured at configuration time would be replayed from the
  * cache and every build would claim the same moment.
  */
+/** The checkout's short HEAD commit, or null outside a git checkout. */
+fun gitShortCommit(repoRoot: File): String? = runCatching {
+    val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(repoRoot)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().readText().trim()
+    if (process.waitFor() == 0) output.takeIf { it.matches(Regex("[0-9a-f]{6,40}")) } else null
+}.getOrNull()
+
 fun writeAppImageBuildInfo(
     appDir: File,
     versionName: String,
@@ -1273,14 +1283,7 @@ fun writeAppImageBuildInfo(
     // stamp nobody checks.
     val now = ZonedDateTime.now(ZoneOffset.UTC).withNano(0)
     val buildId = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-    val gitCommit = runCatching {
-        val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
-            .directory(repoRoot)
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader().readText().trim()
-        if (process.waitFor() == 0) output.takeIf { it.matches(Regex("[0-9a-f]{6,40}")) } else null
-    }.getOrNull()
+    val gitCommit = gitShortCommit(repoRoot)
 
     val buildInfo = appDir.resolve("build-info.properties")
     buildInfo.writeText(
@@ -1575,6 +1578,21 @@ mapOf(
     tasks.matching { it.name == taskName }.configureEach {
         notCompatibleWithConfigurationCache("Rewrites the packaged material-icons-extended and onnxruntime jars in the app image.")
         inputs.file(layout.projectDirectory.file("startup-classes.lst")).optional()
+        // The channel and commit are stamped into build-info.properties below, so they are inputs:
+        // otherwise a stable build right after a nightly (or a nightly right after a stable) from
+        // unchanged code is UP-TO-DATE and ships the other channel's image with the old stamp.
+        // createNativeDistributable copies build-info.properties, so the native zip follows.
+        inputs.property("nuvioDesktopChannel", provider { resolveDesktopChannel(desktopChannelOverride, logger) })
+        // providers.exec, not ProcessBuilder: the configuration cache resolves inputs when it stores
+        // the build, and only allows external processes started this way.
+        inputs.property(
+            "nuvioGitCommit",
+            providers.exec {
+                commandLine("git", "rev-parse", "--short", "HEAD")
+                workingDir = repoRootDir
+                isIgnoreExitValue = true
+            }.standardOutput.asText.map { it.trim() },
+        )
         doLast {
             val binariesDir = layout.buildDirectory.dir("compose/binaries/$imageFlavor/app").get().asFile
             val appDir = listOf("Nuvio/app", "Nuvio.app/Contents/app", "nuvio/lib/app")

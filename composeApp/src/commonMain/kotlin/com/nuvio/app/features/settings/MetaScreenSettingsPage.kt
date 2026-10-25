@@ -267,7 +267,7 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     onCheckedChange = { MetaScreenSettingsRepository.setBlurUnwatchedEpisodes(it) },
                 )
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsSegmentedChoiceRow(
+                SettingsChoiceRow(
                     title = stringResource(Res.string.settings_meta_episode_ratings),
                     description = stringResource(Res.string.settings_meta_episode_ratings_description),
                     options = listOf(
@@ -299,7 +299,7 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     onCheckedChange = MetaScreenSettingsRepository::setShowOverallRatings,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsSegmentedChoiceRow(
+                SettingsChoiceRow(
                     title = SAME_CAST_LABEL_TITLE,
                     description = SAME_CAST_LABEL_DESCRIPTION,
                     options = listOf(

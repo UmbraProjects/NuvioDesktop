@@ -2587,18 +2587,21 @@ public:
 
     void setResizeMode(int mode) {
         // Runs on the mpv call thread, which also owns the auto crop state.
-        if (mode == 3) {
+        if (mode == 3 || mode == 4) {
             // Zoom's fill, applied to the frame once video-crop has trimmed its bars.
             setStringProperty("keepaspect", "yes");
             setStringProperty("panscan", "1.0");
             setStringProperty("video-unscaled", "no");
+            // Mode 4 is the hero trailer's: same crop, decided in about two seconds.
+            autoCropQuick = mode == 4;
             if (!autoCropEnabled.exchange(true)) {
                 resetAutoCropState();
-                autoCropNextCheckAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-                nuvioMpvLogAppend("[nuvio] auto crop enabled\n");
+                autoCropNextCheckAt = std::chrono::steady_clock::now() + std::chrono::milliseconds(autoCropQuick ? 0 : 500);
+                nuvioMpvLogAppend(autoCropQuick ? "[nuvio] auto crop enabled (quick)\n" : "[nuvio] auto crop enabled\n");
             }
             return;
         }
+        autoCropQuick = false;
         if (autoCropEnabled.exchange(false)) {
             resetAutoCropState();
             nuvioMpvLogAppend("[nuvio] auto crop disabled\n");
@@ -2639,14 +2642,39 @@ public:
     // crop learned for the previous file would otherwise carry over).
     void onAutoCropFileLoaded() {
         postMpvCall([this]() { resetAutoCropState(); });
-        autoCropNextCheckAt = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        // Quick: start as soon as there is a frame (a check without one just waits for the next).
+        autoCropNextCheckAt = std::chrono::steady_clock::now() +
+            (autoCropQuick.load() ? kAutoCropQuickInterval : std::chrono::milliseconds(2000));
     }
 
     // Event thread: after a seek the scene (and, while still learning, the bars) may differ.
+    // Also the first frame of a file, which is when a quick crop starts looking.
     void onAutoCropPlaybackRestart() {
         if (!autoCropEnabled.load()) return;
-        const auto soon = std::chrono::steady_clock::now() + std::chrono::milliseconds(700);
+        const auto soon = std::chrono::steady_clock::now() +
+            (autoCropQuick.load() ? std::chrono::milliseconds(0) : std::chrono::milliseconds(700));
         if (soon < autoCropNextCheckAt.load()) autoCropNextCheckAt = soon;
+    }
+
+    // Event thread: the frames reaching the VO changed size. video-crop is in pixels of those
+    // frames, so a crop measured before RTX Super Resolution switched on (1442x1080 of a 1920x1080
+    // frame) was applied to the 2x upscaled 3840x2160 frame as a quarter-size window - the picture
+    // zoomed in - and one measured while it was on was rejected as invalid once it switched off.
+    // The bars are kept as fractions, so they are re-applied in the new frame's pixels.
+    void onAutoCropVideoReconfig() {
+        if (!autoCropEnabled.load()) return;
+        postMpvCall([this]() {
+            if (!autoCropEnabled.load() || autoCropAppliedCrop.empty()) return;
+            const int64_t frameWidth = int64Property("video-out-params/w", 0);
+            const int64_t frameHeight = int64Property("video-out-params/h", 0);
+            if (frameWidth <= 0 || frameHeight <= 0) return;
+            if (frameWidth == autoCropAppliedFrameWidth && frameHeight == autoCropAppliedFrameHeight) return;
+            nuvioMpvLogAppend("[nuvio] auto crop: frame resized " + std::to_string(autoCropAppliedFrameWidth) + "x" +
+                std::to_string(autoCropAppliedFrameHeight) + " -> " + std::to_string(frameWidth) + "x" +
+                std::to_string(frameHeight) + ", re-applying crop\n");
+            autoCropAppliedCrop.clear();
+            applyAutoCropBars(autoCropAppliedBars);
+        });
     }
 
     void resetAutoCropState() {
@@ -2748,9 +2776,11 @@ public:
         // taller picture after the learning minute (IMAX sequences) gets those scenes back uncut,
         // while a dark or black frame can't tighten anything.
         const bool loosenOnly = autoCropLocked && !autoCropVariableAspect;
-        autoCropNextCheckAt = now + (loosenOnly ? std::chrono::seconds(30) : std::chrono::seconds(3));
+        const bool quick = autoCropQuick.load();
+        autoCropNextCheckAt = now + (loosenOnly ? std::chrono::milliseconds(30000)
+            : quick ? kAutoCropQuickInterval : std::chrono::milliseconds(3000));
         if (flagProperty("pause", false) || flagProperty("seeking", false)) {
-            autoCropNextCheckAt = now + std::chrono::seconds(1);
+            autoCropNextCheckAt = now + (quick ? kAutoCropQuickInterval : std::chrono::milliseconds(1000));
             return;
         }
         // The decoder's display size: unlike dwidth/dheight it isn't changed by video-crop.
@@ -2824,8 +2854,30 @@ public:
             smallest.left = std::min(smallest.left, sample.bars.left);
             smallest.right = std::min(smallest.right, sample.bars.right);
         }
-        const bool ready = autoCropHistory.size() >= 3 &&
+        bool ready = autoCropHistory.size() >= 3 &&
             now - autoCropHistory.front().at >= std::chrono::seconds(5);
+        if (quick && !autoCropVariableAspect) {
+            // Upstream's trailer rule (e22baecec): the last four samples agree to within 1.5% of
+            // the frame, and the crop is the smallest of those four. A trailer is two minutes
+            // long; five seconds of learning was most of what someone watched of it zoomed out.
+            ready = false;
+            smallest = AutoCropBars{1.0, 1.0, 1.0, 1.0};
+            if (autoCropHistory.size() >= kAutoCropQuickSamples) {
+                AutoCropBars largest{};
+                for (auto it = autoCropHistory.end() - (std::ptrdiff_t)kAutoCropQuickSamples; it != autoCropHistory.end(); ++it) {
+                    smallest.top = std::min(smallest.top, it->bars.top);
+                    smallest.left = std::min(smallest.left, it->bars.left);
+                    largest.top = std::max(largest.top, it->bars.top);
+                    largest.left = std::max(largest.left, it->bars.left);
+                }
+                smallest.bottom = smallest.top;
+                smallest.right = smallest.left;
+                ready = largest.top - smallest.top <= kAutoCropQuickTolerance &&
+                    largest.left - smallest.left <= kAutoCropQuickTolerance;
+            }
+            // Not settled: the newest sample may still zoom out (the block below never zooms in).
+            if (!ready) smallest = autoCropHistory.back().bars;
+        }
         AutoCropBars target = smallest;
         if (!ready) {
             // Too little history to zoom in yet, but zooming out is always allowed.
@@ -2834,7 +2886,9 @@ public:
             target.left = std::min(target.left, autoCropAppliedBars.left);
             target.right = std::min(target.right, autoCropAppliedBars.right);
         }
-        if (!autoCropVariableAspect && ++autoCropLearnChecks >= 20 && ready) {
+        // Quick decides once, as upstream does; the 30 s loosen-only checks still give a trailer
+        // that opens up to a taller picture its scenes back.
+        if (!autoCropVariableAspect && (++autoCropLearnChecks >= 20 || quick) && ready) {
             autoCropLocked = true;
             nuvioMpvLogAppend("[nuvio] auto crop: bars locked top/bottom " +
                 std::to_string(smallest.top * 100.0) + "% sides " + std::to_string(smallest.left * 100.0) +
@@ -2959,6 +3013,11 @@ public:
         return sharedSubtitleTracksJson;
     }
 
+    std::string videoTracksJson() {
+        std::lock_guard<std::mutex> lock(trackJsonMutex);
+        return sharedVideoTracksJson;
+    }
+
     std::string chaptersJson() {
         std::lock_guard<std::mutex> lock(trackJsonMutex);
         return sharedChaptersJson;
@@ -2979,10 +3038,12 @@ public:
         if (!trackJsonDirty.exchange(false)) return;
         std::string audio = tracksJsonForType("audio");
         std::string subtitles = tracksJsonForType("sub");
+        std::string video = tracksJsonForType("video");
         std::string chapters = buildChaptersJson();
         std::lock_guard<std::mutex> lock(trackJsonMutex);
         sharedAudioTracksJson = std::move(audio);
         sharedSubtitleTracksJson = std::move(subtitles);
+        sharedVideoTracksJson = std::move(video);
         sharedChaptersJson = std::move(chapters);
     }
 
@@ -3790,6 +3851,12 @@ private:
         AutoCropBars bars;
     };
     std::atomic_bool autoCropEnabled = false;
+    // Resize mode 4 (hero trailers): a frame every 400 ms from the first one, settled after four
+    // agreeing samples instead of five seconds of history. See runAutoCropCheck.
+    std::atomic_bool autoCropQuick = false;
+    static constexpr std::chrono::milliseconds kAutoCropQuickInterval{400};
+    static constexpr size_t kAutoCropQuickSamples = 4;
+    static constexpr double kAutoCropQuickTolerance = 0.015;
     std::atomic_bool autoCropCheckQueued = false;
     std::atomic<std::chrono::steady_clock::time_point> autoCropNextCheckAt{std::chrono::steady_clock::time_point{}};
     std::deque<AutoCropSample> autoCropHistory;
@@ -5392,7 +5459,10 @@ private:
             }
             if (event->event_id == MPV_EVENT_PLAYBACK_RESTART) onAutoCropPlaybackRestart();
             if (event->event_id == MPV_EVENT_START_FILE) nuvioBridgeLog("media open started");
-            if (event->event_id == MPV_EVENT_VIDEO_RECONFIG) nuvioBridgeLog("video reconfigured");
+            if (event->event_id == MPV_EVENT_VIDEO_RECONFIG) {
+                nuvioBridgeLog("video reconfigured");
+                onAutoCropVideoReconfig();
+            }
             if (event->event_id == MPV_EVENT_AUDIO_RECONFIG) nuvioBridgeLog("audio reconfigured");
             if (event->event_id == MPV_EVENT_FILE_LOADED) {
                 startupMetricsDue = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -6095,6 +6165,7 @@ public:
     std::mutex trackJsonMutex;
     std::string sharedAudioTracksJson = "[]"; // trackJsonMutex
     std::string sharedSubtitleTracksJson = "[]"; // trackJsonMutex
+    std::string sharedVideoTracksJson = "[]"; // trackJsonMutex
     std::string sharedChaptersJson = "[]"; // trackJsonMutex
 
     std::mutex mpvCallMutex;
@@ -6284,6 +6355,21 @@ private:
                 : trackSelected;
             bool forced = flagProperty((prefix + "/forced").c_str(), false);
             std::string label = formatTrackTitle(type, logicalIndex, title, language, codec, decoderDescription, channels, (int)channelCount);
+            // Raw facts for the player badges (what is playing, matched against the badge pack):
+            // e.g. "DTS-HD MA" or "Dolby TrueHD + Dolby Atmos" in codec-profile, and the Dolby
+            // Vision profile of a video track. Empty / 0 when mpv does not know them.
+            std::string codecProfile = trackStringAtIndex(index, "codec-profile");
+            long long dolbyVisionProfile = wantedType == "video"
+                ? int64Property((prefix + "/dolby-vision-profile").c_str(), 0)
+                : 0;
+            // For the HUD's stream info panel. demux-bitrate is the container's figure (often 0
+            // for streams that do not declare one); the panel leaves out what is unknown.
+            long long demuxWidth = int64Property((prefix + "/demux-w").c_str(), 0);
+            long long demuxHeight = int64Property((prefix + "/demux-h").c_str(), 0);
+            double demuxFps = doubleProperty((prefix + "/demux-fps").c_str(), 0.0);
+            long long demuxBitrate = int64Property((prefix + "/demux-bitrate").c_str(), 0);
+            long long demuxSampleRate = int64Property((prefix + "/demux-samplerate").c_str(), 0);
+            if (!std::isfinite(demuxFps) || demuxFps < 0.0) demuxFps = 0.0;
 
             if (!first) json << ",";
             first = false;
@@ -6293,7 +6379,16 @@ private:
                  << "\"label\":\"" << jsonEscape(label) << "\","
                  << "\"language\":\"" << jsonEscape(language) << "\","
                  << "\"selected\":" << (selected ? "true" : "false") << ","
-                 << "\"forced\":" << (forced ? "true" : "false")
+                 << "\"forced\":" << (forced ? "true" : "false") << ","
+                 << "\"codec\":\"" << jsonEscape(codec) << "\","
+                 << "\"profile\":\"" << jsonEscape(codecProfile) << "\","
+                 << "\"channelCount\":" << channelCount << ","
+                 << "\"dvProfile\":" << dolbyVisionProfile << ","
+                 << "\"width\":" << demuxWidth << ","
+                 << "\"height\":" << demuxHeight << ","
+                 << "\"fps\":" << demuxFps << ","
+                 << "\"bitrate\":" << demuxBitrate << ","
+                 << "\"sampleRate\":" << demuxSampleRate
                  << "}";
             logicalIndex++;
         }
@@ -6861,6 +6956,12 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_subtitleTracksJson(JNIEnv *env, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
     return newJavaStringUtf8(env, player ? player->subtitleTracksJson() : "[]");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_videoTracksJson(JNIEnv *env, jobject, jlong handle) {
+    auto player = playerFromHandle(handle);
+    return newJavaStringUtf8(env, player ? player->videoTracksJson() : "[]");
 }
 
 extern "C" JNIEXPORT void JNICALL

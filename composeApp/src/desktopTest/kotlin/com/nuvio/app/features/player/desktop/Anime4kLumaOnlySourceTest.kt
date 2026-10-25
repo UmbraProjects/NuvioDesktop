@@ -25,6 +25,25 @@ class Anime4kLumaOnlySourceTest {
     }
 
     @Test
+    fun chromaRealignIsAMainHookThatKeepsColourWhereItDoesNotFollowLuma() {
+        val source = shader("Nuvio_Chroma_Realign")
+        assertTrue("//!HOOK MAIN" in source)
+        // Must sit at MAIN like Anime4K: True HDR hands mpv RGB, so there is no LUMA or CHROMA plane.
+        assertFalse("//!HOOK LUMA" in source || "//!HOOK CHROMA" in source)
+        assertTrue("mix(original, predicted, fit)" in source)
+    }
+
+    @Test
+    fun trueHdrChainStartsWithChromaRealign() {
+        val chain = DesktopAnimeShaders.shaderChain(com.nuvio.app.features.player.DesktopAnimeMode.ModeAFast, lumaOnly = true)
+            .split(";")
+        assertTrue(chain.first().endsWith("Nuvio_Chroma_Realign.glsl"), chain.first())
+        assertEquals(1, chain.count { it.endsWith("Nuvio_Chroma_Realign.glsl") })
+        val plain = DesktopAnimeShaders.shaderChain(com.nuvio.app.features.player.DesktopAnimeMode.ModeAFast)
+        assertFalse("Nuvio_Chroma_Realign" in plain)
+    }
+
+    @Test
     fun colourNeutralShadersAreLeftAlone() {
         listOf("Anime4K_Clamp_Highlights", "Anime4K_Thin_Fast", "Anime4K_AutoDownscalePre_x2").forEach { name ->
             assertNull(anime4kLumaOnlySource(shader(name)), name)

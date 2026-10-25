@@ -55,7 +55,6 @@ import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_plugins
 import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attributions
 import nuvio.composeapp.generated.resources.compose_settings_page_notifications
-import nuvio.composeapp.generated.resources.compose_settings_page_playback
 import nuvio.composeapp.generated.resources.compose_settings_page_streams
 import nuvio.composeapp.generated.resources.compose_settings_page_local_library
 import nuvio.composeapp.generated.resources.compose_settings_page_auto_downloads
@@ -98,12 +97,17 @@ import nuvio.composeapp.generated.resources.settings_discover_page_description
 import nuvio.composeapp.generated.resources.random_play_settings_description
 import nuvio.composeapp.generated.resources.about_supporters_contributors_subtitle
 import nuvio.composeapp.generated.resources.about_licenses_attributions_subtitle
+import nuvio.composeapp.generated.resources.compose_settings_page_video_audio
+import nuvio.composeapp.generated.resources.compose_settings_page_player
+import nuvio.composeapp.generated.resources.settings_player_page_subtitle
+import androidx.compose.material.icons.rounded.HighQuality
 import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.accentBrush
 
 internal fun LazyListScope.settingsRootContent(
     isTablet: Boolean,
     onPlaybackClick: () -> Unit,
+    onPlayerClick: () -> Unit,
     onRandomPlayClick: () -> Unit,
     onDiscoverClick: () -> Unit,
     onStreamsClick: () -> Unit,
@@ -308,11 +312,19 @@ internal fun LazyListScope.settingsRootContent(
                     }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(
-                        title = stringResource(Res.string.compose_settings_page_playback),
+                        title = stringResource(Res.string.compose_settings_page_video_audio),
                         description = stringResource(Res.string.settings_playback_subtitle),
-                        icon = Icons.Rounded.PlayArrow,
+                        icon = Icons.Rounded.HighQuality,
                         isTablet = isTablet,
                         onClick = onPlaybackClick,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_player),
+                        description = stringResource(Res.string.settings_player_page_subtitle),
+                        icon = Icons.Rounded.PlayArrow,
+                        isTablet = isTablet,
+                        onClick = onPlayerClick,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(

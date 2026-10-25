@@ -28,6 +28,7 @@ import com.nuvio.app.features.search.SearchHistoryRepository
 import com.nuvio.app.features.settings.SettingsCategoryNamesRepository
 import com.nuvio.app.features.settings.SettingsCategoryOrderRepository
 import com.nuvio.app.features.settings.SettingsFavoritesRepository
+import com.nuvio.app.features.settings.SettingsSearchHistoryRepository
 import com.nuvio.app.features.settings.SettingsCollapsedSectionsRepository
 import com.nuvio.app.features.settings.SettingsHiddenCategoriesRepository
 import com.nuvio.app.features.settings.ThemeSettingsRepository
@@ -133,6 +134,7 @@ object ProfileRepository {
         SettingsCategoryOrderRepository.onProfileChanged()
         SettingsCategoryNamesRepository.onProfileChanged()
         SettingsFavoritesRepository.onProfileChanged()
+        SettingsSearchHistoryRepository.onProfileChanged()
         SettingsHiddenCategoriesRepository.onProfileChanged()
         SettingsCollapsedSectionsRepository.onProfileChanged()
         ThemeSettingsRepository.onProfileChanged()
@@ -160,6 +162,7 @@ object ProfileRepository {
         SettingsCategoryOrderRepository.onProfileChanged()
         SettingsCategoryNamesRepository.onProfileChanged()
         SettingsFavoritesRepository.onProfileChanged()
+        SettingsSearchHistoryRepository.onProfileChanged()
         SettingsHiddenCategoriesRepository.onProfileChanged()
         SettingsCollapsedSectionsRepository.onProfileChanged()
     }
@@ -234,6 +237,7 @@ object ProfileRepository {
         SettingsCategoryOrderRepository.onProfileChanged()
         SettingsCategoryNamesRepository.onProfileChanged()
         SettingsFavoritesRepository.onProfileChanged()
+        SettingsSearchHistoryRepository.onProfileChanged()
         SettingsHiddenCategoriesRepository.onProfileChanged()
         SettingsCollapsedSectionsRepository.onProfileChanged()
         PosterCardStyleRepository.onProfileChanged()

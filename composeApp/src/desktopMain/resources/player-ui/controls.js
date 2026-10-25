@@ -1702,7 +1702,27 @@ const partyModal = document.getElementById("partyModal");
 const partyPanelTitle = document.getElementById("partyPanelTitle");
 const partyCloseButton = document.getElementById("partyCloseButton");
 const partyBody = document.getElementById("partyBody");
+const partyPillBadge = document.getElementById("partyPillBadge");
+const partyTabs = document.getElementById("partyTabs");
+const partyTabParty = document.getElementById("partyTabParty");
+const partyTabChat = document.getElementById("partyTabChat");
+const partyTabChatLabel = document.getElementById("partyTabChatLabel");
+const partyTabBadge = document.getElementById("partyTabBadge");
+const partyChat = document.getElementById("partyChat");
+const partyChatList = document.getElementById("partyChatList");
+const partyChatEmpty = document.getElementById("partyChatEmpty");
+const partyChatEmptyTitle = document.getElementById("partyChatEmptyTitle");
+const partyChatEmptyMessage = document.getElementById("partyChatEmptyMessage");
+const partyChatForm = document.getElementById("partyChatForm");
+const partyChatInput = document.getElementById("partyChatInput");
+const partyChatSend = document.getElementById("partyChatSend");
 const PartyPillMaxAvatars = 4;
+const PartyChatMaxLength = 500;
+// "party" | "chat": which tab of the panel is showing while in a party.
+let partyTab = "party";
+let partyChatSignature = "";
+// A badge on the party button, created once (the button's own markup is static).
+let partyButtonBadge = null;
 // "" | "end" | "remove:<member index>": the inline confirmation the panel is showing.
 let partyConfirm = "";
 let partyPillSignature = "";
@@ -1784,6 +1804,32 @@ const renderPartyChrome = (isChromeHidden, pictureInPictureActive) => {
   }
   partyPillText.textContent = message;
   partyPillText.hidden = !message;
+};
+
+const partyUnreadText = () => {
+  const party = currentParty();
+  const unread = party.active ? Math.max(0, Number(party.chatUnread) || 0) : 0;
+  return unread > 0 ? (unread > 99 ? "99+" : String(unread)) : "";
+};
+
+// Unread chat on the pill, the party button and the Chat tab. Runs on every render, so it only
+// touches the DOM when the count changes.
+let partyUnreadShown = null;
+const renderPartyUnread = () => {
+  const text = partyUnreadText();
+  if (text === partyUnreadShown) return;
+  partyUnreadShown = text;
+  if (!partyButtonBadge && partyButton) {
+    partyButtonBadge = partyElement("span", "party-badge");
+    partyButtonBadge.hidden = true;
+    partyButton.style.position = partyButton.style.position || "relative";
+    partyButton.appendChild(partyButtonBadge);
+  }
+  [partyPillBadge, partyButtonBadge, partyTabBadge].forEach(badge => {
+    if (!badge) return;
+    badge.textContent = text;
+    badge.hidden = !text;
+  });
 };
 
 const partySwitchRow = (title, description, checked, eventType, note = "") => {
@@ -1961,10 +2007,91 @@ const renderPartyActive = (party, body) => {
   body.appendChild(actions);
 };
 
+const partyChatMessages = () => {
+  const list = currentParty().chatMessages;
+  return Array.isArray(list) ? list : [];
+};
+
+const partyChatNearBottom = () =>
+  partyChatList.scrollHeight - partyChatList.scrollTop - partyChatList.clientHeight < 48;
+
+const renderPartyChat = () => {
+  const party = currentParty();
+  const messages = partyChatMessages();
+  const signature = JSON.stringify([messages, party.labels && party.labels.chatSend]);
+  if (signature === partyChatSignature) return;
+  partyChatSignature = signature;
+  partyChatEmptyTitle.textContent = partyLabel("chatEmptyTitle", "No messages yet");
+  partyChatEmptyMessage.textContent = partyLabel("chatEmptyMessage");
+  partyChatInput.placeholder = partyLabel("chatPlaceholder", "Message");
+  partyChatSend.textContent = partyLabel("chatSend", "Send");
+  partyChatEmpty.hidden = messages.length > 0;
+  partyChatList.hidden = messages.length === 0;
+  // Follow new messages only when already at the bottom, so reading back is not interrupted.
+  const stick = partyChatNearBottom() || partyChatList.childElementCount === 0;
+  partyChatList.replaceChildren();
+  messages.forEach(message => {
+    if (message.time) partyChatList.appendChild(partyElement("div", "party-chat-time", message.time));
+    const classes = ["party-chat-row"];
+    if (message.mine) classes.push("mine");
+    if (message.startsGroup) classes.push("group-start");
+    if (message.sending) classes.push("sending");
+    const row = partyElement("div", classes.join(" "));
+    if (!message.mine) {
+      const avatar = partyAvatarElement(message);
+      if (!message.startsGroup) avatar.classList.add("spacer");
+      row.appendChild(avatar);
+    }
+    const bubble = partyElement("div", "party-chat-bubble");
+    if (!message.mine && message.startsGroup) bubble.appendChild(partyElement("span", "party-chat-name", message.name));
+    bubble.appendChild(partyElement("span", "", message.body));
+    if (message.failed) {
+      const retry = partyElement("button", "party-chat-failed", partyLabel("chatNotSent", "Not sent. Click to retry"));
+      retry.type = "button";
+      retry.addEventListener("click", event => {
+        event.stopPropagation();
+        send(`partyChatRetry:${message.key}`, 0);
+      });
+      bubble.appendChild(retry);
+    }
+    row.appendChild(bubble);
+    partyChatList.appendChild(row);
+  });
+  if (stick) partyChatList.scrollTop = partyChatList.scrollHeight;
+};
+
+const setPartyTab = tab => {
+  const party = currentParty();
+  const next = party.active && tab === "chat" ? "chat" : "party";
+  const changed = next !== partyTab;
+  partyTab = next;
+  partyTabParty.classList.toggle("selected", next === "party");
+  partyTabChat.classList.toggle("selected", next === "chat");
+  partyTabParty.setAttribute("aria-selected", next === "party" ? "true" : "false");
+  partyTabChat.setAttribute("aria-selected", next === "chat" ? "true" : "false");
+  partyBody.hidden = next === "chat";
+  partyChat.hidden = next !== "chat";
+  if (changed) send("partyChatTab", next === "chat" ? 1 : 0);
+  if (next === "chat") {
+    partyChatSignature = "";
+    renderPartyChat();
+    partyChatList.scrollTop = partyChatList.scrollHeight;
+    partyChatInput.focus();
+  }
+};
+
 const renderPartyModal = () => {
   const party = currentParty();
   if (!party.active && partyConfirm) partyConfirm = "";
-  const signature = JSON.stringify([party, partyConfirm]);
+  partyTabs.hidden = !party.active;
+  partyTabParty.textContent = partyLabel("tabParty", "Party");
+  partyTabChatLabel.textContent = partyLabel("tabChat", "Chat");
+  if (!party.active && partyTab !== "party") setPartyTab("party");
+  if (partyTab === "chat") renderPartyChat();
+  // The chat is rendered on its own above; leaving it out here keeps a new message from
+  // rebuilding the party tab's controls under the pointer.
+  const { chatMessages, chatUnread, ...panelState } = party;
+  const signature = JSON.stringify([panelState, partyConfirm]);
   if (signature === partyPanelSignature) return;
   partyPanelSignature = signature;
   partyPanelTitle.textContent = partyLabel("title", "Watch party");
@@ -1979,24 +2106,103 @@ const renderPartyModal = () => {
   partyBody.scrollTop = scrollTop;
 };
 
-const openPartyModal = () => {
+const openPartyModal = (tab = "party") => {
   partyConfirm = "";
   partyPanelSignature = "";
+  partyTab = "";
   openPlayerModal("party");
   send("partyPanelOpened", 0);
+  setPartyTab(tab);
 };
+
+const submitPartyChat = () => {
+  const text = String(partyChatInput.value || "").trim().slice(0, PartyChatMaxLength);
+  if (!text) return;
+  partyChatInput.value = "";
+  // The text rides in the event name (see handlePartyControlsEvent).
+  send(`partyChatSend:${text}`, 0);
+  partyChatList.scrollTop = partyChatList.scrollHeight;
+};
+
+partyTabParty.addEventListener("click", event => {
+  event.stopPropagation();
+  setPartyTab("party");
+});
+partyTabChat.addEventListener("click", event => {
+  event.stopPropagation();
+  setPartyTab("chat");
+});
+partyChatForm.addEventListener("submit", event => {
+  event.preventDefault();
+  event.stopPropagation();
+  submitPartyChat();
+});
+partyChatInput.addEventListener("click", event => event.stopPropagation());
+partyChatInput.addEventListener("keydown", event => {
+  // Enter sends (the form submits); keep other keys away from the player shortcuts. Escape still
+  // reaches the document handler, which closes the panel.
+  if (event.code !== "Escape") event.stopPropagation();
+});
 
 partyPill.addEventListener("click", event => {
   event.stopPropagation();
   partyPill.blur();
-  openPartyModal();
+  // Unread chat is the likeliest reason to click the pill.
+  openPartyModal(partyUnreadText() ? "chat" : "party");
 });
 partyCloseButton.addEventListener("click", event => {
   event.stopPropagation();
   closePlayerModal();
 });
 
+const streamInfoModal = document.getElementById("streamInfoModal");
+const streamInfoTitle = document.getElementById("streamInfoTitle");
+const streamInfoBody = document.getElementById("streamInfoBody");
+const streamInfoCloseButton = document.getElementById("streamInfoCloseButton");
+let streamInfoSignature = "";
+
+// Kotlin fills state.streamInfo only while it knows the panel is open ("streamInfoOpened"), so
+// an empty state right after opening is just the next push on its way.
+const renderStreamInfoModal = () => {
+  const info = state.streamInfo && typeof state.streamInfo === "object" ? state.streamInfo : null;
+  const signature = JSON.stringify(info);
+  if (signature === streamInfoSignature) return;
+  streamInfoSignature = signature;
+  if (!info) return;
+  streamInfoTitle.textContent = info.title || "Stream info";
+  streamInfoCloseButton.textContent = info.closeLabel || "Close";
+  const sections = Array.isArray(info.sections) ? info.sections : [];
+  streamInfoBody.replaceChildren();
+  sections.forEach(section => {
+    const block = document.createElement("div");
+    const title = document.createElement("div");
+    title.className = "stream-info-section-title";
+    title.textContent = section.title || "";
+    block.appendChild(title);
+    (Array.isArray(section.rows) ? section.rows : []).forEach(row => {
+      const line = document.createElement("div");
+      line.className = "stream-info-row";
+      const label = document.createElement("span");
+      label.className = "stream-info-label";
+      label.textContent = row.label || "";
+      const value = document.createElement("span");
+      value.className = "stream-info-value";
+      value.textContent = row.value || "";
+      line.appendChild(label);
+      line.appendChild(value);
+      block.appendChild(line);
+    });
+    streamInfoBody.appendChild(block);
+  });
+};
+
+streamInfoCloseButton.addEventListener("click", event => {
+  event.stopPropagation();
+  closePlayerModal();
+});
+
 const modalByName = {
+  streamInfo: streamInfoModal,
   audio: audioModal,
   subtitles: subtitleModal,
   sources: sourceModal,
@@ -2065,6 +2271,9 @@ const closePlayerModal = (notifyDismiss = false, animated = true) => {
   if (closingModal === "party") {
     partyConfirm = "";
     send("partyPanelClosed", 0);
+  }
+  if (closingModal === "streamInfo") {
+    send("streamInfoClosed", 0);
   }
   if (closingModal === "iptvChannels") {
     resetIptvSearch();
@@ -4594,6 +4803,7 @@ const renderActiveModal = () => {
   if (activeModal === "submitIntro") renderSubmitIntroModal();
   if (activeModal === "p2pConsent") renderP2pConsentModal();
   if (activeModal === "party") renderPartyModal();
+  if (activeModal === "streamInfo") renderStreamInfoModal();
 };
 
 window.nuvioNativeViewportChanged = () => {
@@ -5418,6 +5628,7 @@ const renderChrome = () => {
   setVisible(episodesButton, Boolean(state.showEpisodes));
   setVisible(episodeNotch, Boolean(state.showEpisodes));
   renderPartyChrome(isChromeHidden, pictureInPictureActive);
+  renderPartyUnread();
   const sourceNotchPosition = ["left", "hidden"].includes(state.sourceNotchPosition)
     ? state.sourceNotchPosition
     : "right";
@@ -5986,19 +6197,63 @@ window.nuvioSetPlaybackInfo = payload => {
 // Badges beside the title: the decoded quality (from the video-profile pass, so it is what mpv
 // is actually playing, not what the source name claims) and the subtitle in use. Runs on every
 // position tick, hence the signature check.
+// Image badges from the user's badge pack, matched in Kotlin against what is decoding (Settings ->
+// Streams -> Show in player). When there are any they stand in for the text quality badge, which
+// says the same thing less well.
+let playerPackBadges = [];
+window.nuvioSetPlayerBadges = list => {
+  playerPackBadges = (Array.isArray(list) ? list : [])
+    .map(item => ({
+      name: String(item && item.name || ""),
+      imageURL: String(item && item.imageURL || ""),
+      // The pack's chip fill: many pack images are dark glyphs drawn for a white chip, and are
+      // unreadable (a black smudge) on the bare video without it.
+      backgroundColor: String(item && item.backgroundColor || ""),
+      borderColor: String(item && item.borderColor || ""),
+    }))
+    .filter(item => item.imageURL);
+  renderTitleBadges();
+};
+
 let titleBadgesSignature = null;
 const renderTitleBadges = () => {
   if (!titleBadges) return;
   const badges = [];
   const quality = String(playbackInfo.quality || "").trim();
   const subtitle = String(state.activeSubtitleLabel || "").trim();
-  if (quality) badges.push({ kind: "quality", text: quality });
+  playerPackBadges.forEach(item => badges.push({
+    kind: "image",
+    text: item.name,
+    imageURL: item.imageURL,
+    backgroundColor: item.backgroundColor,
+    borderColor: item.borderColor,
+  }));
+  if (quality && playerPackBadges.length === 0) badges.push({ kind: "quality", text: quality });
   if (subtitle) badges.push({ kind: "subtitle", text: subtitle });
-  const signature = badges.map(badge => `${badge.kind}:${badge.text}`).join("|");
+  const signature = badges
+    .map(badge => `${badge.kind}:${badge.text}:${badge.imageURL || ""}:${badge.backgroundColor || ""}:${badge.borderColor || ""}`)
+    .join("|");
   if (signature === titleBadgesSignature) return;
   titleBadgesSignature = signature;
   titleBadges.replaceChildren();
   badges.forEach(badge => {
+    if (badge.kind === "image") {
+      const chip = document.createElement("span");
+      chip.className = "title-badge-chip";
+      chip.title = badge.text;
+      if (badge.backgroundColor) chip.style.backgroundColor = badge.backgroundColor;
+      if (badge.borderColor) chip.style.borderColor = badge.borderColor;
+      const image = document.createElement("img");
+      image.className = "title-badge-image";
+      image.src = badge.imageURL;
+      image.alt = badge.text;
+      image.decoding = "async";
+      // A pack image that fails to load leaves no gap.
+      image.onerror = () => chip.remove();
+      chip.appendChild(image);
+      titleBadges.appendChild(chip);
+      return;
+    }
     const element = document.createElement("span");
     element.className = `title-badge title-badge-${badge.kind}`;
     if (badge.kind === "subtitle") {
@@ -6456,8 +6711,14 @@ document.querySelectorAll("[data-command]").forEach(button => {
       openPlayerModal("submitIntro");
       return;
     }
+    if (command === "streamInfo") {
+      streamInfoSignature = "";
+      openPlayerModal("streamInfo");
+      send("streamInfoOpened", 0);
+      return;
+    }
     if (command === "party") {
-      openPartyModal();
+      openPartyModal(partyUnreadText() ? "chat" : "party");
       return;
     }
     send(command, 0);
@@ -7156,6 +7417,8 @@ window.playerControls = nextState => {
   // Kotlin asking for the party panel (the party moved to something this player cannot follow by
   // itself). A token for the same reason as openSourcesToken.
   const partyPanelToken = Number(currentParty().openPanelToken) || 0;
+  // A stream swap rebuilds this HUD with every panel closed; let Kotlin stop building stream info.
+  if (state.streamInfo && activeModal !== "streamInfo") send("streamInfoClosed", 0);
   if (!isFirstPlayerControls && partyPanelToken !== previousPartyPanelToken && activeModal !== "party") {
     openPartyModal();
   }

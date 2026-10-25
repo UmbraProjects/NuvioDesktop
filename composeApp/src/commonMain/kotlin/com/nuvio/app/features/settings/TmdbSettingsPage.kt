@@ -121,24 +121,21 @@ internal fun LazyListScope.tmdbSettingsContent(
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {
+                // The key check sits in the row's control column, and only a problem gets a
+                // sentence (in place of "Configured"); a separate line under the row sat oddly.
+                val keyStatus = if (settings.hasApiKey) rememberTmdbApiKeyStatus(settings.apiKey) else null
                 TmdbApiKeyRow(
                     isTablet = isTablet,
                     value = settings.apiKey,
+                    summaryOverride = tmdbApiKeyProblemText(keyStatus),
+                    rowTrailingContent = if (keyStatus != null) {
+                        { TmdbApiKeyStatusBadge(keyStatus) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-api-key")),
                     onApiKeyCommitted = TmdbSettingsRepository::setApiKey,
                 )
-                if (settings.hasApiKey) {
-                    TmdbApiKeyStatusLine(
-                        apiKey = settings.apiKey,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                start = if (isTablet) 20.dp else 16.dp,
-                                end = if (isTablet) 20.dp else 16.dp,
-                                bottom = if (isTablet) 14.dp else 12.dp,
-                            ),
-                    )
-                }
             }
         }
     }
@@ -280,16 +277,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-season-posters")),
                     onCheckedChange = TmdbSettingsRepository::setUseSeasonPosters,
                 )
-                SettingsGroupDivider(isTablet = isTablet)
-                TmdbToggleRow(
-                    isTablet = isTablet,
-                    title = stringResource(Res.string.settings_tmdb_module_more_like_this),
-                    description = stringResource(Res.string.settings_tmdb_module_more_like_this_description),
-                    checked = settings.useMoreLikeThis,
-                    enabled = enrichmentControlsEnabled,
-                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-more-like-this")),
-                    onCheckedChange = TmdbSettingsRepository::setUseMoreLikeThis,
-                )
+                // More Like This is configured under Integrations, with its source.
                 SettingsGroupDivider(isTablet = isTablet)
                 TmdbToggleRow(
                     isTablet = isTablet,
@@ -404,6 +392,8 @@ private fun TmdbApiKeyRow(
     isTablet: Boolean,
     value: String,
     modifier: Modifier = Modifier,
+    summaryOverride: String? = null,
+    rowTrailingContent: (@Composable () -> Unit)? = null,
     onApiKeyCommitted: (String) -> Unit,
 ) {
     SettingsTextInputRow(
@@ -414,6 +404,8 @@ private fun TmdbApiKeyRow(
         secret = true,
         isTablet = isTablet,
         modifier = modifier,
+        summaryOverride = summaryOverride,
+        rowTrailingContent = rowTrailingContent,
         onSave = onApiKeyCommitted,
     )
 }

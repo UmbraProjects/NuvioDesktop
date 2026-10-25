@@ -73,3 +73,40 @@ internal fun desktopInterpolationProperties(
 }
 
 internal val DESKTOP_INTERPOLATION_OFF = listOf("interpolation" to "no", "video-sync" to "audio")
+
+/**
+ * mpv's own SDR-to-HDR expansion, the any-GPU alternative to RTX Video True HDR. SDR video only,
+ * only with Windows HDR on (on an SDR desktop a PQ output breaks the colours, as with True HDR), and
+ * never while True HDR runs: its frames reach mpv as HDR already, and the fixed peak below would
+ * tone map them again.
+ */
+internal fun shouldEnableDesktopInverseToneMapping(
+    enabled: Boolean,
+    isHdr: Boolean?,
+    displayHdr: Boolean?,
+    rtxTrueHdrActive: Boolean,
+): Boolean = enabled && isHdr == false && displayHdr == true && !rtxTrueHdrActive
+
+/**
+ * Written after the HDR mode's target properties, which it overrides while active. mpv never
+ * switches an SDR file's output to HDR by itself, so the expansion needs an explicit PQ / BT.2020
+ * target, and `target-peak` decides how bright highlights get. Inactive, it only resets
+ * `inverse-tone-mapping`, and not even that when the custom options box sets it, so a hand-written
+ * setup keeps working; the HDR mode restores the targets on the same pass.
+ */
+internal fun desktopInverseToneMappingProperties(
+    active: Boolean,
+    peakNits: Int,
+    customOptionNames: Set<String>,
+): List<Pair<String, String>> = when {
+    active -> listOf(
+        "target-colorspace-hint" to "yes",
+        "target-colorspace-hint-mode" to "target",
+        "target-prim" to "bt.2020",
+        "target-trc" to "pq",
+        "target-peak" to peakNits.toString(),
+        "inverse-tone-mapping" to "yes",
+    )
+    "inverse-tone-mapping" in customOptionNames -> emptyList()
+    else -> listOf("inverse-tone-mapping" to "no")
+}

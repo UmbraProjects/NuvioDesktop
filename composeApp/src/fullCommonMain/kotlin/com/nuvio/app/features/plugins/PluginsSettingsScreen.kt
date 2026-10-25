@@ -1,5 +1,9 @@
 package com.nuvio.app.features.plugins
 
+import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.features.settings.SettingsGlassButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -778,10 +782,9 @@ private fun DesktopPluginSegmentedFilters(
 ) {
     val tokens = MaterialTheme.nuvio
     Surface(
-        modifier = Modifier.height(40.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = tokens.colors.surfaceCard,
-        border = androidx.compose.foundation.BorderStroke(1.dp, tokens.colors.borderDefault),
+        modifier = Modifier.height(40.dp).pluginGlass(),
+        shape = NuvioGlass.Shape,
+        color = Color.Transparent,
     ) {
         Row(
             modifier = Modifier.padding(4.dp),
@@ -834,11 +837,12 @@ private fun DesktopPluginSearchField(
     Box(
         modifier = modifier
             .height(40.dp)
-            .background(tokens.colors.surfaceCard, RoundedCornerShape(10.dp))
+            // The settings glass, like the Addons page.
+            .ditheredBackground(NuvioGlass.Fill, NuvioGlass.Shape)
             .border(
                 width = 1.dp,
-                color = if (focused) tokens.colors.borderFocus else tokens.colors.borderDefault,
-                shape = RoundedCornerShape(10.dp),
+                brush = if (focused) SolidColor(tokens.colors.borderFocus) else NuvioGlass.Edge,
+                shape = NuvioGlass.Shape,
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -940,15 +944,13 @@ private fun DesktopPluginAddRepositoryPopover(
     onInstallRepository: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val shape = RoundedCornerShape(10.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth().nuvioPanelBackdrop(tokens.colors.surface, shape),
-        shape = shape,
+        modifier = Modifier.fillMaxWidth().pluginGlass(),
+        shape = NuvioGlass.Shape,
         color = Color.Transparent,
-        border = androidx.compose.foundation.BorderStroke(1.dp, tokens.colors.borderDefault),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
@@ -956,21 +958,19 @@ private fun DesktopPluginAddRepositoryPopover(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                NuvioInputField(
+                NuvioTextField(
                     value = repositoryUrl,
                     onValueChange = onRepositoryUrlChange,
                     placeholder = stringResource(Res.string.plugins_input_manifest_placeholder),
                     modifier = Modifier.weight(1f),
+                    onImeAction = { if (repositoryUrl.isNotBlank() && !isAdding) onInstallRepository() },
                 )
-                NuvioPrimaryButton(
-                    text = if (isAdding) {
-                        stringResource(Res.string.plugins_button_installing)
-                    } else {
-                        stringResource(Res.string.plugins_button_install_repo)
-                    },
-                    enabled = repositoryUrl.isNotBlank() && !isAdding,
+                SettingsGlassButton(
+                    text = stringResource(Res.string.plugins_button_install_repo),
+                    enabled = repositoryUrl.isNotBlank(),
+                    accent = true,
+                    loading = isAdding,
                     onClick = onInstallRepository,
-                    modifier = Modifier.width(148.dp),
                 )
             }
             message?.let { text ->
@@ -992,13 +992,13 @@ private fun DesktopPluginRepositoriesTable(
     val tokens = MaterialTheme.nuvio
     val shape = RoundedCornerShape(10.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth().nuvioPanelBackdrop(tokens.colors.surface, shape),
+        modifier = Modifier.fillMaxWidth().pluginGlass(),
         shape = shape,
         color = Color.Transparent,
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp)) {
             DesktopPluginTableTitle(stringResource(Res.string.plugins_section_installed_repos))
-            HorizontalDivider(color = tokens.colors.borderDefault)
+            HorizontalDivider(color = NuvioGlass.EdgeColor)
             if (totalRepositoryCount == 0) {
                 DesktopPluginEmptyTable(
                     title = stringResource(Res.string.plugins_empty_repos_title),
@@ -1013,7 +1013,7 @@ private fun DesktopPluginRepositoriesTable(
                 repositories.forEachIndexed { index, repo ->
                     DesktopPluginRepositoryRow(repo)
                     if (index != repositories.lastIndex) {
-                        HorizontalDivider(color = tokens.colors.borderDefault.copy(alpha = 0.72f))
+                        HorizontalDivider(color = NuvioGlass.EdgeColor)
                     }
                 }
             }
@@ -1033,7 +1033,7 @@ private fun DesktopPluginProvidersTable(
     val tokens = MaterialTheme.nuvio
     val shape = RoundedCornerShape(10.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth().nuvioPanelBackdrop(tokens.colors.surface, shape),
+        modifier = Modifier.fillMaxWidth().pluginGlass(),
         shape = shape,
         color = Color.Transparent,
     ) {
@@ -1042,7 +1042,7 @@ private fun DesktopPluginProvidersTable(
                 uiState = uiState,
                 hasTmdbApiKey = hasTmdbApiKey,
             )
-            HorizontalDivider(color = tokens.colors.borderDefault)
+            HorizontalDivider(color = NuvioGlass.EdgeColor)
             if (scrapers.isEmpty()) {
                 DesktopPluginEmptyTable(
                     title = stringResource(Res.string.plugins_empty_providers),
@@ -1058,7 +1058,7 @@ private fun DesktopPluginProvidersTable(
                         onConfigure = onConfigureScraper,
                     )
                     if (index != scrapers.lastIndex) {
-                        HorizontalDivider(color = tokens.colors.borderDefault.copy(alpha = 0.72f))
+                        HorizontalDivider(color = NuvioGlass.EdgeColor)
                     }
                 }
             }
@@ -1367,8 +1367,8 @@ private fun DesktopPluginActionCluster(
     ) {
         Surface(
             shape = RoundedCornerShape(10.dp),
-            color = tokens.colors.surfaceCard.copy(alpha = 0.5f),
-            border = androidx.compose.foundation.BorderStroke(1.dp, tokens.colors.borderDefault),
+            color = Color.Transparent,
+            border = androidx.compose.foundation.BorderStroke(1.dp, NuvioGlass.Edge),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
@@ -1504,3 +1504,8 @@ private fun String.fallbackRepositoryLabel(fallback: String): String {
         withoutManifest.substringAfterLast('/').ifBlank { fallback }
     }
 }
+
+/** The settings glass (fill and one-pixel edge), so this page sits with the rest of Settings. */
+private fun Modifier.pluginGlass(): Modifier = this
+    .ditheredBackground(NuvioGlass.Fill, NuvioGlass.Shape)
+    .border(1.dp, NuvioGlass.Edge, NuvioGlass.Shape)

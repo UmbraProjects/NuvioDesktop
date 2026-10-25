@@ -67,6 +67,9 @@ interface PlayerEngineController {
     /** Shows a short, non-blocking notification over the player when the platform supports it. */
     fun showTransientMessage(title: String, value: String) {}
 
+    /** The selected tracks as the engine decodes them, for the stream info panel. Null if unknown. */
+    fun playingMediaFacts(): PlayingMediaFacts? = null
+
     /**
      * Like [showTransientMessage], but survives an imminent source switch: the message is held
      * and shown on the replacement player's overlay once it attaches. Platforms whose overlay
@@ -364,6 +367,8 @@ data class PlayerControlsState(
     val playlistPeekItems: List<PlayerControlPlaylistItem> = emptyList(),
     // Watch party: the HUD's party button, top status pill and party panel.
     val party: PlayerControlPartyState = PlayerControlPartyState(),
+    /** The stream info panel's content; null while the panel is closed. */
+    val streamInfo: PlayerControlStreamInfo? = null,
     val showSubmitIntro: Boolean = false,
     val showVideoSettings: Boolean = false,
     val showSources: Boolean = false,
@@ -435,37 +440,50 @@ data class PlayerControlsState(
      * sheet the user has since dismissed.
      */
     val sourcesPanelOpen: Boolean = false,
-    /**
-     * Desktop only: when true the native controls overlay hides all chrome and renders just
-     * the hero-trailer fade gradients (used by the TV-mode home hero trailer surface).
-     */
-    val heroTrailerMode: Boolean = false,
-    /** Desktop only: background color (e.g. "#121212") the hero-trailer fade blends toward. */
-    val heroTrailerBackgroundColor: String = "",
-    /** Desktop only: hero metadata rendered over the full-bleed trailer (logo/title/meta/desc). */
-    val heroTrailerLogoUrl: String = "",
-    val heroTrailerTitle: String = "",
-    val heroTrailerMeta: String = "",
-    val heroTrailerDescription: String = "",
-    val heroTrailerMuted: Boolean = true,
-    /** Desktop only: hero-trailer volume (0..100) reflected by the overlay volume slider. */
-    val heroTrailerVolume: Int = 0,
-    /**
-     * Desktop only: which screen edge holds the navigation chrome while a home hero trailer plays
-     * ("top" for the floating top bar, "left" for the sidebar, "none" to disable). The heavyweight
-     * native video surface paints over the Compose navbar, so when the pointer enters this edge
-     * band the overlay tells Kotlin to dismiss the trailer, uncovering the navbar.
-     */
-    val heroTrailerNavDismissEdge: String = "none",
-    /**
-     * Desktop only: the top nav-dismiss band height as a fraction of the trailer surface height.
-     * The overlay surface matches the hero region, so a fraction scales with the hero size — the
-     * small (and user-resizable) adaptive hero needs a tighter band than TV mode's full-viewport
-     * hero, or moving onto the strip at all trips the dismiss.
-     */
-    val heroTrailerNavDismissBandFraction: Float = 0.22f,
+    /** Desktop only: hero-trailer overlay state; see [PlayerHeroTrailerState]. */
+    val heroTrailer: PlayerHeroTrailerState = PlayerHeroTrailerState(),
     /** Desktop only: reflects the stream-failover setting in the player context-menu toggle. */
     val streamFailoverEnabled: Boolean = false,
+)
+// PlayerControlsState is close to the JVM's 255-slot method-signature limit: its synthetic
+// default-arguments constructor adds an int mask per 32 params, a marker and `this`, and Long/Double
+// take two slots. Going over still compiles but fails class loading (ClassFormatError: Too many
+// arguments in method signature). Group new fields into holders like the one below.
+
+/**
+ * Desktop only: state for the native controls overlay when it renders a hero trailer (home or
+ * details) instead of the player HUD. Serialised flat as `heroTrailer*` fields for controls.js.
+ */
+data class PlayerHeroTrailerState(
+    /**
+     * When true the native controls overlay hides all chrome and renders just the hero-trailer
+     * fade gradients (used by the TV-mode home hero trailer surface).
+     */
+    val enabled: Boolean = false,
+    /** Background color (e.g. "#121212") the hero-trailer fade blends toward. */
+    val backgroundColor: String = "",
+    /** Hero metadata rendered over the full-bleed trailer (logo/title/meta/desc). */
+    val logoUrl: String = "",
+    val title: String = "",
+    val meta: String = "",
+    val description: String = "",
+    val muted: Boolean = true,
+    /** Hero-trailer volume (0..100) reflected by the overlay volume slider. */
+    val volume: Int = 0,
+    /**
+     * Which screen edge holds the navigation chrome while a home hero trailer plays ("top" for the
+     * floating top bar, "left" for the sidebar, "none" to disable). The heavyweight native video
+     * surface paints over the Compose navbar, so when the pointer enters this edge band the overlay
+     * tells Kotlin to dismiss the trailer, uncovering the navbar.
+     */
+    val navDismissEdge: String = "none",
+    /**
+     * The top nav-dismiss band height as a fraction of the trailer surface height. The overlay
+     * surface matches the hero region, so a fraction scales with the hero size — the small (and
+     * user-resizable) adaptive hero needs a tighter band than TV mode's full-viewport hero, or
+     * moving onto the strip at all trips the dismiss.
+     */
+    val navDismissBandFraction: Float = 0.22f,
 )
 
 /**
@@ -525,6 +543,25 @@ data class PlayerControlPartyState(
     val startNote: String = "",
     val members: List<PlayerControlPartyMember> = emptyList(),
     val labels: Map<String, String> = emptyMap(),
+    /** Chat messages from others not yet seen; drives the badges on the pill, button and tab. */
+    val chatUnread: Int = 0,
+    /** The chat, only while the party panel is open (it is the only place that shows it). */
+    val chatMessages: List<PlayerControlChatMessage> = emptyList(),
+)
+
+data class PlayerControlChatMessage(
+    val key: String,
+    val name: String,
+    val initials: String,
+    val color: String,
+    val avatarUrl: String,
+    val body: String,
+    /** "HH:mm" on the first message after a gap, empty otherwise. */
+    val time: String,
+    val mine: Boolean,
+    val sending: Boolean,
+    val failed: Boolean,
+    val startsGroup: Boolean,
 )
 
 data class PlayerControlPartyMember(

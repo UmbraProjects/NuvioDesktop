@@ -178,6 +178,20 @@ internal fun StreamFileSizeBadge(stream: StreamItem) {
     }
 }
 
+/**
+ * A pack colour as CSS for the player HUD. Packs write 8-digit colours as `#AARRGGBB` (Android's
+ * order), which CSS would read as `#RRGGBBAA`: `#FF0D47A1`, a blue, came out red.
+ */
+internal fun String.toBadgeCssColorOrNull(): String? {
+    val argb = toBadgeColorArgbOrNull() ?: return null
+    val alpha = ((argb shr 24) and 0xFF) / 255.0
+    return "rgba(${(argb shr 16) and 0xFF}, ${(argb shr 8) and 0xFF}, ${argb and 0xFF}, ${(alpha * 1000).toInt() / 1000.0})"
+}
+
+/** The chip fill a pack asked for, or null: only a "filled" tag has one. */
+internal fun badgeFillCssColorOrNull(tagColor: String, tagStyle: String): String? =
+    if (tagStyle.equals("filled", ignoreCase = true)) tagColor.toBadgeCssColorOrNull() else null
+
 private fun String.toBadgeColorArgbOrNull(): Long? {
     val hex = trim().removePrefix("#")
     val argb = when (hex.length) {

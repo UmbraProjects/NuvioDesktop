@@ -63,6 +63,7 @@ internal object LocalAccountDataCleaner {
         CatalogRepository.clear()
         StreamsRepository.clear()
         StreamPrefetchCache.clear()
+        com.nuvio.app.features.streams.CwStreamCache.clear()
         StreamPrefetchService.reset()
         MetaDetailsRepository.clear()
         SearchRepository.reset()

@@ -50,16 +50,16 @@ internal fun desktopSettingsSidebarSubItems(
     return when (sidebarPage) {
         SettingsPage.Playback -> listOfNotNull(
             if (isWindows) section(SettingsPage.Playback, Res.string.settings_playback_nvidia_rtx_video_section) else null,
-            section(SettingsPage.Playback, Res.string.settings_playback_section_player),
+            if (isDesktop) section(SettingsPage.Playback, Res.string.settings_playback_section_picture_audio) else null,
             if (isDesktop) section(SettingsPage.Playback, Res.string.settings_playback_section_anime) else null,
             if (isDesktop) section(SettingsPage.Playback, Res.string.settings_playback_section_advanced) else null,
-            section(SettingsPage.Playback, Res.string.settings_playback_section_subtitle_audio),
-            section(SettingsPage.Playback, Res.string.settings_playback_section_subtitle_rendering),
-            if (P2pSettingsRepository.isVisible) section(SettingsPage.Playback, Res.string.settings_p2p_title) else null,
-            section(SettingsPage.Playback, Res.string.settings_playback_section_stream_selection),
-            section(SettingsPage.Playback, Res.string.settings_playback_section_stream_auto_play),
-            section(SettingsPage.Playback, Res.string.settings_playback_section_skip_segments),
-            section(SettingsPage.Playback, Res.string.settings_playback_section_next_episode),
+        )
+        SettingsPage.Player -> listOf(
+            section(SettingsPage.Player, Res.string.settings_playback_section_player),
+            section(SettingsPage.Player, Res.string.settings_playback_section_subtitle_audio),
+            section(SettingsPage.Player, Res.string.settings_playback_section_subtitle_rendering),
+            section(SettingsPage.Player, Res.string.settings_playback_section_skip_segments),
+            section(SettingsPage.Player, Res.string.settings_playback_section_next_episode),
         )
         SettingsPage.Homescreen -> {
             val catalogCount = homescreenItems.count { !it.isCollection }
@@ -122,12 +122,15 @@ internal fun desktopSettingsSidebarSubItems(
             if (isDesktop) subPage(SettingsPage.Lights) else null,
             if (isDesktop) subPage(SettingsPage.DiscordPresence) else null,
         )
-        SettingsPage.Streams -> listOf(
+        SettingsPage.Streams -> listOfNotNull(
             // The page's own "Stream scoring" section holds only the row that opens the sub-page,
             // so the sub-page is the one entry - listing both put the same label twice.
             section(SettingsPage.Streams, Res.string.settings_stream_badges_section),
             section(SettingsPage.Streams, Res.string.settings_stream_display_section),
             subPage(SettingsPage.StreamScoring),
+            if (P2pSettingsRepository.isVisible) section(SettingsPage.Streams, Res.string.settings_p2p_title) else null,
+            section(SettingsPage.Streams, Res.string.settings_playback_section_stream_selection),
+            section(SettingsPage.Streams, Res.string.settings_playback_section_stream_auto_play),
         )
         SettingsPage.Discover -> listOf(
             section(SettingsPage.Discover, Res.string.settings_discover_section_row_order),

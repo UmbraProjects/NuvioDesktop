@@ -1,5 +1,9 @@
 package com.nuvio.app.features.iptv
 
+import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.features.settings.settingsSkyBackground
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -370,7 +374,8 @@ fun IptvScreen(
     Row(
         modifier = modifier
             .fillMaxSize()
-            .background(tokens.colors.background)
+            // The settings sky and glass, so Live TV reads as part of the same app as Settings.
+            .settingsSkyBackground(tokens.colors.background, tokens.colors.accent)
             .focusRequester(screenFocus)
             .focusable()
             .onGloballyPositioned { rootOrigin = it.positionInWindow() }
@@ -605,8 +610,8 @@ private fun IptvSidebarEntry(
             .background(
                 when {
                     selected -> tokens.colors.accent.copy(alpha = 0.18f)
-                    keyboardFocused || hovered -> tokens.colors.surfaceElevated
-                    else -> tokens.colors.background
+                    keyboardFocused || hovered -> IptvGlassHover
+                    else -> Color.Transparent
                 },
             )
             .then(if (keyboardFocused) Modifier.border(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
@@ -756,7 +761,7 @@ private fun IptvHeaderButton(
             .background(
                 when {
                     active -> tokens.colors.accent.copy(alpha = 0.22f)
-                    focused || hovered -> tokens.colors.surfaceElevated
+                    focused || hovered -> IptvGlassHover
                     else -> Color.Transparent
                 },
             )
@@ -840,14 +845,9 @@ private fun IptvRegionChip(
     Row(
         modifier = Modifier
             .height(36.dp)
+            .iptvGlass(shape, selected = selected, raised = focused || hovered, selectedTint = tokens.colors.accent.copy(alpha = 0.22f))
+            // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
-            .background(
-                when {
-                    selected -> tokens.colors.accent.copy(alpha = 0.22f)
-                    focused || hovered -> tokens.colors.surfaceElevated
-                    else -> tokens.colors.surface.copy(alpha = 0.55f)
-                },
-            )
             .then(if (focused) Modifier.border(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp),
@@ -921,13 +921,14 @@ private fun IptvChannelRow(
     val tokens = MaterialTheme.nuvio
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(12.dp)
+    val shape = NuvioGlass.Shape
     val name = channel.name.ifBlank { stringResource(Res.string.iptv_channel_number, channel.num) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .iptvGlass(shape, raised = keyboardFocused || starKeyboardFocused || hovered)
+            // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
-            .background(if (keyboardFocused || starKeyboardFocused || hovered) tokens.colors.surfaceElevated else tokens.colors.surface.copy(alpha = 0.55f))
             .then(if (keyboardFocused) Modifier.border(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onPlay)
             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -1053,3 +1054,27 @@ private fun IptvMessage(
         }
     }
 }
+
+/** A hovered or focused row: the glass, a step lighter. */
+internal val IptvGlassHover = Color.White.copy(alpha = 0.09f)
+
+/**
+ * The settings glass for a Live TV tile or row: the frosted fill and edge, a lighter fill while
+ * [raised] (hovered or focused), and [selectedTint] instead while [selected].
+ */
+internal fun Modifier.iptvGlass(
+    shape: Shape,
+    raised: Boolean = false,
+    selected: Boolean = false,
+    selectedTint: Color = Color.Transparent,
+): Modifier = this
+    .ditheredBackground(NuvioGlass.Fill, shape)
+    .background(
+        when {
+            selected -> selectedTint
+            raised -> IptvGlassHover
+            else -> Color.Transparent
+        },
+        shape,
+    )
+    .border(1.dp, NuvioGlass.Edge, shape)

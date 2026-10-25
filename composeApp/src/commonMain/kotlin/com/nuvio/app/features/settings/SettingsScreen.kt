@@ -1,5 +1,8 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.LocalOpenMetaDetails
+import nuvio.composeapp.generated.resources.settings_desktop_recent_searches
+import androidx.compose.material.icons.rounded.History
 import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.library.LibraryQuickAccess
 import com.nuvio.app.core.build.AppFeaturePolicy
@@ -37,6 +40,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.material.icons.Icons
@@ -53,6 +62,7 @@ import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.PowerSettingsNew
@@ -204,7 +214,6 @@ import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attri
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_notifications
-import nuvio.composeapp.generated.resources.compose_settings_page_playback
 import nuvio.composeapp.generated.resources.compose_settings_page_plugins
 import nuvio.composeapp.generated.resources.compose_settings_page_root
 import nuvio.composeapp.generated.resources.compose_settings_page_streams
@@ -215,6 +224,8 @@ import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichmen
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
 import nuvio.composeapp.generated.resources.sidebar_library
 import nuvio.composeapp.generated.resources.sidebar_search
+import nuvio.composeapp.generated.resources.compose_settings_page_video_audio
+import nuvio.composeapp.generated.resources.compose_settings_page_player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -832,11 +843,23 @@ private fun MobileSettingsScreen(
         }
         ApplyLibraryQuickAccessBrowser(page, localLibraryTitlesState)
         if (page == SettingsPage.LocalLibrary && localLibraryTitlesState.browserOpen) {
-            LocalLibraryBrowserDialog(
-                state = localLibraryUiState,
-                titlesState = localLibraryTitlesState,
-                onDismiss = { localLibraryTitlesState.browserOpen = false },
-            )
+            // Opening a title closes the browser first: it is a window-level dialog, so left open
+            // it sat over the details page it had just opened.
+            val openMetaDetails = LocalOpenMetaDetails.current
+            CompositionLocalProvider(
+                LocalOpenMetaDetails provides openMetaDetails?.let { open ->
+                    { type: String, id: String ->
+                        localLibraryTitlesState.browserOpen = false
+                        open(type, id)
+                    }
+                },
+            ) {
+                LocalLibraryBrowserDialog(
+                    state = localLibraryUiState,
+                    titlesState = localLibraryTitlesState,
+                    onDismiss = { localLibraryTitlesState.browserOpen = false },
+                )
+            }
         }
         var rootSearchVisible by rememberSaveable { mutableStateOf(isDesktop) }
         var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
@@ -867,6 +890,10 @@ private fun MobileSettingsScreen(
         )
 
         fun openSearchTarget(target: SettingsSearchTarget) {
+            SettingsSearchHistoryRepository.record(
+                settingsSearchQuery,
+                (target as? SettingsSearchTarget.Page)?.page,
+            )
             // Remove the results layer before mounting the destination. Otherwise it can keep
             // covering the page whose row is waiting to consume the requested scroll anchor.
             settingsSearchQuery = ""
@@ -946,6 +973,7 @@ private fun MobileSettingsScreen(
                         settingsRootContent(
                             isTablet = false,
                             onPlaybackClick = { onPageChange(SettingsPage.Playback) },
+                            onPlayerClick = { onPageChange(SettingsPage.Player) },
                             onRandomPlayClick = { onPageChange(SettingsPage.RandomPlay) },
                             onDiscoverClick = { onPageChange(SettingsPage.Discover) },
                             onStreamsClick = { onPageChange(SettingsPage.Streams) },
@@ -1003,6 +1031,24 @@ private fun MobileSettingsScreen(
                     tunnelingEnabled = tunnelingEnabled,
                     useLibass = useLibass,
                     libassRenderType = libassRenderType,
+                    group = PlaybackSettingsGroup.VideoAudio,
+                )
+                SettingsPage.Player -> playbackSettingsContent(
+                    isTablet = false,
+                    showLoadingOverlay = showLoadingOverlay,
+                    defaultPlaybackSpeed = defaultPlaybackSpeed,
+                    preferredAudioLanguage = preferredAudioLanguage,
+                    secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
+                    preferredSubtitleLanguage = preferredSubtitleLanguage,
+                    secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
+                    streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
+                    streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
+                    decoderPriority = decoderPriority,
+                    mapDV7ToHevc = mapDV7ToHevc,
+                    tunnelingEnabled = tunnelingEnabled,
+                    useLibass = useLibass,
+                    libassRenderType = libassRenderType,
+                    group = PlaybackSettingsGroup.Player,
                 )
                 SettingsPage.Discover -> discoverSettingsContent(
                     isTablet = false,
@@ -1372,7 +1418,7 @@ private fun TabletSettingsScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(tokens.colors.background),
+            .settingsSkyBackground(tokens.colors.background, tokens.colors.accent),
         contentAlignment = Alignment.TopCenter,
     ) {
         val contextPanelWidth = if (showContextPanel) DesktopSettingsContextPanelWidth else 0.dp
@@ -1394,11 +1440,23 @@ private fun TabletSettingsScreen(
             }
             ApplyLibraryQuickAccessBrowser(page, localLibraryTitlesState)
             if (page == SettingsPage.LocalLibrary && localLibraryTitlesState.browserOpen) {
-                LocalLibraryBrowserDialog(
-                    state = localLibraryUiState,
-                    titlesState = localLibraryTitlesState,
-                    onDismiss = { localLibraryTitlesState.browserOpen = false },
-                )
+                // Opening a title closes the browser first: it is a window-level dialog, so left open
+                // it sat over the details page it had just opened.
+                val openMetaDetails = LocalOpenMetaDetails.current
+                CompositionLocalProvider(
+                    LocalOpenMetaDetails provides openMetaDetails?.let { open ->
+                        { type: String, id: String ->
+                            localLibraryTitlesState.browserOpen = false
+                            open(type, id)
+                        }
+                    },
+                ) {
+                    LocalLibraryBrowserDialog(
+                        state = localLibraryUiState,
+                        titlesState = localLibraryTitlesState,
+                        onDismiss = { localLibraryTitlesState.browserOpen = false },
+                    )
+                }
             }
             var rootSearchVisible by rememberSaveable { mutableStateOf(false) }
             var rootSearchRevealAnimating by rememberSaveable { mutableStateOf(false) }
@@ -1415,6 +1473,10 @@ private fun TabletSettingsScreen(
             )
 
             fun openSearchTarget(target: SettingsSearchTarget) {
+                SettingsSearchHistoryRepository.record(
+                    settingsSearchQuery,
+                    (target as? SettingsSearchTarget.Page)?.page,
+                )
                 settingsSearchQuery = ""
                 when (target) {
                     is SettingsSearchTarget.Page -> {
@@ -1619,8 +1681,15 @@ private fun TabletSettingsScreen(
                     Row(modifier = Modifier.fillMaxSize()) {
                         // The list's size, for headings that scroll themselves to the top of it.
                         val listViewportSize = remember { mutableStateOf(IntSize.Zero) }
-                        val anchorViewport = remember {
-                            SettingsAnchorViewport(listViewportSize, DesktopSettingsPageTopInset)
+                        val anchorScope = rememberCoroutineScope()
+                        val anchorViewport = remember(listState) {
+                            SettingsAnchorViewport(
+                                listViewportSize,
+                                DesktopSettingsPageTopInset,
+                                scrollBy = { delta -> listState.animateScrollBy(delta, SettingsAnchorScrollSpec) },
+                                scope = anchorScope,
+                                scrollPosition = { listState.scrollPositionKey() },
+                            )
                         }
                         // Expose the current page to every SettingsSection heading so it can build a
                         // stable favorite/scroll-anchor id and be pinned via right-click.
@@ -1634,7 +1703,11 @@ private fun TabletSettingsScreen(
                             modifier = Modifier
                                 .width(mainColumnWidth)
                                 .fillMaxHeight()
+                                // Hidden for the few frames a jump walks the list; see
+                                // SeekSettingsAnchorIntoView.
+                                .graphicsLayer { alpha = if (SettingsScrollAnchor.seeking) 0f else 1f }
                                 .onSizeChanged { listViewportSize.value = it }
+                                .onPlaced { anchorViewport.coordinates = it }
                                 .nestedScroll(rootSearchRevealConnection),
                             contentPadding = PaddingValues(
                                 start = 32.dp,
@@ -1681,6 +1754,7 @@ private fun TabletSettingsScreen(
                             settingsRootContent(
                                 isTablet = true,
                                 onPlaybackClick = { openInlinePage(SettingsPage.Playback) },
+                                onPlayerClick = { openInlinePage(SettingsPage.Player) },
                                 onRandomPlayClick = { openInlinePage(SettingsPage.RandomPlay) },
                                 onDiscoverClick = { openInlinePage(SettingsPage.Discover) },
                                 onStreamsClick = { openInlinePage(SettingsPage.Streams) },
@@ -1742,6 +1816,24 @@ private fun TabletSettingsScreen(
                         tunnelingEnabled = tunnelingEnabled,
                         useLibass = useLibass,
                         libassRenderType = libassRenderType,
+                        group = PlaybackSettingsGroup.VideoAudio,
+                    )
+                    SettingsPage.Player -> playbackSettingsContent(
+                        isTablet = true,
+                        showLoadingOverlay = showLoadingOverlay,
+                        defaultPlaybackSpeed = defaultPlaybackSpeed,
+                        preferredAudioLanguage = preferredAudioLanguage,
+                        secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
+                        preferredSubtitleLanguage = preferredSubtitleLanguage,
+                        secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
+                        streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
+                        streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
+                        decoderPriority = decoderPriority,
+                        mapDV7ToHevc = mapDV7ToHevc,
+                        tunnelingEnabled = tunnelingEnabled,
+                        useLibass = useLibass,
+                        libassRenderType = libassRenderType,
+                        group = PlaybackSettingsGroup.Player,
                     )
                     SettingsPage.Discover -> discoverSettingsContent(
                         isTablet = true,
@@ -1751,10 +1843,31 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         settings = randomPlaySettingsUiState,
                     )
-                    SettingsPage.Streams -> streamsSettingsContent(
-                        isTablet = true,
-                        onOpenStreamScoring = { openInlinePage(SettingsPage.StreamScoring) },
-                    )
+                    SettingsPage.Streams -> {
+                        streamsSettingsContent(
+                            isTablet = true,
+                            onOpenStreamScoring = { openInlinePage(SettingsPage.StreamScoring) },
+                        )
+                        // Source choice moved here from the old Playback page: P2P, stream
+                        // selection and auto-play decide which stream plays, not how it plays.
+                        playbackSettingsContent(
+                            isTablet = true,
+                            showLoadingOverlay = showLoadingOverlay,
+                            defaultPlaybackSpeed = defaultPlaybackSpeed,
+                            preferredAudioLanguage = preferredAudioLanguage,
+                            secondaryPreferredAudioLanguage = secondaryPreferredAudioLanguage,
+                            preferredSubtitleLanguage = preferredSubtitleLanguage,
+                            secondaryPreferredSubtitleLanguage = secondaryPreferredSubtitleLanguage,
+                            streamReuseLastLinkEnabled = streamReuseLastLinkEnabled,
+                            streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
+                            decoderPriority = decoderPriority,
+                            mapDV7ToHevc = mapDV7ToHevc,
+                            tunnelingEnabled = tunnelingEnabled,
+                            useLibass = useLibass,
+                            libassRenderType = libassRenderType,
+                            group = PlaybackSettingsGroup.Streams,
+                        )
+                    }
                     SettingsPage.LocalLibrary -> localLibraryContent(
                         isTablet = true,
                         state = localLibraryUiState,
@@ -1942,6 +2055,7 @@ private fun TabletSettingsScreen(
                             onPageChange = ::openInlinePage,
                             onCheckForUpdatesClick = onCheckForUpdatesClick,
                             columnGuidesVisible = desktopColumnGuidesVisible,
+                            onRecentSearchClick = { settingsSearchQuery = it },
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
@@ -2030,9 +2144,14 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Screensaver,
     ),
     DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_playback),
-        icon = Icons.Rounded.PlayArrow,
+        label = stringResource(Res.string.compose_settings_page_video_audio),
+        icon = Icons.Rounded.HighQuality,
         page = SettingsPage.Playback,
+    ),
+    DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_player),
+        icon = Icons.Rounded.PlayArrow,
+        page = SettingsPage.Player,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.random_play_title),
@@ -2106,6 +2225,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.ContinueWatching -> SettingsPage.ContinueWatching
     SettingsPage.MetaScreen -> SettingsPage.MetaScreen
     SettingsPage.Playback -> SettingsPage.Playback
+    SettingsPage.Player -> SettingsPage.Player
     SettingsPage.RandomPlay -> SettingsPage.RandomPlay
     SettingsPage.Discover -> SettingsPage.Discover
     SettingsPage.Appearance -> SettingsPage.Appearance
@@ -2162,8 +2282,16 @@ private fun orderDesktopSettingsSidebarItems(
 ): List<DesktopSettingsSidebarItem> {
     if (categoryOrder.isEmpty()) return items
     val byPage = items.associateBy { it.page.name }
-    val ordered = categoryOrder.mapNotNull { byPage[it] }
-    return ordered + items.filterNot { item -> item.page.name in categoryOrder }
+    val ordered = categoryOrder.mapNotNull { byPage[it] }.toMutableList()
+    // A category the saved order has never seen (one added since) goes in after the category it
+    // follows by default, so a new page lands next to its siblings instead of at the bottom.
+    items.forEachIndexed { index, item ->
+        if (item.page.name in categoryOrder) return@forEachIndexed
+        val predecessor = items.getOrNull(index - 1)
+        val at = predecessor?.let { ordered.indexOf(it) } ?: -1
+        if (at >= 0) ordered.add(at + 1, item) else ordered.add(item)
+    }
+    return ordered
 }
 
 @Composable
@@ -2335,8 +2463,15 @@ private val DesktopSidebarSubListGuideInset = 11.dp
  * (icon 22.dp + 12.dp gap) minus the 8.dp of click padding the entries carry. */
 private val DesktopSidebarSubListTextInset = 15.dp
 
-private const val SettingsAnchorSeekStartDelayMillis = 200L
-private const val SettingsAnchorSeekFallbackStepMillis = 160L
+/**
+ * How the settings list lands on a search, favourite or sidebar target: a quick ease, in step with
+ * the rest of the app's motion. It replaces bring-into-view's own animation, a soft spring that
+ * crawled the last stretch and that Compose no longer lets a caller change.
+ */
+private val SettingsAnchorScrollSpec = tween<Float>(durationMillis = 220, easing = FastOutSlowInEasing)
+
+/** Frames a fallback heading gets to claim a request once it is on the page; see below. */
+private const val SettingsAnchorFallbackClaimFrames = 3
 
 /**
  * Carries a pending [SettingsScrollAnchor] request to a heading that lives in a lazy item which is
@@ -2344,37 +2479,52 @@ private const val SettingsAnchorSeekFallbackStepMillis = 160L
  * when it sees the request, which only works while it is composed, and most pages put one section
  * per lazy item. A sidebar section, favourite or search result below the fold was silently ignored.
  *
- * Gives an already-composed target (or its fallback, which waits 120ms) first refusal, then walks
- * the list from the top a viewport at a time; as soon as the target mounts it consumes the request
- * and its own bringIntoView lands it exactly. A request that reaches the end unconsumed (the section
- * is hidden by a condition the sidebar table could not predict) is expired and the list put back.
+ * A target already on the page handles itself. Otherwise the list walks from the top a viewport at
+ * a time until the target mounts, hidden while it does ([SettingsScrollAnchor.seeking]), so the user
+ * sees one quick scroll onto the target rather than the crawl. The walk used to wait 200ms before
+ * starting and 160ms per viewport for search results (the fallback heading's old 120ms grace):
+ * well over a second, visibly stepping, for a row a few screens down. It now moves every frame and
+ * only pauses where a fallback heading is on screen and needs a frame or two to claim the request.
+ * A request that reaches the end unconsumed (the section is hidden by a condition the sidebar table
+ * could not predict) is expired and the list put back.
  */
 @Composable
-private fun SeekSettingsAnchorIntoView(listState: LazyListState) {
+internal fun SeekSettingsAnchorIntoView(listState: LazyListState) {
     val requested by SettingsScrollAnchor.requested.collectAsStateWithLifecycle()
     LaunchedEffect(requested) {
         val request = requested ?: return@LaunchedEffect
-        delay(SettingsAnchorSeekStartDelayMillis)
         fun pending() = SettingsScrollAnchor.requested.value?.sequence == request.sequence
-        if (!pending()) return@LaunchedEffect
+        fun targetMounted() = SettingsScrollAnchor.isMounted(request.anchor) ||
+            SettingsScrollAnchor.isMounted(request.fallbackAnchor)
+        // A page that has just opened composes its first items on the next frame.
+        withFrameNanos {}
+        if (!pending() || targetMounted()) return@LaunchedEffect
         val startIndex = listState.firstVisibleItemIndex
         val startOffset = listState.firstVisibleItemScrollOffset
-        // A search result's exact row may be hidden, in which case its section heading consumes the
-        // request on its behalf - after a 120ms grace that would never elapse if the heading were
-        // scrolled out (and disposed) a frame after it mounted.
-        val settleMillis = if (request.fallbackAnchor != null) SettingsAnchorSeekFallbackStepMillis else 0L
-        listState.scrollToItem(0)
-        while (pending()) {
-            withFrameNanos {}
-            withFrameNanos {}
-            if (settleMillis > 0) delay(settleMillis)
-            if (!pending()) break
-            if (!listState.canScrollForward) {
-                SettingsScrollAnchor.expire(request.sequence)
-                listState.scrollToItem(startIndex, startOffset)
-                break
+        SettingsScrollAnchor.seeking = true
+        try {
+            listState.scrollToItem(0)
+            while (pending()) {
+                withFrameNanos {}
+                if (!pending() || SettingsScrollAnchor.isMounted(request.anchor)) break
+                if (SettingsScrollAnchor.isMounted(request.fallbackAnchor)) {
+                    // Its exact row isn't here, so the heading claims the jump after a frame; don't
+                    // scroll it away before it does.
+                    repeat(SettingsAnchorFallbackClaimFrames) { if (pending()) withFrameNanos {} }
+                    if (!pending()) break
+                }
+                if (!listState.canScrollForward) {
+                    SettingsScrollAnchor.expire(request.sequence)
+                    listState.scrollToItem(startIndex, startOffset)
+                    break
+                }
+                listState.scrollBy(listState.layoutInfo.viewportSize.height * 0.9f)
             }
-            listState.scrollBy(listState.layoutInfo.viewportSize.height * 0.8f)
+            // The target consumes the request and starts its own bring-into-view; show the list
+            // once that has begun, so what is seen is the short glide onto it.
+            repeat(2) { withFrameNanos {} }
+        } finally {
+            SettingsScrollAnchor.seeking = false
         }
     }
 }
@@ -2712,6 +2862,7 @@ private fun DesktopSettingsContextPanel(
     onPageChange: (SettingsPage) -> Unit,
     onCheckForUpdatesClick: (() -> Unit)?,
     columnGuidesVisible: Boolean,
+    onRecentSearchClick: (String) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
     val playerSettings by PlayerSettingsRepository.uiState.collectAsStateWithLifecycle()
@@ -2719,7 +2870,8 @@ private fun DesktopSettingsContextPanel(
         modifier = Modifier
             .width(DesktopSettingsContextPanelWidth)
             .fillMaxHeight(),
-        color = tokens.colors.background,
+        // Transparent so the shell's sky runs under the panel too.
+        color = Color.Transparent,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (columnGuidesVisible) {
@@ -2758,6 +2910,28 @@ private fun DesktopSettingsContextPanel(
                             favorites = favorites,
                             onPageChange = onPageChange,
                         )
+                    }
+                }
+                LaunchedEffect(Unit) { SettingsSearchHistoryRepository.ensureLoaded() }
+                val recentSearches by SettingsSearchHistoryRepository.recent.collectAsStateWithLifecycle()
+                // Only once there is something to show: an empty "no searches yet" block under the
+                // favourites would be clutter on every page.
+                if (recentSearches.isNotEmpty()) {
+                    DesktopPanelSection(title = stringResource(Res.string.settings_desktop_recent_searches)) {
+                        Column {
+                            recentSearches.forEach { recent ->
+                                val target = recent.page?.let { runCatching { SettingsPage.valueOf(it) }.getOrNull() }
+                                DesktopActionRow(
+                                    icon = Icons.Rounded.History,
+                                    title = recent.query,
+                                    subtitle = target?.let { stringResource(it.titleRes) }.orEmpty(),
+                                    // Right-click forgets it, as it unpins a favourite.
+                                    onSecondaryClick = { SettingsSearchHistoryRepository.remove(recent.query) },
+                                ) {
+                                    onRecentSearchClick(recent.query)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2975,3 +3149,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.watchPartySettingsCon
         }
     }
 }
+
+/** The list's scroll position packed into one number; see [SettingsAnchorViewport.scrollPosition]. */
+internal fun LazyListState.scrollPositionKey(): Long =
+    (firstVisibleItemIndex.toLong() shl 32) or (firstVisibleItemScrollOffset.toLong() and 0xffffffffL)

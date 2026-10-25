@@ -24,12 +24,36 @@ import com.nuvio.app.features.streams.StreamScoreProfile
 import com.nuvio.app.features.streams.StreamScoreContext
 import com.nuvio.app.features.streams.StreamScoreContexts
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
+import com.nuvio.app.features.streams.YouTubeStreamResolver
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.youtube_resolution_failed
+import org.jetbrains.compose.resources.getString
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+
+/**
+ * Resolves a stream that is only a YouTube id (upstream 94976222d) and hands the playable copy to
+ * [onResolved]. False when [stream] needs no YouTube resolve.
+ */
+internal fun PlayerScreenRuntime.resolveYouTubeForPlayer(
+    stream: StreamItem,
+    onResolved: (StreamItem) -> Unit,
+): Boolean {
+    if (stream.youTubeIdToResolve == null) return false
+    scope.launch {
+        val resolved = YouTubeStreamResolver.resolve(stream)
+        if (resolved == null) {
+            NuvioToastController.show(getString(Res.string.youtube_resolution_failed))
+            return@launch
+        }
+        onResolved(resolved)
+    }
+    return true
+}
 
 internal fun PlayerScreenRuntime.resolveDebridForPlayer(
     stream: StreamItem,
@@ -274,6 +298,11 @@ internal fun PlayerScreenRuntime.switchToSource(
     keepSourcesPanelOpen: Boolean = false,
 ) {
     if (
+        resolveYouTubeForPlayer(stream) {
+            switchToSource(it, sourceIdentityKey, resumePositionOverrideMs, keepSourcesPanelOpen)
+        }
+    ) return
+    if (
         resolveDebridForPlayer(
             stream = stream,
             season = activeSeasonNumber,
@@ -315,7 +344,8 @@ internal fun PlayerScreenRuntime.switchToSource(
     flushWatchProgress()
     stopActiveP2pStream()
     val currentVideoId = activeVideoId
-    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && currentVideoId != null) {
+    // A resolved YouTube URL expires after a few hours, so it is not kept for reuse.
+    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && currentVideoId != null && stream.ytId.isNullOrBlank()) {
         saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber, sourceIdentityKey)
     }
     activeSourceAudioUrl = null
@@ -358,6 +388,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
 ) {
     val seasonNumber = episode.playbackSeasonNumber()
     val episodeNumber = episode.playbackEpisodeNumber()
+    if (resolveYouTubeForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
     if (
         resolveDebridForPlayer(
             stream = stream,
@@ -394,7 +425,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     stopActiveP2pStream()
     val epVideoId = episode.id
     val resume = resolveEpisodeResume(epVideoId, episode)
-    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled)) {
+    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && stream.ytId.isNullOrBlank()) {
         saveDirectStreamForReuse(stream, url, epVideoId, seasonNumber, episodeNumber, sourceIdentityKey)
     }
     activeSourceAudioUrl = null
@@ -986,6 +1017,7 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
         settings = playerSettingsUiState,
         sourceAffinity = sourceAffinity,
         currentStreamBingeGroup = currentStreamBingeGroup,
+        currentStream = activeStream,
         onDownloadedEpisodeSelected = { item, episode -> switchToDownloadedEpisode(item, episode) },
         onEpisodeStreamSelected = { stream, episode -> switchToEpisodeStream(stream, episode) },
         onManualSelectionRequired = { nextVideo ->
@@ -1042,6 +1074,7 @@ internal fun PlayerScreenRuntime.autoPlaySelectedEpisode(episode: MetaVideo) {
         settings = playerSettingsUiState,
         sourceAffinity = sourceAffinity,
         currentStreamBingeGroup = currentStreamBingeGroup,
+        currentStream = activeStream,
         onDownloadedEpisodeSelected = { item, video -> switchToDownloadedEpisode(item, video) },
         onEpisodeStreamSelected = { stream, video -> switchToEpisodeStream(stream, video) },
         onManualSelectionRequired = { video ->

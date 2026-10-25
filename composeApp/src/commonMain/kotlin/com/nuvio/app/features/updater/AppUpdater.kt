@@ -433,6 +433,10 @@ class AppUpdaterController internal constructor(
         if (autoCheckStarted || !AppFeaturePolicy.inAppUpdaterEnabled || !AppUpdaterPlatform.isSupported) {
             return
         }
+        // A `gradlew run` launch carries no build stamp, so on the nightly channel it always read
+        // as a stable install and was offered the switch to nightly on every start. There is
+        // nothing to update in place there anyway; "Check for updates" still works by hand.
+        if (AppVersionPolicy.isDevelopmentRun) return
         autoCheckStarted = true
         checkForUpdates(force = false, showNoUpdateFeedback = false)
     }

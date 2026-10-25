@@ -429,16 +429,18 @@ object FolderDetailRepository {
     }
 
     private fun updateTab(index: Int, transform: (FolderTab) -> FolderTab) {
-        val current = _uiState.value
-        val updatedTabs = current.tabs.toMutableList()
-        if (index !in updatedTabs.indices) return
-        updatedTabs[index] = transform(updatedTabs[index])
+        // Tabs load in parallel; update atomically so one tab's result can't overwrite another's.
+        _uiState.update { current ->
+            val updatedTabs = current.tabs.toMutableList()
+            if (index !in updatedTabs.indices) return@update current
+            updatedTabs[index] = transform(updatedTabs[index])
 
-        val allDone = updatedTabs.none { !it.isAllTab && it.isLoading }
-        _uiState.value = current.copy(
-            tabs = updatedTabs,
-            isLoading = !allDone,
-        )
+            val allDone = updatedTabs.none { !it.isAllTab && it.isLoading }
+            current.copy(
+                tabs = updatedTabs,
+                isLoading = !allDone,
+            )
+        }
     }
 
     private fun loadTabPage(index: Int, reset: Boolean): Job? {
@@ -588,8 +590,13 @@ object FolderDetailRepository {
     }
 
     private fun rebuildAllTab() {
-        val current = _uiState.value
-        if (!current.showAllTab) return
+        // Atomic for the same reason as updateTab: a stale copy would undo a tab that just loaded.
+        _uiState.update { current -> current.withRebuiltAllTab() }
+    }
+
+    private fun FolderDetailUiState.withRebuiltAllTab(): FolderDetailUiState {
+        val current = this
+        if (!current.showAllTab) return current
         val sourceTabs = current.tabs.filter { !it.isAllTab }
 
         // Round-robin merge
@@ -623,7 +630,7 @@ object FolderDetailRepository {
                 error = errorMessage.takeIf { merged.isEmpty() },
             )
         }
-        _uiState.value = current.copy(tabs = updatedTabs)
+        return current.copy(tabs = updatedTabs)
     }
 
     fun getCatalogSectionsForRows(): List<HomeCatalogSection> {

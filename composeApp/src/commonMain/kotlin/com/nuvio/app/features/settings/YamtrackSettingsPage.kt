@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -120,6 +121,8 @@ private fun YamtrackConnectionRows(
             onSave = YamtrackSettingsRepository::setBaseUrl,
         )
         SettingsGroupDivider(isTablet = isTablet)
+        // The connection test belongs to the token: its result replaces "Configured" under the
+        // title and the button sits in the row's control column.
         SettingsTextInputRow(
             title = stringResource(Res.string.settings_yamtrack_token_title),
             description = stringResource(Res.string.settings_yamtrack_token_description),
@@ -127,44 +130,31 @@ private fun YamtrackConnectionRows(
             placeholder = stringResource(Res.string.settings_yamtrack_token_label),
             secret = true,
             isTablet = isTablet,
+            summaryOverride = settings.connectionState.describe().takeIf { settings.hasCredentials },
+            rowTrailingContent = {
+                SettingsGlassButton(
+                    text = stringResource(Res.string.settings_yamtrack_test_connection),
+                    onClick = {
+                        scope.launch {
+                            YamtrackTrackingAuthProvider.testConnection(
+                                baseUrl = settings.baseUrl,
+                                apiToken = settings.apiToken,
+                            )
+                        }
+                    },
+                    enabled = settings.hasCredentials,
+                    accent = true,
+                    loading = settings.connectionState is YamtrackConnectionState.Testing,
+                )
+            },
             onSave = YamtrackSettingsRepository::setApiToken,
         )
-
-        Column(
-            modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (isInsecureRemoteBaseUrl(settings.baseUrl)) {
-                Text(
-                    text = stringResource(Res.string.settings_yamtrack_insecure_warning),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-
-            Text(
-                text = settings.connectionState.describe(),
-                style = MaterialTheme.typography.bodySmall,
-                color = when (settings.connectionState) {
-                    is YamtrackConnectionState.Unauthorized,
-                    is YamtrackConnectionState.Unreachable,
-                    -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
+        if (isInsecureRemoteBaseUrl(settings.baseUrl)) {
+            SettingsGroupDivider(isTablet = isTablet)
+            SettingsSectionNote(
+                text = stringResource(Res.string.settings_yamtrack_insecure_warning),
+                isTablet = isTablet,
             )
-
-            Button(
-                onClick = {
-                    scope.launch {
-                        YamtrackTrackingAuthProvider.testConnection(
-                            baseUrl = settings.baseUrl,
-                            apiToken = settings.apiToken,
-                        )
-                    }
-                },
-                enabled = settings.hasCredentials &&
-                    settings.connectionState !is YamtrackConnectionState.Testing,
-            ) { Text(stringResource(Res.string.settings_yamtrack_test_connection)) }
         }
     }
 }

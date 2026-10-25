@@ -597,18 +597,15 @@ internal fun LazyListScope.homescreenSettingsContent(
                         onClick = HomeCatalogSettingsRepository::resetToDefaults,
                     )
                 },
+                subtitle = stringResource(
+                    Res.string.settings_homescreen_summary,
+                    enabledCatalogCount,
+                    items.size,
+                    selectedHeroSourceCount,
+                ),
             ) {
                 val hapticFeedback = LocalHapticFeedback.current
                 val pinToMoveToast = stringResource(Res.string.settings_homescreen_pin_to_move_toast)
-                SettingsSectionNote(
-                    text = stringResource(
-                        Res.string.settings_homescreen_summary,
-                        enabledCatalogCount,
-                        items.size,
-                        selectedHeroSourceCount,
-                    ),
-                    isTablet = isTablet,
-                )
 
                 HomescreenCatalogList(
                     isTablet = isTablet,
@@ -691,7 +688,7 @@ private fun AdaptiveHeroVerticalBiasRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = 8.dp)
+            .padding(horizontal = horizontalPadding, vertical = if (isTablet) DesktopRowVerticalPadding else 8.dp)
             .alpha(if (enabled) 1f else 0.55f),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -710,12 +707,10 @@ private fun AdaptiveHeroVerticalBiasRow(
                 isTablet = isTablet,
             )
         }
-        Column(
-            modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            modifier = Modifier.width(if (isTablet) DesktopControlWidth else 220.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ValueBox(text = sliderValue.formatAdaptiveHeroVerticalBias())
             SettingsModernSlider(
                 value = sliderValue,
                 onValueChange = { if (enabled) sliderValue = it },
@@ -724,7 +719,8 @@ private fun AdaptiveHeroVerticalBiasRow(
                 },
                 enabled = enabled,
                 valueRange = -1f..1f,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
+                valueLabel = sliderValue.formatAdaptiveHeroVerticalBias(),
             )
         }
     }
@@ -751,7 +747,7 @@ private fun AdaptiveHeroHeightRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = if (isTablet) DesktopRowVerticalPadding else 8.dp)
             .alpha(if (enabled) 1f else 0.55f),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -770,12 +766,10 @@ private fun AdaptiveHeroHeightRow(
                 isTablet = isTablet,
             )
         }
-        Column(
-            modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            modifier = Modifier.width(if (isTablet) DesktopControlWidth else 220.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ValueBox(text = sliderValue.formatAdaptiveHeroHeight())
             SettingsModernSlider(
                 value = sliderValue,
                 onValueChange = { if (enabled) sliderValue = it },
@@ -784,7 +778,8 @@ private fun AdaptiveHeroHeightRow(
                 },
                 enabled = enabled,
                 valueRange = 0.5f..1.75f,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
+                valueLabel = sliderValue.formatAdaptiveHeroHeight(),
             )
         }
     }

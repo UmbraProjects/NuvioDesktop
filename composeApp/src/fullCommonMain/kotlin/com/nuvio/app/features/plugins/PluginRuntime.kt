@@ -10,6 +10,9 @@ import com.fleeksoft.ksoup.nodes.Document
 import com.fleeksoft.ksoup.nodes.Element
 import com.fleeksoft.ksoup.select.Elements
 import com.nuvio.app.features.addons.httpRequestRaw
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.util.Base64
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -410,8 +413,9 @@ internal object PluginRuntime {
             val url = args.getOrNull(0)?.toString() ?: ""
             val method = args.getOrNull(1)?.toString() ?: "GET"
             val headersJson = args.getOrNull(2)?.toString() ?: "{}"
-            val body = args.getOrNull(3)?.toString() ?: ""
-            val followRedirects = args.getOrNull(4) as? Boolean ?: true
+            val bodyKind = args.getOrNull(3)?.toString() ?: "none"
+            val body = args.getOrNull(4)?.toString() ?: ""
+            val followRedirects = args.getOrNull(5) as? Boolean ?: true
             val host = PluginHostFailureCache.hostOf(url)
             val cachedFailure = host?.let(PluginHostFailureCache::recentFailure)
             if (cachedFailure != null) {
@@ -421,7 +425,7 @@ internal object PluginRuntime {
                 return@asyncFunction failedFetchResult(url, "Host unreachable ($cachedFailure)")
             }
             try {
-                performNativeFetch(url, method, headersJson, body, followRedirects)
+                performNativeFetch(url, method, headersJson, bodyKind, body, followRedirects)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Throwable) {
@@ -669,6 +673,7 @@ internal object PluginRuntime {
         url: String,
         method: String,
         headersJson: String,
+        bodyKind: String,
         body: String,
         followRedirects: Boolean,
     ): String {
@@ -681,10 +686,12 @@ internal object PluginRuntime {
             method = method,
             url = url,
             headers = headers,
-            body = body,
+            body = if (bodyKind == "text") body else "",
             followRedirects = followRedirects,
             callTimeoutMs = PLUGIN_FETCH_CALL_TIMEOUT_MS,
             connectTimeoutMs = PLUGIN_FETCH_CONNECT_TIMEOUT_MS,
+            requestBodyBytes = if (bodyKind == "base64") Base64.getDecoder().decode(body) else null,
+            keepResponseBytes = true,
         )
 
         val truncated = response.body.length > MAX_FETCH_BODY_CHARS
@@ -700,8 +707,37 @@ internal object PluginRuntime {
                 "body" to JsonPrimitive(truncateString(response.body, MAX_FETCH_BODY_CHARS)),
                 "headers" to JsonObject(responseHeaders.mapValues { JsonPrimitive(it.value) }),
                 "truncated" to JsonPrimitive(truncated),
-            ),
+            ) + binaryBodyField(response.bodyBytes, responseHeaders["content-type"]),
         ).toString()
+    }
+
+    /**
+     * The undecoded body for `Response.arrayBuffer()`, only when the text cannot stand in for it.
+     *
+     * Upstream ships every body twice (text and base64). Most plugin traffic is UTF-8 HTML and JSON,
+     * for which `arrayBuffer()` can re-encode the text exactly, so that would double every page a
+     * scraper reads for nothing. Bytes cross the bridge only when the body is not valid UTF-8 or
+     * was decoded with another charset, which is exactly when the text has lost information.
+     */
+    private fun binaryBodyField(bytes: ByteArray?, contentType: String?): Map<String, JsonPrimitive> {
+        if (bytes == null || bytes.isEmpty()) return emptyMap()
+        val declared = contentType
+            ?.split(';')
+            ?.drop(1)
+            ?.map { it.trim() }
+            ?.firstOrNull { it.startsWith("charset=", ignoreCase = true) }
+            ?.substringAfter('=')
+            ?.trim('"', ' ')
+        val isUtf8Text = (declared == null || declared.equals("utf-8", ignoreCase = true) || declared.equals("utf8", ignoreCase = true)) &&
+            runCatching {
+                Charsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+            }.isSuccess
+        if (isUtf8Text) return emptyMap()
+        val capped = if (bytes.size > MAX_FETCH_BODY_CHARS) bytes.copyOf(MAX_FETCH_BODY_CHARS) else bytes
+        return mapOf("bodyBase64" to JsonPrimitive(Base64.getEncoder().encodeToString(capped)))
     }
 
     private fun parseHeaders(headersJson: String): Map<String, String> {
@@ -925,13 +961,79 @@ internal object PluginRuntime {
                 globalThis.console = textConsole;
             })();
 
+            // Binary request and response bodies (upstream 12621c654). A string body is sent as text;
+            // an ArrayBuffer or typed array crosses the bridge as base64 and is sent verbatim. The
+            // host returns `bodyBase64` only when the text cannot be re-encoded to the same bytes.
+            var __b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+            function __fetch_bytes_to_base64(bytes) {
+                var out = '';
+                for (var i = 0; i < bytes.length; i += 3) {
+                    var a = bytes[i];
+                    var hasB = i + 1 < bytes.length;
+                    var hasC = i + 2 < bytes.length;
+                    var b = hasB ? bytes[i + 1] : 0;
+                    var c = hasC ? bytes[i + 2] : 0;
+                    out += __b64chars.charAt(a >> 2);
+                    out += __b64chars.charAt(((a & 3) << 4) | (b >> 4));
+                    out += hasB ? __b64chars.charAt(((b & 15) << 2) | (c >> 6)) : '=';
+                    out += hasC ? __b64chars.charAt(c & 63) : '=';
+                }
+                return out;
+            }
+            function __fetch_base64_to_bytes(value) {
+                var clean = String(value || '').replace(/[^A-Za-z0-9+/]/g, '');
+                var bytes = new Uint8Array(Math.floor(clean.length * 3 / 4));
+                var j = 0;
+                for (var i = 0; i < clean.length; i += 4) {
+                    var n = (__b64chars.indexOf(clean.charAt(i)) << 18) |
+                        (__b64chars.indexOf(clean.charAt(i + 1)) << 12) |
+                        ((i + 2 < clean.length ? __b64chars.indexOf(clean.charAt(i + 2)) : 0) << 6) |
+                        (i + 3 < clean.length ? __b64chars.indexOf(clean.charAt(i + 3)) : 0);
+                    if (j < bytes.length) bytes[j++] = (n >> 16) & 255;
+                    if (j < bytes.length) bytes[j++] = (n >> 8) & 255;
+                    if (j < bytes.length) bytes[j++] = n & 255;
+                }
+                return bytes;
+            }
+            function __fetch_utf8_bytes(text) {
+                var out = [];
+                for (var i = 0; i < text.length; i++) {
+                    var c = text.charCodeAt(i);
+                    if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) {
+                        var low = text.charCodeAt(i + 1);
+                        if (low >= 0xdc00 && low <= 0xdfff) {
+                            c = 0x10000 + ((c - 0xd800) << 10) + (low - 0xdc00);
+                            i++;
+                        }
+                    }
+                    if (c < 0x80) out.push(c);
+                    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+                    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+                    else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+                }
+                return new Uint8Array(out);
+            }
+            function __normalize_fetch_body(body) {
+                if (body === undefined || body === null) return { kind: 'none', value: '' };
+                if (typeof body === 'string') return { kind: 'text', value: body };
+                var bytes = null;
+                if (typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer) {
+                    bytes = new Uint8Array(body);
+                } else if (typeof ArrayBuffer !== 'undefined' &&
+                           typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(body)) {
+                    bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+                }
+                if (bytes !== null) return { kind: 'base64', value: __fetch_bytes_to_base64(bytes) };
+                return { kind: 'text', value: String(body) };
+            }
+
             var fetch = async function(url, options) {
                 options = options || {};
                 var method = (options.method || 'GET').toUpperCase();
                 var headers = options.headers || {};
-                var body = options.body || '';
+                var body = __normalize_fetch_body(options.body);
                 var followRedirects = options.redirect !== 'manual';
-                var result = await __native_fetch(url, method, JSON.stringify(headers), body, followRedirects);
+                var result = await __native_fetch(url, method, JSON.stringify(headers), body.kind, body.value, followRedirects);
                 var parsed = JSON.parse(result);
                 return {
                     ok: parsed.ok,
@@ -942,6 +1044,12 @@ internal object PluginRuntime {
                         get: function(name) {
                             return parsed.headers[name.toLowerCase()] || null;
                         }
+                    },
+                    arrayBuffer: function() {
+                        var bytes = typeof parsed.bodyBase64 === 'string'
+                            ? __fetch_base64_to_bytes(parsed.bodyBase64)
+                            : __fetch_utf8_bytes(parsed.body || '');
+                        return Promise.resolve(bytes.buffer);
                     },
                     text: function() { return Promise.resolve(parsed.body); },
                     json: function() {

@@ -49,7 +49,6 @@ import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktBrandAsset
 import com.nuvio.app.features.trakt.TraktAuthUiState
 import com.nuvio.app.features.trakt.TraktConnectionMode
-import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.TraktSettingsUiState
 import com.nuvio.app.features.trakt.WatchProgressSource
@@ -82,6 +81,7 @@ import nuvio.composeapp.generated.resources.trakt_more_like_this_source_dialog_t
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_subtitle
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_title
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_tmdb
+import nuvio.composeapp.generated.resources.trakt_more_like_this_source_simkl
 import nuvio.composeapp.generated.resources.trakt_more_like_this_source_trakt
 import nuvio.composeapp.generated.resources.trakt_watch_progress_dialog_subtitle
 import nuvio.composeapp.generated.resources.trakt_watch_progress_dialog_title
@@ -156,10 +156,7 @@ private fun TraktFeatureRows(
     commentsEnabled: Boolean,
     onCommentsEnabledChange: (Boolean) -> Unit,
 ) {
-    var showMoreLikeThisSourceDialog by rememberSaveable { mutableStateOf(false) }
-
     val watchProgressValue = watchProgressSourceLabel(settingsUiState.watchProgressSource)
-    val moreLikeThisSourceValue = moreLikeThisSourceLabel(settingsUiState.moreLikeThisSource)
     val traktProgressSelectedMessage = stringResource(Res.string.trakt_watch_progress_trakt_selected)
     val nuvioProgressSelectedMessage = stringResource(Res.string.trakt_watch_progress_nuvio_selected)
 
@@ -171,25 +168,7 @@ private fun TraktFeatureRows(
         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("trakt-comments")),
         onCheckedChange = onCommentsEnabledChange,
     )
-    SettingsGroupDivider(isTablet = isTablet)
-    TraktSettingsActionRow(
-        title = stringResource(Res.string.trakt_more_like_this_source_title),
-        description = stringResource(Res.string.trakt_more_like_this_source_subtitle),
-        value = moreLikeThisSourceValue,
-        isTablet = isTablet,
-        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("trakt-more-like-this-source")),
-        onClick = { showMoreLikeThisSourceDialog = true },
-    )
-    if (showMoreLikeThisSourceDialog) {
-        MoreLikeThisSourceDialog(
-            selectedSource = settingsUiState.moreLikeThisSource,
-            onSourceSelected = { source ->
-                TraktSettingsRepository.setMoreLikeThisSource(source)
-                showMoreLikeThisSourceDialog = false
-            },
-            onDismiss = { showMoreLikeThisSourceDialog = false },
-        )
-    }
+    // More Like This is not Trakt-specific; it is configured under Integrations.
 }
 
 @Composable
@@ -250,13 +229,6 @@ private fun watchProgressSourceLabel(source: WatchProgressSource): String =
     }
 
 @Composable
-private fun moreLikeThisSourceLabel(source: MoreLikeThisSourcePreference): String =
-    when (source) {
-        MoreLikeThisSourcePreference.TRAKT -> stringResource(Res.string.trakt_more_like_this_source_trakt)
-        MoreLikeThisSourcePreference.TMDB -> stringResource(Res.string.trakt_more_like_this_source_tmdb)
-    }
-
-@Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun WatchProgressSourceDialog(
     selectedSource: WatchProgressSource,
@@ -288,55 +260,6 @@ private fun WatchProgressSourceDialog(
                     listOf(WatchProgressSource.TRAKT, WatchProgressSource.NUVIO_SYNC).forEach { source ->
                         TraktDialogOption(
                             label = watchProgressSourceLabel(source),
-                            selected = source == selectedSource,
-                            onClick = { onSourceSelected(source) },
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = stringResource(Res.string.settings_playback_dialog_close),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun MoreLikeThisSourceDialog(
-    selectedSource: MoreLikeThisSourcePreference,
-    onSourceSelected: (MoreLikeThisSourcePreference) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    BasicAlertDialog(onDismissRequest = onDismiss) {
-        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(Res.string.trakt_more_like_this_source_dialog_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(Res.string.trakt_more_like_this_source_dialog_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    listOf(MoreLikeThisSourcePreference.TRAKT, MoreLikeThisSourcePreference.TMDB).forEach { source ->
-                        TraktDialogOption(
-                            label = moreLikeThisSourceLabel(source),
                             selected = source == selectedSource,
                             onClick = { onSourceSelected(source) },
                         )
@@ -459,26 +382,25 @@ private fun TraktCredentialsCard(
             placeholder = stringResource(Res.string.settings_trakt_client_id),
             summarizeAsConfigured = true,
             isTablet = isTablet,
+            // Clear sits in the row's control column rather than on a line of its own.
+            rowTrailingContent = if (settingsUiState.traktClientId.isNotBlank()) {
+                {
+                    SettingsGlassButton(
+                        text = stringResource(Res.string.settings_trakt_credentials_clear),
+                        onClick = {
+                            TraktSettingsRepository.clearCredentials()
+                            TraktAuthRepository.onCredentialsChanged()
+                        },
+                    )
+                }
+            } else {
+                null
+            },
             onSave = { value ->
                 TraktSettingsRepository.setClientId(value)
                 TraktAuthRepository.onCredentialsChanged()
             },
         )
-        if (settingsUiState.traktClientId.isNotBlank()) {
-            Button(
-                modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 8.dp),
-                onClick = {
-                    TraktSettingsRepository.clearCredentials()
-                    TraktAuthRepository.onCredentialsChanged()
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-            ) {
-                Text(stringResource(Res.string.settings_trakt_credentials_clear))
-            }
-        }
     }
 }
 
@@ -487,115 +409,66 @@ private fun TraktConnectionCard(
     isTablet: Boolean,
     uiState: TraktAuthUiState,
 ) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
-    val verticalPadding = if (isTablet) 18.dp else 16.dp
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    // One settings row: the account state as its title and description, and the action in the
+    // control column, where every other row keeps its switch or dropdown.
+    val connected = uiState.mode == TraktConnectionMode.CONNECTED
+    val error = uiState.errorMessage?.takeIf { it.isNotBlank() }
+    val baseDescription = when {
+        connected && uiState.needsReconnect ->
+            "Trakt is no longer accepting this connection. Connections made before " +
+                "Trakt's October 2026 sign-in change, or removed from your Trakt Connected " +
+                "Apps, need one fresh sign-in. Your lists and history are kept."
+        connected -> stringResource(Res.string.settings_trakt_save_actions_description)
+        !uiState.credentialsConfigured -> stringResource(Res.string.settings_trakt_missing_credentials)
+        else -> stringResource(Res.string.settings_trakt_sign_in_description)
+    }
+    val description = listOfNotNull(
+        baseDescription,
+        uiState.statusMessage?.takeIf { it.isNotBlank() },
+        error,
+    ).joinToString(" ")
+    SettingsActionRow(
+        title = if (connected) {
+            stringResource(
+                Res.string.settings_trakt_connected_as,
+                uiState.username ?: stringResource(Res.string.settings_trakt_default_user),
+            )
+        } else {
+            // Literal string: newly added resource keys do not always resolve (see build notes).
+            "Not connected"
+        },
+        description = description,
+        descriptionColor = if (error != null || (connected && uiState.needsReconnect) ||
+            (!connected && !uiState.credentialsConfigured)
+        ) {
+            MaterialTheme.colorScheme.error
+        } else {
+            null
+        },
+        isTablet = isTablet,
     ) {
-        when (uiState.mode) {
-            TraktConnectionMode.CONNECTED -> {
-                Text(
-                    text = stringResource(
-                        Res.string.settings_trakt_connected_as,
-                        uiState.username ?: stringResource(Res.string.settings_trakt_default_user),
-                    ),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium,
-                )
-                if (uiState.needsReconnect) {
-                    Text(
-                        text = "Trakt is no longer accepting this connection. Connections made before " +
-                            "Trakt's October 2026 sign-in change, or removed from your Trakt Connected " +
-                            "Apps, need one fresh sign-in. Your lists and history are kept.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    Text(
-                        text = stringResource(Res.string.settings_trakt_save_actions_description),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (uiState.needsReconnect) {
-                        Button(
-                            onClick = { TraktAuthRepository.onConnectRequested() },
-                            enabled = uiState.credentialsConfigured && !uiState.isLoading,
-                        ) {
-                            Text("Reconnect")
-                        }
-                    }
-                    Button(
-                        onClick = { TraktAuthRepository.onDisconnectRequested() },
-                        enabled = !uiState.isLoading,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                    ) {
-                        Text(stringResource(Res.string.settings_trakt_disconnect))
-                    }
-                    if (uiState.isLoading) {
-                        CircularProgressIndicator(
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
-            }
-
-            TraktConnectionMode.AWAITING_APPROVAL,
-            TraktConnectionMode.DISCONNECTED -> {
-                Text(
-                    text = stringResource(Res.string.settings_trakt_sign_in_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Button(
+        if (connected) {
+            if (uiState.needsReconnect) {
+                SettingsGlassButton(
+                    text = "Reconnect",
                     onClick = { TraktAuthRepository.onConnectRequested() },
                     enabled = uiState.credentialsConfigured && !uiState.isLoading,
-                ) {
-                    if (uiState.isLoading) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    } else {
-                        Text(stringResource(Res.string.settings_trakt_connect))
-                    }
-                }
-                if (!uiState.credentialsConfigured) {
-                    Text(
-                        text = stringResource(Res.string.settings_trakt_missing_credentials),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                    accent = true,
+                )
             }
-        }
-
-        uiState.statusMessage?.takeIf { it.isNotBlank() }?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            SettingsGlassButton(
+                text = stringResource(Res.string.settings_trakt_disconnect),
+                onClick = { TraktAuthRepository.onDisconnectRequested() },
+                enabled = !uiState.isLoading,
+                loading = uiState.isLoading,
             )
-        }
-        uiState.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+        } else {
+            SettingsGlassButton(
+                text = stringResource(Res.string.settings_trakt_connect),
+                onClick = { TraktAuthRepository.onConnectRequested() },
+                enabled = uiState.credentialsConfigured && !uiState.isLoading,
+                accent = true,
+                loading = uiState.isLoading,
             )
         }
     }

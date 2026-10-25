@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import nuvio.composeapp.generated.resources.settings_qualicache_public_instance
+import nuvio.composeapp.generated.resources.settings_qualicache_public_instance_key
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -212,6 +214,10 @@ private fun QualiCacheBaseUrlRow(
         keyboardType = KeyboardType.Uri,
         normalize = ::normalizeBaseUrl,
         isTablet = isTablet,
+        suggestedValue = SettingsSuggestedValue(
+            label = stringResource(Res.string.settings_qualicache_public_instance),
+            value = QUALICACHE_PUBLIC_BASE_URL,
+        ),
         onSave = onCommitted,
     )
 }
@@ -229,6 +235,10 @@ private fun QualiCacheAccessKeyRow(
         placeholder = stringResource(Res.string.settings_qualicache_access_key),
         isTablet = isTablet,
         secret = true,
+        suggestedValue = SettingsSuggestedValue(
+            label = stringResource(Res.string.settings_qualicache_public_instance_key),
+            value = QUALICACHE_PUBLIC_ACCESS_KEY,
+        ),
         onSave = onCommitted,
     )
 }
@@ -250,3 +260,8 @@ private fun QualiCacheInfoRow(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
+
+// The public instance the descriptions point people at; offered in the editors so they can be
+// copied or filled in rather than retyped from a description that can't be selected.
+private const val QUALICACHE_PUBLIC_BASE_URL = "https://quality.myaio.xyz"
+private const val QUALICACHE_PUBLIC_ACCESS_KEY = "HN7Aj1Z4CV95k0ZxJJ583nmU"

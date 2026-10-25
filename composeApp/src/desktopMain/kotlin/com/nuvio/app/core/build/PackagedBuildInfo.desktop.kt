@@ -15,6 +15,19 @@ import java.util.Properties
 internal object PackagedBuildInfo {
     val current: PackagedBuild? by lazy { read() }
 
+    /**
+     * A `gradlew run` launch: the code is loaded from the build's own output - its classes
+     * directory or the module jar in build/libs - rather than from an app image. An installed or
+     * packaged image (even one unpacked inside build/compose) loads from its own app/ folder, and a
+     * native image has no code source at all, so neither is mistaken for one.
+     */
+    val isDevelopmentRun: Boolean by lazy {
+        val source = runCatching {
+            PackagedBuildInfo::class.java.protectionDomain?.codeSource?.location?.toURI()?.let(::File)
+        }.getOrNull() ?: return@lazy false
+        source.isDirectory || source.parentFile?.let { it.name == "libs" && it.parentFile?.name == "build" } == true
+    }
+
     private fun read(): PackagedBuild? {
         val file = locate() ?: return null
         val props = runCatching {

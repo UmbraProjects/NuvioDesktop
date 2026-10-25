@@ -5,4 +5,5 @@ actual object AppVersionPolicy {
     actual val displayVersionCode: Int = AppVersionConfig.DESKTOP_VERSION_CODE
     actual val basedOnVersionName: String? = AppVersionConfig.VERSION_NAME.takeIf { it != displayVersionName }
     actual val packagedBuild: PackagedBuild? get() = PackagedBuildInfo.current
+    actual val isDevelopmentRun: Boolean get() = PackagedBuildInfo.isDevelopmentRun
 }

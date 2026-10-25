@@ -1,5 +1,12 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.nuvio.app.isDesktop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +47,27 @@ fun NuvioModalBottomSheet(
     showDragHandle: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (isDesktop) {
+        // A sheet dragged up from the bottom edge is a touch idiom; with a mouse it reads as a
+        // phone screen. On desktop the same content opens as a centred glass modal, the way every
+        // other popup here does. Dismissal still runs through onDismissRequest (scrim click, Esc),
+        // and dismissNuvioBottomSheet skips the hide animation for a sheet that was never shown.
+        Dialog(
+            onDismissRequest = onDismissRequest,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            NuvioDialogSurface(modifier = modifier.widthIn(max = DesktopSheetMaxWidth)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = DesktopSheetMaxHeight)
+                        .padding(vertical = NuvioTokens.Space.s8),
+                    content = content,
+                )
+            }
+        }
+        return
+    }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
@@ -132,3 +160,6 @@ private fun NuvioBottomSheetDragHandle() {
             .background(tokens.colors.borderDefault),
     )
 }
+
+private val DesktopSheetMaxWidth = 560.dp
+private val DesktopSheetMaxHeight = 640.dp

@@ -4,7 +4,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,18 +15,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 internal const val SettingsScrollAnchorHighlightMillis = 5000L
-private const val SettingsScrollAnchorFallbackDelayMillis = 120L
 
 /**
  * Lets a deep-link (e.g. from the Fork Enhancements overview, the settings search, or a pinned
@@ -49,6 +54,7 @@ internal object SettingsScrollAnchor {
     const val TrailerFullscreen = "trailer_fullscreen"
     const val TrailerSearch = "trailer_search"
     const val HdrMode = "hdr_mode"
+    const val InverseToneMapping = "inverse_tone_mapping"
     const val ColorProfile = "color_profile"
     const val DesktopRenderer = "desktop_renderer"
     const val MouseMove = "mouse_move"
@@ -123,6 +129,34 @@ internal object SettingsScrollAnchor {
         if (_requested.value?.sequence == sequence) _requested.value = null
     }
 
+    // Which anchors are composed right now, so a jump can tell at once whether its target is on
+    // the page instead of waiting out timers for it to answer. UI thread only.
+    //
+    // "On the page" means placed where the list is now, not merely composed: a lazy list can hold
+    // a section composed off-screen after a jump carried it away, and that section still reports
+    // the position it last had. Each anchor registers a check that answers for its own element.
+    private val mounted = HashMap<String, MutableList<() -> Boolean>>()
+
+    internal fun markMounted(anchor: String, onPage: () -> Boolean) {
+        mounted.getOrPut(anchor) { mutableListOf() }.add(onPage)
+    }
+
+    internal fun markUnmounted(anchor: String, onPage: () -> Boolean) {
+        val checks = mounted[anchor] ?: return
+        checks.remove(onPage)
+        if (checks.isEmpty()) mounted.remove(anchor)
+    }
+
+    internal fun isMounted(anchor: String?): Boolean =
+        anchor != null && mounted[anchor]?.any { it() } == true
+
+    /**
+     * True while the settings list walks itself to an anchor that is not composed yet. The list is
+     * hidden for those few frames, so the jump reads as one quick move rather than a visible
+     * page-by-page crawl.
+     */
+    internal var seeking by mutableStateOf(false)
+
     fun highlightTitle(title: String) {
         _titleHighlight.value = TitleHighlight(title, ++titleHighlightSequence)
     }
@@ -156,7 +190,48 @@ internal object SettingsScrollAnchor {
 internal class SettingsAnchorViewport(
     val size: State<IntSize>,
     val topInset: Dp,
+    /** Scrolls the list by a pixel delta with the settings jump's own quick ease. */
+    private val scrollBy: (suspend (Float) -> Unit)? = null,
+    /**
+     * The list's own scope, which the landing scroll runs in. Not the anchor's: a heading that a
+     * lazy list still holds composed off-screen (above a jump that went further down) is let go as
+     * soon as the list starts moving, and a scroll running in that heading's effect was cancelled
+     * with it, so the jump back to it did nothing.
+     */
+    private val scope: CoroutineScope? = null,
+    /**
+     * The list's scroll position as one number. An anchor stamps it each time it is placed; one
+     * whose stamp is out of date was not placed in the current layout (see markMounted).
+     */
+    val scrollPosition: () -> Long = { 0L },
 ) {
+    /** The list's layout, set as it is placed; what an anchor measures itself against. */
+    var coordinates: LayoutCoordinates? = null
+
+    /**
+     * Moves [element] into view with [scrollBy]: to the top (less [topInset]) when [alignToTop],
+     * otherwise just far enough. False when it cannot (no scroller, or either layout detached), for
+     * the caller to fall back to plain bring-into-view.
+     */
+    suspend fun scrollIntoView(element: LayoutCoordinates?, alignToTop: Boolean, density: Density): Boolean {
+        val scroll = scrollBy ?: return false
+        val list = coordinates?.takeIf { it.isAttached } ?: return false
+        val target = element?.takeIf { it.isAttached } ?: return false
+        val bounds = list.localBoundingBoxOf(target, clipBounds = false)
+        val inset = with(density) { topInset.toPx() }
+        val viewportHeight = list.size.height.toFloat()
+        val delta = when {
+            alignToTop || bounds.top < inset -> bounds.top - inset
+            bounds.bottom > viewportHeight -> minOf(bounds.bottom - viewportHeight + inset, bounds.top - inset)
+            else -> 0f
+        }
+        if (delta != 0f) {
+            val listScope = scope
+            if (listScope != null) listScope.launch { scroll(delta) } else scroll(delta)
+        }
+        return true
+    }
+
     /**
      * A viewport-tall rect hung from the element's top edge (less [topInset]). Bringing it into
      * view scrolls the element to the top of the viewport whichever side of it the element starts
@@ -196,22 +271,44 @@ internal fun rememberSettingsAnchorHighlight(
     alignToTop: Boolean = false,
 ): SettingsAnchorHighlight {
     val requester = remember { BringIntoViewRequester() }
-    val viewport = if (alignToTop) LocalSettingsAnchorViewport.current else null
+    val viewport = LocalSettingsAnchorViewport.current
+    // Where this element sits, for the viewport's own scroll. Not state: read only when landing.
+    val placement = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val density = LocalDensity.current
     val requested by SettingsScrollAnchor.requested.collectAsStateWithLifecycle()
     // Bump a local token (and consume the request) without keying the highlight timer on the
     // shared flow — otherwise consuming would cancel the in-flight highlight.
     var highlightToken by remember { mutableStateOf(0) }
     var highlighted by remember { mutableStateOf(false) }
+    // The list position this element was last placed at; see SettingsScrollAnchor.markMounted.
+    val placedAt = remember { longArrayOf(Long.MIN_VALUE) }
+    val onPage = remember(viewport) {
+        {
+            placement[0]?.isAttached == true &&
+                (viewport == null || placedAt[0] == viewport.scrollPosition())
+        }
+    }
+    DisposableEffect(anchor, onPage) {
+        if (anchor.isNotEmpty()) SettingsScrollAnchor.markMounted(anchor, onPage)
+        onDispose { if (anchor.isNotEmpty()) SettingsScrollAnchor.markUnmounted(anchor, onPage) }
+    }
     LaunchedEffect(requested) {
         val request = requested ?: return@LaunchedEffect
         if (request.anchor == anchor) {
+            // Composed but off-screen: leave the request for the seek, which walks the list until
+            // this element is placed again and it can claim the jump with a true position. One
+            // frame first, for an element that has only just been composed.
+            if (!onPage()) withFrameNanos {}
+            if (!onPage()) return@LaunchedEffect
             if (!SettingsScrollAnchor.consume(anchor, request.sequence)) return@LaunchedEffect
             highlightToken++
         } else if (request.fallbackAnchor == anchor) {
-            // Give the exact destination a frame to mount and consume the request. If it is
-            // conditionally hidden (or not anchored yet), the nearest visible fallback takes over.
-            delay(SettingsScrollAnchorFallbackDelayMillis)
+            // Give the exact destination a frame to mount and consume the request. If it is not
+            // on the page (conditionally hidden, or not anchored), this fallback takes over. A frame,
+            // not a fixed wait: rows mount with their section heading, so one frame is enough to
+            // know, and the old 120ms showed as a pause before every search jump.
+            withFrameNanos {}
+            if (SettingsScrollAnchor.isMounted(request.anchor)) return@LaunchedEffect
             if (!SettingsScrollAnchor.consume(anchor, request.sequence, allowFallback = true)) {
                 return@LaunchedEffect
             }
@@ -221,14 +318,24 @@ internal fun rememberSettingsAnchorHighlight(
     }
     LaunchedEffect(highlightToken) {
         if (highlightToken == 0) return@LaunchedEffect
-        runCatching { requester.bringIntoView(viewport?.headingRect(density)) }
         highlighted = true
+        // A target that has only just mounted may not be placed until the next frame.
+        if (placement[0] == null) withFrameNanos {}
+        val landed = viewport?.scrollIntoView(placement[0], alignToTop, density) == true
+        if (!landed) {
+            runCatching { requester.bringIntoView(if (alignToTop) viewport?.headingRect(density) else null) }
+        }
         delay(SettingsScrollAnchorHighlightMillis)
         highlighted = false
     }
     return SettingsAnchorHighlight(
         highlighted = highlighted,
-        modifier = Modifier.bringIntoViewRequester(requester),
+        modifier = Modifier
+            .bringIntoViewRequester(requester)
+            .onPlaced {
+                placement[0] = it
+                placedAt[0] = viewport?.scrollPosition?.invoke() ?: 0L
+            },
     )
 }
 

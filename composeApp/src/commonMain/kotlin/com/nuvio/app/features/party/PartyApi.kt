@@ -83,6 +83,27 @@ internal object PartyApi {
             put("p_member_id", memberId)
         })
 
+    suspend fun sendMessage(partyId: String, deviceId: String, body: String, clientId: String): PartyChatSendResult {
+        val params = buildJsonObject {
+            put("p_party_id", partyId)
+            put("p_device_id", deviceId)
+            put("p_body", body)
+            put("p_client_id", clientId)
+        }
+        val response = SupabaseProvider.client.postgrest.rpc("watch_party_send_message", params).data
+        return json.decodeFromString(PartyChatSendResult.serializer(), response)
+    }
+
+    suspend fun listMessages(partyId: String, deviceId: String, after: Long?): PartyChatHistory {
+        val params = buildJsonObject {
+            put("p_party_id", partyId)
+            put("p_device_id", deviceId)
+            after?.let { put("p_after", it) }
+        }
+        val response = SupabaseProvider.client.postgrest.rpc("watch_party_list_messages", params).data
+        return json.decodeFromString(PartyChatHistory.serializer(), response)
+    }
+
     suspend fun clock(): Long =
         SupabaseProvider.client.postgrest.rpc("watch_party_clock").data.trim().toLong()
 

@@ -54,8 +54,8 @@ internal object SettingsFavoritesRepository {
             title = "Appearance",
         ),
         SettingsFavorite(
-            page = SettingsPage.Playback.name,
-            anchor = "heading:Playback:PLAYER",
+            page = SettingsPage.Player.name,
+            anchor = "heading:Player:PLAYER",
             title = "Player",
         ),
         SettingsFavorite(

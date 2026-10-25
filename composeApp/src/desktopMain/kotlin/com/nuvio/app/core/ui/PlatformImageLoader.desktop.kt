@@ -49,6 +49,11 @@ internal actual fun ImageLoader.Builder.configurePlatformImageLoader(): ImageLoa
         // listener for the log format and why it exists.
         .eventListenerFactory(ImageFetchTimingListener.Factory())
 
+internal actual fun ComponentRegistry.Builder.addPlatformSvgDecoders() {
+    // Takes only SVGs that contain an <image>; every other SVG still goes to SvgDecoder.
+    add(SvgEmbeddedImageDecoder.Factory())
+}
+
 /**
  * The desktop fetch/decode chain, shared with the integration test that drives it against a real
  * HTTP server so the registration order below is what gets tested.
@@ -59,6 +64,7 @@ internal fun ComponentRegistry.Builder.addDesktopArtworkComponents() {
     // Coil appends its own defaults after these. Animation is offered the source first; whatever
     // it declines falls to the high-quality still decoder, which would otherwise have gone to
     // Coil's own - the one that reduces with nearest-neighbour.
+    add(GithubRawImageMapper)
     add(HeroBackdropPrefetchJoinInterceptor())
     add(DesktopArtworkSizeInterceptor())
     // After the size interceptor, so a stale-copy retry keeps the memory key it was sized under.

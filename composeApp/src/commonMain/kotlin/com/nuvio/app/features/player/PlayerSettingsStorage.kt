@@ -124,6 +124,10 @@ internal expect object PlayerSettingsStorage {
     fun saveStreamPrefetchCacheMinutes(minutes: Int)
     fun loadStreamPrefetchResolveLinks(): Boolean?
     fun saveStreamPrefetchResolveLinks(enabled: Boolean)
+    fun loadStreamCwCacheEnabled(): Boolean?
+    fun saveStreamCwCacheEnabled(enabled: Boolean)
+    fun loadPreloadNextEpisodeSources(): Boolean?
+    fun savePreloadNextEpisodeSources(enabled: Boolean)
     fun loadDecoderPriority(): Int?
     fun saveDecoderPriority(priority: Int)
     fun loadNvidiaRtxSuperResolutionEnabled(): Boolean?
@@ -263,6 +267,10 @@ internal expect object PlayerSettingsStorage {
     fun saveIosGamma(value: Int)
     fun loadDesktopHdrMode(): String?
     fun saveDesktopHdrMode(mode: String)
+    fun loadDesktopInverseToneMappingEnabled(): Boolean?
+    fun saveDesktopInverseToneMappingEnabled(enabled: Boolean)
+    fun loadDesktopInverseToneMappingPeakNits(): Int?
+    fun saveDesktopInverseToneMappingPeakNits(nits: Int)
     fun loadDesktopColorProfile(): String?
     fun saveDesktopColorProfile(profile: String)
     fun loadDesktopColorContrast(): Int?

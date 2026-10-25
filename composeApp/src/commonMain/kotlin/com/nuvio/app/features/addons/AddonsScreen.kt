@@ -1,5 +1,16 @@
 package com.nuvio.app.features.addons
 
+import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.features.settings.SettingsSectionGlassEdge
+import com.nuvio.app.features.settings.SettingsSectionGlassEdgeColor
+import com.nuvio.app.features.settings.SettingsSectionGlassFill
+import com.nuvio.app.features.settings.SettingsSectionGlassShape
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -531,10 +542,9 @@ private fun DesktopSegmentedFilters(
 ) {
     val tokens = MaterialTheme.nuvio
     Surface(
-        modifier = Modifier.height(40.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = tokens.colors.surfaceCard,
-        border = androidx.compose.foundation.BorderStroke(1.dp, tokens.colors.borderDefault),
+        modifier = Modifier.height(40.dp).addonGlass(),
+        shape = SettingsSectionGlassShape,
+        color = Color.Transparent,
     ) {
         Row(
             modifier = Modifier.padding(4.dp),
@@ -584,6 +594,9 @@ private fun DesktopAddonSearchField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    placeholder: String = stringResource(Res.string.addons_filter_placeholder),
+    leadingIcon: ImageVector? = Icons.Rounded.Search,
+    onSubmit: (() -> Unit)? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val focusRequester = remember { FocusRequester() }
@@ -591,11 +604,11 @@ private fun DesktopAddonSearchField(
     Box(
         modifier = modifier
             .height(40.dp)
-            .background(tokens.colors.surfaceCard, RoundedCornerShape(10.dp))
+            .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
             .border(
                 width = 1.dp,
-                color = if (focused) tokens.colors.borderFocus else tokens.colors.borderDefault,
-                shape = RoundedCornerShape(10.dp),
+                brush = if (focused) SolidColor(tokens.colors.borderFocus) else SettingsSectionGlassEdge,
+                shape = SettingsSectionGlassShape,
             )
             // Focus the text input when anywhere in the field is clicked. Without this the
             // BasicTextField only claims its own inner bounds, so clicks on the icon/placeholder
@@ -612,12 +625,14 @@ private fun DesktopAddonSearchField(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Search,
-                contentDescription = null,
-                tint = tokens.colors.textMuted,
-                modifier = Modifier.size(20.dp),
-            )
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = tokens.colors.textMuted,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -627,13 +642,15 @@ private fun DesktopAddonSearchField(
                     .onFocusChanged { focused = it.isFocused }
                     .trackTextInputFocus(),
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = if (onSubmit != null) ImeAction.Done else ImeAction.Default),
+                keyboardActions = KeyboardActions(onDone = { onSubmit?.invoke() }),
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = tokens.colors.textPrimary),
                 cursorBrush = SolidColor(tokens.colors.accent),
                 decorationBox = { innerTextField ->
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (value.isBlank()) {
                             Text(
-                                text = stringResource(Res.string.addons_filter_placeholder),
+                                text = placeholder,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = tokens.colors.textMuted,
                                 maxLines = 1,
@@ -653,19 +670,41 @@ private fun DesktopAddAddonButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    DesktopAccentButton(
+        text = stringResource(Res.string.addons_section_add_addon),
+        icon = Icons.Rounded.Add,
+        pressedLook = selected,
+        onClick = onClick,
+    )
+}
+
+/**
+ * The page's accent action: Add Addon in the header and Install Addon in the add panel share it so
+ * the two read as one family - same height, padding and type.
+ */
+@Composable
+private fun DesktopAccentButton(
+    text: String,
+    onClick: () -> Unit,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    pressedLook: Boolean = false,
+    height: Dp = 44.dp,
+) {
     val tokens = MaterialTheme.nuvio
     val shape = RoundedCornerShape(12.dp)
     Surface(
         modifier = Modifier
-            .height(44.dp)
+            .height(height)
+            .alpha(if (enabled) 1f else 0.45f)
             // Painted as a brush rather than through Surface's colour so a gradient accent reaches
             // this pill too; accentFill is a SolidColor on the flat themes and renders identically.
             // The open state keeps its flat accentStrong, which is what distinguishes it.
             .background(
-                brush = if (selected) SolidColor(tokens.colors.accentStrong) else tokens.colors.accentFill,
+                brush = if (pressedLook) SolidColor(tokens.colors.accentStrong) else tokens.colors.accentFill,
                 shape = shape,
             )
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         shape = shape,
         color = Color.Transparent,
     ) {
@@ -674,14 +713,16 @@ private fun DesktopAddAddonButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = null,
-                tint = tokens.colors.background,
-                modifier = Modifier.size(20.dp),
-            )
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = tokens.colors.background,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
             Text(
-                text = stringResource(Res.string.addons_section_add_addon),
+                text = text,
                 style = MaterialTheme.typography.bodyLarge,
                 color = tokens.colors.background,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
@@ -705,12 +746,11 @@ private fun DesktopAddonSortMenu(
                 .fillMaxWidth()
                 .height(40.dp)
                 .clickable { expanded = true },
-            shape = RoundedCornerShape(10.dp),
-            color = tokens.colors.surfaceCard,
-            border = androidx.compose.foundation.BorderStroke(1.dp, tokens.colors.borderDefault),
+            shape = SettingsSectionGlassShape,
+            color = Color.Transparent,
         ) {
             Row(
-                modifier = Modifier.padding(start = 14.dp, end = 10.dp),
+                modifier = Modifier.addonGlass().padding(start = 14.dp, end = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -732,6 +772,11 @@ private fun DesktopAddonSortMenu(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            shape = SettingsSectionGlassShape,
+            containerColor = tokens.colors.background,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, SettingsSectionGlassEdge),
         ) {
             DesktopAddonSort.entries.forEach { option ->
                 val isSelected = option == sort
@@ -766,13 +811,12 @@ private fun DesktopAddAddonPopover(
 ) {
     val tokens = MaterialTheme.nuvio
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = tokens.colors.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, tokens.colors.borderDefault),
+        modifier = Modifier.fillMaxWidth().addonGlass(),
+        shape = SettingsSectionGlassShape,
+        color = Color.Transparent,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
@@ -780,17 +824,19 @@ private fun DesktopAddAddonPopover(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                NuvioInputField(
+                DesktopAddonSearchField(
                     value = addonUrl,
                     onValueChange = onAddonUrlChange,
                     placeholder = stringResource(Res.string.addons_input_placeholder),
+                    leadingIcon = Icons.Rounded.Link,
+                    onSubmit = { if (addonUrl.isNotBlank()) onAddClick() },
                     modifier = Modifier.weight(1f),
                 )
-                NuvioPrimaryButton(
+                DesktopAccentButton(
                     text = stringResource(Res.string.addons_install_button),
                     enabled = addonUrl.isNotBlank(),
                     onClick = onAddClick,
-                    modifier = Modifier.width(112.dp),
+                    height = 40.dp,
                 )
             }
             formMessage?.let { message ->
@@ -813,13 +859,13 @@ private fun DesktopAddonsTable(
     val tokens = MaterialTheme.nuvio
     val shape = RoundedCornerShape(10.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth().nuvioPanelBackdrop(tokens.colors.surface, shape),
+        modifier = Modifier.fillMaxWidth().addonGlass(),
         shape = shape,
         color = Color.Transparent,
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 16.dp)) {
             DesktopAddonTableHeader()
-            HorizontalDivider(color = tokens.colors.borderDefault)
+            HorizontalDivider(color = SettingsSectionGlassEdgeColor)
             if (totalAddonCount == 0) {
                 DesktopAddonsEmptyTable(
                     title = stringResource(Res.string.addons_empty_title),
@@ -838,7 +884,7 @@ private fun DesktopAddonsTable(
                         openConfigureUrl = openConfigureUrl,
                     )
                     if (visibleIndex != rows.lastIndex) {
-                        HorizontalDivider(color = tokens.colors.borderDefault.copy(alpha = 0.72f))
+                        HorizontalDivider(color = SettingsSectionGlassEdgeColor)
                     }
                 }
             }
@@ -1058,9 +1104,9 @@ private fun DesktopAddonActionCluster(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = tokens.colors.surfaceCard.copy(alpha = 0.5f),
-            border = androidx.compose.foundation.BorderStroke(1.dp, tokens.colors.borderDefault),
+            shape = SettingsSectionGlassShape,
+            color = Color.Transparent,
+            border = androidx.compose.foundation.BorderStroke(1.dp, SettingsSectionGlassEdge),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
@@ -1443,3 +1489,8 @@ private fun String.toConfigureUrl(): String {
         "$base/configure"
     }
 }
+
+/** The settings glass (fill and one-pixel edge), so this page sits with the rest of Settings. */
+private fun Modifier.addonGlass(): Modifier = this
+    .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
+    .border(1.dp, SettingsSectionGlassEdge, SettingsSectionGlassShape)

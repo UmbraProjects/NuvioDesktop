@@ -1,5 +1,8 @@
 package com.nuvio.app.features.settings
 
+import nuvio.composeapp.generated.resources.settings_action_run
+import nuvio.composeapp.generated.resources.settings_action_load
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -311,68 +314,55 @@ private fun Int.roundedToHalfHour(): Int = ((this + 15) / 30 * 30).mod(MINUTES_P
 
 @Composable
 private fun LightsTestRow(isTablet: Boolean, settings: LightsSettings) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
     val state = settings.testState
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    // A row with its action in the control column: the last result under the title.
+    SettingsActionRow(
+        title = stringResource(Res.string.settings_lights_test),
+        description = when (state) {
+            LightsTestState.Idle -> stringResource(Res.string.settings_lights_test_idle)
+            LightsTestState.Running -> stringResource(Res.string.settings_lights_test_running)
+            LightsTestState.Done -> stringResource(Res.string.settings_lights_test_done)
+            is LightsTestState.Failed -> stringResource(Res.string.settings_lights_test_failed, state.detail)
+        },
+        descriptionColor = if (state is LightsTestState.Failed) MaterialTheme.colorScheme.error else null,
+        isTablet = isTablet,
     ) {
-        Text(
-            text = when (state) {
-                LightsTestState.Idle -> stringResource(Res.string.settings_lights_test_idle)
-                LightsTestState.Running -> stringResource(Res.string.settings_lights_test_running)
-                LightsTestState.Done -> stringResource(Res.string.settings_lights_test_done)
-                is LightsTestState.Failed -> stringResource(Res.string.settings_lights_test_failed, state.detail)
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = if (state is LightsTestState.Failed) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        )
-        Button(
+        SettingsGlassButton(
+            text = stringResource(Res.string.settings_action_run),
             onClick = { LightsController.runTest() },
-            enabled = settings.hasAnyProvider && state !is LightsTestState.Running,
-        ) { Text(stringResource(Res.string.settings_lights_test)) }
+            enabled = settings.hasAnyProvider,
+            accent = true,
+            loading = state is LightsTestState.Running,
+        )
     }
 }
 
 @Composable
 private fun GoveeDevicesRows(isTablet: Boolean, settings: LightsSettings) {
-    val horizontalPadding = if (isTablet) 20.dp else 16.dp
     val loadState = settings.goveeDeviceLoadState
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            text = when (loadState) {
-                GoveeDeviceLoadState.Idle -> stringResource(Res.string.settings_lights_govee_devices_idle)
-                GoveeDeviceLoadState.Loading -> stringResource(Res.string.settings_lights_govee_devices_loading)
-                is GoveeDeviceLoadState.Loaded -> if (loadState.count == 0) {
-                    stringResource(Res.string.settings_lights_govee_devices_none)
-                } else {
-                    stringResource(Res.string.settings_lights_govee_devices_loaded, loadState.count)
-                }
-                is GoveeDeviceLoadState.Failed ->
-                    stringResource(Res.string.settings_lights_govee_devices_failed, loadState.detail)
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = if (loadState is GoveeDeviceLoadState.Failed) {
-                MaterialTheme.colorScheme.error
+    SettingsActionRow(
+        title = stringResource(Res.string.settings_lights_govee_load_devices),
+        description = when (loadState) {
+            GoveeDeviceLoadState.Idle -> stringResource(Res.string.settings_lights_govee_devices_idle)
+            GoveeDeviceLoadState.Loading -> stringResource(Res.string.settings_lights_govee_devices_loading)
+            is GoveeDeviceLoadState.Loaded -> if (loadState.count == 0) {
+                stringResource(Res.string.settings_lights_govee_devices_none)
             } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        )
-        Button(
+                stringResource(Res.string.settings_lights_govee_devices_loaded, loadState.count)
+            }
+            is GoveeDeviceLoadState.Failed ->
+                stringResource(Res.string.settings_lights_govee_devices_failed, loadState.detail)
+        },
+        descriptionColor = if (loadState is GoveeDeviceLoadState.Failed) MaterialTheme.colorScheme.error else null,
+        isTablet = isTablet,
+    ) {
+        SettingsGlassButton(
+            text = stringResource(Res.string.settings_action_load),
             onClick = { LightsController.loadGoveeDevices() },
-            enabled = settings.hasGoveeKey && loadState !is GoveeDeviceLoadState.Loading,
-        ) { Text(stringResource(Res.string.settings_lights_govee_load_devices)) }
+            enabled = settings.hasGoveeKey,
+            accent = true,
+            loading = loadState is GoveeDeviceLoadState.Loading,
+        )
     }
     if (settings.goveeDevices.isNotEmpty()) {
         SettingsGroupDivider(isTablet = isTablet)

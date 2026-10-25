@@ -54,6 +54,13 @@ private class SharedCatalogRead(val response: CompletableDeferred<RawHttpRespons
 private val catalogMutex = Mutex()
 private val catalogReads = HashMap<String, SharedCatalogRead>()
 
+/** SIMKL's answer when the client_id needs a user token on every call; see [simklRequest]. */
+private const val USER_TOKEN_REQUIRED = "user_token_required"
+
+/** Set once SIMKL has said this client_id needs the user's token even on public reads. */
+@Volatile
+private var clientIdRequiresUserToken = false
+
 /** Owns the shared fetches, so one caller cancelling does not abort the others waiting on it. */
 private val catalogScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -92,8 +99,19 @@ internal suspend fun simklRequest(
                 lastWriteAtMs = System.currentTimeMillis()
             }
         }
-    } else if (!authenticated && body.isEmpty()) {
-        sharedCatalogRead(url, method, followRedirects, allowLargeResponse)
+    } else if (!authenticated && body.isEmpty() && !clientIdRequiresUserToken) {
+        val response = sharedCatalogRead(url, method, followRedirects, allowLargeResponse)
+        if (response.status == 401 && response.body.contains(USER_TOKEN_REQUIRED) && SimklAuthRepository.isAuthenticated.value) {
+            // An AUTH V2 client_id refuses every request without the user's token, public catalog
+            // reads included, so More Like This, the calendar and episode lookups all came back
+            // empty. Sign them from now on; the edge caching they lose was never available.
+            clientIdRequiresUserToken = true
+            sendWithRetries(method, url, body, true, followRedirects, allowLargeResponse, isWrite)
+        } else {
+            response
+        }
+    } else if (!authenticated && clientIdRequiresUserToken && SimklAuthRepository.isAuthenticated.value) {
+        sendWithRetries(method, url, body, true, followRedirects, allowLargeResponse, isWrite)
     } else {
         sendWithRetries(method, url, body, authenticated, followRedirects, allowLargeResponse, isWrite)
     }

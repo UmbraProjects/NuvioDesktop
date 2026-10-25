@@ -23,6 +23,7 @@ import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.details.HeroTrailerAudioState
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
+import com.nuvio.app.features.player.PlayerHeroTrailerState
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
@@ -180,17 +181,19 @@ actual fun HomeHeroTrailerSurface(
         // Push hero-trailer overlay state first so attach() forwards it to the controls page.
         controller.updateControls(
             PlayerControlsState(
-                heroTrailerMode = true,
-                heroTrailerBackgroundColor = backgroundHex,
-                heroTrailerLogoUrl = logoUrl?.takeIf { it.isNotBlank() }.orEmpty(),
-                heroTrailerTitle = title,
-                heroTrailerMeta = meta,
-                heroTrailerDescription = description,
                 isLoading = true,
-                heroTrailerMuted = muted,
-                heroTrailerVolume = effectiveVolume,
-                heroTrailerNavDismissEdge = navDismissEdge,
-                heroTrailerNavDismissBandFraction = navDismissBandFraction,
+                heroTrailer = PlayerHeroTrailerState(
+                    enabled = true,
+                    backgroundColor = backgroundHex,
+                    logoUrl = logoUrl?.takeIf { it.isNotBlank() }.orEmpty(),
+                    title = title,
+                    meta = meta,
+                    description = description,
+                    muted = muted,
+                    volume = effectiveVolume,
+                    navDismissEdge = navDismissEdge,
+                    navDismissBandFraction = navDismissBandFraction,
+                ),
             ),
         )
         trailerSurfaceLog.i { "attach video=${sourceUrl.take(80)} audio=${sourceAudioUrl?.take(60)} muted=$muted vol=$effectiveVolume" }
@@ -220,17 +223,19 @@ actual fun HomeHeroTrailerSurface(
     LaunchedEffect(controller, sourceUrl, muted, effectiveVolume) {
         controller.updateControls(
             PlayerControlsState(
-                heroTrailerMode = true,
-                heroTrailerBackgroundColor = backgroundHex,
-                heroTrailerLogoUrl = logoUrl?.takeIf { it.isNotBlank() }.orEmpty(),
-                heroTrailerTitle = title,
-                heroTrailerMeta = meta,
-                heroTrailerDescription = description,
                 isLoading = true,
-                heroTrailerMuted = muted,
-                heroTrailerVolume = effectiveVolume,
-                heroTrailerNavDismissEdge = navDismissEdge,
-                heroTrailerNavDismissBandFraction = navDismissBandFraction,
+                heroTrailer = PlayerHeroTrailerState(
+                    enabled = true,
+                    backgroundColor = backgroundHex,
+                    logoUrl = logoUrl?.takeIf { it.isNotBlank() }.orEmpty(),
+                    title = title,
+                    meta = meta,
+                    description = description,
+                    muted = muted,
+                    volume = effectiveVolume,
+                    navDismissEdge = navDismissEdge,
+                    navDismissBandFraction = navDismissBandFraction,
+                ),
             ),
         )
         controller.setMpvProperty("mute", if (muted) "yes" else "no")
@@ -240,9 +245,14 @@ actual fun HomeHeroTrailerSurface(
     }
 
     // Crop the trailer to fill the hero region (no letterbox) so it reads as part of the
-    // hero rather than a pillarboxed PIP window. panscan queues until the handle exists.
+    // hero rather than a pillarboxed PIP window. Auto Crop rather than a bare panscan: it also
+    // trims black bars baked into the video itself (a scope film in a 16:9 upload), which panscan
+    // alone leaves on screen. Upstream does this with a frame sampler (e22baecec); ours is the
+    // player's own bar detector, on upstream's quick cadence (a frame every 400 ms, settled after
+    // four agreeing ones) rather than the film's five seconds of learning. The mode is re-applied
+    // when the handle attaches.
     LaunchedEffect(controller, sourceUrl) {
-        controller.setMpvProperty("panscan", "1.0")
+        controller.setResizeMode(com.nuvio.app.features.player.PlayerResizeMode.AutoCrop, quickAutoCrop = true)
         // Trailer loudness is wildly inconsistent between uploads; smooth it out in real time.
         controller.setMpvProperty("af", TRAILER_AUDIO_NORMALIZATION_FILTER)
     }

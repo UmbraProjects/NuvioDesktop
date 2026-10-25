@@ -19,6 +19,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 
 /**
  * mpv's path for IPTV behind a SOCKS5 proxy: mpv (played here by an OkHttp client configured the
@@ -41,6 +42,8 @@ class IptvPlaybackRelayTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when (request.requestUrl?.encodedPath) {
                 "/live/u/p/1.ts" -> MockResponse().setBody("TS-BYTES").addHeader("Content-Type", "video/mp2t")
+                    // MockWebServer ignores Connection: close; the CONNECT test reads to EOF.
+                    .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END)
                 "/moved" -> MockResponse().setResponseCode(302).addHeader("Location", "/live/u/p/1.ts")
                 else -> MockResponse().setResponseCode(404)
             }

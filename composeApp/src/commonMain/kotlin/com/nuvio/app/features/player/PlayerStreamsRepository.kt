@@ -111,6 +111,12 @@ object PlayerStreamsRepository {
         episode: Int? = null,
         sourceAffinity: PlayerSourceAffinity = PlayerSourceAffinity.Stream,
         forceRefresh: Boolean = false,
+        /**
+         * Serve provider answers from the prefetch cache even on a forced refresh. Next-episode
+         * autoplay forces a refresh to get past the request-key reuse that once stalled it, but
+         * what the next-episode preload found minutes ago is a real answer, not that stale state.
+         */
+        readPrefetchOnForceRefresh: Boolean = false,
     ) {
         PerfTelemetry.count("PlayerStreamsRepository.loadEpisodeStreams")
         fetchStreams(
@@ -122,6 +128,7 @@ object PlayerStreamsRepository {
             episode = episode,
             sourceAffinity = sourceAffinity,
             forceRefresh = forceRefresh,
+            readPrefetchOnForceRefresh = readPrefetchOnForceRefresh,
             stateFlow = _episodeStreamsState,
             requestKeyHolder = { episodeStreamsRequestKey },
             setRequestKey = { episodeStreamsRequestKey = it },
@@ -163,6 +170,7 @@ object PlayerStreamsRepository {
         episode: Int?,
         sourceAffinity: PlayerSourceAffinity = PlayerSourceAffinity.Stream,
         forceRefresh: Boolean,
+        readPrefetchOnForceRefresh: Boolean = false,
         stateFlow: MutableStateFlow<StreamsUiState>,
         requestKeyHolder: () -> String?,
         setRequestKey: (String?) -> Unit,
@@ -269,7 +277,7 @@ object PlayerStreamsRepository {
         val installedAddons = AddonRepository.uiState.value.addons.enabledAddons()
         PlayerSettingsRepository.ensureLoaded()
         val playerSettings = PlayerSettingsRepository.uiState.value
-        val prefetchMaxAgeMs = if (forceRefresh) {
+        val prefetchMaxAgeMs = if (forceRefresh && !readPrefetchOnForceRefresh) {
             0L
         } else {
             playerSettings.streamPrefetchCacheMinutes * 60L * 1000L

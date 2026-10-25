@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.border
+import com.nuvio.app.core.ui.ditheredBackground
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -320,33 +322,29 @@ private fun SupportersContributorsBody(
     Column(
         verticalArrangement = Arrangement.spacedBy(if (isTablet) 18.dp else 14.dp),
     ) {
-        NuvioSurfaceCard {
+        // The settings glass with the button beside the text, as on the Account page.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
+                .border(1.dp, SettingsSectionGlassEdge, SettingsSectionGlassShape)
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(SettingsRowTextGap),
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(Res.string.community_section_title),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = stringResource(Res.string.community_section_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = { if (donateConfigured) uriHandler.openUri(donateUrl) },
-                enabled = donateConfigured,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Favorite,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                Text(stringResource(Res.string.action_donate))
-            }
             if (!donationsConfigured) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
@@ -355,6 +353,13 @@ private fun SupportersContributorsBody(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+          }
+            SettingsGlassButton(
+                text = stringResource(Res.string.action_donate),
+                onClick = { if (donateConfigured) uriHandler.openUri(donateUrl) },
+                enabled = donateConfigured,
+                accent = true,
+            )
         }
 
         NuvioSurfaceCard {

@@ -1,5 +1,10 @@
 package com.nuvio.app.features.settings
 
+import nuvio.composeapp.generated.resources.settings_tmdb_key_badge_checking
+import nuvio.composeapp.generated.resources.settings_tmdb_key_badge_valid
+import nuvio.composeapp.generated.resources.settings_tmdb_key_badge_rejected
+import nuvio.composeapp.generated.resources.settings_tmdb_key_badge_wrong_type
+import nuvio.composeapp.generated.resources.settings_tmdb_key_badge_unreachable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -173,14 +178,7 @@ internal fun TmdbApiKeyStatusLine(
     debounceMs: Long = 0L,
 ) {
     val tokens = MaterialTheme.nuvio
-    var status by remember(apiKey) { mutableStateOf<TmdbApiKeyStatus?>(null) }
-    LaunchedEffect(apiKey) {
-        if (apiKey.isBlank()) return@LaunchedEffect
-        if (debounceMs > 0) delay(debounceMs)
-        status = TmdbApiKeyStatus.Checking
-        status = TmdbApiKeyCheck.check(apiKey)
-    }
-    val current = status ?: return
+    val current = rememberTmdbApiKeyStatus(apiKey, debounceMs) ?: return
     val text = when (current) {
         TmdbApiKeyStatus.Checking -> stringResource(Res.string.settings_tmdb_key_check_checking)
         TmdbApiKeyStatus.Valid -> stringResource(Res.string.settings_tmdb_key_check_valid)
@@ -199,3 +197,51 @@ internal fun TmdbApiKeyStatusLine(
 }
 
 private const val STAGED_KEY_CHECK_DEBOUNCE_MS = 700L
+
+/** Whether TMDB accepts [apiKey], checked once per key; null until a check has started. */
+@Composable
+internal fun rememberTmdbApiKeyStatus(apiKey: String, debounceMs: Long = 0L): TmdbApiKeyStatus? {
+    var status by remember(apiKey) { mutableStateOf<TmdbApiKeyStatus?>(null) }
+    LaunchedEffect(apiKey) {
+        if (apiKey.isBlank()) return@LaunchedEffect
+        if (debounceMs > 0) delay(debounceMs)
+        status = TmdbApiKeyStatus.Checking
+        status = TmdbApiKeyCheck.check(apiKey)
+    }
+    return status
+}
+
+/** The full explanation for a key TMDB would not take, or null when there is nothing wrong. */
+@Composable
+internal fun tmdbApiKeyProblemText(status: TmdbApiKeyStatus?): String? = when (status) {
+    TmdbApiKeyStatus.Rejected -> stringResource(Res.string.settings_tmdb_key_check_rejected)
+    TmdbApiKeyStatus.WrongKeyType -> stringResource(Res.string.settings_tmdb_key_check_wrong_type)
+    TmdbApiKeyStatus.Unreachable -> stringResource(Res.string.settings_tmdb_key_check_unreachable)
+    else -> null
+}
+
+/** The key check in a word or two, for a settings row's control column. */
+@Composable
+internal fun TmdbApiKeyStatusBadge(status: TmdbApiKeyStatus?) {
+    val tokens = MaterialTheme.nuvio
+    val current = status ?: return
+    val text = when (current) {
+        TmdbApiKeyStatus.Checking -> stringResource(Res.string.settings_tmdb_key_badge_checking)
+        TmdbApiKeyStatus.Valid -> stringResource(Res.string.settings_tmdb_key_badge_valid)
+        TmdbApiKeyStatus.Rejected -> stringResource(Res.string.settings_tmdb_key_badge_rejected)
+        TmdbApiKeyStatus.WrongKeyType -> stringResource(Res.string.settings_tmdb_key_badge_wrong_type)
+        TmdbApiKeyStatus.Unreachable -> stringResource(Res.string.settings_tmdb_key_badge_unreachable)
+    }
+    val isProblem = current == TmdbApiKeyStatus.Rejected || current == TmdbApiKeyStatus.WrongKeyType
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = when {
+            isProblem -> MaterialTheme.colorScheme.error
+            current == TmdbApiKeyStatus.Valid -> tokens.colors.textPrimary
+            else -> tokens.colors.textMuted
+        },
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+    )
+}

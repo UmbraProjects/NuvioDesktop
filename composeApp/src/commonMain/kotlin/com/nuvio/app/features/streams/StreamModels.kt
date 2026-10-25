@@ -2,6 +2,7 @@ package com.nuvio.app.features.streams
 
 import com.nuvio.app.core.build.AppFeaturePolicy
 
+@kotlinx.serialization.Serializable
 data class StreamItem(
     val name: String? = null,
     val title: String? = null,
@@ -10,6 +11,8 @@ data class StreamItem(
     val infoHash: String? = null,
     val fileIdx: Int? = null,
     val externalUrl: String? = null,
+    /** A YouTube video id, the addon protocol's `ytId`; see [youTubeIdToResolve]. */
+    val ytId: String? = null,
     val sources: List<String> = emptyList(),
     val sourceName: String? = null,
     /** Audio languages advertised by the source. Empty means the addon did not provide metadata. */
@@ -51,6 +54,12 @@ data class StreamItem(
      */
     val sourceTotalSizeBytes: Long? = null,
     val badges: List<StreamBadge> = emptyList(),
+    /**
+     * When this row came from the Continue Watching stream cache rather than a live provider answer:
+     * the time that answer was fetched. Null for every live row. Autoplay leaves such rows alone
+     * unless a debrid resolve will prove the link first (see `CwStreamCache`).
+     */
+    val cachedAtMs: Long? = null,
 ) {
     val streamLabel: String
         // Read from composition for every row of a stream list, so it must not block: the resource
@@ -74,6 +83,21 @@ data class StreamItem(
         get() = url?.takeIf {
             it.isNotBlank() && !it.isMagnetLink() && !it.isTorrentSchemeUrl()
         }
+
+    /**
+     * The YouTube id to resolve on the device, only when `ytId` is the stream's only way to play.
+     * Streams that also carry a url, externalUrl, torrent or debrid resolve keep using those.
+     */
+    val youTubeIdToResolve: String?
+        get() = ytId
+            ?.trim()
+            ?.takeIf {
+                it.isNotEmpty() &&
+                    url.isNullOrBlank() &&
+                    externalUrl.isNullOrBlank() &&
+                    infoHash.isNullOrBlank() &&
+                    clientResolve == null
+            }
 
     val torrentMagnetUri: String?
         get() = listOfNotNull(url, externalUrl, clientResolve?.magnetUri)
@@ -160,7 +184,7 @@ data class StreamItem(
         get() = isInstalledAddonStream && (needsLocalDebridResolve || isDirectDebridStream)
 
     val hasPlayableSource: Boolean
-        get() = url != null || infoHash != null || externalUrl != null || clientResolve != null
+        get() = url != null || infoHash != null || externalUrl != null || clientResolve != null || ytId != null
 }
 
 // Serializable for watch parties, which send the host's stream (badges included) to members.
@@ -313,9 +337,11 @@ val StreamItem.mediaFilename: String?
 
 fun StreamItem.isSelectableForPlayback(debridEnabled: Boolean): Boolean =
     playableDirectUrl != null ||
+        youTubeIdToResolve != null ||
         (AppFeaturePolicy.p2pEnabled && needsLocalDebridResolve && p2pInfoHash != null) ||
         (debridEnabled && isAddonDebridCandidate)
 
+@kotlinx.serialization.Serializable
 data class StreamBehaviorHints(
     val bingeGroup: String? = null,
     val notWebReady: Boolean = false,
@@ -325,11 +351,13 @@ data class StreamBehaviorHints(
     val proxyHeaders: StreamProxyHeaders? = null,
 )
 
+@kotlinx.serialization.Serializable
 data class StreamProxyHeaders(
     val request: Map<String, String>? = null,
     val response: Map<String, String>? = null,
 )
 
+@kotlinx.serialization.Serializable
 enum class StreamDebridCacheState {
     CHECKING,
     CACHED,
@@ -337,6 +365,7 @@ enum class StreamDebridCacheState {
     UNKNOWN,
 }
 
+@kotlinx.serialization.Serializable
 data class StreamDebridCacheStatus(
     val providerId: String,
     val providerName: String,
@@ -359,6 +388,7 @@ data class StreamDebridCacheStatus(
  * addon streams marked NOT_CACHED. Feeding an addon's own flag into it would silently drop every
  * uncached result from the picker.
  */
+@kotlinx.serialization.Serializable
 data class StreamAddonData(
     /** Addon's own classification, e.g. "debrid", "usenet", "p2p". */
     val type: String? = null,
@@ -377,11 +407,13 @@ data class StreamAddonData(
     val torrent: StreamAddonTorrentData? = null,
 )
 
+@kotlinx.serialization.Serializable
 data class StreamAddonTorrentData(
     val infoHash: String? = null,
     val fileIdx: Int? = null,
 )
 
+@kotlinx.serialization.Serializable
 data class StreamClientResolve(
     val type: String? = null,
     val infoHash: String? = null,
@@ -408,10 +440,12 @@ data class StreamClientResolve(
             isCached == true
 }
 
+@kotlinx.serialization.Serializable
 data class StreamClientResolveStream(
     val raw: StreamClientResolveRaw? = null,
 )
 
+@kotlinx.serialization.Serializable
 data class StreamClientResolveRaw(
     val torrentName: String? = null,
     val filename: String? = null,
@@ -423,6 +457,7 @@ data class StreamClientResolveRaw(
     val parsed: StreamClientResolveParsed? = null,
 )
 
+@kotlinx.serialization.Serializable
 data class StreamClientResolveParsed(
     val rawTitle: String? = null,
     val parsedTitle: String? = null,

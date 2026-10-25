@@ -32,7 +32,6 @@ import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_rating
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_notifications
 import nuvio.composeapp.generated.resources.compose_settings_page_discover
-import nuvio.composeapp.generated.resources.compose_settings_page_playback
 import nuvio.composeapp.generated.resources.random_play_title
 import nuvio.composeapp.generated.resources.compose_settings_page_qualicache
 import nuvio.composeapp.generated.resources.compose_settings_page_poster_service
@@ -50,6 +49,8 @@ import nuvio.composeapp.generated.resources.compose_settings_page_seekr
 import nuvio.composeapp.generated.resources.compose_settings_page_discord_presence
 import nuvio.composeapp.generated.resources.compose_settings_page_screensaver
 import nuvio.composeapp.generated.resources.settings_account
+import nuvio.composeapp.generated.resources.compose_settings_page_video_audio
+import nuvio.composeapp.generated.resources.compose_settings_page_player
 import org.jetbrains.compose.resources.StringResource
 
 internal enum class SettingsCategory(
@@ -92,8 +93,15 @@ internal enum class SettingsPage(
         category = SettingsCategory.Account,
         parentPage = Root,
     ),
+    // Shown as "Video & Audio": the technical half of what used to be one long Playback page.
+    // Name kept so saved favourites, category order and anchors still resolve.
     Playback(
-        titleRes = Res.string.compose_settings_page_playback,
+        titleRes = Res.string.compose_settings_page_video_audio,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    Player(
+        titleRes = Res.string.compose_settings_page_player,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

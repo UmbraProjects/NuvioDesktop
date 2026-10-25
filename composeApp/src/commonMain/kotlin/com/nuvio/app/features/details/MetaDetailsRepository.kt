@@ -1650,6 +1650,23 @@ object MetaDetailsRepository {
         TmdbSettingsRepository.ensureLoaded()
 
         val traktSettings = TraktSettingsRepository.uiState.value
+
+        if (shouldUseSimklMoreLikeThis(traktSettings.moreLikeThisSource) && supportsMoreLikeThis(meta, fallbackItemType)) {
+            val items = runCatching {
+                com.nuvio.app.features.simkl.SimklRelatedRepository.getRelated(
+                    meta = meta,
+                    fallbackItemId = fallbackItemId,
+                    fallbackItemType = fallbackItemType,
+                )
+            }.onFailure { error ->
+                log.w { "Failed to load SIMKL related titles for ${meta.id}: ${error.message}" }
+            }.getOrDefault(emptyList())
+            return meta.copy(
+                moreLikeThis = items,
+                moreLikeThisSource = MoreLikeThisSource.SIMKL.takeIf { items.isNotEmpty() },
+            )
+        }
+
         val isTraktAuthenticated = TraktAuthRepository.uiState.value.mode == TraktConnectionMode.CONNECTED
         val shouldUseTrakt = shouldUseTraktMoreLikeThis(
             isAuthenticated = isTraktAuthenticated,
@@ -1714,7 +1731,7 @@ object MetaDetailsRepository {
         return shouldUseTraktMoreLikeThis(
             isAuthenticated = isTraktAuthenticated,
             source = traktSettings.moreLikeThisSource,
-        ) || !tmdbSettings.enabled || !tmdbSettings.useMoreLikeThis || meta.moreLikeThisSource == null && meta.moreLikeThis.isNotEmpty() ||
+        ) || shouldUseSimklMoreLikeThis(traktSettings.moreLikeThisSource) || !tmdbSettings.enabled || !tmdbSettings.useMoreLikeThis || meta.moreLikeThisSource == null && meta.moreLikeThis.isNotEmpty() ||
             // TMDB attached the rail already, but the poster service still has to run over it.
             meta.moreLikeThis.isNotEmpty() && CustomPosterSettingsRepository.snapshot(CustomPosterScreen.Details).isActive
     }
@@ -1735,6 +1752,13 @@ object MetaDetailsRepository {
             append("|tmdb=${tmdbSettings.enabled}:${tmdbSettings.useMoreLikeThis}:${tmdbSettings.hasApiKey}:${tmdbSettings.language}")
             append("|${CustomPosterSettingsRepository.snapshot(CustomPosterScreen.Details).cacheToken()}")
         }
+    }
+
+    /** SIMKL as the More Like This source (upstream af1298eb4); needs a connected SIMKL account. */
+    private fun shouldUseSimklMoreLikeThis(source: com.nuvio.app.features.trakt.MoreLikeThisSourcePreference): Boolean {
+        if (source != com.nuvio.app.features.trakt.MoreLikeThisSourcePreference.SIMKL) return false
+        com.nuvio.app.features.simkl.SimklAuthRepository.ensureLoaded()
+        return com.nuvio.app.features.simkl.SimklAuthRepository.isAuthenticated.value
     }
 
     private fun supportsMoreLikeThis(meta: MetaDetails, fallbackItemType: String): Boolean =

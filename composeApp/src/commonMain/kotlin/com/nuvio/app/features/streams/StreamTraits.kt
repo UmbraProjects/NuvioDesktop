@@ -562,17 +562,29 @@ object StreamTraitDetector {
 
     private fun resolutionValue(value: String?): DebridStreamResolution? {
         val normalized = value?.lowercase().orEmpty()
-        return when {
-            normalized.hasResolutionToken("2160p?", "4k", "uhd") -> DebridStreamResolution.P2160
-            normalized.hasResolutionToken("1440p?", "2k") -> DebridStreamResolution.P1440
-            normalized.hasResolutionToken("1080p?", "fhd") -> DebridStreamResolution.P1080
-            normalized.hasResolutionToken("720p?", "hd") -> DebridStreamResolution.P720
-            normalized.hasResolutionToken("576p?") -> DebridStreamResolution.P576
-            normalized.hasResolutionToken("480p?", "sd") -> DebridStreamResolution.P480
-            normalized.hasResolutionToken("360p?") -> DebridStreamResolution.P360
-            else -> null
-        }
+        return RESOLUTION_TOKENS.firstOrNull { (regex, _) -> regex.containsMatchIn(normalized) }?.second
     }
+
+    // Compiled once rather than per check (upstream def203a96): trait detection runs for every row
+    // of every list on a cache miss, and each of these used to build a new Regex each time.
+    private fun resolutionRegex(vararg tokens: String): Regex =
+        Regex("(^|[^a-z0-9])(${tokens.joinToString("|")})([^a-z0-9]|\$)")
+
+    private val RESOLUTION_TOKENS = listOf(
+        resolutionRegex("2160p?", "4k", "uhd") to DebridStreamResolution.P2160,
+        resolutionRegex("1440p?", "2k") to DebridStreamResolution.P1440,
+        resolutionRegex("1080p?", "fhd") to DebridStreamResolution.P1080,
+        resolutionRegex("720p?", "hd") to DebridStreamResolution.P720,
+        resolutionRegex("576p?") to DebridStreamResolution.P576,
+        resolutionRegex("480p?", "sd") to DebridStreamResolution.P480,
+        resolutionRegex("360p?") to DebridStreamResolution.P360,
+    )
+    private val DOLBY_VISION_TEXT = Regex("(^|[^a-z0-9])(dv|dovi|dolby[ ._-]?vision)([^a-z0-9]|\$)")
+    private val HDR_TEXT = Regex("(^|[^a-z0-9])(hdr|hdr10|hdr10plus|hdr10\\+|hlg)([^a-z0-9]|\$)")
+    private val RELEASE_GROUP_SUFFIX = Regex("-([a-z0-9][a-z0-9._]{1,24})($|\\.)", RegexOption.IGNORE_CASE)
+    private val NON_ALPHANUMERIC = Regex("[^a-z0-9]")
+    private val NON_ALPHANUMERIC_OR_PLUS = Regex("[^a-z0-9+]")
+    private val tokenRegexCache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
 
     private fun streamQuality(parsedQuality: String?, searchText: String): DebridStreamQuality {
         val text = listOfNotNull(parsedQuality, searchText).joinToString(" ").lowercase()
@@ -597,9 +609,9 @@ object StreamTraitDetector {
         val text = (parsedHdr + searchText).joinToString(" ").lowercase()
         val tags = mutableListOf<DebridStreamVisualTag>()
         val hasDv = parsedHdr.any { it.isDolbyVisionToken() } ||
-            Regex("(^|[^a-z0-9])(dv|dovi|dolby[ ._-]?vision)([^a-z0-9]|\$)").containsMatchIn(searchText)
+            DOLBY_VISION_TEXT.containsMatchIn(searchText)
         val hasHdr = parsedHdr.any { it.isHdrToken() } ||
-            Regex("(^|[^a-z0-9])(hdr|hdr10|hdr10plus|hdr10\\+|hlg)([^a-z0-9]|\$)").containsMatchIn(searchText)
+            HDR_TEXT.containsMatchIn(searchText)
         if (hasDv && hasHdr) tags += DebridStreamVisualTag.HDR_DV
         if (hasDv && !hasHdr) tags += DebridStreamVisualTag.DV_ONLY
         if (hasHdr && !hasDv) tags += DebridStreamVisualTag.HDR_ONLY
@@ -684,17 +696,16 @@ object StreamTraitDetector {
     }
 
     private fun releaseGroupFromText(text: String): String =
-        Regex("-([a-z0-9][a-z0-9._]{1,24})($|\\.)", RegexOption.IGNORE_CASE)
+        RELEASE_GROUP_SUFFIX
             .find(text)
             ?.groupValues
             ?.getOrNull(1)
             .orEmpty()
 
-    private fun String.hasResolutionToken(vararg tokens: String): Boolean =
-        Regex("(^|[^a-z0-9])(${tokens.joinToString("|")})([^a-z0-9]|\$)").containsMatchIn(this)
-
     private fun String.hasToken(token: String): Boolean =
-        Regex("(^|[^a-z0-9])${Regex.escape(token.lowercase())}([^a-z0-9]|\$)").containsMatchIn(lowercase())
+        tokenRegexCache
+            .getOrPut(token) { Regex("(^|[^a-z0-9])${Regex.escape(token.lowercase())}([^a-z0-9]|\$)") }
+            .containsMatchIn(lowercase())
 
     /**
      * The gap between a number and its unit. Kotlin's `\s` is ASCII-only on the JVM, so the
@@ -733,12 +744,12 @@ object StreamTraitDetector {
         CHANNEL_TOKEN_REGEX.getValue(token).find(lowercase())
 
     private fun String.isDolbyVisionToken(): Boolean {
-        val normalized = lowercase().replace(Regex("[^a-z0-9]"), "")
+        val normalized = lowercase().replace(NON_ALPHANUMERIC, "")
         return normalized == "dv" || normalized == "dovi" || normalized == "dolbyvision"
     }
 
     private fun String.isHdrToken(): Boolean {
-        val normalized = lowercase().replace(Regex("[^a-z0-9+]"), "")
+        val normalized = lowercase().replace(NON_ALPHANUMERIC_OR_PLUS, "")
         return normalized == "hdr" ||
             normalized == "hdr10" ||
             normalized == "hdr10+" ||

@@ -91,10 +91,10 @@ import org.jetbrains.compose.resources.stringResource
  * call site cannot drift again.
  */
 
-private val FieldShape = RoundedCornerShape(NuvioTokens.Radius.lg)
+private val FieldShape = NuvioGlass.Shape
 private val FieldMinHeight = 46.dp
 private val FieldIconButtonSize = 32.dp
-private val StepperHeight = 34.dp
+private val StepperHeight = 38.dp
 private val StepperButtonWidth = 34.dp
 
 private const val HoldRepeatDelayMillis = 400L
@@ -147,7 +147,9 @@ fun NuvioTextField(
             isError -> tokens.colors.danger
             focused -> tokens.colors.accent
             hovered -> tokens.colors.borderStrong
-            else -> tokens.colors.borderDefault
+            // The resting edge is the glass edge, so a field sits in a glass card or modal as one
+            // more pane of it.
+            else -> NuvioGlass.EdgeColor
         },
         animationSpec = tween(tokens.motion.fastMillis, easing = tokens.motion.standard),
         label = "nuvioFieldBorder",
@@ -161,7 +163,9 @@ fun NuvioTextField(
             isError -> tokens.colors.danger
             focused -> accentEnd ?: tokens.colors.accent
             hovered -> tokens.colors.borderStrong
-            else -> tokens.colors.borderDefault
+            // The resting edge is the glass edge, so a field sits in a glass card or modal as one
+            // more pane of it.
+            else -> NuvioGlass.EdgeColor
         },
         animationSpec = tween(tokens.motion.fastMillis, easing = tokens.motion.standard),
         label = "nuvioFieldBorderEnd",
@@ -177,7 +181,7 @@ fun NuvioTextField(
         targetValue = if (focused) {
             tokens.colors.accent.copy(alpha = tokens.opacity.subtle)
         } else {
-            tokens.colors.surfaceCard
+            Color.Transparent
         },
         animationSpec = tween(tokens.motion.fastMillis, easing = tokens.motion.standard),
         label = "nuvioFieldContainer",
@@ -186,7 +190,7 @@ fun NuvioTextField(
         targetValue = if (focused) {
             (accentEnd ?: tokens.colors.accent).copy(alpha = tokens.opacity.subtle)
         } else {
-            tokens.colors.surfaceCard
+            Color.Transparent
         },
         animationSpec = tween(tokens.motion.fastMillis, easing = tokens.motion.standard),
         label = "nuvioFieldContainerEnd",
@@ -210,9 +214,12 @@ fun NuvioTextField(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = FieldMinHeight)
-                .clip(FieldShape)
-                .background(containerBrush)
+                // The glass fill under the focus tint (which is clear while unfocused).
+                .ditheredBackground(NuvioGlass.Fill, FieldShape)
+                .background(containerBrush, FieldShape)
                 .border(borderWidth, borderBrush, FieldShape)
+                // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
+                .clip(FieldShape)
                 .hoverable(interactionSource, enabled)
                 .alpha(if (enabled) NuvioTokens.Opacity.visible else tokens.opacity.medium)
                 // An icon carries its own optical padding, so a leading one sits closer to the edge
@@ -347,6 +354,8 @@ fun NuvioNumberStepper(
     editFormat: (Double) -> String = format,
     valueColor: Color? = null,
     fieldWidth: Dp = 62.dp,
+    /** Let the value take whatever width [modifier] gives the stepper, instead of [fieldWidth]. */
+    fillWidth: Boolean = false,
 ) {
     val tokens = MaterialTheme.nuvio
     var editing by remember { mutableStateOf(false) }
@@ -382,7 +391,7 @@ fun NuvioNumberStepper(
 
     val stepperAccentEnd = tokens.colors.accentGradientEnd
     val borderColor by animateColorAsState(
-        targetValue = if (editing) tokens.colors.accent else tokens.colors.borderDefault,
+        targetValue = if (editing) tokens.colors.accent else NuvioGlass.EdgeColor,
         animationSpec = tween(tokens.motion.fastMillis, easing = tokens.motion.standard),
         label = "nuvioStepperBorder",
     )
@@ -390,7 +399,7 @@ fun NuvioNumberStepper(
         targetValue = if (editing) {
             stepperAccentEnd ?: tokens.colors.accent
         } else {
-            tokens.colors.borderDefault
+            NuvioGlass.EdgeColor
         },
         animationSpec = tween(tokens.motion.fastMillis, easing = tokens.motion.standard),
         label = "nuvioStepperBorderEnd",
@@ -404,13 +413,15 @@ fun NuvioNumberStepper(
     Row(
         modifier = modifier
             .height(StepperHeight)
-            .clip(FieldShape)
-            .background(tokens.colors.surfaceCard)
+            // The settings glass, like the fields and selectors it sits among.
+            .ditheredBackground(NuvioGlass.Fill, FieldShape)
             .border(
                 width = if (editing) tokens.borders.medium else tokens.borders.thin,
                 brush = borderBrush,
                 shape = FieldShape,
             )
+            // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
+            .clip(FieldShape)
             .alpha(if (enabled) NuvioTokens.Opacity.visible else tokens.opacity.medium),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -420,7 +431,7 @@ fun NuvioNumberStepper(
             onStep = { onChange((value - step).coerceIn(min, max)) },
         )
         Box(
-            modifier = Modifier.width(fieldWidth).fillMaxHeight(),
+            modifier = (if (fillWidth) Modifier.weight(1f) else Modifier.width(fieldWidth)).fillMaxHeight(),
             contentAlignment = Alignment.Center,
         ) {
             // Identical style whether static or editing, so the control does not jump when clicked.

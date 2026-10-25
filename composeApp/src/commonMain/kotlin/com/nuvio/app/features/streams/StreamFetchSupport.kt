@@ -34,14 +34,39 @@ internal data class PluginProviderGroup(
     val scrapers: List<PluginScraper>,
 )
 
+/**
+ * One provider finishing during [StreamsRepository.load].
+ *
+ * [cacheableAnswer] is the provider's real answer (live or from the ten-minute prefetch), offered to
+ * [CwStreamCache]; null for a failure or for rows that themselves came from that cache.
+ */
 internal sealed interface StreamLoadCompletion {
-    data class Addon(val group: AddonStreamGroup) : StreamLoadCompletion
+    data class Addon(
+        val group: AddonStreamGroup,
+        val cacheableAnswer: List<StreamItem>? = null,
+    ) : StreamLoadCompletion
     data class PluginScraper(
         val addonId: String,
         val streams: List<StreamItem>,
         val error: String?,
+        val providerId: String = "",
+        val cacheableAnswer: List<StreamItem>? = null,
+        /** Cached rows this scraper had already put in the group, which [streams] replace. */
+        val replacesCachedRows: List<StreamItem> = emptyList(),
     ) : StreamLoadCompletion
 }
+
+/** Rows served from [CwStreamCache], tagged with when their provider answered. */
+internal fun List<StreamItem>.markedCachedAt(fetchedAtMs: Long): List<StreamItem> =
+    map { it.copy(cachedAtMs = fetchedAtMs) }
+
+/**
+ * Rows autoplay may start. A row from [CwStreamCache] is days old and may be dead; it stays out
+ * until the live answer replaces it, unless it goes through a debrid resolve first, which proves
+ * the link (and fails over to the next candidate when it does not).
+ */
+internal fun List<StreamItem>.autoPlayEligible(): List<StreamItem> =
+    filter { it.cachedAtMs == null || it.isAddonDebridCandidate }
 
 internal fun List<PluginScraper>.toPluginProviderGroups(
     repositories: List<PluginRepositoryItem>,

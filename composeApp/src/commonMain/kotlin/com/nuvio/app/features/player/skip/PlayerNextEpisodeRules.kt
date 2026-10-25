@@ -3,6 +3,7 @@ package com.nuvio.app.features.player.skip
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.resolveSeriesEpisodePosition
 import com.nuvio.app.features.details.sortedPlaybackEpisodePositions
+import com.nuvio.app.features.watching.domain.isShortPlaceholderDuration
 
 object PlayerNextEpisodeRules {
 
@@ -99,6 +100,8 @@ object PlayerNextEpisodeRules {
         thresholdPercent: Float,
         thresholdMinutesBeforeEnd: Float,
     ): Boolean {
+        // An error clip or debrid placeholder is not the episode, so it never leads into the next.
+        if (isShortPlaceholderDuration(durationMs)) return false
         val outroSegments = skipIntervals.filter { it.type in OUTRO_SEGMENT_TYPES }
 
         if (outroSegments.isNotEmpty()) {

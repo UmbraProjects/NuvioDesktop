@@ -86,6 +86,10 @@ import nuvio.composeapp.generated.resources.settings_stream_scoring_enabled_titl
 import nuvio.composeapp.generated.resources.settings_stream_size_badges_description
 import nuvio.composeapp.generated.resources.settings_stream_size_badges_title
 import nuvio.composeapp.generated.resources.settings_stream_addon_logo_title
+import nuvio.composeapp.generated.resources.settings_stream_badges_in_player_description
+import nuvio.composeapp.generated.resources.settings_stream_badges_in_player_title
+import nuvio.composeapp.generated.resources.settings_stream_player_badges_same
+import nuvio.composeapp.generated.resources.settings_stream_player_badges_title
 import nuvio.composeapp.generated.resources.settings_stream_addon_logo_description
 import nuvio.composeapp.generated.resources.settings_stream_display_section
 import org.jetbrains.compose.resources.stringResource
@@ -154,6 +158,34 @@ internal fun LazyListScope.streamsSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-badge-urls")),
                     onClick = { showBadgeImportDialog = true },
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_stream_badges_in_player_title),
+                    description = stringResource(Res.string.settings_stream_badges_in_player_description),
+                    checked = currentSettings.showInPlayer,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-badges-in-player")),
+                    onCheckedChange = StreamBadgeSettingsRepository::setShowInPlayer,
+                )
+                val packs = currentRules.normalized().imports
+                if (currentSettings.showInPlayer && packs.size > 1) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    val sameAsStreams = stringResource(Res.string.settings_stream_player_badges_same)
+                    val options = listOf(SettingsChoiceOption("", sameAsStreams)) +
+                        packs.map { pack -> SettingsChoiceOption(pack.sourceUrl, badgePackLabel(pack.sourceUrl)) }
+                    val selected = currentSettings.playerBadgeSource
+                        .takeIf { source -> packs.any { it.sourceUrl.equals(source, ignoreCase = true) } }
+                        .orEmpty()
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_stream_player_badges_title),
+                        description = options.firstOrNull { it.value == selected }?.label ?: sameAsStreams,
+                        options = options,
+                        selectedValue = selected,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-player-badges")),
+                        onSelected = StreamBadgeSettingsRepository::setPlayerBadgeSource,
+                    )
+                }
             }
         }
 
@@ -189,6 +221,14 @@ internal fun LazyListScope.streamsSettingsContent(
         }
 
     }
+}
+
+/** A pack's URL shortened to something a row can show: its file name, or its host. */
+private fun badgePackLabel(sourceUrl: String): String {
+    val path = sourceUrl.substringBefore('?').trimEnd('/')
+    val file = path.substringAfterLast('/').removeSuffix(".json")
+    val host = path.substringAfter("://").substringBefore('/')
+    return file.takeIf { it.isNotBlank() && it != host }?.let { "$it ($host)" } ?: host.ifBlank { sourceUrl }
 }
 
 @Composable
@@ -263,8 +303,11 @@ private fun BadgeUrlManagerDialog(
                     color = tokens.colors.textMuted,
                     modifier = Modifier.weight(1f),
                 )
-                Button(
-                    enabled = !isImporting && draftUrl.isNotBlank(),
+                SettingsGlassButton(
+                    text = stringResource(Res.string.action_import),
+                    enabled = draftUrl.isNotBlank(),
+                    accent = true,
+                    loading = isImporting,
                     onClick = {
                         scope.launch {
                             isImporting = true
@@ -281,17 +324,7 @@ private fun BadgeUrlManagerDialog(
                             }
                         }
                     },
-                ) {
-                    if (isImporting) {
-                        CircularProgressIndicator(
-                            strokeWidth = tokens.borders.medium,
-                            modifier = Modifier.size(tokens.icons.sm),
-                            color = tokens.colors.onAccent,
-                        )
-                    } else {
-                        Text(text = stringResource(Res.string.action_import), maxLines = 1)
-                    }
-                }
+                )
             }
             errorMessage?.let { message ->
                 Text(

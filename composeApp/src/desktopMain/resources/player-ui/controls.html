@@ -93,6 +93,9 @@
     <symbol id="icon-party" viewBox="0 0 24 24">
       <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3Zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5Zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5Z"/>
     </symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24">
+      <path d="M11 7h2v2h-2V7Zm0 4h2v6h-2v-6Zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8Z"/>
+    </symbol>
     <symbol id="icon-check" viewBox="0 0 24 24">
       <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z"/>
     </symbol>
@@ -324,6 +327,7 @@
       <button class="party-pill" id="partyPill" type="button" aria-hidden="true" tabindex="-1">
         <span class="party-avatars" id="partyPillAvatars"></span>
         <span class="party-pill-text" id="partyPillText"></span>
+        <span class="party-badge" id="partyPillBadge" hidden></span>
       </button>
 
       <div class="control-tooltip" id="controlTooltip" role="tooltip" hidden></div>
@@ -399,6 +403,7 @@
             <button class="side-control episode-skip" data-command="nextEpisode" aria-label="Next episode"><svg><use href="#icon-next"></use></svg></button>
           </div>
           <div class="action-row">
+            <button class="action tertiary-action" data-action-priority="90" id="streamInfoButton" data-command="streamInfo" aria-label="Stream info" title="Stream info"><svg><use href="#icon-info"></use></svg><span>Info</span></button>
             <button class="action tertiary-action" data-action-priority="60" data-command="resize" aria-label="Aspect ratio" title="Aspect ratio"><svg><use href="#icon-aspect"></use></svg><span id="resizeLabel">Fit</span></button>
             <button class="action tertiary-action" data-action-priority="55" id="speedButton" data-command="speed" aria-label="Playback speed" title="Playback speed"><svg><use href="#icon-speed"></use></svg><span id="speedLabel">1x</span></button>
             <button class="action" data-action-priority="5" data-command="subtitles" aria-label="Subtitles" title="Subtitles"><svg><use href="#icon-subs"></use></svg><span id="subtitlesLabel">Subs</span></button>
@@ -722,7 +727,35 @@
               <button class="panel-button" id="partyCloseButton" type="button">Close</button>
             </div>
           </div>
+          <!-- Party | Chat, only while in a party. The chat lives outside partyBody so the composer
+               keeps its text and focus when the panel is rebuilt on a state change. -->
+          <div class="party-tabs" id="partyTabs" role="tablist" hidden>
+            <button class="party-tab selected" id="partyTabParty" type="button" role="tab">Party</button>
+            <button class="party-tab" id="partyTabChat" type="button" role="tab"><span id="partyTabChatLabel">Chat</span><span class="party-badge" id="partyTabBadge" hidden></span></button>
+          </div>
           <div class="party-body" id="partyBody"></div>
+          <div class="party-chat" id="partyChat" hidden>
+            <div class="party-chat-list" id="partyChatList"></div>
+            <div class="party-chat-empty" id="partyChatEmpty" hidden>
+              <div class="party-text strong" id="partyChatEmptyTitle"></div>
+              <div class="party-note" id="partyChatEmptyMessage"></div>
+            </div>
+            <form class="party-chat-composer" id="partyChatForm" autocomplete="off">
+              <input class="party-chat-input" id="partyChatInput" type="text" maxlength="500" spellcheck="true">
+              <button class="panel-button primary" id="partyChatSend" type="submit">Send</button>
+            </form>
+          </div>
+        </div>
+      </section>
+      <section class="modal-layer" id="streamInfoModal" aria-label="Stream info" hidden>
+        <div class="track-panel stream-info-panel">
+          <div class="track-header-row">
+            <div class="track-title" id="streamInfoTitle">Stream info</div>
+            <div class="panel-actions">
+              <button class="panel-button" id="streamInfoCloseButton" type="button">Close</button>
+            </div>
+          </div>
+          <div class="stream-info-body" id="streamInfoBody"></div>
         </div>
       </section>
       <section class="modal-layer" id="p2pConsentModal" aria-label="P2P streaming consent" hidden>

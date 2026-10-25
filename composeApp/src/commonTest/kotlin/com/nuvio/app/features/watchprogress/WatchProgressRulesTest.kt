@@ -43,6 +43,18 @@ class WatchProgressRulesTest {
     }
 
     @Test
+    fun `short placeholder clips are neither stored nor completed`() {
+        // A debrid "caching, try again" clip or an error video, not the episode.
+        assertFalse(shouldStoreWatchProgress(positionMs = 60_000L, durationMs = 90_000L))
+        assertFalse(isWatchProgressComplete(positionMs = 90_000L, durationMs = 90_000L, isEnded = true))
+        assertFalse(isWatchProgressComplete(positionMs = 120_000L, durationMs = 120_999L, isEnded = false))
+        // Real content from just over two minutes, and unknown durations, are unaffected.
+        assertTrue(shouldStoreWatchProgress(positionMs = 60_000L, durationMs = 121_000L))
+        assertTrue(isWatchProgressComplete(positionMs = 121_000L, durationMs = 121_000L, isEnded = true))
+        assertTrue(isWatchProgressComplete(positionMs = 1L, durationMs = 0L, isEnded = true))
+    }
+
+    @Test
     fun `live event types are never resumable but series aliases and custom types are`() {
         // The sports addon's events, as stored on 2026-09-20: a position inside a thirty-second
         // live window that can never reach completion.

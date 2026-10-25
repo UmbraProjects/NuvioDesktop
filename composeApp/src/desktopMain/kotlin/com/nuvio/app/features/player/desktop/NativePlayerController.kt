@@ -2,6 +2,8 @@ package com.nuvio.app.features.player.desktop
 
 import androidx.compose.ui.graphics.Color
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.streams.badgeFillCssColorOrNull
+import com.nuvio.app.features.streams.toBadgeCssColorOrNull
 import java.nio.ByteOrder
 import java.nio.ByteBuffer
 import java.io.File
@@ -142,6 +144,8 @@ internal class NativePlayerController(
     private var mayHostVapourSynth = false
     @Volatile
     private var lastResizeMode: PlayerResizeMode? = null
+    @Volatile
+    private var lastQuickAutoCrop = false
     private val handleLock = Any()
     private val attachGeneration = AtomicLong(0L)
     @Volatile
@@ -432,7 +436,7 @@ internal class NativePlayerController(
                             NativePlayerBridge.setMpvProperty(newHandle, key, value)
                         }
                     }
-                    lastResizeMode?.let { setResizeMode(it) }
+                    lastResizeMode?.let { setResizeMode(it, lastQuickAutoCrop) }
                     applyPendingSubtitleConfiguration(newHandle)
                     if (pendingVideoRedraw) {
                         pendingVideoRedraw = false
@@ -509,8 +513,13 @@ internal class NativePlayerController(
         NativePlayerBridge.updateControls(current, controlsJson)
     }
 
-    fun setResizeMode(mode: PlayerResizeMode) {
+    /**
+     * [quickAutoCrop] is for the hero trailers: Auto Crop that settles in about two seconds from
+     * the first frame instead of after five seconds of learning (native mode 4).
+     */
+    fun setResizeMode(mode: PlayerResizeMode, quickAutoCrop: Boolean = false) {
         lastResizeMode = mode
+        lastQuickAutoCrop = quickAutoCrop
         handle.takeIf { it != 0L }?.let { current ->
             NativePlayerBridge.setResizeMode(
                 handle = current,
@@ -518,7 +527,7 @@ internal class NativePlayerController(
                     PlayerResizeMode.Fit -> 0
                     PlayerResizeMode.Fill -> 1
                     PlayerResizeMode.Zoom -> 2
-                    PlayerResizeMode.AutoCrop -> 3
+                    PlayerResizeMode.AutoCrop -> if (quickAutoCrop) 4 else 3
                 },
             )
             forceVideoRedraw()
@@ -1852,6 +1861,59 @@ internal class NativePlayerController(
             }
     }
 
+    /**
+     * The selected video and audio tracks as mpv decoded them, for the player badges. Read from
+     * the bridge's cached track JSON, so it is cheap to poll. [width]/[height]/[isHdr] come from
+     * the caller, which already tracks the decoded frame.
+     */
+    fun playingMediaFacts(width: Int?, height: Int?, isHdr: Boolean): com.nuvio.app.features.player.PlayingMediaFacts? {
+        if (handle == 0L) return null
+        decodedWidth = width
+        decodedHeight = height
+        decodedIsHdr = isHdr
+        val video = decodeTracks { NativePlayerBridge.videoTracksJson(it) }.firstOrNull { it.selected }
+        val audio = decodeTracks { NativePlayerBridge.audioTracksJson(it) }.firstOrNull { it.selected }
+        if (video == null && audio == null) return null
+        return com.nuvio.app.features.player.PlayingMediaFacts(
+            width = width ?: video?.width?.takeIf { it > 0 },
+            height = height ?: video?.height?.takeIf { it > 0 },
+            isHdr = isHdr,
+            videoCodec = video?.codec?.takeIf(String::isNotBlank),
+            dolbyVisionProfile = video?.dvProfile ?: 0,
+            audioCodec = audio?.codec?.takeIf(String::isNotBlank),
+            audioProfile = audio?.profile?.takeIf(String::isNotBlank),
+            audioChannels = audio?.channelCount?.takeIf { it > 0 },
+            audioLanguage = audio?.language?.takeIf(String::isNotBlank),
+            videoProfile = video?.profile?.takeIf(String::isNotBlank),
+            fps = video?.fps?.takeIf { it > 0.0 },
+            videoBitrate = video?.bitrate?.takeIf { it > 0 },
+            audioTitle = audio?.label?.takeIf(String::isNotBlank),
+            audioSampleRate = audio?.sampleRate?.takeIf { it > 0 },
+            audioBitrate = audio?.bitrate?.takeIf { it > 0 },
+        )
+    }
+
+    // The decoded frame as PlayerEngine.desktop last reported it (it is the one that tracks it).
+    @Volatile private var decodedWidth: Int? = null
+    @Volatile private var decodedHeight: Int? = null
+    @Volatile private var decodedIsHdr: Boolean = false
+
+    override fun playingMediaFacts(): com.nuvio.app.features.player.PlayingMediaFacts? =
+        playingMediaFacts(decodedWidth, decodedHeight, decodedIsHdr)
+
+    /** Image badges for what is playing, shown in the title block; empty hides them. */
+    fun setPlayerBadges(badges: List<com.nuvio.app.features.streams.StreamBadge>) {
+        val current = handle.takeIf { it != 0L } ?: return
+        val payload = badges.joinToString(prefix = "[", postfix = "]") { badge ->
+            // The chip's fill and border as StreamBadgeChip draws them in the stream list.
+            val fill = badgeFillCssColorOrNull(badge.tagColor, badge.tagStyle).orEmpty()
+            val border = badge.borderColor.toBadgeCssColorOrNull().orEmpty()
+            "{\"name\":${badge.name.toJsonString()},\"imageURL\":${badge.imageURL.toJsonString()}," +
+                "\"backgroundColor\":${fill.toJsonString()},\"borderColor\":${border.toJsonString()}}"
+        }
+        NativePlayerBridge.runJavaScript(current, "window.nuvioSetPlayerBadges && window.nuvioSetPlayerBadges($payload)")
+    }
+
     private fun decodeTracks(readJson: (Long) -> String): List<NativeMpvTrack> {
         val current = handle.takeIf { it != 0L } ?: return emptyList()
         return runCatching {
@@ -1868,6 +1930,15 @@ private data class NativeMpvTrack(
     val language: String = "",
     val selected: Boolean = false,
     val forced: Boolean = false,
+    val codec: String = "",
+    val profile: String = "",
+    val channelCount: Int = 0,
+    val dvProfile: Int = 0,
+    val width: Int = 0,
+    val height: Int = 0,
+    val fps: Double = 0.0,
+    val bitrate: Long = 0,
+    val sampleRate: Int = 0,
 )
 
 @Serializable
@@ -2686,6 +2757,8 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonPartyField("party", party)
         append(',')
+        appendStreamInfoField(streamInfo)
+        append(',')
         appendJsonField("showSubmitIntro", showSubmitIntro)
         append(',')
         appendJsonField("showVideoSettings", showVideoSettings)
@@ -2790,25 +2863,25 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("sourcesPanelOpen", sourcesPanelOpen)
         append(',')
-        appendJsonField("heroTrailerMode", heroTrailerMode)
+        appendJsonField("heroTrailerMode", heroTrailer.enabled)
         append(',')
-        appendJsonField("heroTrailerBackgroundColor", heroTrailerBackgroundColor)
+        appendJsonField("heroTrailerBackgroundColor", heroTrailer.backgroundColor)
         append(',')
-        appendJsonField("heroTrailerLogoUrl", heroTrailerLogoUrl)
+        appendJsonField("heroTrailerLogoUrl", heroTrailer.logoUrl)
         append(',')
-        appendJsonField("heroTrailerTitle", heroTrailerTitle)
+        appendJsonField("heroTrailerTitle", heroTrailer.title)
         append(',')
-        appendJsonField("heroTrailerMeta", heroTrailerMeta)
+        appendJsonField("heroTrailerMeta", heroTrailer.meta)
         append(',')
-        appendJsonField("heroTrailerDescription", heroTrailerDescription)
+        appendJsonField("heroTrailerDescription", heroTrailer.description)
         append(',')
-        appendJsonField("heroTrailerMuted", heroTrailerMuted)
+        appendJsonField("heroTrailerMuted", heroTrailer.muted)
         append(',')
-        appendJsonField("heroTrailerVolume", heroTrailerVolume)
+        appendJsonField("heroTrailerVolume", heroTrailer.volume)
         append(',')
-        appendJsonField("heroTrailerNavDismissEdge", heroTrailerNavDismissEdge)
+        appendJsonField("heroTrailerNavDismissEdge", heroTrailer.navDismissEdge)
         append(',')
-        appendJsonField("heroTrailerNavDismissBandFraction", heroTrailerNavDismissBandFraction.toDouble())
+        appendJsonField("heroTrailerNavDismissBandFraction", heroTrailer.navDismissBandFraction.toDouble())
         append(',')
         appendJsonField("streamFailoverEnabled", streamFailoverEnabled)
         append('}')
@@ -2821,7 +2894,7 @@ private fun PlayerControlsState.nativeControlsStructureKey(): PlayerControlsStat
         durationMs = 0L,
         positionMs = 0L,
         // Volatile data (driven by the overlay volume slider); not a structural change.
-        heroTrailerVolume = 0,
+        heroTrailer = heroTrailer.copy(volume = 0),
     )
 
 private fun StringBuilder.appendJsonField(name: String, value: String) {
@@ -2877,12 +2950,69 @@ private fun StringBuilder.appendJsonPartyField(name: String, party: PlayerContro
     append(',')
     appendJsonArrayField("members", party.members) { appendPartyMemberJson(it) }
     append(',')
+    appendJsonField("chatUnread", party.chatUnread)
+    append(',')
+    appendJsonArrayField("chatMessages", party.chatMessages) { appendPartyChatMessageJson(it) }
+    append(',')
     append("\"labels\":{")
     party.labels.entries.forEachIndexed { index, (key, value) ->
         if (index > 0) append(',')
         appendJsonField(key, value)
     }
     append("}}")
+}
+
+private fun StringBuilder.appendPartyChatMessageJson(message: com.nuvio.app.features.player.PlayerControlChatMessage) {
+    append('{')
+    appendJsonField("key", message.key)
+    append(',')
+    appendJsonField("name", message.name)
+    append(',')
+    appendJsonField("initials", message.initials)
+    append(',')
+    appendJsonField("color", message.color)
+    append(',')
+    appendJsonField("avatarUrl", message.avatarUrl)
+    append(',')
+    appendJsonField("body", message.body)
+    append(',')
+    appendJsonField("time", message.time)
+    append(',')
+    appendJsonField("mine", message.mine)
+    append(',')
+    appendJsonField("sending", message.sending)
+    append(',')
+    appendJsonField("failed", message.failed)
+    append(',')
+    appendJsonField("startsGroup", message.startsGroup)
+    append('}')
+}
+
+private fun StringBuilder.appendStreamInfoField(info: com.nuvio.app.features.player.PlayerControlStreamInfo?) {
+    append("\"streamInfo\":")
+    if (info == null) {
+        append("null")
+        return
+    }
+    append('{')
+    appendJsonField("title", info.title)
+    append(',')
+    appendJsonField("closeLabel", info.closeLabel)
+    append(',')
+    appendJsonArrayField("sections", info.sections) { section ->
+        append('{')
+        appendJsonField("title", section.title)
+        append(',')
+        appendJsonArrayField("rows", section.rows) { row ->
+            append('{')
+            appendJsonField("label", row.label)
+            append(',')
+            appendJsonField("value", row.value)
+            append('}')
+        }
+        append('}')
+    }
+    append('}')
 }
 
 private fun StringBuilder.appendPartyMemberJson(member: PlayerControlPartyMember) {

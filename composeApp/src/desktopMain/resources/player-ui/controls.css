@@ -597,6 +597,30 @@ button svg * {
 
 .title-badges[hidden] { display: none; }
 
+/* Badge-pack images for what is playing; same height as the text badges beside them. The chip
+ * carries the pack's own fill and border (set inline), as the stream list's badges do. */
+.title-badge-chip {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  border: 1px solid transparent;
+  border-radius: calc(var(--user-scale) * 4px);
+  overflow: hidden;
+}
+
+.title-badge-chip[style*="background"] {
+  padding: calc(var(--user-scale) * 1px) calc(var(--user-scale) * 3px);
+}
+
+.title-badge-image {
+  display: block;
+  height: calc(var(--user-scale) * 20px);
+  max-width: calc(var(--user-scale) * 96px);
+  width: auto;
+  object-fit: contain;
+  align-self: center;
+}
+
 .title-badge {
   display: inline-flex;
   align-items: center;
@@ -3388,6 +3412,45 @@ button:focus-visible,
 
 .swatch.custom.has-color {
   border-style: solid;
+}
+
+/* Stream info: label / value rows in titled sections. */
+.track-panel.stream-info-panel {
+  width: min(92vw, 520px);
+  max-height: min(88vh, 760px);
+}
+
+.stream-info-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  padding: 0 20px 20px;
+}
+
+.stream-info-section-title {
+  color: rgba(255, 255, 255, .5);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin-bottom: 6px;
+}
+
+.stream-info-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 30%) 1fr;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.stream-info-label { color: rgba(255, 255, 255, .6); }
+
+.stream-info-value {
+  color: #fff;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .consent-body {
@@ -6198,6 +6261,175 @@ svg {
 .party-presence.away { background: rgba(255, 255, 255, .55); }
 .party-presence.offline { background: rgba(255, 255, 255, .2); }
 
+/* Unread chat count, on the pill, the party button and the Chat tab. */
+.party-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.party-badge[hidden] { display: none; }
+
+.action .party-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+
+.party-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 20px 12px;
+}
+
+.party-tabs[hidden] { display: none; }
+
+.party-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, .72);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.party-tab:hover { color: #fff; }
+
+.party-tab.selected {
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .3);
+  color: #fff;
+}
+
+.party-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: min(60vh, 520px);
+  padding: 0 20px 20px;
+  gap: 12px;
+}
+
+.party-chat[hidden] { display: none; }
+
+.party-chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.party-chat-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+}
+
+.party-chat-empty[hidden] { display: none; }
+
+.party-chat-time {
+  align-self: center;
+  margin: 10px 0 4px;
+  color: rgba(255, 255, 255, .45);
+  font-size: 11px;
+}
+
+.party-chat-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.party-chat-row.group-start { margin-top: 8px; }
+.party-chat-row.mine { justify-content: flex-end; }
+
+.party-chat-row .party-avatar {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.party-chat-row .party-avatar.spacer { visibility: hidden; }
+
+.party-chat-bubble {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+  padding: 7px 11px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.party-chat-row.mine .party-chat-bubble { background: rgba(83, 129, 255, .55); }
+.party-chat-row.sending .party-chat-bubble { opacity: .6; }
+
+.party-chat-name {
+  color: rgba(255, 255, 255, .6);
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.party-chat-failed {
+  align-self: flex-end;
+  border: 0;
+  background: transparent;
+  color: #ff8a8a;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 0 0;
+}
+
+.party-chat-composer {
+  display: flex;
+  gap: 8px;
+}
+
+.party-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .35);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.party-chat-input:focus { border-color: rgba(255, 255, 255, .5); }
+
 /* Panel */
 .track-panel.party-panel {
   width: min(92vw, 460px);
@@ -6706,3 +6938,29 @@ svg {
 .iptv-group-row.keyboard-focus { border-color: var(--theme-focus, #9ecaff); }
 .iptv-group-row.selected { color: #fff; font-weight: 700; background: var(--theme-selected-surface, rgba(47,111,237,.25)); }
 .iptv-group-count { color: rgba(255,255,255,.5); font-size: 13px; }
+
+/* Next-episode card, one piece: thumbnail and text only. The whole card is the button, so there is
+   no separate Play control, and the card is as wide as its text rather than a fixed 292px with a
+   gap in the middle. Declared last so it applies to every layout, pills included. The action label
+   element stays in the markup because the script still writes to it. */
+.next-episode-card {
+  width: auto;
+  max-width: min(calc(var(--user-scale) * 340px), calc(100vw - (var(--hp) * 2)));
+  padding: calc(var(--user-scale) * 6px) calc(var(--user-scale) * 20px) calc(var(--user-scale) * 6px) calc(var(--user-scale) * 6px);
+}
+.next-episode-copy {
+  padding-left: calc(var(--user-scale) * 12px);
+  text-align: left;
+}
+.next-episode-action {
+  display: none;
+}
+/* With no button, the card itself answers the pointer. */
+.next-episode-card.playable {
+  cursor: pointer;
+}
+.next-episode-card.playable:hover {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
+  /* Layered over each layout's own fill rather than replacing it. */
+  background-image: linear-gradient(rgba(255, 255, 255, .07), rgba(255, 255, 255, .07));
+}

@@ -17,7 +17,11 @@ import com.nuvio.app.features.tracking.CalendarSource
 import com.nuvio.app.features.tracking.CalendarSourceRepository
 import com.nuvio.app.features.tracking.LibrarySourceRepository
 import com.nuvio.app.features.tracking.RatingPromptRepository
+import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.tracking.TrackingProviderRegistry
+import com.nuvio.app.features.tmdb.TmdbSettingsRepository
+import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
+import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.tracking.trackingProvider
 import com.nuvio.app.features.tracking.trackingRatingProviderFor
 import com.nuvio.app.isDesktop
@@ -86,6 +90,22 @@ internal fun LazyListScope.integrationsContent(
                 ),
             ) {
                 CalendarSourceRow(isTablet = isTablet)
+            }
+        }
+    }
+
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.settings_more_like_this_section),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsScrollAnchor(
+                    SettingsScrollAnchor.searchKey("more-like-this-source"),
+                ),
+            ) {
+                MoreLikeThisSourceRow(isTablet = isTablet)
             }
         }
     }
@@ -265,6 +285,56 @@ private fun RatingPromptRow(isTablet: Boolean) {
     )
 }
 
+/**
+ * The single place the detail page's More Like This rail is configured. It is not a Trakt or TMDB
+ * setting: the source can be any of the three, and "Off" is TMDB's own module switch (with TMDB as
+ * the source, that switch off leaves the rail empty, which is how it always behaved).
+ *
+ * A source that is not connected falls back to TMDB, so the row says so rather than pretending.
+ */
+@Composable
+private fun MoreLikeThisSourceRow(isTablet: Boolean) {
+    val traktSettings by remember {
+        TraktSettingsRepository.ensureLoaded()
+        TraktSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val tmdbSettings by remember {
+        TmdbSettingsRepository.ensureLoaded()
+        TmdbSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val connected by TrackingProviderRegistry.connectedProviderIds.collectAsStateWithLifecycle()
+
+    val source = traktSettings.moreLikeThisSource
+    val selected: MoreLikeThisSourcePreference? =
+        if (source == MoreLikeThisSourcePreference.TMDB && !tmdbSettings.useMoreLikeThis) null else source
+    val labels = linkedMapOf<MoreLikeThisSourcePreference?, String>(
+        MoreLikeThisSourcePreference.TRAKT to stringResource(Res.string.trakt_more_like_this_source_trakt),
+        MoreLikeThisSourcePreference.SIMKL to stringResource(Res.string.trakt_more_like_this_source_simkl),
+        MoreLikeThisSourcePreference.TMDB to stringResource(Res.string.trakt_more_like_this_source_tmdb),
+        null to stringResource(Res.string.settings_more_like_this_off),
+    )
+    val requiredProvider = when (selected) {
+        MoreLikeThisSourcePreference.TRAKT -> TrackingProviderId.TRAKT
+        MoreLikeThisSourcePreference.SIMKL -> TrackingProviderId.SIMKL
+        else -> null
+    }
+    SettingsChoiceRow(
+        title = stringResource(Res.string.trakt_more_like_this_source_title),
+        description = if (requiredProvider == null || requiredProvider in connected) {
+            labels.getValue(selected)
+        } else {
+            stringResource(Res.string.settings_more_like_this_not_connected)
+        },
+        options = labels.map { (value, label) -> SettingsChoiceOption(value, label) },
+        selectedValue = selected,
+        isTablet = isTablet,
+        onSelected = { choice ->
+            TmdbSettingsRepository.setUseMoreLikeThis(choice != null)
+            TraktSettingsRepository.setMoreLikeThisSource(choice ?: MoreLikeThisSourcePreference.TMDB)
+        },
+    )
+}
+
 /** The single place Calendar's provider is selected. */
 @Composable
 private fun CalendarSourceRow(isTablet: Boolean) {
@@ -279,7 +349,8 @@ private fun CalendarSourceRow(isTablet: Boolean) {
             CalendarSource.TRAKT -> stringResource(Res.string.settings_calendar_source_trakt)
             CalendarSource.SIMKL -> stringResource(Res.string.settings_calendar_source_simkl)
             CalendarSource.MDBLIST -> stringResource(Res.string.settings_calendar_source_mdblist)
-            CalendarSource.NUVIO -> "Nuvio (your library and watch history)"
+            // Short enough for the dropdown; the row description says what it draws from.
+            CalendarSource.NUVIO -> "Nuvio"
         }
     }
 
@@ -287,7 +358,7 @@ private fun CalendarSourceRow(isTablet: Boolean) {
     SettingsChoiceRow(
         title = stringResource(Res.string.settings_calendar_source_title),
         description = if (isSelectionConnected) {
-            labels.getValue(selected)
+            if (selected == CalendarSource.NUVIO) "Your Nuvio library and watch history" else labels.getValue(selected)
         } else {
             stringResource(Res.string.settings_calendar_source_not_connected)
         },

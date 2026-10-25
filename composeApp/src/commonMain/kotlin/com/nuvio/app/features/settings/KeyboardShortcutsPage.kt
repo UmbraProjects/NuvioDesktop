@@ -407,11 +407,11 @@ private fun GamepadSection(isTablet: Boolean) {
             }
         }
 
-        SettingsSection(title = "Controller · Buttons", isTablet = isTablet) {
-            SettingsSectionNote(
-                text = "While a panel is open during playback, the D-pad navigates the panel instead.",
-                isTablet = isTablet,
-            )
+        SettingsSection(
+            title = "Controller · Buttons",
+            isTablet = isTablet,
+            subtitle = "While a panel is open during playback, the D-pad navigates the panel instead.",
+        ) {
             SettingsGroup(isTablet = isTablet) {
                 rows.forEachIndexed { index, row ->
                     if (index > 0) SettingsGroupDivider(isTablet = isTablet)
@@ -460,19 +460,18 @@ private fun GamepadSliderRow(
             )
             SettingsSubtext(text = description, isTablet = isTablet)
         }
-        Column(
-            modifier = Modifier.width(if (isTablet) 210.dp else 220.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+        Row(
+            modifier = Modifier.width(if (isTablet) DesktopControlWidth else 220.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ValueBox(text = valueLabel)
             SettingsModernSlider(
                 value = draft,
                 onValueChange = { if (enabled) draft = it },
                 onValueChangeFinished = { if (enabled) onValueChange(draft) },
                 enabled = enabled,
                 valueRange = valueRange,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
+                valueLabel = valueLabel,
             )
         }
     }

@@ -64,6 +64,11 @@ internal data class StreamCandidate(
     val fps: Int,
     val bitrate: Double,
     val ext: String,
+    /**
+     * Audio only: whether this is the video's original language track. Null when YouTube sent no
+     * `audioTrack` (a single-language video, where every audio format is the original).
+     */
+    val isOriginalAudio: Boolean? = null,
 )
 
 private data class ManifestBestVariant(
@@ -191,11 +196,21 @@ class InAppYouTubeExtractor internal constructor(
         val fetchedAtMs: Long,
     )
 
-    suspend fun extractPlaybackSource(youtubeUrl: String): TrailerResolution = withContext(Dispatchers.Default) {
+    suspend fun extractPlaybackSource(youtubeUrl: String): TrailerResolution = extract(youtubeUrl, singleUrl = false)
+
+    /**
+     * One URL carrying both video and audio, for a stream that is only a YouTube id (upstream
+     * 94976222d): the HLS master playlist (every quality, audio as a rendition), or a progressive
+     * file when there is none. The adaptive formats are skipped because their audio is separate.
+     */
+    suspend fun extractSingleUrl(youtubeUrl: String): String? =
+        (extract(youtubeUrl, singleUrl = true) as? TrailerResolution.Available)?.source?.videoUrl
+
+    private suspend fun extract(youtubeUrl: String, singleUrl: Boolean): TrailerResolution = withContext(Dispatchers.Default) {
         if (youtubeUrl.isBlank()) return@withContext TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
 
         val hadCachedConfig = configMutex.withLock { cachedConfig != null }
-        val first = attemptExtraction(youtubeUrl, forceRefreshConfig = false)
+        val first = attemptExtraction(youtubeUrl, forceRefreshConfig = false, singleUrl = singleUrl)
 
         // A session that has expired server-side is indistinguishable from an unplayable video:
         // every client answers LOGIN_REQUIRED with no `streamingData`. Retry once against a
@@ -206,13 +221,17 @@ class InAppYouTubeExtractor internal constructor(
             return@withContext first
         }
         log.i { "Retrying extraction with a fresh watch config" }
-        attemptExtraction(youtubeUrl, forceRefreshConfig = true)
+        attemptExtraction(youtubeUrl, forceRefreshConfig = true, singleUrl = singleUrl)
     }
 
-    private suspend fun attemptExtraction(youtubeUrl: String, forceRefreshConfig: Boolean): TrailerResolution =
+    private suspend fun attemptExtraction(
+        youtubeUrl: String,
+        forceRefreshConfig: Boolean,
+        singleUrl: Boolean,
+    ): TrailerResolution =
         runCatching {
             withTimeout(EXTRACTOR_TIMEOUT_MS) {
-                extractPlaybackSourceInternal(youtubeUrl, forceRefreshConfig)
+                extractPlaybackSourceInternal(youtubeUrl, forceRefreshConfig, singleUrl)
             }
         }.onFailure {
             log.w { "Trailer extractor failed for $youtubeUrl: ${it.message}" }
@@ -315,6 +334,7 @@ class InAppYouTubeExtractor internal constructor(
     private suspend fun extractPlaybackSourceInternal(
         youtubeUrl: String,
         forceRefreshConfig: Boolean,
+        singleUrl: Boolean = false,
     ): TrailerResolution {
         val videoId = extractVideoId(youtubeUrl)
             ?: return TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
@@ -423,6 +443,7 @@ class InAppYouTubeExtractor internal constructor(
                             fps = 0,
                             bitrate = bitrate,
                             ext = if (mimeType.contains("webm")) "webm" else "m4a",
+                            isOriginalAudio = format.isOriginalAudioTrack(url),
                         )
                     }
                 }
@@ -458,13 +479,26 @@ class InAppYouTubeExtractor internal constructor(
         }
 
         val bestProgressive = sortCandidates(progressive).firstOrNull()
+        if (singleUrl) {
+            // The master playlist, not the best variant: variant playlists carry video only, with
+            // audio as a rendition only the master links.
+            val single = bestManifest?.manifestUrl?.takeIf { it.isNotBlank() } ?: bestProgressive?.url
+            log.i { "Selected single-url stream manifest=${bestManifest != null} progressive=${bestProgressive?.height ?: 0}p" }
+            return single?.let { TrailerResolution.Available(TrailerPlaybackSource(videoUrl = it)) }
+                ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+        }
         val bestVideo = pickBestVideoForClient(
             items = adaptiveVideo,
             clientKey = PREFERRED_SEPARATE_CLIENT,
             preferredHeights = TrailerExtractionPlatform.preferredSeparateVideoHeights,
             preferClient = TrailerExtractionPlatform.preferSeparateVideoClient,
         )
-        val bestAudio = pickBestForClient(adaptiveAudio, PREFERRED_SEPARATE_CLIENT)
+        // Multi-language uploads (studio trailers, and anything YouTube has auto-dubbed) carry one
+        // audio format per language, and the highest-bitrate one was as likely to be a dub as the
+        // original: The Housemaid (2025) played in another language. Only the original track
+        // competes when YouTube says which one that is.
+        val originalAudio = adaptiveAudio.filter { it.isOriginalAudio == true }
+        val bestAudio = pickBestForClient(originalAudio.ifEmpty { adaptiveAudio }, PREFERRED_SEPARATE_CLIENT)
 
         log.i {
             "Selected trailer streams adaptive=${bestVideo?.height ?: 0}p/${bestVideo?.fps ?: 0}fps " +
@@ -839,6 +873,25 @@ private fun parseUrl(input: String): ParsedUrl? {
         pathSegments = path.trim('/').split('/').filter { it.isNotBlank() },
         query = query,
     )
+}
+
+/**
+ * Whether an audio format is the original language. YouTube marks it in `audioTrack.audioIsDefault`
+ * and in the URL's `xtags` (`acont=original` against `acont=dubbed`/`dubbed-auto`); null when
+ * neither says, which is a video with only one audio language.
+ */
+private fun JsonObject.isOriginalAudioTrack(url: String): Boolean? {
+    val track = objectValue("audioTrack")
+    (track?.get("audioIsDefault") as? JsonPrimitive)?.content?.toBooleanStrictOrNull()?.let { return it }
+    val xtags = Regex("""[?&]xtags=([^&]*)""").find(url)?.groupValues?.get(1)
+        ?.replace("%3D", "=", ignoreCase = true)
+        ?.replace("%3A", ":", ignoreCase = true)
+        ?: return if (track != null) false else null
+    return when {
+        "acont=original" in xtags -> true
+        "acont=dubbed" in xtags || "acont=descriptive" in xtags -> false
+        else -> null
+    }
 }
 
 private fun JsonObject.objectValue(key: String): JsonObject? {

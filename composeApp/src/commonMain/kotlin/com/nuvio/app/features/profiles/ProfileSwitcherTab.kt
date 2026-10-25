@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1167,10 +1168,12 @@ fun ActiveProfileMiniAvatar(
         profileAvatarImageUrl(profile, avatarItem)
     }
 
-    val borderColor = if (selected) {
-        tokens.colors.borderSelected
+    // The ring follows the theme accent rather than the profile colour, which was the one thing
+    // on a themed screen that ignored the theme.
+    val borderBrush = if (selected) {
+        SolidColor(tokens.colors.borderSelected)
     } else {
-        avatarColor.copy(alpha = 0.5f)
+        tokens.colors.accentFill(0.5f)
     }
 
     Box(
@@ -1184,7 +1187,7 @@ fun ActiveProfileMiniAvatar(
                     avatarColor.copy(alpha = 0.15f)
                 },
             )
-            .border(tokens.borders.thin + NuvioTokens.Space.hairline, borderColor, tokens.shapes.avatar),
+            .border(tokens.borders.thin + NuvioTokens.Space.hairline, borderBrush, tokens.shapes.avatar),
         contentAlignment = Alignment.Center,
     ) {
         if (avatarImageUrl != null) {

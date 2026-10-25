@@ -102,6 +102,8 @@ actual suspend fun httpRequestRaw(
     allowLargeResponse: Boolean,
     callTimeoutMs: Long,
     connectTimeoutMs: Long,
+    requestBodyBytes: ByteArray?,
+    keepResponseBytes: Boolean,
 ): RawHttpResponse = withContext(Dispatchers.IO) {
     val needsOwnClient = !followRedirects || callTimeoutMs > 0 || connectTimeoutMs > 0
     val client = if (!needsOwnClient) {
@@ -120,16 +122,29 @@ actual suspend fun httpRequestRaw(
             }
             .build()
     }
-    client.newCall(buildDesktopRequest(method, url, headers, body)).execute().use { response ->
-        RawHttpResponse(
-            status = response.code,
-            statusText = response.message,
-            url = response.request.url.toString(),
-            body = readRawResponseBody(response.body, allowLargeResponse),
-            headers = response.headers.toMultimap()
-                .mapValues { (_, values) -> values.joinToString(",") }
-                .mapKeys { (name, _) -> name.lowercase() },
-        )
+    client.newCall(buildDesktopRequest(method, url, headers, body, requestBodyBytes)).execute().use { response ->
+        val responseHeaders = response.headers.toMultimap()
+            .mapValues { (_, values) -> values.joinToString(",") }
+            .mapKeys { (name, _) -> name.lowercase() }
+        if (keepResponseBytes && !allowLargeResponse) {
+            val (text, bytes) = readResponseBodyLimitedWithBytes(response.body)
+            RawHttpResponse(
+                status = response.code,
+                statusText = response.message,
+                url = response.request.url.toString(),
+                body = text,
+                headers = responseHeaders,
+                bodyBytes = bytes,
+            )
+        } else {
+            RawHttpResponse(
+                status = response.code,
+                statusText = response.message,
+                url = response.request.url.toString(),
+                body = readRawResponseBody(response.body, allowLargeResponse),
+                headers = responseHeaders,
+            )
+        }
     }
 }
 
@@ -189,6 +204,7 @@ private fun buildDesktopRequest(
     url: String,
     headers: Map<String, String>,
     body: String,
+    bodyBytes: ByteArray? = null,
 ): Request {
     val normalizedMethod = method.trim().uppercase().ifBlank { "GET" }
     val sanitizedHeaders = headers.filterKeys { !it.equals("Accept-Encoding", ignoreCase = true) }
@@ -204,7 +220,7 @@ private fun buildDesktopRequest(
             ?: if (normalizedMethod == "POST") "application/x-www-form-urlencoded" else "application/json"
         builder.method(
             normalizedMethod,
-            body.toByteArray(Charsets.UTF_8).toRequestBody(contentType.toMediaType()),
+            (bodyBytes ?: body.toByteArray(Charsets.UTF_8)).toRequestBody(contentType.toMediaType()),
         )
     } else {
         builder.method(normalizedMethod, null)
@@ -229,13 +245,17 @@ private fun readAtMostBytes(stream: InputStream, maxBytes: Int): LimitedReadResu
     )
 }
 
-private fun readResponseBodyLimited(body: ResponseBody?): String {
-    if (body == null) return ""
+private fun readResponseBodyLimited(body: ResponseBody?): String = readResponseBodyLimitedWithBytes(body).first
+
+/** [readResponseBodyLimited], also returning the bytes it decoded (cut at the same cap). */
+private fun readResponseBodyLimitedWithBytes(body: ResponseBody?): Pair<String, ByteArray> {
+    if (body == null) return "" to ByteArray(0)
     val charset = body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
     val readResult = body.byteStream().use { readAtMostBytes(it, MAX_RAW_RESPONSE_BODY_BYTES) }
     val decoded = runCatching { String(readResult.bytes, charset) }
         .getOrElse { String(readResult.bytes, Charsets.UTF_8) }
-    return if (readResult.truncated) decoded + RAW_RESPONSE_TRUNCATION_SUFFIX else decoded
+    val text = if (readResult.truncated) decoded + RAW_RESPONSE_TRUNCATION_SUFFIX else decoded
+    return text to readResult.bytes
 }
 
 private fun readResponseBody(body: ResponseBody?, maxBytes: Int = MAX_RESPONSE_BODY_BYTES): String {

@@ -445,7 +445,10 @@ object LibraryRepository {
         } else {
             // Single-watchlist providers may split their Library presentation into movie/show rows.
             // Those row keys are display-only; route removal to the provider's sole destination.
-            activeLibraryProvider()?.snapshot()?.tabs?.singleOrNull()?.key ?: listKey
+            // MDBList also has its lists as tabs now, so fall back to the watchlist tab, not the only one.
+            activeLibraryProvider()?.snapshot()?.tabs?.let { tabs ->
+                tabs.singleOrNull() ?: tabs.firstOrNull { it.kind == com.nuvio.app.features.tracking.TrackingLibraryTabKind.WATCHLIST }
+            }?.key ?: listKey
         }
         val desiredMembership = libraryMembershipWithRemovedList(
             currentMembership = currentMembership,

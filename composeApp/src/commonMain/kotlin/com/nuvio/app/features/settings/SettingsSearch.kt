@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.storage.PortableMode
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -176,7 +177,8 @@ private fun settingsSearchEntries(
     val contentDiscoveryPage = resolve(Res.string.compose_settings_page_content_discovery)
     val downloadsPage = resolve(Res.string.compose_settings_root_downloads_title)
     val autoDownloadsPage = resolve(Res.string.compose_settings_page_auto_downloads)
-    val playbackPage = resolve(Res.string.compose_settings_page_playback)
+    val playbackPage = resolve(Res.string.compose_settings_page_video_audio)
+    val playerPage = resolve(Res.string.compose_settings_page_player)
     val randomPlayPage = resolve(Res.string.random_play_title)
     val discoverPage = resolve(Res.string.compose_settings_page_discover)
     val streamsPage = resolve(Res.string.compose_settings_page_streams)
@@ -360,6 +362,13 @@ private fun settingsSearchEntries(
         key = "playback",
         title = playbackPage,
         description = resolve(Res.string.settings_playback_subtitle),
+        icon = Icons.Rounded.PlayArrow,
+    )
+    addPage(
+        page = SettingsPage.Player,
+        key = "player",
+        title = playerPage,
+        description = resolve(Res.string.settings_player_page_subtitle),
         icon = Icons.Rounded.PlayArrow,
     )
     addPage(
@@ -610,6 +619,16 @@ private fun settingsSearchEntries(
         section = resolve(Res.string.settings_calendar_source_section),
         icon = Icons.Rounded.Link,
         anchor = SettingsScrollAnchor.searchKey("calendar-source"),
+    )
+    addRow(
+        page = SettingsPage.Integrations,
+        key = "more-like-this-source",
+        title = resolve(Res.string.trakt_more_like_this_source_title),
+        description = resolve(Res.string.trakt_more_like_this_source_subtitle),
+        pageLabel = integrationsPage,
+        section = resolve(Res.string.settings_more_like_this_section),
+        icon = Icons.Rounded.Link,
+        anchor = SettingsScrollAnchor.searchKey("more-like-this-source"),
     )
     if (isDesktop) {
         addPage(
@@ -1266,6 +1285,9 @@ private fun settingsSearchEntries(
     )
 
     val playbackPlayer = resolve(Res.string.settings_playback_section_player)
+    val playbackPictureAudio = resolve(Res.string.settings_playback_section_picture_audio)
+    val playbackAnime = resolve(Res.string.settings_playback_section_anime)
+    val playbackRtx = resolve(Res.string.settings_playback_nvidia_rtx_video_section)
     val playbackSubtitleAudio = resolve(Res.string.settings_playback_section_subtitle_audio)
     val playbackStreamSelection = resolve(Res.string.settings_playback_section_stream_selection)
     val playbackStreamAutoPlay = resolve(Res.string.settings_playback_section_stream_auto_play)
@@ -1304,6 +1326,15 @@ private fun settingsSearchEntries(
         key = "stream-badge-urls",
         title = resolve(Res.string.settings_stream_badge_urls_title),
         description = resolve(Res.string.settings_stream_badge_urls_search_description),
+        pageLabel = streamsPage,
+        section = resolve(Res.string.settings_stream_badges_section),
+        icon = Icons.Rounded.Style,
+    )
+    addRow(
+        page = SettingsPage.Streams,
+        key = "stream-badges-in-player",
+        title = resolve(Res.string.settings_stream_badges_in_player_title),
+        description = resolve(Res.string.settings_stream_badges_in_player_description),
         pageLabel = streamsPage,
         section = resolve(Res.string.settings_stream_badges_section),
         icon = Icons.Rounded.Style,
@@ -1382,9 +1413,10 @@ private fun settingsSearchEntries(
     }
     addPlaybackRows(
         addRow = ::addRow,
-        pageLabel = playbackPage,
+        pageLabel = playerPage,
         section = playbackPlayer,
         icon = Icons.Rounded.PlayArrow,
+        page = SettingsPage.Player,
         rows = listOfNotNull(
             PlaybackSearchRow(
                 "loading-overlay",
@@ -1440,10 +1472,25 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_notification_position_description),
                 anchor = SettingsScrollAnchor.NotificationPosition,
             ) else null,
+        ),
+    )
+    addPlaybackRows(
+        addRow = ::addRow,
+        pageLabel = playbackPage,
+        section = playbackPictureAudio,
+        icon = Icons.Rounded.PlayArrow,
+        page = SettingsPage.Playback,
+        rows = listOfNotNull(
             if (isDesktop) PlaybackSearchRow(
                 "desktop-hdr",
                 resolve(Res.string.settings_playback_desktop_hdr_mode),
                 anchor = SettingsScrollAnchor.HdrMode,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-inverse-tone-mapping",
+                resolve(Res.string.settings_playback_desktop_inverse_tone_mapping),
+                resolve(Res.string.settings_playback_desktop_inverse_tone_mapping_desc),
+                anchor = SettingsScrollAnchor.InverseToneMapping,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
                 "desktop-color-profile",
@@ -1514,12 +1561,15 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_desktop_audio_dialogue_boost),
                 resolve(Res.string.settings_playback_desktop_audio_dialogue_boost_desc),
             ) else null,
-            if (isDesktop) PlaybackSearchRow(
-                "desktop-rate-limit-recovery",
-                resolve(Res.string.settings_playback_desktop_rate_limit_recovery),
-                resolve(Res.string.settings_playback_desktop_rate_limit_recovery_search),
-                anchor = SettingsScrollAnchor.RateLimitRecovery,
-            ) else null,
+        ),
+    )
+    addPlaybackRows(
+        addRow = ::addRow,
+        pageLabel = playbackPage,
+        section = playbackAnime,
+        icon = Icons.Rounded.PlayArrow,
+        page = SettingsPage.Playback,
+        rows = listOfNotNull(
             if (isDesktop) PlaybackSearchRow(
                 "desktop-anime-mode",
                 resolve(Res.string.settings_playback_desktop_anime_mode),
@@ -1565,6 +1615,15 @@ private fun settingsSearchEntries(
                 fallbackAnchor = SettingsScrollAnchor.AnimeSvp,
                 fallbackTitle = resolve(Res.string.settings_playback_desktop_anime_svp),
             ) else null,
+        ),
+    )
+    addPlaybackRows(
+        addRow = ::addRow,
+        pageLabel = playbackPage,
+        section = playbackRtx,
+        icon = Icons.Rounded.PlayArrow,
+        page = SettingsPage.Playback,
+        rows = listOfNotNull(
             if (isDesktop) PlaybackSearchRow(
                 "nvidia-rtx-hdr",
                 resolve(Res.string.settings_playback_nvidia_rtx_hdr),
@@ -1590,8 +1649,24 @@ private fun settingsSearchEntries(
     )
     addPlaybackRows(
         addRow = ::addRow,
-        pageLabel = playbackPage,
+        pageLabel = streamsPage,
+        section = playbackStreamSelection,
+        icon = Icons.Rounded.PlayArrow,
+        page = SettingsPage.Streams,
+        rows = listOfNotNull(
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-rate-limit-recovery",
+                resolve(Res.string.settings_playback_desktop_rate_limit_recovery),
+                resolve(Res.string.settings_playback_desktop_rate_limit_recovery_search),
+                anchor = SettingsScrollAnchor.RateLimitRecovery,
+            ) else null,
+        ),
+    )
+    addPlaybackRows(
+        addRow = ::addRow,
+        pageLabel = playerPage,
         section = playbackSubtitleAudio,
+        page = SettingsPage.Player,
         icon = Icons.Rounded.PlayArrow,
         rows = listOfNotNull(
             PlaybackSearchRow("preferred-audio", resolve(Res.string.settings_playback_preferred_audio_language)),
@@ -1642,8 +1717,9 @@ private fun settingsSearchEntries(
     )
     addPlaybackRows(
         addRow = ::addRow,
-        pageLabel = playbackPage,
+        pageLabel = streamsPage,
         section = playbackStreamSelection,
+        page = SettingsPage.Streams,
         icon = Icons.Rounded.PlayArrow,
         rows = listOf(
             PlaybackSearchRow(
@@ -1661,6 +1737,11 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_prefetch_resolve_links_description),
             ),
             PlaybackSearchRow(
+                "cw-stream-cache",
+                resolve(Res.string.settings_playback_cw_stream_cache),
+                resolve(Res.string.settings_playback_cw_stream_cache_description),
+            ),
+            PlaybackSearchRow(
                 "reuse-last-link",
                 resolve(Res.string.settings_playback_reuse_last_link),
                 resolve(Res.string.settings_playback_reuse_last_link_description),
@@ -1675,8 +1756,9 @@ private fun settingsSearchEntries(
     )
     addPlaybackRows(
         addRow = ::addRow,
-        pageLabel = playbackPage,
+        pageLabel = streamsPage,
         section = playbackStreamAutoPlay,
+        page = SettingsPage.Streams,
         icon = Icons.Rounded.PlayArrow,
         rows = buildList {
             add(PlaybackSearchRow("stream-mode", resolve(Res.string.settings_playback_stream_selection_mode)))
@@ -1691,8 +1773,9 @@ private fun settingsSearchEntries(
     if (!isIos) {
         addPlaybackRows(
             addRow = ::addRow,
-            pageLabel = playbackPage,
+            pageLabel = playerPage,
             section = playbackSubtitleRendering,
+            page = SettingsPage.Player,
             icon = Icons.Rounded.PlayArrow,
             rows = listOf(
                 PlaybackSearchRow("libass", resolve(Res.string.settings_playback_enable_libass), resolve(Res.string.settings_playback_enable_libass_description)),
@@ -1712,8 +1795,9 @@ private fun settingsSearchEntries(
     }
     addPlaybackRows(
         addRow = ::addRow,
-        pageLabel = playbackPage,
+        pageLabel = playerPage,
         section = playbackSkipSegments,
+        page = SettingsPage.Player,
         icon = Icons.Rounded.PlayArrow,
         rows = listOf(
             PlaybackSearchRow("skip-intro", resolve(Res.string.settings_playback_skip_intro_outro_recap), resolve(Res.string.settings_playback_skip_intro_outro_recap_description)),
@@ -1747,11 +1831,19 @@ private fun settingsSearchEntries(
     )
     addPlaybackRows(
         addRow = ::addRow,
-        pageLabel = playbackPage,
+        pageLabel = playerPage,
         section = playbackNextEpisode,
+        page = SettingsPage.Player,
         icon = Icons.Rounded.PlayArrow,
         rows = listOf(
             PlaybackSearchRow("auto-play-next", resolve(Res.string.settings_playback_auto_play_next_episode), resolve(Res.string.settings_playback_auto_play_next_episode_description), anchor = SettingsScrollAnchor.BingeMode),
+            // Shown only while Binge Mode is on; the fallback lands on the switch that reveals it.
+            PlaybackSearchRow(
+                "preload-next-episode",
+                resolve(Res.string.settings_playback_preload_next_episode),
+                resolve(Res.string.settings_playback_preload_next_episode_description),
+                fallbackAnchor = SettingsScrollAnchor.BingeMode,
+            ),
             PlaybackSearchRow("prefer-binge", resolve(Res.string.settings_playback_prefer_binge_group), resolve(Res.string.settings_playback_prefer_binge_group_description)),
             PlaybackSearchRow("skip-anime-filler", resolve(Res.string.settings_playback_skip_anime_filler), resolve(Res.string.settings_playback_skip_anime_filler_description)),
             PlaybackSearchRow("show-anime-filler", resolve(Res.string.settings_meta_anime_filler_badges), resolve(Res.string.settings_meta_anime_filler_badges_description)),
@@ -2042,7 +2134,6 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("tmdb-networks", resolve(Res.string.settings_tmdb_module_networks), resolve(Res.string.settings_tmdb_module_networks_description), tmdbModulesSection),
         PlaybackSearchRow("tmdb-episodes", resolve(Res.string.settings_tmdb_module_episodes), resolve(Res.string.settings_tmdb_module_episodes_description), tmdbModulesSection),
         PlaybackSearchRow("tmdb-season-posters", resolve(Res.string.settings_tmdb_module_season_posters), resolve(Res.string.settings_tmdb_module_season_posters_description), tmdbModulesSection),
-        PlaybackSearchRow("tmdb-more-like-this", resolve(Res.string.settings_tmdb_module_more_like_this), resolve(Res.string.settings_tmdb_module_more_like_this_description), tmdbModulesSection),
         PlaybackSearchRow("tmdb-collections", resolve(Res.string.settings_tmdb_module_collections), resolve(Res.string.settings_tmdb_module_collections_description), tmdbModulesSection),
     ).forEach { row ->
         addRow(
@@ -2058,6 +2149,8 @@ private fun settingsSearchEntries(
 
     listOf(
         PlaybackSearchRow("mdb-enable", resolve(Res.string.settings_mdb_enable_ratings), resolve(Res.string.settings_mdb_enable_ratings_description), resolve(Res.string.settings_mdb_section_title)),
+        // Only shown with MDBList tracking connected; the fallback lands on the enable switches.
+        PlaybackSearchRow("mdb-library-lists", resolve(Res.string.settings_mdb_section_library_lists), resolve(Res.string.settings_mdb_section_library_lists_description), resolve(Res.string.settings_mdb_section_library_lists), fallbackAnchor = SettingsScrollAnchor.searchKey("mdb-enable")),
         PlaybackSearchRow("mdb-api-key", resolve(Res.string.settings_mdb_api_key_title), resolve(Res.string.settings_mdb_api_key_description), resolve(Res.string.settings_mdb_section_api_key)),
         PlaybackSearchRow("mdb-imdb", resolve(Res.string.source_imdb), "", resolve(Res.string.settings_mdb_section_rating_providers)),
         PlaybackSearchRow("mdb-tmdb", resolve(Res.string.source_tmdb), "", resolve(Res.string.settings_mdb_section_rating_providers)),
@@ -2177,7 +2270,6 @@ private fun settingsSearchEntries(
     listOf(
         PlaybackSearchRow("trakt-watch-progress", resolve(Res.string.trakt_watch_progress_title), resolve(Res.string.trakt_watch_progress_subtitle)),
         PlaybackSearchRow("trakt-comments", resolve(Res.string.settings_trakt_comments), resolve(Res.string.settings_trakt_comments_description)),
-        PlaybackSearchRow("trakt-more-like-this-source", resolve(Res.string.trakt_more_like_this_source_title), resolve(Res.string.trakt_more_like_this_source_subtitle)),
     ).forEach { row ->
         addRow(
             page = SettingsPage.TraktAuthentication,
@@ -2389,10 +2481,11 @@ private fun addPlaybackRows(
     section: String,
     icon: ImageVector,
     rows: List<PlaybackSearchRow>,
+    page: SettingsPage = SettingsPage.Playback,
 ) {
     rows.forEach { row ->
         addRow(
-            SettingsPage.Playback,
+            page,
             // Search anchors on PlaybackSettingsPage use the setting key itself. Prefixing only
             // the search index key made clicks request a different, nonexistent destination.
             row.key,
@@ -2569,11 +2662,13 @@ internal fun SettingsSearchField(
         modifier = modifier
             .fillMaxWidth()
             .height(38.dp)
-            .background(tokens.colors.surfaceCard, tokens.shapes.compactCard)
+            // The section cards' frosted glass, so the field belongs to the page under it.
+            .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
             .border(
-                width = tokens.borders.hairline,
-                color = if (focused.value) tokens.colors.borderFocus else tokens.colors.borderDefault,
-                shape = tokens.shapes.compactCard,
+                // A full pixel: a half-pixel stroke steps visibly round the corners at 100% scale.
+                width = tokens.borders.thin,
+                brush = if (focused.value) SolidColor(tokens.colors.borderFocus) else SettingsSectionGlassEdge,
+                shape = SettingsSectionGlassShape,
             )
             .trackTextInputFocus()
             .onFocusChanged {

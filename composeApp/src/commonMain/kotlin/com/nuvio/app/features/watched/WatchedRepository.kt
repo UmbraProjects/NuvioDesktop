@@ -10,6 +10,7 @@ import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.WatchProgressSource
+import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.trakt.shouldUseTraktProgress
 import com.nuvio.app.features.watching.sync.SupabaseWatchedSyncAdapter
 import com.nuvio.app.features.watching.sync.TraktWatchedSyncAdapter
@@ -648,6 +649,11 @@ object WatchedRepository {
     }
 
     fun markWatched(items: Collection<WatchedItem>) {
+        // Marking an episode is a sign you're back on the show, as finishing one in the player is,
+        // so a Next Up card you dismissed for it comes back.
+        items.filter { it.isEpisode }.map { it.id }.distinct().forEach {
+            ContinueWatchingPreferencesRepository.removeDismissedNextUpKeysForContent(it)
+        }
         markWatched(items = items, remoteSync = WatchedRemoteSync.Manual)
     }
 

@@ -7,22 +7,26 @@
   [![License][license-shield]][license-url]
 
   <p>
-    Nuvio HTPC (Home Theatre PC) is designed to be a premium Windows media client for either desk or couch.
+    Nuvio HTPC (Home Theatre PC) is a feature rich Windows media client for either desk or couch.
     <br>To see it in action, click the image for a showcase video.<br/>
   </p> 
 </div>
 
 [![Nuvio TV Mode Demo](https://img.youtube.com/vi/txiM8_y2aD8/maxresdefault.jpg)](https://youtu.be/txiM8_y2aD8)
 
-This fork is unaffiliated with the Nuvio team. Don't worry about the commit disparity, Nuvio's team makes many small commits while I bundle everything into a single release commit for simplicity as this is mostly a solo focused project.
+This fork is unaffiliated with the Nuvio team. Don't worry about the commit disparity, Nuvio's team makes many small commits while I bundle everything into a single release commit for simplicity as this is mostly a solo focused project. 
+
+If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamSlokker/NuvioDesktop-Linux) It supports appimage, flatpack or debian. It's based on the nightly releases of this project.
 
 # Home Theatre features
 
 * Mouse, keyboard or controller friendly TV Mode with full-screen navigation, adaptive hero, row-jump navigation, cast and award information. This applies across all panels, not just home.
 * Game Mode for browsing and launching your game library alongside your media.
+* IPTV from your own provider (Xtream Codes or M3U) with a programme guide, favourites and an in-player channel switcher, based on Slokker's GoatTV (used with Permission).
 * Automatic control of smart lights based on playback state for a theater like experience.
 * Automatic dim and shutdown for OLED displays.
-* Audio pass-through for a receiver.
+* Audio pass-through features for a receiver.
+* Casting to another device, if the TV is busy you can cast to your phone or laptop.
 
 # Discovery & Browsing
 
@@ -30,7 +34,7 @@ This fork is unaffiliated with the Nuvio team. Don't worry about the commit disp
 * Discover built around your watch history, favorites, unfinished titles, hidden gems, trending content, and fully custom rows.
 * Custom discovery queries can filter by genre, rating, votes, release status, language, certification, runtime, year, studio, cast, and crew.
 * Optional AI-powered discovery using OpenAI, Anthropic, OpenRouter, etc.
-* Built in calendar powered by either SIMKL or MDBList.
+* Built in calendar for Nuvio, Trakt, Mdblist and SIMKL.
 * Random play content or episode based on your criteria.
 
 # Library & Downloads
@@ -42,13 +46,12 @@ This fork is unaffiliated with the Nuvio team. Don't worry about the commit disp
 # Desktop Playback
 
 * MPV-based desktop player with extensive customization options built in, as well as the option to fully overwrite the MPV config.
-* Unique playback UI with right click menu for quickly swapping options and a clock with a "media ends at" timer.
+* Multiple playback UIs to choose from, with a extensive right click menu, cast display and clock.
 * Automatic stream failover, source affinity, binge mode, next-episode autoplay, and configurable buffering.
-* Three color profiles thanks to Stremio Kai (used with Permission), custom color profile and HDR modes.
+* Three color profiles thanks to Stremio Kai (used with Permission), custom color profile for tinkering and three HDR modes.
 * Anime shaders (4K Anime, Stremio Kai, custom), SVP frame interpolation and NVIDIA RTX Video True HDR.
-* Seek-bar thumbnails, chapters, SkipDB support, intro/outro skipping, dual subtitles, subtitle styling, playback speed controls, and volume boost.
+* Seek-bar thumbnails, chapters, SkipDB support, intro/outro skipping, dual subtitles, extensive subtitle styling, playback speed controls, and volume boost.
 * Desktop Picture-in-Picture, direct URL playback, local-file playback, and external-player integration.
-* Live TV / IPTV from your own provider (Xtream Codes or M3U) with a programme guide, favourites and an in-player channel switcher, based on Slokker's GoatTV (used with Permission).
 * Stream Scoring can rank or reject sources based on quality, resolution, HDR, audio, codec, language, release metadata, cache status, and file size.
 
 # Tracking & Metadata
@@ -57,6 +60,7 @@ This fork is unaffiliated with the Nuvio team. Don't worry about the commit disp
 * Extensive anime metadata support across IMDb, MyAnimeList, Kitsu, AniDB, AniList, SIMKL, TMDB, and TVDB.
 * Automatic anime numbering/matching through a bundled Fribb mapping database.
 * Filename-only resolution for debrid and cloud libraries, turning raw files into properly identified titles and artwork.
+* State based external player tracking support for MPV, MPC, VLC and process based tracking for PotPlayer/Energy.
 
 # Customisation
 

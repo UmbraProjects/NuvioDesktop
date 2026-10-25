@@ -49,6 +49,14 @@ internal enum class PrefetchDecision {
  * rather than "the work is badly timed".
  */
 internal fun evaluatePrefetchGate(inputs: PrefetchGateInputs): PrefetchDecision = when {
+    // The next-episode preload has its own setting (checked by the caller) and runs during playback
+    // by design, so neither the scope nor the playback fence applies to it.
+    inputs.trigger == StreamPrefetchService.Trigger.NextEpisode -> when {
+        inputs.withinCooldown -> PrefetchDecision.CoolingDown
+        inputs.interactiveFetchRunning -> PrefetchDecision.InteractiveFetchRunning
+        inputs.hasInstantSourceAlready -> PrefetchDecision.AlreadyInstant
+        else -> PrefetchDecision.Proceed
+    }
     !inputs.scope.isEnabled -> PrefetchDecision.ScopeDisabled
     inputs.trigger == StreamPrefetchService.Trigger.ContinueWatching &&
         !inputs.scope.includesContinueWatching -> PrefetchDecision.TriggerOutOfScope

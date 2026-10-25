@@ -1,5 +1,8 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.width
+import com.nuvio.app.core.ui.ditheredBackground
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -339,40 +342,15 @@ private fun StreamScoringSetupGroup(isTablet: Boolean) {
  */
 @Composable
 private fun ResetToPresetRow(enabled: Boolean, isTablet: Boolean) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled) {
-                StreamScoreRepository.update { it.resetPointsToAnswers() }
-            }
-            .padding(horizontal = 16.dp, vertical = if (isTablet) 16.dp else 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    SettingsActionRow(
+        title = stringResource(Res.string.settings_stream_scoring_reset_title),
+        description = stringResource(Res.string.settings_stream_scoring_reset_desc),
+        isTablet = isTablet,
     ) {
-        Column(
-            modifier = Modifier.weight(1f).padding(end = SettingsRowTextGap),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = stringResource(Res.string.settings_stream_scoring_reset_title),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = stringResource(Res.string.settings_stream_scoring_reset_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Text(
+        SettingsGlassButton(
             text = stringResource(Res.string.settings_stream_scoring_reset_action),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = if (enabled) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
+            onClick = { StreamScoreRepository.update { it.resetPointsToAnswers() } },
+            enabled = enabled,
         )
     }
 }
@@ -401,43 +379,59 @@ private fun <T : ScoreAnswerOption> QuestionRow(
 @Composable
 private fun MinimumScoreRow(profile: StreamScoreProfile, isTablet: Boolean) {
     val minimum = profile.minimumScore
+    // An On/Off like every other switch, and the threshold on its own row while it is on: the
+    // stepper and an "Off" chip squeezed side by side read as two unrelated controls.
+    SettingsSwitchRow(
+        title = stringResource(Res.string.settings_stream_scoring_minimum_title),
+        description = stringResource(Res.string.settings_stream_scoring_minimum_desc),
+        checked = minimum != null,
+        enabled = profile.enabled,
+        isTablet = isTablet,
+        onCheckedChange = { on -> StreamScoreRepository.update { it.copy(minimumScore = if (on) 0 else null) } },
+    )
+    if (minimum != null) {
+        SettingsGroupDivider(isTablet = isTablet)
+        ScoringStepperRow(
+            title = stringResource(Res.string.settings_stream_scoring_minimum_title),
+            caption = null,
+            isTablet = isTablet,
+        ) {
+            PointsStepper(
+                value = minimum,
+                enabled = profile.enabled,
+                onChange = { next -> StreamScoreRepository.update { it.copy(minimumScore = next) } },
+            )
+        }
+    }
+}
+
+/** A title (and caption) with a stepper in the control column, laid out like the other rows. */
+@Composable
+private fun ScoringStepperRow(
+    title: String,
+    caption: String?,
+    isTablet: Boolean,
+    stepper: @Composable () -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = if (isTablet) DesktopRowVerticalPadding else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+        Column(
+            modifier = Modifier.weight(1f).padding(end = if (isTablet) SettingsRowTextGap else 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Text(
-                text = stringResource(Res.string.settings_stream_scoring_minimum_title),
-                style = MaterialTheme.typography.bodyLarge,
+                text = title,
+                style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Text(
-                text = stringResource(Res.string.settings_stream_scoring_minimum_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (caption != null) SettingsSubtext(text = caption, isTablet = isTablet)
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PointsStepper(
-                value = minimum ?: 0,
-                enabled = profile.enabled && minimum != null,
-                onChange = { next -> StreamScoreRepository.update { it.copy(minimumScore = next) } },
-            )
-            FilterChip(
-                selected = minimum == null,
-                enabled = profile.enabled,
-                onClick = {
-                    StreamScoreRepository.update {
-                        it.copy(minimumScore = if (minimum == null) 0 else null)
-                    }
-                },
-                label = { Text(stringResource(Res.string.settings_stream_scoring_minimum_off)) },
-            )
-        }
+        stepper()
     }
 }
 
@@ -451,36 +445,21 @@ private fun StreamScoringTraitGroup(group: StreamScoreTraitGroup, isTablet: Bool
         SettingsGroup(isTablet = isTablet) {
             traits.forEachIndexed { index, trait ->
                 if (index > 0) SettingsGroupDivider(isTablet = isTablet)
-                TraitRow(trait = trait, profile = profile)
+                TraitRow(trait = trait, profile = profile, isTablet = isTablet)
             }
         }
     }
 }
 
 @Composable
-private fun TraitRow(trait: StreamScoreTrait, profile: StreamScoreProfile) {
-    val points = profile.pointsFor(trait)
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun TraitRow(trait: StreamScoreTrait, profile: StreamScoreProfile, isTablet: Boolean) {
+    ScoringStepperRow(
+        title = stringResource(trait.labelRes),
+        caption = trait.captionRes?.let { stringResource(it) },
+        isTablet = isTablet,
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(
-                text = stringResource(trait.labelRes),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            trait.captionRes?.let {
-                Text(
-                    text = stringResource(it),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
         PointsStepper(
-            value = points,
+            value = profile.pointsFor(trait),
             enabled = profile.enabled,
             onChange = { next -> StreamScoreRepository.setPoints(trait, next) },
         )
@@ -506,6 +485,8 @@ private fun PointsStepper(
         enabled = enabled,
         // Signed on display so the sign is obvious, but unsigned while editing — nobody wants to
         // type a leading "+".
+        modifier = Modifier.width(DesktopControlWidth),
+        fillWidth = true,
         format = { if (it > 0) "+${it.toInt()}" else it.toInt().toString() },
         editFormat = { it.toInt().toString() },
         valueColor = when {
@@ -686,17 +667,16 @@ private fun ScoreTestBench(
                 enabled = enabled,
                 onChange = onSizeChange,
             )
-            FilterChip(
-                selected = !isEpisode,
+            SettingsSegmentedControl(
+                options = listOf(
+                    SettingsChoiceOption(false, stringResource(Res.string.settings_stream_scoring_test_movie)),
+                    SettingsChoiceOption(true, stringResource(Res.string.settings_stream_scoring_test_episode)),
+                ),
+                selectedValue = isEpisode,
                 enabled = enabled,
-                onClick = { onIsEpisodeChange(false) },
-                label = { Text(stringResource(Res.string.settings_stream_scoring_test_movie)) },
-            )
-            FilterChip(
-                selected = isEpisode,
-                enabled = enabled,
-                onClick = { onIsEpisodeChange(true) },
-                label = { Text(stringResource(Res.string.settings_stream_scoring_test_episode)) },
+                isTablet = true,
+                modifier = Modifier.width(DesktopControlWidth),
+                onSelected = onIsEpisodeChange,
             )
         }
 
@@ -704,8 +684,8 @@ private fun ScoreTestBench(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(tokens.colors.surfaceCard)
+                    .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
+                    .border(1.dp, SettingsSectionGlassEdge, SettingsSectionGlassShape)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -835,17 +815,14 @@ private fun GigabyteRow(
     enabled: Boolean,
     onChange: (Double) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f).padding(end = 12.dp),
+    ScoringStepperRow(title = title, caption = null, isTablet = true) {
+        GigabyteStepper(
+            value = value,
+            enabled = enabled,
+            modifier = Modifier.width(DesktopControlWidth),
+            fillWidth = true,
+            onChange = onChange,
         )
-        GigabyteStepper(value = value, enabled = enabled, onChange = onChange)
     }
 }
 
@@ -857,6 +834,8 @@ private fun GigabyteRow(
 private fun GigabyteStepper(
     value: Double,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
+    fillWidth: Boolean = false,
     onChange: (Double) -> Unit,
 ) {
     NuvioNumberStepper(
@@ -868,7 +847,9 @@ private fun GigabyteStepper(
         format = { "${formatGb(it)} GB" },
         editFormat = ::formatGb,
         valueColor = if (enabled) MaterialTheme.nuvio.colors.textPrimary else MaterialTheme.nuvio.colors.textDisabled,
+        modifier = modifier,
         fieldWidth = 78.dp,
+        fillWidth = fillWidth,
         onChange = onChange,
     )
 }

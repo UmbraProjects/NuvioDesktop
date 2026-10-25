@@ -28,10 +28,14 @@ object StreamParser {
             val url = obj.string("url")
             val infoHash = obj.string("infoHash")
             val externalUrl = obj.string("externalUrl")
+            val ytId = obj.string("ytId")?.trim()?.takeIf { it.isNotEmpty() }
             val clientResolve = obj.objectValue("clientResolve")?.toClientResolve()
 
-            // Must have at least one playable source
-            if (url == null && infoHash == null && externalUrl == null && clientResolve == null) return@mapNotNull null
+            // Must have at least one playable source. A bare ytId counts: it is resolved on pick
+            // (upstream 94976222d).
+            if (url == null && infoHash == null && externalUrl == null && ytId == null && clientResolve == null) {
+                return@mapNotNull null
+            }
 
             val hintsObj = obj["behaviorHints"] as? JsonObject
             val proxyHeaders = hintsObj
@@ -45,6 +49,7 @@ object StreamParser {
                 infoHash = infoHash,
                 fileIdx = obj.int("fileIdx"),
                 externalUrl = externalUrl,
+                ytId = ytId,
                 sources = obj.stringList("sources"),
                 audioLanguages = (
                     obj.stringList("languages") +

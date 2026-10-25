@@ -1,5 +1,38 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.ditheredBackground
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import com.nuvio.app.core.ui.NuvioModalDialog
+import com.nuvio.app.core.ui.NuvioPrimaryButton
+import com.nuvio.app.core.ui.nuvio
+import nuvio.composeapp.generated.resources.settings_poster_service_placeholders_title
+import nuvio.composeapp.generated.resources.settings_poster_service_placeholders_row_description
+import nuvio.composeapp.generated.resources.settings_poster_service_placeholders_subtitle
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_group_ids
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_group_values
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_group_modifiers
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_id
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_type
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_shape
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_tmdb_key
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_mdblist_key
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_optional
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_alternatives
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_note_blank
+import nuvio.composeapp.generated.resources.settings_poster_service_ph_note_local
+import nuvio.composeapp.generated.resources.action_close
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
@@ -28,7 +61,6 @@ import nuvio.composeapp.generated.resources.settings_poster_service_landscape_te
 import nuvio.composeapp.generated.resources.settings_poster_service_landscape_template_description
 import nuvio.composeapp.generated.resources.settings_poster_service_landscape_override_note
 import nuvio.composeapp.generated.resources.settings_poster_service_missing_template
-import nuvio.composeapp.generated.resources.settings_poster_service_placeholders
 import nuvio.composeapp.generated.resources.settings_poster_service_poster_template
 import nuvio.composeapp.generated.resources.settings_poster_service_poster_template_description
 import nuvio.composeapp.generated.resources.settings_poster_service_section
@@ -106,10 +138,18 @@ internal fun LazyListScope.customPosterSettingsContent(
                     "poster-service-test",
                 ),
             ) {
-                CustomPosterInfoRow(
+                // The placeholder reference used to sit here as one dense paragraph; it reads far
+                // better laid out as a table in its own window.
+                var placeholdersOpen by remember { mutableStateOf(false) }
+                SettingsNavigationRow(
+                    title = stringResource(Res.string.settings_poster_service_placeholders_title),
+                    description = stringResource(Res.string.settings_poster_service_placeholders_row_description),
                     isTablet = isTablet,
-                    text = stringResource(Res.string.settings_poster_service_placeholders),
+                    onClick = { placeholdersOpen = true },
                 )
+                if (placeholdersOpen) {
+                    CustomPosterPlaceholdersDialog(onDismiss = { placeholdersOpen = false })
+                }
                 SettingsGroupDivider(isTablet = isTablet)
                 CustomPosterTemplateRow(
                     isTablet = isTablet,
@@ -309,5 +349,123 @@ private fun CustomPosterInfoRow(
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** One placeholder and what it stands for, a row of [CustomPosterPlaceholdersDialog]. */
+private class TemplatePlaceholder(val token: String, val meaning: StringResource? = null)
+
+@Composable
+private fun CustomPosterPlaceholdersDialog(onDismiss: () -> Unit) {
+    val ids = listOf(
+        TemplatePlaceholder("{id}", Res.string.settings_poster_service_ph_id),
+        TemplatePlaceholder("{id_type}"),
+        TemplatePlaceholder("{typed_id}"),
+        TemplatePlaceholder("{imdb_id}"),
+        TemplatePlaceholder("{tmdb_id}"),
+        TemplatePlaceholder("{tvdb_id}"),
+        TemplatePlaceholder("{kitsu_id}"),
+        TemplatePlaceholder("{anilist_id}"),
+        TemplatePlaceholder("{mal_id}"),
+        TemplatePlaceholder("{anidb_id}"),
+    )
+    val values = listOf(
+        TemplatePlaceholder("{type}", Res.string.settings_poster_service_ph_type),
+        TemplatePlaceholder("{shape}", Res.string.settings_poster_service_ph_shape),
+        TemplatePlaceholder("{tmdb_key}", Res.string.settings_poster_service_ph_tmdb_key),
+        TemplatePlaceholder("{mdblist_key}", Res.string.settings_poster_service_ph_mdblist_key),
+    )
+    val modifiers = listOf(
+        TemplatePlaceholder("{imdb_id?}", Res.string.settings_poster_service_ph_optional),
+        TemplatePlaceholder("{imdb_id|tmdb_id}", Res.string.settings_poster_service_ph_alternatives),
+    )
+    NuvioModalDialog(
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.settings_poster_service_placeholders_title),
+        subtitle = stringResource(Res.string.settings_poster_service_placeholders_subtitle),
+        actions = {
+            NuvioPrimaryButton(
+                text = stringResource(Res.string.action_close),
+                onClick = onDismiss,
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            PlaceholderGroup(stringResource(Res.string.settings_poster_service_ph_group_ids), ids)
+            PlaceholderGroup(stringResource(Res.string.settings_poster_service_ph_group_values), values)
+            PlaceholderGroup(stringResource(Res.string.settings_poster_service_ph_group_modifiers), modifiers)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                PlaceholderNote(stringResource(Res.string.settings_poster_service_ph_note_blank))
+                PlaceholderNote(stringResource(Res.string.settings_poster_service_ph_note_local))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlaceholderGroup(title: String, items: List<TemplatePlaceholder>) {
+    val tokens = MaterialTheme.nuvio
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = tokens.colors.textMuted,
+            fontWeight = FontWeight.SemiBold,
+        )
+        // Placeholders with no explanation of their own wrap as a cloud of chips; the ones that
+        // need a word get a row each.
+        val (plain, explained) = items.partition { it.meaning == null }
+        if (plain.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                plain.forEach { PlaceholderChip(it.token) }
+            }
+        }
+        explained.forEach { item ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(modifier = Modifier.width(PlaceholderTokenColumn)) { PlaceholderChip(item.token) }
+                Text(
+                    text = stringResource(item.meaning!!),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = tokens.colors.textSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+private val PlaceholderTokenColumn = 170.dp
+
+@Composable
+private fun PlaceholderChip(token: String) {
+    val tokens = MaterialTheme.nuvio
+    Text(
+        text = token,
+        modifier = Modifier
+            .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
+            .border(1.dp, SettingsSectionGlassEdge, SettingsSectionGlassShape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+        color = tokens.colors.textPrimary,
+        maxLines = 1,
+    )
+}
+
+@Composable
+private fun PlaceholderNote(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.nuvio.colors.textMuted,
     )
 }

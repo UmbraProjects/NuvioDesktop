@@ -1,5 +1,14 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.runtime.Stable
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.ditheredBackground
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -14,6 +23,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -44,7 +54,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,8 +71,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.geometry.Offset
@@ -144,7 +160,11 @@ internal data class SettingsChoiceOption<T>(
     val label: String,
 )
 
-/** One-line settings help text whose full value remains available from a mouse hover. */
+/**
+ * Settings help text. On desktop it wraps in full, as Windows Settings does: each row is its own
+ * card with a compact control, so the text has the width to wrap into a line or two instead of
+ * being cut to one. Elsewhere it stays one line, with the full text in a hover tooltip.
+ */
 @Composable
 internal fun SettingsSubtext(
     text: String,
@@ -152,6 +172,17 @@ internal fun SettingsSubtext(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.nuvio.colors.textMuted,
 ) {
+    if (isTablet) {
+        Text(
+            text = text,
+            // Capped at the wrap column of a row with a control, so a row without one (or a note)
+            // doesn't run its text out to the card edge.
+            modifier = modifier.widthIn(max = LocalSettingsTextMaxWidth.current).fillMaxWidth(),
+            style = MaterialTheme.typography.bodySmall,
+            color = color,
+        )
+        return
+    }
     var hasOverflow by remember(text) { mutableStateOf(false) }
     NuvioPosterHoverTooltip(
         title = text.takeIf { hasOverflow }.orEmpty(),
@@ -160,7 +191,7 @@ internal fun SettingsSubtext(
         Text(
             text = text,
             modifier = Modifier.fillMaxWidth(),
-            style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium,
             color = color,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -264,10 +295,13 @@ internal fun SettingsModernRangeSlider(
     enabled: Boolean = true,
     steps: Int = 0,
     onValueChangeFinished: () -> Unit = {},
+    /** Shown in a bubble over the cursor while dragging; see [SettingsSliderValueBubble]. */
+    valueLabel: String? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+    val drag = remember { SliderDragState() }
     val currentLow by rememberUpdatedState(lowValue)
     val currentHigh by rememberUpdatedState(highValue)
     var size by remember { mutableStateOf(IntSize.Zero) }
@@ -309,16 +343,18 @@ internal fun SettingsModernRangeSlider(
             .pointerInput(enabled, valueRange.start, valueRange.endInclusive, steps) {
                 if (!enabled) return@pointerInput
                 detectDragGestures(
-                    onDragEnd = { currentOnValueChangeFinished() },
-                    onDragCancel = { currentOnValueChangeFinished() },
+                    onDragEnd = { drag.end(); currentOnValueChangeFinished() },
+                    onDragCancel = { drag.end(); currentOnValueChangeFinished() },
                     onDragStart = { offset ->
                         val pressed = valueFromX(offset.x)
                         draggingHighThumb =
                             abs(pressed - currentHigh) <= abs(pressed - currentLow)
+                        drag.moveTo(offset.x)
                         reportDragTo(offset.x)
                     },
                     onDrag = { change, _ ->
                         change.consume()
+                        drag.moveTo(change.position.x)
                         reportDragTo(change.position.x)
                     },
                 )
@@ -332,24 +368,13 @@ internal fun SettingsModernRangeSlider(
             val trackEnd = (size.width.toFloat() - thumbRadius).coerceAtLeast(trackStart)
             val lowX = trackStart + (trackEnd - trackStart) * lowProgress
             val highX = trackStart + (trackEnd - trackStart) * highProgress
-            drawLine(
-                color = inactiveColor,
-                start = Offset(trackStart, centerY),
-                end = Offset(trackEnd, centerY),
-                strokeWidth = 3.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
+            drawGlassSliderTrack(trackStart, trackEnd, centerY)
             // Only the span between the thumbs is active: that band is the setting.
-            drawLine(
-                brush = activeBrush,
-                start = Offset(lowX, centerY),
-                end = Offset(highX, centerY),
-                strokeWidth = 3.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-            drawCircle(brush = activeBrush, radius = thumbRadius, center = Offset(lowX, centerY))
-            drawCircle(brush = activeBrush, radius = thumbRadius, center = Offset(highX, centerY))
+            drawGlassSliderFill(activeBrush, lowX, highX, centerY)
+            drawGlassSliderThumb(activeBrush, Offset(lowX, centerY), thumbRadius)
+            drawGlassSliderThumb(activeBrush, Offset(highX, centerY), thumbRadius)
         }
+        if (valueLabel != null && drag.active) SettingsSliderValueBubble(valueLabel, drag.x)
     }
 }
 
@@ -362,10 +387,13 @@ internal fun SettingsModernSlider(
     enabled: Boolean = true,
     steps: Int = 0,
     onValueChangeFinished: () -> Unit = {},
+    /** Shown in a bubble over the cursor while dragging; see [SettingsSliderValueBubble]. */
+    valueLabel: String? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+    val drag = remember { SliderDragState() }
     var size by remember { mutableStateOf(IntSize.Zero) }
     val thumbRadiusPx = with(LocalDensity.current) { SettingsSliderThumbRadius.toPx() }
 
@@ -397,11 +425,15 @@ internal fun SettingsModernSlider(
             .pointerInput(enabled, valueRange.start, valueRange.endInclusive, steps) {
                 if (!enabled) return@pointerInput
                 detectDragGestures(
-                    onDragEnd = { currentOnValueChangeFinished() },
-                    onDragCancel = { currentOnValueChangeFinished() },
-                    onDragStart = { offset -> currentOnValueChange(valueFromX(offset.x)) },
+                    onDragEnd = { drag.end(); currentOnValueChangeFinished() },
+                    onDragCancel = { drag.end(); currentOnValueChangeFinished() },
+                    onDragStart = { offset ->
+                        drag.moveTo(offset.x)
+                        currentOnValueChange(valueFromX(offset.x))
+                    },
                     onDrag = { change, _ ->
                         change.consume()
+                        drag.moveTo(change.position.x)
                         currentOnValueChange(valueFromX(change.position.x))
                     },
                 )
@@ -414,46 +446,139 @@ internal fun SettingsModernSlider(
             val trackStart = thumbRadius
             val trackEnd = (size.width.toFloat() - thumbRadius).coerceAtLeast(trackStart)
             val thumbX = trackStart + (trackEnd - trackStart) * progress
-            val start = Offset(trackStart, centerY)
-            val end = Offset(trackEnd, centerY)
-            drawLine(
-                color = inactiveColor,
-                start = start,
-                end = end,
-                strokeWidth = 3.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                brush = activeBrush,
-                start = start,
-                end = Offset(thumbX, centerY),
-                strokeWidth = 3.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-            drawCircle(
-                brush = activeBrush,
-                radius = thumbRadius,
-                center = Offset(thumbX, centerY),
-            )
+            drawGlassSliderTrack(trackStart, trackEnd, centerY)
+            drawGlassSliderFill(activeBrush, trackStart, thumbX, centerY)
+            drawGlassSliderThumb(activeBrush, Offset(thumbX, centerY), thumbRadius)
         }
+        if (valueLabel != null && drag.active) SettingsSliderValueBubble(valueLabel, drag.x)
     }
 }
 
+/** Where the pointer is while a settings slider is being dragged, for its value bubble. */
+@Stable
+private class SliderDragState {
+    var active by mutableStateOf(false)
+        private set
+    var x by mutableStateOf(0f)
+        private set
+
+    fun moveTo(pointerX: Float) {
+        x = pointerX
+        active = true
+    }
+
+    fun end() {
+        active = false
+    }
+}
+
+/** Groove height of the glass slider track. */
+private val SliderTrackHeight = 6.dp
+
+/** The track: a recessed strip of the settings glass, with its one-pixel edge. */
+private fun DrawScope.drawGlassSliderTrack(start: Float, end: Float, centerY: Float) {
+    val height = SliderTrackHeight.toPx()
+    val radius = CornerRadius(height / 2f)
+    val topLeft = Offset(start, centerY - height / 2f)
+    val trackSize = Size((end - start).coerceAtLeast(height), height)
+    drawRoundRect(color = SliderTrackFill, topLeft = topLeft, size = trackSize, cornerRadius = radius)
+    drawRoundRect(
+        color = NuvioGlass.EdgeColor,
+        topLeft = topLeft,
+        size = trackSize,
+        cornerRadius = radius,
+        style = Stroke(width = 1.dp.toPx()),
+    )
+}
+
+/** The filled part: the accent as tinted glass, like the selected half of an On/Off. */
+private fun DrawScope.drawGlassSliderFill(accent: Brush, from: Float, to: Float, centerY: Float) {
+    val height = SliderTrackHeight.toPx()
+    if (to - from <= 0f) return
+    val left = from - height / 2f
+    val topLeft = Offset(left, centerY - height / 2f)
+    val fillSize = Size(to - left, height)
+    val radius = CornerRadius(height / 2f)
+    drawRoundRect(brush = accent, topLeft = topLeft, size = fillSize, cornerRadius = radius, alpha = 0.6f)
+    drawRoundRect(brush = accent, topLeft = topLeft, size = fillSize, cornerRadius = radius, style = Stroke(1.dp.toPx()), alpha = 0.9f)
+}
+
+/** The thumb: an accent glass bead with a light sheen across its top and a bright rim. */
+private fun DrawScope.drawGlassSliderThumb(accent: Brush, center: Offset, radius: Float) {
+    drawCircle(brush = accent, radius = radius, center = center, alpha = 0.85f)
+    drawCircle(
+        brush = Brush.verticalGradient(
+            0f to Color.White.copy(alpha = 0.45f),
+            0.55f to Color.White.copy(alpha = 0.05f),
+            1f to Color.Transparent,
+            startY = center.y - radius,
+            endY = center.y + radius,
+        ),
+        radius = radius,
+        center = center,
+    )
+    drawCircle(color = Color.White.copy(alpha = 0.35f), radius = radius - 0.5.dp.toPx(), center = center, style = Stroke(1.dp.toPx()))
+}
+
+private val SliderTrackFill = Color.White.copy(alpha = 0.07f)
+
+/**
+ * The slider's value, shown only while it is being dragged, in a small glass bubble just above the
+ * cursor. The rows used to spend a column on a readout nobody needs until they move the slider; a
+ * Popup, so the first row's bubble is not clipped by its card.
+ */
+@Composable
+private fun SettingsSliderValueBubble(label: String, pointerX: Float) {
+    val gap = with(LocalDensity.current) { SliderBubbleGap.roundToPx() }
+    val position = remember(pointerX, gap) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ): IntOffset = IntOffset(
+                x = (anchorBounds.left + pointerX.roundToInt() - popupContentSize.width / 2)
+                    .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+                y = (anchorBounds.top - popupContentSize.height - gap).coerceAtLeast(0),
+            )
+        }
+    }
+    val tokens = MaterialTheme.nuvio
+    Popup(popupPositionProvider = position, properties = PopupProperties(focusable = false)) {
+        Text(
+            text = label,
+            modifier = Modifier
+                .background(NuvioGlass.night(tokens.colors.background), NuvioGlass.Shape)
+                .ditheredBackground(NuvioGlass.Fill, NuvioGlass.Shape)
+                .border(1.dp, NuvioGlass.Edge, NuvioGlass.Shape)
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = tokens.colors.textPrimary,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+private val SliderBubbleGap = 6.dp
+
 /** Fixed width shared by dropdown and segmented controls so every picker on the desktop
  * settings pages lines up, regardless of control type. */
-private val DesktopControlWidth = 210.dp
+internal val DesktopControlWidth = 190.dp
 
 // Trailing inset on the title/description column, shared by every desktop settings row so they
 // all wrap at the same column. This is the ONLY lever that moves the wrap point: the text column
 // is laid out with Modifier.weight(1f), whose default fill=true pins it to a fixed slot width, and
 // a widthIn(max=...) inside a fixed-width constraint is silently ignored. Raise this to wrap
-// sooner; a max-width token here would do nothing.
-internal val SettingsRowTextGap = 120.dp
+// sooner; a max-width token here would do nothing. Small since descriptions wrap in full (as in
+// Windows Settings), so the text should use the row's width rather than stop short of it.
+internal val SettingsRowTextGap = 32.dp
 
 /** Vertical padding shared by every desktop settings row (switch, navigation, dropdown,
- * segmented) so row spacing no longer depends on which control type it hosts. Based on the
- * dropdown/segmented row spacing (8.dp), +10% for a little extra breathing room. */
-private val DesktopRowVerticalPadding = 8.8.dp
+ * segmented) so row spacing no longer depends on which control type it hosts. Sized for a row
+ * that is its own card, as in Windows Settings. */
+internal val DesktopRowVerticalPadding = 13.dp
 
 @Composable
 private fun SettingsCard(
@@ -499,9 +624,38 @@ internal fun SettingsGroup(
 @Composable
 internal fun SettingsGroupDivider(isTablet: Boolean) {
     val tokens = MaterialTheme.nuvio
-    // The subtle border all but vanishes on the card surface, which is a step lighter than the
-    // page background the edge-to-edge layout draws on.
     val cards = isTablet && LocalSettingsSectionCards.current
+    if (cards) {
+        // Splits the section card into one card per row; see SettingsSectionCardSurface. Inside
+        // the card's offscreen layer the gap is cut out of the card so the starfield shows through;
+        // anywhere else it falls back to painting the page colour.
+        val clears = LocalSettingsCardGapClears.current
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(SettingsRowCardGap)
+                .then(
+                    if (clears) {
+                        val edge = tokens.borders.thin
+                        Modifier.drawBehind {
+                            drawRect(Color.Black, blendMode = BlendMode.Clear)
+                            // Close the glass edge across the cut: the bottom of the card above
+                            // and the top of the card below.
+                            val stroke = edge.toPx()
+                            drawRect(SettingsSectionGlassEdge, size = size.copy(height = stroke))
+                            drawRect(
+                                SettingsSectionGlassEdge,
+                                topLeft = Offset(0f, size.height - stroke),
+                                size = size.copy(height = stroke),
+                            )
+                        }
+                    } else {
+                        Modifier.background(tokens.colors.background)
+                    },
+                ),
+        )
+        return
+    }
     HorizontalDivider(
         modifier = Modifier.padding(start = if (isTablet) 0.dp else NuvioTokens.Space.s64 + NuvioTokens.Space.s2),
         thickness = tokens.borders.hairline,
@@ -622,6 +776,7 @@ internal val LocalSettingsSectionCards = staticCompositionLocalOf { false }
  * the same column as the row titles under it. */
 private val SettingsSectionCardHeaderPaddingHorizontal = 16.dp
 private val SettingsSectionCardHeaderPaddingVertical = 12.dp
+private val SettingsHeadingExtraGap = 4.dp
 
 /**
  * A muted paragraph inside a [SettingsSection] - a summary line above the rows, or a footnote after
@@ -639,7 +794,6 @@ internal fun SettingsSectionNote(
     Text(
         text = text,
         modifier = modifier
-            .fillMaxWidth()
             .then(
                 if (cards) {
                     Modifier.padding(
@@ -649,13 +803,20 @@ internal fun SettingsSectionNote(
                 } else {
                     Modifier
                 },
-            ),
+            )
+            .widthIn(max = LocalSettingsTextMaxWidth.current)
+            .fillMaxWidth(),
         style = style,
         color = MaterialTheme.nuvio.colors.textMuted,
     )
 }
 
-private val SettingsSectionNotePaddingVertical = 10.dp
+// A row's own vertical padding, so a note inside a card reads as one more row rather than a line
+// squeezed in above or below the rows.
+private val SettingsSectionNotePaddingVertical = DesktopRowVerticalPadding
+
+/** Space between a heading's subtitle and the card under it. */
+private val SettingsSectionSubtitleGap = 8.dp
 
 /**
  * Gap the settings list puts between sections. Exposed because a page that has to place two
@@ -673,6 +834,12 @@ internal fun SettingsSection(
     // way [actions] is.
     titleTrailing: @Composable RowScope.() -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
+    /**
+     * A one-line summary of the section ("51 of 51 catalogs visible"). In the card layout it sits
+     * centred under the heading, outside the card, rather than as a loose line inside it; elsewhere
+     * it is the first line of the content, as a [SettingsSectionNote].
+     */
+    subtitle: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -726,16 +893,19 @@ internal fun SettingsSection(
             targetValue = if (expanded) 0f else -90f,
             animationSpec = tween(durationMillis = 160),
         )
-        SettingsSectionContainer(cards = cards) {
-            // Card layout: the heading is a band across the top of the card, a step lighter than
-            // the rows so it reads as the card's header rather than a first row.
+        Column {
+            // Card layout, after Windows Settings: a plain heading on the page, the rows in cards
+            // under it.
             val headerModifier = if (cards) {
-                Modifier
-                    .background(tokens.colors.surfaceCard)
-                    .padding(
-                        horizontal = SettingsSectionCardHeaderPaddingHorizontal,
-                        vertical = SettingsSectionCardHeaderPaddingVertical,
-                    )
+                // No band of its own: a centred title over the glass cards, with the section's
+                // actions and chevron still at the right.
+                Modifier.padding(
+                    start = SettingsSectionCardHeaderPaddingHorizontal,
+                    end = SettingsSectionCardHeaderPaddingHorizontal,
+                    top = SettingsSectionCardHeaderPaddingVertical * 3 / 4,
+                    // A touch more below than above, so the heading has room before its card.
+                    bottom = SettingsSectionCardHeaderPaddingVertical * 3 / 4 + SettingsHeadingExtraGap,
+                )
             } else {
                 Modifier.padding(top = 6.dp, bottom = 10.dp)
             }
@@ -765,11 +935,14 @@ internal fun SettingsSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Card layout centres the title: equal-weight slots either side of it, the right
+                // one holding the actions.
+                if (cards) Spacer(modifier = Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     Text(
                         text = displayTitle,
-                        style = if (cards) MaterialTheme.nuvioTypeScale.titleMd else MaterialTheme.nuvioTypeScale.titleSm,
+                        style = MaterialTheme.nuvioTypeScale.titleSm,
                         color = titleColor,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -798,6 +971,7 @@ internal fun SettingsSection(
                     titleTrailing()
                 }
                 Row(
+                    modifier = if (cards) Modifier.weight(1f) else Modifier,
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -815,8 +989,22 @@ internal fun SettingsSection(
                     }
                 }
             }
+            if (cards && subtitle != null) {
+                Text(
+                    text = subtitle,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = SettingsSectionSubtitleGap),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.colors.textMuted,
+                    textAlign = TextAlign.Center,
+                )
+            }
             AnimatedVisibility(visible = expanded) {
-                Column(content = content)
+                SettingsSectionCardSurface(cards = cards) {
+                    if (!cards && subtitle != null) SettingsSectionNote(text = subtitle, isTablet = true)
+                    content()
+                }
             }
         }
         return
@@ -865,16 +1053,17 @@ internal fun SettingsSection(
 }
 
 /**
- * Card layout wraps the heading band and the rows in one surface, clipped so the band's fill
- * follows the top corners; the edge-to-edge layout is a bare column. Split out so
- * [SettingsSection] has one body for both.
+ * The card layout's rows, on the card surface; the edge-to-edge layout is a bare column.
  *
- * No border: the hairline composites to almost exactly the heading band's colour on the row
- * surface, so it read as the band running down both edges of the rows. The band and the surface
- * step from the page background carry the card's outline on their own.
+ * Every row reads as its own card, as in Windows Settings: [SettingsGroupDivider] draws the gap
+ * between two rows in the page colour rather than a hairline. Doing it here, once, rather than
+ * giving each row its own surface, is what keeps the dozens of page-specific rows (which draw no
+ * background of their own) looking the same as the shared ones.
+ *
+ * No border: the step from the page background carries the outline on its own.
  */
 @Composable
-private fun SettingsSectionContainer(
+private fun SettingsSectionCardSurface(
     cards: Boolean,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -884,13 +1073,47 @@ private fun SettingsSectionContainer(
     }
     val tokens = MaterialTheme.nuvio
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = tokens.colors.surface,
-        shape = RoundedCornerShape(NuvioTokens.Radius.lg),
+        // Offscreen so SettingsGroupDivider can clear the gaps between rows out of this layer.
+        // A translucent glass fill and a one-pixel light edge over the settings sky.
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
+            .border(tokens.borders.thin, SettingsSectionGlassEdge, SettingsSectionGlassShape),
+        color = Color.Transparent,
+        contentColor = contentColorFor(tokens.colors.surface),
+        shape = SettingsSectionGlassShape,
     ) {
-        Column(content = content)
+        BoxWithConstraints {
+            // Where a row with a control wraps its text: the card less the row's side padding,
+            // the control column and the gap before it.
+            val textMaxWidth = maxWidth - SettingsSectionCardHeaderPaddingHorizontal * 2 -
+                DesktopControlWidth - SettingsRowTextGap
+            CompositionLocalProvider(
+                LocalSettingsCardGapClears provides true,
+                LocalSettingsTextMaxWidth provides textMaxWidth.coerceAtLeast(0.dp),
+            ) {
+                Column(content = content)
+            }
+        }
     }
 }
+
+/** True inside a section card's offscreen layer, where a row gap may clear pixels safely. */
+private val LocalSettingsCardGapClears = staticCompositionLocalOf { false }
+
+/** The shared wrap width for settings help text; unbounded outside a section card. */
+private val LocalSettingsTextMaxWidth = staticCompositionLocalOf { Dp.Infinity }
+
+// The settings names for the shared glass; see [NuvioGlass].
+internal val SettingsGlassRadius = NuvioGlass.Radius
+internal val SettingsSectionGlassShape = NuvioGlass.Shape
+internal val SettingsSectionGlassFill = NuvioGlass.Fill
+internal val SettingsSectionGlassEdgeColor = NuvioGlass.EdgeColor
+internal val SettingsSectionGlassEdge = NuvioGlass.Edge
+
+/** The page-coloured gap between two row cards. */
+private val SettingsRowCardGap = 3.dp
 
 /**
  * A labelled text setting: title, muted description, then the field.
@@ -961,6 +1184,11 @@ internal fun SettingsNavigationRow(
     enabled: Boolean = true,
     isTablet: Boolean,
     modifier: Modifier = Modifier,
+    /**
+     * Shown in the control column, where another row has its switch or dropdown: a short status
+     * ("Accepted") for a row that opens an editor rather than holding a control of its own.
+     */
+    trailingContent: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -1041,11 +1269,125 @@ internal fun SettingsNavigationRow(
                 }
             }
         }
+        if (trailingContent != null) {
+            // Centred in the control column, on the same line as the switches and dropdowns.
+            Box(
+                modifier = if (isTablet) Modifier.width(DesktopControlWidth) else Modifier,
+                contentAlignment = if (isTablet) Alignment.Center else Alignment.CenterEnd,
+            ) {
+                trailingContent()
+            }
+        }
     }
 }
 
-/** Square toggle used in place of Material3's pill-shaped [Switch] across the settings pages,
- * to match the desktop redesign's squared-off control language. */
+/**
+ * A settings action in the glass, sized to the control column so it lines up with the switches
+ * and dropdowns: [accent] for the thing the row is for (Test, Connect), plain glass for the rest
+ * (Disconnect). Replaces the Material buttons that used to sit on a line of their own.
+ */
+@Composable
+internal fun SettingsGlassButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    accent: Boolean = false,
+    loading: Boolean = false,
+) {
+    val tokens = MaterialTheme.nuvio
+    val shape = SettingsSectionGlassShape
+    Box(
+        modifier = modifier
+            .width(DesktopControlWidth)
+            .heightIn(min = SettingsGlassButtonHeight)
+            .alpha(if (enabled) NuvioTokens.Opacity.visible else tokens.opacity.medium)
+            .ditheredBackground(SettingsSectionGlassFill, shape)
+            .then(
+                if (accent) {
+                    Modifier
+                        .background(tokens.colors.accentFill(SegmentSelectedTintAlpha), shape)
+                        .ditheredBackground(SegmentSelectedSheen, shape)
+                        .border(tokens.borders.thin, tokens.colors.accentFill(SegmentSelectedEdgeAlpha), shape)
+                } else {
+                    Modifier.border(tokens.borders.thin, SettingsSectionGlassEdge, shape)
+                },
+            )
+            // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
+            .clip(shape)
+            .clickable(enabled = enabled && !loading, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = tokens.colors.textPrimary,
+            )
+        } else {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = tokens.colors.textPrimary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** Height of [SettingsGlassButton], level with the On/Off selectors and dropdowns. */
+private val SettingsGlassButtonHeight = 38.dp
+
+/**
+ * A row whose control is an action: title and description on the left, a [SettingsGlassButton]
+ * (or several, via [actions]) in the control column, the same place every other row keeps its
+ * switch or dropdown.
+ */
+@Composable
+internal fun SettingsActionRow(
+    title: String,
+    description: String?,
+    isTablet: Boolean,
+    modifier: Modifier = Modifier,
+    descriptionColor: Color? = null,
+    actions: @Composable ColumnScope.() -> Unit,
+) {
+    val tokens = MaterialTheme.nuvio
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = if (isTablet) DesktopRowVerticalPadding else 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = if (isTablet) SettingsRowTextGap else 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = title,
+                style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                color = tokens.colors.textPrimary,
+                fontWeight = FontWeight.Medium,
+            )
+            if (!description.isNullOrBlank()) {
+                SettingsSubtext(
+                    text = description,
+                    isTablet = isTablet,
+                    color = descriptionColor ?: tokens.colors.textMuted,
+                )
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp), content = actions)
+    }
+}
+
+/** Pill toggle used in place of Material3's [Switch] across the settings pages, drawn by hand so
+ * its colours follow the theme accent (including gradient accents). */
 @Composable
 internal fun SettingsSquareSwitch(
     checked: Boolean,
@@ -1054,12 +1396,13 @@ internal fun SettingsSquareSwitch(
     enabled: Boolean = true,
 ) {
     val tokens = MaterialTheme.nuvio
-    val trackWidth = 38.dp
-    val trackHeight = 20.dp
-    val thumbSize = 14.dp
+    val trackWidth = 40.dp
+    val trackHeight = 22.dp
+    val thumbSize = 16.dp
     val thumbInset = 3.dp
-    val trackShape = RoundedCornerShape(NuvioTokens.Radius.xs)
-    val thumbShape = RoundedCornerShape(3.dp)
+    // Pill track and round thumb, to sit with the rounded glass cards.
+    val trackShape = RoundedCornerShape(percent = 50)
+    val thumbShape = CircleShape
     val trackColor by animateColorAsState(
         targetValue = if (checked) tokens.colors.accent else tokens.colors.borderDefault,
         label = "settingsSquareSwitchTrack",
@@ -1128,6 +1471,20 @@ internal fun SettingsSwitchRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                // Desktop, as Windows Settings: the whole card flips the toggle, not only the
+                // switch. Not for a row whose title is an editable field.
+                if (isTablet && titleContent == null) {
+                    Modifier.toggleable(
+                        value = checked,
+                        onValueChange = onCheckedChange,
+                        enabled = enabled,
+                        role = Role.Switch,
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
@@ -1183,6 +1540,9 @@ internal fun SettingsSwitchRow(
                 )
             }
         }
+        // An On/Off pair in the settings glass, the same size as every dropdown and A/B choice
+        // on the page, rather than a small switch. SettingsSquareSwitch stays for the lists that
+        // toggle many items at once (categories, catalogs, collections).
         SettingsSegmentedControl(
             options = toggleOptions,
             selectedValue = checked,
@@ -1304,16 +1664,15 @@ internal fun <T> SettingsSegmentedControl(
     onSelected: (T) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val controlShape = RoundedCornerShape(NuvioTokens.Radius.md)
+    // The settings glass, like the dropdowns beside it; the selected half is tinted glass in the
+    // accent, inset by the track padding so its corners follow the track's.
+    val controlShape = SettingsSectionGlassShape
+    val segmentShape = RoundedCornerShape(SettingsGlassRadius - SegmentedTrackPadding)
     Row(
         modifier = modifier
-            .background(tokens.colors.surfaceCard, controlShape)
-            .border(
-                tokens.borders.thin,
-                tokens.colors.accentFill(tokens.opacity.overlayLight),
-                controlShape,
-            )
-            .padding(2.dp),
+            .ditheredBackground(SettingsSectionGlassFill, controlShape)
+            .border(tokens.borders.thin, SettingsSectionGlassEdge, controlShape)
+            .padding(SegmentedTrackPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         options.take(2).forEach { option ->
@@ -1321,18 +1680,37 @@ internal fun <T> SettingsSegmentedControl(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(
-                        if (selected) tokens.colors.accentFill else SolidColor(Color.Transparent),
-                        RoundedCornerShape(NuvioTokens.Radius.sm),
+                    .then(
+                        if (selected) {
+                            // Accent seen through glass rather than painted on: a translucent tint
+                            // (a brush, so gradient accents keep both stops), a soft sheen across
+                            // the top half, and a brighter accent edge.
+                            Modifier
+                                .background(tokens.colors.accentFill(SegmentSelectedTintAlpha), segmentShape)
+                                .ditheredBackground(SegmentSelectedSheen, segmentShape)
+                                .border(
+                                    tokens.borders.thin,
+                                    tokens.colors.accentFill(SegmentSelectedEdgeAlpha),
+                                    segmentShape,
+                                )
+                        } else {
+                            Modifier
+                        },
                     )
+                    // Clipped after the fill and edge, not before: a clip is not anti-aliased
+                    // here, and drawn inside one the accent edge came out stair-stepped. The clip
+                    // is only there to keep the hover/press feedback inside the rounded corners.
+                    .clip(segmentShape)
                     .clickable(enabled = enabled) { onSelected(option.value) }
-                    .padding(horizontal = if (isTablet) 10.dp else 12.dp, vertical = if (isTablet) 6.dp else 9.dp),
+                    .padding(horizontal = if (isTablet) SegmentHorizontalPadding else 12.dp, vertical = if (isTablet) 6.dp else 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = option.label,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (selected) tokens.colors.onAccent else tokens.colors.textSecondary,
+                    // Primary rather than onAccent: the tint is see-through, so the label sits on the
+                    // dark glass behind it, and onAccent is dark for the pale accents.
+                    color = if (selected) tokens.colors.textPrimary else tokens.colors.textSecondary,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1341,6 +1719,19 @@ internal fun <T> SettingsSegmentedControl(
         }
     }
 }
+
+private val SegmentedTrackPadding = 3.dp
+
+private const val SegmentSelectedTintAlpha = 0.42f
+private const val SegmentSelectedEdgeAlpha = 0.85f
+private val SegmentSelectedSheen = Brush.verticalGradient(
+    0f to Color.White.copy(alpha = 0.16f),
+    0.5f to Color.White.copy(alpha = 0.04f),
+    1f to Color.Transparent,
+)
+
+/** Horizontal padding inside one segment of [SettingsSegmentedControl] on desktop. */
+private val SegmentHorizontalPadding = 8.dp
 
 /** A menu never shrinks below this, however cramped the anchor is; it scrolls instead. */
 private val MenuMinHeight = 160.dp
@@ -1351,7 +1742,7 @@ private val MenuMinHeight = 160.dp
  * One definition for both, because they are one shape: a menu row indented differently from the
  * label above it makes the seam read as two controls that happen to be touching.
  */
-private fun menuHorizontalPadding(isTablet: Boolean): Dp = if (isTablet) 12.dp else 14.dp
+private fun menuHorizontalPadding(isTablet: Boolean): Dp = if (isTablet) 10.dp else 14.dp
 
 /** Vertical padding either side of a menu row's label. */
 private val MenuRowVerticalPadding = 10.dp
@@ -1362,8 +1753,8 @@ private fun triggerVerticalPadding(isTablet: Boolean): Dp = if (isTablet) 6.dp e
 /** Padding on the menu's free edge, away from the trigger. */
 private val MenuEdgePadding = 6.dp
 
-/** Thickness of the accent rule along the seam. */
-private val MenuSeamAccentThickness = 2.dp
+/** Thickness of the rule along the seam. */
+private val MenuSeamThickness = 1.dp
 
 /**
  * How long a menu takes to open, and — shorter still — to close.
@@ -1389,18 +1780,15 @@ private fun menuSeamPadding(isTablet: Boolean): Dp =
     (MenuRowVerticalPadding * 2 - triggerVerticalPadding(isTablet)).coerceAtLeast(MenuEdgePadding)
 
 /**
- * The accent rule along the seam, dividing the options from the value the trigger already shows.
- *
- * Painted onto the panel rather than added as a row so it stays pinned to the joined edge while a
- * long list scrolls beneath it, and taken as a brush so a gradient accent sweeps across it instead
- * of arriving as its first stop alone. The seam edge is the one the panel squares off, so a
- * full-bleed rule meets both corners without fighting the rounding.
+ * A rule along the seam in the glass edge tone, dividing the options from the value the trigger
+ * already shows. Painted on the panel so it stays pinned to the joined edge while a long list
+ * scrolls beneath it.
  */
-private fun Modifier.menuSeamAccent(accent: Brush, openUp: Boolean): Modifier = drawWithContent {
+private fun Modifier.menuSeam(openUp: Boolean): Modifier = drawWithContent {
     drawContent()
-    val thickness = MenuSeamAccentThickness.toPx()
+    val thickness = MenuSeamThickness.toPx()
     drawRect(
-        brush = accent,
+        brush = SettingsSectionGlassEdge,
         topLeft = Offset(0f, if (openUp) size.height - thickness else 0f),
         size = Size(size.width, thickness),
     )
@@ -1432,7 +1820,7 @@ private data class MenuPlacement(val openUp: Boolean, val maxHeight: Dp) {
 
     private fun joinedShape(joined: Boolean, squareOnTop: Boolean): Shape {
         val square = 0.dp
-        val round = NuvioTokens.Radius.md
+        val round = SettingsGlassRadius
         val top = if (joined && squareOnTop) square else round
         val bottom = if (joined && !squareOnTop) square else round
         return RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
@@ -1540,8 +1928,12 @@ private fun SettingsMenuPanel(
             Column(
                 modifier = widthModifier
                     .heightIn(max = placement.maxHeight)
-                    .background(tokens.colors.surfaceCard, placement.menuShape())
-                    .menuSeamAccent(tokens.colors.accentFill, placement.openUp)
+                    // It floats over other rows, so the glass needs a solid base under it to stay
+                    // readable; the fill and edge on top match the trigger it hangs from.
+                    .background(tokens.colors.background, placement.menuShape())
+                    .ditheredBackground(SettingsSectionGlassFill, placement.menuShape())
+                    .border(tokens.borders.thin, SettingsSectionGlassEdge, placement.menuShape())
+                    .menuSeam(placement.openUp)
                     .verticalScroll(rememberScrollState())
                     .padding(
                         top = if (placement.openUp) MenuEdgePadding else menuSeamPadding(isTablet),
@@ -1603,34 +1995,15 @@ internal fun <T> SettingsDropdownChoiceRow(
             // edge they meet at and stay rounded everywhere else. See [SettingsMenuPanel] for why
             // that needs a Popup of our own rather than Material's DropdownMenu.
             val placement = rememberMenuPlacement(anchorBounds, options.size)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(tokens.colors.surfaceCard, placement.triggerShape(expanded))
-                    .border(
-                        tokens.borders.thin,
-                        tokens.colors.accentFill(tokens.opacity.overlayLight),
-                        placement.triggerShape(expanded),
-                    )
-                    .clickable(enabled = enabled) { expanded = true }
-                    .padding(
-                        horizontal = menuHorizontalPadding(isTablet),
-                        vertical = triggerVerticalPadding(isTablet),
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = selectedLabel,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = tokens.colors.textPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                SettingsDropdownArrow()
-            }
+            SettingsDropdownTrigger(
+                label = selectedLabel,
+                labelColor = tokens.colors.textPrimary,
+                expanded = expanded,
+                placement = placement,
+                enabled = enabled,
+                isTablet = isTablet,
+                onClick = { expanded = true },
+            )
             SettingsMenuPanel(
                 expanded = expanded,
                 placement = placement,
@@ -1677,9 +2050,12 @@ internal fun <T> SettingsDropdownChoiceRow(
                         val marked = selected || hovered
                         Text(
                             text = option.label,
+                            // Centred on desktop, under the centred value in the trigger.
+                            modifier = if (isTablet) Modifier.fillMaxWidth() else Modifier,
                             style = if (marked) markStyle else labelStyle,
                             color = if (marked) markColor else tokens.colors.textPrimary,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            textAlign = if (isTablet) TextAlign.Center else null,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1690,31 +2066,82 @@ internal fun <T> SettingsDropdownChoiceRow(
     }
 }
 
+/**
+ * A dropdown's closed face, in the settings glass: the card fill and edge, and a plain chevron that
+ * turns over while the menu is open (the same chevron the section headings use). Squares the edge
+ * the open menu is joined to, see [MenuPlacement].
+ */
 @Composable
-private fun SettingsDropdownArrow() {
+private fun SettingsDropdownTrigger(
+    label: String,
+    labelColor: Color,
+    expanded: Boolean,
+    placement: MenuPlacement,
+    enabled: Boolean,
+    isTablet: Boolean,
+    onClick: () -> Unit,
+) {
     val tokens = MaterialTheme.nuvio
-    val shape = RoundedCornerShape(NuvioTokens.Radius.sm)
-    Box(
+    val shape = placement.triggerShape(expanded)
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(durationMillis = MenuEnterMillis),
+    )
+    Layout(
         modifier = Modifier
-            .size(24.dp)
-            .background(tokens.colors.surfaceCard, shape)
-            .border(
-                tokens.borders.thin,
-                tokens.colors.accentFill(tokens.opacity.overlayLight),
-                shape,
+            .fillMaxWidth()
+            .ditheredBackground(SettingsSectionGlassFill, shape)
+            .border(tokens.borders.thin, SettingsSectionGlassEdge, shape)
+            // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
+            .clip(shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(
+                horizontal = menuHorizontalPadding(isTablet),
+                vertical = triggerVerticalPadding(isTablet) + DropdownTriggerExtraPadding,
             ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.ArrowDropDown,
-            contentDescription = null,
-            tint = tokens.colors.accent,
-            modifier = Modifier
-                .size(18.dp)
-                .accentGradientMask(),
+        content = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = labelColor,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = null,
+                tint = tokens.colors.textMuted,
+                modifier = Modifier
+                    .size(DropdownChevronSize)
+                    .rotate(chevronRotation),
+            )
+        },
+    ) { measurables, constraints ->
+        // The label is centred across the whole control, like the On/Off labels beside it, and
+        // only gives way (sliding left) when centring would run it into the chevron.
+        val chevron = measurables[1].measure(constraints.copy(minWidth = 0, minHeight = 0))
+        val reserve = chevron.width + DropdownChevronGap.roundToPx()
+        val width = constraints.maxWidth
+        val text = measurables[0].measure(
+            constraints.copy(minWidth = 0, minHeight = 0, maxWidth = (width - reserve).coerceAtLeast(0)),
         )
+        val height = maxOf(text.height, chevron.height).coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) {
+            val centred = (width - text.width) / 2
+            val latest = width - reserve - text.width
+            text.place(minOf(centred, latest).coerceAtLeast(0), (height - text.height) / 2)
+            chevron.place(width - chevron.width, (height - chevron.height) / 2)
+        }
     }
 }
+
+private val DropdownChevronSize = 20.dp
+private val DropdownChevronGap = 6.dp
+
+/** Keeps the trigger at the old height now that the boxed arrow no longer props it up. */
+private val DropdownTriggerExtraPadding = 2.dp
+
 
 @Composable
 private fun SettingsChoiceLeadingIcon(
@@ -1819,34 +2246,15 @@ internal fun <T> SettingsMultiSelectRow(
         ) {
             // Same treatment as the single-choice menu above: one joined shape and accent outline.
             val placement = rememberMenuPlacement(anchorBounds, options.size)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(tokens.colors.surfaceCard, placement.triggerShape(expanded))
-                    .border(
-                        tokens.borders.thin,
-                        tokens.colors.accentFill(tokens.opacity.overlayLight),
-                        placement.triggerShape(expanded),
-                    )
-                    .clickable(enabled = enabled) { expanded = true }
-                    .padding(
-                        horizontal = menuHorizontalPadding(isTablet),
-                        vertical = triggerVerticalPadding(isTablet),
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = summary,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (selectedLabels.isEmpty()) tokens.colors.textMuted else tokens.colors.textPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                SettingsDropdownArrow()
-            }
+            SettingsDropdownTrigger(
+                label = summary,
+                labelColor = if (selectedLabels.isEmpty()) tokens.colors.textMuted else tokens.colors.textPrimary,
+                expanded = expanded,
+                placement = placement,
+                enabled = enabled,
+                isTablet = isTablet,
+                onClick = { expanded = true },
+            )
             SettingsMenuPanel(
                 expanded = expanded,
                 placement = placement,

@@ -10,6 +10,13 @@ expect object AppVersionPolicy {
      * (a `gradlew run` launch has no app image to read the stamp from).
      */
     val packagedBuild: PackagedBuild?
+
+    /**
+     * True for a `gradlew run` launch straight from the build's class output, as opposed to an
+     * installed app image (jar or native). Distinct from [packagedBuild] being null, which an old
+     * install from before build stamping also is.
+     */
+    val isDevelopmentRun: Boolean
 }
 
 /**

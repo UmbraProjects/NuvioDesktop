@@ -22,6 +22,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
+import com.nuvio.app.features.player.PlayerHeroTrailerState
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
@@ -158,11 +159,13 @@ actual fun HeroTrailerPlayerSurface(
         playbackRevealReady = false
         controller.updateControls(
             PlayerControlsState(
-                heroTrailerMode = true,
-                heroTrailerBackgroundColor = "#000000",
                 isLoading = true,
-                heroTrailerMuted = muted,
-                heroTrailerVolume = effectiveVolume,
+                heroTrailer = PlayerHeroTrailerState(
+                    enabled = true,
+                    backgroundColor = "#000000",
+                    muted = muted,
+                    volume = effectiveVolume,
+                ),
             ),
         )
         detailHeroTrailerSurfaceLog.i {
@@ -190,11 +193,13 @@ actual fun HeroTrailerPlayerSurface(
     LaunchedEffect(controller, sourceUrl, muted, effectiveVolume) {
         controller.updateControls(
             PlayerControlsState(
-                heroTrailerMode = true,
-                heroTrailerBackgroundColor = "#000000",
                 isLoading = true,
-                heroTrailerMuted = muted,
-                heroTrailerVolume = effectiveVolume,
+                heroTrailer = PlayerHeroTrailerState(
+                    enabled = true,
+                    backgroundColor = "#000000",
+                    muted = muted,
+                    volume = effectiveVolume,
+                ),
             ),
         )
         controller.setMpvProperty("mute", if (muted) "yes" else "no")
@@ -204,7 +209,8 @@ actual fun HeroTrailerPlayerSurface(
     }
 
     LaunchedEffect(controller, sourceUrl) {
-        controller.setMpvProperty("panscan", "1.0")
+        // Fill the hero and trim bars baked into the video, as on Home (HomeHeroTrailerSurface).
+        controller.setResizeMode(com.nuvio.app.features.player.PlayerResizeMode.AutoCrop, quickAutoCrop = true)
         // Trailer loudness is wildly inconsistent between uploads; smooth it out in real time.
         controller.setMpvProperty("af", TRAILER_AUDIO_NORMALIZATION_FILTER)
     }

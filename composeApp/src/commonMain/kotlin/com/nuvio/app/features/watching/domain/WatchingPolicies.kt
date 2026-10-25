@@ -4,6 +4,13 @@ private const val CompletionThresholdFraction = 0.90
 private const val ProgressStoreThresholdMs = 1_000L
 private const val UpcomingNextSeasonWindowDays = 7
 
+/**
+ * Streams shorter than this are treated as error/placeholder clips (debrid cache-sync placeholders,
+ * "service unavailable" error videos, RAR-only torrents), not real episodes. Mirrors upstream Nuvio
+ * and NuvioTV.
+ */
+private const val MinRealContentDurationMs = 121_000L
+
 fun watchedKey(
     content: WatchingContentRef,
     seasonNumber: Int? = null,
@@ -13,19 +20,28 @@ fun watchedKey(
 fun shouldStoreProgress(
     positionMs: Long,
     durationMs: Long,
-): Boolean = positionMs >= ProgressStoreThresholdMs
+): Boolean = !isShortPlaceholderDuration(durationMs) && positionMs >= ProgressStoreThresholdMs
 
 fun isProgressComplete(
     positionMs: Long,
     durationMs: Long,
     isEnded: Boolean,
 ): Boolean {
+    if (isShortPlaceholderDuration(durationMs)) return false
     if (isEnded) return true
     if (durationMs <= 0L) return false
 
     val watchedFraction = positionMs.toDouble() / durationMs.toDouble()
     return watchedFraction >= CompletionThresholdFraction
 }
+
+/**
+ * Returns `true` when the duration looks like an error clip or debrid cache-sync placeholder rather
+ * than real content. A zero/negative duration is left to the normal path so that players which only
+ * report "ended" still work.
+ */
+fun isShortPlaceholderDuration(durationMs: Long): Boolean =
+    durationMs in 1 until MinRealContentDurationMs
 
 fun isReleasedBy(
     todayIsoDate: String,

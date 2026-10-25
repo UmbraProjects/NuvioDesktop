@@ -59,6 +59,14 @@ internal object StreamPrefetchService {
          * Matches the home hero's own trailer dwell.
          */
         ContinueWatching(1_200L),
+
+        /**
+         * The player is nearing the end of an episode and Preload Next Episode Sources is on
+         * (upstream 22c9ab203). Its own setting, so the prefetch scope does not apply, and the one
+         * trigger allowed during playback: searching then is the whole point. No dwell; the
+         * player asks once per next episode.
+         */
+        NextEpisode(0L),
     }
 
     data class Target(
@@ -136,9 +144,13 @@ internal object StreamPrefetchService {
         PlayerSettingsRepository.ensureLoaded()
         val settings = PlayerSettingsRepository.uiState.value
         val prefetchScope = settings.streamPrefetchScope
-        if (!prefetchScope.isEnabled) return
-        if (target.trigger == Trigger.ContinueWatching && !prefetchScope.includesContinueWatching) return
-        if (playbackActive) return
+        if (target.trigger == Trigger.NextEpisode) {
+            if (!settings.preloadNextEpisodeSources) return
+        } else {
+            if (!prefetchScope.isEnabled) return
+            if (target.trigger == Trigger.ContinueWatching && !prefetchScope.includesContinueWatching) return
+            if (playbackActive) return
+        }
 
         val resolved = MediaIdResolver.resolveLocalEpisodeIdentity(
             contentType = target.type,
@@ -296,6 +308,12 @@ internal object StreamPrefetchService {
             )
             stored += annotated.streams.size
         }
+        // A Continue Watching card's answers are offered to the long-lived cache too; its gates
+        // decide. Failed providers are left out, empty answers kept, as for the prefetch cache.
+        CwStreamCache.offer(
+            contentKey = contentKey,
+            answers = groups.filter { it.error == null }.associate { it.addonId.toCacheProviderId() to it.streams },
+        )
 
         log.i {
             "prefetched $stored streams across ${groups.count { it.streams.isNotEmpty() }} providers " +

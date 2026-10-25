@@ -25,6 +25,7 @@ internal actual object MdbListSettingsStorage {
     private const val useAudienceKey = "mdblist_use_audience"
     private const val useMalKey = "mdblist_use_mal"
     private const val refreshPresetKey = "mdblist_refresh_preset"
+    private const val hiddenLibraryListsKey = "mdblist_hidden_library_lists"
     private const val customRefreshDaysKey = "mdblist_custom_refresh_days"
     private val syncKeys = listOf(
         enabledKey,
@@ -73,6 +74,8 @@ internal actual object MdbListSettingsStorage {
     actual fun saveUseMal(enabled: Boolean) = saveBoolean(useMalKey, enabled)
     actual fun loadRefreshPreset(): String? = loadString(refreshPresetKey)
     actual fun saveRefreshPreset(value: String) = saveString(refreshPresetKey, value)
+    actual fun loadHiddenLibraryLists(): String? = loadString(hiddenLibraryListsKey)
+    actual fun saveHiddenLibraryLists(value: String) = saveString(hiddenLibraryListsKey, value)
     actual fun loadCustomRefreshDays(): String? = loadString(customRefreshDaysKey)
     actual fun saveCustomRefreshDays(value: String) = saveString(customRefreshDaysKey, value)
 

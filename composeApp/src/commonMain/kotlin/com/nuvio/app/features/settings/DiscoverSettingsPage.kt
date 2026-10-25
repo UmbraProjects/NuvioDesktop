@@ -1105,10 +1105,11 @@ private fun CustomDiscoverRefPicker(
                 // behind with no results under it looks like the search broke.
                 onDismissRequest = { query = "" },
                 properties = PopupProperties(focusable = false),
-                containerColor = tokens.colors.surfaceCard,
+                containerColor = tokens.colors.background,
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
-                border = BorderStroke(1.dp, tokens.colors.borderDefault),
+                border = BorderStroke(1.dp, SettingsSectionGlassEdge),
+                shape = SettingsSectionGlassShape,
                 modifier = Modifier.heightIn(max = RefResultsMaxHeight),
             ) {
                 results.take(MAX_REF_RESULTS).forEach { candidate ->

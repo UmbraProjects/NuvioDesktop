@@ -13,6 +13,12 @@ data class RawHttpResponse(
     val url: String,
     val body: String,
     val headers: Map<String, String>,
+    /**
+     * The body as received, before charset decoding (and cut at the same size cap). Only filled
+     * when the request asked for it with `keepResponseBytes`, so ordinary callers do not hold every
+     * body twice.
+     */
+    val bodyBytes: ByteArray? = null,
 )
 
 expect suspend fun httpGetText(url: String): String
@@ -73,6 +79,10 @@ expect suspend fun httpRequestRaw(
      * many hosts wants those to fail well before a healthy transfer would.
      */
     connectTimeoutMs: Long = 0,
+    /** Sent verbatim instead of the UTF-8 encoding of [body] when present (binary uploads). */
+    requestBodyBytes: ByteArray? = null,
+    /** Keep the undecoded body in [RawHttpResponse.bodyBytes]. */
+    keepResponseBytes: Boolean = false,
 ): RawHttpResponse
 
 /** True when this body was cut short by the response size cap; see [RAW_HTTP_TRUNCATION_MARKER]. */

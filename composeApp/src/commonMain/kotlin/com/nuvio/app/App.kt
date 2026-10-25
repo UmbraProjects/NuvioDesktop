@@ -1,5 +1,9 @@
 package com.nuvio.app
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.runtime.key
 import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.settings.perfSettingsPage
@@ -172,6 +176,7 @@ import com.nuvio.app.core.ui.ContextMenuInvocation
 import com.nuvio.app.core.ui.unclaimedSecondaryClick
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.platformExitApp
+import com.nuvio.app.core.ui.addPlatformSvgDecoders
 import com.nuvio.app.core.ui.configurePlatformImageLoader
 import com.nuvio.app.core.ui.TransientImageErrorRetryInterceptor
 import com.nuvio.app.core.ui.NuvioToastHost
@@ -358,6 +363,7 @@ import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamLaunch
 import com.nuvio.app.features.streams.StreamLinkCacheRepository
 import com.nuvio.app.features.streams.StreamsRepository
+import com.nuvio.app.features.streams.YouTubeStreamResolver
 import com.nuvio.app.features.streams.StreamsScreen
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -658,8 +664,8 @@ internal fun rootTabHistoryAfterNavigation(
 // two must stay identical or the panel's rounded top corners stop lining up with the bar. Sized so
 // the five nav quadrants keep the 80.dp rhythm they had when there were four. Quadrants divide the
 // bar by weight, so hiding Discover subtracts one quadrant instead of stretching the other four.
-private val FloatingTopBarQuadrantWidth = 80.dp
-private val FloatingTopBarWidth = 400.dp
+private val FloatingTopBarQuadrantWidth = 64.dp
+private val FloatingTopBarWidth = 320.dp
 
 // The sidebar's nav glyphs sit alone in a wide rail rather than in a dense pill, so they carry
 // 15% more than the standard 20.dp icon step to stop them reading as undersized.
@@ -1034,6 +1040,7 @@ fun App() {
             .diskCachePolicy(CachePolicy.ENABLED)
             .memoryCachePolicy(CachePolicy.ENABLED)
             .components {
+                addPlatformSvgDecoders()
                 add(SvgDecoder.Factory())
                 add(TransientImageErrorRetryInterceptor())
             }
@@ -2100,7 +2107,13 @@ private fun MainAppContent(
             // Persist binge group for subsequent episode plays (same as internal player)
             val bingeGroup = launch.bingeGroup
             if (bingeGroup != null && launch.parentMetaId.isNotBlank()) {
-                BingeGroupCacheRepository.save(launch.parentMetaId, bingeGroup)
+                val release = launch.stream?.takeIf { it.behaviorHints.bingeGroup == bingeGroup }
+                BingeGroupCacheRepository.save(
+                    contentId = launch.parentMetaId,
+                    bingeGroup = bingeGroup,
+                    filename = release?.behaviorHints?.filename,
+                    infoHash = release?.p2pInfoHash,
+                )
             }
 
             val baseRequest = launch.toExternalPlayerPlaybackRequest()
@@ -4876,6 +4889,30 @@ private fun MainAppContent(
                     // "Play on device…": resolve as usual, then hand the stream to the cast picker.
                     castToDevice: Boolean = false,
                 ) {
+                    if (stream.youTubeIdToResolve != null) {
+                        if (resolvingDebridStream) return
+                        streamRouteScope.launch {
+                            resolvingDebridStream = true
+                            val resolved = YouTubeStreamResolver.resolve(stream)
+                            resolvingDebridStream = false
+                            if (resolved == null) {
+                                NuvioToastController.show(getString(Res.string.youtube_resolution_failed))
+                                return@launch
+                            }
+                            openSelectedStream(
+                                stream = resolved,
+                                resolvedResumePositionMs = resolvedResumePositionMs,
+                                resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                forceExternal = forceExternal,
+                                forceInternal = forceInternal,
+                                sourceIdentityKey = sourceIdentityKey,
+                                // The resolved URL expires after a few hours.
+                                saveForReuse = false,
+                                castToDevice = castToDevice,
+                            )
+                        }
+                        return
+                    }
                     if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
                         if (resolvingDebridStream) return
                         streamRouteScope.launch {
@@ -6169,11 +6206,13 @@ private fun TabletFloatingTopBar(
         onSearchSubmit(entry.query)
     }
 
-    val dividerColor = Color.White.copy(alpha = 0.13f)
-    val activeQuadColor = Color.White.copy(alpha = 0.18f)
+    // Styled after the Nuvio tracker's nav: a dark glass pill with a hairline edge, pill-shaped
+    // items inside it that lift on hover, and a lighter fill on the page you're on.
+    val dividerColor = NavBarEdge
+    val activeQuadColor = Color.White.copy(alpha = 0.14f)
     val activeIconTint = Color.White
     val inactiveIconTint = Color.White.copy(alpha = 0.55f)
-    val floatingSearchSurfaceColor = tokens.colors.surface.copy(alpha = tokens.opacity.strong)
+    val floatingSearchSurfaceColor = NavBarFill
 
     BoxWithConstraints(
         modifier = modifier
@@ -6189,11 +6228,11 @@ private fun TabletFloatingTopBar(
             Surface(
             color = floatingSearchSurfaceColor,
             shape = if (attachedPanelVisible) androidx.compose.foundation.shape.RoundedCornerShape(topStartPercent = 50, topEndPercent = 50) else tokens.shapes.chip,
-            tonalElevation = if (attachedPanelVisible) 0.dp else tokens.elevation.playerControls,
+            tonalElevation = 0.dp,
             shadowElevation = if (attachedPanelVisible) 0.dp else tokens.elevation.overlay,
-            border = BorderStroke(0.5.dp, dividerColor),
+            border = BorderStroke(1.dp, dividerColor),
             modifier = Modifier
-                .height(44.dp)
+                .height(NavBarHeight)
                 .width(topBarWidth)
                 .onPointerEvent(PointerEventType.Enter) {
                     activationZoneHovered = true
@@ -6349,7 +6388,11 @@ private fun TabletFloatingTopBar(
                         }
                     }
                 } else {
-                    Row(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Home,
                             activeColor = activeQuadColor,
@@ -6358,11 +6401,10 @@ private fun TabletFloatingTopBar(
                             Icon(
                                 imageVector = Icons.Filled.Home,
                                 contentDescription = stringResource(Res.string.compose_nav_home),
-                                modifier = Modifier.size(NuvioTokens.Space.s18).offset(x = 2.dp),
+                                modifier = Modifier.size(NuvioTokens.Space.s18),
                                 tint = if (selectedTab == AppScreenTab.Home) activeIconTint else inactiveIconTint,
                             )
                         }
-                        Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
                         NavQuadrant(
                             selected = isSearchActive,
                             activeColor = activeQuadColor,
@@ -6376,7 +6418,6 @@ private fun TabletFloatingTopBar(
                             )
                         }
                         if (discoverTabVisible) {
-                            Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
                             NavQuadrant(
                                 selected = selectedTab == AppScreenTab.Discover,
                                 activeColor = activeQuadColor,
@@ -6395,7 +6436,6 @@ private fun TabletFloatingTopBar(
                             }
                         }
                         if (liveTvTabVisible) {
-                            Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
                             NavQuadrant(
                                 selected = selectedTab == AppScreenTab.LiveTv,
                                 activeColor = activeQuadColor,
@@ -6409,7 +6449,6 @@ private fun TabletFloatingTopBar(
                                 )
                             }
                         }
-                        Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Library,
                             activeColor = activeQuadColor,
@@ -6423,13 +6462,12 @@ private fun TabletFloatingTopBar(
                                 tint = if (selectedTab == AppScreenTab.Library) activeIconTint else inactiveIconTint,
                             )
                         }
-                        Box(Modifier.width(0.5.dp).fillMaxHeight().background(dividerColor))
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Settings,
                             activeColor = activeQuadColor,
                             onClick = { onTabSelected(AppScreenTab.Settings) },
                         ) {
-                            Box(modifier = Modifier.offset(x = (-2).dp)) {
+                            Box {
                                 ProfileSwitcherTab(
                                     selected = selectedTab == AppScreenTab.Settings,
                                     onClick = { onTabSelected(AppScreenTab.Settings) },
@@ -6450,7 +6488,7 @@ private fun TabletFloatingTopBar(
             val density = LocalDensity.current
             Popup(
                 alignment = Alignment.TopCenter,
-                offset = IntOffset(0, with(density) { (44.dp - 0.5.dp).roundToPx() }),
+                offset = IntOffset(0, with(density) { (NavBarHeight - 0.5.dp).roundToPx() }),
                 properties = PopupProperties(focusable = true),
                 onDismissRequest = { libraryMenuVisible = false },
             ) {
@@ -6557,14 +6595,24 @@ private fun RowScope.NavQuadrant(
     onSecondaryClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val shape = androidx.compose.foundation.shape.CircleShape
+    val fill = when {
+        selected -> activeColor
+        hovered -> Color.White.copy(alpha = 0.07f)
+        else -> Color.Transparent
+    }
     Box(
         modifier = modifier
             .weight(1f)
-            .fillMaxHeight()
-            .background(if (selected) activeColor else Color.Transparent)
+            .height(NavBarItemHeight)
+            .background(fill, shape)
+            .clip(shape)
             .then(if (onSecondaryClick != null) Modifier.secondaryClick(onSecondaryClick) else Modifier)
+            .hoverable(interaction)
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interaction,
                 indication = null,
                 onClick = onClick,
             ),
@@ -6573,6 +6621,12 @@ private fun RowScope.NavQuadrant(
         content()
     }
 }
+
+/** The nav bar's glass: a dark translucent fill and a hairline edge, after the Nuvio tracker. */
+private val NavBarFill = Color(0xFF1C1C21).copy(alpha = 0.78f)
+private val NavBarEdge = Color.White.copy(alpha = 0.1f)
+private val NavBarHeight = 48.dp
+private val NavBarItemHeight = 40.dp
 
 private fun Float.isInCenteredActivationBand(widthPx: Int): Boolean {
     if (widthPx <= 0) return false

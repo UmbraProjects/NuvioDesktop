@@ -4,6 +4,7 @@ import com.nuvio.app.core.ui.frameBudgetSetProbesEnabled
 import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.features.player.skip.NextEpisodeThresholdMode
 import com.nuvio.app.features.player.skip.SkipAutoAcceptMode
+import com.nuvio.app.features.streams.CwStreamCache
 import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.STREAM_PREFETCH_DEFAULT_CACHE_MINUTES
 import com.nuvio.app.features.streams.STREAM_PREFETCH_CACHE_MINUTE_VALUES
@@ -133,6 +134,8 @@ data class PlayerSettingsUiState(
     val streamPrefetchScope: StreamPrefetchScope = StreamPrefetchScope.OFF,
     val streamPrefetchCacheMinutes: Int = STREAM_PREFETCH_DEFAULT_CACHE_MINUTES,
     val streamPrefetchResolveLinks: Boolean = true,
+    val streamCwCacheEnabled: Boolean = true,
+    val preloadNextEpisodeSources: Boolean = false,
     val decoderPriority: Int = 1,
     val nvidiaRtxSuperResolutionEnabled: Boolean = false,
     val nvidiaRtxHdrEnabled: Boolean = false,
@@ -195,6 +198,13 @@ data class PlayerSettingsUiState(
     val iosSaturation: Int = 0,
     val iosGamma: Int = 0,
     val desktopHdrMode: DesktopHdrMode = DesktopHdrMode.Auto,
+    /**
+     * mpv's own SDR-to-HDR expansion (`inverse-tone-mapping`), for any GPU. Only on SDR video with
+     * Windows HDR on, and never while RTX Video True HDR is running, which it is an alternative to.
+     */
+    val desktopInverseToneMappingEnabled: Boolean = false,
+    /** The `target-peak` the expansion aims for, in nits. */
+    val desktopInverseToneMappingPeakNits: Int = DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS,
     val desktopColorProfile: DesktopColorProfile = DesktopColorProfile.Neutral,
     /**
      * mpv equalizer offsets for [DesktopColorProfile.Custom]. Ignored by every other profile, so
@@ -318,6 +328,8 @@ object PlayerSettingsRepository {
     private var streamPrefetchScope = StreamPrefetchScope.OFF
     private var streamPrefetchCacheMinutes = STREAM_PREFETCH_DEFAULT_CACHE_MINUTES
     private var streamPrefetchResolveLinks = true
+    private var streamCwCacheEnabled = true
+    private var preloadNextEpisodeSources = false
     private var decoderPriority = 1
     private var nvidiaRtxSuperResolutionEnabled = false
     private var nvidiaRtxHdrEnabled = false
@@ -369,6 +381,8 @@ object PlayerSettingsRepository {
     private var iosSaturation = 0
     private var iosGamma = 0
     private var desktopHdrMode = DesktopHdrMode.Auto
+    private var desktopInverseToneMappingEnabled = false
+    private var desktopInverseToneMappingPeakNits = DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS
     private var desktopColorProfile = DesktopColorProfile.Neutral
     private var desktopColorContrast = 0
     private var desktopColorBrightness = 0
@@ -418,6 +432,7 @@ object PlayerSettingsRepository {
         // setting; nothing speculatively gathered for the old one is answering for this one.
         StreamPrefetchCache.clear()
         StreamPrefetchService.reset()
+        CwStreamCache.onProfileChanged()
         loadFromDisk()
     }
 
@@ -466,6 +481,8 @@ object PlayerSettingsRepository {
         streamPrefetchScope = StreamPrefetchScope.OFF
         streamPrefetchCacheMinutes = STREAM_PREFETCH_DEFAULT_CACHE_MINUTES
         streamPrefetchResolveLinks = true
+        streamCwCacheEnabled = true
+        preloadNextEpisodeSources = false
         decoderPriority = 1
         nvidiaRtxSuperResolutionEnabled = false
         nvidiaRtxHdrEnabled = false
@@ -517,6 +534,8 @@ object PlayerSettingsRepository {
         iosSaturation = 0
         iosGamma = 0
         desktopHdrMode = DesktopHdrMode.Auto
+        desktopInverseToneMappingEnabled = false
+        desktopInverseToneMappingPeakNits = DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS
         desktopColorProfile = DesktopColorProfile.Neutral
         desktopColorContrast = 0
         desktopColorBrightness = 0
@@ -685,6 +704,8 @@ object PlayerSettingsRepository {
             ?.takeIf { it in STREAM_PREFETCH_CACHE_MINUTE_VALUES }
             ?: STREAM_PREFETCH_DEFAULT_CACHE_MINUTES
         streamPrefetchResolveLinks = PlayerSettingsStorage.loadStreamPrefetchResolveLinks() ?: true
+        streamCwCacheEnabled = PlayerSettingsStorage.loadStreamCwCacheEnabled() ?: true
+        preloadNextEpisodeSources = PlayerSettingsStorage.loadPreloadNextEpisodeSources() ?: false
         streamReuseLastLinkCacheHours = PlayerSettingsStorage.loadStreamReuseLastLinkCacheHours() ?: 24
         decoderPriority = PlayerSettingsStorage.loadDecoderPriority() ?: 1
         nvidiaRtxSuperResolutionEnabled = PlayerSettingsStorage.loadNvidiaRtxSuperResolutionEnabled() ?: false
@@ -780,6 +801,10 @@ object PlayerSettingsRepository {
         desktopHdrMode = PlayerSettingsStorage.loadDesktopHdrMode()
             ?.let { runCatching { DesktopHdrMode.valueOf(it) }.getOrNull() }
             ?: DesktopHdrMode.Auto
+        desktopInverseToneMappingEnabled = PlayerSettingsStorage.loadDesktopInverseToneMappingEnabled() ?: false
+        desktopInverseToneMappingPeakNits = PlayerSettingsStorage.loadDesktopInverseToneMappingPeakNits()
+            ?.coerceIn(DESKTOP_INVERSE_TONE_MAPPING_PEAK_RANGE)
+            ?: DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS
         desktopColorProfile = PlayerSettingsStorage.loadDesktopColorProfile()
             ?.let { runCatching { DesktopColorProfile.valueOf(it) }.getOrNull() }
             ?: DesktopColorProfile.Neutral
@@ -1282,6 +1307,24 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveStreamPrefetchResolveLinks(enabled)
     }
 
+    fun setStreamCwCacheEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (streamCwCacheEnabled == enabled) return
+        streamCwCacheEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveStreamCwCacheEnabled(enabled)
+        // Off means off: nothing kept on disk for a feature the user turned away from.
+        if (!enabled) CwStreamCache.clear()
+    }
+
+    fun setPreloadNextEpisodeSources(enabled: Boolean) {
+        ensureLoaded()
+        if (preloadNextEpisodeSources == enabled) return
+        preloadNextEpisodeSources = enabled
+        publish()
+        PlayerSettingsStorage.savePreloadNextEpisodeSources(enabled)
+    }
+
     fun setDecoderPriority(priority: Int) {
         ensureLoaded()
         if (decoderPriority == priority) return
@@ -1775,6 +1818,8 @@ object PlayerSettingsRepository {
             streamPrefetchScope = streamPrefetchScope,
             streamPrefetchCacheMinutes = streamPrefetchCacheMinutes,
             streamPrefetchResolveLinks = streamPrefetchResolveLinks,
+            streamCwCacheEnabled = streamCwCacheEnabled,
+            preloadNextEpisodeSources = preloadNextEpisodeSources,
             streamReuseLastLinkCacheHours = streamReuseLastLinkCacheHours,
             decoderPriority = decoderPriority,
             nvidiaRtxSuperResolutionEnabled = nvidiaRtxSuperResolutionEnabled,
@@ -1827,6 +1872,8 @@ object PlayerSettingsRepository {
             iosSaturation = iosSaturation,
             iosGamma = iosGamma,
             desktopHdrMode = desktopHdrMode,
+            desktopInverseToneMappingEnabled = desktopInverseToneMappingEnabled,
+            desktopInverseToneMappingPeakNits = desktopInverseToneMappingPeakNits,
             desktopColorProfile = desktopColorProfile,
             desktopColorContrast = desktopColorContrast,
             desktopColorBrightness = desktopColorBrightness,
@@ -1873,6 +1920,23 @@ object PlayerSettingsRepository {
         desktopHdrMode = mode
         publish()
         PlayerSettingsStorage.saveDesktopHdrMode(mode.name)
+    }
+
+    fun setDesktopInverseToneMappingEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopInverseToneMappingEnabled == enabled) return
+        desktopInverseToneMappingEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopInverseToneMappingEnabled(enabled)
+    }
+
+    fun setDesktopInverseToneMappingPeakNits(nits: Int) {
+        ensureLoaded()
+        val clamped = nits.coerceIn(DESKTOP_INVERSE_TONE_MAPPING_PEAK_RANGE)
+        if (desktopInverseToneMappingPeakNits == clamped) return
+        desktopInverseToneMappingPeakNits = clamped
+        publish()
+        PlayerSettingsStorage.saveDesktopInverseToneMappingPeakNits(clamped)
     }
 
     fun setDesktopColorProfile(profile: DesktopColorProfile) {
@@ -2243,6 +2307,9 @@ object PlayerSettingsRepository {
         }
     }
 }
+
+const val DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS = 400
+val DESKTOP_INVERSE_TONE_MAPPING_PEAK_RANGE = 200..1000
 
 // The RTX settings as the player applies them: the menu's session toggle wins over the saved one.
 val PlayerSettingsUiState.effectiveRtxVsrEnabled: Boolean
