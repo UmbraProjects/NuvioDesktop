@@ -93,4 +93,31 @@ class EraTimelineTest {
         assertEquals(own, withOwn.palette(artistPalette))
         assertNotNull(withOwn.lead)
     }
+
+    @Test
+    fun placeholderYearsAreUndatedAndDoNotStretchTheRuler() {
+        // Deezer sends "0000-00-00" for an unknown date, and one source once stored a bare "0".
+        val t = buildEraTimeline(hozierLike + r("zero", "Zero", year = "0") + r("zeros", "Zeros", year = "0000", date = "0000-00-00"))
+        assertEquals(2014, t.startYear)
+        assertEquals(2025, t.endYear)
+        assertEquals(setOf("zero", "zeros"), t.undated.map { it.primary.key }.toSet())
+        assertTrue(t.dots.none { it.release.key.startsWith("zero") })
+        assertNull(releasePosition(r("z", year = "0000")))
+        assertNull(releasePosition(r("z", date = "0000-00-00")))
+    }
+
+    @Test
+    fun releaseYearOrNullOnlyAcceptsRealYears() {
+        assertEquals(2014, releaseYearOrNull("2014"))
+        assertEquals(1972, releaseYearOrNull("1972-06"))
+        assertEquals(2025, releaseYearOrNull(" 2025-10-24 "))
+        assertNull(releaseYearOrNull("0"))
+        assertNull(releaseYearOrNull("0000"))
+        assertNull(releaseYearOrNull("0000-00-00"))
+        assertNull(releaseYearOrNull("9999"))
+        assertNull(releaseYearOrNull("20145"))
+        assertNull(releaseYearOrNull(null))
+        assertEquals("2014-05", sanePartialDate("2014-05"))
+        assertNull(sanePartialDate("0000-00-00"))
+    }
 }

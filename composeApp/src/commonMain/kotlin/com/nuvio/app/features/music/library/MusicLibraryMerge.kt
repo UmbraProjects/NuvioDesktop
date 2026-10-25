@@ -47,6 +47,18 @@ internal fun sameArtistName(a: String, b: String): Boolean {
     return x.isNotEmpty() && x == y
 }
 
+/** Years outside this range are placeholders ("0000", "0"), not dates; they would stretch the era ruler back to year 0. */
+internal const val MIN_RELEASE_YEAR = 1900
+internal const val MAX_RELEASE_YEAR = 2100
+
+/** The four-digit year at the start of [raw] ("2014", "2014-05-20"), or null when there is none or it is a placeholder like "0000". */
+internal fun releaseYearOrNull(raw: String?): Int? =
+    raw?.trim()?.takeIf { it.length >= 4 && it.take(4).all(Char::isDigit) && (it.length == 4 || it[4] == '-') }
+        ?.take(4)?.toIntOrNull()?.takeIf { it in MIN_RELEASE_YEAR..MAX_RELEASE_YEAR }
+
+/** [raw] unchanged when it starts with a real year ("2014", "2014-05", "2014-05-20"), else null ("0000-00-00" from Deezer, "0"). */
+internal fun sanePartialDate(raw: String?): String? = raw?.trim()?.takeIf { releaseYearOrNull(it) != null }
+
 // region kinds
 
 internal fun kindFromMusicBrainz(primary: String?, secondary: List<String>): ReleaseKind {
@@ -250,8 +262,8 @@ private fun Draft.toRelease(fanart: FanartArtist?): LibraryRelease {
         title = yt?.title ?: title,
         kind = kind,
         secondaryTypes = secondary,
-        year = year,
-        releaseDate = date ?: year,
+        year = sanePartialDate(year)?.take(4),
+        releaseDate = sanePartialDate(date) ?: sanePartialDate(year)?.take(4),
         ytBrowseId = yt?.browseId,
         musicBrainzId = mbid,
         deezerId = deezer?.id,
@@ -279,7 +291,7 @@ internal fun LibraryRelease.withDeezerDetail(detail: DeezerAlbumDetail): Library
     label = label ?: detail.label,
     genres = (genres + detail.genres).distinct(),
     upc = detail.upc ?: upc,
-    releaseDate = if (releaseDate == null || releaseDate.length < 10) detail.releaseDate ?: releaseDate else releaseDate,
+    releaseDate = if (releaseDate == null || releaseDate.length < 10) sanePartialDate(detail.releaseDate) ?: releaseDate else releaseDate,
 )
 
 /** A YouTube Music album page knows its tracks; use that count and length when Deezer does not. */

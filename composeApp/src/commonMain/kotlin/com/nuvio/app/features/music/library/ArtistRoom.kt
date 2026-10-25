@@ -22,12 +22,14 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -94,6 +97,7 @@ internal fun ArtistRoom(
     onShuffle: () -> Unit,
     onAbout: () -> Unit,
     onLinks: () -> Unit,
+    onOpenArtist: (String) -> Unit,
     onRefresh: () -> Unit,
     onRemove: () -> Unit,
     onOpen: (LibraryRelease) -> Unit,
@@ -139,7 +143,7 @@ internal fun ArtistRoom(
                 ) {
                     RoomEras(
                         artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
-                        filter, playableOnly, demosOpen, onPlay, onShuffle, onLinks, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
+                        filter, playableOnly, demosOpen, onPlay, onShuffle, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
                     )
                 }
             }
@@ -154,7 +158,7 @@ internal fun ArtistRoom(
                 }
                 RoomEras(
                     artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
-                    filter, playableOnly, demosOpen, onPlay, onShuffle, onLinks, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
+                    filter, playableOnly, demosOpen, onPlay, onShuffle, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
                 )
             }
         }
@@ -253,7 +257,8 @@ private fun RoomIdentity(
         )
     }
 
-    val cutout = artist.art.bestClearArt
+    // Clear art often has the band's logo printed in it; with a logo already on show, prefer the plain cut-out.
+    val cutout = if (logo != null) artist.art.cutout ?: artist.art.clearArt else artist.art.bestClearArt
     val thumb = artist.art.thumb
     when {
         cutout != null -> NuvioAsyncImage(
@@ -311,7 +316,11 @@ private fun RoomIdentity(
     }
 
     if (saved) {
-        TextButton(onClick = onRefresh, enabled = refreshing == null) { Text(refreshing ?: "Refresh") }
+        TextButton(
+            onClick = onRefresh,
+            enabled = refreshing == null,
+            colors = ButtonDefaults.textButtonColors(contentColor = colors.accent, disabledContentColor = colors.textMuted),
+        ) { Text(refreshing ?: "Refresh") }
     } else if (refreshing != null) {
         Text(refreshing, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
     }
@@ -354,6 +363,7 @@ private fun RoomEras(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     onLinks: () -> Unit,
+    onOpenArtist: (String) -> Unit,
     onRemove: () -> Unit,
     onOpen: (LibraryRelease) -> Unit,
     onPlayableOnly: (Boolean) -> Unit,
@@ -363,6 +373,8 @@ private fun RoomEras(
     val colors = MaterialTheme.nuvio.colors
     var showFilters by rememberSaveable { mutableStateOf(false) }
     val era = timeline.eras.getOrNull(selected)
+
+    if (artist.channelMismatch) NamesakeNotice(artist, onOpenArtist)
 
     // Play bar.
     FlowRow(
@@ -521,14 +533,12 @@ private fun EraRuler(artist: LibraryArtist, timeline: EraTimeline, selected: Int
                     .clickable { onSelect(dot.eraIndex) },
             )
         }
-        val slots = layoutEraBlocks(timeline.eras, timeline.startYear, timeline.spanYears, w, minWidth = 90f)
-        timeline.eras.forEachIndexed { i, era ->
-            val slot = slots[i]
+        @Composable
+        fun EraBlock(i: Int, modifier: Modifier) {
+            val era = timeline.eras[i]
             val on = i == selected
             Column(
-                Modifier
-                    .offset(x = slot.left.dp, y = 96.dp)
-                    .width(slot.width.dp)
+                modifier
                     .height(44.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(if (on) eraColor(i) else Color.White.copy(alpha = 0.1f))
@@ -541,7 +551,60 @@ private fun EraRuler(artist: LibraryArtist, timeline: EraTimeline, selected: Int
                 Text(era.name, style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+        if (eraBlocksOverflow(timeline.eras.size, w, minWidth = 90f)) {
+            // Too many eras to share the width: fixed-size blocks in a strip that scrolls, kept on the chosen era.
+            val strip = rememberScrollState()
+            val density = LocalDensity.current
+            LaunchedEffect(selected, w) {
+                val target = with(density) { ((selected * (SCROLL_BLOCK_WIDTH + 4f) - w / 2f + SCROLL_BLOCK_WIDTH / 2f).coerceAtLeast(0f)).dp.roundToPx() }
+                strip.animateScrollTo(target)
+            }
+            Row(
+                Modifier.offset(y = 96.dp).fillMaxWidth().horizontalScroll(strip),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                timeline.eras.indices.forEach { i -> EraBlock(i, Modifier.width(SCROLL_BLOCK_WIDTH.dp)) }
+            }
+        } else {
+            val slots = layoutEraBlocks(timeline.eras, timeline.startYear, timeline.spanYears, w, minWidth = 90f)
+            timeline.eras.indices.forEach { i ->
+                val slot = slots[i]
+                EraBlock(i, Modifier.offset(x = slot.left.dp, y = 96.dp).width(slot.width.dp))
+            }
+        }
     }
 }
 
 // endregion
+
+/** Width of one era block when there are too many to share the ruler's width. Wide enough for "1979 – 1980". */
+private const val SCROLL_BLOCK_WIDTH = 116f
+
+/**
+ * Shown when the other sources turned out to describe a namesake, so this page carries only what YouTube
+ * Music lists. Offers the channel MusicBrainz lists for the real one when it names one.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NamesakeNotice(artist: LibraryArtist, onOpenArtist: (String) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.4f)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("This may not be the ${artist.name} you mean", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+        Text(
+            "The releases on this YouTube Music channel don't match the artist of that name on MusicBrainz, " +
+                "so their photos and details are left out rather than mixed in.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textSecondary,
+        )
+        val better = artist.suggestedChannelId
+        if (better != null) {
+            ActionPill("Open the likely match", onClick = { onOpenArtist(better) })
+        } else {
+            Text("Try another result in Search, or check the album titles.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        }
+    }
+}
+

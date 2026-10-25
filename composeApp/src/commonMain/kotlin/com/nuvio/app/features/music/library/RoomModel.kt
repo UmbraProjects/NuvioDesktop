@@ -5,9 +5,10 @@ import kotlin.math.min
 
 /** Phase 4: pure helpers behind the artist room and the shelf strip. No Compose, so they are unit-tested. */
 
-/** "Person · Ireland · born 1990", "Group · United States · formed 1981", "Group · UK · 1990–2004". Missing parts are left out. */
+/** "Solo artist · Ireland · born 1990", "Group · United States · formed 1981", "Group · UK · 1990–2004". Missing parts are left out. */
 internal fun passportLine(artist: LibraryArtist): String = listOfNotNull(
-    artist.type?.takeIf { it.isNotBlank() },
+    // MusicBrainz's "Person" is jargon next to a country; say what it means on a music page.
+    artist.type?.takeIf { it.isNotBlank() }?.let { if (it.equals("Person", ignoreCase = true)) "Solo artist" else it },
     (artist.area ?: artist.country)?.takeIf { it.isNotBlank() },
     artist.beginYear?.let { begin ->
         when {
@@ -43,6 +44,10 @@ internal fun passportChips(artist: LibraryArtist): Pair<String?, List<String>> {
 /** Where one era block sits on the ruler, in the same unit as the ruler width. */
 internal data class EraBlockSlot(val left: Float, val width: Float)
 
+/** True when [count] blocks of at least [minWidth] cannot sit side by side in [totalWidth]; the strip then scrolls. */
+internal fun eraBlocksOverflow(count: Int, totalWidth: Float, minWidth: Float, gap: Float = 4f): Boolean =
+    count * (minWidth + gap) > totalWidth
+
 /**
  * Era blocks under the ruler: each spans its years, at least [minWidth] wide, pushed right so two
  * blocks never overlap, and pulled back inside [totalWidth]. If they cannot all fit they share the width equally.
@@ -56,7 +61,7 @@ internal fun layoutEraBlocks(
     gap: Float = 4f,
 ): List<EraBlockSlot> {
     if (eras.isEmpty()) return emptyList()
-    if (eras.size * (minWidth + gap) > totalWidth) {
+    if (eraBlocksOverflow(eras.size, totalWidth, minWidth, gap)) {
         val each = (totalWidth - gap * (eras.size - 1)) / eras.size
         return eras.indices.map { EraBlockSlot(it * (each + gap), each) }
     }

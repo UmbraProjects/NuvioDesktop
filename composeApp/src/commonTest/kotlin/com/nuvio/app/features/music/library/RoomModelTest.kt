@@ -16,7 +16,7 @@ class RoomModelTest {
 
     @Test
     fun passportLineReadsLikeTheMock() {
-        assertEquals("Person · Ireland · born 1990", passportLine(a("Person", "Ireland", "1990")))
+        assertEquals("Solo artist · Ireland · born 1990", passportLine(a("Person", "Ireland", "1990")))
         assertEquals("Group · United States · formed 1981", passportLine(a("Group", "United States", "1981")))
         assertEquals("Group · UK · 1990–2004", passportLine(a("Group", "UK", "1990", "2004", ended = true)))
         assertEquals("", passportLine(a()))
@@ -83,5 +83,12 @@ class RoomModelTest {
         assertEquals("24 Oct 2025", formatReleaseDay("2025-10-24"))
         assertEquals("Oct 2025", formatReleaseDay("2025-10"))
         assertEquals("2025", formatReleaseDay("2025"))
+    }
+
+    @Test
+    fun manyErasOverflowIntoAScrollingStrip() {
+        assertTrue(eraBlocksOverflow(24, 1500f, 90f))
+        assertTrue(!eraBlocksOverflow(4, 832f, 90f))
+        assertTrue(!eraBlocksOverflow(0, 100f, 90f))
     }
 }

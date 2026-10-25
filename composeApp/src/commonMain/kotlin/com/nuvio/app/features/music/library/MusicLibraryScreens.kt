@@ -330,6 +330,8 @@ fun MusicArtistScreen(
     onBack: () -> Unit,
     onAlbumClick: (browseId: String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens another artist's page; the namesake notice uses it to jump to the channel MusicBrainz lists. */
+    onArtistClick: (browseId: String) -> Unit = {},
 ) {
     val colors = MaterialTheme.nuvio.colors
     var attempt by remember { mutableStateOf(0) }
@@ -421,6 +423,7 @@ fun MusicArtistScreen(
         onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
         onAbout = { showAbout = true },
         onLinks = { showLinks = true },
+        onOpenArtist = onArtistClick,
         onRefresh = { MusicLibraryRepository.refresh(artist.id) },
         onRemove = { confirmRemove = true },
         onOpen = { selectedKey = it.key },

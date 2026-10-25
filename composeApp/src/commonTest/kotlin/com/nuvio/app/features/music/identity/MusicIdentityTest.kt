@@ -123,4 +123,15 @@ class MusicIdentityTest {
         assertNull(viewedArtist(library, "UC404", null))
         assertNull(viewedArtist(library, null, null))
     }
+
+    @Test
+    fun aPageWearsTheViewedArtistAndEverywhereElseThePlayingOne() {
+        val viewed = LibraryArtist(id = "UCv", name = "Viewed")
+        val playing = LibraryArtist(id = "UCp", name = "Playing")
+        assertEquals("UCv", accentArtist(playing, viewed, viewedFirst = true)?.id)
+        assertEquals("UCp", accentArtist(playing, viewed, viewedFirst = false)?.id)
+        assertEquals("UCp", accentArtist(playing, null, viewedFirst = true)?.id)
+        assertEquals("UCv", accentArtist(null, viewed, viewedFirst = false)?.id)
+        assertNull(accentArtist(null, null, viewedFirst = true))
+    }
 }

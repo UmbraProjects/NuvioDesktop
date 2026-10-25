@@ -112,7 +112,7 @@ object MusicLibraryRepository {
         val settings = MusicLibraryStorage.loadSettings()
             ?.let { runCatching { json.decodeFromString<MusicLibrarySettings>(it) }.getOrNull() }
             ?: MusicLibrarySettings()
-        _state.value = MusicLibraryState(artists = sorted(artists), settings = settings)
+        _state.value = MusicLibraryState(artists = sorted(artists.map { it.withSaneDates() }), settings = settings)
     }
 
     private fun sorted(artists: List<LibraryArtist>) =
@@ -335,7 +335,8 @@ object MusicLibraryRepository {
 
             val enricher = MusicLibraryEnricher(_state.value.settings)
             val built = enricher.build(page, releases, addedAt, now) { setProgress(artistId, it) }
-            val full = if (existing == null) built else keepWhereEmpty(built, existing)
+            // A namesake verdict replaces what an earlier run merged in; only a source outage keeps old data.
+            val full = if (existing == null || built.channelMismatch) built else keepWhereEmpty(built, existing)
             put(full, onlyIfPresent = true)
 
             setProgress(artistId, "Reading album details")

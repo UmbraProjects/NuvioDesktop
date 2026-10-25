@@ -33,16 +33,18 @@ val LocalArtistIdentity = staticCompositionLocalOf<ArtistIdentity?> { null }
  * `onAccent` read below this point (primary buttons, the mini player's progress line and active
  * icons, links) takes the artist's colour, with no change at the call sites.
  *
- * Whose colour: the artist who is *playing* wins, so the mini player and the page buttons always
- * agree; with nothing playing it is the artist being viewed ([viewedArtistId], or the owner of
- * [viewedAlbumBrowseId]). With neither, or an artist with no palette yet, or a light theme, the
- * app's own accent is left alone. The palette is derived in the background the first time it is
+ * Whose colour: on an artist or album page ([viewedFirst]) the artist being viewed wins, so a room
+ * is never painted in the colours of whatever happens to be playing; the mini player and the stage
+ * keep their own scope, where the artist who is *playing* wins. With nothing to go by (no viewed
+ * artist, nothing playing), an artist with no palette yet, or a light theme, the app's own accent is
+ * left alone. The viewed artist is [viewedArtistId], or the owner of [viewedAlbumBrowseId]. The palette is derived in the background the first time it is
  * needed and then cached in the library (an artist only previewed from Search keeps it for the session).
  */
 @Composable
 fun MusicAccentScope(
     viewedArtistId: String? = null,
     viewedAlbumBrowseId: String? = null,
+    viewedFirst: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     // Only the track and album matter here; collecting the whole state would recompose on every position tick.
@@ -56,8 +58,12 @@ fun MusicAccentScope(
 
     LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
 
-    val identity = remember(nowPlaying, library.artists, library.preview, viewedArtistId, viewedAlbumBrowseId) {
-        (playingArtist(nowPlaying.track, nowPlaying.album, library) ?: viewedArtist(library, viewedArtistId, viewedAlbumBrowseId))?.identity()
+    val identity = remember(nowPlaying, library.artists, library.preview, viewedArtistId, viewedAlbumBrowseId, viewedFirst) {
+        accentArtist(
+            playing = playingArtist(nowPlaying.track, nowPlaying.album, library),
+            viewed = viewedArtist(library, viewedArtistId, viewedAlbumBrowseId),
+            viewedFirst = viewedFirst,
+        )?.identity()
     }
 
     LaunchedEffect(identity?.artistId, identity?.needsPalette) {
@@ -91,6 +97,10 @@ internal fun playingArtist(track: MusicTrack?, album: MusicAlbum?, library: Musi
     }
     return null
 }
+
+/** Whose accent a scope wears: the viewed artist first on a page ([viewedFirst]), the playing one first elsewhere. */
+internal fun accentArtist(playing: LibraryArtist?, viewed: LibraryArtist?, viewedFirst: Boolean): LibraryArtist? =
+    if (viewedFirst) viewed ?: playing else playing ?: viewed
 
 internal fun viewedArtist(library: MusicLibraryState, artistId: String?, albumBrowseId: String?): LibraryArtist? =
     artistId?.let(library::artistOrPreview) ?: albumBrowseId?.let(library::artistOfAlbum)

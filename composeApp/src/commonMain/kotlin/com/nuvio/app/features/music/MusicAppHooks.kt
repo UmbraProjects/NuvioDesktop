@@ -93,7 +93,7 @@ fun NavGraphBuilder.musicRoutes(
 ) {
     composable<MusicAlbumRoute> { backStackEntry ->
         val route = backStackEntry.toRoute<MusicAlbumRoute>()
-        MusicAccentScope(viewedAlbumBrowseId = route.browseId) {
+        MusicAccentScope(viewedAlbumBrowseId = route.browseId, viewedFirst = true) {
             MusicAlbumScreen(
                 browseId = route.browseId,
                 onBack = guardedBack(backStackEntry),
@@ -105,11 +105,12 @@ fun NavGraphBuilder.musicRoutes(
     }
     composable<MusicArtistRoute> { backStackEntry ->
         val route = backStackEntry.toRoute<MusicArtistRoute>()
-        MusicAccentScope(viewedArtistId = route.browseId) {
+        MusicAccentScope(viewedArtistId = route.browseId, viewedFirst = true) {
             MusicArtistScreen(
                 artistId = route.browseId,
                 onBack = guardedBack(backStackEntry),
                 onAlbumClick = { navigate(MusicAlbumRoute(it)) },
+                onArtistClick = { navigate(MusicArtistRoute(it)) },
                 modifier = Modifier.fillMaxSize(),
             )
         }

@@ -70,7 +70,7 @@ internal fun LibraryRelease.dedupeKey(): String {
 }
 
 /** Sort key, newest first when compared descending. `2026-03` sorts above `2026`. */
-private fun LibraryRelease.sortDate(): String = releaseDate ?: year ?: ""
+private fun LibraryRelease.sortDate(): String = sanePartialDate(releaseDate) ?: sanePartialDate(year) ?: ""
 
 private fun fold(list: List<LibraryRelease>): List<ReleaseGroup> =
     list.groupBy { it.dedupeKey() }.values.map { versions ->
@@ -129,7 +129,7 @@ internal fun buildDiscography(
     val shownDemos = if (filter == ReleaseFilter.All || filter == ReleaseFilter.Demos) demos.visible() else emptyList()
 
     val eras = shownRegular
-        .groupBy { it.primary.year ?: "" }
+        .groupBy { releaseYearOrNull(it.primary.year)?.toString() ?: "" }
         .map { (year, groups) ->
             val sorted = groups.sortedByDescending { it.primary.sortDate() }
             val (singles, full) = sorted.partition { it.kind == ReleaseKind.Single }

@@ -51,6 +51,26 @@ internal class MusicLibraryEnricher(private val settings: MusicLibrarySettings) 
             emptyList()
         }
 
+        // Name search can land on a namesake. Compare the channel with MusicBrainz before trusting its facts.
+        val verdict = if (mbArtist == null) {
+            ChannelVerdict.Unconfirmed
+        } else {
+            verifyChannel(artist.browseId, mbArtist.links, releases.map { it.title }, groups.map { it.title })
+        }
+        if (verdict is ChannelVerdict.Mismatch) {
+            log.w { "$name (${artist.browseId}) does not match the MusicBrainz artist of that name; keeping YouTube Music's data only" }
+            deezerJob.cancel()
+            return@coroutineScope assembleArtist(
+                id = artist.browseId,
+                name = name,
+                youTubeThumbnail = artist.thumbnailUrl,
+                sources = ArtistSources(),
+                releases = mergeReleases(ReleaseSources(youTubeMusic = releases)),
+                addedAtEpochMs = addedAtEpochMs,
+                nowEpochMs = nowEpochMs,
+            ).copy(channelMismatch = true, suggestedChannelId = verdict.betterChannelId?.takeIf { it != artist.browseId })
+        }
+
         onStatus("Fetching artwork")
         val audioArtist = mbArtist?.let { audioDb.artistByMusicBrainzId(it.id) } ?: audioDb.artistByName(name)
         val mbid = mbArtist?.id ?: audioArtist?.musicBrainzId

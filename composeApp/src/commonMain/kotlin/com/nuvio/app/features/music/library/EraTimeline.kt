@@ -62,7 +62,7 @@ internal data class EraTimeline(
 private const val MAX_ERA_SPAN_YEARS = 2
 private const val MIN_GAP_YEARS = 2
 
-private fun ReleaseGroup.yearInt(): Int? = primary.year?.take(4)?.toIntOrNull()
+private fun ReleaseGroup.yearInt(): Int? = releaseYearOrNull(primary.year)
 
 /** The release that names an era: the fullest album, else the fullest release of any kind. */
 private fun leadOf(groups: List<ReleaseGroup>): ReleaseGroup =
@@ -79,7 +79,7 @@ private fun leadOf(groups: List<ReleaseGroup>): ReleaseGroup =
  */
 internal fun releasePosition(release: LibraryRelease): Double? {
     val parts = (release.releaseDate ?: release.year)?.split("-").orEmpty()
-    val year = parts.getOrNull(0)?.takeIf { it.length == 4 }?.toIntOrNull() ?: return null
+    val year = parts.getOrNull(0)?.takeIf { it.length == 4 }?.let(::releaseYearOrNull) ?: return null
     val month = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 1..12 } ?: return year + 0.5
     val day = parts.getOrNull(2)?.toIntOrNull()?.takeIf { it in 1..31 }
     val within = if (day != null) ((month - 1) + (day - 1) / 31.0) / 12.0 else (month - 0.5) / 12.0

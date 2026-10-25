@@ -124,6 +124,13 @@ data class LibraryArtist(
     val updatedAtEpochMs: Long = 0L,
     /** Derived from the artist's art and cached here so it is never recomputed on scroll. Null until first needed. */
     val palette: ArtworkPalette? = null,
+    /**
+     * True when the other sources found an artist by this name whose releases are not this channel's
+     * (a namesake). Their facts and artwork are then left out, so the page shows only what YouTube Music lists.
+     */
+    val channelMismatch: Boolean = false,
+    /** The YouTube Music channel MusicBrainz lists for the namesake it found, when this channel is not it. */
+    val suggestedChannelId: String? = null,
 ) {
     fun releasesOf(kind: ReleaseKind): List<LibraryRelease> = releases.filter { it.kind == kind }
 
