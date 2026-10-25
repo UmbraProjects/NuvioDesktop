@@ -5,17 +5,27 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,13 +44,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.nuvio
-import com.nuvio.app.features.music.library.rememberCdArtFor
+import com.nuvio.app.features.music.library.LibraryAlbumInfo
+import com.nuvio.app.features.music.library.rememberLibraryAlbumInfo
 
 /**
  * An album: cover, a Play/Shuffle pair, the Audio/Video choice, and the track list.
@@ -56,6 +69,7 @@ fun MusicAlbumScreen(
     onBack: () -> Unit,
     onArtistClick: (browseId: String) -> Unit,
     modifier: Modifier = Modifier,
+    onAlbumClick: (browseId: String) -> Unit = {},
     catalog: MusicCatalog = remember { defaultMusicCatalog() },
     player: MusicPlayer = MusicPlayback.player,
 ) {
@@ -79,78 +93,122 @@ fun MusicAlbumScreen(
                 actionLabel = "Try again",
                 onAction = { attempt++ },
             )
-            is MusicLoad.Loaded -> AlbumContent(load.value, onArtistClick, player)
+            is MusicLoad.Loaded -> AlbumContent(load.value, onArtistClick, onAlbumClick, player)
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AlbumContent(
     album: MusicAlbum,
     onArtistClick: (String) -> Unit,
+    onAlbumClick: (String) -> Unit,
     player: MusicPlayer,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val state by player.state.collectAsStateWithLifecycle()
     var chosenMode by rememberSaveable(album.browseId) { mutableStateOf(player.state.value.mode) }
+    var descriptionOpen by rememberSaveable(album.browseId) { mutableStateOf(false) }
+    // What the music library knows about this album: only set when it is a release of a library artist.
+    val info = rememberLibraryAlbumInfo(album.browseId)
 
     val loaded = state.holds(album)
     // While this album plays, the player's mode is the truth: a failed switch to video leaves it on audio.
     val mode = if (loaded) state.mode else chosenMode
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
-    ) {
-        item { AlbumHeader(album, spinning = loaded && state.isPlaying, onArtistClick = onArtistClick) }
-        item {
-            Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    NuvioPrimaryButton(
-                        text = when {
-                            !loaded -> "Play"
-                            state.playWhenReady -> "Pause"
-                            else -> "Resume"
-                        },
-                        modifier = Modifier.width(140.dp),
-                        height = 44.dp,
-                        enabled = album.tracks.any { it.isAvailable },
-                        onClick = {
-                            if (loaded) player.togglePlayback()
-                            else player.play(album, trackIndex = 0, mode = mode, shuffled = false)
-                        },
-                    )
-                    ShuffleButton(
-                        on = loaded && state.shuffled,
-                        enabled = album.tracks.any { it.isAvailable },
-                        onClick = {
-                            if (loaded) player.setShuffled(!state.shuffled)
-                            else player.play(album, trackIndex = randomPlayableIndex(album), mode = mode, shuffled = true)
-                        },
-                    )
-                }
-                MusicSegmented(
-                    options = listOf(MusicPlayMode.Audio to "Audio", MusicPlayMode.Video to "Video"),
-                    selected = mode,
-                    onSelect = { picked ->
-                        chosenMode = picked
-                        if (loaded) player.switchMode(picked)
+    val rail: @Composable () -> Unit = {
+        AlbumHeader(album, info, spinning = loaded && state.isPlaying, onArtistClick = onArtistClick)
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                NuvioPrimaryButton(
+                    text = when {
+                        !loaded -> "Play"
+                        state.playWhenReady -> "Pause"
+                        else -> "Resume"
+                    },
+                    modifier = Modifier.width(140.dp),
+                    height = 44.dp,
+                    enabled = album.tracks.any { it.isAvailable },
+                    onClick = {
+                        if (loaded) player.togglePlayback()
+                        else player.play(album, trackIndex = 0, mode = mode, shuffled = false)
                     },
                 )
-                val note = when {
-                    loaded && state.notice != null -> state.notice
-                    mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
-                    else -> null
-                }
-                if (note != null) {
-                    Text(
-                        text = note,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (loaded && state.notice != null) colors.warning else colors.textSecondary,
-                    )
-                }
+                ShuffleButton(
+                    on = loaded && state.shuffled,
+                    enabled = album.tracks.any { it.isAvailable },
+                    onClick = {
+                        if (loaded) player.setShuffled(!state.shuffled)
+                        else player.play(album, trackIndex = randomPlayableIndex(album), mode = mode, shuffled = true)
+                    },
+                )
+            }
+            MusicSegmented(
+                options = listOf(MusicPlayMode.Audio to "Audio", MusicPlayMode.Video to "Video"),
+                selected = mode,
+                onSelect = { picked ->
+                    chosenMode = picked
+                    if (loaded) player.switchMode(picked)
+                },
+            )
+            val note = when {
+                loaded && state.notice != null -> state.notice
+                mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
+                else -> null
+            }
+            if (note != null) {
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (loaded && state.notice != null) colors.warning else colors.textSecondary,
+                )
             }
         }
+        info?.release?.let { release ->
+            // The feel of the record, from the library: genre, style and mood as chips.
+            val feel = (release.genres + listOfNotNull(release.style, release.mood)).distinctBy { it.lowercase() }
+            if (feel.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    feel.forEach { AlbumChip(it) }
+                }
+            }
+            release.description?.let { text ->
+                Column(
+                    Modifier.clip(RoundedCornerShape(10.dp)).clickable { descriptionOpen = !descriptionOpen }.padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        maxLines = if (descriptionOpen) Int.MAX_VALUE else 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(if (descriptionOpen) "Show less" else "Read more", style = MaterialTheme.typography.bodySmall, color = colors.accent)
+                }
+            }
+            // Where the library and YouTube Music disagree is worth a line: it explains a "missing" song.
+            val listed = release.trackCount
+            if (listed != null && listed != album.tracks.size) {
+                Text(
+                    "Your library lists $listed tracks for this release; YouTube Music has ${album.tracks.size}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
+            }
+        }
+        val unavailable = album.tracks.count { !it.isAvailable }
+        if (unavailable > 0) {
+            Text(
+                "$unavailable track${if (unavailable == 1) "" else "s"} unavailable here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
+        }
+    }
+
+    val pane: LazyListScope.() -> Unit = {
         itemsIndexed(album.tracks) { index, track ->
             TrackRow(
                 album = album,
@@ -165,14 +223,82 @@ private fun AlbumContent(
                 },
             )
         }
+        val more = info?.more.orEmpty()
+        if (more.isNotEmpty()) {
+            item(key = "more") {
+                Column(Modifier.padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "More from ${info?.artist?.name ?: "this artist"}",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textPrimary,
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        items(more, key = { it.key }) { release ->
+                            Column(
+                                Modifier.width(124.dp).clip(RoundedCornerShape(10.dp)).clickable { release.ytBrowseId?.let(onAlbumClick) },
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                MusicCover(release.art.cover, release.title, size = 124.dp)
+                                Text(release.title, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    listOfNotNull(release.year, release.kind.label.takeIf { it != "Album" }).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textSecondary,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (maxWidth >= 840.dp) {
+            Row(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.width(360.dp).fillMaxHeight().verticalScroll(rememberScrollState())
+                        .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) { rail() }
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    contentPadding = PaddingValues(start = 12.dp, end = 24.dp, top = 12.dp, bottom = 40.dp),
+                ) { pane() }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+            ) {
+                item(key = "rail") {
+                    Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { rail() }
+                }
+                pane()
+            }
+        }
     }
 }
 
 @Composable
-private fun AlbumHeader(album: MusicAlbum, spinning: Boolean, onArtistClick: (String) -> Unit) {
+private fun AlbumChip(text: String) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(16.dp)
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = colors.textPrimary,
+        modifier = Modifier.clip(shape).border(1.dp, colors.borderDefault, shape).padding(horizontal = 12.dp, vertical = 5.dp),
+    )
+}
+
+@Composable
+private fun AlbumHeader(album: MusicAlbum, info: LibraryAlbumInfo?, spinning: Boolean, onArtistClick: (String) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     // CD art is only known for releases in the music library; any other album gets a drawn disc.
-    val cdArt = rememberCdArtFor(album.browseId)
+    val cdArt = info?.release?.art?.cdArt
     val artistId = album.artists.firstOrNull()?.browseId
     val minutes = album.tracks.sumOf { it.durationSeconds } / 60
     val meta = listOfNotNull(
@@ -181,10 +307,13 @@ private fun AlbumHeader(album: MusicAlbum, spinning: Boolean, onArtistClick: (St
         "${album.tracks.size} track${if (album.tracks.size == 1) "" else "s"}",
         "$minutes min".takeIf { minutes > 0 },
     ).joinToString(" · ")
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        MusicCdSleeve(album.thumbnailUrl, cdArt, spinning = spinning, size = 160.dp, peek = 0.34f)
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // Release details the library has and YouTube Music does not.
+    val credit = info?.release?.let { r ->
+        listOfNotNull(r.label, r.releaseDate, "Explicit".takeIf { r.explicit == true }).joinToString(" · ")
+    }?.takeIf { it.isNotEmpty() }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        MusicCdSleeve(album.thumbnailUrl, cdArt, spinning = spinning, size = 200.dp, peek = 0.34f)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = album.title,
                 style = MaterialTheme.typography.headlineMedium,
@@ -206,11 +335,10 @@ private fun AlbumHeader(album: MusicAlbum, spinning: Boolean, onArtistClick: (St
                     },
                 )
             }
-            Text(
-                text = meta,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
-            )
+            Text(text = meta, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+            if (credit != null) {
+                Text(text = credit, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+            }
         }
     }
 }
@@ -249,8 +377,10 @@ private fun TrackRow(
     val credit = trackArtists.takeIf { it.isNotEmpty() && it != albumArtists }?.joinToString(", ")
     Row(
         modifier = Modifier
+            .widthIn(max = 720.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
+            .background(if (current) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
             .clickable(enabled = track.isAvailable, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

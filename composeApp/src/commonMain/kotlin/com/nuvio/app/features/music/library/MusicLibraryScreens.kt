@@ -1207,4 +1207,32 @@ fun rememberCdArtFor(albumBrowseId: String?): String? {
     }
 }
 
+/**
+ * What the library knows about the album with YouTube Music id `albumBrowseId`: the release (label,
+ * genres, mood, description, CD art...) and the artist it belongs to.
+ */
+data class LibraryAlbumInfo(val artist: LibraryArtist, val release: LibraryRelease) {
+    /** The artist's other releases YouTube Music can play, one per record, newest first. */
+    val more: List<LibraryRelease>
+        get() = artist.releases
+            .filter { it.isPlayable && it.ytBrowseId != release.ytBrowseId && !it.isDemo() }
+            .distinctBy { it.dedupeKey() }
+            .sortedByDescending { it.releaseDate ?: it.year ?: "" }
+            .take(10)
+}
+
+/** The [LibraryAlbumInfo] for an album, or null when it is not a release of an artist in the library. */
+@Composable
+fun rememberLibraryAlbumInfo(albumBrowseId: String?): LibraryAlbumInfo? {
+    LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
+    val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    return remember(albumBrowseId, state.artists) {
+        albumBrowseId?.let { id ->
+            state.artists.firstNotNullOfOrNull { artist ->
+                artist.releases.firstOrNull { it.ytBrowseId == id }?.let { LibraryAlbumInfo(artist, it) }
+            }
+        }
+    }
+}
+
 // endregion

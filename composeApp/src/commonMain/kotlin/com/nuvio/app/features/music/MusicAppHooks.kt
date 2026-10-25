@@ -97,6 +97,7 @@ fun NavGraphBuilder.musicRoutes(
             browseId = route.browseId,
             onBack = guardedBack(backStackEntry),
             onArtistClick = { navigate(MusicArtistRoute(it)) },
+            onAlbumClick = { navigate(MusicAlbumRoute(it)) },
             modifier = Modifier.fillMaxSize(),
         )
     }
