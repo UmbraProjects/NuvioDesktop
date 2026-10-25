@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.identity.MusicAccentScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
@@ -149,15 +150,18 @@ fun MusicPlayerHost(
                 modifier = Modifier.align(Alignment.TopStart),
             )
         }
-        MusicMiniPlayerBar(
-            state = state,
-            visible = !hidden,
-            player = player,
-            modifier = Modifier.align(Alignment.BottomCenter),
-            videoView = view,
-            onSetVideoView = MusicPlayback::setVideoView,
-            onOpenNowPlaying = { MusicPlayback.nowPlayingOpen.value = true },
-        )
+        // The bar wears the playing artist's accent (the app's own until that artist has a palette).
+        MusicAccentScope {
+            MusicMiniPlayerBar(
+                state = state,
+                visible = !hidden,
+                player = player,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                videoView = view,
+                onSetVideoView = MusicPlayback::setVideoView,
+                onOpenNowPlaying = { MusicPlayback.nowPlayingOpen.value = true },
+            )
+        }
     }
 }
 

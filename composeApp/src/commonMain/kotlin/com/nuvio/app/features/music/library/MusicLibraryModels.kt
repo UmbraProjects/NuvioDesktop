@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.features.music.identity.ArtworkPalette
 import kotlinx.serialization.Serializable
 
 /** How a release is filed in the library. The order is the order of the sections on an artist page. */
@@ -79,6 +80,8 @@ data class LibraryRelease(
     val upc: String? = null,
     val explicit: Boolean? = null,
     val art: ReleaseArtwork = ReleaseArtwork(),
+    /** Derived from the cover and cached here so it is never recomputed on scroll. Null until first needed. */
+    val palette: ArtworkPalette? = null,
 ) {
     val isPlayable: Boolean get() = ytBrowseId != null
 }
@@ -119,6 +122,8 @@ data class LibraryArtist(
     val sources: List<String> = emptyList(),
     val addedAtEpochMs: Long = 0L,
     val updatedAtEpochMs: Long = 0L,
+    /** Derived from the artist's art and cached here so it is never recomputed on scroll. Null until first needed. */
+    val palette: ArtworkPalette? = null,
 ) {
     fun releasesOf(kind: ReleaseKind): List<LibraryRelease> = releases.filter { it.kind == kind }
 

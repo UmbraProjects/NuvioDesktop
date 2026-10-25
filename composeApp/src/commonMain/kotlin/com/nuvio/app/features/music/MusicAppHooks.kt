@@ -14,6 +14,7 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.nuvio.app.features.music.identity.MusicAccentScope
 import com.nuvio.app.features.music.library.MusicLibraryArtistScreen
 import kotlinx.serialization.Serializable
 
@@ -93,30 +94,36 @@ fun NavGraphBuilder.musicRoutes(
 ) {
     composable<MusicAlbumRoute> { backStackEntry ->
         val route = backStackEntry.toRoute<MusicAlbumRoute>()
-        MusicAlbumScreen(
-            browseId = route.browseId,
-            onBack = guardedBack(backStackEntry),
-            onArtistClick = { navigate(MusicArtistRoute(it)) },
-            onAlbumClick = { navigate(MusicAlbumRoute(it)) },
-            modifier = Modifier.fillMaxSize(),
-        )
+        MusicAccentScope(viewedAlbumBrowseId = route.browseId) {
+            MusicAlbumScreen(
+                browseId = route.browseId,
+                onBack = guardedBack(backStackEntry),
+                onArtistClick = { navigate(MusicArtistRoute(it)) },
+                onAlbumClick = { navigate(MusicAlbumRoute(it)) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
     composable<MusicArtistRoute> { backStackEntry ->
         val route = backStackEntry.toRoute<MusicArtistRoute>()
-        MusicArtistScreen(
-            browseId = route.browseId,
-            onBack = guardedBack(backStackEntry),
-            onAlbumClick = { navigate(MusicAlbumRoute(it)) },
-            modifier = Modifier.fillMaxSize(),
-        )
+        MusicAccentScope(viewedArtistId = route.browseId) {
+            MusicArtistScreen(
+                browseId = route.browseId,
+                onBack = guardedBack(backStackEntry),
+                onAlbumClick = { navigate(MusicAlbumRoute(it)) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
     composable<MusicLibraryArtistRoute> { backStackEntry ->
         val route = backStackEntry.toRoute<MusicLibraryArtistRoute>()
-        MusicLibraryArtistScreen(
-            artistId = route.artistId,
-            onBack = guardedBack(backStackEntry),
-            onAlbumClick = { navigate(MusicAlbumRoute(it)) },
-            modifier = Modifier.fillMaxSize(),
-        )
+        MusicAccentScope(viewedArtistId = route.artistId) {
+            MusicLibraryArtistScreen(
+                artistId = route.artistId,
+                onBack = guardedBack(backStackEntry),
+                onAlbumClick = { navigate(MusicAlbumRoute(it)) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }

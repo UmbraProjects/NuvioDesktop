@@ -2,6 +2,10 @@ package com.nuvio.app.features.music.library
 
 import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.MusicArtistRef
+import com.nuvio.app.features.music.identity.ArtworkPaletteMath
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -367,5 +371,18 @@ class AssembleArtistTest {
         val artist = assembleArtist("UC1", "X", null, ArtistSources(wikipedia = "From Wikipedia, long enough to be used."), emptyList(), 1, 2)
         assertEquals("Wikipedia", artist.biographySource)
         assertTrue("Wikipedia" in artist.sources)
+    }
+
+    @Test
+    fun aLibrarySavedBeforePalettesExistedStillLoadsAndAPaletteRoundTrips() {
+        val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val old = """{"artists":[{"id":"UC1","name":"Hozier","releases":[{"key":"k","title":"T","kind":"Album"}]}]}"""
+        val loaded = json.decodeFromString<StoredMusicLibrary>(old).artists.single()
+        assertNull(loaded.palette)
+        assertNull(loaded.releases.single().palette)
+
+        val palette = ArtworkPaletteMath.derive(0xE8913A, forUrl = "https://bg")
+        val saved = json.encodeToString(StoredMusicLibrary(listOf(loaded.copy(palette = palette))))
+        assertEquals(palette, json.decodeFromString<StoredMusicLibrary>(saved).artists.single().palette)
     }
 }

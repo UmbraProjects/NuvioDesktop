@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.features.music.MusicCatalog
 import com.nuvio.app.features.music.defaultMusicCatalog
+import com.nuvio.app.features.music.identity.ArtworkPalette
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -101,7 +102,19 @@ object MusicLibraryRepository {
         if (onlyIfPresent && !_state.value.contains(artist.id)) return
         _state.update { state ->
             val without = state.artists.filterNot { it.id == artist.id }
-            state.copy(artists = sorted(without + artist))
+            // A fill-in works from an older copy of the artist; it must not wipe a palette derived meanwhile.
+            val palette = artist.palette ?: state.artist(artist.id)?.palette
+            state.copy(artists = sorted(without + artist.copy(palette = palette)))
+        }
+        persist()
+    }
+
+    /** Caches the palette derived for [artistId]. Dropped when the artist has since been removed. */
+    fun setArtistPalette(artistId: String, palette: ArtworkPalette) {
+        ensureLoaded()
+        if (!_state.value.contains(artistId)) return
+        _state.update { state ->
+            state.copy(artists = state.artists.map { if (it.id == artistId) it.copy(palette = palette) else it })
         }
         persist()
     }
