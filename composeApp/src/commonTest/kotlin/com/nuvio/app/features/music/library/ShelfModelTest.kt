@@ -1,9 +1,7 @@
 package com.nuvio.app.features.music.library
 
-import com.nuvio.app.features.music.identity.ArtworkPalette
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -14,68 +12,68 @@ class ShelfModelTest {
         year: String = "2020",
         date: String? = null,
         tracks: Int? = 10,
-        yt: String? = null,
+        yt: String? = "MPREb_$key",
     ) = LibraryRelease(key = key, title = key, kind = kind, year = year, releaseDate = date, trackCount = tracks, ytBrowseId = yt)
 
-    private fun artist(id: String, vararg releases: LibraryRelease) =
-        LibraryArtist(id = id, name = id, releases = releases.toList())
+    private fun artist(id: String, vararg releases: LibraryRelease, top: List<String> = emptyList(), pinned: List<String> = emptyList()) =
+        LibraryArtist(id = id, name = id, releases = releases.toList(), topAlbumKeys = top, pinnedTopKeys = pinned)
 
     @Test
-    fun spineWidthFollowsTheMockRule() {
-        assertEquals(28, spineWidthDp(1))
-        assertEquals(65, spineWidthDp(26))
-        assertEquals(65, spineWidthDp(60))
-        assertEquals(SPINE_DEFAULT_WIDTH_DP, spineWidthDp(null))
-        assertEquals(SPINE_DEFAULT_WIDTH_DP, spineWidthDp(0))
+    fun onlyPlayableReleasesBecomeTiles() {
+        val a = artist("a", r("here"), r("gone", yt = null), r("gone single", ReleaseKind.Single, yt = null))
+        val row = buildShelfRow(a)
+        assertEquals(listOf("here"), row.tiles.map { it.release.key })
+        assertEquals(3, row.totalReleases)
+        assertEquals(1, row.playableReleases)
     }
 
     @Test
-    fun everythingFitsWithNoMorePill() {
-        val a = artist("a", r("one", year = "2014"), r("two", year = "2019"))
-        val row = buildShelfRow(a, availableWidthDp = 1000)
-        assertEquals(listOf("one", "two"), row.spines.map { it.release.key })
-        assertEquals(0, row.hidden)
+    fun topAlbumsLeadAndAreNumberedWhenRanked() {
+        val a = artist(
+            "a", r("a1", year = "2001"), r("a2", year = "2002"), r("a3", year = "2003"),
+            top = listOf("a2", "a1"), pinned = listOf("a3"),
+        )
+        val row = buildShelfRow(a)
+        assertEquals(listOf("a3", "a2", "a1"), row.top.map { it.release.key })
+        assertEquals(listOf(1, 2, 3), row.top.map { it.rank })
+        assertTrue(row.top.all { it.featured })
+        assertEquals(listOf(true, false, false), row.top.map { it.pinned })
+        assertEquals("Top 3", row.topLabel)
+    }
+
+    @Test
+    fun theRestRunOldestToNewestAndNeverRepeatTheTop() {
+        val albums = (1..6).map { r("a$it", year = "${2000 + it}") }
+        val single = r("s", ReleaseKind.Single, year = "1999", tracks = 1)
+        val row = buildShelfRow(artist("a", *(albums + single).toTypedArray(), top = listOf("a1")))
+        assertEquals("a1", row.top.first().release.key)
+        assertEquals(5, row.top.size)
+        // Whatever is not in the top five follows, oldest first, with the single from 1999 ahead of the albums.
+        val topKeys = row.top.map { it.release.key }.toSet()
+        assertTrue(row.rest.none { it.release.key in topKeys })
+        assertEquals(row.rest.map { it.release.key }, row.rest.map { it.release }.sortedBy { it.year }.map { it.key })
+        assertEquals(7, row.tiles.size)
+    }
+
+    @Test
+    fun withNothingRankedTheLabelSaysLatestAndNoTileIsNumbered() {
+        val row = buildShelfRow(artist("a", r("a1", year = "2001"), r("a2", year = "2002")))
+        assertEquals("Latest 2", row.topLabel)
+        assertTrue(row.top.all { it.rank == null })
+    }
+
+    @Test
+    fun demosAreNeverTilesButStillCounted() {
+        val row = buildShelfRow(artist("a", r("alb"), r("Demos", year = "2010")))
+        assertEquals(listOf("alb"), row.tiles.map { it.release.key })
         assertEquals(2, row.totalReleases)
     }
 
     @Test
-    fun aFullShelfKeepsAlbumsOverSinglesAndCountsTheRestAsMore() {
-        val singles = (1..30).map { r("s$it", ReleaseKind.Single, year = "20${10 + it % 10}", tracks = 1) }
-        val albums = listOf(r("alb1", year = "2001"), r("alb2", year = "2005"))
-        val a = artist("a", *(singles + albums).toTypedArray())
-        val row = buildShelfRow(a, availableWidthDp = 300)
-        assertTrue(row.spines.map { it.release.key }.containsAll(listOf("alb1", "alb2")))
-        assertEquals(32, row.totalReleases)
-        assertEquals(32 - row.spines.size, row.hidden)
-        val used = row.spines.sumOf { it.widthDp + SPINE_GAP_DP }
-        assertTrue(used <= 300 - 96, "spines must leave room for the +N more pill")
-    }
-
-    @Test
-    fun spinesAreLaidOutOldestFirst() {
-        val a = artist("a", r("new", year = "2024"), r("old", year = "2001"), r("mid", year = "2012"))
-        assertEquals(listOf("old", "mid", "new"), buildShelfRow(a, 1000).spines.map { it.release.key })
-    }
-
-    @Test
-    fun demosAreHiddenButStillCounted() {
-        val a = artist("a", r("alb"), r("Demos", year = "2010"))
-        val row = buildShelfRow(a, 1000)
-        assertEquals(listOf("alb"), row.spines.map { it.release.key })
-        assertEquals(1, row.hidden)
-        assertEquals(2, row.totalReleases)
-    }
-
-    @Test
-    fun generatedSpineColoursAreStableAndReadable() {
-        val (bg1, fg1) = spineColors(r("Same"), null)
-        val (bg2, _) = spineColors(r("Same"), null)
-        assertEquals(bg1, bg2)
-        assertNotEquals(bg1, spineColors(r("Different title"), null).first)
-        assertTrue(fg1 == 0xFFFFFFFFL || fg1 == 0xFF0B0B0BL)
-        val palette = ArtworkPalette(accent = 0xFFE8913A, onAccent = 0xFF1A1007, tint = 0xFF4A3220, ground = 0xFF120D08)
-        assertEquals(0xFF4A3220, spineColors(r("x"), palette).first)
-        assertEquals(0xFF111111, spineColors(r("x").copy(palette = palette.copy(tint = 0xFF111111)), palette).first)
+    fun anArtistWithNothingPlayableHasAnEmptyShelf() {
+        val row = buildShelfRow(artist("a", r("x", yt = null)))
+        assertTrue(row.tiles.isEmpty())
+        assertEquals(1, row.totalReleases)
     }
 
     @Test

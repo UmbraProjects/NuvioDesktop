@@ -103,6 +103,17 @@ internal object DeezerClient {
             lastCallMs = LibraryClock.nowEpochMs()
         }
     }
+
+    /** The artist's most played tracks (up to 100), each with the album it is on. Null when Deezer could not be reached; empty when it has none. */
+    suspend fun topTracks(artistId: Long): List<DeezerTopTrack>? = gate.withLock {
+        val wait = lastCallMs + GAP_MS - LibraryClock.nowEpochMs()
+        if (wait > 0) delay(wait)
+        try {
+            fetch("$BASE/artist/$artistId/top?limit=100")?.let(::parseDeezerTopTracks)
+        } finally {
+            lastCallMs = LibraryClock.nowEpochMs()
+        }
+    }
 }
 
 /**

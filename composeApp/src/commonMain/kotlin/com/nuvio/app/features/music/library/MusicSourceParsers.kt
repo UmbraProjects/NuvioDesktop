@@ -231,6 +231,17 @@ internal fun parseDeezerAlbums(body: String): Pair<List<DeezerAlbum>, String?> {
     return albums to root.text("next")
 }
 
+/** One of an artist's most played tracks. [rank] is Deezer's popularity number: bigger is more played. */
+internal data class DeezerTopTrack(val albumId: Long, val rank: Long)
+
+internal fun parseDeezerTopTracks(body: String): List<DeezerTopTrack> =
+    parse(body).obj()?.takeIf { it["error"] == null }?.objects("data").orEmpty().mapNotNull { t ->
+        DeezerTopTrack(
+            albumId = t["album"].obj()?.long("id") ?: return@mapNotNull null,
+            rank = t.long("rank") ?: 0L,
+        )
+    }
+
 internal fun parseDeezerAlbumDetail(body: String): DeezerAlbumDetail? {
     val a = parse(body).obj()?.takeIf { it["error"] == null } ?: return null
     return DeezerAlbumDetail(

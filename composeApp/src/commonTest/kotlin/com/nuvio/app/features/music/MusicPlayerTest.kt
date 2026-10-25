@@ -193,6 +193,57 @@ class MusicPlayerTest {
         assertNotNull(p.state.value.notice)
     }
 
+    private fun albumOf(prefix: String, n: Int) = MusicAlbum(
+        "MPREb_$prefix", prefix, listOf(MusicArtistRef("Artist")), "2020", "Album", null,
+        (1..n).map { MusicTrack("$prefix$it", "Track $it", emptyList(), 200, it, true) }, null,
+    )
+
+    @Test
+    fun playAlbumsCarriesOnIntoTheNextAlbumAndStopsAfterTheLast() {
+        val p = player(Fake())
+        p.playAlbums(listOf(albumOf("a", 1), albumOf("b", 2)))
+        assertEquals("a1", p.state.value.track?.videoId)
+        // The first album has one track, but another album is queued, so Next is on.
+        assertTrue(p.state.value.hasNext)
+        p.playing(positionMs = 199_000L)
+        p.onSurfaceEnded()
+        assertEquals("b1", p.state.value.track?.videoId)
+        assertEquals("MPREb_b", p.state.value.album?.browseId)
+        p.playing(positionMs = 199_000L)
+        p.onSurfaceEnded()
+        assertEquals("b2", p.state.value.track?.videoId)
+        assertFalse(p.state.value.hasNext)
+        p.playing(positionMs = 199_000L)
+        p.onSurfaceEnded()
+        assertFalse(p.state.value.isActive)
+    }
+
+    @Test
+    fun nextAtTheEndOfAnAlbumStartsTheQueuedOne() {
+        val p = player(Fake())
+        p.playAlbums(listOf(albumOf("a", 1), albumOf("b", 1)))
+        p.next()
+        assertEquals("b1", p.state.value.track?.videoId)
+    }
+
+    @Test
+    fun playingAnAlbumAfterPlayAlbumsDropsTheQueuedOnes() {
+        val p = player(Fake())
+        p.playAlbums(listOf(albumOf("a", 1), albumOf("b", 1)))
+        p.play(albumOf("c", 1))
+        assertFalse(p.state.value.hasNext)
+        p.playing(positionMs = 199_000L)
+        p.onSurfaceEnded()
+        assertFalse(p.state.value.isActive)
+    }
+
+    @Test
+    fun playAlbumsSkipsAlbumsWithNoTracks() {
+        val p = player(Fake())
+        p.playAlbums(listOf(albumOf("a", 0), albumOf("b", 1)))
+        assertEquals("b1", p.state.value.track?.videoId)
+    }
+
     @Test
     fun formatsTimes() {
         assertEquals("0:00", formatMusicTime(-5))

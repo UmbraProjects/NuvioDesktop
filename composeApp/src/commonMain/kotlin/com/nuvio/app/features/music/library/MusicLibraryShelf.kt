@@ -1,7 +1,10 @@
 package com.nuvio.app.features.music.library
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,7 +14,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,12 +25,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,17 +48,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -70,10 +74,12 @@ import com.nuvio.app.features.music.identity.identity
 import kotlinx.coroutines.launch
 
 /**
- * Phase 4: the Library home as a shelf. One shelf per artist; each release is a spine whose width
- * follows its track count. Spines use TheAudioDB spine art when there is some, else a generated spine
- * (cover thumb, vertical title, the cover's colour). Hovering a shelf tints the glow and the ledge with
- * that artist's accent. Clicking a spine opens the album; the avatar, name or "+N more" open the room.
+ * Phase 4: the Library home as a shelf. One row per artist: the artist and its quick-play chips on the
+ * left, then a rail of release covers. Only releases that can be played are shown; the artist's top
+ * five come first as larger tiles (numbered when they are really ranked or starred), then everything
+ * else oldest to newest. Hovering a cover slides its disc out and shows a star that pins the album to
+ * the top five. A star by the artist's name floats it to the top of the shelf. Hovering a row tints
+ * the glow with that artist's accent. Clicking a cover opens the album; the avatar, name or "All" open the room.
  * Only the Shelf view exists; Constellation and Eras are shown as coming soon.
  */
 @Composable
@@ -97,6 +103,8 @@ fun MusicLibraryShelf(
         pickYearAgo(state.artists, y, m, d)
     }
     val totalReleases = remember(state.artists) { state.artists.sumOf { countReleaseCards(it.releases) } }
+    // Starred artists first; the sort is stable, so each group stays alphabetical.
+    val ordered = remember(state.artists) { state.artists.sortedByDescending { it.favourite } }
 
     Box(modifier.fillMaxSize()) {
         Box(
@@ -151,10 +159,11 @@ fun MusicLibraryShelf(
                     items(pending.entries.toList(), key = { "pending:${it.key}" }) { (_, progress) ->
                         Text("Adding… ${progress.status}", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, modifier = Modifier.padding(vertical = 12.dp))
                     }
-                    items(state.artists, key = { it.id }) { artist ->
+                    items(ordered, key = { it.id }) { artist ->
                         ShelfArtistRow(
                             artist = artist,
                             status = state.working[artist.id]?.status,
+                            reducedMotion = state.settings.reducedMotion,
                             onFocus = { focusedId = artist.id },
                             onOpenArtist = { onArtistClick(artist.id) },
                             onOpenRelease = { release ->
@@ -230,18 +239,24 @@ private fun YearAgoStrip(pick: YearAgoPick, artistCount: Int, releaseCount: Int)
 // region shelf
 
 private val SHELF_HEADER_WIDTH = 250.dp
-private val SPINE_HEIGHT = 126.dp
+private val FEATURED_SIZE = 148.dp
+private val TILE_SIZE = 112.dp
+private val GOLD = Color(0xFFE8B84A)
+private val ON_GOLD = Color(0xFF1A1307)
 
 @Composable
 private fun ShelfArtistRow(
     artist: LibraryArtist,
     status: String?,
+    reducedMotion: Boolean,
     onFocus: () -> Unit,
     onOpenArtist: () -> Unit,
     onOpenRelease: (LibraryRelease) -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val context = LocalPlatformContext.current
+    val scope = rememberCoroutineScope()
+    val catalog = remember { defaultMusicCatalog() }
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     LaunchedEffect(hovered) { if (hovered) onFocus() }
@@ -250,128 +265,256 @@ private fun ShelfArtistRow(
     val identity = remember(artist) { artist.identity() }
     LaunchedEffect(identity.artistId, identity.needsPalette) { MusicPaletteResolver.ensure(context, identity) }
     val accent = artist.palette?.let { Color(it.accent) } ?: colors.accent
-    val ledge by animateColorAsState(if (hovered) accent else Color.White.copy(alpha = 0.12f), tween(200))
+    val wash by animateColorAsState(if (hovered) accent.copy(alpha = 0.07f) else Color.Transparent, tween(200))
+
+    // Artists added before Top 5 existed get their ranking filled in once, quietly.
+    LaunchedEffect(artist.id, artist.topAlbumKeys.isEmpty(), status == null) {
+        if (status == null) MusicLibraryRepository.ensureTopAlbums(artist.id)
+    }
+
+    val row = remember(artist) { buildShelfRow(artist) }
+    // Only the covers on this shelf get a palette (for the disc label and a missing cover).
+    val keys = remember(row) { row.tiles.map { it.release.key }.toSet() }
+    val missing = row.tiles.count { it.release.needsPalette }
+    LaunchedEffect(artist.id, missing) { ReleasePaletteResolver.ensure(context, artist, keys = keys, limit = 40) }
+
+    fun playTop(shuffled: Boolean) {
+        scope.launch { playTopAlbums(catalog, row.top.map { it.release }, shuffled) }
+    }
 
     Row(
-        Modifier.fillMaxWidth().height(154.dp).hoverable(source),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(wash).hoverable(source).padding(vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Row(
-            Modifier.width(SHELF_HEADER_WIDTH).padding(bottom = 26.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onOpenArtist),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Box(Modifier.border(3.dp, accent, CircleShape).padding(3.dp)) {
-                MusicCover(artist.art.thumb, artist.name, size = 58.dp, circle = true)
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(artist.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val count = remember(artist.releases) { countReleaseCards(artist.releases) }
-                Text(
-                    status ?: "$count release${if (count == 1) "" else "s"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (status != null) colors.accent else colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        BoxWithConstraints(Modifier.weight(1f).height(150.dp)) {
-            val available = (maxWidth.value.toInt() - 24).coerceAtLeast(0)
-            val row = remember(artist.releases, artist.palette, available) { buildShelfRow(artist, available) }
-            // Only the covers on this shelf get a palette (for the spine colour).
-            val keys = remember(row) { row.spines.map { it.release.key }.toSet() }
-            val missing = row.spines.count { it.release.needsPalette }
-            LaunchedEffect(artist.id, missing) { ReleasePaletteResolver.ensure(context, artist, keys = keys, limit = 40) }
-
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(SPINE_GAP_DP.dp),
-                ) {
-                    row.spines.forEach { spine -> SpineView(spine, onClick = { onOpenRelease(spine.release) }) }
-                    if (row.hidden > 0) {
+        Column(Modifier.width(SHELF_HEADER_WIDTH).padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.clip(CircleShape).clickable(onClick = onOpenArtist)) {
+                    Box(Modifier.border(3.dp, accent, CircleShape).padding(3.dp)) {
+                        MusicCover(artist.art.thumb, artist.name, size = 58.dp, circle = true)
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            "+${row.hidden} more",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = colors.textSecondary,
+                            artist.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textPrimary,
                             maxLines = 1,
-                            modifier = Modifier
-                                .padding(start = 8.dp, bottom = 8.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White.copy(alpha = 0.08f))
-                                .clickable(onClick = onOpenArtist)
-                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenArtist),
+                        )
+                        Icon(
+                            Icons.Rounded.Star,
+                            contentDescription = if (artist.favourite) "Remove from favourites" else "Add to favourites",
+                            tint = if (artist.favourite) GOLD else Color.White.copy(alpha = if (hovered) 0.4f else 0.18f),
+                            modifier = Modifier.size(20.dp).clip(CircleShape).clickable {
+                                MusicLibraryRepository.setFavourite(artist.id, !artist.favourite)
+                            },
                         )
                     }
-                }
-                Box(Modifier.fillMaxWidth().height(5.dp).background(ledge))
-            }
-        }
-    }
-}
-
-/** Rotates a one-line text to read bottom to top and swaps its measured width and height. */
-private fun Modifier.vertical(): Modifier = layout { measurable, constraints ->
-    val placeable = measurable.measure(Constraints(maxWidth = constraints.maxHeight.coerceAtLeast(0)))
-    layout(placeable.height, placeable.width) {
-        placeable.place(
-            x = -(placeable.width / 2 - placeable.height / 2),
-            y = -(placeable.height / 2 - placeable.width / 2),
-        )
-    }
-}
-
-@Composable
-private fun SpineView(spine: ShelfSpine, onClick: () -> Unit) {
-    val source = remember { MutableInteractionSource() }
-    val hovered by source.collectIsHoveredAsState()
-    val lift by animateDpAsState(if (hovered) (-16).dp else 0.dp, tween(150))
-    // TheAudioDB spine art when it loads; otherwise (or on a load error) the generated spine.
-    var useArt by remember(spine.release.key, spine.spineArtUrl) { mutableStateOf(spine.spineArtUrl != null) }
-    Box(
-        Modifier
-            .offset { IntOffset(0, lift.roundToPx()) }
-            .width(spine.widthDp.dp)
-            .height(SPINE_HEIGHT)
-            .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-            .hoverable(source)
-            .clickable(onClick = onClick),
-    ) {
-        if (useArt) {
-            NuvioAsyncImage(
-                model = spine.spineArtUrl,
-                contentDescription = spine.release.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                onError = { useArt = false },
-            )
-        } else {
-            Column(
-                Modifier.fillMaxSize().background(Color(spine.bg)).padding(start = 3.dp, end = 3.dp, top = 4.dp, bottom = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Box(Modifier.size((spine.widthDp - 6).dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.14f))) {
-                    spine.thumbUrl?.let {
-                        NuvioAsyncImage(model = it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    val subtitle = when {
+                        status != null -> status
+                        row.playableReleases == row.totalReleases -> "${row.totalReleases} release${if (row.totalReleases == 1) "" else "s"}"
+                        else -> "${row.playableReleases} playable of ${row.totalReleases}"
                     }
-                }
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(
-                        spine.release.title,
-                        color = Color(spine.fg),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = FontFamily.SansSerif,
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (status != null) colors.accent else colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.vertical().rotate(-90f),
                     )
                 }
             }
+            if (row.top.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickPlayChip(Icons.Rounded.PlayArrow, row.topLabel, filled = true) { playTop(shuffled = false) }
+                    QuickPlayChip(Icons.Rounded.Shuffle, null, filled = false) { playTop(shuffled = true) }
+                }
+            }
+        }
+        if (row.tiles.isEmpty()) {
+            Text(
+                if (status != null) "Reading releases…" else "Nothing here is on YouTube Music yet. Open the room to see every release.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textMuted,
+                modifier = Modifier.weight(1f).padding(top = 24.dp).clickable(onClick = onOpenArtist),
+            )
+        } else {
+            LazyRow(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(end = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(row.top, key = { it.release.key }) { tile ->
+                    CoverTile(
+                        tile = tile,
+                        reducedMotion = reducedMotion,
+                        onClick = { onOpenRelease(tile.release) },
+                        onTogglePin = { MusicLibraryRepository.toggleTopPin(artist.id, tile.release.key) },
+                    )
+                }
+                if (row.top.isNotEmpty() && row.rest.isNotEmpty()) {
+                    item(key = "divider") {
+                        Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(FEATURED_SIZE).background(Color.White.copy(alpha = 0.14f)))
+                    }
+                }
+                items(row.rest, key = { it.release.key }) { tile ->
+                    CoverTile(
+                        tile = tile,
+                        reducedMotion = reducedMotion,
+                        onClick = { onOpenRelease(tile.release) },
+                        onTogglePin = { MusicLibraryRepository.toggleTopPin(artist.id, tile.release.key) },
+                    )
+                }
+                item(key = "all") {
+                    Box(
+                        Modifier.size(TILE_SIZE).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.06f)).clickable(onClick = onOpenArtist),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "All ${row.totalReleases}",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textSecondary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A pill on the artist's header: with [label] the filled play chip, without one a round icon button. */
+@Composable
+private fun QuickPlayChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String?, filled: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(20.dp)
+    val tint = if (filled) colors.onAccent else colors.textPrimary
+    Row(
+        Modifier
+            .height(36.dp)
+            .clip(shape)
+            .background(if (filled) colors.accent else Color.White.copy(alpha = 0.1f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (label != null) 14.dp else 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(icon, contentDescription = label ?: "Shuffle the top albums", tint = tint, modifier = Modifier.size(20.dp))
+        if (label != null) Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = tint, maxLines = 1)
+    }
+}
+
+/**
+ * One release as a cover with its title and year under it. Hovering slides the record out of the right
+ * edge (the tile widens to make room, so the neighbours shift instead of being covered) and shows the
+ * star that pins an album to the top five. A ranked album carries its gold number.
+ */
+@Composable
+private fun CoverTile(tile: ShelfTile, reducedMotion: Boolean, onClick: () -> Unit, onTogglePin: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val size = if (tile.featured) FEATURED_SIZE else TILE_SIZE
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val peek by animateDpAsState(if (hovered) size * 0.16f else 0.dp, tween(220))
+    val release = tile.release
+    val pinnable = release.kind == ReleaseKind.Album || release.kind == ReleaseKind.EP
+
+    Column(Modifier.width(size + peek).hoverable(source), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.width(size + peek).height(size)) {
+            if (hovered || peek > 0.dp) {
+                val diameter = size * 0.92f
+                VinylDisc(
+                    release = release,
+                    diameter = diameter,
+                    spinning = hovered && !reducedMotion,
+                    modifier = Modifier.align(Alignment.CenterStart).offset(x = size + peek - diameter),
+                )
+            }
+            ReleaseCover(release, Modifier.size(size).clickable(onClick = onClick))
+            tile.rank?.let { rank ->
+                Box(
+                    Modifier.align(Alignment.TopStart).padding(6.dp).size(22.dp).clip(CircleShape).background(GOLD),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("$rank", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ON_GOLD)
+                }
+            }
+            if (pinnable && (hovered || tile.pinned)) {
+                Box(
+                    Modifier.align(Alignment.TopStart).offset(x = size - 32.dp, y = 6.dp).size(26.dp).clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.55f)).clickable(onClick = onTogglePin),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Rounded.Star,
+                        contentDescription = if (tile.pinned) "Remove from top albums" else "Pin to top albums",
+                        tint = if (tile.pinned) GOLD else Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
+        Column(Modifier.width(size), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                release.title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (tile.featured) FontWeight.SemiBold else FontWeight.Normal,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                listOfNotNull(release.year, release.kind.label.takeIf { release.kind != ReleaseKind.Album }).joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * The record behind the sleeve: the printed disc when a source has one (round, transparent PNG), else a
+ * plain black record with a label in the release's colour. It turns while the cover is hovered.
+ */
+@Composable
+private fun VinylDisc(release: LibraryRelease, diameter: Dp, spinning: Boolean, modifier: Modifier) {
+    val angle = if (spinning) {
+        val transition = rememberInfiniteTransition(label = "disc")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(5000, easing = LinearEasing)),
+            label = "discAngle",
+        ).value
+    } else {
+        0f
+    }
+    val printed = release.art.cdArt
+    var printedOk by remember(printed) { mutableStateOf(printed != null) }
+    val black = Color(0xFF0C0C0E)
+    Box(
+        modifier.size(diameter).graphicsLayer { rotationZ = angle }.clip(CircleShape).background(black),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (printed != null && printedOk) {
+            NuvioAsyncImage(
+                model = printed,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onError = { printedOk = false },
+            )
+        } else {
+            Box(Modifier.fillMaxSize().padding(diameter * 0.08f).border(1.dp, Color.White.copy(alpha = 0.07f), CircleShape))
+            Box(Modifier.fillMaxSize().padding(diameter * 0.2f).border(1.dp, Color.White.copy(alpha = 0.05f), CircleShape))
+            Box(Modifier.size(diameter * 0.34f).clip(CircleShape).background(release.palette?.let { Color(it.accent) } ?: GOLD.copy(alpha = 0.85f)))
+            Box(Modifier.size(6.dp).clip(CircleShape).background(black))
         }
     }
 }

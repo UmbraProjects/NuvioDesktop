@@ -83,6 +83,10 @@ class MusicPlayer(
     val state: StateFlow<MusicPlayerState> = _state.asStateFlow()
 
     private var queue: MusicQueue? = null
+
+    /** Albums [playAlbums] queued behind the one playing. Replaced, never edited, so a reader never sees it half changed. */
+    @Volatile
+    private var following: List<MusicAlbum> = emptyList()
     private var request: Job? = null
     private var prefetch: Job? = null
     private var loadCounter = 0L
@@ -102,6 +106,11 @@ class MusicPlayer(
         seed: Long = now(),
     ) {
         if (album.tracks.isEmpty()) return
+        following = emptyList()
+        launchAlbum(album, trackIndex, mode, shuffled, seed)
+    }
+
+    private fun launchAlbum(album: MusicAlbum, trackIndex: Int, mode: MusicPlayMode, shuffled: Boolean, seed: Long) {
         launchRequest {
             val fresh = MusicQueue(album, mode, shuffled, seed, trackIndex.coerceIn(0, album.tracks.size - 1))
             _state.update { it.copy(isLoading = true, playWhenReady = true, notice = null) }
@@ -117,6 +126,19 @@ class MusicPlayer(
             queue = fresh
             show(fresh, found, startPositionMs = 0L, skipped = found.skipped.size)
         }
+    }
+
+    /**
+     * Plays [albums] one after the other, each from its first track (in its own shuffled order when
+     * [shuffled]). Albums with no tracks are left out. Skipping past the last track of one album starts
+     * the next; Previous stays inside the album that is playing.
+     */
+    fun playAlbums(albums: List<MusicAlbum>, shuffled: Boolean = false) {
+        val playable = albums.filter { it.tracks.isNotEmpty() }
+        val first = playable.firstOrNull() ?: return
+        // Queued before the first album starts, so the bar's Next is already on for a one-track album.
+        following = playable.drop(1)
+        launchAlbum(first, trackIndex = 0, mode = _state.value.mode, shuffled = shuffled, seed = now())
     }
 
     fun next() {
@@ -199,7 +221,7 @@ class MusicPlayer(
     fun setShuffled(on: Boolean) {
         val q = queue ?: return
         q.setShuffled(on)
-        _state.update { it.copy(shuffled = on, hasNext = q.upNext.isNotEmpty()) }
+        _state.update { it.copy(shuffled = on, hasNext = q.upNext.isNotEmpty() || following.isNotEmpty()) }
         prefetchNext(q)
     }
 
@@ -231,6 +253,7 @@ class MusicPlayer(
         request?.cancel()
         prefetch?.cancel()
         queue = null
+        following = emptyList()
         cache.clear()
         _state.update { MusicPlayerState(volume = it.volume) }
     }
@@ -313,11 +336,25 @@ class MusicPlayer(
         val album = q.album
         val found = q.advance { track -> resolve(track, album, q.mode) }
         if (found == null) {
-            // End of the album. Nothing else to play, so the bar goes away.
-            stop()
+            startFollowingAlbum(q, notice)
             return
         }
         show(q, found, startPositionMs = 0L, skipped = found.skipped.size, notice = notice)
+    }
+
+    /** The album is over: carries on with the next one [playAlbums] queued that has a track that plays, else stops. */
+    private suspend fun startFollowingAlbum(q: MusicQueue, notice: String?) {
+        while (true) {
+            val next = following.firstOrNull() ?: break
+            following = following.drop(1)
+            val fresh = MusicQueue(next, q.mode, q.shuffled, seed = now(), startIndex = 0)
+            val found = fresh.jumpTo(fresh.currentIndex ?: 0) { track -> resolve(track, next, fresh.mode) } ?: continue
+            queue = fresh
+            show(fresh, found, startPositionMs = 0L, skipped = found.skipped.size, notice = notice)
+            return
+        }
+        // End of the last album. Nothing else to play, so the bar goes away.
+        stop()
     }
 
     private fun show(q: MusicQueue, found: NextPlayable, startPositionMs: Long, skipped: Int, notice: String? = null) {
@@ -336,7 +373,7 @@ class MusicPlayer(
                 lyricVideo = found.playable.lyricVideo,
                 positionMs = startPositionMs,
                 durationMs = track.durationSeconds * 1000L,
-                hasNext = q.upNext.isNotEmpty(),
+                hasNext = q.upNext.isNotEmpty() || following.isNotEmpty(),
                 notice = notice ?: if (skipped > 0) "Skipped $skipped track${if (skipped == 1) "" else "s"} that couldn't play" else null,
             )
         }

@@ -343,7 +343,8 @@ fun MusicArtistScreen(
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
     val artist = state.artistOrPreview(artistId)
     val saved = state.contains(artistId)
-    var playableOnly by rememberSaveable { mutableStateOf(false) }
+    // Playable albums first: what is not on YouTube Music stays one tap away under Filter → All.
+    var playableOnly by rememberSaveable { mutableStateOf(true) }
     var filterName by rememberSaveable { mutableStateOf(ReleaseFilter.All.name) }
     var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -402,6 +403,13 @@ fun MusicArtistScreen(
         }
     }
 
+    val top = remember(artist) { selectTopAlbums(artist) }
+    val topLabel = when {
+        top.releases.isEmpty() -> null
+        top.rankedCount > 0 -> "Top ${top.releases.size}"
+        else -> "Latest ${top.releases.size}"
+    }
+
     val playTarget = latest?.takeIf { it.isPlayable }
     val shuffleTarget = artist.releases.filter { it.isPlayable && !it.isDemo() }.randomOrNull()
 
@@ -421,6 +429,13 @@ fun MusicArtistScreen(
         onBack = onBack,
         onPlay = { startPlayback(playTarget, shuffled = false) },
         onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
+        onPlayTop = {
+            playNotice = null
+            scope.launch {
+                if (!playTopAlbums(catalog, top.releases, shuffled = false)) playNotice = "Nothing here is on YouTube Music yet."
+            }
+        },
+        topLabel = topLabel,
         onAbout = { showAbout = true },
         onLinks = { showLinks = true },
         onOpenArtist = onArtistClick,

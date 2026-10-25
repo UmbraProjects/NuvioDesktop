@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -95,6 +96,8 @@ internal fun ArtistRoom(
     onBack: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
+    onPlayTop: () -> Unit,
+    topLabel: String?,
     onAbout: () -> Unit,
     onLinks: () -> Unit,
     onOpenArtist: (String) -> Unit,
@@ -143,7 +146,7 @@ internal fun ArtistRoom(
                 ) {
                     RoomEras(
                         artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
-                        filter, playableOnly, demosOpen, onPlay, onShuffle, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
+                        filter, playableOnly, demosOpen, onPlay, onShuffle, onPlayTop, topLabel, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
                     )
                 }
             }
@@ -158,7 +161,7 @@ internal fun ArtistRoom(
                 }
                 RoomEras(
                     artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
-                    filter, playableOnly, demosOpen, onPlay, onShuffle, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
+                    filter, playableOnly, demosOpen, onPlay, onShuffle, onPlayTop, topLabel, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
                 )
             }
         }
@@ -362,6 +365,8 @@ private fun RoomEras(
     demosOpen: Boolean,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
+    onPlayTop: () -> Unit,
+    topLabel: String?,
     onLinks: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onRemove: () -> Unit,
@@ -390,10 +395,12 @@ private fun RoomEras(
         )
         NuvioPrimaryButton(text = "Play", modifier = Modifier.width(128.dp), height = 44.dp, enabled = playTarget != null, onClick = onPlay)
         OutlinedAction(Icons.Rounded.Shuffle, "Shuffle", enabled = canShuffle, onClick = onShuffle)
+        // The quick play: the artist's top five albums, one after the other.
+        if (topLabel != null) OutlinedAction(Icons.Rounded.PlayArrow, topLabel, onClick = onPlayTop)
         MusicAddToLibraryButton(artistId = artist.id, onSavedClick = onRemove)
         val linkCount = groupLinks(artist.links).values.sumOf { it.size }
         if (linkCount > 0) ActionPill("Links · $linkCount", onClick = onLinks)
-        ActionPill("Filter", selected = showFilters || playableOnly || filter != ReleaseFilter.All) { showFilters = !showFilters }
+        ActionPill("Filter", selected = showFilters || !playableOnly || filter != ReleaseFilter.All) { showFilters = !showFilters }
     }
     val playing = notice ?: playTarget?.let { "Plays ${it.title}${it.year?.let { y -> " ($y)" } ?: ""}" }
     if (playing != null) {
@@ -434,7 +441,7 @@ private fun RoomEras(
         }
         val shown = era.groups.filter { it.passes(playableOnly, filter) }
         if (shown.isEmpty()) {
-            Text("Nothing in this era matches the filter.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+            Text(if (playableOnly) "Nothing in this era is on YouTube Music. Filter → All shows it anyway." else "Nothing in this era matches the filter.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
         } else {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 shown.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }) }

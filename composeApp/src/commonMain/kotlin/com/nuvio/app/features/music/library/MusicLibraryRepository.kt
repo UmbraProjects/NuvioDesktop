@@ -63,6 +63,9 @@ data class MusicLibraryState(
             .firstOrNull { artist -> artist.releases.any { it.ytBrowseId == browseId } }
 }
 
+/** An artist whose top albums could not be ranked is asked about again after this long. */
+private const val TOP_RECHECK_MS = 7L * 24 * 60 * 60 * 1000
+
 /** How many unsaved artists are kept for this session before the least recently touched is dropped. */
 internal const val MAX_PREVIEWS = 12
 
@@ -137,9 +140,17 @@ object MusicLibraryRepository {
         _state.update { state ->
             val without = state.artists.filterNot { it.id == artist.id }
             // A fill-in works from an older copy of the artist; it must not wipe a palette derived meanwhile.
-            val palette = artist.palette ?: state.artist(artist.id)?.palette
-            // Release palettes survive a refresh too (phase 4).
-            val kept = artist.copy(palette = palette).keepingPalettesFrom(state.artist(artist.id))
+            val old = state.artist(artist.id)
+            val palette = artist.palette ?: old?.palette
+            // What the person set (star, pinned albums) is the library's copy, never a fill-in's older one; a
+            // fill-in that found no top albums keeps the ones already ranked. Release palettes survive too (phase 4).
+            val kept = artist.copy(
+                palette = palette,
+                favourite = old?.favourite ?: artist.favourite,
+                pinnedTopKeys = old?.pinnedTopKeys ?: artist.pinnedTopKeys,
+                topAlbumKeys = artist.topAlbumKeys.ifEmpty { old?.topAlbumKeys.orEmpty() },
+                topCheckedAtEpochMs = maxOf(artist.topCheckedAtEpochMs, old?.topCheckedAtEpochMs ?: 0L),
+            ).keepingPalettesFrom(old)
             state.copy(artists = sorted(without + kept))
         }
         persist()
@@ -187,6 +198,76 @@ object MusicLibraryRepository {
                 }
             }
         }
+    }
+
+    /** Stars or unstars an artist: starred ones lead the shelf. Saved artists only. */
+    fun setFavourite(artistId: String, favourite: Boolean) {
+        ensureLoaded()
+        if (!_state.value.contains(artistId)) return
+        _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) it.copy(favourite = favourite) else it }) }
+        persist()
+    }
+
+    /** Stars or unstars an album as one of the artist's top albums: starred ones lead the top five. */
+    fun toggleTopPin(artistId: String, releaseKey: String) {
+        ensureLoaded()
+        if (!_state.value.contains(artistId)) return
+        _state.update { s ->
+            s.copy(
+                artists = s.artists.map {
+                    if (it.id == artistId) it.copy(pinnedTopKeys = togglePinned(it.pinnedTopKeys, releaseKey)) else it
+                },
+            )
+        }
+        persist()
+    }
+
+    private val topJobs = HashSet<String>()
+
+    /**
+     * Ranks the artist's top albums from Deezer when that has not been done (artists added before the
+     * shelf had Top 5, or ones Deezer could not answer for a week ago). One quiet request, kept on disk,
+     * and never while the artist is still being filled in: its releases would be incomplete.
+     */
+    fun ensureTopAlbums(artistId: String) {
+        ensureLoaded()
+        val state = _state.value
+        val artist = state.artist(artistId) ?: return
+        if (artist.deezerId == null || state.working.containsKey(artistId)) return
+        if (artist.topAlbumKeys.isNotEmpty()) return
+        if (LibraryClock.nowEpochMs() - artist.topCheckedAtEpochMs < TOP_RECHECK_MS) return
+        if (!topJobs.add(artistId)) return
+        scope.launch {
+            try {
+                loadTopAlbums(artistId)
+            } finally {
+                topJobs.remove(artistId)
+            }
+        }
+    }
+
+    private suspend fun loadTopAlbums(artistId: String) {
+        val deezerId = _state.value.artist(artistId)?.deezerId ?: return
+        val tracks = try {
+            DeezerClient.topTracks(deezerId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            log.w { "Deezer top tracks for $artistId failed: ${error.message}" }
+            null
+        } ?: return // Deezer unreachable: not marked as checked, so the next visit tries again.
+        // The artist may have been refreshed or removed while that request ran.
+        val releases = _state.value.artist(artistId)?.releases ?: return
+        val keys = rankTopAlbums(releases, tracks)
+        val now = LibraryClock.nowEpochMs()
+        _state.update { s ->
+            s.copy(
+                artists = s.artists.map {
+                    if (it.id == artistId) it.copy(topAlbumKeys = keys.ifEmpty { it.topAlbumKeys }, topCheckedAtEpochMs = now) else it
+                },
+            )
+        }
+        persist()
     }
 
     /** Stores a previewed artist, keeping a palette derived meanwhile. Never persisted. */
@@ -344,6 +425,8 @@ object MusicLibraryRepository {
                 put(full.copy(releases = partial), onlyIfPresent = true)
             }
             put(full.copy(releases = detailed), onlyIfPresent = true)
+            setProgress(artistId, "Finding the top albums")
+            loadTopAlbums(artistId)
             completed.add(artistId)
         } catch (cancelled: CancellationException) {
             throw cancelled

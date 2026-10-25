@@ -1,120 +1,62 @@
 package com.nuvio.app.features.music.library
 
-import com.nuvio.app.features.music.identity.ArtworkPalette
-import com.nuvio.app.features.music.identity.ArtworkPaletteMath
 import kotlin.math.abs
-import kotlin.math.min
-import kotlin.math.roundToInt
 
 /**
- * Phase 4b: the Library shelf, as pure data. A shelf is one artist; a spine is one folded release.
- * Spine art comes from TheAudioDB when it has some; otherwise the UI draws a spine from [ShelfSpine.bg],
- * [ShelfSpine.fg], the cover thumb and the vertical title.
+ * Phase 4b: the Library shelf, as pure data. A shelf is one artist; a tile is one folded release shown
+ * as its cover. Only releases that can be played are tiles: the rest are what the Discover layer will
+ * show later. The artist's top albums come first, then every other playable release oldest to newest.
  */
 
-internal const val SPINE_GAP_DP = 4
-internal const val SPINE_DEFAULT_WIDTH_DP = 38
-
-/** The mock's rule: 26 + 1.5 per track, capped at 26 tracks. Unknown track count gets a fixed width. */
-internal fun spineWidthDp(trackCount: Int?): Int =
-    if (trackCount == null || trackCount <= 0) SPINE_DEFAULT_WIDTH_DP else (26 + 1.5 * min(trackCount, 26)).roundToInt()
-
-internal data class ShelfSpine(
+internal data class ShelfTile(
     val release: LibraryRelease,
-    val widthDp: Int,
-    /** TheAudioDB spine picture, when there is one: draw it instead of the generated spine. */
-    val spineArtUrl: String?,
-    /** Square thumbnail drawn at the top of a generated spine. */
-    val thumbUrl: String?,
-    /** `0xAARRGGBB`. */
-    val bg: Long,
-    /** Readable text colour on [bg], `0xAARRGGBB`. */
-    val fg: Long,
+    /** 1..5 for a ranked or starred top album, else null. */
+    val rank: Int?,
+    val featured: Boolean,
+    /** The person starred this album, so it leads the top five. */
+    val pinned: Boolean,
 )
 
 internal data class ShelfRow(
     val artist: LibraryArtist,
-    val spines: List<ShelfSpine>,
-    /** Releases not shown as spines (the "+N more" pill), demos included. */
-    val hidden: Int,
+    /** The quick-play albums: bigger tiles at the start of the rail. */
+    val top: List<ShelfTile>,
+    val rest: List<ShelfTile>,
+    /** "Top 5", or "Latest 5" when nothing is ranked or starred. */
+    val topLabel: String,
     /** Same count as the artist page: [countReleaseCards]. */
     val totalReleases: Int,
-)
-
-private fun kindPriority(kind: ReleaseKind): Int = when (kind) {
-    ReleaseKind.Album -> 0
-    ReleaseKind.EP -> 1
-    ReleaseKind.Single -> 2
-    ReleaseKind.Live -> 3
-    ReleaseKind.Compilation -> 4
-    ReleaseKind.Other -> 5
+    /** Cards that can be played, demos included, as the room's "playable" figure counts them. */
+    val playableReleases: Int,
+) {
+    val tiles: List<ShelfTile> get() = top + rest
 }
 
 private fun LibraryRelease.dateKey(): String = releaseDate ?: year ?: ""
 
-/**
- * Colours for a generated spine: the release's palette (else the artist's) gives a dark wash of the
- * cover's hue. With no palette at all the hue comes from the title, so a spine is stable between runs
- * and neighbours differ.
- */
-internal fun spineColors(release: LibraryRelease, artistPalette: ArtworkPalette?): Pair<Long, Long> {
-    val palette = release.palette ?: artistPalette ?: run {
-        val hue = (release.title.fold(7) { h, c -> (h * 31 + c.code) and 0x7FFFFFFF } % 360) / 360f
-        ArtworkPaletteMath.derive(ArtworkPaletteMath.hslToRgb(hue, 0.5f, 0.5f))
-    }
-    val bg = palette.tint
-    val bgRgb = (bg and 0xFFFFFFL).toInt()
-    val fgRgb = if (ArtworkPaletteMath.contrast(bgRgb, 0xFFFFFF) >= ArtworkPaletteMath.contrast(bgRgb, 0x0B0B0B)) 0xFFFFFF else 0x0B0B0B
-    return bg to (0xFF000000L or fgRgb.toLong())
-}
-
-/**
- * Chooses which releases of [artist] become spines in [availableWidthDp]. Albums, then EPs, then the
- * rest are taken first (newest first within a kind) until the shelf is full; the chosen ones are then
- * laid out oldest to newest. When some are left out, [moreWidthDp] is kept free for the "+N more" pill.
- * Demos are never spines.
- */
-internal fun buildShelfRow(
-    artist: LibraryArtist,
-    availableWidthDp: Int,
-    moreWidthDp: Int = 96,
-): ShelfRow {
+internal fun buildShelfRow(artist: LibraryArtist): ShelfRow {
     val total = countReleaseCards(artist.releases)
-    val groups = buildDiscography(artist.releases, playableOnly = false, filter = ReleaseFilter.All)
-        .eras.flatMap { it.full + it.singles }
-        .map { it.primary }
+    val playable = buildDiscography(artist.releases, playableOnly = true, filter = ReleaseFilter.All)
+    val topAlbums = selectTopAlbums(artist)
+    val topKeys = topAlbums.releases.map { it.key }.toSet()
 
-    fun fits(list: List<LibraryRelease>, width: Int): List<LibraryRelease> {
-        var used = 0
-        val chosen = ArrayList<LibraryRelease>()
-        for (r in list) {
-            val w = spineWidthDp(r.trackCount) + SPINE_GAP_DP
-            if (used + w > width) continue
-            used += w
-            chosen += r
-        }
-        return chosen
-    }
-
-    val ranked = groups.sortedWith(
-        compareBy<LibraryRelease> { kindPriority(it.kind) }.thenByDescending { it.dateKey() },
-    )
-    var chosen = fits(ranked, availableWidthDp)
-    if (chosen.size < groups.size || total > groups.size) {
-        chosen = fits(ranked, availableWidthDp - moreWidthDp)
-    }
-    val spines = chosen.sortedBy { it.dateKey() }.map { r ->
-        val (bg, fg) = spineColors(r, artist.palette)
-        ShelfSpine(
-            release = r,
-            widthDp = spineWidthDp(r.trackCount),
-            spineArtUrl = r.art.spine,
-            thumbUrl = r.art.cover,
-            bg = bg,
-            fg = fg,
+    val top = topAlbums.releases.mapIndexed { index, release ->
+        ShelfTile(
+            release = release,
+            rank = (index + 1).takeIf { index < topAlbums.rankedCount },
+            featured = true,
+            pinned = release.key in artist.pinnedTopKeys,
         )
     }
-    return ShelfRow(artist, spines, hidden = (total - spines.size).coerceAtLeast(0), totalReleases = total)
+    val rest = playable.eras
+        .flatMap { it.full + it.singles }
+        .map { it.primary }
+        .filter { it.key !in topKeys }
+        .sortedBy { it.dateKey() }
+        .map { ShelfTile(release = it, rank = null, featured = false, pinned = false) }
+
+    val label = if (topAlbums.rankedCount > 0) "Top ${top.size}" else "Latest ${top.size}"
+    return ShelfRow(artist, top, rest, label, totalReleases = total, playableReleases = playable.playableCount)
 }
 
 // region a year ago this week

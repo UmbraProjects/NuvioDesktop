@@ -131,6 +131,14 @@ data class LibraryArtist(
     val channelMismatch: Boolean = false,
     /** The YouTube Music channel MusicBrainz lists for the namesake it found, when this channel is not it. */
     val suggestedChannelId: String? = null,
+    /** The person starred this artist: it floats to the top of the shelf. User state; a refresh keeps it. */
+    val favourite: Boolean = false,
+    /** Release keys of the artist's most played albums, best first, from Deezer's top tracks. Empty until fetched. */
+    val topAlbumKeys: List<String> = emptyList(),
+    /** Albums the person starred: they lead the top five. User state; a refresh keeps it. */
+    val pinnedTopKeys: List<String> = emptyList(),
+    /** When Deezer's top tracks were last asked for, so an artist Deezer cannot answer for is not asked on every visit. */
+    val topCheckedAtEpochMs: Long = 0L,
 ) {
     fun releasesOf(kind: ReleaseKind): List<LibraryRelease> = releases.filter { it.kind == kind }
 
