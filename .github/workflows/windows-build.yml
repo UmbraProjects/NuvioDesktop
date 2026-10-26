@@ -19,6 +19,20 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # services.gradle.org occasionally drops the TLS handshake on hosted runners.
+      # Download the wrapper distribution up front with retries so a blip doesn't fail the job.
+      - name: Warm up Gradle wrapper (retry)
+        shell: pwsh
+        run: |
+          $ok = $false
+          foreach ($i in 1..5) {
+            ./gradlew.bat --version
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Write-Host "Gradle wrapper download failed (attempt $i/5); retrying in $($i * 10)s"
+            Start-Sleep -Seconds ($i * 10)
+          }
+          if (-not $ok) { throw "Could not download the Gradle wrapper after 5 attempts" }
+
       # libmpv + ffmpeg DLLs. The build auto-detects C:/msys64/ucrt64/bin, which the
       # runner image already has; we only need to install mpv into it.
       - name: Install libmpv (MSYS2)
