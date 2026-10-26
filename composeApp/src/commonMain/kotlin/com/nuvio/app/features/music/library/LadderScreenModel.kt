@@ -95,15 +95,24 @@ internal suspend fun loadLadder(
     request: LadderRequest,
     artists: List<LibraryArtist>,
     resolver: ArtistTargetResolver,
-    candidates: suspend (genre: String) -> List<LadderCandidate>?,
-    dial: Double = 0.0,
-): LadderState = when (request) {
+    sourceCandidates: suspend (genre: String) -> List<LadderCandidate>?,
+    progress: LadderProgress = LadderProgress(),
+): LadderState {
+    // Phase 7: rungs the person has marked stay where they are, skipped artists never come back, and only the
+    // remaining rungs are built, at the dial the feedback has moved.
+    val excluded = progress.excluded()
+    val candidates: suspend (String) -> List<LadderCandidate>? =
+        { genre -> sourceCandidates(genre)?.filter { it.id !in excluded } }
+    val dial = progress.dial
+    val rungs = remainingRungs(progress)
+    fun joined(fresh: Ladder): Ladder = mergeClimbed(progress, fresh)
+    return when (request) {
     is LadderRequest.Genre -> {
         val pool = candidates(request.genre)
         if (pool == null) {
             failureMessage(ArtistLadderFailure.Unreachable, request.genre)
         } else {
-            val ladder = buildLadder(request.genre, artists, pool, dial)
+            val ladder = joined(buildLadder(request.genre, artists, pool, dial, rungs))
             emptyOr(
                 LadderView("Into ${ladder.target}", null, noteFor(ladder, emptyList(), null), ladder),
                 "\"${request.genre}\"",
@@ -112,25 +121,26 @@ internal suspend fun loadLadder(
     }
     is LadderRequest.Artist -> {
         val outcome = when (request.mode) {
-            LadderMode.Into -> ladderInto(resolver, candidates, request.name, artists, dial)
-            LadderMode.OutFrom -> ladderOutFrom(resolver, candidates, request.name, artists, request.destination, dial)
+            LadderMode.Into -> ladderInto(resolver, candidates, request.name, artists, dial, rungs)
+            LadderMode.OutFrom -> ladderOutFrom(resolver, candidates, request.name, artists, request.destination, dial, rungs)
         }
         when (outcome) {
             is ArtistLadderOutcome.Failed -> failureMessage(outcome.reason, request.name)
             is ArtistLadderOutcome.Ready -> {
                 val name = outcome.target.artist.name
+                val ladder = joined(outcome.ladder)
                 val view = when (request.mode) {
                     LadderMode.Into -> LadderView(
                         title = "Into $name",
                         subtitle = "Climbing into ${outcome.target.genre}",
-                        note = noteFor(outcome.ladder, outcome.target.borrowedFrom, name),
-                        ladder = outcome.ladder,
+                        note = noteFor(ladder, outcome.target.borrowedFrom, name),
+                        ladder = ladder,
                     )
                     LadderMode.OutFrom -> LadderView(
                         title = "Out from $name",
                         subtitle = "Leading out into ${outcome.destination ?: outcome.ladder.target}",
-                        note = noteFor(outcome.ladder, outcome.target.borrowedFrom, name),
-                        ladder = outcome.ladder,
+                        note = noteFor(ladder, outcome.target.borrowedFrom, name),
+                        ladder = ladder,
                         alternatives = outcome.alternatives,
                     )
                 }
@@ -138,4 +148,5 @@ internal suspend fun loadLadder(
             }
         }
     }
+}
 }

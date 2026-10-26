@@ -16,4 +16,10 @@ internal actual object MusicLibraryStorage {
     actual fun saveSettings(payload: String) {
         store.putString("settings", payload)
     }
+
+    actual fun loadLadders(profileId: Int): String? = store.getString("ladders_$profileId")
+
+    actual fun saveLadders(profileId: Int, payload: String) {
+        store.putString("ladders_$profileId", payload)
+    }
 }

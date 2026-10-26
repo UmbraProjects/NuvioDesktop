@@ -6,4 +6,8 @@ internal expect object MusicLibraryStorage {
     fun saveLibrary(profileId: Int, payload: String)
     fun loadSettings(): String?
     fun saveSettings(payload: String)
+
+    /** Phase 7: the ladders the person has climbed, one JSON payload per profile. */
+    fun loadLadders(profileId: Int): String?
+    fun saveLadders(profileId: Int, payload: String)
 }

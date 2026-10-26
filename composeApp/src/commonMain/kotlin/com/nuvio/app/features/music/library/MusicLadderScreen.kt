@@ -61,10 +61,16 @@ internal fun MusicLadderScreen(
 ) {
     val colors = MaterialTheme.nuvio.colors
     var attempt by remember { mutableIntStateOf(0) }
-    val state by produceState<LadderState>(LadderState.Loading, request, attempt) {
-        value = LadderState.Loading
+    // Phase 7: the marks and the dial for this ladder, read from disk when the ladder opens and written on every change.
+    var progress by remember(request) { mutableStateOf(LadderProgressStore.get(request)) }
+    val state by produceState<LadderState>(LadderState.Loading, request, attempt, progress) {
+        // A ladder being re-ranked keeps showing the old one rather than flashing a spinner.
+        if (value !is LadderState.Ready) value = LadderState.Loading
         MusicLibraryRepository.ensureLoaded()
-        value = LadderArtistTargets.load(request, MusicLibraryRepository.state.value.artists)
+        value = LadderArtistTargets.load(request, MusicLibraryRepository.state.value.artists, progress)
+    }
+    fun mark(rung: LadderRung, feedback: RungFeedback) {
+        progress = applyFeedback(progress, rung, feedback).also { LadderProgressStore.put(request, it) }
     }
     PlatformBackHandler(enabled = true, onBack = onBack)
 
@@ -100,6 +106,17 @@ internal fun MusicLadderScreen(
             )
             view?.subtitle?.let {
                 Text(text = it, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            }
+            if (!progress.isFresh) {
+                Text(
+                    text = "Start over",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.accent,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { progress = LadderProgress().also { LadderProgressStore.put(request, it) } }
+                        .padding(vertical = 6.dp),
+                )
             }
         }
 
@@ -146,6 +163,7 @@ internal fun MusicLadderScreen(
                     LadderRungRow(
                         rung = rung,
                         note = notes[id],
+                        onFeedback = { mark(rung, it) },
                         onPlay = {
                             note(id, "Opening…")
                             scope.launch {
@@ -179,7 +197,13 @@ private fun requestTitle(request: LadderRequest): String = when (request) {
 }
 
 @Composable
-private fun LadderRungRow(rung: LadderRung, note: String?, onPlay: () -> Unit, onSave: () -> Unit) {
+private fun LadderRungRow(
+    rung: LadderRung,
+    note: String?,
+    onFeedback: (RungFeedback) -> Unit,
+    onPlay: () -> Unit,
+    onSave: () -> Unit,
+) {
     val colors = MaterialTheme.nuvio.colors
     val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
     Row(
@@ -225,6 +249,21 @@ private fun LadderRungRow(rung: LadderRung, note: String?, onPlay: () -> Unit, o
                     Text(text = note, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
                 }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                for (feedback in RungFeedback.entries) {
+                    val chosen = rung.mark == feedback
+                    Text(
+                        text = feedbackLabel(feedback),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (chosen) colors.onAccent else colors.textSecondary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (chosen) colors.accent else colors.surfaceElevated)
+                            .clickable { onFeedback(feedback) }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -251,4 +290,11 @@ internal fun LadderOfferRow(offers: List<LadderOffer>, onPick: (LadderRequest) -
             )
         }
     }
+}
+
+private fun feedbackLabel(feedback: RungFeedback): String = when (feedback) {
+    RungFeedback.TooFar -> "Too far"
+    RungFeedback.TooClose -> "Too close"
+    RungFeedback.Skip -> "Skip"
+    RungFeedback.Love -> "Love"
 }

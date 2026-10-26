@@ -89,6 +89,7 @@ internal fun buildOutFromLadder(
     artists: List<LibraryArtist>,
     pool: List<LadderCandidate>,
     dial: Double = 0.0,
+    rungs: Int = LADDER_RUNGS,
 ): Ladder {
     val ownKey = genreKey(target.artist.name)
     val rest = pool.filter { it.id != target.artist.id && genreKey(it.name) != ownKey }
@@ -97,6 +98,7 @@ internal fun buildOutFromLadder(
         artists,
         rest,
         dial,
+        rungs,
         anchors = listOf(target.asAnchor()),
         from = target.artist.name,
     )
@@ -110,6 +112,7 @@ internal suspend fun ladderOutFrom(
     artists: List<LibraryArtist>,
     destination: String? = null,
     dial: Double = 0.0,
+    rungs: Int = LADDER_RUNGS,
 ): ArtistLadderOutcome {
     val target = when (val lookup = resolver.resolve(query)) {
         is ArtistLookup.Failed -> return ArtistLadderOutcome.Failed(lookup.reason)
@@ -125,7 +128,7 @@ internal suspend fun ladderOutFrom(
             ?: return ArtistLadderOutcome.Failed(ArtistLadderFailure.NoOutward)
     }
     val pool = candidates(chosen) ?: return ArtistLadderOutcome.Failed(ArtistLadderFailure.Unreachable)
-    val ladder = buildOutFromLadder(target, chosen, artists, pool, dial)
+    val ladder = buildOutFromLadder(target, chosen, artists, pool, dial, rungs)
     val chosenKey = genreKey(chosen)
     return ArtistLadderOutcome.Ready(
         target = target,

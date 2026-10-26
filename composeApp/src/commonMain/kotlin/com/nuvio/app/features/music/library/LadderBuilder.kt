@@ -55,6 +55,8 @@ internal data class LadderRung(
     val anchorName: String?,
     /** One sentence for the screen. */
     val why: String,
+    /** Phase 7: what the person said about this rung, when it is one they have already climbed. */
+    val mark: RungFeedback? = null,
 )
 
 internal data class Ladder(

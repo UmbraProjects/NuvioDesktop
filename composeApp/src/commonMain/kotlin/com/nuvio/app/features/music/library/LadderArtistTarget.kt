@@ -93,10 +93,11 @@ internal fun buildArtistLadder(
     artists: List<LibraryArtist>,
     pool: List<LadderCandidate>,
     dial: Double = 0.0,
+    rungs: Int = LADDER_RUNGS,
 ): Ladder {
     val ownKey = genreKey(target.artist.name)
     val rest = pool.filter { it.id != target.artist.id && genreKey(it.name) != ownKey }
-    return buildLadder(target.genre, artists, rest, dial)
+    return buildLadder(target.genre, artists, rest, dial, rungs)
 }
 
 /**
@@ -168,8 +169,8 @@ internal object LadderArtistTargets {
         ladderInto(resolver, { genre -> LadderCandidates.forGenre(genre) }, query, artists, dial)
 
     /** The one call the ladder screen makes: any [request], through the session's caches. */
-    suspend fun load(request: LadderRequest, artists: List<LibraryArtist>, dial: Double = 0.0): LadderState =
-        loadLadder(request, artists, resolver, { genre -> LadderCandidates.forGenre(genre) }, dial)
+    suspend fun load(request: LadderRequest, artists: List<LibraryArtist>, progress: LadderProgress = LadderProgress()): LadderState =
+        loadLadder(request, artists, resolver, { genre -> LadderCandidates.forGenre(genre) }, progress)
 
     /**
      * Resolves [query] to an artist the person already loves and builds the ladder leading out from them into
@@ -191,11 +192,12 @@ internal suspend fun ladderInto(
     query: String,
     artists: List<LibraryArtist>,
     dial: Double = 0.0,
+    rungs: Int = LADDER_RUNGS,
 ): ArtistLadderOutcome {
     val target = when (val lookup = resolver.resolve(query)) {
         is ArtistLookup.Failed -> return ArtistLadderOutcome.Failed(lookup.reason)
         is ArtistLookup.Found -> lookup.target
     }
     val pool = candidates(target.genre) ?: return ArtistLadderOutcome.Failed(ArtistLadderFailure.Unreachable)
-    return ArtistLadderOutcome.Ready(target, buildArtistLadder(target, artists, pool, dial))
+    return ArtistLadderOutcome.Ready(target, buildArtistLadder(target, artists, pool, dial, rungs))
 }
