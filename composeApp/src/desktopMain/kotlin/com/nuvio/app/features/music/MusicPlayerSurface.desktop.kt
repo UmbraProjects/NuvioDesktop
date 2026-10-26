@@ -100,6 +100,14 @@ actual fun MusicPlayerSurface(
         onDispose { }
     }
 
+    // Lets lyric auto sync read this stream's audio (see DesktopLyricSync).
+    DisposableEffect(controller, loadId) {
+        DesktopLyricSync.attach(loadId) { startMs, lengthMs ->
+            controller.decodeSpeechSpot(startMs / 1_000.0, lengthMs / 1_000.0)
+        }
+        onDispose { DesktopLyricSync.detach(loadId) }
+    }
+
     LaunchedEffect(controller, loadId) {
         revealed = false
         controller.updateControls(
