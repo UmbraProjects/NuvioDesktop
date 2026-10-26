@@ -91,6 +91,13 @@ import kotlinx.coroutines.delay
 /** Lines light up this long before their stamp, so the eye is on the line as it is sung. */
 private const val NOW_PLAYING_LYRIC_LEAD_MS = 250L
 
+/** Tries at starting the lyric sync (the stream may not be readable the moment it opens), and the wait between. */
+private const val LYRIC_SYNC_ATTEMPTS = 3
+private const val LYRIC_SYNC_RETRY_MS = 4_000L
+
+/** What one tap of the lyric nudge moves the timing by. */
+private const val LYRIC_NUDGE_MS = 500L
+
 private sealed interface LyricsUi {
     data object Loading : LyricsUi
     data class Ready(val lyrics: Lyrics) : LyricsUi
@@ -197,6 +204,27 @@ private fun MusicNowPlayingScreen(
         }
     }
 
+    // The video is often another cut than the album track the lyrics were timed to: find how far
+    // apart they are once the stream's length is known, and shift the lines by it.
+    val syncKey = track?.let { lyricSyncKey(it, realVideo) }
+    val syncStates by MusicLyricSync.states.collectAsStateWithLifecycle()
+    val syncState = syncKey?.let { syncStates[it] } ?: LyricSyncState.Idle
+    val syncLines = ((lyrics as? LyricsUi.Ready)?.lyrics as? Lyrics.Synced)?.lines
+    val streamKnown = state.durationMs > 0L && !state.isLoading
+    val trackDurationMs = (track?.durationSeconds ?: 0) * 1_000L
+    LaunchedEffect(syncKey, syncLines, state.loadId, streamKnown) {
+        if (syncKey == null || syncLines == null || !streamKnown) return@LaunchedEffect
+        repeat(LYRIC_SYNC_ATTEMPTS) {
+            MusicLyricSync.sync(syncKey, syncLines, trackDurationMs, state.durationMs, state.loadId)
+            if (MusicLyricSync.stateOf(syncKey) !is LyricSyncState.Idle) return@LaunchedEffect
+            delay(LYRIC_SYNC_RETRY_MS)
+        }
+    }
+    val syncOffsetMs = syncState.offsetMs()
+    val shownLyrics = remember(lyrics, syncOffsetMs) {
+        (lyrics as? LyricsUi.Ready)?.let { LyricsUi.Ready(it.lyrics.shiftedBy(syncOffsetMs)) } ?: lyrics
+    }
+
     Box(modifier.background(Color.Black)) {
         FanartBackdrop(images = backgrounds, coverUrl = album?.thumbnailUrl, spec = spec)
         StageGlow(color = colors.accent, spec = spec)
@@ -252,8 +280,11 @@ private fun MusicNowPlayingScreen(
                         Text(stageMotionCaption(libraryArtist?.mood, spec), color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
                     }
                     LyricsPane(
-                        lyrics, state.positionMs, onSeek, reduced,
+                        shownLyrics, state.positionMs, onSeek, reduced,
                         Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null) 200.dp else 0.dp),
+                        syncState = syncState,
+                        onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
+                        onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
                     )
                 }
             } else {
@@ -266,7 +297,12 @@ private fun MusicNowPlayingScreen(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    LyricsPane(lyrics, state.positionMs, onSeek, reduced, Modifier.weight(1f).fillMaxWidth())
+                    LyricsPane(
+                        shownLyrics, state.positionMs, onSeek, reduced, Modifier.weight(1f).fillMaxWidth(),
+                        syncState = syncState,
+                        onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
+                        onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
+                    )
                 }
             }
         }
@@ -553,7 +589,16 @@ private fun FanartBackdrop(images: List<String>, coverUrl: String?, spec: StageM
 }
 
 @Composable
-private fun LyricsPane(ui: LyricsUi, positionMs: Long, onSeek: (Long) -> Unit, reduced: Boolean, modifier: Modifier) {
+private fun LyricsPane(
+    ui: LyricsUi,
+    positionMs: Long,
+    onSeek: (Long) -> Unit,
+    reduced: Boolean,
+    modifier: Modifier,
+    syncState: LyricSyncState = LyricSyncState.Idle,
+    onNudge: (Long) -> Unit = {},
+    onResetSync: () -> Unit = {},
+) {
     Box(modifier, contentAlignment = Alignment.Center) {
         when (ui) {
             LyricsUi.Loading -> Unit
@@ -561,9 +606,37 @@ private fun LyricsPane(ui: LyricsUi, positionMs: Long, onSeek: (Long) -> Unit, r
             is LyricsUi.Ready -> when (val lyrics = ui.lyrics) {
                 Lyrics.Instrumental -> Message("Instrumental")
                 is Lyrics.Plain -> PlainLyrics(lyrics.lines)
-                is Lyrics.Synced -> SyncedLyrics(lyrics.lines, positionMs, onSeek, reduced)
+                is Lyrics.Synced -> {
+                    SyncedLyrics(lyrics.lines, positionMs, onSeek, reduced)
+                    LyricSyncStrip(syncState, onNudge, onResetSync, Modifier.align(Alignment.BottomEnd))
+                }
             }
         }
+    }
+}
+
+/** What the lyric timing is doing, with a nudge for when the automatic answer is off or missing. */
+@Composable
+private fun LyricSyncStrip(
+    state: LyricSyncState,
+    onNudge: (Long) -> Unit,
+    onReset: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val offset = state.offsetMs()
+    val label = when {
+        state is LyricSyncState.Checking -> "Syncing lyrics…"
+        state is LyricSyncState.Offset && !state.auto -> "Lyrics ${formatLyricOffset(offset)}"
+        state is LyricSyncState.Offset && offset != 0L -> "Auto-synced ${formatLyricOffset(offset)}"
+        else -> null
+    }
+    Row(modifier.padding(end = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (label != null) {
+            Text(label, color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp, maxLines = 1)
+        }
+        MusicTextChip("-0.5s") { onNudge(-LYRIC_NUDGE_MS) }
+        MusicTextChip("+0.5s") { onNudge(LYRIC_NUDGE_MS) }
+        if (offset != 0L) MusicTextChip("Reset", onReset)
     }
 }
 
