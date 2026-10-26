@@ -86,6 +86,24 @@ internal fun parseMbArtistSearch(body: String): List<MbArtistHit> =
         )
     }
 
+/**
+ * The artists of one MusicBrainz tag search (`artist?query=tag:"shoegaze"`), as ladder candidates: id, name
+ * and the tag votes the search returned with each hit. Hits without an id or name are skipped, and so are
+ * tags with no votes. An answer that is not JSON, or has no artist list, gives an empty list.
+ */
+internal fun parseMbTagSearch(body: String): List<LadderCandidate> =
+    parse(body).obj()?.objects("artists").orEmpty().mapNotNull { a ->
+        val id = a.text("id") ?: return@mapNotNull null
+        val name = a.text("name") ?: return@mapNotNull null
+        val votes = LinkedHashMap<String, Int>()
+        for (tag in a.objects("tags")) {
+            val tagName = tag.text("name") ?: continue
+            val count = tag.int("count") ?: continue
+            if (count > 0) votes[tagName] = (votes[tagName] ?: 0) + count
+        }
+        LadderCandidate(id = id, name = name, votes = votes)
+    }
+
 private fun linkLabelFor(type: String, url: String): String? = when {
     type == "official homepage" -> "Website"
     type == "wikipedia" -> "Wikipedia"

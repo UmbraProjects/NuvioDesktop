@@ -32,6 +32,7 @@ internal object MusicBrainzClient {
     private const val BASE = "https://musicbrainz.org/ws/2"
     private const val GAP_MS = 1_100L
     private const val MAX_PAGES = 6
+    private const val TAG_SEARCH_LIMIT = 100
     private val gate = Mutex()
     private var lastCallMs = 0L
 
@@ -48,6 +49,15 @@ internal object MusicBrainzClient {
     suspend fun searchArtist(name: String): List<MbArtistHit> {
         val query = "artist:\"${name.replace("\"", "\\\"")}\"".encodeURLParameter()
         return paced("$BASE/artist?query=$query&limit=6&fmt=json")?.let(::parseMbArtistSearch).orEmpty()
+    }
+
+    /**
+     * One search for the artists tagged [tag] (about [TAG_SEARCH_LIMIT]), each with its tag votes. A single paced
+     * call, no per-artist look-ups. Null when MusicBrainz could not be reached; empty when nobody carries the tag.
+     */
+    suspend fun searchByTag(tag: String): List<LadderCandidate>? {
+        val query = "tag:\"${tag.replace("\"", "\\\"")}\"".encodeURLParameter()
+        return paced("$BASE/artist?query=$query&limit=$TAG_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
     }
 
     suspend fun artist(mbid: String): MbArtist? =
