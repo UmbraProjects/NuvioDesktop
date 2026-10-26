@@ -1,0 +1,206 @@
+package com.nuvio.app.features.music.library
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.PlatformBackHandler
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.MusicCover
+import com.nuvio.app.features.music.MusicMessage
+import kotlin.math.roundToInt
+
+/**
+ * Ladder phase 5: the five-rung screen. Opened from the Music tab's search card (one `// fork:music` hook in
+ * MusicTabScreen); it replaces the tab body while open and [onBack] closes it. Rung 1 is nearest the listener's taste
+ * (or the artist, out from), the last rung is the core of the sound. Each rung shows a picture, the artist, a
+ * one-sentence reason and how typical of the genre they are. Playing and saving a rung is phase 6.
+ *
+ * [onRequest] swaps the request in place (out-from mode's other destination genres).
+ */
+@Composable
+internal fun MusicLadderScreen(
+    request: LadderRequest,
+    onBack: () -> Unit,
+    onRequest: (LadderRequest) -> Unit,
+    modifier: Modifier = Modifier,
+    topChromePadding: Dp = 0.dp,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    var attempt by remember { mutableIntStateOf(0) }
+    val state by produceState<LadderState>(LadderState.Loading, request, attempt) {
+        value = LadderState.Loading
+        MusicLibraryRepository.ensureLoaded()
+        value = LadderArtistTargets.load(request, MusicLibraryRepository.state.value.artists)
+    }
+    PlatformBackHandler(enabled = true, onBack = onBack)
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(top = topChromePadding),
+    ) {
+        val shown = state
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(
+                text = "Back",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onBack)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+            Spacer(Modifier.height(4.dp))
+            val view = (shown as? LadderState.Ready)?.view
+            Text(
+                text = view?.title ?: requestTitle(request),
+                style = MaterialTheme.typography.displayLarge,
+                color = colors.textPrimary,
+            )
+            view?.subtitle?.let {
+                Text(text = it, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            }
+        }
+
+        when (shown) {
+            LadderState.Loading -> Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = colors.accent)
+            }
+            is LadderState.Failed -> MusicMessage(
+                text = shown.message,
+                actionLabel = if (shown.retry) "Try again" else null,
+                onAction = if (shown.retry) ({ attempt++ }) else null,
+            )
+            is LadderState.Ready -> LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                shown.view.note?.let { note ->
+                    item {
+                        Text(text = note, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+                    }
+                }
+                if (shown.view.alternatives.isNotEmpty() && request is LadderRequest.Artist) {
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Lead out into", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
+                            shown.view.alternatives.forEach { genre ->
+                                Text(
+                                    text = genre,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.textSecondary,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(colors.surfaceCard)
+                                        .clickable { onRequest(request.copy(destination = genre)) }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+                items(shown.view.ladder.rungs, key = { it.candidate.id }) { rung -> LadderRungRow(rung) }
+            }
+        }
+    }
+}
+
+private fun requestTitle(request: LadderRequest): String = when (request) {
+    is LadderRequest.Genre -> "Into ${request.genre}"
+    is LadderRequest.Artist -> if (request.mode == LadderMode.Into) "Into ${request.name}" else "Out from ${request.name}"
+}
+
+@Composable
+private fun LadderRungRow(rung: LadderRung) {
+    val colors = MaterialTheme.nuvio.colors
+    val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.surfaceCard)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(28.dp).clip(CircleShape).background(colors.accent),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("${rung.step}", style = MaterialTheme.typography.bodyMedium, color = colors.onAccent)
+        }
+        Spacer(Modifier.width(12.dp))
+        MusicCover(picture, rung.candidate.name, size = 64.dp, circle = true)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = rung.candidate.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(text = rung.why, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            val facts = buildList {
+                add("${(rung.purity * 100).roundToInt()}% of its tags")
+                if (!rung.candidate.playable) add("may not be playable here")
+            }
+            Text(text = facts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        }
+    }
+}
+
+/** The search card: one pill per offer ("Ladder into Shoegaze", "Climb into / out from X"), above the first result. */
+@Composable
+internal fun LadderOfferRow(offers: List<LadderOffer>, onPick: (LadderRequest) -> Unit, modifier: Modifier = Modifier) {
+    if (offers.isEmpty()) return
+    val colors = MaterialTheme.nuvio.colors
+    Row(modifier = modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        offers.forEach { offer ->
+            Text(
+                text = offer.label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onAccent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(colors.accent)
+                    .clickable { onPick(offer.request) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+    }
+}

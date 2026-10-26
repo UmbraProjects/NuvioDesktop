@@ -136,6 +136,9 @@ internal fun canonicalGenre(raw: String): String? {
         .replace(Regex("\\s+"), " ")
 }
 
+/** True when [raw] is a genre or alias this file knows by name (not merely a tag that passes as one). The search card uses it to tell "shoegaze" from "My Bloody Valentine". */
+internal fun isKnownGenre(raw: String): Boolean = genreKey(raw) in knownByKey
+
 /** True when two tags are the same genre once spelling is ignored. Two non-genre tags are never the same. */
 internal fun sameGenre(a: String, b: String): Boolean {
     val ka = canonicalGenre(a)?.let(::genreKey) ?: return false

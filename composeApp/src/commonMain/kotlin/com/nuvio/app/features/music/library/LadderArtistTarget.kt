@@ -167,6 +167,10 @@ internal object LadderArtistTargets {
     suspend fun ladderInto(query: String, artists: List<LibraryArtist>, dial: Double = 0.0): ArtistLadderOutcome =
         ladderInto(resolver, { genre -> LadderCandidates.forGenre(genre) }, query, artists, dial)
 
+    /** The one call the ladder screen makes: any [request], through the session's caches. */
+    suspend fun load(request: LadderRequest, artists: List<LibraryArtist>, dial: Double = 0.0): LadderState =
+        loadLadder(request, artists, resolver, { genre -> LadderCandidates.forGenre(genre) }, dial)
+
     /**
      * Resolves [query] to an artist the person already loves and builds the ladder leading out from them into
      * [destination] (a neighbouring genre; null picks the artist's second genre).

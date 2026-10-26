@@ -30,7 +30,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.library.LadderOfferRow // fork:music
+import com.nuvio.app.features.music.library.LadderRequest // fork:music
+import com.nuvio.app.features.music.library.MusicLadderScreen // fork:music
 import com.nuvio.app.features.music.library.MusicLibraryRepository
+import com.nuvio.app.features.music.library.ladderOffers // fork:music
 import com.nuvio.app.features.music.library.MusicLibraryShelf
 import kotlinx.coroutines.delay
 
@@ -78,6 +82,7 @@ fun MusicTabScreen(
         )
     }
     var results by remember { mutableStateOf<MusicSearchResults>(MusicSearchResults.Idle) }
+    var ladder by remember { mutableStateOf<LadderRequest?>(null) } // fork:music - the open ladder, if any
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
     LaunchedEffect(query, kind) {
@@ -96,6 +101,13 @@ fun MusicTabScreen(
                 if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Artists(it)
             }
         }
+    }
+
+    // fork:music - a ladder replaces the tab body while it is open
+    val openLadder = ladder
+    if (openLadder != null) {
+        MusicLadderScreen(openLadder, onBack = { ladder = null }, onRequest = { ladder = it }, modifier = modifier, topChromePadding = topChromePadding)
+        return
     }
 
     Column(
@@ -161,11 +173,17 @@ fun MusicTabScreen(
                 MusicSearchResults.Empty -> item {
                     MusicMessage("Nothing found. Check the spelling, or YouTube Music may be unreachable.")
                 }
-                is MusicSearchResults.Albums -> items(shown.items) { album ->
-                    MusicAlbumRow(album, showArtist = true, onClick = { onAlbumClick(album.browseId) })
+                is MusicSearchResults.Albums -> {
+                    item { LadderOfferRow(ladderOffers(query, null), onPick = { ladder = it }) } // fork:music
+                    items(shown.items) { album ->
+                        MusicAlbumRow(album, showArtist = true, onClick = { onAlbumClick(album.browseId) })
+                    }
                 }
-                is MusicSearchResults.Artists -> items(shown.items) { artist ->
-                    MusicArtistRow(artist, onClick = { onArtistClick(artist.browseId) })
+                is MusicSearchResults.Artists -> {
+                    item { LadderOfferRow(ladderOffers(query, shown.items.firstOrNull()?.name), onPick = { ladder = it }) } // fork:music
+                    items(shown.items) { artist ->
+                        MusicArtistRow(artist, onClick = { onArtistClick(artist.browseId) })
+                    }
                 }
             }
         }
