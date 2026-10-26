@@ -33,10 +33,7 @@ internal object MusicBrainzClient {
     private const val GAP_MS = 1_100L
     private const val MAX_PAGES = 6
     private const val TAG_SEARCH_LIMIT = 100
-<<<<<<< Updated upstream
-=======
     private const val ARTIST_SEARCH_LIMIT = 5
->>>>>>> Stashed changes
     private val gate = Mutex()
     private var lastCallMs = 0L
 
@@ -64,8 +61,6 @@ internal object MusicBrainzClient {
         return paced("$BASE/artist?query=$query&limit=$TAG_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
     }
 
-<<<<<<< Updated upstream
-=======
     /**
      * One search for an artist by name (a few hits, best first), each with its tag votes: the same answer shape as
      * [searchByTag], so [parseMbTagSearch] reads it. A single paced call. Null when MusicBrainz could not be reached.
@@ -75,7 +70,6 @@ internal object MusicBrainzClient {
         return paced("$BASE/artist?query=$query&limit=$ARTIST_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
     }
 
->>>>>>> Stashed changes
     suspend fun artist(mbid: String): MbArtist? =
         paced("$BASE/artist/$mbid?inc=url-rels+tags+genres+ratings&fmt=json")?.let(::parseMbArtist)
 
