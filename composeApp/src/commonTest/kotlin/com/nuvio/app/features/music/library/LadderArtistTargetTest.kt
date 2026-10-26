@@ -81,7 +81,7 @@ class LadderArtistTargetTest {
     }
 
     @Test
-    fun resolverAsksOncePerArtistEvenWhenSpelledDifferently() = runBlocking {
+    fun resolverAsksOncePerArtistEvenWhenSpelledDifferently() = runBlocking<Unit> {
         var calls = 0
         val resolver = ArtistTargetResolver(now = { 0L }) { calls++; listOf(mbv) }
         val a = resolver.resolve("My Bloody Valentine")
@@ -92,7 +92,7 @@ class LadderArtistTargetTest {
     }
 
     @Test
-    fun resolverRefetchesAfterTheDay() = runBlocking {
+    fun resolverRefetchesAfterTheDay() = runBlocking<Unit> {
         var calls = 0
         var clock = 0L
         val resolver = ArtistTargetResolver(now = { clock }) { calls++; listOf(mbv) }
@@ -103,7 +103,7 @@ class LadderArtistTargetTest {
     }
 
     @Test
-    fun anUnreachableSourceIsNotCached() = runBlocking {
+    fun anUnreachableSourceIsNotCached() = runBlocking<Unit> {
         var calls = 0
         val resolver = ArtistTargetResolver(now = { 0L }) { calls++; if (calls == 1) null else listOf(mbv) }
         val first = resolver.resolve("My Bloody Valentine")
@@ -113,7 +113,7 @@ class LadderArtistTargetTest {
     }
 
     @Test
-    fun unknownArtistAndUntaggedArtistFailDifferently() = runBlocking {
+    fun unknownArtistAndUntaggedArtistFailDifferently() = runBlocking<Unit> {
         val none = ArtistTargetResolver(now = { 0L }) { emptyList() }
         assertEquals(ArtistLookup.Failed(ArtistLadderFailure.NoArtist), none.resolve("Nobody"))
         val bare = ArtistTargetResolver(now = { 0L }) { listOf(cand("b", "Nobody", emptyMap())) }
@@ -121,7 +121,7 @@ class LadderArtistTargetTest {
     }
 
     @Test
-    fun blankQueryNeverReachesTheNetwork() = runBlocking {
+    fun blankQueryNeverReachesTheNetwork() = runBlocking<Unit> {
         var calls = 0
         val resolver = ArtistTargetResolver(now = { 0L }) { calls++; emptyList() }
         assertEquals(ArtistLookup.Failed(ArtistLadderFailure.NoArtist), resolver.resolve("   "))
@@ -129,7 +129,7 @@ class LadderArtistTargetTest {
     }
 
     @Test
-    fun fullPathBuildsALadderFromTheArtistQuery() = runBlocking {
+    fun fullPathBuildsALadderFromTheArtistQuery() = runBlocking<Unit> {
         val resolver = ArtistTargetResolver(now = { 0L }) { listOf(mbv) }
         var askedGenre: String? = null
         val out = ladderInto(resolver, { g -> askedGenre = g; pool }, "My Bloody Valentine", me)
@@ -141,7 +141,7 @@ class LadderArtistTargetTest {
     }
 
     @Test
-    fun fullPathReportsUnreachableCandidates() = runBlocking {
+    fun fullPathReportsUnreachableCandidates() = runBlocking<Unit> {
         val resolver = ArtistTargetResolver(now = { 0L }) { listOf(mbv) }
         val out = ladderInto(resolver, { null }, "My Bloody Valentine", me)
         assertEquals(ArtistLadderOutcome.Failed(ArtistLadderFailure.Unreachable), out)
