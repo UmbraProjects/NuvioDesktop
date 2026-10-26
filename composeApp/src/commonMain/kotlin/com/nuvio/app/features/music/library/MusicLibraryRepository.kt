@@ -99,6 +99,9 @@ object MusicLibraryRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val jobs = HashMap<String, Job>()
 
+    /** Where artists being added were found (phase 6), by channel id, until the artist lands in the library. */
+    private val foundVia = HashMap<String, String>()
+
     private val _state = MutableStateFlow(MusicLibraryState())
     val state: StateFlow<MusicLibraryState> = _state.asStateFlow()
 
@@ -148,6 +151,7 @@ object MusicLibraryRepository {
                 palette = palette,
                 favourite = old?.favourite ?: artist.favourite,
                 pinnedTopKeys = old?.pinnedTopKeys ?: artist.pinnedTopKeys,
+                foundVia = old?.foundVia ?: artist.foundVia ?: foundVia[artist.id],
                 topAlbumKeys = artist.topAlbumKeys.ifEmpty { old?.topAlbumKeys.orEmpty() },
                 topCheckedAtEpochMs = maxOf(artist.topCheckedAtEpochMs, old?.topCheckedAtEpochMs ?: 0L),
             ).keepingPalettesFrom(old)
@@ -283,7 +287,10 @@ object MusicLibraryRepository {
     private fun promote(artist: LibraryArtist) {
         _state.update { state ->
             state.copy(
-                artists = sorted(state.artists.filterNot { it.id == artist.id } + artist.copy(addedAtEpochMs = LibraryClock.nowEpochMs())),
+                artists = sorted(
+                    state.artists.filterNot { it.id == artist.id } +
+                        artist.copy(addedAtEpochMs = LibraryClock.nowEpochMs(), foundVia = artist.foundVia ?: foundVia[artist.id]),
+                ),
                 preview = state.preview - artist.id,
                 previewFailed = state.previewFailed - artist.id,
             )
@@ -323,6 +330,14 @@ object MusicLibraryRepository {
         jobs[artistBrowseId] = scope.launch { fillIn(artistBrowseId, catalog, existing = null, preview = false) }
     }
 
+    /** [add], remembering that the artist was found through [via] (a ladder, phase 6). A saved artist keeps how it was first found. */
+    fun addFoundVia(artistBrowseId: String, via: String, catalog: MusicCatalog = defaultMusicCatalog()) {
+        ensureLoaded()
+        if (_state.value.contains(artistBrowseId)) return
+        foundVia[artistBrowseId] = via
+        add(artistBrowseId, catalog)
+    }
+
     /**
      * Looks the artist up for an artist page opened from Search (or from an album) without saving
      * it. The page shows what YouTube Music lists at once and fills in as the other sources answer,
@@ -358,6 +373,7 @@ object MusicLibraryRepository {
     fun remove(artistId: String) {
         ensureLoaded()
         jobs.remove(artistId)?.cancel()
+        foundVia.remove(artistId)
         val removed = _state.value.artist(artistId)
         _state.update { it.copy(artists = it.artists.filterNot { a -> a.id == artistId }, working = it.working - artistId) }
         removed?.let(::putPreview)

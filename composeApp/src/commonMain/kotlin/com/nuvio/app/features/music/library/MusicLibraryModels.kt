@@ -139,6 +139,8 @@ data class LibraryArtist(
     val pinnedTopKeys: List<String> = emptyList(),
     /** When Deezer's top tracks were last asked for, so an artist Deezer cannot answer for is not asked on every visit. */
     val topCheckedAtEpochMs: Long = 0L,
+    /** How the person found this artist when it was not by searching for it, for example "ladder: Into shoegaze". User state; a refresh keeps it. */
+    val foundVia: String? = null,
 ) {
     fun releasesOf(kind: ReleaseKind): List<LibraryRelease> = releases.filter { it.kind == kind }
 

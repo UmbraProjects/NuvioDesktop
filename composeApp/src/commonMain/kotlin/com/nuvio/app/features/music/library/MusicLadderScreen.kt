@@ -24,7 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicCover
+import com.nuvio.app.features.music.defaultMusicCatalog
+import kotlinx.coroutines.launch
 import com.nuvio.app.features.music.MusicMessage
 import kotlin.math.roundToInt
 
@@ -63,6 +67,12 @@ internal fun MusicLadderScreen(
         value = LadderArtistTargets.load(request, MusicLibraryRepository.state.value.artists)
     }
     PlatformBackHandler(enabled = true, onBack = onBack)
+
+    // Phase 6: what happened to each rung the person played or saved, by candidate id.
+    val catalog = remember { defaultMusicCatalog() }
+    val scope = rememberCoroutineScope()
+    var notes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    fun note(id: String, text: String) { notes = notes + (id to text) }
 
     Column(
         modifier = modifier
@@ -131,7 +141,33 @@ internal fun MusicLadderScreen(
                         }
                     }
                 }
-                items(shown.view.ladder.rungs, key = { it.candidate.id }) { rung -> LadderRungRow(rung) }
+                items(shown.view.ladder.rungs, key = { it.candidate.id }) { rung ->
+                    val id = rung.candidate.id
+                    LadderRungRow(
+                        rung = rung,
+                        note = notes[id],
+                        onPlay = {
+                            note(id, "Opening…")
+                            scope.launch {
+                                val result = playRung(catalog, rung.candidate.name, MusicLibraryRepository.state.value.artists)
+                                note(
+                                    id,
+                                    when (result) {
+                                        is RungPlay.Playing -> "Playing ${result.albumTitle}"
+                                        RungPlay.NotPlayable -> "No release to play here"
+                                    },
+                                )
+                            }
+                        },
+                        onSave = {
+                            note(id, "Saving…")
+                            scope.launch {
+                                val saved = saveRung(catalog, rung.candidate.name, foundViaLabel(shown.view.title))
+                                note(id, if (saved != null) "Saved to your Library" else "Not found on YouTube Music")
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -143,7 +179,7 @@ private fun requestTitle(request: LadderRequest): String = when (request) {
 }
 
 @Composable
-private fun LadderRungRow(rung: LadderRung) {
+private fun LadderRungRow(rung: LadderRung, note: String?, onPlay: () -> Unit, onSave: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
     Row(
@@ -151,6 +187,7 @@ private fun LadderRungRow(rung: LadderRung) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(colors.surfaceCard)
+            .clickable(onClick = onPlay)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -177,6 +214,17 @@ private fun LadderRungRow(rung: LadderRung) {
                 if (!rung.candidate.playable) add("may not be playable here")
             }
             Text(text = facts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Save",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.accent,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onSave).padding(vertical = 4.dp, horizontal = 4.dp),
+                )
+                if (note != null) {
+                    Text(text = note, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                }
+            }
         }
     }
 }
