@@ -980,8 +980,18 @@ val windowsUnusedLibmpvRuntimeDllsAll = listOf(
     "libvorbisfile-3.dll", "libwebpdecoder-3.dll", "libwebpdemux-2.dll", "tcl86.dll", "tk86.dll",
 )
 
+// CI escape hatch #2: the exclusion list above was traced against Nuvio's own FFmpeg/mpv build.
+// A stock MSYS2 mpv/ffmpeg links a different set of optional libraries (libmysofa, libtheora,
+// libFLAC, libvorbisfile, libsndfile, ...), and dropping any DLL that avcodec/avfilter/libmpv
+// import makes LoadLibrary fail for libmpv-2.dll with a generic "Unable to load libmpv-2.dll".
+// -Pnuvio.windows.bundleFullRuntime=true ships every DLL from the runtime dir instead.
+val windowsBundleFullRuntime =
+    providers.gradleProperty("nuvio.windows.bundleFullRuntime").orNull?.toBoolean() == true
+
 val windowsUnusedLibmpvRuntimeDlls =
-    if (windowsAllowWhisperAvfilter) {
+    if (windowsBundleFullRuntime) {
+        emptyList()
+    } else if (windowsAllowWhisperAvfilter) {
         windowsUnusedLibmpvRuntimeDllsAll.filterNot {
             it.startsWith("ggml", ignoreCase = true) || it.equals("libwhisper-1.dll", ignoreCase = true)
         }

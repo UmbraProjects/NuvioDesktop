@@ -26,7 +26,7 @@ jobs:
         run: |
           C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm"
           # gcc compiles the patched libquickjs.dll (buildWindowsQuickJs); mpv does not pull it in.
-          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-gcc"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils"
           if (-not (Test-Path C:\msys64\ucrt64\bin\libmpv-2.dll)) { throw "libmpv-2.dll missing after install" }
           if (-not (Test-Path C:\msys64\ucrt64\bin\gcc.exe)) { throw "gcc.exe missing after install" }
 
@@ -46,6 +46,7 @@ jobs:
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
           "-Pnuvio.windows.allowWhisperAvfilter=true"
+          "-Pnuvio.windows.bundleFullRuntime=true"
           "-Pnuvio.engine.optional=true"
 
       # Portable app folder: no WiX needed.
@@ -56,7 +57,20 @@ jobs:
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
           "-Pnuvio.windows.allowWhisperAvfilter=true"
+          "-Pnuvio.windows.bundleFullRuntime=true"
           "-Pnuvio.engine.optional=true"
+
+      # Fails the job if libmpv-2.dll (or anything it pulls in) imports a DLL that is not bundled,
+      # instead of shipping a build that dies with "Unable to load libmpv-2.dll" on user machines.
+      - name: Verify player runtime is complete
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem composeApp\build\compose\binaries -Recurse -Filter player_bridge.dll |
+                 Where-Object { $_.Directory.Parent.Name -eq 'app' -or $_.Directory.Name -eq 'app' } |
+                 Select-Object -First 1
+          if (-not $dll) { $dll = Get-ChildItem composeApp\build\compose\binaries -Recurse -Filter player_bridge.dll | Select-Object -First 1 }
+          if (-not $dll) { throw "player_bridge.dll not found in distributable" }
+          ./scripts/verify-windows-runtime.ps1 -AppDir $dll.Directory.FullName
 
       - name: Zip portable build
         shell: pwsh
@@ -85,6 +99,7 @@ jobs:
             "-Pnuvio.webview2.dir=C:/libs/webview2" `
             "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin" `
             "-Pnuvio.windows.allowWhisperAvfilter=true" `
+            "-Pnuvio.windows.bundleFullRuntime=true" `
             "-Pnuvio.engine.optional=true"
 
       - uses: actions/upload-artifact@v4
