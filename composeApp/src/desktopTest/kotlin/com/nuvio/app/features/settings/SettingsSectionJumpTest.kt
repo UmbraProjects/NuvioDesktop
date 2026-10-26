@@ -1,6 +1,7 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,7 +47,7 @@ class SettingsSectionJumpTest {
             val viewportSize = remember { mutableStateOf(IntSize.Zero) }
             val scope = rememberCoroutineScope()
             val viewport = remember(listState) {
-                SettingsAnchorViewport(viewportSize, 22.dp, scrollBy = { delta -> listState.animateScrollBy(delta) }, scope = scope, scrollPosition = { listState.scrollPositionKey() })
+                SettingsAnchorViewport(viewportSize, 22.dp, scrollBy = { delta, instant -> if (instant) listState.scrollBy(delta) else listState.animateScrollBy(delta) }, scope = scope, scrollPosition = { listState.scrollPositionKey() })
             }
             SeekSettingsAnchorIntoView(listState)
             CompositionLocalProvider(LocalSettingsAnchorViewport provides viewport) {
@@ -102,7 +103,7 @@ class SettingsSectionJumpTest {
                 val viewportSize = remember { mutableStateOf(IntSize.Zero) }
                 val scope = rememberCoroutineScope()
                 val viewport = remember(listState) {
-                    SettingsAnchorViewport(viewportSize, 22.dp, scrollBy = { delta -> listState.animateScrollBy(delta) }, scope = scope, scrollPosition = { listState.scrollPositionKey() })
+                    SettingsAnchorViewport(viewportSize, 22.dp, scrollBy = { delta, instant -> if (instant) listState.scrollBy(delta) else listState.animateScrollBy(delta) }, scope = scope, scrollPosition = { listState.scrollPositionKey() })
                 }
                 SeekSettingsAnchorIntoView(listState)
                 CompositionLocalProvider(

@@ -5,6 +5,7 @@ import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.iptv_error_bad_login
 import nuvio.composeapp.generated.resources.iptv_error_bad_response
 import nuvio.composeapp.generated.resources.iptv_error_bad_url
+import nuvio.composeapp.generated.resources.iptv_error_connection_cut
 import nuvio.composeapp.generated.resources.iptv_error_http
 import nuvio.composeapp.generated.resources.iptv_error_inactive
 import nuvio.composeapp.generated.resources.iptv_error_network
@@ -31,6 +32,7 @@ internal fun iptvErrorText(error: IptvSourceException): String {
         IptvSourceException.Kind.Network -> when {
             proxied && error.isProxyFailure() -> stringResource(Res.string.iptv_error_proxy_unreachable)
             error.isUnreachable() -> stringResource(Res.string.iptv_error_unreachable)
+            error.isConnectionCut() -> stringResource(Res.string.iptv_error_connection_cut)
             else -> stringResource(Res.string.iptv_error_network, error.message.orEmpty())
         }
     }
@@ -55,6 +57,16 @@ internal fun IptvSourceException.isUnreachable(): Boolean =
         it is java.net.ConnectException ||
             it is java.net.NoRouteToHostException ||
             (it is java.net.SocketTimeoutException && it.message?.contains("connect", ignoreCase = true) == true)
+    }
+
+/**
+ * The connection opened and was then reset. ISPs that block by site name (SNI filtering, used for
+ * iptv-org's github.io playlists among others) let the connection through and reset it during the
+ * TLS handshake, so this is how a name block looks, where an address block looks [isUnreachable].
+ */
+internal fun IptvSourceException.isConnectionCut(): Boolean =
+    generateSequence<Throwable>(this) { current -> current.cause?.takeIf { it !== current } }.take(4).any {
+        it is java.net.SocketException && it.message?.contains("reset", ignoreCase = true) == true
     }
 
 /** Any failure as an [IptvSourceException], so the UI has one thing to describe. */

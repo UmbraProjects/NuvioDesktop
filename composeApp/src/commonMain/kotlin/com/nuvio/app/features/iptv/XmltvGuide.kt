@@ -18,7 +18,7 @@ class XmltvGuide(
     val names: Map<String, String>,
 ) {
     fun entriesFor(channel: IptvChannel): List<IptvEpgEntry> {
-        val id = channel.epgId?.lowercase()?.takeIf { it in programmes }
+        val id = epgIdCandidates(channel.epgId).firstOrNull { it in programmes }
             ?: names[normalizeName(channel.name)]
             ?: return emptyList()
         // Also cleans guides cached before build() did (see withoutOverlaps); cheap per channel.
@@ -34,6 +34,17 @@ class XmltvGuide(
         private val QUALITY = Regex("""\b(uhd|fhd|hd|sd|4k|hevc|h265|1080p?|720p?)\b""")
         private val NON_ALNUM = Regex("""[^a-z0-9]""")
         private val ACCENTS = Regex("""\p{Mn}+""")
+
+        /**
+         * The guide ids a channel's `tvg-id` may appear under, lower case, best first: as given,
+         * then without an iptv-org feed suffix (`BBCOne.uk@SD` → `bbcone.uk`). iptv-org playlists
+         * name the feed; the guides built from the same database (iptv-epg.org and others) do not.
+         */
+        fun epgIdCandidates(epgId: String?): List<String> {
+            val id = epgId?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return emptyList()
+            val base = id.substringBefore('@')
+            return if ('@' in id && base.isNotEmpty()) listOf(id, base) else listOf(id)
+        }
 
         /** "PT: RTP 1 HD" → "rtp1": the same channel spelt differently in the playlist and the guide. */
         fun normalizeName(name: String): String {
@@ -53,7 +64,7 @@ class XmltvGuide(
             fetchedAt: Long,
             parse: (XmltvParser) -> Unit,
         ): XmltvGuide {
-            val wantedIds = channels.mapNotNullTo(HashSet()) { it.epgId?.lowercase() }
+            val wantedIds = channels.flatMapTo(HashSet()) { epgIdCandidates(it.epgId) }
             // Only channels with no programmes by id need a name match; that is settled at the end.
             val channelNames = channels.mapTo(HashSet()) { normalizeName(it.name) }.apply { remove("") }
             val names = HashMap<String, String>()

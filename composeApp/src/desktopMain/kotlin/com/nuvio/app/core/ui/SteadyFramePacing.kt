@@ -121,6 +121,9 @@ internal fun SteadyFramePacingEffect(window: Window) {
             }
 
             override fun windowLostFocus(event: WindowEvent) {
+                // Null when focus went to another application; a window of ours means one of our
+                // own popups or overlays took it and paused pacing with the app still in front.
+                log.i { "focus lost to ${event.oppositeWindow?.javaClass?.name ?: "another application"}" }
                 focused = false
             }
         }

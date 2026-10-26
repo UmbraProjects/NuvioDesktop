@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.iptv.IptvChannel
 import com.nuvio.app.features.iptv.IptvEpgRepository
@@ -20,6 +21,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.iptv_category_all
 import nuvio.composeapp.generated.resources.iptv_category_favourites
@@ -57,24 +59,171 @@ internal fun PlayerScreenRuntime.BindIptvLiveEffects() {
 
     LaunchedEffect(playbackSnapshot.isEnded, playbackAttemptId) {
         if (!playbackSnapshot.isEnded) return@LaunchedEffect
-        val now = System.currentTimeMillis()
-        while (iptvReconnectTimesMs.isNotEmpty() && now - iptvReconnectTimesMs.first() > IPTV_RECONNECT_WINDOW_MS) {
-            iptvReconnectTimesMs.removeFirst()
-        }
-        if (iptvReconnectTimesMs.size >= IPTV_MAX_RECONNECTS) {
-            IptvPlaybackLog.w { "live stream kept ending; giving up after ${iptvReconnectTimesMs.size} reconnects" }
-            return@LaunchedEffect
-        }
-        iptvReconnectTimesMs.addLast(now)
-        IptvPlaybackLog.i { "live stream ended; reconnecting (${iptvReconnectTimesMs.size}/$IPTV_MAX_RECONNECTS)" }
+        if (!takeIptvReconnectSlot("live stream ended")) return@LaunchedEffect
         delay(1_500L)
         reopenIptvSource(activeSourceUrl)
     }
+
+    BindIptvStallReconnect()
+    BindIptvBufferTelemetry()
 
     DisposableEffect(Unit) {
         onDispose { IptvPlaybackSession.clear() }
     }
 }
+
+/**
+ * Counts a reconnect against [IPTV_MAX_RECONNECTS] in [IPTV_RECONNECT_WINDOW_MS] and logs it; false,
+ * with nothing counted, when the allowance is spent and the channel should be left as it is.
+ */
+private fun PlayerScreenRuntime.takeIptvReconnectSlot(reason: String): Boolean {
+    val now = System.currentTimeMillis()
+    while (iptvReconnectTimesMs.isNotEmpty() && now - iptvReconnectTimesMs.first() > IPTV_RECONNECT_WINDOW_MS) {
+        iptvReconnectTimesMs.removeFirst()
+    }
+    if (iptvReconnectTimesMs.size >= IPTV_MAX_RECONNECTS) {
+        IptvPlaybackLog.w { "$reason; giving up after ${iptvReconnectTimesMs.size} reconnects" }
+        return false
+    }
+    iptvReconnectTimesMs.addLast(now)
+    IptvPlaybackLog.i { "$reason; reconnecting (${iptvReconnectTimesMs.size}/$IPTV_MAX_RECONNECTS)" }
+    return true
+}
+
+/** How long a live stall may last with its buffer not growing before the channel is reopened. */
+private const val IPTV_STALL_RECONNECT_MS = 20_000L
+
+/** Buffer growth during a stall that counts as data arriving, and restarts [IPTV_STALL_RECONNECT_MS]. */
+private const val IPTV_STALL_PROGRESS_MS = 1_000L
+
+/**
+ * Buffer that should have let a stall end: mpv resumes at `cache-pause-wait` (3 s for live TV,
+ * IptvMpvOptions), so a stall holding this much has stopped for some other reason.
+ */
+private const val IPTV_STUCK_BUFFER_MS = 3_000L
+
+/** How long a stall may hold [IPTV_STUCK_BUFFER_MS] without the position moving before reopening. */
+private const val IPTV_STUCK_RECONNECT_MS = 8_000L
+
+/**
+ * Reopens a live channel stuck rebuffering. Such a stream raises no error and never ends, and
+ * reopening is what fixed it by hand. Two shapes:
+ * - Nothing arriving: the buffer stops growing (a download hung through a flaky proxy, or a
+ *   stitched channel switching to stream IDs mpv is not reading). After [IPTV_STALL_RECONNECT_MS].
+ *   A stall whose buffer is filling, however slowly, is left alone.
+ * - Data arriving but not playing: a clip change whose timestamps jump across the MPEG-TS wrap
+ *   (audio 110 s -> 95,102 s) can leave mpv paused with minutes buffered and the position frozen.
+ *   The growing buffer keeps resetting the first clock, so this one watches the position instead,
+ *   and fires after [IPTV_STUCK_RECONNECT_MS].
+ * The start (the failover watchdog owns that) and a pause are left alone.
+ */
+@Composable
+private fun PlayerScreenRuntime.BindIptvStallReconnect() {
+    LaunchedEffect(playbackAttemptId) {
+        var played = false
+        var stallStartMs = 0L
+        var stallBufferMs = 0L
+        var stuckStartMs = 0L
+        var stuckPositionMs = 0L
+        while (true) {
+            delay(1_000L)
+            val snapshot = playbackSnapshot
+            if (!snapshot.isLoading || !played || snapshot.isEnded || !shouldPlay) {
+                if (!snapshot.isLoading && snapshot.isPlaying) played = true
+                stallStartMs = 0L
+                stuckStartMs = 0L
+                continue
+            }
+            val now = System.currentTimeMillis()
+            val aheadMs = snapshot.bufferedAheadMs()
+            val reason = when {
+                aheadMs < IPTV_STUCK_BUFFER_MS -> {
+                    stuckStartMs = 0L
+                    null
+                }
+                stuckStartMs == 0L || kotlin.math.abs(snapshot.positionMs - stuckPositionMs) > 500L -> {
+                    stuckStartMs = now
+                    stuckPositionMs = snapshot.positionMs
+                    null
+                }
+                now - stuckStartMs >= IPTV_STUCK_RECONNECT_MS ->
+                    "live stream stuck ${(now - stuckStartMs) / 1000}s with ${aheadMs}ms buffered"
+                else -> null
+            } ?: run {
+                if (stallStartMs == 0L || aheadMs >= stallBufferMs + IPTV_STALL_PROGRESS_MS) {
+                    stallStartMs = now
+                    stallBufferMs = aheadMs
+                    null
+                } else if (now - stallStartMs >= IPTV_STALL_RECONNECT_MS) {
+                    "live stream stalled ${(now - stallStartMs) / 1000}s with ${aheadMs}ms buffered"
+                } else {
+                    null
+                }
+            }
+            if (reason != null) {
+                if (takeIptvReconnectSlot(reason)) reopenIptvSource(activeSourceUrl)
+                return@LaunchedEffect
+            }
+        }
+    }
+}
+
+/** How often [BindIptvBufferTelemetry] reports the buffer. */
+private const val IPTV_BUFFER_SAMPLE_MS = 30_000L
+
+/**
+ * Logs how the live buffer moves, to tell a provider delivering slower than real time from playback
+ * consuming faster than it. Each stall is logged with the buffer it hit, and every
+ * [IPTV_BUFFER_SAMPLE_MS] a summary: buffer ahead and its change, and the playback rate (stream
+ * seconds per wall second; skipped across a seek, a pause or a speed change, where it means nothing).
+ * A falling buffer at a rate of ~1.000 is the provider; a rate above 1 is us.
+ */
+@Composable
+private fun PlayerScreenRuntime.BindIptvBufferTelemetry() {
+    LaunchedEffect(playbackAttemptId) {
+        var stalls = 0
+        var played = false
+        launch {
+            snapshotFlow { playbackSnapshot.isLoading to playbackSnapshot.isEnded }.collect { (loading, ended) ->
+                val snapshot = playbackSnapshot
+                if (!loading) {
+                    played = true
+                } else if (played && !ended) {
+                    stalls++
+                    IptvPlaybackLog.i {
+                        "live stall at ${snapshot.positionMs / 1000}s bufferAhead=${snapshot.bufferedAheadMs()}ms"
+                    }
+                }
+            }
+        }
+        var lastWallMs = System.currentTimeMillis()
+        var last = playbackSnapshot
+        var lastStalls = 0
+        while (true) {
+            delay(IPTV_BUFFER_SAMPLE_MS)
+            val nowMs = System.currentTimeMillis()
+            val now = playbackSnapshot
+            val wallMs = nowMs - lastWallMs
+            val streamMs = now.positionMs - last.positionMs
+            val steady = played && now.isPlaying && last.isPlaying && stalls == lastStalls &&
+                now.playbackSpeed == 1f && last.playbackSpeed == 1f &&
+                kotlin.math.abs(streamMs - wallMs) < 5_000L
+            val rate = if (steady && wallMs > 0) "%.4f".format(streamMs.toDouble() / wallMs) else "n/a"
+            val aheadMs = now.bufferedAheadMs()
+            if (played) {
+                IptvPlaybackLog.i {
+                    "live buffer ahead=${aheadMs}ms change=${aheadMs - last.bufferedAheadMs()}ms/${wallMs / 1000}s " +
+                        "playRate=$rate speed=${now.playbackSpeed} stalls=${stalls - lastStalls} (total $stalls)"
+                }
+            }
+            lastWallMs = nowMs
+            last = now
+            lastStalls = stalls
+        }
+    }
+}
+
+private fun PlayerPlaybackSnapshot.bufferedAheadMs(): Long = (bufferedPositionMs - positionMs).coerceAtLeast(0L)
 
 /**
  * An IPTV source failed to open or play. Tries the channel's next format (`ts` ⇄ `m3u8`); with

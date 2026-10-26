@@ -190,8 +190,11 @@ internal object SettingsScrollAnchor {
 internal class SettingsAnchorViewport(
     val size: State<IntSize>,
     val topInset: Dp,
-    /** Scrolls the list by a pixel delta with the settings jump's own quick ease. */
-    private val scrollBy: (suspend (Float) -> Unit)? = null,
+    /**
+     * Scrolls the list by a pixel delta: with the settings jump's own quick ease, or at once when
+     * `instant` (a landing at the end of a hidden seek, see [SettingsScrollAnchor.seeking]).
+     */
+    private val scrollBy: (suspend (delta: Float, instant: Boolean) -> Unit)? = null,
     /**
      * The list's own scope, which the landing scroll runs in. Not the anchor's: a heading that a
      * lazy list still holds composed off-screen (above a jump that went further down) is let go as
@@ -226,8 +229,13 @@ internal class SettingsAnchorViewport(
             else -> 0f
         }
         if (delta != 0f) {
+            // A target the seek had to walk to lands in one step while the list is still hidden:
+            // the walk stops wherever the target first appears, often well short of where it
+            // should sit, and gliding the rest of the way showed as the page overshooting and then
+            // scrolling back. Only a target that was already on screen gets the short glide.
+            val instant = SettingsScrollAnchor.seeking
             val listScope = scope
-            if (listScope != null) listScope.launch { scroll(delta) } else scroll(delta)
+            if (listScope != null) listScope.launch { scroll(delta, instant) } else scroll(delta, instant)
         }
         return true
     }

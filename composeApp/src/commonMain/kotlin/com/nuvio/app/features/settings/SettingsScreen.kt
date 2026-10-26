@@ -55,23 +55,21 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.DateRange
-import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.PowerSettingsNew
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material.icons.rounded.WidthFull
@@ -113,6 +111,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Dp
@@ -1686,7 +1685,9 @@ private fun TabletSettingsScreen(
                             SettingsAnchorViewport(
                                 listViewportSize,
                                 DesktopSettingsPageTopInset,
-                                scrollBy = { delta -> listState.animateScrollBy(delta, SettingsAnchorScrollSpec) },
+                                scrollBy = { delta, instant ->
+                                    if (instant) listState.scrollBy(delta) else listState.animateScrollBy(delta, SettingsAnchorScrollSpec)
+                                },
                                 scope = anchorScope,
                                 scrollPosition = { listState.scrollPositionKey() },
                             )
@@ -2105,17 +2106,17 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
     ),
     DesktopSettingsSidebarItem(
         label = "Cont Watching",
-        icon = Icons.Rounded.CollectionsBookmark,
+        icon = SettingsCategoryIcons.ContinueWatching,
         page = SettingsPage.ContinueWatching,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_meta_screen),
-        icon = Icons.Rounded.Tune,
+        icon = SettingsCategoryIcons.Details,
         page = SettingsPage.MetaScreen,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_homescreen),
-        icon = Icons.Rounded.Settings,
+        icon = SettingsCategoryIcons.Homescreen,
         page = SettingsPage.Homescreen,
     ),
     DesktopSettingsSidebarItem(
@@ -2145,7 +2146,7 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_video_audio),
-        icon = Icons.Rounded.HighQuality,
+        icon = SettingsCategoryIcons.VideoAudio,
         page = SettingsPage.Playback,
     ),
     DesktopSettingsSidebarItem(
@@ -2165,12 +2166,12 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_plugins),
-        icon = Icons.Rounded.Settings,
+        icon = Icons.Rounded.Extension,
         page = SettingsPage.Plugins,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_streams),
-        icon = Icons.Rounded.Tune,
+        icon = SettingsCategoryIcons.Streams,
         page = SettingsPage.Streams,
     ),
     DesktopSettingsSidebarItem(
@@ -2190,12 +2191,12 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_auto_downloads),
-        icon = Icons.Rounded.CloudDownload,
+        icon = SettingsCategoryIcons.AutoDownloads,
         page = SettingsPage.AutoDownloads,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_root_downloads_title),
-        icon = Icons.Rounded.CloudDownload,
+        icon = SettingsCategoryIcons.Downloads,
         page = SettingsPage.Downloads,
     ),
     DesktopSettingsSidebarItem(
@@ -2205,7 +2206,7 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_advanced),
-        icon = Icons.Rounded.Tune,
+        icon = SettingsCategoryIcons.Advanced,
         page = SettingsPage.Advanced,
     ),
     DesktopSettingsSidebarItem(
@@ -2470,6 +2471,9 @@ private val DesktopSidebarSubListTextInset = 15.dp
  */
 private val SettingsAnchorScrollSpec = tween<Float>(durationMillis = 220, easing = FastOutSlowInEasing)
 
+/** Most frames a seek stays hidden waiting for its target to claim the jump; see below. */
+private const val SettingsAnchorLandingMaxFrames = 8
+
 /** Frames a fallback heading gets to claim a request once it is on the page; see below. */
 private const val SettingsAnchorFallbackClaimFrames = 3
 
@@ -2520,9 +2524,16 @@ internal fun SeekSettingsAnchorIntoView(listState: LazyListState) {
                 }
                 listState.scrollBy(listState.layoutInfo.viewportSize.height * 0.9f)
             }
-            // The target consumes the request and starts its own bring-into-view; show the list
-            // once that has begun, so what is seen is the short glide onto it.
-            repeat(2) { withFrameNanos {} }
+            // The target consumes the request and lands itself, in one step since the list is still
+            // hidden (see SettingsAnchorViewport.scrollIntoView). Stay hidden until it has: wait out
+            // the claim (a few frames at most), then a couple more for the landing scroll and the
+            // layout after it, so the list reappears already on the setting.
+            var claimFrames = 0
+            while (pending() && claimFrames < SettingsAnchorLandingMaxFrames) {
+                withFrameNanos {}
+                claimFrames++
+            }
+            repeat(3) { withFrameNanos {} }
         } finally {
             SettingsScrollAnchor.seeking = false
         }
@@ -2618,6 +2629,8 @@ private fun DesktopSettingsTopBar(
                     size = 34,
                 )
             }
+            // Each icon drawn in the settings glass (see settingsGlassGlyph) so the bar reads as part
+            // of the page. The two toggles are clear glass when off and take the accent when on.
             IconButton(
                 onClick = { onShowLatestChangelogClick?.invoke() },
                 enabled = onShowLatestChangelogClick != null,
@@ -2625,16 +2638,7 @@ private fun DesktopSettingsTopBar(
                 Icon(
                     imageVector = Icons.Rounded.Notifications,
                     contentDescription = null,
-                    tint = if (onShowLatestChangelogClick != null) {
-                        tokens.colors.accent
-                    } else {
-                        tokens.colors.textMuted.copy(alpha = 0.42f)
-                    },
-                    modifier = if (onShowLatestChangelogClick != null) {
-                        Modifier.accentGradientMask()
-                    } else {
-                        Modifier
-                    },
+                    modifier = Modifier.settingsGlassGlyph(lit = onShowLatestChangelogClick != null),
                 )
             }
             IconButton(
@@ -2643,12 +2647,7 @@ private fun DesktopSettingsTopBar(
                 Icon(
                     imageVector = Icons.Rounded.ViewColumn,
                     contentDescription = stringResource(Res.string.settings_desktop_toggle_column_guides),
-                    tint = if (columnGuidesVisible) {
-                        tokens.colors.accent
-                    } else {
-                        tokens.colors.textMuted
-                    },
-                    modifier = if (columnGuidesVisible) Modifier.accentGradientMask() else Modifier,
+                    modifier = Modifier.settingsGlassGlyph(lit = columnGuidesVisible),
                 )
             }
             // Centred column set vs. the whole window; lit like the guides toggle when it is on.
@@ -2656,16 +2655,14 @@ private fun DesktopSettingsTopBar(
                 Icon(
                     imageVector = Icons.Rounded.WidthFull,
                     contentDescription = stringResource(Res.string.settings_desktop_toggle_full_width),
-                    tint = if (fullWidth) tokens.colors.accent else tokens.colors.textMuted,
-                    modifier = if (fullWidth) Modifier.accentGradientMask() else Modifier,
+                    modifier = Modifier.settingsGlassGlyph(lit = fullWidth),
                 )
             }
             IconButton(onClick = onQuitClick) {
                 Icon(
                     imageVector = Icons.Rounded.PowerSettingsNew,
                     contentDescription = null,
-                    tint = tokens.colors.accent,
-                    modifier = Modifier.accentGradientMask(),
+                    modifier = Modifier.settingsGlassGlyph(),
                 )
             }
             Spacer(modifier = Modifier.weight(1f))
@@ -2720,7 +2717,6 @@ private fun DesktopSettingsRootNavigation(
     onNavigateToCalendar: (() -> Unit)?,
     onNavigateToLiveTv: (() -> Unit)?,
 ) {
-    val tokens = MaterialTheme.nuvio
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsState()
@@ -2729,118 +2725,66 @@ private fun DesktopSettingsRootNavigation(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        IconButton(
-            onClick = { onNavigateToHome?.invoke() },
-            enabled = onNavigateToHome != null,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Home,
-                contentDescription = stringResource(Res.string.compose_nav_home),
-                modifier = Modifier
-                    .size(22.dp)
-                    .then(if (onNavigateToHome != null) Modifier.accentGradientMask() else Modifier),
-                tint = if (onNavigateToHome != null) {
-                    tokens.colors.accent
-                } else {
-                    tokens.colors.textMuted.copy(alpha = 0.42f)
-                },
-            )
-        }
-        IconButton(
-            onClick = { onNavigateToSearch?.invoke() },
-            enabled = onNavigateToSearch != null,
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.sidebar_search),
-                contentDescription = stringResource(Res.string.compose_nav_search),
-                modifier = Modifier
-                    .size(22.dp)
-                    .then(if (onNavigateToSearch != null) Modifier.accentGradientMask() else Modifier),
-                tint = if (onNavigateToSearch != null) {
-                    tokens.colors.accent
-                } else {
-                    tokens.colors.textMuted.copy(alpha = 0.42f)
-                },
-            )
-        }
+        DesktopSettingsNavIcon(
+            onClick = onNavigateToHome,
+            contentDescription = stringResource(Res.string.compose_nav_home),
+            imageVector = Icons.Filled.Home,
+        )
+        DesktopSettingsNavIcon(
+            onClick = onNavigateToSearch,
+            contentDescription = stringResource(Res.string.compose_nav_search),
+            painter = painterResource(Res.drawable.sidebar_search),
+        )
         // Discover sits between Search and Library, matching the top bar and sidebar order. Settings
         // hides the top bar entirely, so without this row Discover is only reachable by detouring
         // through another tab or knowing the hotkey. Hidden outright when the tab is turned off,
         // since navigation to it is refused and the button would do nothing.
         if (discoverTabVisible) {
-            IconButton(
-                onClick = { onNavigateToDiscover?.invoke() },
-                enabled = onNavigateToDiscover != null,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Explore,
-                    contentDescription = stringResource(Res.string.compose_nav_discover),
-                    modifier = Modifier
-                        .size(22.dp)
-                        .then(if (onNavigateToDiscover != null) Modifier.accentGradientMask() else Modifier),
-                    tint = if (onNavigateToDiscover != null) {
-                        tokens.colors.accent
-                    } else {
-                        tokens.colors.textMuted.copy(alpha = 0.42f)
-                    },
-                )
-            }
-        }
-        IconButton(
-            onClick = { onNavigateToLibrary?.invoke() },
-            enabled = onNavigateToLibrary != null,
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.sidebar_library),
-                contentDescription = stringResource(Res.string.compose_nav_library),
-                modifier = Modifier
-                    .size(22.dp)
-                    .then(if (onNavigateToLibrary != null) Modifier.accentGradientMask() else Modifier),
-                tint = if (onNavigateToLibrary != null) {
-                    tokens.colors.accent
-                } else {
-                    tokens.colors.textMuted.copy(alpha = 0.42f)
-                },
+            DesktopSettingsNavIcon(
+                onClick = onNavigateToDiscover,
+                contentDescription = stringResource(Res.string.compose_nav_discover),
+                imageVector = Icons.Rounded.Explore,
             )
         }
+        DesktopSettingsNavIcon(
+            onClick = onNavigateToLibrary,
+            contentDescription = stringResource(Res.string.compose_nav_library),
+            painter = painterResource(Res.drawable.sidebar_library),
+        )
         // Live TV, like its tab, only once a playlist exists.
         if (liveTvTabVisible) {
-            IconButton(
-                onClick = { onNavigateToLiveTv?.invoke() },
-                enabled = onNavigateToLiveTv != null,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.LiveTv,
-                    contentDescription = stringResource(Res.string.iptv_settings_page),
-                    modifier = Modifier
-                        .size(22.dp)
-                        .then(if (onNavigateToLiveTv != null) Modifier.accentGradientMask() else Modifier),
-                    tint = if (onNavigateToLiveTv != null) {
-                        tokens.colors.accent
-                    } else {
-                        tokens.colors.textMuted.copy(alpha = 0.42f)
-                    },
-                )
-            }
+            DesktopSettingsNavIcon(
+                onClick = onNavigateToLiveTv,
+                contentDescription = stringResource(Res.string.iptv_settings_page),
+                imageVector = Icons.Rounded.LiveTv,
+            )
         }
         // Calendar is a pushed route rather than a tab, so it has no sidebar entry to fall back
         // on; from Settings the only other ways in are the hotkey or the Library header icon.
-        IconButton(
-            onClick = { onNavigateToCalendar?.invoke() },
-            enabled = onNavigateToCalendar != null,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.DateRange,
-                contentDescription = stringResource(Res.string.calendar_title),
-                modifier = Modifier
-                    .size(22.dp)
-                    .then(if (onNavigateToCalendar != null) Modifier.accentGradientMask() else Modifier),
-                tint = if (onNavigateToCalendar != null) {
-                    tokens.colors.accent
-                } else {
-                    tokens.colors.textMuted.copy(alpha = 0.42f)
-                },
-            )
+        DesktopSettingsNavIcon(
+            onClick = onNavigateToCalendar,
+            contentDescription = stringResource(Res.string.calendar_title),
+            imageVector = Icons.Rounded.DateRange,
+        )
+    }
+}
+
+@Composable
+private fun DesktopSettingsNavIcon(
+    onClick: (() -> Unit)?,
+    contentDescription: String,
+    imageVector: ImageVector? = null,
+    painter: Painter? = null,
+) {
+    val enabled = onClick != null
+    val iconModifier = Modifier
+        .size(22.dp)
+        .settingsGlassGlyph(lit = enabled)
+    IconButton(onClick = { onClick?.invoke() }, enabled = enabled) {
+        if (imageVector != null) {
+            Icon(imageVector, contentDescription, iconModifier)
+        } else if (painter != null) {
+            Icon(painter, contentDescription, iconModifier)
         }
     }
 }

@@ -2,8 +2,8 @@ package com.nuvio.app.core.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
@@ -40,7 +40,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -205,7 +207,7 @@ internal fun NuvioContextMenu(
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
-        Surface(
+        NuvioGlassMenuSurface(
             modifier = Modifier
                 .widthIn(min = ContextMenuMinWidth, max = ContextMenuMaxWidth)
                 .width(IntrinsicSize.Max)
@@ -213,11 +215,6 @@ internal fun NuvioContextMenu(
                     alpha = fadeIn.value
                     translationY = (1f - fadeIn.value) * -4.dp.toPx()
                 },
-            shape = RoundedCornerShape(10.dp),
-            color = ContextMenuFill,
-            contentColor = Color.White,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-            shadowElevation = 16.dp,
         ) {
             Column(
                 modifier = Modifier
@@ -397,7 +394,33 @@ internal class CursorMenuPositionProvider(
     }
 }
 
-internal val ContextMenuFill = Color(0xFA18191D)
+/**
+ * The panel every right-click menu is drawn in: the settings glass on its night-blue base, as the
+ * modals are ([NuvioDialogSurface]), with a lighter shadow for something this small. Menus float
+ * over busy content, so the base is opaque; the glass fill and one-pixel edge go over it.
+ */
+@Composable
+internal fun NuvioGlassMenuSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape = ContextMenuShape,
+    content: @Composable () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    Surface(
+        modifier = modifier
+            .shadow(elevation = 16.dp, shape = shape, clip = false)
+            // No clip around the edge (see NuvioDialogSurface); Surface clips the content.
+            .background(nuvioBackdropBrush(NuvioGlass.night(colors.background, colors.accent), NuvioBackdropDirection.Vertical), shape)
+            .ditheredBackground(NuvioGlass.Fill, shape)
+            .border(width = 1.dp, brush = NuvioGlass.Edge, shape = shape),
+        shape = shape,
+        color = Color.Transparent,
+        contentColor = Color.White,
+        content = content,
+    )
+}
+
+internal val ContextMenuShape = RoundedCornerShape(12.dp)
 private val ContextMenuMinWidth = 220.dp
 private val ContextMenuMaxWidth = 380.dp
 internal val ContextMenuRowHeight = 38.dp

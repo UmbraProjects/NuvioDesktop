@@ -79,6 +79,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.accentFill
+import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.features.settings.settingsSkyBackground
 import com.nuvio.app.core.ui.NuvioScreenHeader
 import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.nuvio
@@ -304,7 +308,8 @@ fun CalendarScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.nuvio.colors.background)
+            // The settings sky, so the glass below sits on the backdrop it was designed against.
+            .settingsSkyBackground(MaterialTheme.nuvio.colors.background, MaterialTheme.nuvio.colors.accent)
             .focusRequester(screenFocusRequester)
             .onFocusChanged { calendarHasFocus = it.hasFocus }
             .focusable()
@@ -353,6 +358,7 @@ fun CalendarScreen(
             title = stringResource(Res.string.calendar_title),
             includeStatusBarPadding = false,
             topPadding = 0.dp,
+            opaqueBackground = false,
             onBack = onBack?.let { callback ->
                 {
                     // Stop reclaiming focus immediately; lifecycle pause can arrive after the
@@ -502,8 +508,7 @@ private fun StepButton(
     Box(
         modifier = Modifier
             .size(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.06f))
+            .calendarGlass()
             .pointerHoverIcon(PointerIcon.Hand)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -517,8 +522,7 @@ private fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = M
     Box(
         modifier = modifier
             .height(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.06f))
+            .calendarGlass()
             .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand).clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
@@ -638,28 +642,42 @@ private fun DayCell(
     val titles = entries.map { it.contentId }.distinct().size
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
-    val outline = when {
-        isFocused -> Modifier.border(3.dp, Color.White, shape)
-        isToday -> Modifier.border(2.dp, MaterialTheme.nuvio.colors.accent, shape)
-        hovered -> Modifier.border(2.dp, Color.White.copy(alpha = 0.35f), shape)
-        else -> Modifier
+    val tokens = MaterialTheme.nuvio
+    // Every day carries the glass edge; today, hover and keyboard focus change that edge rather
+    // than adding a heavy solid frame. Drawn on the outer box, outside the content clip: a clip is
+    // not anti-aliased here, and an edge drawn inside one stair-steps round the corners.
+    val edge = when {
+        isFocused -> Modifier.border(2.dp, Color.White.copy(alpha = 0.92f), shape)
+        isToday -> Modifier.border(1.5.dp, tokens.colors.accentFill(0.95f), shape)
+        hovered -> Modifier.border(1.dp, CalendarGlassEdgeHover, shape)
+        else -> Modifier.border(1.dp, NuvioGlass.Edge, shape)
     }
     val compact = width < 70.dp
+    // The "watched" tick and "+N" count sit on dark glass in the theme's own night tint.
+    val badgeGlass = NuvioGlass.nightTint(tokens.colors.accent).copy(alpha = 0.88f)
 
     Box(
         modifier = Modifier
             .size(width, height)
             .alpha(if (day.monthDelta != 0) 0.4f else 1f)
-            .clip(shape)
-            .background(
-                if (first == null) Color.White.copy(alpha = 0.035f)
-                else MaterialTheme.colorScheme.surfaceVariant,
+            .then(
+                if (first == null) {
+                    Modifier.ditheredBackground(if (hovered) CalendarGlassFillHover else NuvioGlass.Fill, shape)
+                } else {
+                    Modifier
+                },
             )
-            .then(outline)
+            .then(edge)
             .hoverable(hover)
             .pointerHoverIcon(PointerIcon.Hand)
             .clickable(onClick = onClick),
     ) {
+      Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(shape)
+            .then(if (first != null) Modifier.background(MaterialTheme.colorScheme.surfaceVariant) else Modifier),
+      ) {
         if (first?.posterUrl != null) {
             NuvioAsyncImage(
                 model = first.posterUrl,
@@ -696,8 +714,8 @@ private fun DayCell(
                     .align(Alignment.TopEnd)
                     .padding(6.dp)
                     .size(20.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xEB16161A)),
+                    .background(badgeGlass, CircleShape)
+                    .border(1.dp, NuvioGlass.Edge, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Text("✓", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.nuvio.colors.accent)
@@ -709,8 +727,8 @@ private fun DayCell(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(if (compact) 3.dp else 6.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.nuvio.colors.background.copy(alpha = 0.82f))
+                    .background(badgeGlass, RoundedCornerShape(999.dp))
+                    .border(1.dp, NuvioGlass.Edge, RoundedCornerShape(999.dp))
                     .padding(horizontal = if (compact) 5.dp else 7.dp, vertical = if (compact) 1.dp else 2.dp),
             ) {
                 Text(
@@ -722,6 +740,7 @@ private fun DayCell(
                 )
             }
         }
+      }
     }
 }
 
@@ -739,7 +758,12 @@ private fun DayPanel(
     val listState = rememberLazyListState()
     LaunchedEffect(dayKey) { listState.scrollToItem(0) }
     KeepRowInView(listState, focusedRow)
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier
+            .ditheredBackground(NuvioGlass.Fill, CalendarPanelShape)
+            .border(1.dp, NuvioGlass.Edge, CalendarPanelShape)
+            .padding(start = 8.dp, end = 8.dp, top = 14.dp, bottom = 8.dp),
+    ) {
         DayHeading(dayKey, todayKey)
         if (groups.isEmpty()) {
             Text(
@@ -793,7 +817,7 @@ private fun DayHeading(dayKey: String, todayKey: String) {
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
         )
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(NuvioGlass.EdgeColor))
         Spacer(Modifier.height(6.dp))
     }
 }
@@ -824,18 +848,26 @@ private fun EntryRow(
     val hovered by hover.collectIsHoveredAsState()
     val accent = MaterialTheme.nuvio.colors.accent
 
+    val tokens = MaterialTheme.nuvio
+    val rowShape = RoundedCornerShape(12.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(
+            // Selected like a settings On/Off half: the accent seen through glass, a sheen across
+            // its top and a brighter accent edge. Hover lifts the glass a step.
+            .then(
                 when {
-                    isFocused -> accent.copy(alpha = 0.18f)
-                    hovered -> Color.White.copy(alpha = 0.05f)
-                    else -> Color.Transparent
+                    isFocused -> Modifier
+                        .background(tokens.colors.accentFill(0.32f), rowShape)
+                        .ditheredBackground(CalendarSelectedSheen, rowShape)
+                        .border(1.dp, tokens.colors.accentFill(0.85f), rowShape)
+                    hovered -> Modifier
+                        .ditheredBackground(CalendarGlassFillHover, rowShape)
+                        .border(1.dp, NuvioGlass.Edge, rowShape)
+                    else -> Modifier
                 },
             )
-            .then(if (isFocused) Modifier.border(2.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(14.dp)) else Modifier)
+            .clip(rowShape)
             .hoverable(hover)
             .pointerHoverIcon(PointerIcon.Hand)
             .clickable(onClick = onClick)
@@ -892,12 +924,11 @@ private fun EntryRow(
                     if (premiere) {
                         CalendarChip(
                             text = if (e.seasonNumber == 1) "Series premiere" else "Season premiere",
-                            background = accent.copy(alpha = 0.28f),
-                            content = Color.White,
+                            accent = true,
                         )
                     }
                     if (finale) {
-                        CalendarChip(text = "Finale", background = Color.White.copy(alpha = 0.1f), content = Color(0xFFD4D4D8))
+                        CalendarChip(text = "Finale", accent = false)
                     }
                     if (watched) {
                         Text(
@@ -913,17 +944,53 @@ private fun EntryRow(
     }
 }
 
+/** A small glass tag: tinted like a selected control when [accent] (premieres), plain glass otherwise. */
 @Composable
-private fun CalendarChip(text: String, background: Color, content: Color) {
+private fun CalendarChip(text: String, accent: Boolean) {
+    val tokens = MaterialTheme.nuvio
+    val shape = RoundedCornerShape(8.dp)
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(background)
+            .then(
+                if (accent) {
+                    Modifier
+                        .background(tokens.colors.accentFill(0.32f), shape)
+                        .border(1.dp, tokens.colors.accentFill(0.8f), shape)
+                } else {
+                    Modifier
+                        .ditheredBackground(NuvioGlass.Fill, shape)
+                        .border(1.dp, NuvioGlass.Edge, shape)
+                },
+            )
             .padding(horizontal = 8.dp, vertical = 3.dp),
     ) {
-        Text(text = text, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = content, maxLines = 1)
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (accent) Color.White else Color(0xFFD4D4D8),
+            maxLines = 1,
+        )
     }
 }
+
+/** The settings glass for the calendar's controls: fill, one-pixel edge, the settings radius. */
+private fun Modifier.calendarGlass(): Modifier = this
+    .ditheredBackground(NuvioGlass.Fill, NuvioGlass.Shape)
+    .border(1.dp, NuvioGlass.Edge, NuvioGlass.Shape)
+    .clip(NuvioGlass.Shape)
+
+private val CalendarPanelShape = RoundedCornerShape(14.dp)
+private val CalendarGlassFillHover: Brush = Brush.verticalGradient(
+    0f to Color.White.copy(alpha = 0.10f),
+    1f to Color.White.copy(alpha = 0.08f),
+)
+private val CalendarGlassEdgeHover = Color.White.copy(alpha = 0.22f)
+private val CalendarSelectedSheen: Brush = Brush.verticalGradient(
+    0f to Color.White.copy(alpha = 0.14f),
+    0.5f to Color.White.copy(alpha = 0.03f),
+    0.52f to Color.Transparent,
+)
 
 /** A show's episodes on one day (a whole season dropped at once) as one row, in airing order. */
 private fun groupedRows(entries: List<TraktCalendarEntry>): List<CalendarRowGroup> {

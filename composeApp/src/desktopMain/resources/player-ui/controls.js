@@ -206,6 +206,8 @@ const bottomOffsetLabel = document.getElementById("bottomOffsetLabel");
 const assStyleModeLabel = document.getElementById("assStyleModeLabel");
 const assStyleModeSelect = document.getElementById("assStyleModeSelect");
 const assScaleRow = document.getElementById("assScaleRow");
+const subtitleOutlineGroup = document.getElementById("subtitleOutlineGroup");
+const subtitleShadowGroup = document.getElementById("subtitleShadowGroup");
 const assScaleLabel = document.getElementById("assScaleLabel");
 const assScaleMinus = document.getElementById("assScaleMinus");
 const assScaleValue = document.getElementById("assScaleValue");
@@ -770,6 +772,7 @@ const setIconHref = (icon, href) => {
 
 const send = (type, value = 0) => {
   if ((type === "toggle" || type === "keyboardToggle") && !state.isLocked) notePlayToggleIntent();
+  predictSubtitleStyle(type, value);
   const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.player;
   if (bridge) {
     bridge.postMessage({ type, value });
@@ -777,6 +780,96 @@ const send = (type, value = 0) => {
   }
   const webViewBridge = window.chrome && window.chrome.webview;
   if (webViewBridge) webViewBridge.postMessage({ type, value });
+};
+
+// --- Optimistic subtitle style ------------------------------------------------------------------
+// The Style tab answers a click at once: the change is predicted here and drawn before Kotlin has
+// saved it and pushed the new state back, which made every step feel like it was waiting on
+// something (it was). Each predictor mirrors its handler in PlayerScreenRuntimeUi exactly (same
+// steps, clamps and alpha rules), so the confirmed state matches and simply replaces the guess.
+// Until it does, a push still carrying the old style keeps the guess rather than flicking the
+// control back; after OptimisticSubtitleStyleMs the pushed state wins regardless, so a change
+// Kotlin refused cannot stick on screen.
+const OptimisticSubtitleStyleMs = 1500;
+let optimisticSubtitleStyle = null;
+let optimisticSubtitleStyleUntil = 0;
+
+const clampInt = (value, min, max) => Math.max(min, Math.min(max, Math.round(value)));
+const argbWithAlpha = (color, alpha) => {
+  const parsed = parseArgb(color);
+  const hex = n => n.toString(16).padStart(2, "0").toUpperCase();
+  return `#${hex(clampInt(alpha, 0, 255))}${hex(parsed.red)}${hex(parsed.green)}${hex(parsed.blue)}`;
+};
+const swatchKeepingAlpha = (swatches, index, current) => {
+  const color = Array.isArray(swatches) ? swatches[index] : null;
+  return color ? argbWithAlpha(color, parseArgb(current).alpha) : null;
+};
+
+const SUBTITLE_STYLE_PREDICTORS = {
+  subtitleFontSizeDelta: (style, v) => ({ fontSizeSp: clampInt((Number(style.fontSizeSp) || 18) + v, 6, 40) }),
+  subtitleFontIndex: (style, v) => {
+    const fonts = Array.isArray(state.subtitleFontFamilies) ? state.subtitleFontFamilies : [];
+    return v >= 0 && v < fonts.length ? { fontFamily: fonts[v] } : null;
+  },
+  subtitleOutlineToggle: style => ({ outlineEnabled: !style.outlineEnabled }),
+  subtitleShadowToggle: style => ({ shadowEnabled: !style.shadowEnabled }),
+  subtitleBoldToggle: style => ({ bold: !style.bold }),
+  subtitleItalicToggle: style => ({ italic: !style.italic }),
+  subtitleOutlineWidthDelta: (style, v) => ({ outlineWidth: clampInt((Number(style.outlineWidth) || 0) + v, 0, 6) }),
+  subtitleShadowOffsetDelta: (style, v) => ({ shadowOffset: clampInt((Number(style.shadowOffset) || 0) + v, 0, 60) }),
+  subtitleBlurDelta: (style, v) => ({ blur: clampInt((Number(style.blur) || 0) + v, 0, 10) }),
+  subtitleBottomOffsetDelta: (style, v) => ({ bottomOffset: clampInt((Number(style.bottomOffset) || 0) + v, 0, 200) }),
+  subtitleAssScaleDelta: (style, v) => ({ assScalePercent: clampInt((Number(style.assScalePercent) || 100) + v, 50, 250) }),
+  subtitleAssStyleMode: (style, v) => {
+    const mode = assStyleModes()[v];
+    return mode ? { assStyleMode: mode.value } : null;
+  },
+  subtitleTextOpacity: (style, v) => ({ textColor: argbWithAlpha(style.textColor, (Math.max(0, Math.min(100, v)) / 100) * 255) }),
+  subtitleShadowOpacity: (style, v) => ({ shadowColor: argbWithAlpha(style.shadowColor, (Math.max(0, Math.min(100, v)) / 100) * 255) }),
+  subtitleTextColor: (style, v) => {
+    const color = swatchKeepingAlpha(state.subtitleColorSwatches, v, style.textColor);
+    return color ? { textColor: color } : null;
+  },
+  subtitleOutlineColor: (style, v) => {
+    const color = swatchKeepingAlpha(state.subtitleColorSwatches, v, style.outlineColor);
+    return color ? { outlineColor: color } : null;
+  },
+  subtitleShadowColor: (style, v) => {
+    const color = swatchKeepingAlpha(state.subtitleShadowColorSwatches, v, style.shadowColor);
+    return color ? { shadowColor: color } : null;
+  },
+  subtitleBackgroundColor: (style, v) => {
+    const swatches = state.subtitleBackgroundColorSwatches;
+    const color = Array.isArray(swatches) ? swatches[v] : null;
+    return color ? { backgroundColor: color } : null;
+  },
+};
+
+const predictSubtitleStyle = (type, value) => {
+  const predictor = SUBTITLE_STYLE_PREDICTORS[type];
+  if (!predictor || !state.subtitleStyle) return;
+  // Built on the latest guess, so quick repeated clicks stack instead of each starting over.
+  const base = optimisticSubtitleStyle && Date.now() < optimisticSubtitleStyleUntil
+    ? optimisticSubtitleStyle
+    : state.subtitleStyle;
+  const change = predictor(base, Number(value) || 0);
+  if (!change) return;
+  optimisticSubtitleStyle = { ...base, ...change };
+  optimisticSubtitleStyleUntil = Date.now() + OptimisticSubtitleStyleMs;
+  state.subtitleStyle = optimisticSubtitleStyle;
+  if (!subtitleStylePanel.hidden) renderSubtitleStylePanel();
+};
+
+// Called with each pushed state: keep the guess while the push has not caught up with it.
+const reconcileOptimisticSubtitleStyle = () => {
+  if (!optimisticSubtitleStyle) return;
+  const pushed = state.subtitleStyle;
+  const confirmed = pushed && JSON.stringify(pushed) === JSON.stringify(optimisticSubtitleStyle);
+  if (confirmed || Date.now() >= optimisticSubtitleStyleUntil) {
+    optimisticSubtitleStyle = null;
+    return;
+  }
+  state.subtitleStyle = optimisticSubtitleStyle;
 };
 
 const animationDelay = ms => new Promise(resolve => {
@@ -1055,6 +1148,7 @@ const setProgress = (positionMs, durationMs) => {
     ? Math.max(percent, Math.min(100, bufferedMs / durationMs * 100))
     : 0;
   seek.style.setProperty("--buffered", `${bufferedPercent}%`);
+  applySeekTrack(percent, bufferedPercent);
   if (pipSeek) {
     pipSeek.value = seek.value;
     pipSeek.style.setProperty("--progress", `${percent}%`);
@@ -1066,6 +1160,68 @@ const setProgress = (positionMs, durationMs) => {
   // Read through the same helper the click handler uses, so a countdown keeps counting down as
   // playback advances rather than freezing at whatever it read when the label was tapped.
   durationLabel.textContent = durationLabelText(durationMs, positionMs);
+};
+
+// --- Seek track ----------------------------------------------------------------------------------
+// The seek line is drawn as glass with the chapters cut into it, YouTube-style: a small gap at
+// each chapter start instead of a notch laid over the bar. Both live in the track's own background,
+// built here as two gradients with the gaps left transparent: the colours (played in the theme
+// fill, buffered and unplayed as lighter and darker see-through white) and a highlight band across
+// the top half. Kept in the background rather than a mask so the thumb is never sliced by a gap.
+let seekChapterPercents = [];
+let seekTrackProgress = 0;
+let seekTrackBuffered = 0;
+
+// Half a chapter gap: 3px wide at full scale, never under 2px in a small window.
+const SEEK_GAP_HALF = "max(1px, calc(var(--user-scale, 1) * 1.5px))";
+const SEEK_PLAYED = "var(--theme-timeline-fill)";
+const SEEK_BUFFERED = "rgba(255, 255, 255, .42)";
+const SEEK_UNPLAYED = "rgba(255, 255, 255, .20)";
+const SEEK_SHEEN_PLAYED = "rgba(255, 255, 255, .30)";
+const SEEK_SHEEN_REST = "rgba(255, 255, 255, .12)";
+
+const seekStop = (percent, offset) => {
+  if (!offset) return `${percent}%`;
+  return `calc(${percent}% ${offset < 0 ? "-" : "+"} ${SEEK_GAP_HALF})`;
+};
+
+const applySeekTrack = (progress, buffered) => {
+  seekTrackProgress = progress;
+  seekTrackBuffered = buffered;
+  // Every place the colour or the gap state changes, in order along the bar. A gap is a chapter
+  // start widened by SEEK_GAP_HALF either side; offset -1/+1 marks its two edges.
+  const events = [
+    { at: progress, offset: 0, kind: "edge" },
+    { at: buffered, offset: 0, kind: "edge" },
+  ];
+  seekChapterPercents.forEach(at => {
+    events.push({ at, offset: -1, kind: "gapStart" });
+    events.push({ at, offset: 1, kind: "gapEnd" });
+  });
+  events.push({ at: 100, offset: 0, kind: "end" });
+  events.sort((a, b) => a.at - b.at || a.offset - b.offset);
+
+  const colours = [];
+  const sheen = [];
+  let from = seekStop(0, 0);
+  let fromAt = 0;
+  let inGap = 0;
+  events.forEach(event => {
+    const to = seekStop(event.at, event.offset);
+    // The segment's colour is decided by where it sits against played/buffered, by its middle.
+    const middle = (fromAt + event.at) / 2;
+    const played = middle < progress;
+    const colour = inGap > 0 ? "transparent" : played ? SEEK_PLAYED : middle < buffered ? SEEK_BUFFERED : SEEK_UNPLAYED;
+    const shine = inGap > 0 ? "transparent" : played ? SEEK_SHEEN_PLAYED : SEEK_SHEEN_REST;
+    colours.push(`${colour} ${from} ${to}`);
+    sheen.push(`${shine} ${from} ${to}`);
+    if (event.kind === "gapStart") inGap += 1;
+    if (event.kind === "gapEnd") inGap = Math.max(0, inGap - 1);
+    from = to;
+    fromAt = event.at;
+  });
+  seek.style.setProperty("--seek-colours", `linear-gradient(to right, ${colours.join(", ")})`);
+  seek.style.setProperty("--seek-sheen", `linear-gradient(to right, ${sheen.join(", ")})`);
 };
 
 let chapterMarkersSignature = "";
@@ -1090,6 +1246,11 @@ const renderChapterMarkers = durationMs => {
   if (signature === chapterMarkersSignature) return;
   chapterMarkersSignature = signature;
   chapterMarkers.textContent = "";
+  // The same chapter starts, as gaps cut into the seek track.
+  seekChapterPercents = durationMs <= 0 ? [] : chapters
+    .filter(chapter => chapter.startTime > 0 && chapter.startTime * 1000 < durationMs)
+    .map(chapter => Math.max(0, Math.min(100, chapter.startTime * 1000 / durationMs * 100)));
+  applySeekTrack(seekTrackProgress, seekTrackBuffered);
   if (durationMs <= 0) return;
   chapters.forEach(chapter => {
     if (chapter.startTime <= 0 || chapter.startTime * 1000 >= durationMs) return;
@@ -3711,6 +3872,12 @@ const sameRgb = (left, right) => {
   return a.red === b.red && a.green === b.green && a.blue === b.blue;
 };
 
+// A swatch matches on colour and on whether it is see-through at all: "None" (fully transparent
+// black) and solid black share their RGB, and comparing RGB alone lit both in the Background row.
+// Partial alpha still matches, since Opacity and Intensity are set separately from the swatch.
+const sameSwatch = (left, right) =>
+  sameRgb(left, right) && (parseArgb(left).alpha === 0) === (parseArgb(right).alpha === 0);
+
 const renderSwatches = (container, selectedColor, eventType, availableColors = state.subtitleColorSwatches) => {
   container.textContent = "";
   const colors = Array.isArray(availableColors) ? availableColors : [];
@@ -3718,7 +3885,7 @@ const renderSwatches = (container, selectedColor, eventType, availableColors = s
     const parsed = parseArgb(color);
     const swatch = document.createElement("button");
     swatch.type = "button";
-    swatch.className = `swatch${parsed.alpha === 0 ? " transparent" : ""}${sameRgb(color, selectedColor) ? " selected" : ""}`;
+    swatch.className = `swatch${parsed.alpha === 0 ? " transparent" : ""}${sameSwatch(color, selectedColor) ? " selected" : ""}`;
     swatch.style.setProperty("--swatch", parsed.css);
     swatch.addEventListener("click", event => {
       event.stopPropagation();
@@ -3731,7 +3898,7 @@ const renderSwatches = (container, selectedColor, eventType, availableColors = s
   if (!field) return;
   // Trailing entry: a dashed "+" normally, and the colour itself once one is in use that no preset
   // covers - otherwise a custom colour would leave the whole row looking unselected.
-  const isCustom = !colors.some(color => sameRgb(color, selectedColor));
+  const isCustom = !colors.some(color => sameSwatch(color, selectedColor));
   const custom = document.createElement("button");
   custom.type = "button";
   custom.className = `swatch custom${isCustom ? " has-color selected" : ""}`;
@@ -3850,6 +4017,14 @@ const renderAssStyleRows = style => {
   }
 };
 
+// The Style tab's On/Off controls are switches: the label text stays for the strings, the state is
+// read from aria-checked, which the switch styling keys on.
+const setStyleSwitch = (button, on) => {
+  button.textContent = on ? (state.onLabel || "On") : (state.offLabel || "Off");
+  button.setAttribute("aria-checked", on ? "true" : "false");
+  button.classList.toggle("primary", on);
+};
+
 const renderSubtitleStylePanel = () => {
   const style = state.subtitleStyle || {};
   subtitleDelayLabel.textContent = state.subtitleDelayLabel || "Subtitle Delay";
@@ -3880,13 +4055,13 @@ const renderSubtitleStylePanel = () => {
     fontFamilySelect.value = String(selectedIndex >= 0 ? selectedIndex : 0);
   }
   outlineLabel.textContent = state.outlineLabel || "Outline";
-  outlineToggle.textContent = style.outlineEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
-  outlineToggle.classList.toggle("primary", Boolean(style.outlineEnabled));
+  setStyleSwitch(outlineToggle, Boolean(style.outlineEnabled));
+  if (subtitleOutlineGroup) subtitleOutlineGroup.classList.toggle("style-group-off", !style.outlineEnabled);
   outlineWidthLabel.textContent = state.outlineWidthLabel || "Outline Width";
   outlineWidthValue.textContent = String(Number(style.outlineWidth) || 0);
   shadowLabel.textContent = state.shadowLabel || "Shadow";
-  shadowToggle.textContent = style.shadowEnabled ? (state.onLabel || "On") : (state.offLabel || "Off");
-  shadowToggle.classList.toggle("primary", Boolean(style.shadowEnabled));
+  setStyleSwitch(shadowToggle, Boolean(style.shadowEnabled));
+  if (subtitleShadowGroup) subtitleShadowGroup.classList.toggle("style-group-off", !style.shadowEnabled);
   shadowOffsetLabel.textContent = state.shadowOffsetLabel || "Shadow Offset";
   shadowOffsetValue.textContent = (Number(style.shadowOffset) / 10).toFixed(1);
   shadowIntensityLabel.textContent = state.shadowIntensityLabel || "Shadow Intensity";
@@ -3895,11 +4070,9 @@ const renderSubtitleStylePanel = () => {
   blurLabel.textContent = state.blurLabel || "Blur";
   blurValue.textContent = String(Number(style.blur) || 0);
   boldLabel.textContent = state.boldLabel || "Bold";
-  boldToggle.textContent = style.bold ? (state.onLabel || "On") : (state.offLabel || "Off");
-  boldToggle.classList.toggle("primary", Boolean(style.bold));
+  setStyleSwitch(boldToggle, Boolean(style.bold));
   italicLabel.textContent = state.italicLabel || "Italic";
-  italicToggle.textContent = style.italic ? (state.onLabel || "On") : (state.offLabel || "Off");
-  italicToggle.classList.toggle("primary", Boolean(style.italic));
+  setStyleSwitch(italicToggle, Boolean(style.italic));
   bottomOffsetLabel.textContent = state.bottomOffsetLabel || "Bottom Offset";
   bottomOffsetValue.textContent = String(Number(style.bottomOffset) || 0);
   renderAssStyleRows(style);
@@ -4077,6 +4250,15 @@ const buildSourceRow = (item, onSelect) => {
     if (item.scoreRejected) scoreChip.title = "Below the minimum score";
     top.appendChild(scoreChip);
   }
+  // The addon name rides at the end of the title line, as a quiet glass tag, rather than taking a
+  // line of its own under the badges: on a long list that trailing line was a third of every row.
+  if (item.addonName) {
+    const addon = document.createElement("span");
+    addon.className = "stream-addon-inline";
+    addon.textContent = item.addonName;
+    addon.title = item.addonName;
+    top.appendChild(addon);
+  }
   let subtitle = null;
   if (item.subtitle) {
     subtitle = document.createElement("span");
@@ -4086,7 +4268,7 @@ const buildSourceRow = (item, onSelect) => {
 
   const badges = Array.isArray(item.badges) ? item.badges : [];
   let badgeRail = null;
-  if (badges.length > 0 || item.addonName) {
+  if (badges.length > 0) {
     badgeRail = document.createElement("span");
     badgeRail.className = "stream-badges";
     badges.forEach(badge => {
@@ -4115,12 +4297,6 @@ const buildSourceRow = (item, onSelect) => {
       }
       badgeRail.appendChild(badgeElement);
     });
-    if (item.addonName) {
-      const addon = document.createElement("span");
-      addon.className = "stream-addon-inline";
-      addon.textContent = item.addonName;
-      badgeRail.appendChild(addon);
-    }
   }
   if (badgeRail && state.sourceBadgePlacement === "top") copy.appendChild(badgeRail);
   copy.appendChild(top);
@@ -5247,6 +5423,8 @@ const debouncedBuffering = wanted => {
 // playerUpdate), which is the live edge. Within a few seconds of the edge counts as live; further
 // back, the badge shows the gap and jumps to the edge when clicked.
 const IPTV_LIVE_SLACK_MS = 10000;
+// Under IPTV_LIVE_SLACK_MS, so the badge reads LIVE after the jump.
+const IPTV_GO_LIVE_CUSHION_MS = 5000;
 let iptvWindowChannel = "";
 let iptvEarliestSeenMs = null;
 
@@ -5312,8 +5490,9 @@ const renderIptvLive = () => {
 iptvLiveBadge.addEventListener("click", event => {
   event.stopPropagation();
   if (!state.iptv || iptvBehindLiveMs() <= IPTV_LIVE_SLACK_MS) return;
-  // Just short of the received end, so mpv lands on data it has rather than waiting for more.
-  const target = Math.max(0, (Number(state.bufferedMs) || 0) - 2000);
+  // Short of the received end, so mpv lands on data it has and keeps a cushion: at the very edge
+  // any pause in the provider's delivery longer than the gap left shows up as a stall.
+  const target = Math.max(0, (Number(state.bufferedMs) || 0) - IPTV_GO_LIVE_CUSHION_MS);
   send("scrubFinish", target);
 });
 
@@ -7380,6 +7559,7 @@ window.playerControls = nextState => {
   const previousPartyPanelToken = Number(currentParty().openPanelToken) || 0;
   const previousOpenSourcesToken = Number(state.openSourcesToken) || 0;
   state = { ...state, ...nextState };
+  reconcileOptimisticSubtitleStyle();
   applyUiFontFamily(state.uiFontFamily);
   syncSeekrTrack();
   if (!state.seekThumbnailsEnabled) {

@@ -153,6 +153,9 @@ fun NuvioScreenHeader(
     topPadding: Dp? = null,
     onBack: (() -> Unit)? = null,
     titleTrailing: (@Composable () -> Unit)? = null,
+    // Off for a screen drawn over a backdrop (the settings sky), where the header's own band of
+    // page colour shows as a solid bar across the top.
+    opaqueBackground: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
@@ -164,7 +167,7 @@ fun NuvioScreenHeader(
         Row(
             modifier = Modifier
                 .matchParentSize()
-                .background(tokens.colors.background)
+                .then(if (opaqueBackground) Modifier.background(tokens.colors.background) else Modifier)
                 .nuvioConsumePointerEvents(),
         ) {}
         Row(

@@ -6964,3 +6964,637 @@ svg {
   /* Layered over each layout's own fill rather than replacing it. */
   background-image: linear-gradient(rgba(255, 255, 255, .07), rgba(255, 255, 255, .07));
 }
+
+/* ── Glass modals ────────────────────────────────────────────────────────────────────────────
+ * Every player panel in the desktop settings glass (core/ui/NuvioGlass.kt + NuvioModalDialog): a
+ * night-blue base, a faint white fill over it, a one-pixel light edge, and the accent seen through
+ * the glass on whatever is selected rather than painted on solid. The base is nearly opaque on
+ * purpose: the HUD WebView sits over the mpv surface, so backdrop-filter has no video to blur and a
+ * see-through panel just loses its text against the picture.
+ * Kept last and cosmetic only (fill, edge, radius, shadow, type colour): the sheet geometry, the
+ * episode-rail sizing and the scale rules above still decide where and how big everything is. The
+ * :is() lists carry ID specificity so they outrank the per-modal rules they restyle. */
+:root {
+  /* The night the glass sits on, tinted by the theme: the accent taken almost to black, as
+   * NuvioGlass.nightTint does in the app. With the default blue this is the night blue the panels
+   * always had; a red theme gets a deep oxblood instead of blue panels. --glass-deep is the darker
+   * end of the panel gradient. Anything laid over the picture itself (scrims, shading on stills)
+   * stays neutral black so the theme never colours the video. */
+  --glass-base: color-mix(in srgb, var(--theme-accent) 15%, #07080c);
+  --glass-deep: color-mix(in srgb, var(--theme-accent) 9%, #04050a);
+  --glass-night: linear-gradient(180deg,
+    color-mix(in srgb, var(--glass-base) 95%, transparent),
+    color-mix(in srgb, var(--glass-deep) 96%, transparent));
+  --glass-fill: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .045));
+  --glass-edge: rgba(255, 255, 255, .10);
+  --glass-edge-hover: rgba(255, 255, 255, .17);
+  --glass-hover: rgba(255, 255, 255, .055);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .04) 50%, rgba(255, 255, 255, 0));
+  --glass-tint: color-mix(in srgb, var(--theme-accent) 42%, transparent);
+  --glass-tint-soft: color-mix(in srgb, var(--theme-accent) 20%, transparent);
+  --glass-tint-edge: color-mix(in srgb, var(--theme-accent) 85%, transparent);
+  --glass-panel-radius: 20px;
+  --glass-radius: 10px;
+}
+
+/* Scrims dim the picture and nothing more: plain black, never the theme tint. Tinted, a red theme
+ * cast the whole picture red behind every panel; only the panels themselves take the theme. */
+.modal-layer { background-color: rgba(0, 0, 0, .52); }
+#audioModal,
+#subtitleModal { background: rgba(0, 0, 0, .44); }
+
+/* Panels */
+:is(#audioModal, #subtitleModal, #sourceModal, #episodesModal, #submitIntroModal, #subtitleHexModal,
+    #iptvChannelModal, #partyModal, #streamInfoModal, #p2pConsentModal) .track-panel {
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--glass-panel-radius);
+  background: var(--glass-fill), var(--glass-night);
+  color: #f5f7f8;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+
+/* No backdrop blur on any panel. The HUD WebView has nothing behind it but its own transparent
+ * page (the picture is a separate surface), so the blur changed nothing on screen while still
+ * costing a full-panel filter pass on every HUD repaint: the panels' lag in use. */
+:is(#audioModal, #subtitleModal, #sourceModal, #episodesModal, #submitIntroModal, #subtitleHexModal,
+    #iptvChannelModal, #partyModal, #streamInfoModal, #p2pConsentModal) :is(.track-panel, .track-panel.wide, .iptv-panel) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Sources and Live TV float as inset glass sheets on their edge instead of a slab glued to it. */
+#sourceModal .track-panel.wide,
+#iptvChannelModal .iptv-panel {
+  top: 12px;
+  bottom: 12px;
+  right: 12px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  box-shadow: -24px 0 70px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.player.source-notch-left #sourceModal .track-panel.wide,
+.player.source-notch-left #iptvChannelModal .iptv-panel {
+  right: auto;
+  left: 12px;
+  border: 1px solid var(--glass-edge);
+  box-shadow: 24px 0 70px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.source-resize-handle::after { background: rgba(255, 255, 255, .28); }
+
+/* Episodes is a shelf hanging from the top edge: glass with only its lower corners rounded. */
+#episodesModal .track-panel.wide {
+  border: 0;
+  border-bottom: 1px solid var(--glass-edge);
+  border-radius: 0 0 var(--glass-panel-radius) var(--glass-panel-radius);
+  background: var(--glass-fill), var(--glass-night);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .5);
+}
+
+/* An open panel sits on the pixel grid. The open animation's transform and will-change kept every
+ * panel on its own compositor layer after it had landed, and a centred layer lands on half pixels:
+ * the one-pixel glass edge came out crisp on some sides and faint and thin up others and round the
+ * corners. With no transform left the panel paints into the page and its edge snaps to whole
+ * pixels. The transition still runs from the offset start state to here. */
+.modal-layer.modal-visible .track-panel,
+#sourceModal.modal-visible .track-panel.wide,
+.player.source-notch-left #sourceModal.modal-visible .track-panel.wide,
+#iptvChannelModal.modal-visible .iptv-panel,
+.player.source-notch-left #iptvChannelModal.modal-visible .iptv-panel {
+  transform: none;
+  will-change: auto;
+}
+
+/* Headers */
+:is(#audioModal, #subtitleModal) .track-header,
+:is(#sourceModal, #episodesModal, #submitIntroModal, #subtitleHexModal, #iptvChannelModal, #partyModal,
+    #streamInfoModal, #p2pConsentModal) .track-header-row {
+  border-bottom: 1px solid var(--glass-edge);
+}
+#episodesModal .track-header-row { border-bottom: 0; }
+/* Bodies laid out flush under an undivided header; with the divider above they need their own
+ * breathing room, or the first section title sits on the line. */
+.modal-layer .track-header-row + :is(.stream-info-body, .intro-form, .consent-body, .party-body) {
+  padding-top: 18px;
+}
+
+/* Buttons and chips: settings glass, accent-tinted glass when primary or selected. */
+.modal-layer :is(.panel-button, .filter-chip, .capture-button, .round-step, .segment-button, .subtitle-tab),
+#subtitleModal :is(.panel-button, .round-step, .style-select),
+#sourceModal :is(.panel-button, .filter-chip) {
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--glass-radius);
+  background: var(--glass-fill);
+  color: rgba(255, 255, 255, .80);
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease, transform .12s ease;
+}
+.modal-layer :is(.panel-button, .filter-chip, .capture-button, .round-step, .segment-button, .subtitle-tab):hover:not(:disabled),
+#subtitleModal :is(.panel-button, .round-step, .style-select):hover:not(:disabled),
+#sourceModal :is(.panel-button, .filter-chip):hover:not(:disabled) {
+  border-color: var(--glass-edge-hover);
+  background: linear-gradient(var(--glass-hover), var(--glass-hover)), var(--glass-fill);
+  color: #fff;
+}
+.modal-layer :is(.panel-button.primary, .filter-chip.selected, .segment-button.selected, .subtitle-tab.selected),
+#sourceModal :is(.panel-button.primary, .filter-chip.selected),
+.modal-layer :is(.panel-button.primary, .filter-chip.selected, .segment-button.selected, .subtitle-tab.selected):hover:not(:disabled),
+#sourceModal :is(.panel-button.primary, .filter-chip.selected):hover:not(:disabled) {
+  border-color: var(--glass-tint-edge);
+  background: var(--glass-sheen), linear-gradient(var(--glass-tint), var(--glass-tint)), var(--glass-fill);
+  color: #fff;
+}
+.modal-layer .panel-button.sort-active { border-color: var(--glass-tint-edge); color: #fff; }
+.modal-layer .panel-button.danger { color: rgb(240, 128, 152); }
+.modal-layer .panel-button.primary.danger,
+.modal-layer .panel-button.primary.danger:hover:not(:disabled) {
+  border-color: rgba(226, 88, 118, .8);
+  background: var(--glass-sheen), linear-gradient(rgba(226, 88, 118, .38), rgba(226, 88, 118, .38)), var(--glass-fill);
+  color: #fff;
+}
+
+/* Filter rows read as a strip of pills under the header. */
+#sourceModal .filter-row {
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--glass-edge);
+}
+#sourceModal .filter-chip {
+  min-height: 32px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+/* Sort menu: a small glass card dropped from its button. */
+.source-sort-menu {
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  background: var(--glass-fill), var(--glass-night);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .55);
+}
+.source-sort-menu .filter-chip:not(.selected) { border-color: transparent; background: transparent; }
+.source-sort-divider { background: var(--glass-edge); }
+
+/* Rows (audio, subtitles, sources, channels): each one a pane of glass, lit on hover, and the
+ * selected one tinted with the accent and edged in it. */
+:is(#audioModal, #subtitleModal, #sourceModal, #iptvChannelModal) .track-row {
+  border: 1px solid transparent;
+  border-radius: var(--glass-radius);
+  background: transparent;
+  transition: background-color .12s ease, border-color .12s ease, transform .12s ease;
+}
+:is(#audioModal, #subtitleModal, #sourceModal, #iptvChannelModal) .track-row:hover:not(:disabled) {
+  border-color: var(--glass-edge);
+  background: var(--glass-hover);
+}
+:is(#audioModal, #subtitleModal, #sourceModal, #iptvChannelModal) .track-row.selected,
+:is(#audioModal, #subtitleModal, #sourceModal, #iptvChannelModal) .track-row.selected:hover:not(:disabled) {
+  border-color: var(--glass-tint-edge);
+  background: var(--glass-sheen), linear-gradient(var(--glass-tint-soft), var(--glass-tint-soft));
+  color: #fff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--theme-accent) 22%, transparent);
+}
+:is(#audioModal, #subtitleModal, #sourceModal, #iptvChannelModal) .track-row.keyboard-focused {
+  background: var(--glass-hover);
+  box-shadow: inset 0 0 0 2px var(--theme-focus);
+}
+:is(#audioModal, #subtitleModal, #sourceModal, #iptvChannelModal) .track-row.keyboard-focused.selected {
+  background: var(--glass-sheen), linear-gradient(var(--glass-tint-soft), var(--glass-tint-soft));
+  box-shadow: inset 0 0 0 2px var(--theme-focus);
+}
+#subtitleModal .subtitle-download-button { border-radius: 8px; }
+
+/* Sources: every result is a glass card, so a long list reads as separate options rather than
+ * one wall of text, and the playing one is unmistakable without a solid block of colour. */
+#sourceModal .track-list { padding: 14px 14px 18px; }
+#sourceModal .track-row.source-row {
+  padding: 14px 16px;
+  border-color: var(--glass-edge);
+  border-radius: 14px;
+  background: var(--glass-fill);
+}
+#sourceModal .track-row.source-row:hover:not(:disabled) {
+  border-color: var(--glass-edge-hover);
+  background: linear-gradient(var(--glass-hover), var(--glass-hover)), var(--glass-fill);
+}
+#sourceModal .track-row.source-row.selected,
+#sourceModal .track-row.source-row.selected:hover:not(:disabled) {
+  border-color: var(--glass-tint-edge);
+  background: var(--glass-sheen), linear-gradient(var(--glass-tint-soft), var(--glass-tint-soft)), var(--glass-fill);
+}
+#sourceModal .source-row .track-copy { gap: 6px; }
+#sourceModal .source-row .track-row-top { align-items: center; gap: 8px; }
+#sourceModal .source-row .stream-name {
+  color: #fff;
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+#sourceModal .source-row .stream-subtitle {
+  color: rgba(255, 255, 255, .70);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+#sourceModal .source-row.selected .stream-subtitle { color: rgba(255, 255, 255, .84); font-weight: 500; }
+/* The addon, end of the title line: a quiet glass tag rather than an italic line of its own. */
+#sourceModal .source-row .stream-addon-inline {
+  flex: 0 1 auto;
+  max-width: 46%;
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .05);
+  color: rgba(255, 255, 255, .66);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: .2px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#sourceModal .source-row.selected .stream-addon-inline {
+  border-color: color-mix(in srgb, var(--theme-accent) 45%, transparent);
+  color: rgba(255, 255, 255, .86);
+}
+#sourceModal .source-row .stream-badges { gap: 6px; margin-top: 2px; }
+.modal-layer .stream-badge {
+  border-color: var(--glass-edge);
+  border-radius: 6px;
+}
+/* Chips sized to sit on the 17px name line. */
+.modal-layer .status-chip,
+.modal-layer .score-chip {
+  padding: 3px 8px;
+  font-size: 10.5px;
+}
+.modal-layer .score-chip {
+  border: 1px solid var(--glass-edge);
+  background: rgba(255, 255, 255, .06);
+}
+.modal-layer .score-chip.positive {
+  border-color: color-mix(in srgb, var(--theme-accent) 40%, transparent);
+  background: color-mix(in srgb, var(--theme-accent) 16%, transparent);
+  color: color-mix(in srgb, var(--theme-accent) 55%, #fff);
+}
+.modal-layer .score-chip.negative { border-color: rgba(226, 88, 118, .38); }
+
+/* Episodes: season tabs become glass pills; cards get a glass edge and an accent ring for the one
+ * playing, and their chips sit in small dark glass over the still. */
+#episodesModal .filter-row {
+  gap: 8px;
+  padding-inline: clamp(10px, 1.1vw, 22px);
+}
+#episodesModal .filter-chip,
+#episodesModal .filter-chip:hover:not(:disabled) {
+  min-height: 0;
+  height: clamp(28px, 6vh, 34px);
+  padding: 0 clamp(10px, 1vw, 16px);
+  border-radius: 999px;
+  font-size: clamp(11px, min(1vw, 2.6vh), 13.5px);
+  font-weight: 700;
+  border: 1px solid var(--glass-edge);
+  background: var(--glass-fill);
+}
+#episodesModal .filter-chip:not(.selected) { color: rgba(255, 255, 255, .70); }
+#episodesModal .filter-chip:not(.selected):hover:not(:disabled) {
+  border-color: var(--glass-edge-hover);
+  background: linear-gradient(var(--glass-hover), var(--glass-hover)), var(--glass-fill);
+  color: #fff;
+}
+#episodesModal .filter-chip.selected,
+#episodesModal .filter-chip.selected:hover:not(:disabled) {
+  border-color: var(--glass-tint-edge);
+  background: var(--glass-sheen), linear-gradient(var(--glass-tint), var(--glass-tint)), var(--glass-fill);
+  color: #fff;
+}
+#episodesModal .track-row.episode-row {
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .04);
+}
+#episodesModal .track-row.episode-row::before {
+  /* A lit top edge over the still, the glass catching light. */
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, 0) 28%);
+}
+#episodesModal .track-row.episode-row::after {
+  /* Neutral shade over the still, for the same reason as the scrims: tinted, it coloured the picture. */
+  background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, .12) 36%, rgba(0, 0, 0, .62) 66%, rgba(0, 0, 0, .9) 100%);
+}
+#episodesModal .track-row.episode-row.selected,
+.poster-highlight-off #episodesModal .track-row.episode-row.selected.keyboard-focused,
+.poster-highlight-off #episodesModal .track-row.episode-row.selected:hover:not(:disabled),
+.poster-highlight-shine #episodesModal .track-row.episode-row.selected.keyboard-focused,
+.poster-highlight-shine #episodesModal .track-row.episode-row.selected:hover:not(:disabled) {
+  border-color: var(--glass-tint-edge);
+  box-shadow: inset 0 0 0 1px var(--glass-tint-edge), 0 0 0 1px color-mix(in srgb, var(--theme-accent) 30%, transparent), 0 12px 30px rgba(0, 0, 0, .35);
+}
+#episodesModal .episode-code,
+#episodesModal .episode-row-top .status-chip {
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(0, 0, 0, .62);
+  color: rgba(255, 255, 255, .92);
+}
+#episodesModal .track-row.episode-row.selected .episode-row-top .status-chip {
+  border-color: var(--glass-tint-edge);
+  background: var(--glass-sheen), linear-gradient(var(--glass-tint), var(--glass-tint)), rgba(0, 0, 0, .62);
+}
+
+#episodesModal .track-row.episode-row.selected .episode-overview { font-weight: 400; }
+/* The rail sits midway between the season pills and the shelf's bottom edge. The pills end a few
+ * pixels above their row, so the list carries a little less padding on top than below, and any
+ * height the cards don't fill is split evenly rather than all left underneath. */
+#episodesModal #episodeList {
+  align-items: center;
+  padding-top: clamp(7px, 1.05vh, 9px);
+  padding-bottom: clamp(9px, 1.4vh, 13px);
+}
+
+/* Episode → streams view (rows in the same shelf). */
+#episodesModal .track-row.stream-row:not(.episode-row) {
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  background: var(--glass-fill);
+}
+#episodesModal .track-row.stream-row:not(.episode-row):hover:not(:disabled) {
+  border-color: var(--glass-edge-hover);
+  background: linear-gradient(var(--glass-hover), var(--glass-hover)), var(--glass-fill);
+}
+
+/* Subtitle style panel and forms: rules in the glass edge tone, inputs as glass wells. */
+#subtitleModal :is(.style-row, .swatch-section, .auto-sync-card) { border-bottom-color: var(--glass-edge); }
+.modal-layer :is(input[type="text"], input[type="number"], input:not([type]), textarea) {
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--glass-radius);
+  background-color: rgba(0, 0, 0, .22);
+  color: #fff;
+}
+.modal-layer :is(input[type="text"], input[type="number"], input:not([type]), textarea):focus {
+  border-color: var(--theme-focus);
+  outline: none;
+}
+.modal-layer .track-empty { color: rgba(255, 255, 255, .58); }
+
+/* Scrollbars in the edge tone. */
+.modal-layer :is(.track-list, .style-panel) { scrollbar-color: rgba(255, 255, 255, .20) transparent; }
+.modal-layer :is(.track-list, .style-panel)::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .18); }
+.modal-layer :is(.track-list, .style-panel)::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .34); }
+
+/* ── Subtitle Style tab ──────────────────────────────────────────────────────────────────────
+ * The options in titled glass groups (Timing, Text, Outline, Shadow, Background, Position) instead
+ * of one long ruled list. Outline and Shadow carry their switch in
+ * the group heading and dim their body while off; every On/Off is a switch; steppers are one
+ * joined glass control. */
+#subtitleModal .style-panel {
+  /* One column width for every control, so steppers and dropdowns line up edge to edge and the
+   * switches can centre on the same column. */
+  --style-control-width: 156px;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 12px;
+  padding: 14px 18px 18px;
+}
+
+/* Groups */
+#subtitleModal .style-group {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 2px 14px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  background: var(--glass-fill);
+}
+#subtitleModal .style-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 8px 0 4px;
+}
+#subtitleModal .style-group-title {
+  color: rgba(255, 255, 255, .56);
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: .9px;
+  text-transform: uppercase;
+}
+#subtitleModal .style-group-body {
+  display: flex;
+  flex-direction: column;
+  transition: opacity .16s ease;
+}
+#subtitleModal .style-group-off .style-group-body {
+  opacity: .38;
+}
+
+/* Rows inside a group: hairlines between them, none under the last. */
+#subtitleModal .style-group :is(.style-row, .swatch-section, .auto-sync-card) {
+  min-height: 46px;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--glass-edge);
+  border-radius: 0;
+  background: transparent;
+}
+#subtitleModal .style-group-head + :is(.style-row, .swatch-section, .auto-sync-card),
+#subtitleModal .style-group-head + .style-group-body > :first-child {
+  border-top: 0;
+}
+#subtitleModal .style-group .swatch-section {
+  gap: 10px;
+  padding: 10px 0 12px;
+}
+#subtitleModal .style-group-head + .swatch-section { padding-top: 2px; }
+#subtitleModal .style-group .style-label {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, .86);
+  font-size: 13px;
+  font-weight: 600;
+}
+#subtitleModal .style-group .auto-sync-card { gap: 8px; }
+#subtitleModal .style-group .auto-sync-card > .style-row {
+  min-height: 0;
+  padding: 0;
+  border-top: 0;
+}
+#subtitleModal .style-row-inert { opacity: .38; }
+
+/* Steppers: one glass control, − value +, rather than two loose circles around a number. */
+#subtitleModal .style-group .stepper {
+  width: var(--style-control-width);
+  justify-content: space-between;
+  gap: 0;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--glass-radius);
+  background: var(--glass-fill);
+}
+#subtitleModal .style-group .stepper .round-step,
+#subtitleModal .style-group .stepper .round-step:hover:not(:disabled) {
+  width: 30px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, .78);
+  font-size: 17px;
+  font-weight: 600;
+}
+#subtitleModal .style-group .stepper .round-step:hover:not(:disabled) {
+  background: var(--glass-hover);
+  color: #fff;
+}
+#subtitleModal .style-group .stepper .round-step:disabled { opacity: .5; }
+#subtitleModal .style-group .stepper-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+#subtitleModal .style-group .style-select {
+  width: var(--style-control-width);
+  max-width: var(--style-control-width);
+  height: 34px;
+  border-radius: var(--glass-radius);
+  background-color: transparent;
+}
+#subtitleModal .style-group .style-select option { background: var(--glass-base); }
+#subtitleModal .style-group .icon-reset-button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+}
+
+/* Switches: a glass track with a knob, the accent through the glass when on. The On/Off text
+ * stays in the button for the strings and screen readers, but is not drawn. */
+#subtitleModal .style-switch {
+  position: relative;
+  flex: 0 0 auto;
+  /* Centred on the control column rather than flush right, so a switch sits under the middle of
+   * the stepper or dropdown above it. */
+  margin-right: calc((var(--style-control-width) - 44px) / 2);
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--glass-edge-hover);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+  color: transparent;
+  font-size: 0;
+  cursor: pointer;
+  transition: background-color .16s ease, border-color .16s ease;
+}
+#subtitleModal .style-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  transition: transform .18s var(--ease-out), background-color .16s ease;
+}
+#subtitleModal .style-switch[aria-checked="true"] {
+  border-color: var(--glass-tint-edge);
+  background: var(--glass-sheen), linear-gradient(var(--glass-tint), var(--glass-tint));
+}
+#subtitleModal .style-switch[aria-checked="true"]::after {
+  background: #fff;
+  transform: translateX(20px);
+}
+#subtitleModal .style-switch:hover { border-color: rgba(255, 255, 255, .26); }
+#subtitleModal .style-switch:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
+
+/* Swatches: a little larger, with a ring set off from the colour for the selected one. */
+#subtitleModal .style-group .swatch-row { gap: 9px; }
+#subtitleModal .style-group .swatch {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+#subtitleModal .style-group .swatch:hover:not(.selected) { transform: scale(1.08); }
+#subtitleModal .style-group .swatch.selected {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--glass-base), 0 0 0 4px var(--theme-accent);
+}
+#subtitleModal .style-group .swatch.custom:not(.has-color) {
+  border: 1px dashed rgba(255, 255, 255, .38);
+  background: transparent;
+  color: rgba(255, 255, 255, .7);
+}
+
+#subtitleModal .style-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+/* The delay's reset button sits outside the control column; the stepper gives up its width so the
+ * pair still ends on the column's right edge. */
+#subtitleModal .style-group .delay-controls { gap: 6px; }
+#subtitleModal .style-group .delay-controls .stepper { width: calc(var(--style-control-width) - 40px); }
+
+/* ── Glass right-click menu ──────────────────────────────────────────────────────────────────
+ * The player's context menu and its flyouts in the same settings glass as the panels: the night
+ * base under a faint white fill, a one-pixel light edge, rounded rows that light up as glass. */
+.context-menu,
+.context-menu-submenu {
+  border: 1px solid var(--glass-edge);
+  border-radius: 12px;
+  background: var(--glass-fill), var(--glass-night);
+  color: #f5f7f8;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.context-menu-item {
+  border-radius: 8px;
+  transition: background-color .1s ease;
+}
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
+  background: rgba(255, 255, 255, .08);
+  box-shadow: inset 0 0 0 1px var(--glass-edge);
+}
+.context-menu-item .context-menu-swatch { border-radius: 50%; }
+.context-menu-item .context-menu-state.is-on {
+  color: color-mix(in srgb, var(--theme-accent) 55%, #fff);
+}
+
+/* ── Glass seek line with chapter gaps ───────────────────────────────────────────────────────
+ * The track is drawn from two backgrounds built in controls.js (applySeekTrack): the colours, with
+ * a transparent gap cut at every chapter start the way YouTube marks chapters, and a highlight band
+ * across the top half with the same gaps, which is what makes the line read as glass rather than
+ * flat paint. The old gradient is the fallback until the first position arrives. The chapter notch
+ * elements are no longer drawn; the gaps replace them. */
+.scrub::-webkit-slider-runnable-track,
+.player.official-hud .scrub::-webkit-slider-runnable-track {
+  background:
+    var(--seek-sheen, none) left top / 100% 45% no-repeat,
+    var(--seek-colours, linear-gradient(
+      to right,
+      var(--theme-timeline-fill) 0 var(--progress, 0%),
+      var(--theme-timeline-buffered, rgba(255, 255, 255, .45)) var(--progress, 0%) var(--buffered, 0%),
+      var(--theme-timeline-track) var(--buffered, 0%) 100%));
+}
+.chapter-markers,
+.player.official-hud .chapter-markers { display: none; }

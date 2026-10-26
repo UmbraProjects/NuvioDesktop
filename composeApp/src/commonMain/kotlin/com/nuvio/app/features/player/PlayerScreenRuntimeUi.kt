@@ -358,14 +358,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         providerName = activeProviderName,
         pauseOverlayWatchingLabel = stringResource(Res.string.compose_player_youre_watching),
         pauseOverlayLogo = logo,
+        // The episode code, or nothing. Movies used to borrow this line for the provider name, which
+        // put the addon (AIOUmbra) on the pause card exactly when "Show source while paused" was
+        // off; the provider now only ever appears in the source row that setting controls.
         pauseOverlayEpisodeInfo = if (seasonNumber != null && episodeNumber != null) {
             stringResource(Res.string.compose_player_episode_code_full, seasonNumber, episodeNumber)
-        } else if (playerSettingsUiState.desktopPauseOverlaySourceEnabled) {
-            // Movies borrow this line for the provider name; the source row now says it better, so
-            // don't print it twice.
-            ""
         } else {
-            activeProviderName
+            ""
         },
         pauseOverlayEpisodeTitle = activeEpisodeTitle.orEmpty(),
         // Only a real synopsis belongs here — the raw stream/release name (activeStreamSubtitle)
@@ -1408,59 +1407,61 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             val cue = playerControlsNearestSubtitleCues().getOrNull(value.toInt()) ?: return true
             applySubtitleAutoSyncCue(cue)
         }
+        // The style events below build on the stored style and apply through updateSubtitleStyle,
+        // never on the last-composed one: see liveSubtitleStyle.
         "subtitleFontSizeDelta" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(fontSizeSp = (subtitleStyle.fontSizeSp + value.toInt()).coerceIn(6, 40)),
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(fontSizeSp = (liveSubtitleStyle.fontSizeSp + value.toInt()).coerceIn(6, 40)),
             )
         }
         "subtitleFontDelta" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(fontFamily = cycleSubtitleFontFamily(subtitleStyle.fontFamily, value.toInt())),
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(fontFamily = cycleSubtitleFontFamily(liveSubtitleStyle.fontFamily, value.toInt())),
             )
         }
         "subtitleFontIndex" -> {
             availableSubtitleFontFamilies().getOrNull(value.toInt())?.let { family ->
-                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(fontFamily = family))
+                updateSubtitleStyle(liveSubtitleStyle.copy(fontFamily = family))
             }
         }
         "subtitleOutlineToggle" -> {
-            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineEnabled = !subtitleStyle.outlineEnabled))
+            updateSubtitleStyle(liveSubtitleStyle.copy(outlineEnabled = !liveSubtitleStyle.outlineEnabled))
         }
         "subtitleShadowToggle" -> {
-            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowEnabled = !subtitleStyle.shadowEnabled))
+            updateSubtitleStyle(liveSubtitleStyle.copy(shadowEnabled = !liveSubtitleStyle.shadowEnabled))
         }
         "subtitleShadowOffsetDelta" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(
-                    shadowOffset = (subtitleStyle.shadowOffset + value.toInt())
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(
+                    shadowOffset = (liveSubtitleStyle.shadowOffset + value.toInt())
                         .coerceIn(SUBTITLE_SHADOW_OFFSET_MIN, SUBTITLE_SHADOW_OFFSET_MAX),
                 ),
             )
         }
         "subtitleShadowOpacity" -> {
             val alpha = (value.toFloat() / 100f).coerceIn(0f, 1f)
-            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(shadowColor = subtitleStyle.shadowColor.copy(alpha = alpha)))
+            updateSubtitleStyle(liveSubtitleStyle.copy(shadowColor = liveSubtitleStyle.shadowColor.copy(alpha = alpha)))
         }
         "subtitleOutlineWidthDelta" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(
-                    outlineWidth = (subtitleStyle.outlineWidth + value.toInt())
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(
+                    outlineWidth = (liveSubtitleStyle.outlineWidth + value.toInt())
                         .coerceIn(SUBTITLE_OUTLINE_WIDTH_MIN, SUBTITLE_OUTLINE_WIDTH_MAX),
                 ),
             )
         }
         "subtitleBlurDelta" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(
-                    blur = (subtitleStyle.blur + value.toInt()).coerceIn(SUBTITLE_BLUR_MIN, SUBTITLE_BLUR_MAX),
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(
+                    blur = (liveSubtitleStyle.blur + value.toInt()).coerceIn(SUBTITLE_BLUR_MIN, SUBTITLE_BLUR_MAX),
                 ),
             )
         }
         "subtitleBoldToggle" -> {
-            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(bold = !subtitleStyle.bold))
+            updateSubtitleStyle(liveSubtitleStyle.copy(bold = !liveSubtitleStyle.bold))
         }
         "subtitleItalicToggle" -> {
-            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(italic = !subtitleStyle.italic))
+            updateSubtitleStyle(liveSubtitleStyle.copy(italic = !liveSubtitleStyle.italic))
         }
         // ASS/SSA tracks: how much of the styling above reaches them, and their own size factor.
         //
@@ -1470,71 +1471,71 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         // the user had to cycle blind and read the result somewhere else.
         "subtitleAssStyleMode" -> {
             SubtitleAssStyleMode.entries.getOrNull(value.toInt())?.let { mode ->
-                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(assStyleMode = mode))
+                updateSubtitleStyle(liveSubtitleStyle.copy(assStyleMode = mode))
             }
         }
         "subtitleAssScaleDelta" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(
-                    assScalePercent = (subtitleStyle.assScalePercent + value.toInt())
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(
+                    assScalePercent = (liveSubtitleStyle.assScalePercent + value.toInt())
                         .coerceIn(SUBTITLE_ASS_SCALE_MIN, SUBTITLE_ASS_SCALE_MAX),
                 ),
             )
         }
         "subtitleBottomOffsetDelta" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(bottomOffset = (subtitleStyle.bottomOffset + value.toInt()).coerceIn(0, 200)),
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(bottomOffset = (liveSubtitleStyle.bottomOffset + value.toInt()).coerceIn(0, 200)),
             )
         }
         "subtitleTextColor" -> {
             SubtitleColorSwatches.getOrNull(value.toInt())?.let { color ->
-                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(textColor = color.copy(alpha = subtitleStyle.textColor.alpha)))
+                updateSubtitleStyle(liveSubtitleStyle.copy(textColor = color.copy(alpha = liveSubtitleStyle.textColor.alpha)))
             }
         }
         "subtitleOutlineColor" -> {
             SubtitleColorSwatches.getOrNull(value.toInt())?.let { color ->
-                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(outlineColor = color.copy(alpha = subtitleStyle.outlineColor.alpha)))
+                updateSubtitleStyle(liveSubtitleStyle.copy(outlineColor = color.copy(alpha = liveSubtitleStyle.outlineColor.alpha)))
             }
         }
         "subtitleBackgroundColor" -> {
             SubtitleBackgroundColorSwatches.getOrNull(value.toInt())?.let { color ->
-                PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(backgroundColor = color))
+                updateSubtitleStyle(liveSubtitleStyle.copy(backgroundColor = color))
             }
         }
         "subtitleShadowColor" -> {
             SubtitleShadowColorSwatches.getOrNull(value.toInt())?.let { color ->
-                PlayerSettingsRepository.setSubtitleStyle(
-                    subtitleStyle.copy(shadowColor = color.copy(alpha = subtitleStyle.shadowColor.alpha)),
+                updateSubtitleStyle(
+                    liveSubtitleStyle.copy(shadowColor = color.copy(alpha = liveSubtitleStyle.shadowColor.alpha)),
                 )
             }
         }
         // Custom colours from the HUD's hex prompt. It resolves alpha before sending (it knows the
         // current style and the opacity steppers), so these apply the packed value as it arrives.
         "subtitleTextColorArgb" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(textColor = subtitleColorFromArgb(value)),
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(textColor = subtitleColorFromArgb(value)),
             )
         }
         "subtitleOutlineColorArgb" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(outlineColor = subtitleColorFromArgb(value)),
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(outlineColor = subtitleColorFromArgb(value)),
             )
         }
         "subtitleBackgroundColorArgb" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(backgroundColor = subtitleColorFromArgb(value)),
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(backgroundColor = subtitleColorFromArgb(value)),
             )
         }
         "subtitleShadowColorArgb" -> {
-            PlayerSettingsRepository.setSubtitleStyle(
-                subtitleStyle.copy(shadowColor = subtitleColorFromArgb(value)),
+            updateSubtitleStyle(
+                liveSubtitleStyle.copy(shadowColor = subtitleColorFromArgb(value)),
             )
         }
         "subtitleTextOpacity" -> {
             val alpha = (value.toFloat() / 100f).coerceIn(0f, 1f)
-            PlayerSettingsRepository.setSubtitleStyle(subtitleStyle.copy(textColor = subtitleStyle.textColor.copy(alpha = alpha)))
+            updateSubtitleStyle(liveSubtitleStyle.copy(textColor = liveSubtitleStyle.textColor.copy(alpha = alpha)))
         }
-        "subtitleStyleReset" -> PlayerSettingsRepository.setSubtitleStyle(SubtitleStyleState.DEFAULT)
+        "subtitleStyleReset" -> updateSubtitleStyle(SubtitleStyleState.DEFAULT)
         "parentalGuideComplete" -> {
             showParentalGuide = false
         }

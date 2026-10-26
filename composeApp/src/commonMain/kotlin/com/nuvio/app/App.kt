@@ -1,6 +1,10 @@
 package com.nuvio.app
 
 import androidx.compose.ui.draw.clip
+import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.accentFill
+import com.nuvio.app.core.ui.ditheredBackground
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -160,8 +164,6 @@ import com.nuvio.app.core.sync.SyncManager
 import com.nuvio.app.core.ui.ImageCacheSettingsRepository
 import com.nuvio.app.core.ui.KeptAliveLayer
 import com.nuvio.app.core.ui.rememberChildLifecycleOwner
-import com.nuvio.app.core.ui.nuvioLaunchBackdrop
-import com.nuvio.app.core.ui.rememberNuvioLaunchDrift
 import com.nuvio.app.core.ui.NuvioNavigationBar
 import com.nuvio.app.core.ui.NuvioContinueWatchingActionSheet
 import com.nuvio.app.core.ui.NuvioPosterActionSheet
@@ -336,6 +338,7 @@ import com.nuvio.app.features.settings.ApiKeysOnboardingHost
 import com.nuvio.app.features.setup.FirstRunWizardController
 import com.nuvio.app.features.setup.FirstRunWizardHost
 import com.nuvio.app.features.settings.SettingsScreen
+import com.nuvio.app.features.settings.settingsSkyBackground
 import com.nuvio.app.features.settings.HomescreenSettingsScreen
 import com.nuvio.app.features.settings.MetaScreenSettingsScreen
 import com.nuvio.app.features.settings.ContinueWatchingSettingsScreen
@@ -6206,13 +6209,13 @@ private fun TabletFloatingTopBar(
         onSearchSubmit(entry.query)
     }
 
-    // Styled after the Nuvio tracker's nav: a dark glass pill with a hairline edge, pill-shaped
-    // items inside it that lift on hover, and a lighter fill on the page you're on.
-    val dividerColor = NavBarEdge
-    val activeQuadColor = Color.White.copy(alpha = 0.14f)
+    // The settings glass: a night-blue pill with the cards' one-pixel edge, pill-shaped items that
+    // lift on hover, and the page you are on lit with the accent seen through the glass, the way a
+    // selected On/Off half is.
+    val dividerColor = NuvioGlass.EdgeColor
     val activeIconTint = Color.White
     val inactiveIconTint = Color.White.copy(alpha = 0.55f)
-    val floatingSearchSurfaceColor = NavBarFill
+    val floatingSearchSurfaceColor = NuvioGlass.night(tokens.colors.background, tokens.colors.accent).copy(alpha = NavBarGlassOpacity)
 
     BoxWithConstraints(
         modifier = modifier
@@ -6395,7 +6398,6 @@ private fun TabletFloatingTopBar(
                     ) {
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Home,
-                            activeColor = activeQuadColor,
                             onClick = { onTabSelected(AppScreenTab.Home) },
                         ) {
                             Icon(
@@ -6407,7 +6409,6 @@ private fun TabletFloatingTopBar(
                         }
                         NavQuadrant(
                             selected = isSearchActive,
-                            activeColor = activeQuadColor,
                             onClick = onSearchOverlayOpen,
                         ) {
                             Icon(
@@ -6420,7 +6421,6 @@ private fun TabletFloatingTopBar(
                         if (discoverTabVisible) {
                             NavQuadrant(
                                 selected = selectedTab == AppScreenTab.Discover,
-                                activeColor = activeQuadColor,
                                 onClick = { onTabSelected(AppScreenTab.Discover) },
                             ) {
                                 Icon(
@@ -6438,7 +6438,6 @@ private fun TabletFloatingTopBar(
                         if (liveTvTabVisible) {
                             NavQuadrant(
                                 selected = selectedTab == AppScreenTab.LiveTv,
-                                activeColor = activeQuadColor,
                                 onClick = { onTabSelected(AppScreenTab.LiveTv) },
                             ) {
                                 Icon(
@@ -6451,7 +6450,6 @@ private fun TabletFloatingTopBar(
                         }
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Library,
-                            activeColor = activeQuadColor,
                             onClick = { onTabSelected(AppScreenTab.Library) },
                             onSecondaryClick = { libraryMenuVisible = true },
                         ) {
@@ -6464,7 +6462,6 @@ private fun TabletFloatingTopBar(
                         }
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Settings,
-                            activeColor = activeQuadColor,
                             onClick = { onTabSelected(AppScreenTab.Settings) },
                         ) {
                             Box {
@@ -6589,7 +6586,6 @@ private fun TabletFloatingTopBar(
 @Composable
 private fun RowScope.NavQuadrant(
     selected: Boolean,
-    activeColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onSecondaryClick: (() -> Unit)? = null,
@@ -6598,16 +6594,24 @@ private fun RowScope.NavQuadrant(
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val shape = androidx.compose.foundation.shape.CircleShape
-    val fill = when {
-        selected -> activeColor
-        hovered -> Color.White.copy(alpha = 0.07f)
-        else -> Color.Transparent
-    }
+    val tokens = MaterialTheme.nuvio
     Box(
         modifier = modifier
             .weight(1f)
             .height(NavBarItemHeight)
-            .background(fill, shape)
+            .then(
+                when {
+                    // Accent glass: a translucent tint (a brush, so gradient accents keep both stops),
+                    // a sheen across the top half and a brighter accent edge.
+                    selected -> Modifier
+                        .background(tokens.colors.accentFill(NavSelectedTintAlpha), shape)
+                        .ditheredBackground(NavSelectedSheen, shape)
+                        .border(1.dp, tokens.colors.accentFill(NavSelectedEdgeAlpha), shape)
+                    hovered -> Modifier.background(Color.White.copy(alpha = 0.07f), shape)
+                    else -> Modifier
+                },
+            )
+            // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
             .then(if (onSecondaryClick != null) Modifier.secondaryClick(onSecondaryClick) else Modifier)
             .hoverable(interaction)
@@ -6622,9 +6626,15 @@ private fun RowScope.NavQuadrant(
     }
 }
 
-/** The nav bar's glass: a dark translucent fill and a hairline edge, after the Nuvio tracker. */
-private val NavBarFill = Color(0xFF1C1C21).copy(alpha = 0.78f)
-private val NavBarEdge = Color.White.copy(alpha = 0.1f)
+/** How much of the night-blue glass base shows; the rest is the page behind it. */
+private const val NavBarGlassOpacity = 0.84f
+private const val NavSelectedTintAlpha = 0.42f
+private const val NavSelectedEdgeAlpha = 0.85f
+private val NavSelectedSheen = Brush.verticalGradient(
+    0f to Color.White.copy(alpha = 0.16f),
+    0.5f to Color.White.copy(alpha = 0.04f),
+    0.52f to Color.Transparent,
+)
 private val NavBarHeight = 48.dp
 private val NavBarItemHeight = 40.dp
 
@@ -6732,11 +6742,12 @@ private fun AppLaunchOverlay(
     modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
-    val drift = rememberNuvioLaunchDrift()
     LaunchOverlayFrameGapProbe()
     Box(
         modifier = modifier
-            .nuvioLaunchBackdrop(tokens.colors.background, drift)
+            // The settings sky: the same night-blue wash and two faint glows the settings pages sit
+            // on, so the app opens on the backdrop its glass is designed against.
+            .settingsSkyBackground(tokens.colors.background, tokens.colors.accent)
             .zIndex(NuvioTokens.Z.dialog),
         contentAlignment = Alignment.Center,
     ) {
@@ -6751,21 +6762,27 @@ private fun AppLaunchOverlay(
                 contentDescription = stringResource(Res.string.app_brand_name),
                 modifier = Modifier
                     .fillMaxWidth(0.48f)
-                    .height(30.dp),
+                    .height(LaunchWordmarkHeight),
                 contentScale = ContentScale.Fit,
             )
-            Spacer(modifier = Modifier.height(NuvioTokens.Space.s12))
+            Spacer(modifier = Modifier.height(NuvioTokens.Space.s16))
             Text(
                 text = "HOME THEATRE",
-                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 4.sp),
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontSize = 15.sp,
+                    letterSpacing = LaunchTaglineTracking,
+                ),
                 color = tokens.colors.textMuted,
                 // Tracking trails the last letter too; pad the start by the same amount so the
                 // line sits centred under the wordmark instead of half a letter to its left.
-                modifier = Modifier.padding(start = 4.dp),
+                modifier = Modifier.padding(start = 6.dp),
             )
         }
     }
 }
+
+private val LaunchWordmarkHeight = 44.dp
+private val LaunchTaglineTracking = 6.sp
 
 /** Upper bound on waiting for the outgoing player to dispose before opening the next entry. */
 private const val PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS = 3_000L

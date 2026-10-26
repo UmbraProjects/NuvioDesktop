@@ -29,7 +29,14 @@ internal object NativePlayerBridge {
 
     init {
         loadNativeLibrary()
+        // Before any other call, so the player logs and shader cache land in the same data folder as
+        // nuvio.log (beside the app when portable) rather than the bridge's %LOCALAPPDATA% default.
+        runCatching { setDataDirectory(DesktopStorage.rootDir.toAbsolutePath().toString()) }
+            .onFailure { log.w { "Native bridge data folder not set: ${it.message}" } }
     }
+
+    /** Where the bridge keeps `logs\` and `shader-cache\`: [DesktopStorage.rootDir]. */
+    private external fun setDataDirectory(directory: String)
 
     external fun create(
         hostViewPtr: Long,

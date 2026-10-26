@@ -57,6 +57,21 @@ class PlayerTrackSelectionTest {
     }
 
     @Test
+    fun `untagged built-in tracks stay listed under the preferred-only filter`() {
+        // mpv's EIA-608 closed-caption track carries no language; it could be any of them.
+        val tracks = englishSpanishTracks + listOf(
+            SubtitleTrack(index = 3, id = "4", label = "EIA-608", language = null),
+            SubtitleTrack(index = 4, id = "5", label = "Subtitle", language = "und"),
+        )
+        val result = filterBuiltInSubtitlesForSettings(
+            tracks = tracks,
+            settings = settings(showOnlyPreferred = true, preferred = "en"),
+            selectedIndex = -1,
+        )
+        assertEquals(listOf(0, 3, 4), result.map { it.index })
+    }
+
+    @Test
     fun `the selected built-in track is never hidden by the preferred-only filter`() {
         val result = filterBuiltInSubtitlesForSettings(
             tracks = englishSpanishTracks,

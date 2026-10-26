@@ -1,5 +1,6 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.core.ui.NuvioGlassMenuSurface
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -225,14 +226,7 @@ private fun StreamActionsMenu(
     onExternal: () -> Unit,
     onCast: (() -> Unit)?,
 ) {
-    Surface(
-        modifier = Modifier.width(244.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = Color(0xFA18191D),
-        contentColor = Color.White,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-        shadowElevation = 16.dp,
-    ) {
+    NuvioGlassMenuSurface(modifier = Modifier.width(244.dp)) {
         Column(modifier = Modifier.padding(6.dp)) {
             StreamActionRow(copyLabel, Icons.Rounded.ContentCopy, onCopy)
             if (onDownload != null) {

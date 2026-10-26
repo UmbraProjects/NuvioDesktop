@@ -549,7 +549,7 @@ private fun SettingsSliderValueBubble(label: String, pointerX: Float) {
         Text(
             text = label,
             modifier = Modifier
-                .background(NuvioGlass.night(tokens.colors.background), NuvioGlass.Shape)
+                .background(NuvioGlass.night(tokens.colors.background, tokens.colors.accent), NuvioGlass.Shape)
                 .ditheredBackground(NuvioGlass.Fill, NuvioGlass.Shape)
                 .border(1.dp, NuvioGlass.Edge, NuvioGlass.Shape)
                 .padding(horizontal = 10.dp, vertical = 5.dp),
@@ -1340,6 +1340,41 @@ internal fun SettingsGlassButton(
 
 /** Height of [SettingsGlassButton], level with the On/Off selectors and dropdowns. */
 private val SettingsGlassButtonHeight = 38.dp
+
+/**
+ * An icon drawn as the settings glass rather than flat paint: the accent seen through the glyph
+ * (translucent, like the tint on a selected On/Off half) with a light sheen across its top half. For the bare icons in the
+ * settings top bar, so they read as made of the same material as the buttons below them without a
+ * tile behind each. [lit] false is the glass with no accent in it, for a toggle that is off.
+ *
+ * The glyph is only a mask here: whatever tint the [androidx.compose.material3.Icon] has is
+ * replaced, so pass any opaque colour.
+ */
+@Composable
+internal fun Modifier.settingsGlassGlyph(lit: Boolean = true): Modifier {
+    val tokens = MaterialTheme.nuvio
+    val body: Brush = if (lit) tokens.colors.accentFill else SolidColor(tokens.colors.textMuted)
+    val bodyAlpha = if (lit) GlassGlyphLitAlpha else GlassGlyphUnlitAlpha
+    return this
+        .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+        .drawWithContent {
+            drawContent()
+            // The glyph is the mask: recolour it as tinted glass, then lay the sheen over it alone.
+            drawRect(body, alpha = bodyAlpha, blendMode = BlendMode.SrcIn)
+            drawRect(GlassGlyphSheen, blendMode = BlendMode.SrcAtop)
+        }
+}
+
+private const val GlassGlyphLitAlpha = 0.78f
+private const val GlassGlyphUnlitAlpha = 0.62f
+// A bright catch-light along the top of the glyph that falls off fast, then a soft wash down to
+// the middle where it stops: the glass buttons' sheen, steepened so it reads at icon size.
+private val GlassGlyphSheen = Brush.verticalGradient(
+    0f to Color.White.copy(alpha = 0.62f),
+    0.16f to Color.White.copy(alpha = 0.30f),
+    0.5f to Color.White.copy(alpha = 0.06f),
+    0.52f to Color.White.copy(alpha = 0f),
+)
 
 /**
  * A row whose control is an action: title and description on the left, a [SettingsGlassButton]

@@ -114,9 +114,14 @@ internal object IptvProxyRelay {
             // mpv follows redirects itself (back through this relay), and must see them to do so.
             .followRedirects(false)
             .followSslRedirects(false)
+            .apply {
+                // mpv sends every request here once a proxy is set, the local subtitle server's too;
+                // the proxy's far end cannot reach this machine's loopback, so those go direct.
+                if (IptvHlsSubtitleServer.isLocalUrl(request.url)) proxy(java.net.Proxy.NO_PROXY)
+            }
             .build()
         val response = try {
-            client.newCall(request).execute()
+            withRelayConnectRetry("upstream ${request.url.host}") { client.newCall(request).execute() }
         } catch (e: IOException) {
             log.w { "relay upstream failed: ${describeIptvFailure(e)}" }
             output.writeHead(502, "Bad Gateway")
@@ -124,9 +129,26 @@ internal object IptvProxyRelay {
         }
         response.use {
             val headers = response.headers.filter { (name, _) -> name.lowercase() !in HopByHop }
-            output.writeHead(response.code, response.message.ifBlank { "OK" }, headers)
-            if (head.method.equals("HEAD", ignoreCase = true)) return
-            response.body?.byteStream()?.use { body -> copy(body, output) }
+            val isHead = head.method.equals("HEAD", ignoreCase = true)
+            // OkHttp has already decoded a chunked body. With no length to pass on, chunk it again:
+            // FFmpeg reads a body that just runs to the connection's close as cut short and fetches
+            // it again forever (the local subtitle server streams re-timed segments this way).
+            val rechunk = !isHead && response.header("Content-Length") == null && response.body != null
+            output.writeHead(
+                response.code,
+                response.message.ifBlank { "OK" },
+                if (rechunk) headers + ("Transfer-Encoding" to "chunked") else headers,
+            )
+            if (isHead) return
+            response.body?.byteStream()?.use { body ->
+                if (rechunk) {
+                    val chunked = ChunkedOutput(output)
+                    copy(body, chunked)
+                    chunked.close() // only after a complete copy: a cut-short body stays unterminated
+                } else {
+                    copy(body, output)
+                }
+            }
         }
     }
 
@@ -135,7 +157,7 @@ internal object IptvProxyRelay {
         val host = head.target.substringBeforeLast(':')
         val port = head.target.substringAfterLast(':').toIntOrNull() ?: 443
         val upstream = try {
-            openUpstream(host, port)
+            withRelayConnectRetry("tunnel $host") { openUpstream(host, port) }
         } catch (e: IOException) {
             log.w { "relay tunnel failed: ${describeIptvFailure(e)}" }
             clientOut.writeHead(502, "Bad Gateway")
@@ -152,6 +174,14 @@ internal object IptvProxyRelay {
             toUpstream.join(1_000)
         }
     }
+
+    private fun <T> withRelayConnectRetry(what: String, block: () -> T): T =
+        retryRelayConnect(
+            block = block,
+            onRescued = { attempt, first ->
+                log.i { "relay $what succeeded on retry $attempt after: ${describeIptvFailure(first)}" }
+            },
+        )
 
     private fun openUpstream(host: String, port: Int): Socket {
         val proxy = IptvRepository.settings.value.proxy
@@ -239,3 +269,49 @@ internal object IptvProxyRelay {
         "te", "trailer", "transfer-encoding", "upgrade", "host",
     )
 }
+
+/** Extra attempts after a failed upstream connect, and the pause before the first (doubling after). */
+internal const val RELAY_CONNECT_RETRIES = 2
+private const val RELAY_CONNECT_RETRY_DELAY_MS = 250L
+
+/**
+ * Runs [block], an upstream connect, again after a failure that a fresh attempt may not repeat. Some
+ * proxies fail a new connection now and then and take the very next one (a SOCKS server answering
+ * with a malformed reply, a reset): a browser shows an error that F5 clears. Over HLS each segment,
+ * key and playlist refresh is a new connection, so without this one such failure drops a segment or
+ * fails the channel. Safe because nothing has gone back to mpv yet.
+ *
+ * Not retried: a timeout, which has already cost the whole connect timeout and would only make mpv
+ * wait past its own, and the proxy refusing our credentials (407), which the next try repeats.
+ * [onRescued] hears the attempt that worked and the first failure.
+ */
+internal fun <T> retryRelayConnect(
+    retries: Int = RELAY_CONNECT_RETRIES,
+    delayMs: Long = RELAY_CONNECT_RETRY_DELAY_MS,
+    onRescued: (attempt: Int, first: IOException) -> Unit = { _, _ -> },
+    block: () -> T,
+): T {
+    var first: IOException? = null
+    var attempt = 0
+    while (true) {
+        val result = try {
+            block()
+        } catch (e: IOException) {
+            if (attempt >= retries || !e.isRetryableRelayConnectFailure()) {
+                first?.let { if (it !== e) e.addSuppressed(it) }
+                throw e
+            }
+            if (first == null) first = e
+            Thread.sleep(delayMs shl attempt)
+            attempt++
+            continue
+        }
+        first?.let { onRescued(attempt, it) }
+        return result
+    }
+}
+
+private fun IOException.isRetryableRelayConnectFailure(): Boolean =
+    generateSequence<Throwable>(this) { current -> current.cause?.takeIf { it !== current } }.take(4).none {
+        it is java.net.SocketTimeoutException || it.message?.startsWith("proxy refused CONNECT: 407") == true
+    }

@@ -61,7 +61,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import java.awt.KeyEventDispatcher
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.player_error_debrid_rate_limited
@@ -963,7 +965,13 @@ private fun NativePlayerSurface(
                     startupProfileRequested = svpStartupProfileAcknowledgementPending.value,
                 )
             },
-            PlayerSettingsRepository.uiState,
+            // The subtitle style lives in the same settings state but plays no part in the video
+            // profile. Left in, every click in the subtitle Style tab re-ran the whole profile
+            // (vf, scalers, shaders, and a forced redraw that waits up to 1.8 s on the VO), which
+            // made the panel lag and, while paused, buried the subtitle repaint under it.
+            PlayerSettingsRepository.uiState
+                .map { it.copy(subtitleStyle = SubtitleStyleState.DEFAULT) }
+                .distinctUntilChanged(),
             NvidiaRtxDriverState.settings,
         ) { videoState, settings, driver -> Triple(videoState, settings, driver) }
             .collect { (videoState, settings, driver) ->

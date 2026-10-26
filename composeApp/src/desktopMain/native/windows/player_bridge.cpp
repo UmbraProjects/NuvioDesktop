@@ -209,7 +209,8 @@ HMODULE gModule = nullptr;
 constexpr UINT WM_NUVIO_TASK = WM_APP + 0x4E50;
 constexpr UINT_PTR NUVIO_TIMER_ID = 0x4E50;
 
-// Diagnostic mpv logs live beside nuvio.log in %LOCALAPPDATA%\NuvioHTPC\logs.
+// Diagnostic mpv logs live beside nuvio.log in <data folder>\logs: the folder Kotlin's
+// DesktopStorage resolved (a portable install keeps it beside the app), else %LOCALAPPDATA%\NuvioHTPC.
 // Keep five player sessions in total: the active log plus four previous logs. Normal
 // playback writes only bridge lifecycle markers and mpv warnings/errors; full verbose
 // mpv output requires RTX VSR/HDR to be active or the NUVIO_MPV_VERBOSE environment
@@ -221,7 +222,20 @@ std::atomic<unsigned long long> gPlaybackSessionSequence{0};
 thread_local std::wstring gPlaybackThreadLog;
 
 
+// Set once by NativePlayerBridge's initializer, before any other bridge call; empty until then.
+std::mutex gDataDirectoryMutex;
+std::wstring gDataDirectory;
+
 std::wstring nuvioMpvLogDirectory() {
+    {
+        std::lock_guard<std::mutex> lock(gDataDirectoryMutex);
+        if (!gDataDirectory.empty()) {
+            const std::wstring logDirectory = gDataDirectory + L"\\logs";
+            CreateDirectoryW(gDataDirectory.c_str(), nullptr);
+            CreateDirectoryW(logDirectory.c_str(), nullptr);
+            return logDirectory;
+        }
+    }
     wchar_t localAppData[32768] = {};
     DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData,
                                             (DWORD)(sizeof(localAppData) / sizeof(localAppData[0])));
@@ -427,7 +441,7 @@ std::string toUtf8(const std::wstring &value) {
     return result;
 }
 
-// Persistent gpu-next shader cache directory (%LOCALAPPDATA%\NuvioHTPC\shader-cache), returned as
+// Persistent gpu-next shader cache directory (<data folder>\shader-cache), returned as
 // UTF-8 for mpv's option string. Because startMpv sets config=no, mpv has no config directory and
 // therefore resolves no default shader-cache location — so every launch was recompiling the whole
 // gpu-next pipeline (scalers, deband, and any active Anime4K / custom GLSL shaders) from HLSL to
@@ -436,7 +450,7 @@ std::string toUtf8(const std::wstring &value) {
 std::string nuvioMpvShaderCacheDirectoryUtf8() {
     const std::wstring logDirectory = nuvioMpvLogDirectory();
     if (logDirectory.empty()) return {};
-    // logDirectory is ...\NuvioHTPC\logs; place the cache as a sibling ...\NuvioHTPC\shader-cache.
+    // logDirectory is <data folder>\logs; place the cache as a sibling <data folder>\shader-cache.
     const std::wstring::size_type separator = logDirectory.find_last_of(L'\\');
     if (separator == std::wstring::npos) return {};
     const std::wstring cacheDirectory = logDirectory.substr(0, separator) + L"\\shader-cache";
@@ -2461,6 +2475,11 @@ public:
         }
     }
 
+    bool subtitleRefreshQueued() {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        return subtitleRefreshPending;
+    }
+
     bool deferredSeekPending() {
         std::lock_guard<std::mutex> lock(mpvMutex);
         return deferredSeekTargetSeconds >= 0.0;
@@ -3163,7 +3182,7 @@ public:
         requestedSubAssStyleMode = mode;
         requestedSubAssScale = clampedScale;
         refreshSubtitleAssOverrideMode(/*force=*/true);
-        forceVideoRedraw();
+        scheduleSubtitleRefreshIfPaused();
     }
 
     void setSubtitleDelayMs(int delayMs) {
@@ -3171,7 +3190,11 @@ public:
         if (!mpv) return;
         int clamped = std::max(-60000, std::min(60000, delayMs));
         double delaySeconds = (double)clamped / 1000.0;
-        mpvApi().setProperty(mpv, "sub-delay", MPV_FORMAT_DOUBLE, &delaySeconds);
+        if (mpvApi().setProperty(mpv, "sub-delay", MPV_FORMAT_DOUBLE, &delaySeconds) >= 0 &&
+            flagPropertyLocked("pause", false)) {
+            subtitleRefreshPending = true;
+            subtitleRefreshDueAt = std::chrono::steady_clock::now() + subtitleRefreshDebounce;
+        }
     }
 
     void applySubtitleStyle(
@@ -3208,9 +3231,51 @@ public:
             mpvApi().setProperty(mpv, "sub-pos", MPV_FORMAT_INT64, &position);
         }
 
-        // mpv doesn't repaint the embedded surface while paused/idle, so a style change
-        // made while paused wouldn't show until the next frame. Force a redraw.
-        forceVideoRedraw();
+        // mpv doesn't repaint the embedded surface while paused/idle, so a style change made
+        // while paused wouldn't show until the next frame; see scheduleSubtitleRefreshIfPaused.
+        scheduleSubtitleRefreshIfPaused();
+    }
+
+    // While paused, mpv repaints the embedded surface only on a size change, so a subtitle style,
+    // ASS level or delay change made then stays invisible until playback resumes. The repaint is
+    // a 1px size nudge of the container (see nudgePausedSubtitleRedraw), debounced so a run of
+    // clicks costs one, and dropped if playback has resumed by then (the next frame shows it).
+    // Not forceVideoRedraw: that hides and re-shows the container to rebuild the swapchain for
+    // colour changes, and the black container showing through it flashed on about every other
+    // subtitle tweak. A subtitle only needs mpv to draw again.
+    void scheduleSubtitleRefreshIfPaused() {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv || !flagPropertyLocked("pause", false)) return;
+        subtitleRefreshPending = true;
+        subtitleRefreshDueAt = std::chrono::steady_clock::now() + subtitleRefreshDebounce;
+    }
+
+    // Called from the event-drain tick, beside flushDeferredSeek.
+    void flushSubtitleRefresh() {
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (!mpv || !subtitleRefreshPending) return;
+            if (std::chrono::steady_clock::now() < subtitleRefreshDueAt) return;
+            subtitleRefreshPending = false;
+            if (!flagPropertyLocked("pause", false)) return;
+        }
+        nudgePausedSubtitleRedraw();
+    }
+
+    void nudgePausedSubtitleRedraw() {
+        auto self = shared_from_this();
+        postUiTask([self]() {
+            if (!self->containerHwnd || !IsWindow(self->containerHwnd)) return;
+            RECT rect{};
+            GetClientRect(self->containerHwnd, &rect);
+            const LONG width = rect.right - rect.left;
+            const LONG height = rect.bottom - rect.top;
+            if (width <= 1 || height <= 1) return;
+            constexpr UINT flags = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
+            SetWindowPos(self->containerHwnd, nullptr, 0, 0, width - 1, height - 1, flags);
+            SetWindowPos(self->containerHwnd, nullptr, 0, 0, width, height, flags);
+            self->nuvioBridgeLog("paused subtitle redraw");
+        });
     }
 
     bool setChangedPropertyLocked(const std::string &key, const std::string &value) {
@@ -3391,6 +3456,13 @@ public:
         if (key == "@nuvio-svp-bypass-vf") {
             svpBypassVideoFilters = value;
             return;
+        }
+        // Subtitle options (shadow, blur, italic, sub-pos for the HUD clearance) need a repaint
+        // to show while paused; queue the light one rather than the caller reaching for
+        // forceVideoRedraw. Already under mpvMutex, so set the flag here directly.
+        if (key.rfind("sub-", 0) == 0 && flagPropertyLocked("pause", false)) {
+            subtitleRefreshPending = true;
+            subtitleRefreshDueAt = std::chrono::steady_clock::now() + subtitleRefreshDebounce;
         }
         if (key == "vf") {
             videoPipelineManaged = true;
@@ -3702,6 +3774,10 @@ private:
     // Local files open no HTTP range requests, so their seeks are never coalesced.
     std::atomic<bool> sourceIsLocalFile{false};
     std::chrono::steady_clock::time_point deferredSeekDueAt{};
+    // See scheduleSubtitleRefreshIfPaused. Guarded by mpvMutex.
+    bool subtitleRefreshPending = false;
+    std::chrono::steady_clock::time_point subtitleRefreshDueAt{};
+    static constexpr std::chrono::milliseconds subtitleRefreshDebounce{80};
     std::chrono::steady_clock::time_point deferredSeekStartedAt{};
     std::chrono::steady_clock::time_point lastSeekIssuedAt{};
 
@@ -5221,7 +5297,7 @@ private:
             // While a coalesced seek is waiting on its deadline the loop needs a finer tick than
             // the idle 0.5s, which while paused (few spontaneous events) would otherwise let it
             // land hundreds of ms late.
-            mpv_event *event = mpvApi().waitEvent(current, (deferredSeekPending() || initialResumeTransactionPending.load() || svpPrerollPending || profileRenderPending.load()) ? 0.05 : 0.5);
+            mpv_event *event = mpvApi().waitEvent(current, (deferredSeekPending() || subtitleRefreshQueued() || initialResumeTransactionPending.load() || svpPrerollPending || profileRenderPending.load()) ? 0.05 : 0.5);
             if (event && event->event_id == MPV_EVENT_PROPERTY_CHANGE &&
                 event->reply_userdata == propertyMirrorReplyId) {
                 if (event->data) updatePropertyMirror(*static_cast<mpv_event_property *>(event->data));
@@ -5236,6 +5312,7 @@ private:
             // The deadline is driven by wall clock, not by events, so it must be serviced even on
             // a wait that produced nothing to dispatch.
             flushDeferredSeek();
+            flushSubtitleRefresh();
             // Both of these wait on the demuxer resolving real stream parameters, which can land
             // after FILE_LOADED with no event of its own — so they are retried on the tick rather
             // than applied once at load. Each is a cheap no-op after it has run.
@@ -6832,6 +6909,14 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMediaSessionMet
         subtitle ? jstringToUtf8(env, subtitle) : std::string(),
         artworkUrl ? jstringToUtf8(env, artworkUrl) : std::string()
     );
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setDataDirectory(JNIEnv *env, jobject, jstring directory) {
+    std::wstring path = toWide(jstringToUtf8(env, directory));
+    while (!path.empty() && (path.back() == L'\\' || path.back() == L'/')) path.pop_back();
+    std::lock_guard<std::mutex> lock(gDataDirectoryMutex);
+    gDataDirectory = path;
 }
 
 extern "C" JNIEXPORT void JNICALL

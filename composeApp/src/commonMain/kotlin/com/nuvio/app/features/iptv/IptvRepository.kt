@@ -189,7 +189,7 @@ object IptvRepository {
         IptvEpgRepository.forget(id)
         runCatching {
             IptvCacheStorage.delete(contentCacheName(id))
-            IptvCacheStorage.delete(IptvEpgRepository.guideCacheName(id))
+            IptvEpgRepository.guideCacheNames(id).forEach { IptvCacheStorage.delete(it) }
         }
     }
 

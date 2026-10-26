@@ -24,7 +24,7 @@ internal fun Modifier.settingsSkyBackground(
 ): Modifier = drawWithCache {
     val w = size.width
     val h = size.height
-    val night = NuvioGlass.night(background)
+    val night = NuvioGlass.night(background, accent)
     val wash = Brush.verticalGradient(
         0f to night,
         0.65f to lerp(background, night, 0.35f),

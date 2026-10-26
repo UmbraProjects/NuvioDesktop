@@ -27,6 +27,8 @@ internal actual object ThemeSettingsStorage {
     private const val holdToSelectEnabledKey = "hold_to_select_enabled"
     private const val desktopNavigationLayoutKey = "desktop_navigation_layout"
     private const val desktopTopBarAlwaysVisibleKey = "desktop_top_bar_always_visible"
+    // Account-wide, not per profile: set when the account started on the pinned-bar default.
+    private const val desktopTopBarPinnedByDefaultKey = "desktop_top_bar_pinned_by_default"
     private const val desktopDiscoverTabVisibleKey = "desktop_discover_tab_visible"
     private const val desktopAppUiScalePercentKey = "desktop_app_ui_scale_percent"
     private const val desktopAppUiScaleAppliesToDetailsKey = "desktop_app_ui_scale_applies_to_details"
@@ -153,7 +155,18 @@ internal actual object ThemeSettingsStorage {
         store.getBoolean(ProfileScopedKey.of(desktopTopBarAlwaysVisibleKey))?.let { return it }
         // Opt in only genuine first-time installations. An absent key on an existing install means
         // the user had the old auto-hiding behavior and must not be changed by an upgrade.
-        if (!DesktopStorage.isFreshAccount) return null
+        //
+        // The value is per profile but "first-time" is per account folder, and the folder only
+        // counts as fresh in the session that created it. A profile first opened in a later
+        // session (a second household member, or profiles synced down from another device) found
+        // no value and an account no longer fresh, and got the auto-hiding bar new users are
+        // meant to be spared. The account now remembers that it started on the new default, and
+        // every profile it adds inherits it.
+        val pinnedByDefault = store.getBoolean(desktopTopBarPinnedByDefaultKey)
+            ?: DesktopStorage.isFreshAccount.also { fresh ->
+                if (fresh) store.putBoolean(desktopTopBarPinnedByDefaultKey, true)
+            }
+        if (!pinnedByDefault) return null
         saveDesktopTopBarAlwaysVisible(true)
         return true
     }

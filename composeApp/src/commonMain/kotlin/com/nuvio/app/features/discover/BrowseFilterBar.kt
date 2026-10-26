@@ -75,7 +75,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.positionInWindow
-import com.nuvio.app.core.ui.ContextMenuFill
+import com.nuvio.app.core.ui.NuvioGlassMenuSurface
 import com.nuvio.app.core.ui.ContextMenuInvocation
 import com.nuvio.app.core.ui.ContextMenuRowHeight
 import com.nuvio.app.core.ui.CursorMenuPositionProvider
@@ -91,7 +91,7 @@ import kotlin.math.roundToInt
 
 private val IconButtonSize = 34.dp
 private val IconSize = 20.dp
-private val MenuShape = RoundedCornerShape(10.dp)
+private val MenuShape = RoundedCornerShape(12.dp)
 private val OptionShape = RoundedCornerShape(7.dp)
 private val MenuMinWidth = 220.dp
 private val MenuMaxWidth = 560.dp
@@ -294,13 +294,9 @@ private fun BrowseFilterIconButton(
 /** The right-click menu's panel, holding a filter's choices. */
 @Composable
 private fun BrowseFilterMenuSurface(maxHeight: Dp, content: @Composable ColumnScope.() -> Unit) {
-    Surface(
+    NuvioGlassMenuSurface(
         modifier = Modifier.widthIn(min = MenuMinWidth, max = MenuMaxWidth),
-        color = ContextMenuFill,
-        contentColor = Color.White,
         shape = MenuShape,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-        shadowElevation = 16.dp,
     ) {
         Column(
             modifier = Modifier

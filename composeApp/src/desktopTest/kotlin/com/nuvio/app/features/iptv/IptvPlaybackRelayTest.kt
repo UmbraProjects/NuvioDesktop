@@ -131,11 +131,15 @@ class IptvPlaybackRelayTest {
         assertTrue(iptvMpvOptions("http://h:80/live/u/p/1.ts").isEmpty(), "no session yet")
         val launch = assertNotNull(IptvPlaybackSession.launchFor(playlist, channel))
         val options = iptvMpvOptions(launch.sourceUrl)
-        assertTrue("ytdl=no" in options && "stream-lavf-o-append=reconnect_streamed=1" in options, options.toString())
+        assertTrue("ytdl=no" in options, options.toString())
+        // mpv's client API rejects `-append`; the bridge sets the reconnect flags itself.
+        assertTrue(options.none { it.startsWith("stream-lavf-o") }, options.toString())
         val proxyOption = options.single { it.startsWith("http-proxy=") }
         assertTrue(proxyOption.startsWith("http-proxy=http://nuvio:") && "@127.0.0.1:" in proxyOption, proxyOption)
         assertTrue(options.none { "TopSecret" in it || "socks.example" in it }, options.toString())
         assertTrue(iptvMpvOptions("https://other.example/movie.mkv").isEmpty())
+        assertTrue(iptvLiveBufferMpvOptions(launch.sourceUrl) == listOf("cache-pause-wait=$IPTV_CACHE_PAUSE_WAIT_SECONDS"))
+        assertTrue(iptvLiveBufferMpvOptions("https://other.example/movie.mkv").isEmpty())
 
         IptvRepository.setProxy(IptvProxy())
         assertNull(iptvMpvOptions(launch.sourceUrl).firstOrNull { it.startsWith("http-proxy=") }, "no proxy, direct")

@@ -3927,6 +3927,7 @@
     <string name="iptv_error_bad_response">The provider sent something that isn't a playlist. Check the address.</string>
     <string name="iptv_error_network">Couldn't reach the provider: %1$s</string>
     <string name="iptv_error_unreachable">The provider's server isn't answering. It may be down, or your internet provider may be blocking it (common in the UK). Check the address and port, or try a VPN or the proxy setting under Connection.</string>
+    <string name="iptv_error_connection_cut">The connection to the provider was cut off. That's usually your internet provider blocking the site. Try a VPN or the proxy setting under Connection. For a playlist hosted on GitHub, a mirror such as cdn.jsdelivr.net often works.</string>
     <string name="iptv_error_proxy_unreachable">Couldn't connect through the proxy. Check its address, port and type under Connection, or turn it off.</string>
     <string name="iptv_error_proxy_auth">The proxy rejected its username or password.</string>
     <string name="iptv_settings_section_connection">Connection</string>

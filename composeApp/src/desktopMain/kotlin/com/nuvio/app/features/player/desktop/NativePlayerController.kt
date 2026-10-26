@@ -163,6 +163,10 @@ internal class NativePlayerController(
     private var transientMessageForNextAttach: Pair<String, String>? = null
     @Volatile
     private var pendingSubtitleStyle: SubtitleStyleState? = null
+    // The player [pendingSubtitleStyle] was last applied to through applySubtitleStyle; a new
+    // player (stream swap) gets it again even when the style is unchanged.
+    @Volatile
+    private var subtitleStyleAppliedHandle = 0L
     // Top of the HUD's visible chrome as a percentage of the window height from the top, reported
     // by the overlay while the chrome is up and 0 while it is hidden. Subtitles whose bottom edge
     // would fall below it are lifted onto it for as long as it is there; see
@@ -240,7 +244,13 @@ internal class NativePlayerController(
         // Re-attaching the same stream (surface recreation, RTX/settings toggles) must resume
         // from where playback currently is — restarting at the original initialPositionMs
         // looks like playback randomly jumping back. New sources keep the caller's position.
-        val carriedPositionMs = if (pendingSource?.sourceUrl == sourceUrl) {
+        // Never for live TV: a reconnect reopens the channel at the live edge, and a stream that
+        // cannot seek left its first frame waiting on the carried position (once a bogus 26 h one
+        // from the provider's timestamps) until the start-up watchdog gave up on it.
+        val carriedPositionMs = if (
+            pendingSource?.sourceUrl == sourceUrl &&
+            !com.nuvio.app.features.iptv.IptvPlaybackSession.isIptvUrl(sourceUrl)
+        ) {
             synchronized(handleLock) { handle }
                 .takeIf { it != 0L }
                 ?.let { current ->
@@ -305,7 +315,9 @@ internal class NativePlayerController(
                     directMediaNetworkTimeoutOption(sourceUrl)?.let(::add)
                 }
                 if (enableUserMpvOptions) addAll(buildDesktopUserMpvOptions(initialPlaybackSpeed))
-                // After the buffer preset in the user options, which also sets demuxer-max-back-bytes.
+                // After the buffer preset in the user options, which also sets demuxer-max-back-bytes
+                // and cache-pause-wait.
+                addAll(com.nuvio.app.features.iptv.iptvLiveBufferMpvOptions(sourceUrl))
                 addAll(com.nuvio.app.features.iptv.iptvRewindMpvOptions(sourceUrl))
                 // An init option rather than a runtime property: mpv filters text subtitles as it
                 // parses them, so it has to be set before the first track loads. Only ever turned
@@ -357,6 +369,14 @@ internal class NativePlayerController(
             lastSentMediaSessionKey = null
             lastSentMpvMediaTitle = null
             thread(isDaemon = true, name = "Nuvio-Player-Attach") {
+                // Live TV over HLS with subtitles plays a local copy of its master playlist so the
+                // provider's repeated subtitle cues can be dropped (IptvHlsSubtitleServer). One
+                // playlist fetch, made here off the UI thread and outside the lifecycle lock.
+                val mpvSourceUrl = if (com.nuvio.app.features.iptv.IptvPlaybackSession.isIptvUrl(pending.sourceUrl)) {
+                    com.nuvio.app.features.iptv.IptvHlsSubtitleServer.playbackUrlFor(pending.sourceUrl, pending.headerLines)
+                } else {
+                    pending.sourceUrl
+                }
                 synchronized(nativeProcessLifecycleLock) {
                     // Replacement is intentionally sequential. Both operations remain on this
                     // worker, so a slow native shutdown delays the next stream without freezing
@@ -382,7 +402,7 @@ internal class NativePlayerController(
                     val result = runCatching {
                         newHandle = NativePlayerBridge.create(
                             hostViewPtr = hostViewPtr,
-                            sourceUrl = withMpvFilenameHint(pending.sourceUrl, pending.mediaTitle),
+                            sourceUrl = withMpvFilenameHint(mpvSourceUrl, pending.mediaTitle),
                             sourceAudioUrl = pending.sourceAudioUrl,
                             headerLines = pending.headerLines.toTypedArray(),
                             playWhenReady = pending.playWhenReady,
@@ -1303,8 +1323,9 @@ internal class NativePlayerController(
                 hudSubtitleClearancePercent = percent
                 val current = handle.takeIf { it != 0L } ?: return
                 val style = pendingSubtitleStyle ?: return
+                // The bridge queues its light paused repaint for any sub-* write; the full
+                // forceVideoRedraw flashed the video black whenever the HUD showed or hid paused.
                 NativePlayerBridge.setMpvProperty(current, "sub-pos", effectiveSubtitlePosition(style).toString())
-                forceVideoRedraw()
             }
             else -> {
                 if (type == "fileLoaded") {
@@ -1460,6 +1481,10 @@ internal class NativePlayerController(
             // Live TV's rewind buffer owns the back buffer; the preset would shrink it mid-stream.
             .filterNot { (name, _) ->
                 name == "demuxer-max-back-bytes" && com.nuvio.app.features.iptv.iptvRewindActive(pendingSource?.sourceUrl)
+            }
+            // Likewise its resume threshold (see IPTV_CACHE_PAUSE_WAIT_SECONDS).
+            .filterNot { (name, _) ->
+                name == "cache-pause-wait" && com.nuvio.app.features.iptv.iptvLiveBufferActive(pendingSource?.sourceUrl)
             }
             // While the Metered freeze is engaged the clamp outranks the preset. Without this an
             // unrelated re-apply (the video-profile flow re-runs this on every settings change, and
@@ -1764,8 +1789,16 @@ internal class NativePlayerController(
             ?.takeIf { it > 0.0 }
 
     override fun applySubtitleStyle(style: SubtitleStyleState) {
+        val current = handle
+        // The Style tab applies a change from its click handler and the player screen applies the
+        // same style again once it recomposes; the repeat would cost a second round of property
+        // writes, a redraw and a paused refresh for nothing.
+        if (current != 0L && current == subtitleStyleAppliedHandle && style == pendingSubtitleStyle) return
         pendingSubtitleStyle = style
-        handle.takeIf { it != 0L }?.let { current -> applySubtitleStyle(current, style) }
+        if (current != 0L) {
+            applySubtitleStyle(current, style)
+            subtitleStyleAppliedHandle = current
+        }
     }
 
     private fun applyPendingSubtitleConfiguration(current: Long) {
@@ -1813,9 +1846,11 @@ internal class NativePlayerController(
         // user's (usually transparent) background to that property, so the shadow colour must be
         // applied afterwards or it is immediately overwritten and the offset appears to do
         // nothing. In outline-and-shadow mode sub-back-color is used for the shadow itself.
+        // No forceVideoRedraw here: the bridge's paused subtitle nudge, scheduled by the
+        // applySubtitleStyle call above, runs after this write on the same queue. The full redraw
+        // hides and re-shows the video window, which flashed black on paused subtitle changes.
         if (style.shadowEnabled && style.backgroundColor.alpha <= 0f) {
             NativePlayerBridge.setMpvProperty(current, "sub-back-color", style.shadowColor.toMpvColorString())
-            forceVideoRedraw()
         }
         reapplyCustomSubtitleOverrides(current)
     }

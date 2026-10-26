@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="controls.css?v=20261017-watch-party-1">
+  <link rel="stylesheet" href="controls.css?v=20261026-accent-night-2">
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
@@ -453,7 +453,8 @@
           <div class="track-list" id="subtitleTrackList"></div>
           <div class="track-list" id="addonSubtitleList" hidden></div>
           <div class="style-panel" id="subtitleStylePanel" hidden>
-            <div class="style-card">
+            <section class="style-group">
+              <div class="style-group-head"><span class="style-group-title">Timing</span></div>
               <div class="style-row">
                 <span class="style-label" id="subtitleDelayLabel">Subtitle Delay</span>
                 <div class="delay-controls">
@@ -476,6 +477,13 @@
                 </div>
                 <div id="autoSyncCueList"></div>
               </div>
+            </section>
+            <section class="style-group">
+              <div class="style-group-head"><span class="style-group-title">Text</span></div>
+              <div class="style-row">
+                <span class="style-label" id="fontFamilyLabel">Font</span>
+                <select class="style-select" id="fontFamilySelect"></select>
+              </div>
               <div class="style-row">
                 <span class="style-label" id="fontSizeLabel">Font Size</span>
                 <div class="stepper">
@@ -485,47 +493,19 @@
                 </div>
               </div>
               <div class="style-row">
-                <span class="style-label" id="bottomOffsetLabel">Bottom Offset</span>
+                <span class="style-label" id="boldLabel">Bold</span>
+                <button class="style-switch" id="boldToggle" type="button" role="switch" aria-labelledby="boldLabel">Off</button>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="italicLabel">Italic</span>
+                <button class="style-switch" id="italicToggle" type="button" role="switch" aria-labelledby="italicLabel">Off</button>
+              </div>
+              <div class="style-row">
+                <span class="style-label" id="textOpacityLabel">Text Opacity</span>
                 <div class="stepper">
-                  <button class="round-step" id="bottomOffsetMinus" type="button">-</button>
-                  <span class="stepper-value" id="bottomOffsetValue">20</span>
-                  <button class="round-step" id="bottomOffsetPlus" type="button">+</button>
-                </div>
-              </div>
-              <div class="style-row">
-                <span class="style-label" id="fontFamilyLabel">Font</span>
-                <select class="style-select" id="fontFamilySelect"></select>
-              </div>
-              <div class="style-row">
-                <span class="style-label" id="outlineLabel">Outline</span>
-                <button class="panel-button" id="outlineToggle" type="button">On</button>
-              </div>
-              <div class="style-row">
-                <span class="style-label" id="outlineWidthLabel">Outline Width</span>
-                <div class="stepper">
-                  <button class="round-step" id="outlineWidthMinus" type="button">-</button>
-                  <span class="stepper-value" id="outlineWidthValue">2</span>
-                  <button class="round-step" id="outlineWidthPlus" type="button">+</button>
-                </div>
-              </div>
-              <div class="style-row">
-                <span class="style-label" id="shadowLabel">Shadow</span>
-                <button class="panel-button" id="shadowToggle" type="button">Off</button>
-              </div>
-              <div class="style-row">
-                <span class="style-label" id="shadowOffsetLabel">Shadow Offset</span>
-                <div class="stepper">
-                  <button class="round-step" id="shadowOffsetMinus" type="button">-</button>
-                  <span class="stepper-value" id="shadowOffsetValue">1.5</span>
-                  <button class="round-step" id="shadowOffsetPlus" type="button">+</button>
-                </div>
-              </div>
-              <div class="style-row">
-                <span class="style-label" id="shadowIntensityLabel">Shadow Intensity</span>
-                <div class="stepper">
-                  <button class="round-step" id="shadowIntensityMinus" type="button">-</button>
-                  <span class="stepper-value" id="shadowIntensityValue">40%</span>
-                  <button class="round-step" id="shadowIntensityPlus" type="button">+</button>
+                  <button class="round-step" id="textOpacityMinus" type="button">-</button>
+                  <span class="stepper-value" id="textOpacityValue">100%</span>
+                  <button class="round-step" id="textOpacityPlus" type="button">+</button>
                 </div>
               </div>
               <div class="style-row">
@@ -536,13 +516,74 @@
                   <button class="round-step" id="blurPlus" type="button">+</button>
                 </div>
               </div>
-              <div class="style-row">
-                <span class="style-label" id="boldLabel">Bold</span>
-                <button class="panel-button" id="boldToggle" type="button">Off</button>
+              <div class="swatch-section">
+                <span class="style-label" id="subtitleColorLabel">Color</span>
+                <div class="swatch-row" id="subtitleColorSwatches"></div>
               </div>
+            </section>
+            <section class="style-group" id="subtitleOutlineGroup">
+              <div class="style-group-head">
+                <span class="style-group-title" id="outlineLabel">Outline</span>
+                <button class="style-switch" id="outlineToggle" type="button" role="switch" aria-labelledby="outlineLabel">On</button>
+              </div>
+              <div class="style-group-body">
+                <div class="style-row">
+                  <span class="style-label" id="outlineWidthLabel">Outline Width</span>
+                  <div class="stepper">
+                    <button class="round-step" id="outlineWidthMinus" type="button">-</button>
+                    <span class="stepper-value" id="outlineWidthValue">2</span>
+                    <button class="round-step" id="outlineWidthPlus" type="button">+</button>
+                  </div>
+                </div>
+                <div class="swatch-section">
+                  <span class="style-label" id="outlineColorLabel">Outline Color</span>
+                  <div class="swatch-row" id="outlineColorSwatches"></div>
+                </div>
+              </div>
+            </section>
+            <section class="style-group" id="subtitleShadowGroup">
+              <div class="style-group-head">
+                <span class="style-group-title" id="shadowLabel">Shadow</span>
+                <button class="style-switch" id="shadowToggle" type="button" role="switch" aria-labelledby="shadowLabel">Off</button>
+              </div>
+              <div class="style-group-body">
+                <div class="style-row">
+                  <span class="style-label" id="shadowOffsetLabel">Shadow Offset</span>
+                  <div class="stepper">
+                    <button class="round-step" id="shadowOffsetMinus" type="button">-</button>
+                    <span class="stepper-value" id="shadowOffsetValue">1.5</span>
+                    <button class="round-step" id="shadowOffsetPlus" type="button">+</button>
+                  </div>
+                </div>
+                <div class="style-row">
+                  <span class="style-label" id="shadowIntensityLabel">Shadow Intensity</span>
+                  <div class="stepper">
+                    <button class="round-step" id="shadowIntensityMinus" type="button">-</button>
+                    <span class="stepper-value" id="shadowIntensityValue">40%</span>
+                    <button class="round-step" id="shadowIntensityPlus" type="button">+</button>
+                  </div>
+                </div>
+                <div class="swatch-section">
+                  <span class="style-label" id="shadowColorLabel">Shadow Color</span>
+                  <div class="swatch-row" id="shadowColorSwatches"></div>
+                </div>
+              </div>
+            </section>
+            <section class="style-group">
+              <div class="style-group-head"><span class="style-group-title" id="backgroundColorLabel">Background Color</span></div>
+              <div class="swatch-section">
+                <div class="swatch-row" id="backgroundColorSwatches"></div>
+              </div>
+            </section>
+            <section class="style-group">
+              <div class="style-group-head"><span class="style-group-title">Position &amp; ASS/SSA</span></div>
               <div class="style-row">
-                <span class="style-label" id="italicLabel">Italic</span>
-                <button class="panel-button" id="italicToggle" type="button">Off</button>
+                <span class="style-label" id="bottomOffsetLabel">Bottom Offset</span>
+                <div class="stepper">
+                  <button class="round-step" id="bottomOffsetMinus" type="button">-</button>
+                  <span class="stepper-value" id="bottomOffsetValue">20</span>
+                  <button class="round-step" id="bottomOffsetPlus" type="button">+</button>
+                </div>
               </div>
               <div class="style-row">
                 <span class="style-label" id="assStyleModeLabel">ASS/SSA Styling</span>
@@ -556,34 +597,9 @@
                   <button class="round-step" id="assScalePlus" type="button">+</button>
                 </div>
               </div>
-              <div class="style-row">
-                <span class="style-label" id="textOpacityLabel">Text Opacity</span>
-                <div class="stepper">
-                  <button class="round-step" id="textOpacityMinus" type="button">-</button>
-                  <span class="stepper-value" id="textOpacityValue">100%</span>
-                  <button class="round-step" id="textOpacityPlus" type="button">+</button>
-                </div>
-              </div>
-              <div class="swatch-section">
-                <span class="style-label" id="subtitleColorLabel">Color</span>
-                <div class="swatch-row" id="subtitleColorSwatches"></div>
-              </div>
-              <div class="swatch-section">
-                <span class="style-label" id="outlineColorLabel">Outline Color</span>
-                <div class="swatch-row" id="outlineColorSwatches"></div>
-              </div>
-              <div class="swatch-section">
-                <span class="style-label" id="backgroundColorLabel">Background Color</span>
-                <div class="swatch-row" id="backgroundColorSwatches"></div>
-              </div>
-              <div class="swatch-section">
-                <span class="style-label" id="shadowColorLabel">Shadow Color</span>
-                <div class="swatch-row" id="shadowColorSwatches"></div>
-              </div>
-              <div class="style-row">
-                <span></span>
-                <button class="panel-button" id="subtitleStyleReset" type="button">Reset Defaults</button>
-              </div>
+            </section>
+            <div class="style-footer">
+              <button class="panel-button" id="subtitleStyleReset" type="button">Reset Defaults</button>
             </div>
           </div>
         </div>
@@ -793,6 +809,6 @@
     <div class="pip-resize-handle pip-resize-nw" data-pip-resize="8"></div>
   </div>
 
-  <script src="controls.js?v=20261017-watch-party-1"></script>
+  <script src="controls.js?v=20261026-accent-night-2"></script>
 </body>
 </html>

@@ -5,6 +5,25 @@ import com.nuvio.app.isDesktop
 internal val PlayerScreenRuntime.subtitleStyle: SubtitleStyleState
     get() = playerSettingsUiState.subtitleStyle
 
+/**
+ * The subtitle style as stored right now, rather than as of the last composition. The Style tab's
+ * events are deltas and toggles, so each has to build on the latest value: built on the composed
+ * snapshot, a burst of clicks (or any click while composition lagged, as it did with the video
+ * paused) kept starting from the same stale style, so most of them saved nothing new.
+ */
+internal val PlayerScreenRuntime.liveSubtitleStyle: SubtitleStyleState
+    get() = PlayerSettingsRepository.uiState.value.subtitleStyle
+
+/**
+ * Saves [style] and hands it to the player at once. The LaunchedEffect on the composed style still
+ * applies it too (the controller skips a repeat), but a change no longer waits on a recomposition
+ * to reach mpv, which with the video paused it could wait on indefinitely.
+ */
+internal fun PlayerScreenRuntime.updateSubtitleStyle(style: SubtitleStyleState) {
+    PlayerSettingsRepository.setSubtitleStyle(style)
+    playerController?.applySubtitleStyle(style)
+}
+
 internal val PlayerScreenRuntime.activeAddonSubtitleType: String
     get() = contentType ?: parentMetaType
 

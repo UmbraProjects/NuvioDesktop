@@ -39,7 +39,9 @@ internal data class NuvioCalendarCacheEntry(
     val items: List<NuvioCalendarCachedItem> = emptyList(),
 ) {
     companion object {
-        const val VERSION = 1
+        // 2: entries carry the TMDB poster rather than the library or addon one, so an older cache
+        // is rebuilt instead of showing the custom posters until each title is next re-read.
+        const val VERSION = 2
         const val UNKNOWN_PROFILE = -1
     }
 }

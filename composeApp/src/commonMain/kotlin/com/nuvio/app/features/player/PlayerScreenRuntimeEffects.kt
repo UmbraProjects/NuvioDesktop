@@ -814,8 +814,11 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
                 activityStyle = discordSettings.activityStyle,
                 activityName = discordSettings.activityName,
                 isPlaying = playbackSnapshot.isPlaying,
-                positionMs = playbackSnapshot.positionMs.coerceAtLeast(0L),
-                durationMs = playbackSnapshot.durationMs.coerceAtLeast(0L),
+                // Live TV has no timeline: mpv's duration for an endless stream grows with every
+                // tick, and since it is part of the presence's dedupe key that re-sent the activity
+                // to Discord twice a second.
+                positionMs = if (isIptvPlayback) 0L else playbackSnapshot.positionMs.coerceAtLeast(0L),
+                durationMs = if (isIptvPlayback) 0L else playbackSnapshot.durationMs.coerceAtLeast(0L),
                 refreshNonce = presenceReconcileTick * 1_000_000L + pausedAnchorTick,
             ),
         )
@@ -836,6 +839,7 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
  * it clears the failover tried-set so a later, unrelated mid-playback failure gets a fresh budget.
  */
 private const val STREAM_FAILOVER_WATCHDOG_STEP_MS = 500L
+private const val IPTV_STARTUP_TIMEOUT_MS = 45_000L
 private const val STREAM_FAILOVER_SUSTAINED_PLAYBACK_RESET_MS = 30_000L
 private const val INITIAL_TRACK_RESTORE_POLL_INTERVAL_MS = 250L
 private const val INITIAL_TRACK_RESTORE_POLL_ATTEMPTS = 60
@@ -853,7 +857,12 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
         if (activeSourceUrl.isBlank() || isProviderDiagnosticVideoPlayback) return@LaunchedEffect
         val watchedUrl = activeSourceUrl
         val watchedAttemptId = playbackAttemptId
-        val timeoutMs = playerSettingsUiState.streamFailoverTimeoutSeconds.coerceAtLeast(1) * 1000L
+        val settingTimeoutMs = playerSettingsUiState.streamFailoverTimeoutSeconds.coerceAtLeast(1) * 1000L
+        // Live HLS starts slowly: FFmpeg opens and probes every variant and audio rendition before
+        // the first frame, 15-30 s on Pluto TV, so the usual allowance failed working channels over
+        // to a format that does not exist. A dead live source still fails fast: mpv's network
+        // timeout and any HTTP error end it long before this.
+        val timeoutMs = if (isIptvPlayback) maxOf(settingTimeoutMs, IPTV_STARTUP_TIMEOUT_MS) else settingTimeoutMs
         // The desktop controller is created before its native Canvas has received a full-size
         // paint. Do not count that UI lifecycle wait against the source: no loadfile request exists
         // until the platform surface reports that this exact URL is being attached.

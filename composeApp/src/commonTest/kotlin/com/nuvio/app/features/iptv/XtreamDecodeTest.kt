@@ -82,6 +82,15 @@ class XtreamDecodeTest {
     }
 
     @Test
+    fun `a reset connection reads as cut off, a refused one does not`() {
+        fun wrap(cause: Throwable) = cause.asIptvError()
+        assertTrue(wrap(java.net.SocketException("Connection reset")).isConnectionCut())
+        assertTrue(wrap(javax.net.ssl.SSLException("handshake", java.net.SocketException("Connection reset by peer"))).isConnectionCut())
+        assertTrue(!wrap(java.net.ConnectException("Connection refused")).isConnectionCut())
+        assertTrue(!wrap(java.net.SocketTimeoutException("Read timed out")).isConnectionCut())
+    }
+
+    @Test
     fun `server urls are validated`() {
         val p = IptvPlaylist(id = "x", type = IptvPlaylistType.Xtream, name = "x")
         assertEquals(IptvSourceException.Kind.NoUrl, assertFailsWith<IptvSourceException> { XtreamUrls.base(p) }.kind)

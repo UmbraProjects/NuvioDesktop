@@ -31,9 +31,23 @@ object NuvioGlass {
     val Edge: Brush = SolidColor(EdgeColor)
 
     /**
-     * The deep night blue the settings sky starts from, mixed into [background]. What the glass
-     * reads against: a panel that floats over other content (a modal) takes it as its solid base so
-     * it looks like a piece of the settings page rather than a grey slab.
+     * The deep night the settings sky starts from, mixed into [background]. What the glass reads
+     * against: a panel that floats over other content (a modal) takes it as its solid base so it
+     * looks like a piece of the settings page rather than a grey slab.
+     *
+     * Tinted by [accent], so the glass takes on the theme: a very dark version of the accent (see
+     * [nightTint]). It used to be a fixed night blue, which only matched the blue themes; a red
+     * theme still got blue panels.
      */
-    fun night(background: Color): Color = lerp(background, Color(0xFF0B1230), 0.55f)
+    fun night(background: Color, accent: Color): Color = lerp(background, nightTint(accent), 0.55f)
+
+    /**
+     * The accent taken down almost to black: [NightTintAmount] of it over a near-black base. For the
+     * default blue that lands on the night blue this used to hard-code (#0B1230); a red accent gives
+     * a deep oxblood, a green one a near-black forest.
+     */
+    fun nightTint(accent: Color): Color = lerp(NightTintBase, accent.copy(alpha = 1f), NightTintAmount)
+
+    private val NightTintBase = Color(0xFF07080C)
+    private const val NightTintAmount = 0.16f
 }

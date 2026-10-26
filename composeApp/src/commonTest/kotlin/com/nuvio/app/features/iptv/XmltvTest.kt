@@ -85,6 +85,45 @@ class XmltvTest {
     }
 
     @Test
+    fun `an iptv-org feed suffix still matches the guide's plain id`() {
+        val from = XmltvParser.parseTime("20261018000000")!!
+        val to = XmltvParser.parseTime("20261021000000")!!
+        // iptv-org names the feed (`@SD`); guides built from its database do not.
+        val rtp = channel(0, "Some Other Name", epgId = "RTP1.pt@SD")
+        val guide = XmltvGuide.build("u", listOf(rtp), from, to, fetchedAt = 1L) { it.parse(StringReader(xml)) }
+        assertEquals(listOf("Jornal da Tarde", "Praça & Companhia"), guide.entriesFor(rtp).map { it.title })
+        assertEquals(listOf("bbcone.uk@hd", "bbcone.uk"), XmltvGuide.epgIdCandidates(" BBCOne.uk@HD "))
+        assertEquals(listOf("bbcone.uk"), XmltvGuide.epgIdCandidates("BBCOne.uk"))
+        assertEquals(emptyList(), XmltvGuide.epgIdCandidates(""))
+    }
+
+    @Test
+    fun `free-service channels are matched to their guide by the id in the stream URL`() {
+        val pluto = IptvProviderGuides.sources.single { it.key == "pluto" }
+        val samsung = IptvProviderGuides.sources.single { it.key == "samsung" }
+        assertEquals("569546031a619b8f07ce6e25", pluto.channelId("https://jmp2.uk/plu-569546031a619b8f07ce6e25.m3u8"))
+        assertEquals("IN4000600Q", samsung.channelId("https://jmp2.uk/stvp-IN4000600Q"))
+        assertNull(pluto.channelId("https://jmp2.uk/stvp-IN4000600Q"))
+        assertNull(pluto.channelId("https://example.com/plu-569546031a619b8f07ce6e25.m3u8"))
+        assertNull(pluto.channelId(null))
+
+        val horror = channel(0, "Pluto TV Horror", epgId = "PlutoTVHorror.us@US")
+            .copy(url = "https://jmp2.uk/plu-569546031a619b8f07ce6e25.m3u8")
+        val elsewhere = channel(1, "Elsewhere").copy(url = "https://cdn.example/live.m3u8")
+        val forGuide = IptvProviderGuides.channelsFor(pluto, listOf(horror, elsewhere))
+        assertEquals(listOf("569546031a619b8f07ce6e25"), forGuide.map { it.epgId })
+
+        val plutoXml = """
+            <tv><channel id="569546031a619b8f07ce6e25"><display-name>Pluto TV Horror</display-name></channel>
+            <programme start="20261025194500 +0000" stop="20261025220000 +0000" channel="569546031a619b8f07ce6e25">
+            <title>Pet Sematary</title></programme></tv>
+        """.trimIndent()
+        val guide = XmltvGuide.build("u", forGuide, 0L, Long.MAX_VALUE, fetchedAt = 1L) { it.parse(StringReader(plutoXml)) }
+        val asGuideChannel = IptvProviderGuides.asGuideChannel(pluto, horror)!!
+        assertEquals(listOf("Pet Sematary"), guide.entriesFor(asGuideChannel).map { it.title })
+    }
+
+    @Test
     fun `gzipped guides are detected by their magic bytes`() {
         val bytes = ByteArrayOutputStream().also { out -> GZIPOutputStream(out).use { it.write(xml.toByteArray()) } }.toByteArray()
         val plain = ByteArrayInputStream(bytes).gunzipIfNeeded().readBytes().decodeToString()
