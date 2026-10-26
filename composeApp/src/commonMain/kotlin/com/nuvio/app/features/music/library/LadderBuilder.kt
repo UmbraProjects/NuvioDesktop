@@ -86,6 +86,10 @@ private fun fansBonus(fans: Long?): Double {
  * [dial] runs from 0.0 (Known: start close to the listener's taste) to 1.0 (Unknown: the first rung starts
  * further up the genre). Artists the listener has already saved never stand on a rung. An unusable [target]
  * (blank or not a genre) or a pool with nothing of the genre gives an empty ladder.
+ *
+ * Phase 4b, out-from mode: [anchors] is the taste closeness is measured against instead of [artists] (the artist the
+ * person already loves), and [from] is that artist's name, which the why lines use instead of "your saved ...".
+ * [artists] still decides who never stands on a rung. Both null is the plain ladder.
  */
 internal fun buildLadder(
     target: String,
@@ -93,12 +97,15 @@ internal fun buildLadder(
     candidates: List<LadderCandidate>,
     dial: Double = 0.0,
     rungs: Int = LADDER_RUNGS,
+    anchors: List<LibraryArtist>? = null,
+    from: String? = null,
 ): Ladder {
     val targetName = canonicalGenre(target) ?: return Ladder(target.trim(), emptyList(), coldStart = true)
     val targetKey = genreKey(targetName)
     val excluded = setOf(targetKey)
 
-    val me = footprint(artists)
+    val taste = anchors ?: artists
+    val me = footprint(taste)
     val cold = unitProfile(me.filterKeys { it !in excluded }).isEmpty()
 
     val ownedIds = artists.map { it.id }.toSet()
@@ -142,14 +149,14 @@ internal fun buildLadder(
     // Purity rises up the ladder even when two picks swapped places inside a band.
     val ordered = picked.sortedWith(compareBy<Scored> { it.purity }.thenBy { it.candidate.id })
     val built = ordered.mapIndexed { index, s ->
-        val anchor = if (cold) null else closestArtist(s.profile, artists, excluded)
+        val anchor = if (cold) null else closestArtist(s.profile, taste, excluded)
         LadderRung(
             step = index + 1,
             candidate = s.candidate,
             purity = s.purity,
             proximity = s.proximity,
             anchorName = anchor?.name,
-            why = whyLine(index, ordered.size, targetName, targetKey, s, me, anchor, cold),
+            why = whyLine(index, ordered.size, targetName, targetKey, s, me, anchor, cold, from),
         )
     }
     return Ladder(targetName, built, cold)
@@ -195,6 +202,7 @@ private fun whyLine(
     me: TagProfile,
     anchor: LibraryArtist?,
     cold: Boolean,
+    from: String?,
 ): String {
     val names = namesByKey(s.candidate.votes)
     val first = index == 0
@@ -208,6 +216,13 @@ private fun whyLine(
 
     if (!cold && anchor != null && shared.isNotEmpty()) {
         val common = listAnd(shared)
+        if (from != null) {
+            return when {
+                first -> "Nearest to $from: shares $common, with a little more $target."
+                last -> "The core of $target, and still shares $common with $from."
+                else -> "Shares $common with $from, with more $target."
+            }
+        }
         return when {
             first -> "Closest to your taste: shares $common with your saved ${anchor.name}."
             last -> "The core of $target, and still shares $common with your saved ${anchor.name}."

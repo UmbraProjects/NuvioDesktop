@@ -10,7 +10,10 @@ import kotlinx.coroutines.sync.withLock
  * The artist is turned into a target genre: their own tag votes, cleaned up by phase 0, give a primary genre (the
  * most voted). The ladder is then the same [buildLadder] run on that genre, over the genre's candidates (phase 3's
  * one tag search), with the artist themself left out of the pool so they never stand on their own ladder.
- * Out-from mode and the Deezer related-artist fallback for thinly tagged artists are phase 4b.
+ *
+ * Phase 4b adds two things on top (see LadderRelated.kt and LadderOutFrom.kt): an artist with no usable genre tag
+ * borrows genres from Deezer's related artists ([ArtistTarget.borrowedFrom]), and out-from mode, for an artist the
+ * person already loves.
  *
  * One paced MusicBrainz call finds the artist and their tags ([MusicBrainzClient.searchArtistWithTags]); the answer is
  * kept for the session, like the genre candidates.
@@ -23,6 +26,8 @@ internal data class ArtistTarget(
     val genre: String,
     /** Up to [ARTIST_TARGET_GENRES] genres by votes, the primary first. */
     val genres: List<String>,
+    /** Related artists the genres were borrowed from when the artist's own tags gave none; empty when they are the artist's own. */
+    val borrowedFrom: List<String> = emptyList(),
 )
 
 internal const val ARTIST_TARGET_GENRES = 3
@@ -41,18 +46,21 @@ internal fun pickArtistHit(query: String, hits: List<LadderCandidate>): LadderCa
 }
 
 /** The ladder target for [artist], or null when none of their tags is a usable genre. */
-internal fun artistTarget(artist: LadderCandidate): ArtistTarget? {
+internal fun artistTarget(artist: LadderCandidate, borrowedFrom: List<String> = emptyList()): ArtistTarget? {
     val genres = normalizeWeightedGenres(artist.votes).keys.toList()
     val primary = genres.firstOrNull() ?: return null
-    return ArtistTarget(artist, primary, genres.take(ARTIST_TARGET_GENRES))
+    return ArtistTarget(artist, primary, genres.take(ARTIST_TARGET_GENRES), borrowedFrom)
 }
 
 internal enum class ArtistLadderFailure {
     /** MusicBrainz knows no artist by that name. */
     NoArtist,
 
-    /** The artist has no usable genre tag: phase 4b's Deezer fallback will cover this. */
+    /** The artist has no usable genre tag, and Deezer's related artists did not give one either. */
     NoGenre,
+
+    /** Out-from mode found no neighbouring genre to lead out into. */
+    NoOutward,
 
     /** A source could not be reached; nothing was cached, so asking again tries again. */
     Unreachable,
@@ -64,7 +72,15 @@ internal sealed interface ArtistLookup {
 }
 
 internal sealed interface ArtistLadderOutcome {
-    data class Ready(val target: ArtistTarget, val ladder: Ladder) : ArtistLadderOutcome
+    data class Ready(
+        val target: ArtistTarget,
+        val ladder: Ladder,
+        val mode: LadderMode = LadderMode.Into,
+        /** Out-from only: the genre the ladder leads out into, as named on screen. */
+        val destination: String? = null,
+        /** Out-from only: other genres the person could lead out into instead. */
+        val alternatives: List<String> = emptyList(),
+    ) : ArtistLadderOutcome
     data class Failed(val reason: ArtistLadderFailure) : ArtistLadderOutcome
 }
 
@@ -86,9 +102,13 @@ internal fun buildArtistLadder(
 /**
  * Finds artists by name and caches the answer by [genreKey] of the typed name. [fetch] answers null when the source
  * could not be reached: that is never cached. "No such artist" and "no usable genre" are cached for the day.
+ *
+ * An artist with no usable tag asks [relatedTags] (when given) for the tagged artists related to them and borrows
+ * their genres ([borrowGenres]); it answers null when its sources could not be reached, which is never cached.
  */
 internal class ArtistTargetResolver(
     private val now: () -> Long = { LibraryClock.nowEpochMs() },
+    private val relatedTags: (suspend (artist: LadderCandidate) -> List<LadderCandidate>?)? = null,
     private val fetch: suspend (name: String) -> List<LadderCandidate>?,
 ) {
     private class Entry(val lookup: ArtistLookup, val expiresAt: Long)
@@ -105,16 +125,24 @@ internal class ArtistTargetResolver(
             if (cached != null && cached.expiresAt > now()) return@withLock cached.lookup
             entries.remove(key)
             val hits = fetch(name) ?: return@withLock ArtistLookup.Failed(ArtistLadderFailure.Unreachable)
-            val hit = pickArtistHit(name, hits)
-            val lookup = when {
-                hit == null -> ArtistLookup.Failed(ArtistLadderFailure.NoArtist)
-                else -> artistTarget(hit)?.let { ArtistLookup.Found(it) }
-                    ?: ArtistLookup.Failed(ArtistLadderFailure.NoGenre)
-            }
+            val lookup = lookupFor(pickArtistHit(name, hits))
+            // Nothing is remembered when a source could not be reached, so asking again tries again.
+            if (lookup == ArtistLookup.Failed(ArtistLadderFailure.Unreachable)) return@withLock lookup
             entries[key] = Entry(lookup, now() + ARTIST_TARGET_TTL_MS)
             while (entries.size > MAX_CACHED_ARTISTS) entries.remove(entries.keys.first())
             lookup
         }
+    }
+
+    private suspend fun lookupFor(hit: LadderCandidate?): ArtistLookup {
+        if (hit == null) return ArtistLookup.Failed(ArtistLadderFailure.NoArtist)
+        artistTarget(hit)?.let { return ArtistLookup.Found(it) }
+        val borrow = relatedTags ?: return ArtistLookup.Failed(ArtistLadderFailure.NoGenre)
+        val related = borrow(hit) ?: return ArtistLookup.Failed(ArtistLadderFailure.Unreachable)
+        val borrowed = borrowGenres(related) ?: return ArtistLookup.Failed(ArtistLadderFailure.NoGenre)
+        return artistTarget(hit.copy(votes = borrowed.votes), borrowed.from)
+            ?.let { ArtistLookup.Found(it) }
+            ?: ArtistLookup.Failed(ArtistLadderFailure.NoGenre)
     }
 
     fun clear() {
@@ -124,11 +152,32 @@ internal class ArtistTargetResolver(
 
 /** The session's artist cache over the live MusicBrainz search, and the one call a screen makes. */
 internal object LadderArtistTargets {
-    private val resolver = ArtistTargetResolver { name -> MusicBrainzClient.searchArtistWithTags(name) }
+    private val resolver = ArtistTargetResolver(
+        relatedTags = { artist ->
+            relatedArtistTags(
+                artist,
+                related = { name -> DeezerClient.relatedByName(name)?.map { it.name } },
+                tagged = { name -> MusicBrainzClient.searchArtistWithTags(name) },
+            )
+        },
+        fetch = { name -> MusicBrainzClient.searchArtistWithTags(name) },
+    )
 
     /** Resolves [query] to an artist, fetches the genre's candidates (cached) and builds the ladder into the artist. */
     suspend fun ladderInto(query: String, artists: List<LibraryArtist>, dial: Double = 0.0): ArtistLadderOutcome =
         ladderInto(resolver, { genre -> LadderCandidates.forGenre(genre) }, query, artists, dial)
+
+    /**
+     * Resolves [query] to an artist the person already loves and builds the ladder leading out from them into
+     * [destination] (a neighbouring genre; null picks the artist's second genre).
+     */
+    suspend fun ladderOutFrom(
+        query: String,
+        artists: List<LibraryArtist>,
+        destination: String? = null,
+        dial: Double = 0.0,
+    ): ArtistLadderOutcome =
+        ladderOutFrom(resolver, { genre -> LadderCandidates.forGenre(genre) }, query, artists, destination, dial)
 }
 
 /** [LadderArtistTargets.ladderInto] with its two sources passed in, so the whole path is tested without a network. */

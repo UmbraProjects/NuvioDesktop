@@ -114,6 +114,33 @@ internal object DeezerClient {
     private val gate = Mutex()
     private var lastCallMs = 0L
 
+    private const val RELATED_LIMIT = 20
+
+    private suspend fun pacedFetch(url: String): String? = gate.withLock {
+        val wait = lastCallMs + GAP_MS - LibraryClock.nowEpochMs()
+        if (wait > 0) delay(wait)
+        try {
+            fetch(url)
+        } finally {
+            lastCallMs = LibraryClock.nowEpochMs()
+        }
+    }
+
+    /**
+     * The artists Deezer lists as related to the one called [name] (up to [RELATED_LIMIT], closest first). The artist
+     * is the search hit with exactly that name (most fans wins among namesakes). Null when Deezer could not be
+     * reached; empty when it has no such artist or no related ones.
+     */
+    suspend fun relatedByName(name: String): List<DeezerArtistHit>? {
+        val search = pacedFetch("$BASE/search/artist?q=${name.encodeURLParameter()}&limit=8") ?: return null
+        val artist = parseDeezerArtistSearch(search)
+            .filter { sameArtistName(it.name, name) }
+            .maxByOrNull { it.fans ?: 0L }
+            ?: return emptyList()
+        val related = pacedFetch("$BASE/artist/${artist.id}/related?limit=$RELATED_LIMIT") ?: return null
+        return parseDeezerArtistSearch(related)
+    }
+
     suspend fun albumDetail(albumId: Long): DeezerAlbumDetail? = gate.withLock {
         val wait = lastCallMs + GAP_MS - LibraryClock.nowEpochMs()
         if (wait > 0) delay(wait)

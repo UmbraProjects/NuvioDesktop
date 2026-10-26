@@ -45,7 +45,7 @@ class LadderArtistTargetTest {
     @Test
     fun targetIsTheMostVotedGenreAfterCleanup() {
         val t = artistTarget(cand("a", "A", mapOf("seen live" to 20, "Post Punk" to 3, "post-punk" to 4, "goth rock" to 5)))
-        assertEquals("post-punk", genreKey(t!!.genre))
+        assertEquals(genreKey("post-punk"), genreKey(t!!.genre))
         assertEquals(2, t.genres.size)
     }
 
