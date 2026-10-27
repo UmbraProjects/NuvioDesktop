@@ -49,6 +49,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -225,7 +228,28 @@ private fun MusicNowPlayingScreen(
         (lyrics as? LyricsUi.Ready)?.let { LyricsUi.Ready(it.lyrics.shiftedBy(syncOffsetMs)) } ?: lyrics
     }
 
-    Box(modifier.background(Color.Black)) {
+    // HTPC phase 7: the widgets fade out a few seconds after the last input or track change.
+    var inputTick by remember { mutableIntStateOf(0) }
+    var widgetsVisible by remember { mutableStateOf(true) }
+    LaunchedEffect(inputTick, track?.videoId) {
+        widgetsVisible = true
+        delay(WIDGET_IDLE_MS)
+        widgetsVisible = false
+    }
+
+    Box(
+        modifier
+            .background(Color.Black)
+            .onPreviewKeyEvent { inputTick++; false }
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        inputTick++
+                    }
+                }
+            },
+    ) {
         FanartBackdrop(images = backgrounds, coverUrl = album?.thumbnailUrl, spec = spec)
         StageGlow(color = colors.accent, spec = spec)
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -278,6 +302,14 @@ private fun MusicNowPlayingScreen(
                         }
                         Spacer(Modifier.height(10.dp))
                         Text(stageMotionCaption(libraryArtist?.mood, spec), color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
+                        Spacer(Modifier.height(14.dp))
+                        NowPlayingWidgets(
+                            state = state,
+                            player = player,
+                            libraryArtist = libraryArtist,
+                            lyricsMissing = lyrics is LyricsUi.Missing,
+                            visible = widgetsVisible,
+                        )
                     }
                     LyricsPane(
                         shownLyrics, state.positionMs, onSeek, reduced,
@@ -708,3 +740,6 @@ private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long, onSeek: (Long
         }
     }
 }
+
+/** How long the Stage widgets stay up after the last input. */
+private const val WIDGET_IDLE_MS = 6_000L

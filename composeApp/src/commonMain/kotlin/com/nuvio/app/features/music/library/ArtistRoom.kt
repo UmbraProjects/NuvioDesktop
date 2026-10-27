@@ -148,6 +148,8 @@ internal fun ArtistRoom(
                         artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
                         filter, playableOnly, demosOpen, onPlay, onShuffle, onPlayTop, topLabel, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
                     )
+                    ArtistWidgets(artist, onOpen) // fork:music - HTPC phase 8
+                    WhereNextStrip(artist, onOpenArtist) // fork:music - HTPC phase 3
                 }
             }
         } else {
@@ -163,6 +165,8 @@ internal fun ArtistRoom(
                     artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
                     filter, playableOnly, demosOpen, onPlay, onShuffle, onPlayTop, topLabel, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
                 )
+                ArtistWidgets(artist, onOpen) // fork:music - HTPC phase 8
+                WhereNextStrip(artist, onOpenArtist) // fork:music - HTPC phase 3
             }
         }
     }
@@ -311,12 +315,9 @@ private fun RoomIdentity(
     }
 
     val linkCount = groupLinks(artist.links).values.sumOf { it.size }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        artist.fans?.let { RoomStat(formatCount(it), "fans") }
-        RoomStat("${discography.totalCount}", "releases")
-        RoomStat("${discography.playableCount}", "playable")
-        if (linkCount > 0) RoomStat("$linkCount", "links")
-    }
+    // HTPC phase 8: large stat tiles instead of one small row.
+    ArtistStatTiles(artist, discography.totalCount, discography.playableCount)
+    if (linkCount > 0) RoomStat("$linkCount", "links")
 
     if (saved) {
         TextButton(

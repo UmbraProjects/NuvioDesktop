@@ -1,6 +1,11 @@
 package com.nuvio.app.features.music.library
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -74,10 +79,12 @@ import kotlinx.coroutines.launch
  * The header switches views: Shelf (this file), Constellation ([ConstellationView]) and Eras ([LibraryErasView]).
  */
 @Composable
-fun MusicLibraryShelf(
+internal fun MusicLibraryShelf(
     onArtistClick: (artistId: String) -> Unit,
     onAlbumClick: (browseId: String) -> Unit,
     modifier: Modifier = Modifier,
+    /** HTPC phase 4: the "Continue your ladder" card reopens a ladder; the host swaps its body for the ladder screen. */
+    onOpenLadder: (LadderRequest) -> Unit = {},
 ) {
     val colors = MaterialTheme.nuvio.colors
     LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
@@ -93,6 +100,11 @@ fun MusicLibraryShelf(
     val yearAgo = remember(state.artists) {
         val (y, m, d) = civilDate(LibraryClock.nowEpochMs())
         pickYearAgo(state.artists, y, m, d)
+    }
+    // HTPC phase 4: the card row above the shelf (a year ago, starred, added recently, continue your ladder).
+    val cards = remember(state.artists, yearAgo) {
+        val (y, m, d) = civilDate(LibraryClock.nowEpochMs())
+        shelfCards(state.artists, yearAgo, LadderProgressStore.resumable(), daySeed = y * 372 + m * 31 + d)
     }
     val totalReleases = remember(state.artists) { state.artists.sumOf { countReleaseCards(it.releases) } }
     // Starred artists first; the sort is stable, so each group stays alphabetical.
@@ -144,6 +156,7 @@ fun MusicLibraryShelf(
                     onArtistClick = onArtistClick,
                     onFocusArtist = { focusedId = it },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
+                    onOpenLadder = onOpenLadder, // HTPC phase 5
                 )
             } else if (view == LibraryView.Eras) { // fork:music
                 LibraryErasView(
@@ -158,11 +171,19 @@ fun MusicLibraryShelf(
             } else {
                 LazyColumn(
                     Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 8.dp, bottom = 24.dp), // 5% safe area for the TV
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (yearAgo != null) {
-                        item(key = "year-ago") { YearAgoStrip(yearAgo, state.artists.size, totalReleases) }
+                    if (cards.isNotEmpty()) {
+                        item(key = "shelf-cards") {
+                            ShelfCardRow(
+                                cards = cards,
+                                artistCount = state.artists.size,
+                                releaseCount = totalReleases,
+                                onOpenArtist = onArtistClick,
+                                onOpenLadder = onOpenLadder,
+                            )
+                        }
                     }
                     val pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }
                     items(pending.entries.toList(), key = { "pending:${it.key}" }) { (_, progress) ->
@@ -240,6 +261,70 @@ private fun YearAgoStrip(pick: YearAgoPick, artistCount: Int, releaseCount: Int)
         } else {
             Text("Not on YouTube Music", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
         }
+    }
+}
+
+// endregion
+
+// region shelf card row (HTPC phase 4)
+
+/**
+ * Three or four large cards above the shelf. Each can be reached with the d-pad (focus ring and a small grow). Enter or a
+ * click plays the card's release when it can be played, otherwise opens the artist; the ladder card reopens the ladder.
+ */
+@Composable
+private fun ShelfCardRow(
+    cards: List<ShelfCard>,
+    artistCount: Int,
+    releaseCount: Int,
+    onOpenArtist: (String) -> Unit,
+    onOpenLadder: (LadderRequest) -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val scope = rememberCoroutineScope()
+    val catalog = remember { defaultMusicCatalog() }
+    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            cards.forEach { card ->
+                val source = remember { MutableInteractionSource() }
+                val focused by source.collectIsFocusedAsState()
+                val scale by animateFloatAsState(if (focused) 1.05f else 1f)
+                val shape = RoundedCornerShape(16.dp)
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .graphicsLayer { scaleX = scale; scaleY = scale }
+                        .clip(shape)
+                        .background(Color.White.copy(alpha = if (focused) 0.10f else 0.05f))
+                        .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+                        .focusable(interactionSource = source)
+                        .clickable(interactionSource = source, indication = null) {
+                            val ladder = card.ladder
+                            val browseId = card.release?.ytBrowseId
+                            val artistId = card.artist?.id
+                            when {
+                                ladder != null -> onOpenLadder(ladder)
+                                browseId != null && card.kind != ShelfCardKind.Added -> scope.launch {
+                                    val album = runCatching { catalog.album(browseId) }.getOrNull() ?: return@launch
+                                    MusicPlayback.player.play(album, trackIndex = 0, shuffled = false)
+                                }
+                                artistId != null -> onOpenArtist(artistId)
+                            }
+                        }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    card.release?.let { ReleaseCover(it, Modifier.size(96.dp)) }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(card.label.uppercase(), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(card.title, fontSize = 28.sp, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        card.detail?.let { Text(it, fontSize = 22.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+            }
+        }
+        Text("$artistCount artists · $releaseCount releases", fontSize = 22.sp, color = colors.textMuted)
     }
 }
 

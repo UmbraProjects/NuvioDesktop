@@ -2,6 +2,9 @@ package com.nuvio.app.features.music.library
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -71,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.LocalPlatformContext
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioTextField
@@ -110,6 +114,8 @@ internal fun ConstellationView(
     onArtistClick: (artistId: String) -> Unit,
     onFocusArtist: (artistId: String?) -> Unit,
     modifier: Modifier = Modifier,
+    /** HTPC phase 5: "Ladder from here" and the gap cards open a ladder; the host swaps its body for the ladder screen. */
+    onOpenLadder: (LadderRequest) -> Unit = {},
 ) {
     val colors = MaterialTheme.nuvio.colors
     val context = LocalPlatformContext.current
@@ -135,6 +141,7 @@ internal fun ConstellationView(
     var chipKey by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     var hoverId by remember { mutableStateOf<String?>(null) }
+    var legendOpen by rememberSaveable { mutableStateOf(false) } // HTPC phase 5: the key is a corner chip, not a block over the left cluster
     var camera by remember { mutableStateOf(Camera()) }
     val mapFocus = remember { FocusRequester() }
 
@@ -168,6 +175,9 @@ internal fun ConstellationView(
                 litCount = focus?.size,
                 onLeaveField = { runCatching { mapFocus.requestFocus() } },
             )
+            // HTPC phase 5: the genres you tag but barely own, as places to grow (they would be the ghost halos on the map).
+            val gaps = remember(artists) { ladderStarters(artists, limit = 4).filter { it.artists in 1..GAP_MAX_ARTISTS } }
+            if (gaps.isNotEmpty()) GapRow(gaps, onOpenLadder)
         }
         Row(Modifier.weight(1f).fillMaxWidth()) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -199,7 +209,13 @@ internal fun ConstellationView(
                             onOpen = onArtistClick,
                             modifier = Modifier.fillMaxSize(),
                         )
-                        ConstellationLegend(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp))
+                        Column(
+                            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (legendOpen) ConstellationLegend()
+                            BigChip(if (legendOpen) "Hide key" else "Key", selected = legendOpen, onClick = { legendOpen = !legendOpen })
+                        }
                     }
                 }
             }
@@ -211,17 +227,22 @@ internal fun ConstellationView(
                     neighbours = m.graph.neighbours(panelArtist.id).mapNotNull { (id, similarity) -> byId[id]?.let { it to similarity } },
                     onSelect = { selectedId = it },
                     onOpen = { onArtistClick(panelArtist.id) },
+                    onLadderFrom = { onOpenLadder(LadderRequest.Artist(panelArtist.name, LadderMode.OutFrom)) },
+                    onLadderInto = { onOpenLadder(LadderRequest.Artist(panelArtist.name, LadderMode.Into)) },
                     onClose = { selectedId = null },
                     modifier = Modifier.width(PANEL_WIDTH).fillMaxHeight(),
                 )
             }
         }
         val waiting = m?.graph?.untagged?.mapNotNull { byId[it.id] }.orEmpty()
-        if (waiting.isNotEmpty()) NotPlacedTray(waiting, onArtistClick)
+        if (waiting.isNotEmpty()) NotPlacedTray(waiting, onArtistClick, onFetchTags = { MusicLibraryRepository.refresh(it) })
     }
 }
 
-private val PANEL_WIDTH = 300.dp
+private val PANEL_WIDTH = 380.dp
+
+/** A genre held by this many artists or fewer counts as a gap worth a ladder. */
+private const val GAP_MAX_ARTISTS = 8
 
 // region controls
 
@@ -264,7 +285,7 @@ private fun ConstellationControls(
         }
         LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(end = 8.dp)) {
             items(model.clusters.chips, key = { it.key }) { cluster ->
-                ActionPill("${cluster.label} · ${cluster.size}", selected = activeChip == cluster.key, onClick = { onChip(cluster.key) })
+                BigChip("${cluster.label}  ${cluster.size}", selected = activeChip == cluster.key, onClick = { onChip(cluster.key) })
             }
         }
     }
@@ -545,10 +566,13 @@ private fun ConstellationPanel(
     neighbours: List<Pair<LibraryArtist, Double>>,
     onSelect: (String) -> Unit,
     onOpen: () -> Unit,
+    onLadderFrom: () -> Unit,
+    onLadderInto: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
+    val topAlbums = remember(artist.topAlbumKeys, artist.releases) { artistTopReleases(artist, 5) }
     val accent = artist.palette?.let { Color(it.accent) } ?: colors.accent
     val releases = remember(artist.releases) { countReleaseCards(artist.releases) }
     val genres = remember(artist.genres, artist.tags) { topGenres(artist, 5) }
@@ -564,13 +588,13 @@ private fun ConstellationPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.clip(CircleShape).background(accent).padding(3.dp)) {
-                MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true)
+                MusicCover(artist.art.thumb, artist.name, size = 88.dp, circle = true)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(artist.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(artist.name, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
                     listOfNotNull("$releases release${if (releases == 1) "" else "s"}", clusterLabel).joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 22.sp,
                     color = colors.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -580,31 +604,48 @@ private fun ConstellationPanel(
                 Icons.Rounded.Close,
                 contentDescription = "Close",
                 tint = colors.textMuted,
-                modifier = Modifier.size(24.dp).clip(CircleShape).clickable(onClick = onClose),
+                modifier = Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onClose),
             )
         }
         if (genres.isNotEmpty()) {
-            Text(genres.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            Text(genres.joinToString(" · "), fontSize = 22.sp, color = colors.textSecondary)
+        }
+        if (topAlbums.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("TOP ALBUMS", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.accent, modifier = Modifier.padding(bottom = 4.dp))
+                topAlbums.forEachIndexed { i, release ->
+                    Text(
+                        "${i + 1}  ${release.title}",
+                        fontSize = 22.sp,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpen).padding(horizontal = 6.dp, vertical = 5.dp),
+                    )
+                }
+            }
         }
         artist.foundVia?.let {
-            Text("Found via ladder: $it", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+            Text("Found via ladder: $it", fontSize = 20.sp, color = colors.textMuted)
         }
         if (neighbours.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("SOUNDS LIKE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = colors.accent, modifier = Modifier.padding(bottom = 4.dp))
+                Text("SOUNDS LIKE", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.accent, modifier = Modifier.padding(bottom = 4.dp))
                 for ((other, similarity) in neighbours.take(6)) {
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onSelect(other.id) }.padding(horizontal = 6.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(other.name, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        Text("${(similarity * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+                        Text(other.name, fontSize = 22.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text("${(similarity * 100).roundToInt()}%", fontSize = 20.sp, color = colors.textMuted)
                     }
                 }
             }
         }
-        NuvioPrimaryButton(text = "Open artist room", modifier = Modifier.fillMaxWidth(), height = 44.dp, onClick = onOpen)
+        NuvioPrimaryButton(text = "Ladder from here", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onLadderFrom)
+        NuvioPrimaryButton(text = "Climb into ${artist.name}", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onLadderInto)
+        NuvioPrimaryButton(text = "Open artist room", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onOpen)
     }
 }
 
@@ -667,7 +708,7 @@ private fun LegendMark(glyph: LegendGlyph) {
 
 /** Artists with no genres or tags yet: they have no place on the map until the enricher fills those in. */
 @Composable
-private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) -> Unit) {
+private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) -> Unit, onFetchTags: (String) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
@@ -683,19 +724,70 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
             color = colors.textMuted,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(artists, key = { it.id }) { artist ->
-                Text(
-                    artist.name,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color.White.copy(alpha = 0.06f))
-                        .clickable { onArtistClick(artist.id) }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                Column(
+                    Modifier.width(240.dp).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.06f)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        artist.name,
+                        fontSize = 24.sp,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onArtistClick(artist.id) },
+                    )
+                    BigChip("Fetch tags", selected = false, onClick = { onFetchTags(artist.id) })
+                }
+            }
+        }
+    }
+}
+
+// endregion
+
+// region HTPC phase 5 widgets
+
+/** A chip the d-pad can reach: 22sp text, a focus ring, Enter or a click to use it. */
+@Composable
+private fun BigChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(22.dp)
+    Text(
+        text = text,
+        fontSize = 22.sp,
+        color = if (selected) colors.onAccent else colors.textPrimary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .clip(shape)
+            .background(if (selected) colors.accent else Color.White.copy(alpha = 0.08f))
+            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+            .focusable(interactionSource = source)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 8.dp),
+    )
+}
+
+/** Genres you tag but barely own: each card opens a ladder into it. */
+@Composable
+private fun GapRow(gaps: List<LadderStarter>, onOpenLadder: (LadderRequest) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Thin spots", fontSize = 22.sp, color = colors.textMuted)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(gaps, key = { it.genre }) { gap ->
+                BigChip(
+                    "Ladder into ${gap.genre} · ${gap.artists}",
+                    selected = false,
+                    onClick = { onOpenLadder(LadderRequest.Genre(gap.genre)) },
                 )
             }
         }

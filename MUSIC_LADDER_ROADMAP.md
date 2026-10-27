@@ -183,3 +183,7 @@ Each phase fits one session, leaves the app working, and can be the last one you
 - **Into / out from.** Into climbs into the blended genre. Out from leads into another of the record's genres (or a neighbour found by co-occurrence, as in 4b), closeness is measured against the record (mood and style included) and the why lines name the record. The same destination chips work. The record's artist never stands on the ladder.
 - **Search card:** on the Albums tab, the first result gives "Climb into the sound of X" and "Climb out from X" (a genre query still gives the genre pill). Progress is stored per record, apart from the artist's ladder.
 - **Known limits:** MusicBrainz tag search returns no mood, so a candidate's mood never matches the record's; mood only shapes out-from closeness through the anchor. Era uses the year an artist began, not when a record came out. A record by a band with no TheAudioDB entry follows its artist's genres and its year only.
+
+## HTPC layout notes (2026-10-27)
+
+The ladder screen, the artist page's "Where next?" strip, the shelf card row and the Stage widgets were reshaped for a 10-foot display. Status, key map and decisions are in `Docs/HTPC_MUSIC_BLANK_SPACE.md`. UI not compiled.

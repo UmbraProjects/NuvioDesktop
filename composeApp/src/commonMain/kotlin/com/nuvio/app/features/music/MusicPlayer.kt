@@ -262,6 +262,9 @@ class MusicPlayer(
         _state.update { it.copy(volume = volume.coerceIn(0, 100)) }
     }
 
+    /** The next [limit] tracks in the queue that can be played, for the Stage view's Up next card. */
+    fun upNext(limit: Int): List<MusicTrack> = queue?.upNext.orEmpty().filter { it.isAvailable }.take(limit)
+
     /** Stops playback and clears the queue. The mini-player goes away. */
     fun stop() {
         request?.cancel()

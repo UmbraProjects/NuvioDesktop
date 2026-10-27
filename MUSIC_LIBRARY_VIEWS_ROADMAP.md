@@ -187,3 +187,7 @@ Built in C3 and C4 as described above, still on the roadmap's assumptions until 
 - The Discover layer (unplayable releases).
 - Last.fm, ListenBrainz or other listening-history sources: the Added axis uses only when an artist was saved.
 - Playlist building from a view; Play era is the only new play action.
+
+## HTPC layout notes (2026-10-27)
+
+The shelf's year-ago banner became a card row, and the artist page and Stage view gained widgets. Eras already has the summary header, short-era neighbour row and future-date clean-up. The constellation detail drawer and gaps overlay are not built. See `Docs/HTPC_MUSIC_BLANK_SPACE.md`.

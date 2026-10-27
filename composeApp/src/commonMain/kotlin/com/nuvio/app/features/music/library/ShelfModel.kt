@@ -102,3 +102,65 @@ internal fun pickYearAgo(
 }
 
 // endregion
+
+// region the shelf's card row (HTPC phase 4)
+
+internal enum class ShelfCardKind { YearAgo, Starred, Added, Ladder }
+
+/**
+ * One card in the strip above the shelf. [release] gives the cover and, when it can be opened, a Play button;
+ * [ladder] (for [ShelfCardKind.Ladder]) is what tapping reopens.
+ */
+internal data class ShelfCard(
+    val kind: ShelfCardKind,
+    val label: String,
+    val title: String,
+    val detail: String?,
+    val artist: LibraryArtist? = null,
+    val release: LibraryRelease? = null,
+    val ladder: LadderRequest? = null,
+)
+
+private fun LibraryArtist.cardRelease(): LibraryRelease? {
+    val candidates = releases.filterNot { it.isDemo() }
+    return topAlbumKeys.firstNotNullOfOrNull { key -> candidates.firstOrNull { it.key == key && it.isPlayable } }
+        ?: candidates.filter { it.isPlayable }.maxByOrNull { it.releaseDate ?: it.year.orEmpty() }
+        ?: candidates.firstOrNull()
+}
+
+/**
+ * The cards, in order: a year ago this week, a starred artist (one per day, so the card changes daily; the Library keeps
+ * no play history, so "not played lately" is not possible), the artist added most recently, and the ladder most recently
+ * climbed ([resumable], most recent first). A card with nothing to show is left out.
+ */
+internal fun shelfCards(
+    artists: List<LibraryArtist>,
+    yearAgo: YearAgoPick?,
+    resumable: List<LadderProgress>,
+    daySeed: Int,
+): List<ShelfCard> = buildList {
+    if (yearAgo != null) {
+        val r = yearAgo.release
+        add(
+            ShelfCard(
+                ShelfCardKind.YearAgo, "A year ago this week", r.title,
+                listOfNotNull(yearAgo.artist.name, r.kind.label.lowercase()).joinToString(" · "),
+                yearAgo.artist, r,
+            ),
+        )
+    }
+    val starred = artists.filter { it.favourite }
+    if (starred.isNotEmpty()) {
+        val a = starred[Math.floorMod(daySeed, starred.size)]
+        val r = a.cardRelease()
+        add(ShelfCard(ShelfCardKind.Starred, "Starred, worth a spin", a.name, r?.title, a, r))
+    }
+    artists.filter { it.addedAtEpochMs > 0L }.maxByOrNull { it.addedAtEpochMs }?.let { a ->
+        add(ShelfCard(ShelfCardKind.Added, "Added recently", a.name, a.foundVia ?: "New in your Library", a, a.cardRelease()))
+    }
+    continueCards(resumable, limit = 1).firstOrNull()?.let { c ->
+        add(ShelfCard(ShelfCardKind.Ladder, "Continue your ladder", c.title, c.detail, ladder = c.request))
+    }
+}
+
+// endregion

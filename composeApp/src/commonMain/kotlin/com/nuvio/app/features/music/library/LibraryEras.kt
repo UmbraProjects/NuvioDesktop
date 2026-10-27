@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import kotlin.math.abs
+
 /**
  * Library views, phase E0: the whole library on one time axis, as pure data (no Compose, so it is
  * unit-tested). The artist room's [buildEraTimeline] does this for one artist; this does it for every
@@ -125,7 +127,12 @@ private fun LibraryArtist.orderKey(): String = (sortName ?: name).lowercase()
  * - A release with no usable date goes to [LibraryEras.undated].
  * - Order is deterministic: oldest first, then artist, then release key.
  */
-internal fun buildLibraryEras(artists: List<LibraryArtist>, axis: ErasAxis = ErasAxis.Released): LibraryEras {
+internal fun buildLibraryEras(
+    artists: List<LibraryArtist>,
+    axis: ErasAxis = ErasAxis.Released,
+    /** Latest year a release may be placed at; a later date (a 2045 "[unknown]" single) is treated as undated. */
+    maxYear: Int = MAX_RELEASE_YEAR,
+): LibraryEras {
     val all = artists.flatMap { artist ->
         val addedYear = artist.addedYearOrNull()
         buildDiscography(artist.releases, playableOnly = false, filter = ReleaseFilter.All)
@@ -133,7 +140,7 @@ internal fun buildLibraryEras(artists: List<LibraryArtist>, axis: ErasAxis = Era
             .map { group ->
                 when (axis) {
                     ErasAxis.Released -> {
-                        val year = group.primary.releasedYearOrNull()
+                        val year = group.primary.releasedYearOrNull()?.takeIf { it <= maxYear }
                         val position = releasePosition(group.primary)?.takeIf { year != null } ?: year?.let { it + 0.5 } ?: 0.0
                         LibraryEraEntry(artist, group, year, position)
                     }
@@ -217,6 +224,40 @@ internal data class EraArtistGroup(val artist: LibraryArtist, val entries: List<
 internal fun groupEraByArtist(era: LibraryEra, newestFirst: Boolean): List<EraArtistGroup> {
     val ordered = if (newestFirst) era.entries.asReversed() else era.entries
     return ordered.groupBy { it.artist.id }.values.map { EraArtistGroup(it.first().artist, it) }
+}
+
+// endregion
+
+// region summary and short eras (HTPC phase 6)
+
+/** The most common genres among the era's releases (the release's own, else its artist's), lower case, most common first. */
+internal fun eraTopGenres(era: LibraryEra, limit: Int = 3): List<String> =
+    era.entries
+        .flatMap { e -> e.release.genres.ifEmpty { e.artist.genres }.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.distinct() }
+        .groupingBy { it }.eachCount().entries
+        .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+        .take(limit).map { it.key }
+
+/** The artists with the most releases in the era, most first, ties by name. */
+internal fun eraTopArtists(era: LibraryEra, limit: Int = 3): List<LibraryArtist> =
+    era.entries.groupBy { it.artist.id }.values
+        .sortedWith(compareByDescending<List<LibraryEraEntry>> { it.size }.thenBy { it.first().artist.orderKey() })
+        .take(limit).map { it.first().artist }
+
+/** An era with fewer releases than this gets an "Also from nearby" row so the lower half of the screen is not blank. */
+internal const val ERA_FULL_RELEASES = 12
+
+/** The nearest other band that has something in it, with its newest releases. */
+internal data class EraNeighbour(val era: LibraryEra, val entries: List<LibraryEraEntry>)
+
+/** The neighbour to fill a short [era] with, or null when the era is full already or nothing else is in the library. Older band wins a tie. */
+internal fun eraNeighbour(eras: LibraryEras, era: LibraryEra, fullAt: Int = ERA_FULL_RELEASES): EraNeighbour? {
+    if (era.releaseCount >= fullAt) return null
+    val nearest = eras.eras
+        .filter { !it.isEmpty && it.index != era.index }
+        .minWithOrNull(compareBy<LibraryEra>({ abs(it.index - era.index) }, { it.index }))
+        ?: return null
+    return EraNeighbour(nearest, nearest.entries.asReversed().take(fullAt))
 }
 
 // endregion

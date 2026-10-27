@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.features.music.MusicCover
 import com.nuvio.app.features.music.defaultMusicCatalog
@@ -73,7 +75,9 @@ internal fun LibraryErasView(
     val colors = MaterialTheme.nuvio.colors
     // Released places a release by its own year; Added by the year its artist joined the library.
     var axis by rememberSaveable { mutableStateOf(ErasAxis.Released) }
-    val eras = remember(artists, axis) { buildLibraryEras(artists, axis) }
+    // A release dated more than a year ahead (a 2045 "[unknown]" single) is undated, not a bar on the ruler.
+    val latestYear = remember { (yearOfEpochMs(LibraryClock.nowEpochMs()) ?: MAX_RELEASE_YEAR) + 1 }
+    val eras = remember(artists, axis) { buildLibraryEras(artists, axis, maxYear = latestYear) }
     // null means "not chosen": the newest era with something in it. Saved, so coming back lands where the person left.
     var chosen by rememberSaveable { mutableStateOf<Int?>(null) }
     val selected = chosen?.takeIf { it in eras.eras.indices } ?: eras.defaultEraIndex()
@@ -205,8 +209,35 @@ internal fun LibraryErasView(
                         }
                     }
                 }
+                if (!era.isEmpty) item(key = "summary") { EraSummary(era) }
                 items(groups, key = { "era${era.index}:${it.artist.id}" }) { group ->
                     EraArtistRow(group, reducedMotion, onArtistClick, onAlbumClick)
+                }
+                eraNeighbour(eras, era)?.let { near ->
+                    item(key = "also") {
+                        Column(Modifier.fillMaxWidth().padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Also from ${near.era.years}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textSecondary,
+                            )
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                items(near.entries, key = { "also:${it.artist.id}:${it.release.key}" }) { entry ->
+                                    CoverTile(
+                                        tile = ShelfTile(entry.release, rank = null, featured = false, pinned = entry.release.key in entry.artist.pinnedTopKeys),
+                                        reducedMotion = reducedMotion,
+                                        dimmed = !entry.isPlayable,
+                                        onClick = {
+                                            val id = entry.release.ytBrowseId
+                                            if (id != null) onAlbumClick(id) else onArtistClick(entry.artist.id)
+                                        },
+                                        onTogglePin = { MusicLibraryRepository.toggleTopPin(entry.artist.id, entry.release.key) },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -214,7 +245,8 @@ internal fun LibraryErasView(
             item(key = "undated") {
                 val n = eras.undated.size
                 Text(
-                    "$n undated release${if (n == 1) "" else "s"}" + if (axis == ErasAxis.Added) " (their artists have no added date)" else "",
+                    "$n undated release${if (n == 1) "" else "s"}" +
+                        if (axis == ErasAxis.Added) " (their artists have no added date)" else " (no usable date, or dated more than a year ahead)",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 8.dp),
@@ -225,6 +257,44 @@ internal fun LibraryErasView(
 }
 
 private val RULER_HEIGHT = 112.dp
+
+/** The era as a banner: a mosaic of its covers, its top genres and the artists with the most releases in it. */
+@Composable
+private fun EraSummary(era: LibraryEra) {
+    val colors = MaterialTheme.nuvio.colors
+    val mosaic = (listOfNotNull(era.lead) + era.entries.asReversed()).distinctBy { it.artist.id }.take(4)
+    val genres = eraTopGenres(era)
+    val artists = eraTopArtists(era)
+    Row(
+        Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.05f)).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            mosaic.forEach { ReleaseCover(it.release, Modifier.size(96.dp)) }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (genres.isNotEmpty()) {
+                Text(
+                    genres.joinToString(" · ") { g -> g.replaceFirstChar { it.uppercase() } },
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (artists.isNotEmpty()) {
+                Text(
+                    "Most from " + artists.joinToString(" · ") { it.name },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
 
 /** One era on the ruler: its release count over a bar, the first year under it. */
 @Composable

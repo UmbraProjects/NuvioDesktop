@@ -164,6 +164,7 @@ fun MusicTabScreen(
                 onArtistClick = onArtistClick,
                 onAlbumClick = onAlbumClick,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
+                onOpenLadder = { ladder = it }, // fork:music
             )
             return@Column
         }
