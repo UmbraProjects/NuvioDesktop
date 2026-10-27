@@ -2,6 +2,7 @@ package com.nuvio.app.features.music.library
 
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
@@ -18,8 +19,12 @@ import kotlin.math.sqrt
  *     strongest axes of variation (PCA, by power iteration with a fixed iteration count) give each artist an x and
  *     a y, so artists that share genres land close together. The sign of each axis is fixed (its largest loading is
  *     positive), so a flip never mirrors the map.
- *  2. **Fit.** The cloud is scaled uniformly (aspect kept) and centred in the unit box with a margin.
- *  3. **Relax.** Stars closer than their radii are pushed apart. Every pair is judged from the same positions and the
+ *  2. **Orient.** PCA only fixes the plane, not which way is "x" or which side is "up", and those can flip when one
+ *     artist is added. The cloud is turned until its anchor star lies on the positive x axis and mirrored so its
+ *     lopsided side is up ([orientScores]), so the usual addition moves each star only a little. When two axes are
+ *     nearly as strong as each other the plane itself can still change; that is inherent to PCA.
+ *  3. **Fit.** The cloud is scaled uniformly (aspect kept) and centred in the unit box with a margin.
+ *  4. **Relax.** Stars closer than their radii are pushed apart. Every pair is judged from the same positions and the
  *     pushes are summed and damped (not applied one pair after another), so the result does not depend on the order
  *     stars are listed in and an added star disturbs only its neighbours. The smaller star of a pair moves further.
  *
@@ -35,17 +40,20 @@ internal const val LAYOUT_ITERATIONS = 100
 /** Empty border of the unit box that the fitted cloud keeps clear. */
 internal const val LAYOUT_MARGIN = 0.06
 
-/** Radius of the largest star; shrinks for crowded libraries (see [starRadii]). */
+/** Radius of the largest star; shrinks for crowded libraries (see [starRadii]: about a quarter of the box is covered by stars at most). */
 internal const val MAX_STAR_RADIUS = 0.05
 
-/** Most relaxation passes; it stops earlier when nothing overlaps. */
-internal const val RELAX_PASSES = 150
+/** Most relaxation passes; it stops earlier when nothing overlaps. 300 clears libraries to about 150 artists; beyond ~300 two stars may touch by a pixel. */
+internal const val RELAX_PASSES = 300
 
 /** Share of the summed push applied per pass. */
 internal const val RELAX_DAMPING = 0.5
 
 /** Clear space kept between two stars after relaxing. */
 internal const val STAR_GAP = 0.004
+
+/** The anchor star is the first (by id) whose distance from the centre is at least this share of the farthest star's. */
+internal const val ANCHOR_SHARE = 0.5
 
 private const val EPS = 1e-12
 
@@ -121,7 +129,7 @@ private fun unit(v: DoubleArray): DoubleArray? {
 internal fun starRadii(releaseCounts: List<Int>): List<Double> {
     if (releaseCounts.isEmpty()) return emptyList()
     val top = releaseCounts.max()
-    val base = min(MAX_STAR_RADIUS, 0.35 / sqrt(releaseCounts.size.toDouble()))
+    val base = min(MAX_STAR_RADIUS, 0.25 / sqrt(releaseCounts.size.toDouble()))
     return releaseCounts.map { c ->
         val t = if (top > 0) sqrt(c.toDouble() / top) else 1.0
         base * (0.55 + 0.45 * t)
@@ -140,6 +148,27 @@ internal fun fitToUnitBox(points: List<Pair<Double, Double>>): List<DoubleArray>
     val cx = (minX + maxX) / 2
     val cy = (minY + maxY) / 2
     return points.map { doubleArrayOf(0.5 + (it.first - cx) * scale, 0.5 + (it.second - cy) * scale) }
+}
+
+/**
+ * Turns the projected cloud into one fixed orientation. PCA only fixes the plane: which way is "x", and which side
+ * is "up", can flip when a single artist is added and two axes are nearly as strong as each other, and the whole
+ * map would jump. So the cloud is rotated until the anchor star lies on the positive x axis, then mirrored so its
+ * lopsided side is up (a cloud that is nearly symmetric has nothing to mirror, so a flip there moves almost no star).
+ * [scores] must be in star order (by id), centred on 0.
+ */
+internal fun orientScores(scores: List<Pair<Double, Double>>): List<Pair<Double, Double>> {
+    if (scores.size < 2) return scores
+    val norms = scores.map { hypot(it.first, it.second) }
+    val top = norms.max()
+    if (top < 1e-9) return scores
+    val anchor = norms.indexOfFirst { it >= ANCHOR_SHARE * top }
+    val theta = atan2(scores[anchor].second, scores[anchor].first)
+    val c = cos(-theta)
+    val s = sin(-theta)
+    val turned = scores.map { (x, y) -> (x * c - y * s) to (x * s + y * c) }
+    val lean = turned.sumOf { it.first * it.first * it.second }
+    return if (lean < 0) turned.map { it.first to -it.second } else turned
 }
 
 /** Pushes overlapping stars apart in place; see the file comment. [ids] only breaks the tie of two stars exactly on top of each other. */
@@ -192,7 +221,7 @@ internal fun layoutConstellation(graph: ConstellationGraph): ConstellationLayout
     if (stars.isEmpty()) return ConstellationLayout(emptyList())
     val axes = principalAxes(stars.map { it.profile })
     val radii = starRadii(stars.map { countReleaseCards(it.artist.releases) })
-    val placed = fitToUnitBox(axes.scores)
+    val placed = fitToUnitBox(orientScores(axes.scores))
     relaxStars(placed, radii, stars.map { it.id })
     return ConstellationLayout(stars.mapIndexed { i, s -> StarPoint(s.id, placed[i][0], placed[i][1], radii[i]) })
 }

@@ -109,4 +109,37 @@ class ConstellationLayoutTest {
         assertEquals(fitted[0][1], fitted[1][1], 1e-9) // same y: the aspect is kept, the short side is centred
         assertTrue(fitted[2][1] > fitted[0][1])
     }
+
+    @Test
+    fun aBigLibraryStillHasNoOverlappingStars() {
+        val pool = listOf("shoegaze", "dream pop", "ambient", "drone", "noise rock", "post-rock", "death metal", "thrash metal",
+            "black metal", "doom metal", "jazz", "bebop", "swing", "hip-hop", "trap", "house", "techno", "trance", "folk", "country")
+        val crowd = (0 until 150).map { i ->
+            artist("c%03d".format(i), pool[i % pool.size], pool[(i * 7 + 3) % pool.size])
+        }
+        val map = layout(crowd)
+        for (i in map.points.indices) for (j in i + 1 until map.points.size) {
+            val a = map.points[i]
+            val b = map.points[j]
+            assertTrue(hypot(a.x - b.x, a.y - b.y) >= a.radius + b.radius - 1e-9, "${a.id} overlaps ${b.id}")
+        }
+    }
+
+    @Test
+    fun orientationIsTheSameWhateverWayThePlaneCameOut() {
+        val cloud = listOf(3.0 to 0.5, -1.0 to 1.0, -2.0 to -0.5, 0.0 to -1.0)
+        val expected = orientScores(cloud)
+        fun turned(a: Double, mirror: Boolean) = cloud.map { (x, y) ->
+            val yy = if (mirror) -y else y
+            (x * kotlin.math.cos(a) - yy * kotlin.math.sin(a)) to (x * kotlin.math.sin(a) + yy * kotlin.math.cos(a))
+        }
+        for (a in listOf(0.0, 1.0, 2.5, -1.2)) for (mirror in listOf(false, true)) {
+            val got = orientScores(turned(a, mirror))
+            for (i in cloud.indices) {
+                assertEquals(expected[i].first, got[i].first, 1e-9)
+                assertEquals(expected[i].second, got[i].second, 1e-9)
+            }
+        }
+        assertTrue(expected[0].first > 0 && abs(expected[0].second) < 1e-9, "the anchor sits on the positive x axis")
+    }
 }
