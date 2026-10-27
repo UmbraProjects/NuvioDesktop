@@ -112,8 +112,8 @@ Later, not in v1: hollow "unexplored" stars for neighbouring genres your library
 
 | # | Phase | What gets built | Done when | Status |
 |---|---|---|---|---|
-| C0 | **Similarity graph** | `LibraryConstellation.kt`: profiles for artists, pairwise cosine, nearest 3 per artist above the threshold, untagged set. | Tests: similar artists link, dissimilar don't, untagged are set aside, the graph is symmetric where mutual, same input gives the same graph. | |
-| C1 | **Layout** | PCA projection and overlap relaxation, fitted to a unit box. | Tests: deterministic; two similar artists end up closer than two dissimilar ones; no two stars overlap; adding one artist moves the others only slightly; sign is fixed. | |
+| C0 | **Similarity graph** | `LibraryConstellation.kt`: profiles for artists, pairwise cosine, nearest 3 per artist above the threshold, untagged set. | Tests: similar artists link, dissimilar don't, untagged are set aside, the graph is symmetric where mutual, same input gives the same graph. | Done (untested in Gradle) |
+| C1 | **Layout** | PCA projection and overlap relaxation, fitted to a unit box. | Tests: deterministic; two similar artists end up closer than two dissimilar ones; no two stars overlap; adding one artist moves the others only slightly; sign is fixed. | Done (untested in Gradle) |
 | C2 | **Clusters** | Main-genre grouping, merge singletons, top 8 chips, label positions. | Tests on a fake library: groups, labels, singleton merged, chips ordered by size. | |
 | C3 | **Draw** | Canvas: stars, lines, labels, "Not placed yet" tray, empty state. View switch shows it. | You can switch to Constellation and see your library as a map. | |
 | C4 | **Interact** | Hover (name, genres, glow), click opens room, drag pan, scroll zoom, keys, genre-chip dimming. | Every star can be reached by mouse and by keyboard. | |
