@@ -5,6 +5,7 @@
 ### Added
 
 - **Ladder Result As Large Cards** - the ladder screen now shows five large cards in a strip, with a path rail from where you start to the target genre, a detail panel for the focused rung (the reason, a two-ended closeness bar, a familiarity dial) and large buttons. Left and Right browse, Up goes further out, Down comes closer, A or L loves, X or S skips, Enter plays the hook. The last rung offers Save all and Climb higher. Text is sized for a TV (28sp body) with 5% margins.
+- **Ladder Playlist And Countdown** - the end-of-ladder summary can play the whole ladder as a playlist, one album per rung in order, and a card shows a ring filling around its number while its hook waits to start.
 - **Where Next? On The Artist Page** - a strip of five rungs leading out from the artist, built automatically and kept for the session. Direction chips rebuild it, a "Similar in your library" row jumps to artists you already have, and selecting a rung plays its hook with Save and Close.
 - **Library Shelf Card Row** - the "A year ago this week" banner is now a row of cards: a year ago this week, a starred artist, added recently, and continue your ladder. The cards can be reached with the d-pad.
 - **Now Playing Widgets** - under the title on the Stage view: track position in the album, the next three tracks, and, when there are no lyrics, three artists to try next. They fade out a few seconds after the last input.

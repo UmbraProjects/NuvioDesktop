@@ -1,6 +1,6 @@
 # Music Library views: Eras and Constellation
 
-The Library screen has three views in its header: **Shelf**, **Constellation** and **Eras**. Shelf and Eras are built. Constellation is built through C4: the logic (C0 to C2: similarity graph, layout, clusters), the drawing (C3) and the interaction (C4). Its header pill is live. The ladder link (C5) and the play buttons (C6) are next.
+The Library screen has three views in its header: **Shelf**, **Constellation** and **Eras**. Shelf and Eras are built. Constellation is built through C4: the logic (C0 to C2: similarity graph, layout, clusters), the drawing (C3) and the interaction (C4). Its header pill is live. The side panel's ladder buttons (part of C5) were added with the HTPC layout; the found-via ring, cluster "Ladder into" and the play buttons (C6) are still to do.
 
 **Status of this document: the open questions were settled on 2026-10-27** (see "Decisions"). The original mockup is still not in the repo, so the decisions below are the owner's answers to the questions this document raised, plus the extras the mockup shows (legend, side panel, extra play buttons, search/filter box; see "Extras from the mockup"). Where those extras are only described by name, the details below are marked as assumptions to confirm.
 
@@ -79,9 +79,9 @@ The maths is the ladder's. `LadderModel.kt` already turns an artist into a `TagP
 - **Stars**: a circle per artist, in their palette accent; size grows with release count, favourites (the shelf's gold star) get a ring.
 - **Lines**: each artist is joined to their nearest few neighbours (3), when the similarity is high enough (cosine 0.35 or more), so the lines form constellations rather than a hairball.
 - **Clusters**: groups of stars are labelled by their shared main genre ("shoegaze", "ambient"), drawn as quiet labels and a faint halo.
-- **Hover** a star: the name, its top three genres, and the screen glow takes its accent. **Click** selects it and opens the side panel, which has **Open artist room**. **Drag** pans, **scroll** zooms, **Escape** clears the selection and resets the view.
+- **Hover** a star: the name, its top three genres, and the screen glow takes its accent. **Click** selects it and opens the side panel, which has **Ladder from here**, **Climb into** and **Open artist room**. **Drag** pans, **scroll** zooms, **Escape** clears the selection and resets the view.
 - **Genre chips** along the top (the library's biggest clusters): choose one and the rest dims.
-- **Untagged artists** (no genres or tags yet, so no profile) are not placed; they wait in a small "Not placed yet" tray with the reason, and join the map once the enricher fills their tags.
+- **Untagged artists** (no genres or tags yet, so no profile) are not placed; they wait in a "Not placed yet" tray of cards (each with a **Fetch tags** button) and join the map once the enricher fills their tags.
 - Fewer than 3 placeable artists: a message ("A constellation needs a few artists with tags") instead of a map.
 - The extras from the mockup (legend, side panel for the selected star, play buttons, search/filter box): see "Extras from the mockup".
 
@@ -127,7 +127,7 @@ Later, not in v1: hollow "unexplored" stars for neighbouring genres your library
 | C2 | **Clusters** | Main-genre grouping, merge singletons, top 8 chips, label positions. | Tests on a fake library: groups, labels, singleton merged, chips ordered by size, mood never names a group, centroid and halo. | Done (as C0) |
 | C3 | **Draw** | Canvas: stars, lines, cluster labels and halos, **legend**, "Not placed yet" tray, empty state. View switch shows it. | You can switch to Constellation and see your library as a map. | Done (untested in Gradle) |
 | C4 | **Interact** | Hover (name, genres, glow), click selects a star, drag pan, scroll zoom, keys, genre-chip dimming, **search/filter box**, **side panel** for the selected star. | Every star can be reached by mouse and by keyboard; typing in the box dims the stars that don't match. | Done (untested in Gradle) |
-| C5 | **Ladder link** | Star menu and side-panel buttons (climb into or out from), cluster "Ladder into", `foundVia` ring and line. | A star opens a ladder; a ladder-found artist shows how it was found. | |
+| C5 | **Ladder link** | Star menu and side-panel buttons (climb into or out from), cluster "Ladder into", `foundVia` ring and line. | A star opens a ladder; a ladder-found artist shows how it was found. | Partly done (UI not compiled): the panel has Ladder from here and Climb into, and shows `foundVia`; no star menu, cluster "Ladder into" or ring yet |
 | C6 | **Play buttons** | **Play** on the side panel (the star's top albums, `playTopAlbums`) and **Play cluster** (shuffled top albums of the cluster's artists), as Eras' Play era does. A star or cluster with nothing playable says so. | Playing from a star or a cluster starts audio; nothing playable says so. | |
 
 ### Built in C3 and C4
@@ -140,12 +140,12 @@ Pure and tested (tests not yet run through Gradle): `ConstellationModel.kt` (`bu
 - **Drawing.** Stars in the palette accent with a soft glow and a gold ring for a favourite; lines as a gradient between the two stars' colours, firmer for closer matches and for mutual picks, and bright on the selected star; halos and genre names only for groups of two or more, the name just above the halo and kept on the canvas (not hidden under the stars); a legend; the "Not placed yet" tray, whose chips open the artist room.
 - **Interaction.** Hover tooltip with the name and top three genres, flipped near the right edge. Click selects; clicking empty space clears. Arrow keys move to the nearest star that way (preferring a cone round the axis), Tab and Shift+Tab walk every star in reading order (this is what guarantees keyboard reach), Enter opens the room, + and - zoom, Escape clears the selection and resets the view. Selecting a star pans it into view.
 - **Filter.** The search box (name, genres, tags, style, mood) and the genre chips (the 8 biggest clusters) dim what does not match, in step: a star must be in the chosen cluster and match the text. Dimmed stars, their lines and halos are faded, never hidden, and keys skip them.
-- **Side panel.** Avatar, name, release count and cluster, top genres, `foundVia` when set, the closest neighbours with their similarity (click to select), and Open artist room. The map narrows while it is open. Climb into / out from (C5) and Play (C6) are not on it yet.
-- **Legend.** Size, favourite ring, line, halo, dimmed. The found-via-ladder ring is added with C5.
+- **Side panel.** Avatar, name, release count and cluster, top genres, `foundVia` when set, the closest neighbours with their similarity (click to select), and Open artist room. The map narrows while it is open. Since the HTPC layout it also lists the top five albums and has Ladder from here and Climb into; Play (C6) is not on it yet.
+- **Legend.** Size, favourite ring, line, halo, dimmed. It is now a "Key" chip in the bottom-left corner that opens on demand. The found-via-ladder ring is added with C5.
 
 ## Order
 
-Eras first (E0 to E3): its models and visuals already exist in the artist room, the risk is low, and it delivers the time axis the year-ago strip hints at. Then Constellation (C0 to C6), which has the new maths and the most to tune. E4 (Added axis) any time after E1. Each phase leaves the app working and can be the last one done. Built so far: E0 to E4 and C0 to C4; next is C5.
+Eras first (E0 to E3): its models and visuals already exist in the artist room, the risk is low, and it delivers the time axis the year-ago strip hints at. Then Constellation (C0 to C6), which has the new maths and the most to tune. E4 (Added axis) any time after E1. Each phase leaves the app working and can be the last one done. Built so far: E0 to E4 and C0 to C4, plus the panel's ladder buttons from C5; next is the rest of C5, then C6.
 
 ## Risks
 
@@ -190,4 +190,9 @@ Built in C3 and C4 as described above, still on the roadmap's assumptions until 
 
 ## HTPC layout notes (2026-10-27)
 
-The shelf's year-ago banner became a card row, and the artist page and Stage view gained widgets. Eras already has the summary header, short-era neighbour row and future-date clean-up. The constellation detail drawer and gaps overlay are not built. See `Docs/HTPC_MUSIC_BLANK_SPACE.md`.
+- **Shelf:** the year-ago banner is now a row of up to four cards (`ShelfCard` in `ShelfModel.kt`: a year ago this week, a starred artist, added recently, continue your ladder), drawn by `ShelfCardRow` in `MusicLibraryShelf.kt`. Rows have 48dp side margins. The Eras view keeps the year-ago strip.
+- **Eras:** the summary header, the short-era neighbour row ("Also from nearby") and the future-date clean-up (a date more than a year ahead is undated) were already built. Not built: bars stacked by genre mix.
+- **Constellation:** wider side panel with top albums, Ladder from here and Climb into; a "Thin spots" row of ladder chips; the key as a corner chip; larger chips with a focus ring; Not-placed cards with Fetch tags. Not built: ghost halos on the map, leader lines for overlapping labels, chips beside the map.
+- **Artist page and Stage view:** see `Docs/HTPC_MUSIC_BLANK_SPACE.md`.
+
+UI not compiled. The audited list of what is not built is in `Docs/HTPC_MUSIC_BLANK_SPACE.md`.

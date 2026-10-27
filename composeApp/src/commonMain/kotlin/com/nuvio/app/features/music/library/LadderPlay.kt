@@ -83,6 +83,26 @@ internal suspend fun playRung(
     return RungPlay.Playing(resolved.album.title, resolved.artist.browseId)
 }
 
+/**
+ * The whole ladder as one playlist: each rung's album (found as [resolveRungAlbum] does) in rung order, handed to [play]
+ * together. Rungs with nothing playable are left out. Returns how many albums were queued; 0 means nothing was played.
+ */
+internal suspend fun playRungsAsPlaylist(
+    catalog: MusicCatalog,
+    names: List<String>,
+    libraryArtists: List<LibraryArtist>,
+    topAlbumId: (LibraryArtist) -> String? = { a -> selectTopAlbums(a).releases.firstNotNullOfOrNull { it.ytBrowseId } },
+    play: (List<MusicAlbum>) -> Unit = { MusicPlayback.player.playAlbums(it) },
+): Int {
+    val albums = kotlinx.coroutines.coroutineScope {
+        names.map { name -> kotlinx.coroutines.async { resolveRungAlbum(catalog, name, libraryArtists, topAlbumId)?.album } }
+            .let { jobs -> kotlinx.coroutines.awaitAll(*jobs.toTypedArray()) }
+    }.filterNotNull()
+    if (albums.isEmpty()) return 0
+    play(albums)
+    return albums.size
+}
+
 /** Saves the rung's artist to the Library as found through [via]. Returns the channel id, or null when there is no such artist. */
 internal suspend fun saveRung(catalog: MusicCatalog, name: String, via: String): String? {
     val artist = rungArtist(catalog, name) ?: return null

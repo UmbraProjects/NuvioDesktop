@@ -1,6 +1,13 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
@@ -76,9 +83,13 @@ import kotlin.math.roundToInt
  *
  * Phase 10: the same screen shows a ladder from a record ([LadderRequest.Album]); the chips lead out into another genre.
  *
- * Phase 9, audition: Up and Down move over the rungs; after a short pause ([AUDITION_SETTLE_MS]) the rung under the cursor
- * plays from its hook ([auditionRung]), and the room takes on their palette and motion ([LadderRoom]). Enter, or a click
- * on the row, auditions at once. "Play album" is the phase 6 play from the first track.
+ * Phase 9, audition: Left and Right move over the rung cards; after a short pause ([AUDITION_SETTLE_MS]) the rung under
+ * the cursor plays from its hook ([auditionRung]), and the room takes on their palette and motion ([LadderRoom]). Enter, or
+ * a click on the card, auditions at once. "Play album" is the phase 6 play from the first track.
+ *
+ * HTPC layout: five large cards in a strip, a path rail, and a detail panel with a closeness bar and the familiarity dial.
+ * Up turns the dial further out ("too close"), Down brings it closer ("too far"), A or L loves, X or S skips; the same
+ * four [RungFeedback] values go through [applyFeedback], so the model is unchanged. Text is sized for a TV (28sp body).
  *
  * [onRequest] swaps the request in place (out-from mode's other destination genres).
  */
@@ -123,9 +134,13 @@ internal fun MusicLadderScreen(
         focusedId = rung.candidate.id
         auditionTarget = AuditionTarget(rung.candidate.id, rung.candidate.name, immediate)
     }
+    // The rung whose hook is waiting to start: its card draws a countdown ring for the settle pause.
+    var settlingId by remember(request) { mutableStateOf<String?>(null) }
     LaunchedEffect(auditionTarget) {
         val target = auditionTarget ?: return@LaunchedEffect
+        settlingId = if (target.immediate) null else target.id
         if (!target.immediate) delay(AUDITION_SETTLE_MS)
+        settlingId = null
         note(target.id, "Opening…")
         val result = auditionRung(catalog, target.name, MusicLibraryRepository.state.value.artists)
         note(target.id, auditionNote(result))
@@ -284,6 +299,7 @@ internal fun MusicLadderScreen(
                                     rung = rung,
                                     width = cardWidth,
                                     focused = rung.candidate.id == activeRung?.candidate?.id,
+                                    settling = rung.candidate.id == settlingId,
                                     onClick = { focusRung(rung, immediate = true) },
                                 )
                             }
@@ -304,6 +320,14 @@ internal fun MusicLadderScreen(
                             LadderSummary(
                                 rungs = rungs,
                                 onSaveAll = { rungs.forEach { save(it, shown.view.title) } },
+                                onPlayPlaylist = {
+                                    val last = rungs.last().candidate.id
+                                    note(last, "Opening playlist…")
+                                    scope.launch {
+                                        val queued = playRungsAsPlaylist(catalog, rungs.map { it.candidate.name }, MusicLibraryRepository.state.value.artists)
+                                        note(last, if (queued > 0) "Playing $queued album${if (queued == 1) "" else "s"}, one per rung" else "Nothing to play here")
+                                    }
+                                },
                                 onClimbHigher = { onRequest(LadderRequest.Artist(rung.candidate.name, LadderMode.OutFrom)) },
                             )
                         }
@@ -367,7 +391,7 @@ private fun PathRail(start: String, target: String, rungs: List<LadderRung>, foc
 
 /** One rung as a large card: the picture fills it, the focused card grows and the others dim. */
 @Composable
-private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, onClick: () -> Unit) {
+private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, settling: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
     val scale by animateFloatAsState(if (focused) FOCUS_SCALE else 1f)
@@ -386,8 +410,37 @@ private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, onClic
     ) {
         MusicCover(picture, rung.candidate.name, size = width - 24.dp)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(40.dp).clip(CircleShape).background(colors.accent), contentAlignment = Alignment.Center) {
-                Text("${rung.step}", style = ladderText(LadderType.Body), color = colors.onAccent)
+            // The ring fills over the settle pause, then the hook starts.
+            val ring = remember { Animatable(0f) }
+            LaunchedEffect(settling) {
+                if (settling) {
+                    ring.snapTo(0f)
+                    ring.animateTo(1f, tween(AUDITION_SETTLE_MS.toInt(), easing = LinearEasing))
+                } else {
+                    ring.snapTo(0f)
+                }
+            }
+            val ringColor = colors.textPrimary
+            Box(
+                Modifier.size(48.dp).drawBehind {
+                    if (ring.value > 0f) {
+                        val w = 4.dp.toPx()
+                        drawArc(
+                            color = ringColor,
+                            startAngle = -90f,
+                            sweepAngle = 360f * ring.value,
+                            useCenter = false,
+                            topLeft = Offset(w / 2, w / 2),
+                            size = Size(size.width - w, size.height - w),
+                            style = Stroke(w),
+                        )
+                    }
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.size(40.dp).clip(CircleShape).background(colors.accent), contentAlignment = Alignment.Center) {
+                    Text("${rung.step}", style = ladderText(LadderType.Body), color = colors.onAccent)
+                }
             }
             rung.mark?.let { Text(feedbackLabel(it), style = ladderText(LadderType.Legend), color = colors.textSecondary) }
         }
@@ -473,7 +526,7 @@ private fun LadderDetailPanel(
 
 /** After the last rung: the whole climb at a glance, with the two ways on. */
 @Composable
-private fun LadderSummary(rungs: List<LadderRung>, onSaveAll: () -> Unit, onClimbHigher: () -> Unit) {
+private fun LadderSummary(rungs: List<LadderRung>, onSaveAll: () -> Unit, onPlayPlaylist: () -> Unit, onClimbHigher: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     Column(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surfaceCard).padding(24.dp),
@@ -487,6 +540,7 @@ private fun LadderSummary(rungs: List<LadderRung>, onSaveAll: () -> Unit, onClim
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BigPill("Save all", onSaveAll)
+            BigPill("Play as a playlist", onPlayPlaylist)
             BigPill("Climb higher", onClimbHigher)
         }
     }

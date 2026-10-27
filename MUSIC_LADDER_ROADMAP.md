@@ -30,7 +30,7 @@ Only the target vector changes. One function covers all three: `buildLadder(targ
 - **Progress**: climbed rungs are stored; saving an artist records "found via ladder".
 - **Cold start**: with no Library, rung 1 is the most accessible artist in the genre and the dial becomes purity only. For an artist query the query itself is the seed.
 - **Why line** per rung, from a template and no AI: "shares *dream pop* and *calm* with your saved Cocteau Twins, but louder."
-- **Audition**: arrowing over a rung plays the hook (repeated synced-lyric lines give the chorus; fixed-offset fallback) and the room takes on the artist's palette and `MotionProfile`.
+- **Audition**: moving over a rung plays the hook (Left and Right since the HTPC layout; it was Up and Down) (repeated synced-lyric lines give the chorus; fixed-offset fallback) and the room takes on the artist's palette and `MotionProfile`.
 
 ## Data
 
@@ -58,7 +58,7 @@ Each phase fits one session, leaves the app working, and can be the last one you
 | 6 | **Play and save** | Rung plays through the existing top-album and play path. Saving records "found via ladder". | Tapping a rung plays it, and saving works. | **Done** (UI not compiled) |
 | 7 | **Feedback and progress** | Too far / too close / skip / love shift the dial and re-rank. Climbed rungs are stored. | Feedback changes remaining rungs; the ladder survives a restart. | **Done** (UI not compiled) |
 | 8 | **Hook finder** | Pure function: repeated synced-lyric lines give the chorus time; fixed-offset fallback. | Tests on sample LRC files find the chorus. | **Done** |
-| 9 | **Audition** | Arrowing over a rung seeks to the hook; palette and `MotionProfile` change the room. | Moving between rungs auditions each one. | **Done** (UI not compiled) |
+| 9 | **Audition** | Moving over a rung seeks to the hook; palette and `MotionProfile` change the room. | Moving between rungs auditions each one. | **Done** (UI not compiled) |
 | 10 | **Album query** | Blend an album's mood, style and era into the target vector. | An album query gives a different ladder from its artist's. | **Done** (UI not compiled) |
 
 ## Risks
@@ -165,7 +165,7 @@ Each phase fits one session, leaves the app working, and can be the last one you
 
 `LadderAudition.kt` (pure logic, 20 tests in `LadderAuditionTest.kt`), `LadderRoom.kt` and `MusicLadderScreen.kt` (Compose, uncompiled), `LadderPlay.kt` (`resolveRungAlbum` shared with `playRung`), and `MusicPlayer.play(..., startPositionMs)` (3 new tests in `MusicPlayerTest`; all 19 player tests and the 7 `LadderPlayTest` tests pass with the standalone compiler).
 
-- **Keys:** Up and Down move over the rungs (no wrap). After `AUDITION_SETTLE_MS` (450 ms) the rung under the cursor plays, so a held key plays only where it rests. Enter or a click on the row auditions at once. The cursor is kept by candidate id, so a re-rank never moves it onto another artist. The list scrolls to keep it in view.
+- **Keys:** *(superseded by the HTPC layout: Left and Right move over the rung cards, Up and Down turn the familiarity dial, A or L loves, X or S skips; see `Docs/HTPC_MUSIC_BLANK_SPACE.md`.)* Originally Up and Down moved over the rungs (no wrap). After `AUDITION_SETTLE_MS` (450 ms) the rung under the cursor plays, so a held key plays only where it rests. Enter or a click on the row auditions at once. The cursor is kept by candidate id, so a re-rank never moves it onto another artist. The list scrolls to keep it in view.
 - **What plays:** the artist's album as phase 6 picks it, and on it the first real song (`pickAuditionTrack`: skips unavailable tracks, intros, interludes, skits and tracks under 90 s). The lyric comes from LRCLIB through `LyricsRepository`; `hookFor` gives the start. The song opens at the hook (the player's start position), so no intro is heard first, and it carries on afterwards. A start position is dropped when a different track plays instead of the requested one.
 - **Row note:** "Alison · chorus from 0:18", or "... from 1:12 (no chorus found)" for the fixed offset. "Play album" on each row keeps the phase 6 behaviour (the album from its first track).
 - **Room:** `LadderRoom` fades the ground to the artist's palette, re-tints the accent (as `MusicAccentScope` does) and runs Now Playing's `StageGlow` at the pace of `stageMotionSpec(motion)`. Reduced motion holds it still; a light theme keeps the app's colours. The palette is the Library's when the artist is saved, else sampled from their Deezer picture (cached for the session). Motion comes from `rungMotion`: the candidate's mood and style, else its top genres, joined with the saved artist's.
@@ -186,4 +186,8 @@ Each phase fits one session, leaves the app working, and can be the last one you
 
 ## HTPC layout notes (2026-10-27)
 
-The ladder screen, the artist page's "Where next?" strip, the shelf card row and the Stage widgets were reshaped for a 10-foot display. Status, key map and decisions are in `Docs/HTPC_MUSIC_BLANK_SPACE.md`. UI not compiled.
+The ladder screen, the artist page's "Where next?" strip, the shelf card row and the Stage widgets were reshaped for a 10-foot display. Status, the key map, decisions and an audited list of what is not built are in `Docs/HTPC_MUSIC_BLANK_SPACE.md`. UI not compiled.
+
+- **Ladder screen** (`MusicLadderScreen.kt`): five large cards in a strip, a path rail, a detail panel with a two-ended closeness bar and the familiarity dial, large action buttons, and an end-of-ladder summary (Save all, Climb higher). The four per-row text buttons are gone; the same four `RungFeedback` values still go through `applyFeedback`, so the model and storage are unchanged. Up is "too close" (further out), Down is "too far" (closer).
+- **Where next?** (`WhereNextStrip.kt`): `ladderOutFrom` on the artist, built when the artist page opens and cached per artist and direction for the session (`WhereNextCache`).
+- **Also built:** a countdown ring around the rung number while the hook waits (`AUDITION_SETTLE_MS`), and Play as a playlist in the end summary (`playRungsAsPlaylist`: one album per rung through `MusicPlayer.playAlbums`).

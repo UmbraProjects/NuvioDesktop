@@ -76,6 +76,7 @@ import kotlinx.coroutines.launch
  * else oldest to newest. Hovering a cover slides its disc out and shows a star that pins the album to
  * the top five. A star by the artist's name floats it to the top of the shelf. Hovering a row tints
  * the glow with that artist's accent. Clicking a cover opens the album; the avatar, name or "All" open the room.
+ * Above the rows sit up to four cards (a year ago this week, a starred artist, added recently, continue your ladder).
  * The header switches views: Shelf (this file), Constellation ([ConstellationView]) and Eras ([LibraryErasView]).
  */
 @Composable

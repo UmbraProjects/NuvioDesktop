@@ -105,6 +105,9 @@ import kotlin.math.roundToInt
  * The map itself is built by [buildConstellationModel] (C0 to C2) off the main thread, and only when something that
  * moves it changes ([constellationKey]); palettes and favourites are read live, so they never rebuild it.
  *
+ * HTPC layout: the side panel is wider and lists the top albums with Ladder from here and Climb into; a "Thin spots" row
+ * offers a ladder into genres you barely own; the key is a corner chip; artists not placed yet are cards with Fetch tags.
+ *
  * Hosted by [MusicLibraryShelf] behind one `// fork:music` switch.
  */
 @Composable
