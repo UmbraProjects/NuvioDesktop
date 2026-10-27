@@ -140,6 +140,7 @@ fun MusicPlayerHost(
     val slimRequested by MusicPlayback.slimBar.collectAsStateWithLifecycle()
     val nowPlayingOpen by MusicPlayback.nowPlayingOpen.collectAsStateWithLifecycle()
     val reduced = rememberMusicReducedMotion()
+    val barStyle = rememberMusicBarStyle()
     // Kept so the bar can slide away after the player stops, instead of vanishing with the surface.
     val lastActive = remember { arrayOfNulls<MusicPlayerState>(1) }
     val source = state.source
@@ -159,7 +160,14 @@ fun MusicPlayerHost(
                         player = player,
                         modifier = Modifier.align(Alignment.BottomCenter),
                         slim = musicBarSlim(gone, slimRequested, nowPlayingOpen),
-                        initiallyShown = true,
+                        initiallyShown = !musicBarCorner(gone, slimRequested, nowPlayingOpen, barStyle),
+                    )
+                    MusicCornerCard(
+                        state = gone,
+                        visible = false,
+                        player = player,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        initiallyShown = musicBarCorner(gone, slimRequested, nowPlayingOpen, barStyle),
                     )
                 }
             }
@@ -167,6 +175,7 @@ fun MusicPlayerHost(
         return
     }
     lastActive[0] = state
+    val corner = musicBarCorner(state, slimRequested, nowPlayingOpen, barStyle)
     val videoVisible = realVideo && !hidden
     val big = videoVisible && view != MusicVideoView.Bar
     val keys = remember { FocusRequester() }
@@ -267,12 +276,23 @@ fun MusicPlayerHost(
         MusicAccentScope {
             MusicMiniPlayerBar(
                 state = state,
-                visible = !hidden && !collapsed,
+                visible = !hidden && !collapsed && !corner,
                 player = player,
                 slim = musicBarSlim(state, slimRequested, nowPlayingOpen),
                 modifier = Modifier.align(Alignment.BottomCenter),
                 videoView = view,
                 onSetVideoView = MusicPlayback::setVideoView,
+                onOpenNowPlaying = { MusicPlayback.nowPlayingOpen.value = true },
+                onCollapse = {
+                    MusicPlayback.nowPlayingOpen.value = false
+                    MusicPlayback.barCollapsed.value = true
+                },
+            )
+            MusicCornerCard(
+                state = state,
+                visible = !hidden && !collapsed && corner,
+                player = player,
+                modifier = Modifier.align(Alignment.BottomCenter),
                 onOpenNowPlaying = { MusicPlayback.nowPlayingOpen.value = true },
                 onCollapse = {
                     MusicPlayback.nowPlayingOpen.value = false

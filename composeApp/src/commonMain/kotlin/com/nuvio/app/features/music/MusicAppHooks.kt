@@ -72,8 +72,11 @@ fun rememberMusicBarInset(playerHidden: Boolean): Dp {
     val slimRequested by MusicPlayback.slimBar.collectAsStateWithLifecycle()
     val nowPlayingOpen by MusicPlayback.nowPlayingOpen.collectAsStateWithLifecycle()
     val reduced = rememberMusicReducedMotion()
+    val style = rememberMusicBarStyle()
     val target = when {
         !state.isActive || playerHidden || collapsed -> 0.dp
+        // The corner card floats over the page and reserves nothing.
+        musicBarCorner(state, slimRequested, nowPlayingOpen, style) -> 0.dp
         musicBarSlim(state, slimRequested, nowPlayingOpen) -> MusicBarSlimHeight
         else -> MusicMiniPlayerHeight
     }

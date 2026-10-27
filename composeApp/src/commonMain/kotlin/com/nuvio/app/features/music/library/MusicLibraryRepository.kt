@@ -29,6 +29,8 @@ data class MusicLibrarySettings(
     val audioDbKey: String = "",
     /** Stage and album motion off: no drift, pulse, cycling or spinning disc. Applies to the whole Music section. */
     val reducedMotion: Boolean = false,
+    /** The player as a bottom bar or as a corner card. */
+    val barStyle: com.nuvio.app.features.music.MusicBarStyle = com.nuvio.app.features.music.MusicBarStyle.Bar,
 )
 
 /** What is happening to one artist while it is added or refreshed. */

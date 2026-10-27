@@ -87,6 +87,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.OpenInFull
@@ -337,7 +338,7 @@ fun MusicMiniPlayerBar(
 }
 
 /** What the bar's two text lines say; a change in any of it fades to the new lines. */
-private data class BarLine(val title: String, val subtitle: String, val notice: Boolean)
+internal data class BarLine(val title: String, val subtitle: String, val notice: Boolean)
 
 /**
  * The bar when a screen needs the room (a ladder is open): a slim pill at the bottom right with a small cover, the
@@ -419,7 +420,7 @@ private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, play
     }
 }
 
-private fun subtitle(state: MusicPlayerState): String {
+internal fun subtitle(state: MusicPlayerState): String {
     val artist = (state.track?.artists?.takeIf { it.isNotEmpty() } ?: state.album?.artists.orEmpty())
         .joinToString(", ") { it.name }
     return listOf(artist, state.album?.title.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
@@ -466,7 +467,7 @@ private fun Transport(state: MusicPlayerState, player: MusicPlayer) {
  * and (when the panel is open) shows in the accent colour.
  */
 @Composable
-private fun MoreButton(open: Boolean, onToggle: () -> Unit, panel: @Composable () -> Unit) {
+internal fun MoreButton(open: Boolean, onToggle: () -> Unit, panel: @Composable () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
@@ -511,7 +512,7 @@ private class AbovePositionProvider(private val gapPx: Int) : PopupPositionProvi
  * The first row takes focus when the panel opens, so a d-pad can use it straight away.
  */
 @Composable
-private fun MorePanel(
+internal fun MorePanel(
     state: MusicPlayerState,
     player: MusicPlayer,
     videoView: MusicVideoView,
@@ -565,6 +566,15 @@ private fun MorePanel(
                     MusicVideoView.Fullscreen -> "Exit fullscreen" to MusicVideoView.Expanded
                 }
                 PanelRow(Icons.Rounded.OpenInFull, label) { onDismiss(); onSetVideoView(target) }
+            }
+            val style = rememberMusicBarStyle()
+            PanelRow(
+                icon = Icons.Rounded.Dashboard,
+                label = "Player style",
+                value = if (style == MusicBarStyle.Corner) "Corner card" else "Bottom bar",
+            ) {
+                onDismiss()
+                setMusicBarStyle(if (style == MusicBarStyle.Corner) MusicBarStyle.Bar else MusicBarStyle.Corner)
             }
             VolumeRow(state.volume, onChange = { player.setVolume(it.coerceIn(0, 100)) })
             if (onCollapse != null) {
