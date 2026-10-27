@@ -97,22 +97,35 @@ class MusicPlayer(
 
     // region requests
 
-    /** Plays [album] from [trackIndex]. Tracks that cannot play are skipped; if none can, nothing starts. */
+    /**
+     * Plays [album] from [trackIndex]. Tracks that cannot play are skipped; if none can, nothing starts.
+     * [startPositionMs] opens the track part way in (the ladder's audition starts at the chorus); it applies only to
+     * the track that was asked for, never to the one that plays instead when that one cannot.
+     */
     fun play(
         album: MusicAlbum,
         trackIndex: Int = 0,
         mode: MusicPlayMode = _state.value.mode,
         shuffled: Boolean = false,
         seed: Long = now(),
+        startPositionMs: Long = 0L,
     ) {
         if (album.tracks.isEmpty()) return
         following = emptyList()
-        launchAlbum(album, trackIndex, mode, shuffled, seed)
+        launchAlbum(album, trackIndex, mode, shuffled, seed, startPositionMs)
     }
 
-    private fun launchAlbum(album: MusicAlbum, trackIndex: Int, mode: MusicPlayMode, shuffled: Boolean, seed: Long) {
+    private fun launchAlbum(
+        album: MusicAlbum,
+        trackIndex: Int,
+        mode: MusicPlayMode,
+        shuffled: Boolean,
+        seed: Long,
+        startPositionMs: Long = 0L,
+    ) {
         launchRequest {
-            val fresh = MusicQueue(album, mode, shuffled, seed, trackIndex.coerceIn(0, album.tracks.size - 1))
+            val requested = trackIndex.coerceIn(0, album.tracks.size - 1)
+            val fresh = MusicQueue(album, mode, shuffled, seed, requested)
             _state.update { it.copy(isLoading = true, playWhenReady = true, notice = null) }
             val found = fresh.jumpTo(fresh.currentIndex ?: 0) { track -> resolve(track, album, fresh.mode) }
             if (found == null) {
@@ -124,7 +137,8 @@ class MusicPlayer(
                 return@launchRequest
             }
             queue = fresh
-            show(fresh, found, startPositionMs = 0L, skipped = found.skipped.size)
+            val start = if (found.index == requested) startPositionMs.coerceAtLeast(0L) else 0L
+            show(fresh, found, startPositionMs = start, skipped = found.skipped.size)
         }
     }
 

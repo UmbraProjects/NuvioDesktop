@@ -62,6 +62,39 @@ class MusicPlayerTest {
     }
 
     @Test
+    fun playCanOpenTheTrackPartWayIn() {
+        val p = player(Fake())
+        p.play(album(3), trackIndex = 1, startPositionMs = 33_500L)
+        val s = p.state.value
+        assertEquals("id2", s.track?.videoId)
+        assertEquals(33_500L, s.startPositionMs)
+        assertEquals(33_500L, s.positionMs)
+    }
+
+    @Test
+    fun aStartPositionIsNotCarriedToADifferentTrack() {
+        // The requested track cannot be opened, so the next one plays: the chorus time was for the first, so it starts at 0.
+        val unplayable = Fake().resolver.let { base ->
+            val failing: MusicTrackResolver = { track, a, mode ->
+                if (track.videoId == "id1") MusicResolution.Failed(track, "gone") else base(track, a, mode)
+            }
+            failing
+        }
+        val p = MusicPlayer(CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), unplayable, now = { 0L })
+        p.play(album(3), trackIndex = 0, startPositionMs = 33_500L)
+        val s = p.state.value
+        assertEquals("id2", s.track?.videoId)
+        assertEquals(0L, s.startPositionMs)
+    }
+
+    @Test
+    fun aNormalPlayStillStartsAtZero() {
+        val p = player(Fake())
+        p.play(album(2))
+        assertEquals(0L, p.state.value.startPositionMs)
+    }
+
+    @Test
     fun endingMovesOnUsingTheResolutionAlreadyMade() {
         val fake = Fake()
         val p = player(fake)

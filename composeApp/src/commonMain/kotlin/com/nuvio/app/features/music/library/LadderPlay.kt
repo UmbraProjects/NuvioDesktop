@@ -40,6 +40,33 @@ internal fun pickRungAlbum(releases: List<MusicAlbumSummary>): MusicAlbumSummary
 internal suspend fun rungArtist(catalog: MusicCatalog, name: String): MusicArtistSummary? =
     pickRungArtist(name, runCatching { catalog.searchArtists(name) }.getOrDefault(emptyList()))
 
+/** The YouTube Music artist behind a rung and the album to start with, already opened and with something playable on it. */
+internal data class ResolvedRung(val artist: MusicArtistSummary, val album: MusicAlbum)
+
+/**
+ * Finds the rung's YouTube Music artist and the album to start with: the top album when the artist is in the Library
+ * ([libraryArtists], [topAlbumId]), else the first full album on their page, else the first release of any kind. Null
+ * when there is no such artist, no release, or no track on it that would open. Shared by [playRung] and the audition.
+ */
+internal suspend fun resolveRungAlbum(
+    catalog: MusicCatalog,
+    name: String,
+    libraryArtists: List<LibraryArtist>,
+    topAlbumId: (LibraryArtist) -> String? = { a -> selectTopAlbums(a).releases.firstNotNullOfOrNull { it.ytBrowseId } },
+): ResolvedRung? {
+    val artist = rungArtist(catalog, name) ?: return null
+    val saved = libraryArtists.firstOrNull { it.id == artist.browseId }
+    val topId = saved?.let(topAlbumId)
+    val albumId = topId ?: run {
+        val releases = runCatching { catalog.artistReleases(artist.browseId) }.getOrDefault(emptyList())
+            .ifEmpty { runCatching { catalog.artist(artist.browseId) }.getOrNull()?.albums.orEmpty() }
+        pickRungAlbum(releases)?.browseId
+    } ?: return null
+    val album = runCatching { catalog.album(albumId) }.getOrNull()
+    if (album == null || album.tracks.none { it.isAvailable }) return null
+    return ResolvedRung(artist, album)
+}
+
 /**
  * Starts the rung's artist. [play] receives the album to play (the live one hands it to the music player).
  * [libraryArtists] decides whether the top-album path applies; [topAlbumId] names that artist's top playable album.
@@ -51,18 +78,9 @@ internal suspend fun playRung(
     topAlbumId: (LibraryArtist) -> String? = { a -> selectTopAlbums(a).releases.firstNotNullOfOrNull { it.ytBrowseId } },
     play: (MusicAlbum) -> Unit = { MusicPlayback.player.playAlbums(listOf(it)) },
 ): RungPlay {
-    val artist = rungArtist(catalog, name) ?: return RungPlay.NotPlayable
-    val saved = libraryArtists.firstOrNull { it.id == artist.browseId }
-    val topId = saved?.let(topAlbumId)
-    val albumId = topId ?: run {
-        val releases = runCatching { catalog.artistReleases(artist.browseId) }.getOrDefault(emptyList())
-            .ifEmpty { runCatching { catalog.artist(artist.browseId) }.getOrNull()?.albums.orEmpty() }
-        pickRungAlbum(releases)?.browseId
-    } ?: return RungPlay.NotPlayable
-    val album = runCatching { catalog.album(albumId) }.getOrNull()
-    if (album == null || album.tracks.none { it.isAvailable }) return RungPlay.NotPlayable
-    play(album)
-    return RungPlay.Playing(album.title, artist.browseId)
+    val resolved = resolveRungAlbum(catalog, name, libraryArtists, topAlbumId) ?: return RungPlay.NotPlayable
+    play(resolved.album)
+    return RungPlay.Playing(resolved.album.title, resolved.artist.browseId)
 }
 
 /** Saves the rung's artist to the Library as found through [via]. Returns the channel id, or null when there is no such artist. */

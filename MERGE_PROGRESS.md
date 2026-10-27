@@ -37,3 +37,9 @@ NativePlayerController initMpvOptions + controls.js/css/Bridge merge, MusicPlaye
   `YouTubeInnerTube.kt`); bump if YouTube rejects it.
 - The tree in this zip is INCOMPLETE: files listed under "Still to do" are still upstream's version or your
   old version and will not compile until finished.
+
+## Update (phase 8, 2026-10-27)
+Music ladder phase 8 (hook finder) checked: `HookFinder.kt` + `HookFinderTest.kt`, 21 tests pass with a standalone Kotlin compiler. Pure logic only; nothing calls it yet (phase 9). Still uncompiled through Gradle: the Compose screen and the other edits listed above.
+
+## Update (phase 9, 2026-10-27)
+Music ladder phase 9 (audition) written: `LadderAudition.kt`, `LadderRoom.kt`, edits to `MusicLadderScreen.kt`, `LadderPlay.kt` (`resolveRungAlbum`) and `MusicPlayer.play` (`startPositionMs`). Pure logic and the player are covered by tests run with a standalone Kotlin compiler (20 new audition tests, 3 new player tests, existing player and `LadderPlayTest` still pass). Still uncompiled through Gradle: `LadderRoom.kt`, the key handling and row changes in `MusicLadderScreen.kt`, plus everything listed above. Build locally and run `Ladder*Test`, `HookFinderTest` and `MusicPlayerTest` before phase 10.
