@@ -33,7 +33,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -59,6 +69,13 @@ val MusicBarBottomMargin: Dp = 16.dp
 
 /** Height the bar reserves: the card plus its bottom margin. The app shell leaves this much room under its content while the bar shows. */
 val MusicMiniPlayerHeight: Dp = MusicBarCardHeight + MusicBarBottomMargin
+
+/** What the bar shrinks to while a ladder is open: a slim pill, plus its bottom margin. */
+val MusicBarSlimHeight: Dp = 64.dp + MusicBarBottomMargin
+
+/** Whether the bar is the slim pill: a screen asked for it, no real video needs the bar, and the lyric view is closed. */
+internal fun musicBarSlim(state: MusicPlayerState, requested: Boolean, nowPlayingOpen: Boolean): Boolean =
+    requested && !nowPlayingOpen && !(state.mode == MusicPlayMode.Video && !state.lyricVideo)
 
 /** A real video's picture in the bar: 16:9-ish, inset 12dp inside the card at its left end. */
 internal val BarThumbnailWidth = 136.dp
@@ -120,7 +137,36 @@ fun MusicPlayerHost(
         }
     }
 
-    val source = state.source ?: return
+    val slimRequested by MusicPlayback.slimBar.collectAsStateWithLifecycle()
+    val nowPlayingOpen by MusicPlayback.nowPlayingOpen.collectAsStateWithLifecycle()
+    val reduced = rememberMusicReducedMotion()
+    // Kept so the bar can slide away after the player stops, instead of vanishing with the surface.
+    val lastActive = remember { arrayOfNulls<MusicPlayerState>(1) }
+    val source = state.source
+    if (source == null) {
+        val gone = lastActive[0]
+        var leaving by remember { mutableStateOf(gone != null) }
+        LaunchedEffect(Unit) {
+            delay(450)
+            leaving = false
+        }
+        if (gone != null && leaving) {
+            BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+                MusicAccentScope {
+                    MusicMiniPlayerBar(
+                        state = gone,
+                        visible = false,
+                        player = player,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        slim = musicBarSlim(gone, slimRequested, nowPlayingOpen),
+                        initiallyShown = true,
+                    )
+                }
+            }
+        }
+        return
+    }
+    lastActive[0] = state
     val videoVisible = realVideo && !hidden
     val big = videoVisible && view != MusicVideoView.Bar
     val keys = remember { FocusRequester() }
@@ -223,6 +269,7 @@ fun MusicPlayerHost(
                 state = state,
                 visible = !hidden && !collapsed,
                 player = player,
+                slim = musicBarSlim(state, slimRequested, nowPlayingOpen),
                 modifier = Modifier.align(Alignment.BottomCenter),
                 videoView = view,
                 onSetVideoView = MusicPlayback::setVideoView,
@@ -232,13 +279,18 @@ fun MusicPlayerHost(
                     MusicPlayback.barCollapsed.value = true
                 },
             )
-            if (collapsed && !hidden && !realVideo) {
+            AnimatedVisibility(
+                visible = collapsed && !hidden && !realVideo,
+                modifier = Modifier.align(Alignment.BottomEnd),
+                enter = if (reduced) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 2 },
+                exit = if (reduced) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 2 },
+            ) {
                 CollapsedChip(
                     title = state.track?.title.orEmpty(),
                     coverUrl = state.album?.thumbnailUrl,
                     playing = state.playWhenReady,
                     onExpand = { MusicPlayback.barCollapsed.value = false },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 24.dp),
+                    modifier = Modifier.padding(end = 28.dp, bottom = 24.dp),
                 )
             }
         }

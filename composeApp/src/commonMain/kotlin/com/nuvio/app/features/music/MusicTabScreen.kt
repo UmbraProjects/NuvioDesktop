@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -118,6 +119,11 @@ fun MusicTabScreen(
     // fork:music - a ladder replaces the tab body while it is open
     val openLadder = ladder
     if (openLadder != null) {
+        // The ladder wants the room under its cards, so the player bar shrinks to a pill while it is open.
+        DisposableEffect(Unit) {
+            MusicPlayback.slimBar.value = true
+            onDispose { MusicPlayback.slimBar.value = false }
+        }
         MusicLadderScreen(openLadder, onBack = { ladder = null }, onRequest = { ladder = it }, modifier = modifier, topChromePadding = topChromePadding)
         return
     }

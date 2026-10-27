@@ -2,6 +2,9 @@ package com.nuvio.app.features.music
 
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -66,7 +69,17 @@ fun MusicTabHost(
 fun rememberMusicBarInset(playerHidden: Boolean): Dp {
     val state by MusicPlayback.player.state.collectAsStateWithLifecycle()
     val collapsed by MusicPlayback.barCollapsed.collectAsStateWithLifecycle()
-    return if (state.isActive && !playerHidden && !collapsed) MusicMiniPlayerHeight else 0.dp
+    val slimRequested by MusicPlayback.slimBar.collectAsStateWithLifecycle()
+    val nowPlayingOpen by MusicPlayback.nowPlayingOpen.collectAsStateWithLifecycle()
+    val reduced = rememberMusicReducedMotion()
+    val target = when {
+        !state.isActive || playerHidden || collapsed -> 0.dp
+        musicBarSlim(state, slimRequested, nowPlayingOpen) -> MusicBarSlimHeight
+        else -> MusicMiniPlayerHeight
+    }
+    // Follows the bar's slide, so the content glides up and down with it instead of jumping.
+    val inset by animateDpAsState(target, if (reduced) snap() else tween(300), label = "musicBarInset")
+    return inset
 }
 
 /** The lyric view and the mini-player bar, above the app's own content. Place in the root Box. */

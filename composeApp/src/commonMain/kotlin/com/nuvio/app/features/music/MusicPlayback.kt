@@ -19,6 +19,12 @@ object MusicPlayback {
     /** True while the person has tucked the bar away. The music keeps playing; a small chip brings the bar back. */
     val barCollapsed = MutableStateFlow(false)
 
+    /**
+     * True while a screen that needs the room (the ladder) asks for the bar to shrink to a slim pill. The bar only
+     * obeys while there is no real video and the lyric view is closed ([musicBarSlim]).
+     */
+    val slimBar = MutableStateFlow(false)
+
     /** How big the music video is. Only a real video leaves [MusicVideoView.Bar]; [MusicPlayerHost] resets it. */
     val videoView = MutableStateFlow(MusicVideoView.Bar)
 
