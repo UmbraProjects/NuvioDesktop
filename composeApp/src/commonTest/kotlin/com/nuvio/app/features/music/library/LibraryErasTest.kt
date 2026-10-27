@@ -329,4 +329,42 @@ class LibraryErasTest {
     }
 
     // endregion
+
+    // region play era (E3)
+
+    @Test
+    fun playEraTakesEachArtistsTopAlbumsTakingTurns() {
+        val a = artist("a", r("a1", year = "2000"), r("a2", year = "2001"), r("a3", year = "2002"))
+        val b = artist("b", r("b1", year = "2003"))
+        val era = buildLibraryEras(listOf(a, b) + artist("far", r("far1", year = "2020"))).eras.first()
+        // no ranking yet, so each artist's newest albums stand in: a3, a2, a1 and b1; the artists alternate
+        assertEquals(listOf("a3", "b1", "a2", "a1"), eraPlayReleases(era).map { it.key })
+    }
+
+    @Test
+    fun playEraCapsWithoutLosingAnyArtistsBest() {
+        val artists = (1..4).map { n -> artist("x$n", r("x$n-1", year = "2000"), r("x$n-2", year = "2001")) }
+        val era = buildLibraryEras(artists + artist("far", r("far1", year = "2020"))).eras.first() // 5-year bands
+        val picked = eraPlayReleases(era, max = 5).map { it.key }
+        assertEquals(5, picked.size)
+        // every artist's newest album comes before anyone's second
+        assertEquals(setOf("x1-2", "x2-2", "x3-2", "x4-2"), picked.take(4).toSet())
+    }
+
+    @Test
+    fun anArtistWithOnlyPlayableSinglesStillContributesThem() {
+        val a = artist("a", r("hit", kind = ReleaseKind.Single, year = "2000"), r("lost", year = "2000", yt = null))
+        val era = buildLibraryEras(listOf(a)).eras.single()
+        assertEquals(listOf("hit"), eraPlayReleases(era).map { it.key })
+    }
+
+    @Test
+    fun anEraWithNothingPlayableOrNothingAtAllPlaysNothing() {
+        val gone = buildLibraryEras(listOf(artist("a", r("lost", year = "2000", yt = null)))).eras.single()
+        assertTrue(eraPlayReleases(gone).isEmpty())
+        val gap = buildLibraryEras(spanning(1991, 2006)).eras[1]
+        assertTrue(eraPlayReleases(gap).isEmpty())
+    }
+
+    // endregion
 }

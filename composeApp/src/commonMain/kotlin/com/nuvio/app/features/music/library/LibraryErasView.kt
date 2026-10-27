@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -23,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -42,13 +45,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.features.music.MusicCover
+import com.nuvio.app.features.music.defaultMusicCatalog
+import kotlinx.coroutines.launch
 
 /**
  * Library views, phase E1: the Eras view's ruler and header. One bar per era, its height the number of
  * releases and its colour the lead release's palette; the selected era is lit and named in the header.
- * Left/Up and Right/Down step through the eras, Escape goes back to the newest. The era's covers are
- * the next phase (E2); this file only draws what [buildLibraryEras] produced.
+ * Left/Up and Right/Down step through the eras, Escape goes back to the newest. Below the era header are its covers
+ * by artist and Play era. Released / Added re-buckets the same library by release year or by when each artist joined.
+ * This file only draws what [buildLibraryEras] produced.
  *
  * Hosted by [MusicLibraryShelf] behind one `// fork:music` switch. [yearAgo] is the shelf's "a year ago this
  * week" strip, passed in as a slot so it stays above the ruler without being copied.
@@ -64,13 +71,21 @@ internal fun LibraryErasView(
     yearAgo: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val eras = remember(artists) { buildLibraryEras(artists, ErasAxis.Released) }
+    // Released places a release by its own year; Added by the year its artist joined the library.
+    var axis by rememberSaveable { mutableStateOf(ErasAxis.Released) }
+    val eras = remember(artists, axis) { buildLibraryEras(artists, axis) }
     // null means "not chosen": the newest era with something in it. Saved, so coming back lands where the person left.
     var chosen by rememberSaveable { mutableStateOf<Int?>(null) }
     val selected = chosen?.takeIf { it in eras.eras.indices } ?: eras.defaultEraIndex()
     val era = eras.eras.getOrNull(selected)
     var newestFirst by rememberSaveable { mutableStateOf(true) }
     val groups = remember(era, newestFirst) { era?.let { groupEraByArtist(it, newestFirst) }.orEmpty() }
+    val playReleases = remember(era) { era?.let { eraPlayReleases(it) }.orEmpty() }
+    val scope = rememberCoroutineScope()
+    val catalog = remember { defaultMusicCatalog() }
+    // Per era: what Play era is doing, so a second click is not a second fetch and a failure is said once.
+    var playing by remember(selected) { mutableStateOf(false) }
+    var failed by remember(selected) { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
@@ -105,10 +120,20 @@ internal fun LibraryErasView(
                 Text("Adding… $status", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, modifier = Modifier.padding(vertical = 12.dp))
             }
         }
+        item(key = "axis") {
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionPill("Released", selected = axis == ErasAxis.Released, onClick = { axis = ErasAxis.Released; chosen = null })
+                ActionPill("Added", selected = axis == ErasAxis.Added, onClick = { axis = ErasAxis.Added; chosen = null })
+            }
+        }
         if (eras.eras.isEmpty()) {
             item(key = "no-ruler") {
                 Text(
-                    "Nothing in your library has a release date yet, so there is no timeline to draw.",
+                    if (axis == ErasAxis.Added) {
+                        "No artist has a recorded added date yet, so there is no timeline to draw."
+                    } else {
+                        "Nothing in your library has a release date yet, so there is no timeline to draw."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.textMuted,
                     modifier = Modifier.padding(vertical = 12.dp),
@@ -156,6 +181,27 @@ internal fun LibraryErasView(
                         }
                         if (!era.isEmpty) {
                             ActionPill(if (newestFirst) "Newest first" else "Oldest first", onClick = { newestFirst = !newestFirst })
+                            Spacer(Modifier.width(10.dp))
+                            NuvioPrimaryButton(
+                                text = when {
+                                    playReleases.isEmpty() -> "Nothing here can be played"
+                                    failed -> "Couldn't open this era"
+                                    playing -> "Opening…"
+                                    else -> "Play era"
+                                },
+                                modifier = Modifier.width(if (playReleases.isEmpty() || failed) 220.dp else 130.dp),
+                                enabled = playReleases.isNotEmpty() && !playing,
+                                height = 40.dp,
+                                onClick = {
+                                    playing = true
+                                    failed = false
+                                    scope.launch {
+                                        // The albums of every artist in the era, mixed: the shelf's Top 5 shuffle, across artists.
+                                        failed = !playTopAlbums(catalog, playReleases, shuffled = true)
+                                        playing = false
+                                    }
+                                },
+                            )
                         }
                     }
                 }
@@ -168,7 +214,7 @@ internal fun LibraryErasView(
             item(key = "undated") {
                 val n = eras.undated.size
                 Text(
-                    "$n undated release${if (n == 1) "" else "s"}",
+                    "$n undated release${if (n == 1) "" else "s"}" + if (axis == ErasAxis.Added) " (their artists have no added date)" else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textMuted,
                     modifier = Modifier.padding(top = 8.dp),

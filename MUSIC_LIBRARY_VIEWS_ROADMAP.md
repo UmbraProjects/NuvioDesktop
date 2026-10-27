@@ -65,8 +65,8 @@ A second axis: **Added** places each artist at `addedAtEpochMs` (when they joine
 | E0 | **Library eras model** | `LibraryEras.kt`: `buildLibraryEras(artists, axis)` with bucket width, bands, lead release, per-era artist and release counts, undated block. | Tests: bucket width at 3 spans, round-year bands, a gap stays, undated collected, lead picks the fullest album, demos and duplicates folded. | Done (untested in Gradle) |
 | E1 | **Switch and ruler** | Header pills live (`LibraryView`); era ruler with selection and keys; era header. | You can switch to Eras and step through eras with the arrow keys. | Done (untested in Gradle) |
 | E2 | **Era covers** | Cover grid for the selected era grouped by artist; open album and room; order toggle; unplayable dimmed. Extract the shelf's private `CoverTile` into a shared file. | Clicking a cover opens its album from any era. | Done (untested in Gradle) |
-| E3 | **Play era** | Shuffled top albums of the era's artists through `playTopAlbums`. | Play era plays; an era with nothing playable says so. | |
-| E4 | **Added axis** | Released / Added toggle using `addedAtEpochMs`. | Switching axis re-buckets the same library. | |
+| E3 | **Play era** | Shuffled top albums of the era's artists through `playTopAlbums`. | Play era plays; an era with nothing playable says so. | Done (untested in Gradle) |
+| E4 | **Added axis** | Released / Added toggle using `addedAtEpochMs`. | Switching axis re-buckets the same library. | Done (untested in Gradle) |
 
 ## Constellation
 

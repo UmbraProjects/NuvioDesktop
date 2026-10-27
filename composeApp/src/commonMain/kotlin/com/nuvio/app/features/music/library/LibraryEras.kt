@@ -220,3 +220,26 @@ internal fun groupEraByArtist(era: LibraryEra, newestFirst: Boolean): List<EraAr
 }
 
 // endregion
+
+// region play era (E3)
+
+/** Most albums Play era opens at once: [playTopAlbums] fetches every album together, so a huge era is capped. */
+internal const val PLAY_ERA_MAX_ALBUMS = 30
+
+/**
+ * The albums Play era hands to [playTopAlbums]: the top albums ([selectTopAlbums]) of every artist with a release in
+ * the era. An artist with no top albums (only singles or compilations playable) brings its playable releases from the
+ * era instead, so an era with anything playable is never "nothing". Artists take turns, best album first, so a cap at
+ * [max] keeps every artist's best rather than the first artists' everything. Empty when nothing in the era can be
+ * played; the caller shuffles.
+ */
+internal fun eraPlayReleases(era: LibraryEra, max: Int = PLAY_ERA_MAX_ALBUMS): List<LibraryRelease> {
+    val perArtist = era.artists.map { artist ->
+        val top = selectTopAlbums(artist).releases
+        top.ifEmpty { era.entries.filter { it.artist.id == artist.id && it.isPlayable }.map { it.release } }
+    }
+    val rounds = perArtist.maxOfOrNull { it.size } ?: 0
+    return (0 until rounds).flatMap { i -> perArtist.mapNotNull { it.getOrNull(i) } }.take(max)
+}
+
+// endregion
