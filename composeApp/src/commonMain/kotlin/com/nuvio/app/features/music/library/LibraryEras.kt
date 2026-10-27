@@ -173,3 +173,33 @@ private fun leadEntry(entries: List<LibraryEraEntry>): LibraryEraEntry? {
     // leadOf hands back one of the groups it was given; match by identity, since two artists can hold equal groups.
     return entries.first { it.group === lead }
 }
+
+// region selection and header text (E1)
+
+/**
+ * The band under the cursor after an arrow key: [delta] below zero steps to an older band, above zero to a newer one.
+ * Bands with nothing in them are skipped, and a held key rests at the oldest or newest band that has something
+ * (it does not wrap, as [moveFocus] does not). With no valid [current], the newest band with something in it, else -1.
+ */
+internal fun stepEra(eras: List<LibraryEra>, current: Int, delta: Int): Int {
+    val fallback = eras.lastOrNull { !it.isEmpty }?.index ?: -1
+    if (current !in eras.indices || delta == 0) return if (current in eras.indices) current else fallback
+    val step = if (delta > 0) 1 else -1
+    var i = current + step
+    while (i in eras.indices) {
+        if (!eras[i].isEmpty) return i
+        i += step
+    }
+    return current
+}
+
+/** "1990 to 1994 · 41 releases · 12 artists", or "2019 · 1 release · 1 artist" for a one-year band. */
+internal fun eraHeader(era: LibraryEra): String {
+    val span = if (era.fromYear == era.toYear) "${era.fromYear}" else "${era.fromYear} to ${era.toYear}"
+    if (era.isEmpty) return "$span · nothing in your library"
+    val releases = era.releaseCount
+    val artists = era.artistCount
+    return "$span · $releases release${if (releases == 1) "" else "s"} · $artists artist${if (artists == 1) "" else "s"}"
+}
+
+// endregion

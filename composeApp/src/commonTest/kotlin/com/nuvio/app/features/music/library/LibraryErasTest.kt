@@ -272,4 +272,36 @@ class LibraryErasTest {
         assertNotNull(era.lead)
         assertTrue(era.entries.any { it === era.lead })
     }
+
+    // region selection and header (E1)
+
+    @Test
+    fun steppingSkipsGapsAndRestsAtTheEnds() {
+        val eras = buildLibraryEras(spanning(1991, 2006)).eras // bands 0 and 3 hold releases, 1 and 2 are gaps
+        assertEquals(3, stepEra(eras, 0, +1))
+        assertEquals(0, stepEra(eras, 3, -1))
+        assertEquals(3, stepEra(eras, 3, +1))
+        assertEquals(0, stepEra(eras, 0, -1))
+    }
+
+    @Test
+    fun steppingWithNothingSelectedLandsOnTheNewestBandWithSomething() {
+        val eras = buildLibraryEras(spanning(1991, 2006)).eras
+        assertEquals(3, stepEra(eras, -1, +1))
+        assertEquals(3, stepEra(eras, 99, -1))
+        assertEquals(-1, stepEra(emptyList(), -1, +1))
+    }
+
+    @Test
+    fun theHeaderReadsLikeTheMock() {
+        val a = artist("a", r("a1", year = "1991"), r("a2", year = "1992"))
+        val b = artist("b", r("b1", year = "1993"), r("far", year = "2006"))
+        val eras = buildLibraryEras(listOf(a, b))
+        assertEquals("1990 to 1994 · 3 releases · 2 artists", eraHeader(eras.eras[0]))
+        assertEquals("1995 to 1999 · nothing in your library", eraHeader(eras.eras[1]))
+        assertEquals("2005 to 2009 · 1 release · 1 artist", eraHeader(eras.eras[3]))
+        assertEquals("2019 · 1 release · 1 artist", eraHeader(buildLibraryEras(spanning(2019, 2021)).eras[0]))
+    }
+
+    // endregion
 }

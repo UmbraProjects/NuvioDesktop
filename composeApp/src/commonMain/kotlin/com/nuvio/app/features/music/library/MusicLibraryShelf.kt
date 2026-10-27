@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,7 +82,7 @@ import kotlinx.coroutines.launch
  * else oldest to newest. Hovering a cover slides its disc out and shows a star that pins the album to
  * the top five. A star by the artist's name floats it to the top of the shelf. Hovering a row tints
  * the glow with that artist's accent. Clicking a cover opens the album; the avatar, name or "All" open the room.
- * Only the Shelf view exists; Constellation and Eras are shown as coming soon.
+ * The header switches views: Shelf (this file), Eras ([LibraryErasView]); Constellation is not built yet and stays dimmed.
  */
 @Composable
 fun MusicLibraryShelf(
@@ -94,6 +95,7 @@ fun MusicLibraryShelf(
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
     var showSources by remember { mutableStateOf(false) }
     var focusedId by remember { mutableStateOf<String?>(null) }
+    var view by rememberSaveable { mutableStateOf(LibraryView.Shelf) } // fork:music - which of the Library's views is showing
 
     val focusAccent by animateColorAsState(
         state.artists.firstOrNull { it.id == focusedId }?.palette?.let { Color(it.accent) } ?: colors.accent,
@@ -133,10 +135,10 @@ fun MusicLibraryShelf(
                     color = colors.textSecondary,
                     modifier = Modifier.weight(1f),
                 )
-                // Constellation and Eras are not built yet; shown dimmed so the switch matches the design.
-                ActionPill("Shelf", selected = true, onClick = {})
+                // Constellation is not built yet; shown dimmed so the switch matches the design.
+                ActionPill("Shelf", selected = view == LibraryView.Shelf, onClick = { view = LibraryView.Shelf }) // fork:music
                 ActionPill("Constellation", enabled = false, onClick = {})
-                ActionPill("Eras", enabled = false, onClick = {})
+                ActionPill("Eras", selected = view == LibraryView.Eras, onClick = { view = LibraryView.Eras }) // fork:music
                 LibraryIconAction(Icons.Rounded.Refresh, "Refresh all artists", enabled = state.artists.isNotEmpty()) {
                     MusicLibraryRepository.refreshAll()
                 }
@@ -147,6 +149,14 @@ fun MusicLibraryShelf(
             }
             if (state.artists.isEmpty() && state.working.isEmpty()) {
                 MusicMessage("Open an artist from Search and choose Add to library. Every album, single and EP comes with it, with artwork and details.")
+            } else if (view == LibraryView.Eras) { // fork:music
+                LibraryErasView(
+                    artists = state.artists,
+                    pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }.values.map { it.status },
+                    reducedMotion = state.settings.reducedMotion,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    yearAgo = yearAgo?.let { pick -> { YearAgoStrip(pick, state.artists.size, totalReleases) } },
+                )
             } else {
                 LazyColumn(
                     Modifier.weight(1f).fillMaxWidth(),
