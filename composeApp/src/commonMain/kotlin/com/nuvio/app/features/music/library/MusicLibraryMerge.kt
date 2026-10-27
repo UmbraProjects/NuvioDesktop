@@ -353,7 +353,7 @@ internal fun assembleArtist(
         type = mb?.type,
         country = mb?.country ?: audio?.country,
         area = mb?.area,
-        beginYear = mb?.beginYear ?: audio?.formedYear,
+        beginYear = mb?.beginYear ?: audio?.bornYear ?: audio?.formedYear,
         endYear = mb?.endYear ?: audio?.disbandedYear,
         ended = mb?.ended ?: (audio?.disbandedYear != null),
         disambiguation = mb?.disambiguation,

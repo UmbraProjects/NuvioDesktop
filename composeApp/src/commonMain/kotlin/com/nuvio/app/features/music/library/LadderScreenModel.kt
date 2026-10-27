@@ -161,7 +161,7 @@ internal suspend fun loadLadder(
         } else {
             val ladder = joined(buildLadder(request.genre, artists, pool, dial, rungs))
             emptyOr(
-                LadderView("Into ${ladder.target}", null, noteFor(ladder, emptyList(), null), ladder),
+                LadderView("Into ${displayGenre(ladder.target)}", null, noteFor(ladder, emptyList(), null), ladder),
                 "\"${request.genre}\"",
             )
         }

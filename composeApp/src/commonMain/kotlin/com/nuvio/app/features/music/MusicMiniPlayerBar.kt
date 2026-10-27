@@ -120,7 +120,7 @@ internal fun musicBarSideMargin(width: Dp): Dp = width * 0.05f
 /**
  * The bar along the bottom of the app, drawn as a floating card: a large cover, the title and artist, a thick
  * progress bar with the elapsed and remaining time, transport and the audio/video switch. The card is tinted by the
- * playing artist's accent and takes a blurred wash of the cover. In video mode the picture is drawn over the card's
+ * playing artist's accent over a solid, opaque ground (no blurred wash, no glow: it stands as its own object). In video mode the picture is drawn over the card's
  * left end by [MusicPlayerHost], which owns the native surface; the card only leaves that room empty. The bar
  * reserves [MusicMiniPlayerHeight] (the card plus its bottom margin); when it is hidden it takes no room.
  */
@@ -188,14 +188,16 @@ fun MusicMiniPlayerBar(
                     .padding(start = side, end = side, bottom = MusicBarBottomMargin)
                     .fillMaxWidth()
                     .height(MusicBarCardHeight)
+                    // A plain dark shadow: the card reads as its own object, with no accent glow washing the page behind it.
                     .shadow(
-                        elevation = 18.dp,
+                        elevation = 14.dp,
                         shape = shape,
                         clip = false,
-                        ambientColor = colors.accent.copy(alpha = 0.45f),
-                        spotColor = colors.accent,
+                        ambientColor = Color.Black.copy(alpha = 0.55f),
+                        spotColor = Color.Black.copy(alpha = 0.55f),
                     )
                     .clip(shape)
+                    .background(colors.background)
                     .background(ground)
                     .border(
                         if (cardFocused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
@@ -214,25 +216,6 @@ fun MusicMiniPlayerBar(
                         }
                     },
             ) {
-                // A wash of the cover, blurred and enlarged so its edges stay out of the card. Fades when the track changes.
-                Crossfade(targetState = cover, animationSpec = fade, modifier = Modifier.fillMaxSize()) { url ->
-                    if (url != null) {
-                        NuvioAsyncImage(
-                            model = url,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .blur(48.dp)
-                                .graphicsLayer { scaleX = 1.5f; scaleY = 1.5f; alpha = 0.55f },
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
-                }
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.horizontalGradient(listOf(ground.copy(alpha = 0.90f), ground.copy(alpha = 0.62f))),
-                    ),
-                )
                 Row(
                     modifier = Modifier.fillMaxSize().padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -357,7 +340,7 @@ private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, play
         modifier = modifier
             .height(MusicBarSlimHeight - MusicBarBottomMargin)
             .widthIn(max = 480.dp)
-            .shadow(12.dp, shape, clip = false, ambientColor = colors.accent.copy(alpha = 0.40f), spotColor = colors.accent)
+            .shadow(12.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.55f), spotColor = Color.Black.copy(alpha = 0.55f))
             .clip(shape)
             .background(lerp(colors.surfaceCard, colors.accent, 0.16f))
             .border(

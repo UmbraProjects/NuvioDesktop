@@ -143,7 +143,7 @@ fun MusicNowPlayingHost(
                 player = player,
                 onSeek = player::seekTo,
                 onClose = { MusicPlayback.nowPlayingOpen.value = false },
-                modifier = Modifier.fillMaxSize().padding(bottom = MusicMiniPlayerHeight),
+                modifier = Modifier.fillMaxSize(), // takes the whole window; the content clears the bar itself
             )
         }
     }
@@ -252,7 +252,7 @@ private fun MusicNowPlayingScreen(
     ) {
         FanartBackdrop(images = backgrounds, coverUrl = album?.thumbnailUrl, spec = spec)
         StageGlow(color = colors.accent, spec = spec)
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = MusicMiniPlayerHeight)) {
             val wide = maxWidth >= 860.dp
             val cutout = identity?.cutoutUrl.takeIf { wide }
             if (cutout != null) StageCutout(cutout, Modifier.align(Alignment.BottomEnd).fillMaxHeight(0.94f).widthIn(max = 460.dp))

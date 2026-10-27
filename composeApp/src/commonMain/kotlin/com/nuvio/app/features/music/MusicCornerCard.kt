@@ -140,13 +140,14 @@ internal fun MusicCornerCard(
                     .width(cardWidth)
                     .height(MusicCornerCardHeight)
                     .shadow(
-                        elevation = 22.dp,
+                        elevation = 16.dp,
                         shape = shape,
                         clip = false,
-                        ambientColor = colors.accent.copy(alpha = 0.45f),
-                        spotColor = colors.accent,
+                        ambientColor = Color.Black.copy(alpha = 0.55f),
+                        spotColor = Color.Black.copy(alpha = 0.55f),
                     )
                     .clip(shape)
+                    .background(colors.background)
                     .background(ground)
                     .border(
                         if (cardFocused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
@@ -164,24 +165,6 @@ internal fun MusicCornerCard(
                         }
                     },
             ) {
-                Crossfade(targetState = cover, animationSpec = fade, modifier = Modifier.fillMaxSize()) { url ->
-                    if (url != null) {
-                        NuvioAsyncImage(
-                            model = url,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .blur(56.dp)
-                                .graphicsLayer { scaleX = 1.6f; scaleY = 1.6f; alpha = 0.55f },
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
-                }
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.horizontalGradient(listOf(ground.copy(alpha = 0.90f), ground.copy(alpha = 0.66f))),
-                    ),
-                )
                 Row(Modifier.fillMaxSize().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier.size(CornerCoverSize).clip(RoundedCornerShape(22.dp)).clickable(onClick = onOpenNowPlaying),

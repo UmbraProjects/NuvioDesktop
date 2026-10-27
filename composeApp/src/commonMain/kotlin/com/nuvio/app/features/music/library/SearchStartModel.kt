@@ -70,7 +70,7 @@ internal data class LadderStarter(
 ) {
     val request: LadderRequest get() = LadderRequest.Genre(genre)
     val label: String get() = displayGenre(genre)
-    val title: String get() = "Into ${genre.replaceFirstChar { it.uppercase() }}"
+    val title: String get() = "Into ${displayGenre(genre)}"
     val detail: String get() = if (artists == 1) "1 artist in your library" else "$artists artists in your library"
 }
 
@@ -90,7 +90,7 @@ internal fun ladderStarters(artists: List<LibraryArtist>, limit: Int = 6): List<
             .distinctBy(::genreKey)
             .map { it to (sizeByKey[genreKey(it)] ?: 0) }
             .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
-    return counts
+    val ranked = counts
         // A tag nobody else carries and no list knows is usually noise, not a genre to climb into.
         .filter { isKnownGenre(it.genre) || it.artists >= 2 }
         .map { it to neighboursOf(it) }
@@ -101,8 +101,31 @@ internal fun ladderStarters(artists: List<LibraryArtist>, limit: Int = 6): List<
                 .thenByDescending { (_, n) -> n.sumOf { it.second } }
                 .thenBy { it.first.genre },
         )
-        .take(limit)
-        .map { (c, n) -> LadderStarter(c.genre, c.artists, n.take(2).map { displayGenre(it.first) }, c.artistIds) }
+    // Cards should not repeat each other: a starter must bring an artist no earlier card shows (one big name tagged
+    // country and teen pop would otherwise fill two cards), and "near" genres already named are used last.
+    val shownArtists = HashSet<String>()
+    val shownNear = HashSet<String>()
+    val shownPairs = HashSet<List<String>>()
+    val picked = ArrayList<LadderStarter>()
+    val deferred = ArrayList<Pair<GenreCount, List<Pair<String, Int>>>>()
+    fun take(c: GenreCount, n: List<Pair<String, Int>>) {
+        // The usual two neighbours, unless an earlier card already says exactly that: then the ones not yet named lead.
+        val usual = n.take(2).map { displayGenre(it.first) }
+        val near = if (usual in shownPairs) {
+            (n.filter { genreKey(it.first) !in shownNear } + n.filter { genreKey(it.first) in shownNear }).take(2).map { displayGenre(it.first) }
+        } else usual
+        shownPairs += usual
+        val ids = c.artistIds.filter { it !in shownArtists } + c.artistIds.filter { it in shownArtists }
+        shownArtists += c.artistIds.take(2)
+        near.forEach { shownNear += genreKey(it) }
+        picked += LadderStarter(c.genre, c.artists, near, ids)
+    }
+    for ((c, n) in ranked) {
+        if (picked.size >= limit) break
+        if (c.artistIds.all { it in shownArtists } && picked.isNotEmpty()) deferred += c to n else take(c, n)
+    }
+    for ((c, n) in deferred) { if (picked.size >= limit) break; take(c, n) }
+    return picked
 }
 
 /** A card that reopens a ladder with rungs already climbed. */
@@ -120,7 +143,7 @@ internal data class ContinueCard(
 internal fun requestTitle(request: LadderRequest): String {
     fun cap(text: String) = text.replaceFirstChar { it.uppercase() }
     return when (request) {
-        is LadderRequest.Genre -> "Into ${cap(request.genre)}"
+        is LadderRequest.Genre -> "Into ${displayGenre(request.genre)}"
         is LadderRequest.Artist -> when (request.mode) {
             LadderMode.Into -> "Into ${request.name}"
             LadderMode.OutFrom -> "Out from ${request.name}"

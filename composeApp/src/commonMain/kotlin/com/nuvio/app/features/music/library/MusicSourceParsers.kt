@@ -291,6 +291,8 @@ internal data class AudioDbArtist(
     val website: String?,
     val links: List<ArtistLink>,
     val art: ArtistArtwork,
+    /** A person's birth year. Their "formed" year can be the first group they sang in (Michael Jackson: 1964, the Jackson 5). */
+    val bornYear: String? = null,
 )
 
 internal data class AudioDbAlbum(
@@ -335,6 +337,7 @@ internal fun parseAudioDbArtists(body: String): List<AudioDbArtist> =
             mood = a.text("strMood"),
             country = a.text("strCountry"),
             formedYear = a.text("intFormedYear") ?: a.text("intBornYear"),
+            bornYear = yearOf(a.text("intBornYear")),
             disbandedYear = a.text("strDisbanded")?.let { yearOf(it) } ?: a.text("intDiedYear"),
             website = links.firstOrNull { it.label == "Website" }?.url,
             links = links,

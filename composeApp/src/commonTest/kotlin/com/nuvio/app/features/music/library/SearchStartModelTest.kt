@@ -31,7 +31,7 @@ class SearchStartModelTest {
     fun startersAreTheThinnestGenresAndSingleArtistGenresComeLast() {
         val starters = ladderStarters(library)
         assertEquals(listOf("drum and bass", "soul", "rock", "jazz"), starters.map { it.genre })
-        assertEquals("Into Drum and bass", starters.first().title)
+        assertEquals("Into Drum and Bass", starters.first().title)
         assertEquals(LadderRequest.Genre("drum and bass"), starters.first().request)
         assertEquals(2, ladderStarters(library, limit = 2).size)
     }
@@ -109,6 +109,26 @@ class SearchStartModelTest {
         val starter = ladderStarters(library).first { it.genre == "soul" }
         assertEquals(listOf("3", "4"), starter.artistIds)
         assertEquals(listOf("Rock", "Drum and Bass"), starter.neighbours)
+    }
+
+    @Test
+    fun startersDoNotRepeatEachOther() {
+        // One big name carries both thin genres, and the same two neighbours sit beside each.
+        val lib = listOf(
+            artist("b", "country", "teen pop", "hip-hop", "pop"),
+            artist("d", "country", "folk"),
+            artist("s", "teen pop", "pop"),
+            artist("x", "hip-hop"), artist("y", "hip-hop"), artist("z", "pop"), artist("w", "pop"),
+        )
+        val starters = ladderStarters(lib, limit = 2)
+        assertEquals(2, starters.size)
+        assertTrue(starters[0].artistIds.first() != starters[1].artistIds.first())
+        assertTrue(starters[0].neighbours != starters[1].neighbours || starters[0].neighbours.size < 2)
+    }
+
+    @Test
+    fun genreLadderTitleIsCapitalised() {
+        assertEquals("Into Americana", requestTitle(LadderRequest.Genre("americana")))
     }
 
     @Test
