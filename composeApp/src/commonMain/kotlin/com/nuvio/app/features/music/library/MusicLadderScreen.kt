@@ -1,5 +1,16 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -128,13 +139,39 @@ internal fun MusicLadderScreen(
 
     val listState = rememberLazyListState()
     val view = (shown as? LadderState.Ready)?.view
-    val headerItems = (if (view?.note != null) 1 else 0) +
-        (if (view != null && view.alternatives.isNotEmpty() && request.hasDestinations) 1 else 0)
+    // Phase 2 (HTPC): the cursor starts on the first rung, so Left and Right move from somewhere real. Nothing plays until a key is pressed.
+    LaunchedEffect(rungs.firstOrNull()?.candidate?.id) {
+        if (focusedId == null) focusedId = rungs.firstOrNull()?.candidate?.id
+    }
+    val activeRung = focusedRung ?: rungs.firstOrNull()
     LaunchedEffect(focusedId) {
-        if (focusedIndex >= 0) listState.ensureVisible(focusedId, headerItems + focusedIndex)
+        if (focusedIndex >= 0) listState.ensureVisible(focusedId, focusedIndex)
     }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+
+    fun playAlbum(rung: LadderRung) {
+        val id = rung.candidate.id
+        note(id, "Opening…")
+        scope.launch {
+            val result = playRung(catalog, rung.candidate.name, MusicLibraryRepository.state.value.artists)
+            note(
+                id,
+                when (result) {
+                    is RungPlay.Playing -> "Playing ${result.albumTitle}"
+                    RungPlay.NotPlayable -> "No release to play here"
+                },
+            )
+        }
+    }
+    fun save(rung: LadderRung, via: String) {
+        val id = rung.candidate.id
+        note(id, "Saving…")
+        scope.launch {
+            val saved = saveRung(catalog, rung.candidate.name, foundViaLabel(via))
+            note(id, if (saved != null) "Saved to your Library" else "Not found on YouTube Music")
+        }
+    }
 
     LadderRoom(
         room = room,
@@ -143,16 +180,23 @@ internal fun MusicLadderScreen(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown || rungs.isEmpty()) return@onPreviewKeyEvent false
+                val current = activeRung
                 when (event.key) {
-                    Key.DirectionDown, Key.DirectionUp -> {
-                        val next = moveFocus(focusedIndex, if (event.key == Key.DirectionDown) 1 else -1, rungs.size)
+                    // The rungs are a horizontal strip now: Left and Right browse them.
+                    Key.DirectionRight, Key.DirectionLeft -> {
+                        val next = moveFocus(focusedIndex, if (event.key == Key.DirectionRight) 1 else -1, rungs.size)
                         rungs.getOrNull(next)?.let { focusRung(it, immediate = false) }
                         true
                     }
+                    // The closeness dial: Up leads further out, Down comes back toward the listener's taste.
+                    Key.DirectionUp -> current?.let { mark(it, RungFeedback.TooClose) }.let { current != null }
+                    Key.DirectionDown -> current?.let { mark(it, RungFeedback.TooFar) }.let { current != null }
                     Key.Enter, Key.NumPadEnter -> {
-                        focusedRung?.let { focusRung(it, immediate = true) }
-                        focusedRung != null
+                        current?.let { focusRung(it, immediate = true) }
+                        current != null
                     }
+                    Key.ButtonA, Key.L -> current?.let { mark(it, RungFeedback.Love) }.let { current != null }
+                    Key.ButtonX, Key.S -> current?.let { mark(it, RungFeedback.Skip) }.let { current != null }
                     else -> false
                 }
             },
@@ -161,12 +205,13 @@ internal fun MusicLadderScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = topChromePadding),
+                .padding(top = topChromePadding)
+                .padding(horizontal = SAFE_MARGIN),
         ) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Column(Modifier.padding(vertical = 12.dp)) {
                 Text(
                     text = "Back",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = ladderText(LadderType.Body),
                     color = colors.accent,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -180,12 +225,12 @@ internal fun MusicLadderScreen(
                     color = colors.textPrimary,
                 )
                 view?.subtitle?.let {
-                    Text(text = it, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                    Text(text = it, style = ladderText(LadderType.Body), color = colors.textSecondary)
                 }
                 if (!progress.isFresh) {
                     Text(
                         text = "Start over",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = ladderText(LadderType.Body),
                         color = colors.accent,
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
@@ -204,70 +249,273 @@ internal fun MusicLadderScreen(
                     actionLabel = if (shown.retry) "Try again" else null,
                     onAction = if (shown.retry) ({ attempt++ }) else null,
                 )
-                is LadderState.Ready -> LazyColumn(
-                    state = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                is LadderState.Ready -> Column(
+                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
                     shown.view.note?.let { note ->
-                        item {
-                            Text(text = note, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
-                        }
+                        Text(text = note, style = ladderText(LadderType.Body), color = colors.textMuted)
                     }
                     if (shown.view.alternatives.isNotEmpty() && request.hasDestinations) {
-                        item {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Lead out into", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
-                                shown.view.alternatives.forEach { genre ->
-                                    Text(
-                                        text = genre,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = colors.textSecondary,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(colors.surfaceCard)
-                                            .clickable { onRequest(request.withDestination(genre)) }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    )
-                                }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Lead out into", style = ladderText(LadderType.Body), color = colors.textMuted)
+                            shown.view.alternatives.forEach { genre ->
+                                BigPill(text = genre, onClick = { onRequest(request.withDestination(genre)) })
                             }
                         }
                     }
-                    items(shown.view.ladder.rungs, key = { it.candidate.id }) { rung ->
-                        val id = rung.candidate.id
-                        LadderRungRow(
-                            rung = rung,
-                            focused = id == focusedId,
-                            note = notes[id],
-                            onFeedback = { mark(rung, it) },
-                            onAudition = { focusRung(rung, immediate = true) },
-                            onPlayAlbum = {
-                                note(id, "Opening…")
-                                scope.launch {
-                                    val result = playRung(catalog, rung.candidate.name, MusicLibraryRepository.state.value.artists)
-                                    note(
-                                        id,
-                                        when (result) {
-                                            is RungPlay.Playing -> "Playing ${result.albumTitle}"
-                                            RungPlay.NotPlayable -> "No release to play here"
-                                        },
-                                    )
-                                }
-                            },
-                            onSave = {
-                                note(id, "Saving…")
-                                scope.launch {
-                                    val saved = saveRung(catalog, rung.candidate.name, foundViaLabel(shown.view.title))
-                                    note(id, if (saved != null) "Saved to your Library" else "Not found on YouTube Music")
-                                }
-                            },
-                        )
+
+                    PathRail(
+                        start = pathStart(request),
+                        target = shown.view.ladder.target,
+                        rungs = rungs,
+                        focusedId = activeRung?.candidate?.id,
+                    )
+
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val cardWidth = maxWidth * CARD_WIDTH_FRACTION
+                        LazyRow(
+                            state = listState,
+                            horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
+                            contentPadding = PaddingValues(vertical = 20.dp, horizontal = 12.dp),
+                        ) {
+                            items(rungs, key = { it.candidate.id }) { rung ->
+                                LadderRungCard(
+                                    rung = rung,
+                                    width = cardWidth,
+                                    focused = rung.candidate.id == activeRung?.candidate?.id,
+                                    onClick = { focusRung(rung, immediate = true) },
+                                )
+                            }
+                        }
                     }
+
+                    activeRung?.let { rung ->
+                        LadderDetailPanel(
+                            rung = rung,
+                            target = shown.view.ladder.target,
+                            dial = progress.dial,
+                            note = notes[rung.candidate.id],
+                            onFeedback = { mark(rung, it) },
+                            onPlayAlbum = { playAlbum(rung) },
+                            onSave = { save(rung, shown.view.title) },
+                        )
+                        if (rung.step == rungs.size) {
+                            LadderSummary(
+                                rungs = rungs,
+                                onSaveAll = { rungs.forEach { save(it, shown.view.title) } },
+                                onClimbHigher = { onRequest(LadderRequest.Artist(rung.candidate.name, LadderMode.OutFrom)) },
+                            )
+                        }
+                    }
+                    LadderLegend()
+                    Spacer(Modifier.height(24.dp))
                 }
             }
         }
     }
+}
+
+/** HTPC type scale at 1080p: body never below 28sp, row titles 36sp (see the "Using the Blank Space" doc). */
+private object LadderType {
+    val Body = 28.sp
+    val Row = 36.sp
+    val Legend = 24.sp
+}
+
+private val SAFE_MARGIN = 48.dp
+private val CARD_GAP = 16.dp
+private const val CARD_WIDTH_FRACTION = 0.18f
+private const val FOCUS_SCALE = 1.08f
+
+@Composable
+private fun ladderText(size: TextUnit): TextStyle =
+    MaterialTheme.typography.bodyLarge.copy(fontSize = size, lineHeight = size * 1.25f)
+
+/** Where the climb starts: the artist or record it leads out from, otherwise the listener's own Library. */
+private fun pathStart(request: LadderRequest): String = when (request) {
+    is LadderRequest.Genre -> "Your Library"
+    is LadderRequest.Artist -> if (request.mode == LadderMode.OutFrom) request.name else "Your Library"
+    is LadderRequest.Album -> if (request.mode == LadderMode.OutFrom) request.title else "Your Library"
+}
+
+/** The path rail: start on the left, target on the right, one dot per rung (filled once marked, ringed when current). */
+@Composable
+private fun PathRail(start: String, target: String, rungs: List<LadderRung>, focusedId: String?) {
+    val colors = MaterialTheme.nuvio.colors
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(start, style = ladderText(LadderType.Body), color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 260.dp))
+        Spacer(Modifier.width(16.dp))
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            rungs.forEach { rung ->
+                Box(Modifier.weight(1f).height(4.dp).background(colors.surfaceElevated))
+                val current = rung.candidate.id == focusedId
+                Box(
+                    modifier = Modifier
+                        .size(if (current) 28.dp else 20.dp)
+                        .clip(CircleShape)
+                        .background(if (rung.mark != null) colors.accent else colors.surfaceElevated)
+                        .then(if (current) Modifier.border(3.dp, colors.accent, CircleShape) else Modifier),
+                )
+            }
+            Box(Modifier.weight(1f).height(4.dp).background(colors.surfaceElevated))
+        }
+        Spacer(Modifier.width(16.dp))
+        Text(target, style = ladderText(LadderType.Body), color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 260.dp))
+    }
+}
+
+/** One rung as a large card: the picture fills it, the focused card grows and the others dim. */
+@Composable
+private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
+    val scale by animateFloatAsState(if (focused) FOCUS_SCALE else 1f)
+    val alpha by animateFloatAsState(if (focused) 1f else 0.55f)
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier = Modifier
+            .width(width)
+            .graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }
+            .clip(shape)
+            .background(if (focused) colors.surfaceElevated else colors.surfaceCard)
+            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MusicCover(picture, rung.candidate.name, size = width - 24.dp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(colors.accent), contentAlignment = Alignment.Center) {
+                Text("${rung.step}", style = ladderText(LadderType.Body), color = colors.onAccent)
+            }
+            rung.mark?.let { Text(feedbackLabel(it), style = ladderText(LadderType.Legend), color = colors.textSecondary) }
+        }
+        Text(
+            text = rung.candidate.name,
+            style = ladderText(LadderType.Row),
+            color = colors.textPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Detail for the rung under the cursor: the reason, how near it is, the dial, and the actions. */
+@Composable
+private fun LadderDetailPanel(
+    rung: LadderRung,
+    target: String,
+    dial: Double,
+    note: String?,
+    onFeedback: (RungFeedback) -> Unit,
+    onPlayAlbum: () -> Unit,
+    onSave: () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(colors.surfaceCard)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(rung.candidate.name, style = ladderText(LadderType.Row), color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(rung.why, style = ladderText(LadderType.Body), color = colors.textSecondary)
+        if (!rung.candidate.playable) {
+            Text("May not be playable here", style = ladderText(LadderType.Legend), color = colors.textMuted)
+        }
+
+        // Closeness, as one two-ended bar: how much of this artist leans to the Library and how much to the target genre.
+        val library = rung.proximity.toFloat().coerceAtLeast(0f)
+        val genre = rung.purity.toFloat().coerceAtLeast(0f)
+        val libraryShare = if (library + genre <= 0f) 0.5f else library / (library + genre)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().height(16.dp).clip(CircleShape).background(colors.surfaceElevated)) {
+                Box(Modifier.weight(libraryShare.coerceIn(0.03f, 0.97f)).fillMaxHeight().background(colors.textSecondary))
+                Box(Modifier.weight((1f - libraryShare).coerceIn(0.03f, 0.97f)).fillMaxHeight().background(colors.accent))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(rung.anchorName?.let { "Near your $it" } ?: "Near your Library", style = ladderText(LadderType.Legend), color = colors.textSecondary)
+                Text("Into $target", style = ladderText(LadderType.Legend), color = colors.accent)
+            }
+        }
+
+        // The familiarity dial the whole ladder is built at.
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(colors.surfaceElevated))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.weight(dial.toFloat().coerceIn(0.001f, 0.999f)))
+                    Box(Modifier.size(24.dp).clip(CircleShape).background(colors.accent))
+                    Spacer(Modifier.weight((1f - dial.toFloat()).coerceIn(0.001f, 0.999f)))
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Closer to my taste", style = ladderText(LadderType.Legend), color = colors.textSecondary)
+                Text("Further out", style = ladderText(LadderType.Legend), color = colors.textSecondary)
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            BigPill("Closer", { onFeedback(RungFeedback.TooFar) }, selected = rung.mark == RungFeedback.TooFar)
+            BigPill("Further out", { onFeedback(RungFeedback.TooClose) }, selected = rung.mark == RungFeedback.TooClose)
+            BigPill("Skip", { onFeedback(RungFeedback.Skip) })
+            BigPill("Love", { onFeedback(RungFeedback.Love) }, selected = rung.mark == RungFeedback.Love)
+            Spacer(Modifier.width(16.dp))
+            BigPill("Save", onSave)
+            BigPill("Play album", onPlayAlbum)
+        }
+        if (note != null) Text(note, style = ladderText(LadderType.Body), color = colors.textSecondary)
+    }
+}
+
+/** After the last rung: the whole climb at a glance, with the two ways on. */
+@Composable
+private fun LadderSummary(rungs: List<LadderRung>, onSaveAll: () -> Unit, onClimbHigher: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surfaceCard).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("The top of the ladder", style = ladderText(LadderType.Row), color = colors.textPrimary)
+        Text(
+            rungs.joinToString("  ›  ") { it.candidate.name },
+            style = ladderText(LadderType.Body),
+            color = colors.textSecondary,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            BigPill("Save all", onSaveAll)
+            BigPill("Climb higher", onClimbHigher)
+        }
+    }
+}
+
+/** The controls, shown once at the bottom instead of on every row. */
+@Composable
+private fun LadderLegend() {
+    Text(
+        text = "◀ ▶ browse     ▲ further out     ▼ closer to my taste     A or L love     X or S skip     Enter play the hook",
+        style = ladderText(LadderType.Legend),
+        color = MaterialTheme.nuvio.colors.textMuted,
+    )
+}
+
+@Composable
+private fun BigPill(text: String, onClick: () -> Unit, selected: Boolean = false) {
+    val colors = MaterialTheme.nuvio.colors
+    Text(
+        text = text,
+        style = ladderText(LadderType.Body),
+        color = if (selected) colors.onAccent else colors.textPrimary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(28.dp))
+            .background(if (selected) colors.accent else colors.surfaceElevated)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+    )
 }
 
 /** One audition: which rung and whether to start at once (a click or Enter) or after the settle pause (an arrow key). A class, not a data class, so asking again for the same rung starts it again. */
@@ -279,88 +527,6 @@ private suspend fun LazyListState.ensureVisible(key: Any?, index: Int) {
     val inView = info != null && info.offset >= layoutInfo.viewportStartOffset &&
         info.offset + info.size <= layoutInfo.viewportEndOffset
     if (!inView) animateScrollToItem(index)
-}
-
-@Composable
-private fun LadderRungRow(
-    rung: LadderRung,
-    focused: Boolean,
-    note: String?,
-    onFeedback: (RungFeedback) -> Unit,
-    onAudition: () -> Unit,
-    onPlayAlbum: () -> Unit,
-    onSave: () -> Unit,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
-    val shape = RoundedCornerShape(12.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(if (focused) colors.surfaceElevated else colors.surfaceCard)
-            .then(if (focused) Modifier.border(2.dp, colors.accent, shape) else Modifier)
-            .clickable(onClick = onAudition)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier.size(28.dp).clip(CircleShape).background(colors.accent),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("${rung.step}", style = MaterialTheme.typography.bodyMedium, color = colors.onAccent)
-        }
-        Spacer(Modifier.width(12.dp))
-        MusicCover(picture, rung.candidate.name, size = 64.dp, circle = true)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = rung.candidate.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(text = rung.why, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-            val facts = buildList {
-                add("${(rung.purity * 100).roundToInt()}% of its tags")
-                if (!rung.candidate.playable) add("may not be playable here")
-            }
-            Text(text = facts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Save",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.accent,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onSave).padding(vertical = 4.dp, horizontal = 4.dp),
-                )
-                Text(
-                    text = "Play album",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.accent,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onPlayAlbum).padding(vertical = 4.dp, horizontal = 4.dp),
-                )
-                if (note != null) {
-                    Text(text = note, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                for (feedback in RungFeedback.entries) {
-                    val chosen = rung.mark == feedback
-                    Text(
-                        text = feedbackLabel(feedback),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (chosen) colors.onAccent else colors.textSecondary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (chosen) colors.accent else colors.surfaceElevated)
-                            .clickable { onFeedback(feedback) }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    )
-                }
-            }
-        }
-    }
 }
 
 /** The search card: one pill per offer ("Ladder into Shoegaze", "Climb into / out from X"), above the first result. */
