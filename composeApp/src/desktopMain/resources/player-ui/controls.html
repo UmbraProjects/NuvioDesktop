@@ -50,7 +50,8 @@
       <path d="M5 21V4.6c0-.38.21-.72.55-.89 2.15-1.08 4.18.32 6.12.32 1.58 0 3.1-.72 5.26-.72.55 0 1 .45 1 1v9.72c0 .41-.25.78-.63.93-2.03.8-3.79.1-5.46.1-1.94 0-3.55 1.13-5.84.38V21H5Z"/>
     </symbol>
     <symbol id="icon-close" viewBox="0 0 24 24">
-      <path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.3-6.29 1.41 1.41Z"/>
+      <!-- Centred on 12,12; the previous path sat 1.4 units left of centre, visibly off in round buttons. -->
+      <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/>
     </symbol>
     <symbol id="icon-aspect" viewBox="0 0 24 24">
       <path d="M19 3c1.6 0 2.9 1.25 2.99 2.82L22 6v12c0 1.6-1.25 2.9-2.82 2.99L19 21H5c-1.6 0-2.9-1.25-2.99-2.82L2 18V6c0-1.6 1.25-2.9 2.82-2.99L5 3h14Zm0 2H5c-.51 0-.94.39-.99.88L4 6v12c0 .51.39.94.88.99L5 19h14c.51 0 .94-.39.99-.88L20 18V6c0-.51-.39-.94-.88-.99L19 5Zm-2 7c.51 0 .94.39.99.88L18 13v3c0 .51-.39.94-.88.99L17 17h-3a1 1 0 0 1-.12-1.99L14 15h2v-2c0-.55.45-1 1-1ZM10 7a1 1 0 0 1 .12 1.99L10 9H8v2a1 1 0 0 1-1.99.12L6 11V8c0-.51.39-.94.88-.99L7 7h3Z"/>
@@ -168,6 +169,12 @@
         </div>
         <div class="opening-progress-track" id="openingProgressTrack" hidden>
           <div class="opening-progress-bar" id="openingProgressBar"></div>
+        </div>
+        <!-- Live TV's channel loading screen (.opening-overlay.iptv-loading). -->
+        <div class="iptv-loading-card" aria-live="polite">
+          <span class="iptv-loading-eyebrow" id="iptvLoadingEyebrow">Loading</span>
+          <span class="iptv-loading-name" id="iptvLoadingName"></span>
+          <div class="iptv-loading-track"><div class="iptv-loading-bar" id="iptvLoadingBar"></div></div>
         </div>
       </div>
     </section>
@@ -457,6 +464,9 @@
               <div class="style-group-head"><span class="style-group-title">Timing</span></div>
               <div class="style-row">
                 <span class="style-label" id="subtitleDelayLabel">Subtitle Delay</span>
+                <!-- mpv's sub-delay: positive shows each line later. Without this, "-" read as
+                     "delay them" and moved subtitles that were already early further ahead. -->
+                <span class="stream-subtitle" id="subtitleDelayHint">+ shows subtitles later</span>
                 <div class="delay-controls">
                   <div class="stepper">
                     <button class="round-step" id="subtitleDelayMinus" type="button">-</button>

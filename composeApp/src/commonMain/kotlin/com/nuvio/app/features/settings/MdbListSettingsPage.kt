@@ -24,7 +24,6 @@ import com.nuvio.app.features.mdblist.MdbListRefreshTier
 import com.nuvio.app.features.mdblist.MdbListSettings
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.settings_mdb_add_api_key_first
 import nuvio.composeapp.generated.resources.settings_mdb_api_key_description
 import nuvio.composeapp.generated.resources.settings_mdb_api_key_label
@@ -33,7 +32,6 @@ import nuvio.composeapp.generated.resources.settings_mdb_enable_ratings
 import nuvio.composeapp.generated.resources.settings_mdb_enable_ratings_description
 import nuvio.composeapp.generated.resources.settings_mdb_enable_tracking
 import nuvio.composeapp.generated.resources.settings_mdb_enable_tracking_description
-import nuvio.composeapp.generated.resources.settings_mdb_section_api_key
 import nuvio.composeapp.generated.resources.settings_mdb_refresh_pace
 import nuvio.composeapp.generated.resources.settings_mdb_refresh_pace_description
 import nuvio.composeapp.generated.resources.settings_mdb_refresh_pace_standard
@@ -61,7 +59,6 @@ import nuvio.composeapp.generated.resources.settings_mdb_refresh_show_idle
 import nuvio.composeapp.generated.resources.settings_mdb_refresh_show_idle_description
 import nuvio.composeapp.generated.resources.settings_mdb_refresh_not_found
 import nuvio.composeapp.generated.resources.settings_mdb_section_rating_providers
-import nuvio.composeapp.generated.resources.settings_mdb_section_refresh
 import nuvio.composeapp.generated.resources.settings_mdb_section_title
 import nuvio.composeapp.generated.resources.source_audience_score
 import nuvio.composeapp.generated.resources.source_imdb
@@ -81,64 +78,69 @@ internal fun LazyListScope.mdbListSettingsContent(
 ) {
     val providerControlsEnabled = settings.enabled && settings.hasApiKey
 
+    // The switches, the key they need and how often ratings refresh, as one panel.
     item {
         SettingsSection(
             title = stringResource(Res.string.settings_mdb_section_title),
             isTablet = isTablet,
         ) {
-            SettingsGroup(
-                isTablet = isTablet,
-                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("mdb-enable")),
-            ) {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_mdb_enable_ratings),
-                    description = stringResource(Res.string.settings_mdb_enable_ratings_description),
-                    checked = settings.enabled,
-                    enabled = settings.hasApiKey,
-                    isTablet = isTablet,
-                    onCheckedChange = MdbListSettingsRepository::setEnabled,
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                // Separate consent from the ratings toggle: one spends the key's request budget on
-                // lookups, the other writes playback history to the user's MDBList account.
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_mdb_enable_tracking),
-                    description = stringResource(Res.string.settings_mdb_enable_tracking_description),
-                    checked = settings.trackingEnabled,
-                    enabled = settings.hasApiKey,
-                    isTablet = isTablet,
-                    onCheckedChange = MdbListSettingsRepository::setTrackingEnabled,
-                )
-                if (!settings.hasApiKey) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    MdbListInfoRow(
+            SettingsGroup(isTablet = isTablet) {
+                Column(modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("mdb-enable"))) {
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_mdb_enable_ratings),
+                        description = stringResource(Res.string.settings_mdb_enable_ratings_description),
+                        checked = settings.enabled,
+                        enabled = settings.hasApiKey,
                         isTablet = isTablet,
-                        text = stringResource(Res.string.settings_mdb_add_api_key_first),
+                        onCheckedChange = MdbListSettingsRepository::setEnabled,
                     )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    // Separate consent from the ratings toggle: one spends the key's request budget
+                    // on lookups, the other writes playback history to the user's MDBList account.
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_mdb_enable_tracking),
+                        description = stringResource(Res.string.settings_mdb_enable_tracking_description),
+                        checked = settings.trackingEnabled,
+                        enabled = settings.hasApiKey,
+                        isTablet = isTablet,
+                        onCheckedChange = MdbListSettingsRepository::setTrackingEnabled,
+                    )
+                    if (!settings.hasApiKey) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        MdbListInfoRow(
+                            isTablet = isTablet,
+                            text = stringResource(Res.string.settings_mdb_add_api_key_first),
+                        )
+                    }
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                Column(modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("mdb-api-key"))) {
+                    MdbListApiKeyRow(
+                        isTablet = isTablet,
+                        value = settings.apiKey,
+                        onApiKeyCommitted = MdbListSettingsRepository::setApiKey,
+                    )
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                Column(modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("mdb-refresh-pace"))) {
+                    RefreshRows(
+                        isTablet = isTablet,
+                        settings = settings,
+                        controlsEnabled = providerControlsEnabled,
+                    )
+                    if (settings.refreshPreset == MdbListRefreshPreset.Custom) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        MdbListInfoRow(
+                            isTablet = isTablet,
+                            text = stringResource(Res.string.settings_mdb_refresh_custom_note),
+                        )
+                    }
                 }
             }
         }
     }
 
     mdbListLibraryListsSection(isTablet = isTablet, settings = settings)
-
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.settings_mdb_section_api_key),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(
-                isTablet = isTablet,
-                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("mdb-api-key")),
-            ) {
-                MdbListApiKeyRow(
-                    isTablet = isTablet,
-                    value = settings.apiKey,
-                    onApiKeyCommitted = MdbListSettingsRepository::setApiKey,
-                )
-            }
-        }
-    }
 
     item {
         SettingsSection(
@@ -162,31 +164,6 @@ internal fun LazyListScope.mdbListSettingsContent(
                     isTablet = isTablet,
                     settings = settings,
                     controlsEnabled = providerControlsEnabled,
-                )
-            }
-        }
-    }
-
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.settings_mdb_section_refresh),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(
-                isTablet = isTablet,
-                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("mdb-refresh-pace")),
-            ) {
-                RefreshRows(
-                    isTablet = isTablet,
-                    settings = settings,
-                    controlsEnabled = providerControlsEnabled,
-                )
-            }
-            if (settings.refreshPreset == MdbListRefreshPreset.Custom) {
-                SettingsGroupDivider(isTablet = isTablet)
-                SettingsSectionNote(
-                    text = stringResource(Res.string.settings_mdb_refresh_custom_note),
-                    isTablet = isTablet,
                 )
             }
         }

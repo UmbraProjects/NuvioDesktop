@@ -6,9 +6,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * The display mode is stored as three booleans that exclude each other, so the mapping in both
- * directions is the thing most likely to break silently — a reordered write produces
- * "AdaptiveAmbient" with ambient quietly off, and nothing else in the app would notice.
+ * The display mode is stored as booleans that exclude each other, so the mapping in both
+ * directions is the thing most likely to break silently. Adaptive's ambient wash is a toggle kept
+ * across modes, so its gate ([adaptiveAmbientActive]) is covered here too.
  */
 class HomeDisplayModeTest {
 
@@ -20,38 +20,16 @@ class HomeDisplayModeTest {
     }
 
     @Test
-    fun `every mode reaches every other mode`() {
-        // Guards the "from each of the other three" half: the flags a mode writes must not depend
-        // on what was set before it.
-        HomeDisplayMode.entries.forEach { from ->
-            HomeDisplayMode.entries.forEach { to ->
-                val flags = to.toFlags()
-                assertEquals(to, homeDisplayModeOf(flags), "$from -> $to produced the wrong mode")
-            }
-        }
-    }
-
-    @Test
-    fun `tv mode excludes the adaptive hero and its ambient background`() {
+    fun `tv mode excludes the adaptive hero`() {
         val flags = HomeDisplayMode.TvMode.toFlags()
         assertTrue(flags.tvModeEnabled)
         assertFalse(flags.adaptiveHeroEnabled)
-        assertFalse(flags.heroAmbientBackgroundEnabled)
     }
 
     @Test
-    fun `ambient implies the adaptive hero`() {
-        val flags = HomeDisplayMode.AdaptiveAmbient.toFlags()
-        assertTrue(flags.heroAmbientBackgroundEnabled)
-        assertTrue(flags.adaptiveHeroEnabled, "ambient without the adaptive hero reads back as Basic")
-        assertFalse(flags.tvModeEnabled)
-    }
-
-    @Test
-    fun `basic clears all three flags`() {
+    fun `basic clears both flags`() {
         val flags = HomeDisplayMode.Basic.toFlags()
         assertFalse(flags.adaptiveHeroEnabled)
-        assertFalse(flags.heroAmbientBackgroundEnabled)
         assertFalse(flags.tvModeEnabled)
     }
 
@@ -59,11 +37,15 @@ class HomeDisplayModeTest {
     fun `tv mode wins over stale adaptive flags on read`() {
         // Payloads written before the modes were consolidated can carry both; normalizeHeroModes
         // resolves it the same way.
-        val mode = homeDisplayModeOf(
-            adaptiveHeroEnabled = true,
-            heroAmbientBackgroundEnabled = true,
-            tvModeEnabled = true,
-        )
-        assertEquals(HomeDisplayMode.TvMode, mode)
+        assertEquals(HomeDisplayMode.TvMode, homeDisplayModeOf(adaptiveHeroEnabled = true, tvModeEnabled = true))
+    }
+
+    @Test
+    fun `adaptive ambient is drawn only in adaptive`() {
+        val ambientOn = HomeCatalogSettingsUiState(heroAmbientBackgroundEnabled = true)
+        assertTrue(ambientOn.copy(adaptiveHeroEnabled = true).adaptiveAmbientActive)
+        assertFalse(ambientOn.adaptiveAmbientActive, "Basic must not draw Adaptive's ambient")
+        assertFalse(ambientOn.copy(tvModeEnabled = true).adaptiveAmbientActive, "TV Mode has its own toggle")
+        assertFalse(HomeCatalogSettingsUiState(adaptiveHeroEnabled = true).adaptiveAmbientActive)
     }
 }

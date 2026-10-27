@@ -1,7 +1,9 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.features.metadata.nativeAnimeEntryEpisode
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class ManualLibraryFileNamingTest {
 
@@ -54,5 +56,21 @@ class ManualLibraryFileNamingTest {
                 extension = "mkv",
             ),
         )
+    }
+
+    @Test
+    fun nativeAnimeEntryEpisodeIsTheEntrysOwnNumber() {
+        // Apothecary Diaries season 3: the screen is handed TMDB S1E49, the entry calls it E1.
+        assertEquals(1, nativeAnimeEntryEpisode(parentMetaId = "kitsu:50021", videoId = "kitsu:50021:1"))
+        assertEquals(12, nativeAnimeEntryEpisode(parentMetaId = "kitsu:50021", videoId = "kitsu:50021:12"))
+    }
+
+    @Test
+    fun nativeAnimeEntryEpisodeIgnoresFranchiseAndForeignIds() {
+        // 4-part ids are franchise numbered; a sibling entry's id came from a franchise remap.
+        assertNull(nativeAnimeEntryEpisode(parentMetaId = "kitsu:8174", videoId = "kitsu:8174:3:5"))
+        assertNull(nativeAnimeEntryEpisode(parentMetaId = "kitsu:8174", videoId = "kitsu:6589:1"))
+        assertNull(nativeAnimeEntryEpisode(parentMetaId = "tt26743760", videoId = "tt26743760:3:1"))
+        assertNull(nativeAnimeEntryEpisode(parentMetaId = "kitsu:50021", videoId = "tt26743760:1:49"))
     }
 }

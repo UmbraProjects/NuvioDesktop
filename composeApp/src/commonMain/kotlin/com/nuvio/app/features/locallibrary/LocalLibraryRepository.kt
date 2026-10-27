@@ -38,6 +38,7 @@ private data class LocalConfigPayload(
     val playbackPreference: LocalLibraryPlaybackPreference =
         LocalLibraryPlaybackPreference.SOURCE_PICKER,
     val assignments: Map<String, String> = emptyMap(),
+    val titlePlayback: Map<String, LocalTitlePlayback> = emptyMap(),
     // Item keys the auto-filer has already considered. null = pre-feature payload: everything
     // already cached is treated as considered on load, so we never retroactively file old items
     // (only genuinely new scans get auto-filed). Absent on fresh installs (empty cache) too.
@@ -72,6 +73,7 @@ object LocalLibraryRepository {
     private var playbackPreference: LocalLibraryPlaybackPreference =
         LocalLibraryPlaybackPreference.SOURCE_PICKER
     private var assignmentsByKey: Map<String, String> = emptyMap()
+    private var titlePlaybackByKey: Map<String, LocalTitlePlayback> = emptyMap()
     private var overridesByKey: Map<String, LocalMatchOverride> = emptyMap()
     private var itemsByKey: Map<String, LocalMediaItem> = emptyMap()
     // Keys the auto-filer has already considered — so an item the user deliberately moves to
@@ -127,6 +129,7 @@ object LocalLibraryRepository {
         playbackPreference = config?.playbackPreference
             ?: LocalLibraryPlaybackPreference.SOURCE_PICKER
         assignmentsByKey = config?.assignments.orEmpty()
+        titlePlaybackByKey = config?.titlePlayback.orEmpty()
         overridesByKey = LocalLibraryStorage.loadOverrides(profileId)
             ?.let { runCatching { json.decodeFromString<LocalOverridesPayload>(it).overrides }.getOrNull() }
             .orEmpty()
@@ -191,6 +194,44 @@ object LocalLibraryRepository {
     fun currentPlaybackPreference(): LocalLibraryPlaybackPreference {
         ensureLoaded()
         return playbackPreference
+    }
+
+    /**
+     * The local item whose own plain-click override applies to [contentId]/[videoId]: one that
+     * actually serves the requested video, so a show's override reaches each of its episodes and a
+     * franchise sibling without a file never inherits one.
+     */
+    fun titleFor(contentId: String?, videoId: String?): LocalMediaItem? {
+        ensureLoaded()
+        val candidates = when {
+            videoId != null -> itemsByKey.values
+            contentId != null -> itemsForContentId(contentId)
+            else -> return null
+        }
+        return candidates.firstOrNull { streamsFor(it, videoId).isNotEmpty() }
+    }
+
+    /** The configured preference with [contentId]/[videoId]'s own override folded in. */
+    fun routingFor(contentId: String?, videoId: String?): LocalTitleRouting {
+        ensureLoaded()
+        val override = titlePlaybackByKey.takeIf { it.isNotEmpty() }
+            ?.let { overrides -> titleFor(contentId, videoId)?.let { overrides[it.key] } }
+        return playbackPreference.forTitle(override)
+    }
+
+    fun titlePlaybackFor(itemKey: String): LocalTitlePlayback? = titlePlaybackByKey[itemKey]
+
+    /** Sets a title's plain-click override, or clears it (follow the preference) with null. */
+    fun setTitlePlayback(itemKey: String, playback: LocalTitlePlayback?) {
+        ensureLoaded()
+        if (titlePlaybackByKey[itemKey] == playback) return
+        titlePlaybackByKey = if (playback == null) {
+            titlePlaybackByKey - itemKey
+        } else {
+            titlePlaybackByKey + (itemKey to playback)
+        }
+        persistConfig()
+        publish(isScanning = _uiState.value.isScanning)
     }
 
     /**
@@ -663,47 +704,48 @@ object LocalLibraryRepository {
             contentId != null -> itemsForContentId(contentId)
             else -> emptyList()
         }
-        if (items.isEmpty()) return emptyList()
-        return items.flatMap { item ->
-            when {
-                // A movie's file is only served for the movie's OWN id. It must never answer an
-                // `<id>:season:episode` request: movies used to answer any video id, which let a
-                // stale meta — or the movie surfacing on its franchise's series page — play the
-                // movie file in place of an episode (or of a different show entirely).
-                item.type == LocalFolderType.MOVIES ->
-                    if (videoId == null || item.ownsVideoId(videoId)) {
-                        item.files.map { it.toStreamItem() }
-                    } else {
-                        emptyList()
-                    }
-                // Anime video ids mix coordinate spaces (`kitsu:id:ep` is entry-relative,
-                // `tt…:s:e` is franchise season/episode) and so do local file names; the matcher
-                // converts between them through the anime-list mapping and rejects ids that
-                // belong to neither this item nor its franchise.
-                item.isAnime -> {
-                    val matched = videoId?.let { LocalAnimeEpisodeMatcher.matchFiles(item, it) }
-                    when {
-                        matched != null -> matched.map { it.toStreamItem() }
-                        (videoId == null || item.ownsVideoId(videoId)) &&
-                            item.files.singleOrNull()?.isEpisodePlayable == true ->
-                            item.files.map { it.toStreamItem() }
-                        else -> emptyList()
-                    }
+        return items.flatMap { item -> streamsFor(item, videoId) }
+    }
+
+    /** This item's files that answer [videoId] (any of them, when null). */
+    private fun streamsFor(item: LocalMediaItem, videoId: String?): List<StreamItem> =
+        when {
+            // A movie's file is only served for the movie's OWN id. It must never answer an
+            // `<id>:season:episode` request: movies used to answer any video id, which let a
+            // stale meta — or the movie surfacing on its franchise's series page — play the
+            // movie file in place of an episode (or of a different show entirely).
+            item.type == LocalFolderType.MOVIES ->
+                if (videoId == null || item.ownsVideoId(videoId)) {
+                    item.files.map { it.toStreamItem() }
+                } else {
+                    emptyList()
                 }
-                else -> {
-                    val coords = videoId?.takeIf { item.ownsVideoId(it) }?.let(::parseSeasonEpisode)
-                    when {
-                        coords != null -> item.files
-                            .filter { it.season == coords.first && it.episode == coords.second }
-                            .map { it.toStreamItem() }
-                        (videoId == null || item.ownsVideoId(videoId)) && item.files.size == 1 ->
-                            item.files.map { it.toStreamItem() }
-                        else -> emptyList()
-                    }
+            // Anime video ids mix coordinate spaces (`kitsu:id:ep` is entry-relative,
+            // `tt…:s:e` is franchise season/episode) and so do local file names; the matcher
+            // converts between them through the anime-list mapping and rejects ids that
+            // belong to neither this item nor its franchise.
+            item.isAnime -> {
+                val matched = videoId?.let { LocalAnimeEpisodeMatcher.matchFiles(item, it) }
+                when {
+                    matched != null -> matched.map { it.toStreamItem() }
+                    (videoId == null || item.ownsVideoId(videoId)) &&
+                        item.files.singleOrNull()?.isEpisodePlayable == true ->
+                        item.files.map { it.toStreamItem() }
+                    else -> emptyList()
+                }
+            }
+            else -> {
+                val coords = videoId?.takeIf { item.ownsVideoId(it) }?.let(::parseSeasonEpisode)
+                when {
+                    coords != null -> item.files
+                        .filter { it.season == coords.first && it.episode == coords.second }
+                        .map { it.toStreamItem() }
+                    (videoId == null || item.ownsVideoId(videoId)) && item.files.size == 1 ->
+                        item.files.map { it.toStreamItem() }
+                    else -> emptyList()
                 }
             }
         }
-    }
 
     /**
      * The video id for one episode [file]. Absolute-numbered anime files keep the native
@@ -814,6 +856,7 @@ object LocalLibraryRepository {
             catalogs = catalogs,
             hideEmptyCatalogs = hideEmptyCatalogs,
             playbackPreference = playbackPreference,
+            titlePlayback = titlePlaybackByKey,
             isLoaded = true,
             isScanning = isScanning,
             errorMessage = errorMessage,
@@ -830,6 +873,7 @@ object LocalLibraryRepository {
                     hideEmptyCatalogs = hideEmptyCatalogs,
                     playbackPreference = playbackPreference,
                     assignments = assignmentsByKey,
+                    titlePlayback = titlePlaybackByKey,
                     autoFiledKeys = autoConsideredKeys,
                 ),
             ),

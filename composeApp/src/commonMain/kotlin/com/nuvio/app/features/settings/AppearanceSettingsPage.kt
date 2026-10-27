@@ -447,10 +447,14 @@ internal fun LazyListScope.appearanceSettingsContent(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppearanceFontBottomSheet(
+internal fun AppearanceFontBottomSheet(
     selectedFontFamily: String,
     onFontFamilySelected: (String) -> Unit,
     onDismiss: () -> Unit,
+    title: String = stringResource(Res.string.settings_appearance_app_font_sheet_title),
+    note: String = stringResource(Res.string.settings_appearance_app_font_player_note),
+    /** The "no system font" choice, which picking "" selects. */
+    defaultLabel: String = stringResource(Res.string.settings_appearance_app_font_default),
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
@@ -464,8 +468,6 @@ private fun AppearanceFontBottomSheet(
             installedFonts.filter { it.contains(trimmed, ignoreCase = true) }
         }
     }
-    val defaultLabel = stringResource(Res.string.settings_appearance_app_font_default)
-
     val dismiss = {
         coroutineScope.launch {
             dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
@@ -484,14 +486,14 @@ private fun AppearanceFontBottomSheet(
         ) {
             item {
                 Text(
-                    text = stringResource(Res.string.settings_appearance_app_font_sheet_title),
+                    text = title,
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                 )
                 Text(
-                    text = stringResource(Res.string.settings_appearance_app_font_player_note),
+                    text = note,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp),

@@ -35,10 +35,10 @@ class TraktSettingsRepositoryTest {
     }
 
     @Test
-    fun `more like this source defaults to Trakt for unset or invalid storage`() {
-        assertEquals(MoreLikeThisSourcePreference.TRAKT, MoreLikeThisSourcePreference.fromStorage(null))
-        assertEquals(MoreLikeThisSourcePreference.TRAKT, MoreLikeThisSourcePreference.fromStorage(""))
-        assertEquals(MoreLikeThisSourcePreference.TRAKT, MoreLikeThisSourcePreference.fromStorage("not-a-source"))
+    fun `more like this source defaults to TMDB for unset or invalid storage`() {
+        assertEquals(MoreLikeThisSourcePreference.TMDB, MoreLikeThisSourcePreference.fromStorage(null))
+        assertEquals(MoreLikeThisSourcePreference.TMDB, MoreLikeThisSourcePreference.fromStorage(""))
+        assertEquals(MoreLikeThisSourcePreference.TMDB, MoreLikeThisSourcePreference.fromStorage("not-a-source"))
     }
 
     @Test

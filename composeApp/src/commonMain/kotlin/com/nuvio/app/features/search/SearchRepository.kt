@@ -39,6 +39,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -154,10 +155,25 @@ object SearchRepository {
                 resultChannel.close()
             }
             val results = arrayOfNulls<IndexedSearchResult>(requests.size)
+            // Rows are published as they arrive, but not before the top one is known: a later
+            // catalog answering first (Series before Movies) was drawn as row one and then pushed
+            // down when the real first row landed, moving whatever was focused. Past the wait,
+            // whatever has arrived is shown rather than holding the screen on a slow addon.
+            var firstRowWaitOver = false
+            val firstRowWaitJob = launch {
+                delay(SEARCH_FIRST_ROW_WAIT_MS)
+                resultChannel.send(IndexedSearchResult(index = FIRST_ROW_WAIT_OVER))
+            }
 
             try {
                 for (result in resultChannel) {
-                    results[result.index] = result
+                    if (result.index == FIRST_ROW_WAIT_OVER) {
+                        firstRowWaitOver = true
+                    } else {
+                        results[result.index] = result
+                    }
+                    if (!firstRowWaitOver && !results.topRowSettled()) continue
+                    firstRowWaitJob.cancel()
                     val sections = results.orderedSections()
                     if (sections.isNotEmpty()) {
                         _uiState.value = SearchUiState(
@@ -168,6 +184,7 @@ object SearchRepository {
                     }
                 }
             } finally {
+                firstRowWaitJob.cancel()
                 closeChannelJob.cancel()
                 resultChannel.close()
             }
@@ -738,6 +755,24 @@ private data class IndexedSearchResult(
 
 private fun Array<IndexedSearchResult?>.orderedSections(): List<HomeCatalogSection> =
     mapNotNull { result -> result?.section }.ensureUniqueKeys()
+
+/** How long search holds its rows back waiting for the top one before showing what it has. */
+internal const val SEARCH_FIRST_ROW_WAIT_MS = 2_500L
+
+/** Channel marker (not a catalog index) for [SEARCH_FIRST_ROW_WAIT_MS] running out. */
+private const val FIRST_ROW_WAIT_OVER = -1
+
+/**
+ * True once nothing can arrive above the first row shown: every catalog before the first one with
+ * results has answered (empty or failed), or every catalog has.
+ */
+private fun Array<IndexedSearchResult?>.topRowSettled(): Boolean {
+    for (result in this) {
+        if (result == null) return false
+        if (result.section != null) return true
+    }
+    return true
+}
 
 private fun CatalogPage.withUnreleasedFilter(): CatalogPage {
     if (!HomeCatalogSettingsRepository.snapshot().hideUnreleasedContent) return this

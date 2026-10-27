@@ -53,7 +53,7 @@ enum class MoreLikeThisSourcePreference {
     }
 }
 
-val DEFAULT_MORE_LIKE_THIS_SOURCE: MoreLikeThisSourcePreference = MoreLikeThisSourcePreference.TRAKT
+val DEFAULT_MORE_LIKE_THIS_SOURCE: MoreLikeThisSourcePreference = MoreLikeThisSourcePreference.TMDB
 
 data class TraktSettingsUiState(
     val watchProgressSource: WatchProgressSource = DEFAULT_WATCH_PROGRESS_SOURCE,

@@ -146,6 +146,12 @@ private fun ResolvedMediaIds.entryLocalEpisodeNumber(
     val mappedSeason = tmdbSeason ?: tvdbSeason ?: return sourceEpisode
     if (sourceSeason == null || sourceSeason != mappedSeason) return sourceEpisode
     val offset = tmdbEpisodeOffset ?: tvdbEpisodeOffset ?: 0
+    // A mapped season of 1 collides with the entry's own season 1, so "S1E2" can be either. When
+    // TMDB keeps a whole show in one season (Apothecary Diaries: its third cour, `kitsu:50021`, is
+    // TMDB S1E49 onward) an entry-local source reports S1E2 for the entry's second episode, and
+    // removing the offset collapsed every such episode onto E1. The franchise numbers that belong to
+    // this entry all lie above its offset, so an entry-local source at or below it is already local.
+    if (!franchiseNumbering && mappedSeason == 1 && sourceEpisode <= offset) return sourceEpisode
     return (sourceEpisode - offset).coerceAtLeast(1)
 }
 

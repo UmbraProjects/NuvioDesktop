@@ -142,14 +142,15 @@ private const val MONITORED_COLUMNS_WIDE = 4
 private const val MONITORED_COLUMNS_NARROW = 2
 
 /**
- * Content for the dedicated Auto Downloads settings page: enable/interval/concurrency,
- * monitored titles, and grab activity.
+ * Content for the auto-download rules: enable/interval/concurrency, monitored titles, and grab
+ * activity. On desktop it is the lower half of the Downloads page, under the downloads list.
  */
 internal fun LazyListScope.libraryDownloadsSection(
     isTablet: Boolean,
-    onDownloadsClick: () -> Unit,
+    /** Null on desktop, where the downloads list sits on this page instead of behind a link. */
+    onDownloadsClick: (() -> Unit)?,
 ) {
-    item {
+    if (onDownloadsClick != null) item {
         SettingsSection(title = stringResource(Res.string.compose_settings_root_downloads_title), isTablet = isTablet) {
             SettingsGroup(isTablet = isTablet) {
                 SettingsNavigationRow(

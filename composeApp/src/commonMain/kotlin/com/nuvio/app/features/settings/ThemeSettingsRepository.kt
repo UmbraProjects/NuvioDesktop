@@ -46,7 +46,7 @@ object ThemeSettingsRepository {
     private val _liquidGlassNativeTabBarEnabled = MutableStateFlow(false)
     val liquidGlassNativeTabBarEnabled: StateFlow<Boolean> = _liquidGlassNativeTabBarEnabled.asStateFlow()
 
-    private val _desktopColumnGuidesVisible = MutableStateFlow(true)
+    private val _desktopColumnGuidesVisible = MutableStateFlow(false)
     val desktopColumnGuidesVisible: StateFlow<Boolean> = _desktopColumnGuidesVisible.asStateFlow()
 
     /** Settings shell spans the whole window instead of a centred fixed-width column set. */
@@ -104,7 +104,7 @@ object ThemeSettingsRepository {
         _accentGradientDirection.value = AccentGradientDirection.Default
         _amoledEnabled.value = false
         _liquidGlassNativeTabBarEnabled.value = false
-        _desktopColumnGuidesVisible.value = true
+        _desktopColumnGuidesVisible.value = false
         _desktopSettingsFullWidth.value = false
         _wasdNavigationEnabled.value = false
         WasdNavigation.enabled = false
@@ -162,7 +162,7 @@ object ThemeSettingsRepository {
         val liquidGlassEnabled = ThemeSettingsStorage.loadLiquidGlassNativeTabBarEnabled() ?: false
         _liquidGlassNativeTabBarEnabled.value = liquidGlassEnabled
         NativeTabBridge.publishLiquidGlassEnabled(liquidGlassEnabled)
-        _desktopColumnGuidesVisible.value = ThemeSettingsStorage.loadDesktopColumnGuidesVisible() ?: true
+        _desktopColumnGuidesVisible.value = ThemeSettingsStorage.loadDesktopColumnGuidesVisible() ?: false
         _desktopSettingsFullWidth.value = ThemeSettingsStorage.loadDesktopSettingsFullWidth() ?: false
         val wasdEnabled = ThemeSettingsStorage.loadWasdNavigationEnabled() ?: false
         _wasdNavigationEnabled.value = wasdEnabled

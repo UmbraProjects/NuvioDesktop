@@ -78,6 +78,8 @@ import com.nuvio.app.features.watchprogress.NextUpNoCardCache
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import com.nuvio.app.features.setup.FirstRunWizardController
 import com.nuvio.app.isDesktop
 import com.nuvio.app.core.network.NetworkCondition
 import com.nuvio.app.core.network.NetworkStatusRepository
@@ -878,7 +880,7 @@ fun HomeScreen(
         searchLibraryBackdropEnrichmentEnabled,
         homeSettingsUiState.adaptiveHeroEnabled,
         homeSettingsUiState.tvModeEnabled,
-        homeSettingsUiState.heroAmbientBackgroundEnabled,
+        homeSettingsUiState.adaptiveAmbientActive,
         resumeHeroPreview,
     ) {
         resumeHeroPreview?.let { return@remember listOf(it) }
@@ -913,7 +915,7 @@ fun HomeScreen(
                 val desktopBackdropModeActive = isDesktop && (
                     homeSettingsUiState.adaptiveHeroEnabled ||
                         homeSettingsUiState.tvModeEnabled ||
-                        homeSettingsUiState.heroAmbientBackgroundEnabled
+                        homeSettingsUiState.adaptiveAmbientActive
                     )
                 if (desktopBackdropModeActive) currentlyViewingHeroSeed(keepText = true) else emptyList()
             }
@@ -2036,6 +2038,19 @@ fun HomeScreen(
     // auto-play. Only meaningful in Basic; the other modes' heroes host their own trailers.
     var basicHeroActiveItem by remember { mutableStateOf<MetaPreview?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
+    // The hero's backdrop crossfade and the ambient wash both keep the last picture up until the
+    // next one has decoded and faded in. Across a tab change that put the previous tab's title on
+    // screen first - most visibly back from Live TV or Settings, where this screen stays composed
+    // but undrawn, so Discover -> Live TV -> Library opened on Discover's backdrop. Keyed on the
+    // tab, both start empty on a new one, and the wash forgets its picture in the same frame
+    // rather than after the hero reports its new item.
+    val heroModeKey = displayMode.heroHoldKey()
+    var activeHeroBackdropModeKey by remember { mutableStateOf(heroModeKey) }
+    if (activeHeroBackdropModeKey != heroModeKey) {
+        activeHeroBackdropModeKey = heroModeKey
+        activeHeroBackdrop = null
+        activeHeroAccent = null
+    }
 
     // Home is ready to show once it has any row to show. Continue Watching, Next Up and Upcoming
     // come from the local watch history (and its enrichment cache) well before the first catalog
@@ -2163,7 +2178,7 @@ fun HomeScreen(
         heroTrailerShowing && trailersEnabledForCurrentMode &&
             playerTrailerSettings.heroTvTrailerFullscreen && !basicHomeHeroTrailersEnabled
     val heroAmbientBackgroundEnabled =
-        homeSettingsUiState.heroAmbientBackgroundEnabled && isDesktop && showHeroSlot
+        homeSettingsUiState.adaptiveAmbientActive && isDesktop && showHeroSlot
     val tvModeEnabled =
         homeSettingsUiState.tvModeEnabled && isDesktop && showHeroSlot
     // TV Mode's take on Adaptive Ambient: the same screen-wide wash, with the TV hero dissolving
@@ -2350,8 +2365,14 @@ fun HomeScreen(
     // a trailer surface going away, a mode change made from a settings route - must then not
     // pull focus off the screen on top.
     val homeScreenCovered by rememberUpdatedState(LocalScreenCovered.current)
+    // The setup panel sits over Home and owns the keyboard while it is open. Its choices rebuild
+    // Home under it (a display-mode change does), and that rebuild must not pull focus back here.
+    val setupPanelOpen by remember {
+        FirstRunWizardController.uiState.map { it.visible }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = FirstRunWizardController.uiState.value.visible)
+    val homeFocusHeld by rememberUpdatedState(setupPanelOpen && contentMode is HomeContentMode.Normal)
     fun requestHomeFocus() {
-        if (homeScreenCovered) return
+        if (homeScreenCovered || homeFocusHeld) return
         runCatching { tvFocusRequester.requestFocus() }
     }
     var homeRootHasFocus by remember { mutableStateOf(false) }
@@ -2365,6 +2386,18 @@ fun HomeScreen(
         val uncovered = homeWasCovered && !homeCoveredNow
         homeWasCovered = homeCoveredNow
         if (!uncovered || contentMode is HomeContentMode.Search) return@LaunchedEffect
+        repeat(12) { attempt ->
+            delay(if (attempt == 0) 50 else 48)
+            requestHomeFocus()
+            if (homeRootHasFocus) return@LaunchedEffect
+        }
+    }
+    // The panel hands focus to nobody when it closes; Home takes it back, as after a filter menu.
+    var setupPanelWasOpen by remember { mutableStateOf(setupPanelOpen) }
+    LaunchedEffect(setupPanelOpen) {
+        val closed = setupPanelWasOpen && !setupPanelOpen
+        setupPanelWasOpen = setupPanelOpen
+        if (!closed || contentMode !is HomeContentMode.Normal) return@LaunchedEffect
         repeat(12) { attempt ->
             delay(if (attempt == 0) 50 else 48)
             requestHomeFocus()
@@ -2445,6 +2478,11 @@ fun HomeScreen(
     // the user left it, and the synthetic hover Enter for the poster under it would otherwise
     // replace the restored shelf position. A genuine mouse move re-enables hover.
     val mouseActivity = rememberMouseActivityState(startInactive = true)
+    // TV Mode: the hero waits for the cursor's poster after a wheel row change
+    // (see awaitPointerAfterWheelRowChange).
+    var pointerOverImmersiveShelf by remember { mutableStateOf(false) }
+    var heroAwaitingPointer by remember { mutableStateOf(false) }
+    var heroPointerWaitJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     // Seed from the session-scoped holder so the immersive home layout returns to the
     // catalog row the user was on (e.g. after visiting the details screen) instead of
     // resetting to the top. Saved back whenever it changes (see below).
@@ -2762,6 +2800,25 @@ fun HomeScreen(
         if (!mouseActivity.isMouseActive) return
         syncImmersiveTvFocusSection()
         tvFocus.itemIndex = itemIndex
+        heroAwaitingPointer = false
+    }
+
+    /**
+     * A wheel row change carries the column *index* across, but rows of different card widths
+     * (Continue Watching's wide cards over portrait posters) put a different poster under the
+     * cursor: the hero drew the carried card's backdrop and then, once the new row slid in under
+     * the cursor and its hover landed, the hovered one's. With the cursor on the shelf the hover
+     * is the real answer, so the hero waits for it - up to the row's slide-in, after which the
+     * carried card stands (the cursor was in a gap).
+     */
+    fun awaitPointerAfterWheelRowChange() {
+        if (!pointerOverImmersiveShelf) return
+        heroAwaitingPointer = true
+        heroPointerWaitJob?.cancel()
+        heroPointerWaitJob = tvCoroutineScope.launch {
+            delay(HERO_WHEEL_ROW_POINTER_WAIT_MS)
+            heroAwaitingPointer = false
+        }
     }
 
     /**
@@ -3163,6 +3220,7 @@ fun HomeScreen(
             rowIndex = tvFocusedRowIndex,
             item = tvFocusedHeroItemLive,
         ),
+        hold = heroAwaitingPointer && mouseActivity.isMouseActive,
     )
     val tvFocusedHeroItemRaw = settledHeroFocus.item
     SideEffect {
@@ -3171,7 +3229,15 @@ fun HomeScreen(
     // For Search/Library: hold hero on the previous item while the new one enriches.
     // For Normal (home): pass through directly — addon already provides good images.
     var displayedFocusedItem by remember { mutableStateOf<MetaPreview?>(null) }
+    // The mode the held item was focused in. The hold is for moving between titles of one tab; a
+    // title held over from another tab (Discover -> Live TV -> Library came back on Discover's
+    // backdrop until Library's enrichment landed) must not stand in for the new tab's focus.
+    var displayedFocusedItemMode by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tvFocusedHeroItemRaw, searchLibraryBackdropEnrichmentEnabled, displayMode) {
+        fun holdFocused(item: MetaPreview?) {
+            displayedFocusedItem = item
+            displayedFocusedItemMode = displayMode.heroHoldKey()
+        }
         val normalHomeFocusedFallback = displayMode is HomeContentMode.Normal &&
             tvFocusedHeroItemRaw?.needsHomeHeroMetadataEnrichment() == true
         // A row with no backdrop of its own is held too, whatever the image-source setting: the
@@ -3203,33 +3269,33 @@ fun HomeScreen(
                 // giving up here left it unenriched until it was re-focused, which re-ran this
                 // effect and read the by-then-populated map.
                 if (raw.heroMetadataPending) {
-                    displayedFocusedItem = raw.copy(heroMetadataPending = false)
+                    holdFocused(raw.copy(heroMetadataPending = false))
                 }
                 val late = snapshotFlow { heroEnrichmentMap[key] }
                     .filterNotNull()
                     .first()
-                displayedFocusedItem = late
+                holdFocused(late)
                 return
             }
-            displayedFocusedItem = enriched
+            holdFocused(enriched)
         }
         // Already enriched: never step back to the raw row item (see tvFocusedHeroItem below).
         val knownEnriched = tvFocusedHeroItemRaw?.let { heroEnrichmentMap[canonicalHeroKey(it.type, it.id)] }
         if (!isEnrichedMode) {
-            displayedFocusedItem = knownEnriched ?: tvFocusedHeroItemRaw
+            holdFocused(knownEnriched ?: tvFocusedHeroItemRaw)
             if (knownEnriched == null) tvFocusedHeroItemRaw?.let { upgradeWhenTextArrives(it) }
             return@LaunchedEffect
         }
         val raw = tvFocusedHeroItemRaw
         if (raw == null) {
-            displayedFocusedItem = null
+            holdFocused(null)
             return@LaunchedEffect
         }
         // A row already carrying provider-quality *backdrop* art has nothing to wait for — the pass
         // would only reproduce it. Deliberately not a poster check: a poster is not a backdrop, and
         // treating one as "already resolved" is what put a stretched poster behind the hero.
         if (knownEnriched != null) {
-            displayedFocusedItem = knownEnriched
+            holdFocused(knownEnriched)
             return@LaunchedEffect
         }
         if (raw.hasFinalHeroBackdrop(tmdbSettingsUiState.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows)) {
@@ -3238,14 +3304,14 @@ fun HomeScreen(
             // unresolved so the slot stays empty rather than painting the title text and replacing
             // it a moment later; upgradeWhenTextArrives clears the marker either way.
             val pending = raw.withPendingLogoSlot()
-            displayedFocusedItem = pending
+            holdFocused(pending)
             upgradeWhenTextArrives(pending)
             return@LaunchedEffect
         }
         val key = canonicalHeroKey(raw.type, raw.id)
         if (normalHomeFocusedFallback) {
             heroEnrichmentMap[key]?.let { enriched ->
-                displayedFocusedItem = enriched
+                holdFocused(enriched)
                 return@LaunchedEffect
             }
         }
@@ -3256,7 +3322,7 @@ fun HomeScreen(
                 .filterNotNull()
                 .first()
         }
-        displayedFocusedItem = enriched ?: raw
+        holdFocused(enriched ?: raw)
     }
     // displayedFocusedItem is only ever written from the effect above, which runs after the
     // composition that already saw the new focus — so it lags every focus change by at least a
@@ -3281,8 +3347,16 @@ fun HomeScreen(
         // before the effect catches up, so without it the slot would paint the title text here and
         // then blank it once the effect's marked copy lands - turning one swap into two.
             ?: tvFocusedHeroItemRaw?.withPendingLogoSlot()
-    } else {
+    } else if (displayedFocusedItemMode == displayMode.heroHoldKey()) {
         displayedFocusedItem
+    } else {
+        // Nothing held for this tab yet: its focused title as soon as it has a backdrop to show
+        // (enriched before, or its own row art), else nothing, which leaves the hero on this
+        // tab's own items rather than the last tab's.
+        tvFocusedHeroItemRaw?.let { raw ->
+            heroEnrichmentMap[canonicalHeroKey(raw.type, raw.id)]
+                ?: raw.takeUnless { it.banner.isNullOrBlank() }
+        }
     }
     // The Basic home hero is a static rotation through the user's 1–2 chosen hero catalogs; it
     // must NOT retarget to whatever poster is focused — that "follow the focused object" behaviour
@@ -3623,7 +3697,9 @@ fun HomeScreen(
             .onFocusChanged { homeRootHasFocus = it.hasFocus }
             .focusable()
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
-                requestHomeFocus()
+                // A click on Home is the user choosing it, so it takes focus even from the open
+                // setup panel; only Home's own automatic requests are held for the panel.
+                if (!homeScreenCovered) runCatching { tvFocusRequester.requestFocus() }
             }
             .onPreviewKeyEvent { event ->
                 when {
@@ -3699,6 +3775,7 @@ fun HomeScreen(
                                                 tvFocus.sectionIndex =
                                                     getImmersiveRowIndex() + if (heroFocusable) 1 else 0
                                             }
+                                            awaitPointerAfterWheelRowChange()
                                             tvCoroutineScope.launch {
                                                 delay(220)
                                                 immersiveWheelLocked = false
@@ -3809,13 +3886,15 @@ fun HomeScreen(
             ),
     ) {
         if (heroAmbientBackgroundEnabled || tvAmbientBackgroundEnabled) {
-            HeroAmbientBackdrop(
-                backdrop = activeHeroBackdrop,
-                accent = activeHeroAccent,
-                onAccentChanged = { activeHeroAccent = it },
-                label = "home_hero_ambient_background",
-                modifier = Modifier.frameBudgetProbe("ambient"),
-            )
+            androidx.compose.runtime.key(heroModeKey) {
+                HeroAmbientBackdrop(
+                    backdrop = activeHeroBackdrop,
+                    accent = activeHeroAccent,
+                    onAccentChanged = { activeHeroAccent = it },
+                    label = "home_hero_ambient_background",
+                    modifier = Modifier.frameBudgetProbe("ambient"),
+                )
+            }
         }
 
         val homeSectionPadding = homeSectionHorizontalPaddingForWidth(maxWidth.value)
@@ -3956,7 +4035,7 @@ fun HomeScreen(
                     heightOverride = adaptiveHeroLayout?.heroHeight ?: basicHeroHeight,
                 )
 
-                effectiveHeroItems.isNotEmpty() -> HomeHeroSection(
+                effectiveHeroItems.isNotEmpty() -> androidx.compose.runtime.key(heroModeKey) { HomeHeroSection(
                     items = effectiveHeroItems,
                     modifier = Modifier.frameBudgetProbe("hero"),
                     viewportHeight = maxHeight,
@@ -4040,7 +4119,7 @@ fun HomeScreen(
                         // scroll in the first place.
                         mouseActivity.onKeyboardNavigation(ignoreNextMouseMove = true)
                     },
-                )
+                ) }
 
                 else -> HomeHeroReservedSpace(
                     modifier = Modifier,
@@ -4561,6 +4640,15 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .height(immersiveShelfHeight)
                         .align(Alignment.BottomStart)
+                        .then(
+                            if (isDesktop) {
+                                Modifier
+                                    .onPointerEvent(PointerEventType.Enter) { pointerOverImmersiveShelf = true }
+                                    .onPointerEvent(PointerEventType.Exit) { pointerOverImmersiveShelf = false }
+                            } else {
+                                Modifier
+                            },
+                        )
                         // The shelf's own scrim, and the thing that actually makes TV Mode's
                         // bottom band black: it reaches the opaque background colour whatever the
                         // hero behind it is doing. Under full backdrop it stops short instead, so
@@ -5007,6 +5095,9 @@ private fun String?.isMetadataProviderArtUrl(): Boolean {
 // Long enough to cover a normal metadata round-trip, short enough that an item nothing can enrich
 // still reaches the hero.
 private const val FOCUSED_HERO_ENRICHMENT_HOLD_MS = 4_000L
+
+/** The immersive row's slide-in (ImmersiveRowSlideMs) plus a frame or two for the hover to land. */
+private const val HERO_WHEEL_ROW_POINTER_WAIT_MS = 520L
 private const val SEARCH_LIBRARY_METADATA_PREFETCH_LIMIT = 3
 private const val SEARCH_LIBRARY_LANDSCAPE_METADATA_PREFETCH_LIMIT = 8
 // How many results per catalog the search hero eagerly enriches (incl. rate-limited MDBList). Kept

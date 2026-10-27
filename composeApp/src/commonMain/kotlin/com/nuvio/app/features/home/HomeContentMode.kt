@@ -34,3 +34,9 @@ internal fun HomeContentMode.telemetryName(): String = when (this) {
     is HomeContentMode.Discover -> "discover"
     is HomeContentMode.Catalogs -> "catalog"
 }
+
+/** Which screen's focus a held hero title belongs to; Search's re-focus counter is not part of it. */
+internal fun HomeContentMode.heroHoldKey(): String = when (this) {
+    is HomeContentMode.Catalogs -> "catalog:$key"
+    else -> telemetryName()
+}

@@ -138,12 +138,14 @@ import com.nuvio.app.core.ui.accentBrush
 internal fun LazyListScope.metaScreenSettingsContent(
     isTablet: Boolean,
     uiState: MetaScreenSettingsUiState,
+    /** The panel's heading. Desktop shows it inside Layout, where "Appearance" would mislead. */
+    sectionTitle: StringResource = Res.string.settings_meta_section_appearance,
 ) {
     val showHeroTrailerPlaybackSetting = AppFeaturePolicy.heroTrailerPlaybackSupported &&
         AppFeaturePolicy.trailerPlaybackMode == TrailerPlaybackMode.IN_APP
     item {
         SettingsSection(
-            title = stringResource(Res.string.settings_meta_section_appearance),
+            title = stringResource(sectionTitle),
             isTablet = isTablet,
         ) {
             SettingsGroup(isTablet = isTablet) {

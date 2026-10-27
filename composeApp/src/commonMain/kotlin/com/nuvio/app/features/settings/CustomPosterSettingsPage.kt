@@ -54,6 +54,7 @@ import com.nuvio.app.features.posterservice.CustomPosterSettingsRepository
 import com.nuvio.app.features.posterservice.CustomPosterShape
 import com.nuvio.app.features.posterservice.CustomPosterTemplateProbe
 import com.nuvio.app.features.posterservice.probeCustomPosterTemplate
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_poster_service_description
@@ -141,6 +142,7 @@ internal fun LazyListScope.customPosterSettingsContent(
                 // The placeholder reference used to sit here as one dense paragraph; it reads far
                 // better laid out as a table in its own window.
                 var placeholdersOpen by remember { mutableStateOf(false) }
+                val autoEnableScope = rememberCoroutineScope()
                 SettingsNavigationRow(
                     title = stringResource(Res.string.settings_poster_service_placeholders_title),
                     description = stringResource(Res.string.settings_poster_service_placeholders_row_description),
@@ -156,7 +158,9 @@ internal fun LazyListScope.customPosterSettingsContent(
                     title = stringResource(Res.string.settings_poster_service_poster_template),
                     description = stringResource(Res.string.settings_poster_service_poster_template_description),
                     value = settings.posterUrlTemplate,
-                    onTemplateCommitted = CustomPosterSettingsRepository::setPosterUrlTemplate,
+                    onTemplateCommitted = { template ->
+                        commitTemplateAndAutoEnable(autoEnableScope, template, CustomPosterSettingsRepository::setPosterUrlTemplate)
+                    },
                 )
                 if (settings.hasPosterTemplate) {
                     SettingsGroupDivider(isTablet = isTablet)
@@ -186,7 +190,9 @@ internal fun LazyListScope.customPosterSettingsContent(
                     title = stringResource(Res.string.settings_poster_service_landscape_template),
                     description = stringResource(Res.string.settings_poster_service_landscape_template_description),
                     value = settings.landscapeUrlTemplate,
-                    onTemplateCommitted = CustomPosterSettingsRepository::setLandscapeUrlTemplate,
+                    onTemplateCommitted = { template ->
+                        commitTemplateAndAutoEnable(autoEnableScope, template, CustomPosterSettingsRepository::setLandscapeUrlTemplate)
+                    },
                 )
                 if (settings.hasLandscapeTemplate && settings.posterTemplateServesLandscape) {
                     CustomPosterInfoRow(
@@ -331,6 +337,32 @@ private fun CustomPosterTemplateTestRow(
     val message = if (isRunning) runningText else result
     if (message != null) {
         CustomPosterInfoRow(isTablet = isTablet, text = message)
+    }
+}
+
+/**
+ * Saves a template and, when it is the first one entered and the service is still off, switches the
+ * service on once the template answers with a real poster. Typing in a URL is the request; making
+ * the user find the switch above as well read as the feature doing nothing. A template that fails
+ * the probe is left off, so a typo never blanks every poster in the library.
+ */
+private fun commitTemplateAndAutoEnable(
+    scope: CoroutineScope,
+    template: String,
+    save: (String) -> Unit,
+) {
+    val before = CustomPosterSettingsRepository.snapshot()
+    save(template)
+    val after = CustomPosterSettingsRepository.snapshot()
+    if (before.hasAnyTemplate || before.enabled || !after.hasAnyTemplate) return
+    scope.launch {
+        val shape = if (after.hasPosterTemplate) CustomPosterShape.Portrait else CustomPosterShape.Landscape
+        val probe = probeCustomPosterTemplate(after, shape)
+        // Only if nothing changed while the request was out: a newer template, or the user
+        // flipping the switch themselves, wins.
+        if (probe is CustomPosterTemplateProbe.Ok && CustomPosterSettingsRepository.snapshot() == after) {
+            CustomPosterSettingsRepository.setEnabled(true)
+        }
     }
 }
 

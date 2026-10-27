@@ -28,3 +28,26 @@ fun String?.isAnimeNativeId(): Boolean {
     val namespace = this?.trim()?.substringBefore(':', missingDelimiterValue = "")?.lowercase()
     return !namespace.isNullOrEmpty() && namespace in ANIME_NATIVE_ID_NAMESPACES
 }
+
+/**
+ * The episode's number inside the native anime entry that was opened, or null when the episode is
+ * not addressed in that entry's own numbering.
+ *
+ * The stream picker and player are handed canonical TMDB/TVDB coordinates. For a native anime entry
+ * past its first cour those are a franchise pair the entry itself does not have: Apothecary Diaries
+ * season 3 (`kitsu:50021`) is TMDB S1E49 onward, because TMDB files the whole show as one season.
+ * The id itself is unambiguous, so whoever needs the entry's numbering reads it from there: a library
+ * file is matched back to the opened entry, and tracking converts from entry-local numbers (with a
+ * mapped season of 1, the canonical pair would be indistinguishable from them and offset twice).
+ *
+ * Only a 3-part `prefix:id:episode` id under its own parent qualifies: a 4-part id is franchise
+ * numbered by construction, and an id for a different entry came from a franchise remap.
+ */
+internal fun nativeAnimeEntryEpisode(parentMetaId: String, videoId: String): Int? {
+    if (!parentMetaId.isAnimeNativeId()) return null
+    val parts = videoId.trim().split(':')
+    val parentParts = parentMetaId.trim().split(':')
+    if (parts.size != 3 || parentParts.size < 2) return null
+    if (!parts[0].equals(parentParts[0], ignoreCase = true) || parts[1] != parentParts[1]) return null
+    return parts[2].toIntOrNull()?.takeIf { it > 0 }
+}

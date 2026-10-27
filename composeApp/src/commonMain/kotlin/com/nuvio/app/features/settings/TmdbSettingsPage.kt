@@ -41,8 +41,6 @@ import nuvio.composeapp.generated.resources.settings_tmdb_module_details
 import nuvio.composeapp.generated.resources.settings_tmdb_module_details_description
 import nuvio.composeapp.generated.resources.settings_tmdb_module_episodes
 import nuvio.composeapp.generated.resources.settings_tmdb_module_episodes_description
-import nuvio.composeapp.generated.resources.settings_tmdb_module_more_like_this
-import nuvio.composeapp.generated.resources.settings_tmdb_module_more_like_this_description
 import nuvio.composeapp.generated.resources.settings_tmdb_module_networks
 import nuvio.composeapp.generated.resources.settings_tmdb_module_networks_description
 import nuvio.composeapp.generated.resources.settings_tmdb_module_production_companies
@@ -59,27 +57,23 @@ import nuvio.composeapp.generated.resources.settings_tmdb_module_trailers_descri
 import nuvio.composeapp.generated.resources.settings_tmdb_personal_api_key
 import nuvio.composeapp.generated.resources.settings_tmdb_preferred_language
 import nuvio.composeapp.generated.resources.settings_tmdb_preferred_language_description
-import nuvio.composeapp.generated.resources.settings_tmdb_section_credentials
-import nuvio.composeapp.generated.resources.settings_tmdb_section_localization
 import nuvio.composeapp.generated.resources.settings_tmdb_section_modules
 import nuvio.composeapp.generated.resources.settings_tmdb_section_title
 import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs
 import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs_description
 import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs_missing_key
-import nuvio.composeapp.generated.resources.settings_tmdb_filename_catalogs_section
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_addon
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_addon_description
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_missing_key
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_movies_tvdb_shows
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_movies_tvdb_shows_description
-import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_section
+import nuvio.composeapp.generated.resources.settings_tmdb_artwork_catalogs_section
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_tmdb
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_tmdb_description
 import nuvio.composeapp.generated.resources.settings_tmdb_hero_artwork_title
 import nuvio.composeapp.generated.resources.settings_tvdb_api_key
 import nuvio.composeapp.generated.resources.settings_tvdb_api_key_description
 import nuvio.composeapp.generated.resources.settings_tvdb_api_key_label
-import nuvio.composeapp.generated.resources.settings_tvdb_api_key_section
 import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.tmdbSettingsContent(
@@ -89,6 +83,7 @@ internal fun LazyListScope.tmdbSettingsContent(
     val enrichmentControlsEnabled = settings.enabled && settings.hasApiKey
     val localizationEnabled = settings.hasApiKey
 
+    // The switch, the key it needs and the language it fetches in, as one panel.
     item {
         SettingsSection(
             title = stringResource(Res.string.settings_tmdb_section_title),
@@ -111,16 +106,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                         text = stringResource(Res.string.settings_tmdb_add_api_key_first),
                     )
                 }
-            }
-        }
-    }
-
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.settings_tmdb_section_credentials),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
+                SettingsGroupDivider(isTablet = isTablet)
                 // The key check sits in the row's control column, and only a problem gets a
                 // sentence (in place of "Configured"); a separate line under the row sat oddly.
                 val keyStatus = if (settings.hasApiKey) rememberTmdbApiKeyStatus(settings.apiKey) else null
@@ -136,16 +122,7 @@ internal fun LazyListScope.tmdbSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("tmdb-api-key")),
                     onApiKeyCommitted = TmdbSettingsRepository::setApiKey,
                 )
-            }
-        }
-    }
-
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.settings_tmdb_section_localization),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
+                SettingsGroupDivider(isTablet = isTablet)
                 TmdbLanguageRow(
                     isTablet = isTablet,
                     value = settings.language,
@@ -292,16 +269,15 @@ internal fun LazyListScope.tmdbSettingsContent(
         }
     }
 
+    // Artwork and lookups beyond the enrichment modules, as one panel: where the hero art comes
+    // from, the TheTVDB key its "TMDB + TVDB" choice needs, and filename-only catalogs.
     item {
         val tvdbSettingsUiState by TvdbSettingsRepository.uiState.collectAsStateWithLifecycle()
         SettingsSection(
-            title = stringResource(Res.string.settings_tmdb_hero_artwork_section),
+            title = stringResource(Res.string.settings_tmdb_artwork_catalogs_section),
             isTablet = isTablet,
         ) {
-            SettingsGroup(
-                isTablet = isTablet,
-                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TmdbHeroImages),
-            ) {
+            SettingsGroup(isTablet = isTablet) {
                 val heroImageOptions = buildList {
                     add(SettingsChoiceOption(HeroImageSource.Addon, stringResource(Res.string.settings_tmdb_hero_artwork_addon)))
                     if (settings.hasApiKey) {
@@ -316,48 +292,31 @@ internal fun LazyListScope.tmdbSettingsContent(
                 } else {
                     HeroImageSource.Addon
                 }
-                SettingsChoiceRow(
-                    title = stringResource(Res.string.settings_tmdb_hero_artwork_title),
-                    description = selectedHeroImageSource.settingsDescription(),
-                    options = heroImageOptions,
-                    selectedValue = selectedHeroImageSource,
-                    isTablet = isTablet,
-                    onSelected = TmdbSettingsRepository::setHeroImageSource,
-                )
-                if (!settings.hasApiKey) {
-                    SettingsGroupDivider(isTablet = isTablet)
-                    TmdbInfoRow(
+                Column(modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TmdbHeroImages)) {
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.settings_tmdb_hero_artwork_title),
+                        description = selectedHeroImageSource.settingsDescription(),
+                        options = heroImageOptions,
+                        selectedValue = selectedHeroImageSource,
                         isTablet = isTablet,
-                        text = stringResource(Res.string.settings_tmdb_hero_artwork_missing_key),
+                        onSelected = TmdbSettingsRepository::setHeroImageSource,
                     )
+                    if (!settings.hasApiKey) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        TmdbInfoRow(
+                            isTablet = isTablet,
+                            text = stringResource(Res.string.settings_tmdb_hero_artwork_missing_key),
+                        )
+                    }
                 }
-            }
-        }
-    }
-
-    item {
-        val tvdbSettingsUiState by TvdbSettingsRepository.uiState.collectAsStateWithLifecycle()
-        SettingsSection(
-            title = stringResource(Res.string.settings_tvdb_api_key_section),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
+                SettingsGroupDivider(isTablet = isTablet)
                 TvdbApiKeyRow(
                     isTablet = isTablet,
                     value = tvdbSettingsUiState.apiKey,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.TvdbApiKey),
                     onKeyCommitted = TvdbSettingsRepository::setApiKey,
                 )
-            }
-        }
-    }
-
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.settings_tmdb_filename_catalogs_section),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(isTablet = isTablet) {
+                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_tmdb_filename_catalogs),
                     description = stringResource(Res.string.settings_tmdb_filename_catalogs_description),

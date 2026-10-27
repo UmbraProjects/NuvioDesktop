@@ -74,9 +74,22 @@ internal fun desktopSettingsSidebarSubItems(
                 section(SettingsPage.Homescreen, Res.string.settings_home_display_mode),
                 section(SettingsPage.Homescreen, Res.string.settings_homescreen_section_hero),
                 section(SettingsPage.Homescreen, Res.string.settings_homescreen_section_search),
+                // Continue Watching's panel, merged in above hero sources (see desktopMergedInto).
+                section(SettingsPage.Homescreen, Res.string.compose_settings_page_continue_watching),
                 section(SettingsPage.Homescreen, Res.string.settings_homescreen_section_hero_sources),
                 section(SettingsPage.Homescreen, catalogsTitle),
             )
+        }
+        SettingsPage.Addons -> if (AppFeaturePolicy.pluginsEnabled) {
+            listOf(
+                DesktopSettingsSidebarSubItem(
+                    label = stringResource(Res.string.compose_settings_page_plugins),
+                    page = SettingsPage.Addons,
+                    anchor = SettingsScrollAnchor.searchKey("plugins"),
+                ),
+            )
+        } else {
+            emptyList()
         }
         SettingsPage.Appearance -> listOf(
             section(SettingsPage.Appearance, Res.string.settings_appearance_section_theme),
@@ -84,15 +97,8 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.Appearance, Res.string.settings_appearance_section_display),
             section(SettingsPage.Appearance, Res.string.settings_poster_card_style),
             section(SettingsPage.Appearance, Res.string.settings_appearance_card_depth),
-        )
-        SettingsPage.ContinueWatching -> listOf(
-            section(SettingsPage.ContinueWatching, Res.string.settings_continue_watching_section_card_style),
-            section(SettingsPage.ContinueWatching, Res.string.settings_continue_watching_section_default_action),
-            section(SettingsPage.ContinueWatching, Res.string.settings_cw_source_section),
-            section(SettingsPage.ContinueWatching, Res.string.settings_continue_watching_section_up_next_behavior),
-            section(SettingsPage.ContinueWatching, Res.string.settings_continue_watching_section_on_launch),
-            section(SettingsPage.ContinueWatching, Res.string.settings_advanced_section_cache),
-            section(SettingsPage.ContinueWatching, Res.string.settings_continue_watching_section_sort_order),
+            // Detail Page's panel, merged in at the end (see desktopMergedInto).
+            section(SettingsPage.Appearance, Res.string.compose_settings_page_meta_screen),
         )
         SettingsPage.Account -> listOfNotNull(
             section(SettingsPage.Account, Res.string.compose_settings_page_account),
@@ -107,8 +113,7 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.Advanced, Res.string.settings_advanced_section_cache),
         )
         SettingsPage.Integrations -> listOfNotNull(
-            section(SettingsPage.Integrations, Res.string.settings_library_source_section),
-            section(SettingsPage.Integrations, Res.string.settings_calendar_source_section),
+            section(SettingsPage.Integrations, Res.string.settings_integrations_sources_section),
             section(SettingsPage.Integrations, Res.string.settings_integrations_section_title),
             subPage(SettingsPage.TmdbEnrichment),
             subPage(SettingsPage.MdbListRatings),
@@ -168,6 +173,7 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.LocalLibrary, Res.string.settings_local_library_catalogs_title),
         )
         SettingsPage.AutoDownloads -> listOf(
+            // The downloads list, on top since Downloads took this page over.
             section(SettingsPage.AutoDownloads, Res.string.compose_settings_root_downloads_title),
             section(SettingsPage.AutoDownloads, Res.string.library_downloads_section_settings),
             section(SettingsPage.AutoDownloads, Res.string.library_downloads_section_monitored),

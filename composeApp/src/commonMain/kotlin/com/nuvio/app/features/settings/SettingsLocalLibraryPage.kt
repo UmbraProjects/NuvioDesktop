@@ -82,6 +82,7 @@ import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.locallibrary.LocalLibraryPlaybackPreference
 import com.nuvio.app.features.locallibrary.LocalLibraryUiState
 import com.nuvio.app.features.locallibrary.LocalMatchCandidate
+import com.nuvio.app.features.locallibrary.LocalTitlePlayback
 import com.nuvio.app.features.locallibrary.LocalMatchProvider
 import com.nuvio.app.features.locallibrary.LocalMatchState
 import com.nuvio.app.features.locallibrary.LocalMatcher
@@ -89,6 +90,14 @@ import com.nuvio.app.features.locallibrary.LocalMediaItem
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.local_title_playback_heading
+import nuvio.composeapp.generated.resources.local_title_playback_option_default
+import nuvio.composeapp.generated.resources.local_title_playback_option_local
+import nuvio.composeapp.generated.resources.local_title_playback_option_online
+import nuvio.composeapp.generated.resources.local_title_playback_default_hint
+import nuvio.composeapp.generated.resources.local_title_playback_local_hint
+import nuvio.composeapp.generated.resources.local_title_playback_online_hint
+import nuvio.composeapp.generated.resources.play_choose_source
 import nuvio.composeapp.generated.resources.settings_local_library_add_catalog
 import nuvio.composeapp.generated.resources.settings_local_library_browse_open
 import nuvio.composeapp.generated.resources.settings_local_library_browse_open_empty
@@ -1015,6 +1024,19 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
             SettingsChoiceOption(LocalMatchProvider.TMDB, "TMDB"),
         )
     }
+    val libraryState by LocalLibraryRepository.uiState.collectAsState()
+    val titlePlayback = libraryState.titlePlayback[item.key]
+    val titlePlaybackOptions = listOf(
+        SettingsChoiceOption<LocalTitlePlayback?>(null, stringResource(Res.string.local_title_playback_option_default)),
+        SettingsChoiceOption<LocalTitlePlayback?>(
+            LocalTitlePlayback.LOCAL_FILE,
+            stringResource(Res.string.local_title_playback_option_local),
+        ),
+        SettingsChoiceOption<LocalTitlePlayback?>(
+            LocalTitlePlayback.ONLINE_SOURCE,
+            stringResource(Res.string.local_title_playback_option_online),
+        ),
+    )
     val searchHint = stringResource(
         if (provider == LocalMatchProvider.KITSU) Res.string.settings_local_library_search_kitsu_hint
         else Res.string.settings_local_library_search_hint,
@@ -1047,7 +1069,7 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.settings_local_library_match_dialog_title, item.title)) },
         text = {
-            Column(modifier = Modifier.heightIn(max = 480.dp)) {
+            Column(modifier = Modifier.heightIn(max = 620.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1083,7 +1105,7 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                 // Which file/folder is being matched — the title alone is ambiguous when the same
                 // show sits in more than one library folder.
                 item.sourceLocation?.let { location ->
-                    Spacer(Modifier.size(4.dp))
+                    Spacer(Modifier.size(8.dp))
                     Text(
                         text = location,
                         style = MaterialTheme.typography.bodySmall,
@@ -1092,7 +1114,7 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(Modifier.size(8.dp))
+                Spacer(Modifier.size(16.dp))
                 NuvioTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -1107,8 +1129,8 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                         )
                     },
                 )
-                Spacer(Modifier.size(8.dp))
-                Box(modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp, max = 240.dp)) {
+                Spacer(Modifier.size(12.dp))
+                Box(modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 280.dp)) {
                     when {
                         isSearching -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                         hasSearched && results.isEmpty() -> Text(
@@ -1137,6 +1159,44 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                         }
                     }
                 }
+                // Applies at once, separately from Search: it is about how this title plays, not
+                // which title it is. The same override the Continue Watching menu sets.
+                Spacer(Modifier.size(24.dp))
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(Res.string.local_title_playback_heading),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = when (titlePlayback) {
+                            null -> stringResource(
+                                Res.string.local_title_playback_default_hint,
+                                stringResource(
+                                    if (libraryState.playbackPreference == LocalLibraryPlaybackPreference.LOCAL_LIBRARY) {
+                                        Res.string.local_title_playback_option_local
+                                    } else {
+                                        Res.string.play_choose_source
+                                    },
+                                ),
+                            )
+                            LocalTitlePlayback.LOCAL_FILE -> stringResource(Res.string.local_title_playback_local_hint)
+                            LocalTitlePlayback.ONLINE_SOURCE -> stringResource(Res.string.local_title_playback_online_hint)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    SettingsSegmentedControl(
+                        options = titlePlaybackOptions,
+                        selectedValue = titlePlayback,
+                        enabled = true,
+                        isTablet = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        onSelected = { selected -> LocalLibraryRepository.setTitlePlayback(item.key, selected) },
+                    )
+                }
+                Spacer(Modifier.size(8.dp))
             }
         },
         confirmButton = {

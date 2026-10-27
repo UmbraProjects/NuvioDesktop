@@ -64,6 +64,18 @@ enum class AudioRejectKeyword(val storageValue: String, val phrases: List<String
 fun parseSubtitleRejectKeywords(values: Set<String>?): Set<SubtitleRejectKeyword> =
     values.orEmpty().mapNotNull(SubtitleRejectKeyword::fromStorage).toSet()
 
+/**
+ * Rejected out of the box: commentary and narration tracks are almost never the one anyone means to
+ * hear, and a release that lists one first would otherwise auto-select it. Subtitles have no such
+ * default — signs/songs and forced tracks are exactly what dub viewers and foreign-dialogue scenes
+ * rely on.
+ */
+val DEFAULT_REJECTED_AUDIO_KEYWORDS: Set<AudioRejectKeyword> = setOf(
+    AudioRejectKeyword.COMMENTARY,
+    AudioRejectKeyword.DESCRIPTIVE_AUDIO,
+    AudioRejectKeyword.VISUALLY_IMPAIRED,
+)
+
 fun parseAudioRejectKeywords(values: Set<String>?): Set<AudioRejectKeyword> =
     values.orEmpty().mapNotNull(AudioRejectKeyword::fromStorage).toSet()
 

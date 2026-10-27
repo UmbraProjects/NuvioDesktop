@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -43,7 +44,11 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.graphics.Brush
+import com.nuvio.app.DesktopFullscreenHoverButtonState
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.draw.clip
@@ -75,12 +80,12 @@ import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material.icons.rounded.WidthFull
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -213,11 +218,9 @@ import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attri
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
 import nuvio.composeapp.generated.resources.compose_settings_page_meta_screen
 import nuvio.composeapp.generated.resources.compose_settings_page_notifications
-import nuvio.composeapp.generated.resources.compose_settings_page_plugins
 import nuvio.composeapp.generated.resources.compose_settings_page_root
 import nuvio.composeapp.generated.resources.compose_settings_page_streams
 import nuvio.composeapp.generated.resources.compose_settings_page_local_library
-import nuvio.composeapp.generated.resources.compose_settings_page_auto_downloads
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
 import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichment
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
@@ -537,8 +540,15 @@ fun SettingsScreen(
         )
 
         if (maxWidth >= 768.dp) {
+            // A page merged into another (Plugins, Continue Watching, Downloads) opens its host.
+            // Rewritten in state as well, so back, the sidebar highlight and the saved page agree;
+            // the host is passed straight away so the old page never draws for a frame first.
+            val mergedInto = page.desktopMergedInto()
+            if (mergedInto != null) {
+                LaunchedEffect(page) { currentPage = mergedInto.name }
+            }
             TabletSettingsScreen(
-                page = page,
+                page = mergedInto ?: page,
                 scrollToTopRequests = scrollToTopRequests,
                 onPageChange = { currentPage = it.name },
                 showContextPanel = maxWidth >= 1180.dp,
@@ -1403,16 +1413,27 @@ private fun TabletSettingsScreen(
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val topOffset = max(statusBarPadding + 18.dp, 36.dp)
 
+    // A single desktop top bar must also have a single query when the selected settings page
+    // changes. Per-page query state caused result clicks to reopen stale result lists.
+    var settingsSearchQuery by rememberSaveable { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
+
+    // Any page change closes the search: results replace the page in the list, so picking a
+    // category with a query still typed would otherwise leave the results showing over it.
+    fun closeSettingsSearch() {
+        if (settingsSearchQuery.isEmpty()) return
+        settingsSearchQuery = ""
+        focusManager.clearFocus()
+    }
+
     fun openInlinePage(page: SettingsPage) {
+        closeSettingsSearch()
         onPageChange(page)
     }
 
     val saveableStateHolder = rememberSaveableStateHolder()
     val activeSidebarPage = remember(page) { page.desktopSidebarPage() }
     val profileState by remember { ProfileRepository.state }.collectAsStateWithLifecycle()
-    // A single desktop top bar must also have a single query when the selected settings page
-    // changes. Per-page query state caused result clicks to reopen stale result lists.
-    var settingsSearchQuery by rememberSaveable { mutableStateOf("") }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -1523,18 +1544,18 @@ private fun TabletSettingsScreen(
             }
             SeekSettingsAnchorIntoView(listState)
 
+        val columnGuideBrush = settingsColumnGuideBrush()
         val columnGuideModifier = if (desktopColumnGuidesVisible) {
             Modifier.drawBehind {
-                    val strokeWidth = tokens.borders.hairline.toPx()
-                    val color = tokens.colors.accent.copy(alpha = 0.34f)
+                    val strokeWidth = SettingsColumnGuideWidth.toPx()
                     drawLine(
-                        color = color,
+                        brush = columnGuideBrush,
                         start = Offset(strokeWidth / 2f, 0f),
                         end = Offset(strokeWidth / 2f, size.height),
                         strokeWidth = strokeWidth,
                     )
                     drawLine(
-                        color = color,
+                        brush = columnGuideBrush,
                         start = Offset(size.width - strokeWidth / 2f, 0f),
                         end = Offset(size.width - strokeWidth / 2f, size.height),
                         strokeWidth = strokeWidth,
@@ -1556,7 +1577,9 @@ private fun TabletSettingsScreen(
                 profileAvatars = profileAvatars,
                 onQueryChange = { settingsSearchQuery = it },
                 onSearchFocusChange = onSettingsSearchFocusChange,
-                onProfileClick = onSwitchProfile,
+                // Account, not the profile selector: it is the one way into Account from the top bar,
+                // and the selector is the first row there.
+                onProfileClick = { openInlinePage(SettingsPage.Account) },
                 onShowLatestChangelogClick = onShowLatestChangelogClick ?: onCheckForUpdatesClick,
                 columnGuidesVisible = desktopColumnGuidesVisible,
                 onColumnGuidesVisibleChange = onDesktopColumnGuidesVisibleChange,
@@ -1572,7 +1595,12 @@ private fun TabletSettingsScreen(
                 contextPanelWidth = contextPanelWidth,
             )
             if (desktopColumnGuidesVisible) {
-                HorizontalDivider(color = tokens.colors.accent.copy(alpha = 0.34f))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(SettingsColumnGuideWidth)
+                        .background(settingsColumnGuideBrush(horizontal = true)),
+                )
             }
             Row(modifier = Modifier.fillMaxSize()) {
             Box(
@@ -1635,7 +1663,7 @@ private fun TabletSettingsScreen(
                                     ),
                                     onPageChange = ::openInlinePage,
                                     onSubItemClick = { subItem ->
-                                        if (subItem.page != page) openInlinePage(subItem.page)
+                                        if (subItem.page != page) openInlinePage(subItem.page) else closeSettingsSearch()
                                         subItem.anchor?.let { SettingsScrollAnchor.request(it) }
                                     },
                                 )
@@ -1662,9 +1690,9 @@ private fun TabletSettingsScreen(
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
-                            .width(tokens.borders.hairline)
+                            .width(SettingsColumnGuideWidth)
                             .fillMaxHeight()
-                            .background(tokens.colors.accent.copy(alpha = 0.34f)),
+                            .background(settingsColumnGuideBrush()),
                     )
                 }
             }
@@ -1795,6 +1823,7 @@ private fun TabletSettingsScreen(
                     SettingsPage.Account -> accountSettingsContent(
                         isTablet = true,
                         rememberLastProfileEnabled = rememberLastProfileEnabled,
+                        onOpenProfileSelector = onSwitchProfile,
                     )
                     SettingsPage.SupportersContributors -> supportersContributorsContent(
                         isTablet = true,
@@ -1874,10 +1903,19 @@ private fun TabletSettingsScreen(
                         state = localLibraryUiState,
                         titlesState = localLibraryTitlesState,
                     )
-                    SettingsPage.AutoDownloads -> libraryDownloadsSection(
-                        isTablet = true,
-                        onDownloadsClick = { openInlinePage(SettingsPage.Downloads) },
-                    )
+                    SettingsPage.AutoDownloads -> {
+                        withSettingsPage(SettingsPage.Downloads) {
+                            downloadsSummaryContent(
+                                isTablet = true,
+                                uiState = downloadsUiState,
+                                selectedShowId = selectedDownloadsShowId,
+                                onSelectedShowChange = onSelectedDownloadsShowChange,
+                                onOpenDownload = onOpenDownload,
+                                onDeleteTarget = onDownloadsDeleteTarget,
+                            )
+                        }
+                        libraryDownloadsSection(isTablet = true, onDownloadsClick = null)
+                    }
                     SettingsPage.Downloads -> downloadsSettingsContent(
                         isTablet = true,
                         uiState = downloadsUiState,
@@ -1891,26 +1929,35 @@ private fun TabletSettingsScreen(
                     SettingsPage.KeyboardShortcuts -> keyboardShortcutsContent(
                         isTablet = true,
                     )
-                    SettingsPage.Appearance -> appearanceSettingsContent(
-                        isTablet = true,
-                        selectedTheme = selectedTheme,
-                        onThemeSelected = onThemeSelected,
-                        customTheme = customTheme,
-                        amoledEnabled = amoledEnabled,
-                        onAmoledToggle = onAmoledToggle,
-                        liquidGlassNativeTabBarSupported = liquidGlassNativeTabBarSupported,
-                        liquidGlassNativeTabBarEnabled = liquidGlassNativeTabBarEnabled,
-                        onLiquidGlassNativeTabBarToggle = onLiquidGlassNativeTabBarToggle,
-                        desktopNavigationLayout = desktopNavigationLayout,
-                        onDesktopNavigationLayoutSelected = onDesktopNavigationLayoutSelected,
-                        desktopAppUiScalePercent = desktopAppUiScalePercent,
-                        onDesktopAppUiScalePercentChange = onDesktopAppUiScalePercentChange,
-                        desktopAppUiScaleAppliesToDetails = desktopAppUiScaleAppliesToDetails,
-                        onDesktopAppUiScaleAppliesToDetailsChange = onDesktopAppUiScaleAppliesToDetailsChange,
-                        selectedAppLanguage = selectedAppLanguage,
-                        onAppLanguageSelected = onAppLanguageSelected,
-                        posterCardStyleUiState = posterCardStyleUiState,
-                    )
+                    SettingsPage.Appearance -> {
+                            appearanceSettingsContent(
+                            isTablet = true,
+                            selectedTheme = selectedTheme,
+                            onThemeSelected = onThemeSelected,
+                            customTheme = customTheme,
+                            amoledEnabled = amoledEnabled,
+                            onAmoledToggle = onAmoledToggle,
+                            liquidGlassNativeTabBarSupported = liquidGlassNativeTabBarSupported,
+                            liquidGlassNativeTabBarEnabled = liquidGlassNativeTabBarEnabled,
+                            onLiquidGlassNativeTabBarToggle = onLiquidGlassNativeTabBarToggle,
+                            desktopNavigationLayout = desktopNavigationLayout,
+                            onDesktopNavigationLayoutSelected = onDesktopNavigationLayoutSelected,
+                            desktopAppUiScalePercent = desktopAppUiScalePercent,
+                            onDesktopAppUiScalePercentChange = onDesktopAppUiScalePercentChange,
+                            desktopAppUiScaleAppliesToDetails = desktopAppUiScaleAppliesToDetails,
+                            onDesktopAppUiScaleAppliesToDetailsChange = onDesktopAppUiScaleAppliesToDetailsChange,
+                            selectedAppLanguage = selectedAppLanguage,
+                            onAppLanguageSelected = onAppLanguageSelected,
+                            posterCardStyleUiState = posterCardStyleUiState,
+                        )
+                        withSettingsPage(SettingsPage.MetaScreen) {
+                            metaScreenSettingsContent(
+                                isTablet = true,
+                                uiState = metaScreenSettingsUiState,
+                                sectionTitle = Res.string.compose_settings_page_meta_screen,
+                            )
+                        }
+                    }
                     SettingsPage.Advanced -> advancedSettingsContent(
                         isTablet = true,
                         rememberLastProfileEnabled = rememberLastProfileEnabled,
@@ -1950,7 +1997,21 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         onNavigateToEditor = onOpenCollectionEditor,
                     )
-                    SettingsPage.Addons -> addonsSettingsContent()
+                    SettingsPage.Addons -> {
+                        addonsSettingsContent()
+                        if (AppFeaturePolicy.pluginsEnabled) {
+                            // Where search results and the sidebar's "Plugins" entry land.
+                            item(key = "plugins-anchor") {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .settingsScrollAnchor(SettingsScrollAnchor.searchKey("plugins")),
+                                )
+                            }
+                            withSettingsPage(SettingsPage.Plugins) { pluginsSettingsContent() }
+                        }
+                    }
                     SettingsPage.Plugins -> if (AppFeaturePolicy.pluginsEnabled) pluginsSettingsContent() else addonsSettingsContent()
                     SettingsPage.Homescreen -> homescreenSettingsContent(
                         isTablet = true,
@@ -1969,6 +2030,24 @@ private fun TabletSettingsScreen(
                         heroAmbientBackgroundEnabled = homescreenHeroAmbientBackgroundEnabled,
                         tvModeEnabled = homescreenTvModeEnabled,
                         items = homescreenItems,
+                        beforeCatalogs = {
+                            withSettingsPage(SettingsPage.ContinueWatching) {
+                                continueWatchingSettingsContent(
+                                    isTablet = true,
+                                    isVisible = continueWatchingPreferencesUiState.isVisible,
+                                    style = continueWatchingPreferencesUiState.style,
+                                    clickAction = continueWatchingPreferencesUiState.clickAction,
+                                    upNextFromFurthestEpisode = continueWatchingPreferencesUiState.upNextFromFurthestEpisode,
+                                    useEpisodeThumbnails = continueWatchingPreferencesUiState.useEpisodeThumbnails,
+                                    showUnairedNextUp = continueWatchingPreferencesUiState.showUnairedNextUp,
+                                    separateNextUpRow = continueWatchingPreferencesUiState.separateNextUpRow,
+                                    separateUpcomingRow = continueWatchingPreferencesUiState.separateUpcomingRow,
+                                    blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
+                                    showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
+                                    sortMode = continueWatchingPreferencesUiState.sortMode,
+                                )
+                            }
+                        },
                     )
                     SettingsPage.MetaScreen -> metaScreenSettingsContent(
                         isTablet = true,
@@ -2094,30 +2173,14 @@ private fun desktopSettingsSidebarItems(): List<DesktopSettingsSidebarItem> {
 
 @Composable
 private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarItem> = listOf(
+    // Grouped by how a setup goes: sources, then look, then playback, then the rest by how often
+    // they are visited. Plugins, Continue Watching, Detail Page and the downloads list have no
+    // entry of their own; they are sections of Addons, Home Layout, Layout and Downloads (see
+    // desktopMergedInto).
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_addons),
         icon = Icons.Rounded.AutoAwesome,
         page = SettingsPage.Addons,
-    ),
-    DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.collections_header),
-        icon = Icons.Rounded.CollectionsBookmark,
-        page = SettingsPage.Collections,
-    ),
-    DesktopSettingsSidebarItem(
-        label = "Cont Watching",
-        icon = SettingsCategoryIcons.ContinueWatching,
-        page = SettingsPage.ContinueWatching,
-    ),
-    DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_meta_screen),
-        icon = SettingsCategoryIcons.Details,
-        page = SettingsPage.MetaScreen,
-    ),
-    DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_homescreen),
-        icon = SettingsCategoryIcons.Homescreen,
-        page = SettingsPage.Homescreen,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_integrations),
@@ -2125,14 +2188,9 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Integrations,
     ),
     DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_account),
-        icon = Icons.Rounded.AccountCircle,
-        page = SettingsPage.Account,
-    ),
-    DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.party_title),
-        icon = Icons.Rounded.Groups,
-        page = SettingsPage.WatchParty,
+        label = stringResource(Res.string.compose_settings_page_homescreen),
+        icon = SettingsCategoryIcons.Homescreen,
+        page = SettingsPage.Homescreen,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_appearance),
@@ -2140,9 +2198,9 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Appearance,
     ),
     DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_screensaver),
-        icon = Icons.Rounded.Bedtime,
-        page = SettingsPage.Screensaver,
+        label = stringResource(Res.string.compose_settings_page_streams),
+        icon = SettingsCategoryIcons.Streams,
+        page = SettingsPage.Streams,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_video_audio),
@@ -2155,9 +2213,9 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Player,
     ),
     DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.random_play_title),
-        icon = Icons.Rounded.Casino,
-        page = SettingsPage.RandomPlay,
+        label = stringResource(Res.string.compose_settings_page_keyboard_shortcuts),
+        icon = Icons.Rounded.Keyboard,
+        page = SettingsPage.KeyboardShortcuts,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_discover),
@@ -2165,14 +2223,34 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Discover,
     ),
     DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_plugins),
-        icon = Icons.Rounded.Extension,
-        page = SettingsPage.Plugins,
+        label = stringResource(Res.string.iptv_settings_page),
+        icon = Icons.Rounded.LiveTv,
+        page = SettingsPage.Iptv,
     ),
     DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_streams),
-        icon = SettingsCategoryIcons.Streams,
-        page = SettingsPage.Streams,
+        label = stringResource(Res.string.compose_settings_page_account),
+        icon = Icons.Rounded.AccountCircle,
+        page = SettingsPage.Account,
+    ),
+    DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.party_title),
+        icon = Icons.Rounded.Groups,
+        page = SettingsPage.WatchParty,
+    ),
+    DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.collections_header),
+        icon = Icons.Rounded.CollectionsBookmark,
+        page = SettingsPage.Collections,
+    ),
+    DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_screensaver),
+        icon = Icons.Rounded.Bedtime,
+        page = SettingsPage.Screensaver,
+    ),
+    DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.random_play_title),
+        icon = Icons.Rounded.Casino,
+        page = SettingsPage.RandomPlay,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_local_library),
@@ -2180,29 +2258,14 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.LocalLibrary,
     ),
     DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_games),
-        icon = Icons.Rounded.SportsEsports,
-        page = SettingsPage.Games,
-    ),
-    DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.iptv_settings_page),
-        icon = Icons.Rounded.LiveTv,
-        page = SettingsPage.Iptv,
-    ),
-    DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_auto_downloads),
-        icon = SettingsCategoryIcons.AutoDownloads,
+        label = stringResource(Res.string.compose_settings_root_downloads_title),
+        icon = SettingsCategoryIcons.Downloads,
         page = SettingsPage.AutoDownloads,
     ),
     DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_root_downloads_title),
-        icon = SettingsCategoryIcons.Downloads,
-        page = SettingsPage.Downloads,
-    ),
-    DesktopSettingsSidebarItem(
-        label = stringResource(Res.string.compose_settings_page_keyboard_shortcuts),
-        icon = Icons.Rounded.Keyboard,
-        page = SettingsPage.KeyboardShortcuts,
+        label = stringResource(Res.string.compose_settings_page_games),
+        icon = Icons.Rounded.SportsEsports,
+        page = SettingsPage.Games,
     ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_advanced),
@@ -2223,8 +2286,8 @@ private val DesktopSettingsPageTopInset = 22.dp
 private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Addons -> SettingsPage.Addons
     SettingsPage.Collections -> SettingsPage.Collections
-    SettingsPage.ContinueWatching -> SettingsPage.ContinueWatching
-    SettingsPage.MetaScreen -> SettingsPage.MetaScreen
+    SettingsPage.ContinueWatching -> SettingsPage.Homescreen
+    SettingsPage.MetaScreen -> SettingsPage.Appearance
     SettingsPage.Playback -> SettingsPage.Playback
     SettingsPage.Player -> SettingsPage.Player
     SettingsPage.RandomPlay -> SettingsPage.RandomPlay
@@ -2232,13 +2295,13 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Appearance -> SettingsPage.Appearance
     SettingsPage.Screensaver -> SettingsPage.Screensaver
     SettingsPage.Homescreen -> SettingsPage.Homescreen
-    SettingsPage.Plugins -> SettingsPage.Plugins
+    SettingsPage.Plugins -> SettingsPage.Addons
     SettingsPage.Streams -> SettingsPage.Streams
     SettingsPage.LocalLibrary -> SettingsPage.LocalLibrary
     SettingsPage.Games -> SettingsPage.Games
     SettingsPage.Iptv -> SettingsPage.Iptv
     SettingsPage.AutoDownloads -> SettingsPage.AutoDownloads
-    SettingsPage.Downloads -> SettingsPage.Downloads
+    SettingsPage.Downloads -> SettingsPage.AutoDownloads
     SettingsPage.StreamScoring -> SettingsPage.Streams
     SettingsPage.KeyboardShortcuts -> SettingsPage.KeyboardShortcuts
     SettingsPage.LicensesAttributions -> SettingsPage.LicensesAttributions
@@ -2603,108 +2666,121 @@ private fun DesktopSettingsTopBar(
     contextPanelWidth: Dp,
 ) {
     val tokens = MaterialTheme.nuvio
-    Row(
+    // The search field's clear X sits in the window's top-right corner, under the fullscreen
+    // button's hover zone; while it is showing, that button stays out of the way.
+    val clearButtonVisible = query.isNotEmpty()
+    DisposableEffect(clearButtonVisible) {
+        DesktopFullscreenHoverButtonState.suppressed = clearButtonVisible
+        onDispose { DesktopFullscreenHoverButtonState.suppressed = false }
+    }
+    // The shell is centred in the window, so centring the nav icons on the whole bar puts them
+    // under the floating nav bar's own slots (it is the same width, centred in the window).
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(82.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        contentAlignment = Alignment.Center,
     ) {
         Row(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .padding(start = 32.dp),
+            modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .clickable(enabled = onProfileClick != null) { onProfileClick?.invoke() }
-                    .padding(2.dp),
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(start = 32.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                ActiveProfileMiniAvatar(
-                    profile = activeProfile,
-                    avatars = profileAvatars,
-                    selected = false,
-                    size = 34,
-                )
-            }
-            // Each icon drawn in the settings glass (see settingsGlassGlyph) so the bar reads as part
-            // of the page. The two toggles are clear glass when off and take the accent when on.
-            IconButton(
-                onClick = { onShowLatestChangelogClick?.invoke() },
-                enabled = onShowLatestChangelogClick != null,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Notifications,
-                    contentDescription = null,
-                    modifier = Modifier.settingsGlassGlyph(lit = onShowLatestChangelogClick != null),
-                )
-            }
-            IconButton(
-                onClick = { onColumnGuidesVisibleChange(!columnGuidesVisible) },
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.ViewColumn,
-                    contentDescription = stringResource(Res.string.settings_desktop_toggle_column_guides),
-                    modifier = Modifier.settingsGlassGlyph(lit = columnGuidesVisible),
-                )
-            }
-            // Centred column set vs. the whole window; lit like the guides toggle when it is on.
-            IconButton(onClick = { onFullWidthChange(!fullWidth) }) {
-                Icon(
-                    imageVector = Icons.Rounded.WidthFull,
-                    contentDescription = stringResource(Res.string.settings_desktop_toggle_full_width),
-                    modifier = Modifier.settingsGlassGlyph(lit = fullWidth),
-                )
-            }
-            IconButton(onClick = onQuitClick) {
-                Icon(
-                    imageVector = Icons.Rounded.PowerSettingsNew,
-                    contentDescription = null,
-                    modifier = Modifier.settingsGlassGlyph(),
-                )
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            DesktopSettingsRootNavigation(
-                onNavigateToHome = onNavigateToHome,
-                onNavigateToSearch = onNavigateToSearch,
-                onNavigateToLibrary = onNavigateToLibrary,
-                onNavigateToDiscover = onNavigateToDiscover,
-                onNavigateToCalendar = onNavigateToCalendar,
-                onNavigateToLiveTv = onNavigateToLiveTv,
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            if (contextPanelWidth == 0.dp) {
-                SettingsSearchField(
-                    query = query,
-                    onQueryChange = onQueryChange,
-                    onFocusChange = onSearchFocusChange,
+                Box(
                     modifier = Modifier
-                        .padding(end = 18.dp)
-                        .height(44.dp)
-                        .widthIn(min = 240.dp, max = 320.dp),
-                )
+                        .clickable(enabled = onProfileClick != null) { onProfileClick?.invoke() }
+                        .padding(2.dp),
+                ) {
+                    ActiveProfileMiniAvatar(
+                        profile = activeProfile,
+                        avatars = profileAvatars,
+                        selected = false,
+                        size = 34,
+                    )
+                }
+                // Each icon drawn in the settings glass (see settingsGlassGlyph) so the bar reads as part
+                // of the page. The two toggles are clear glass when off and take the accent when on.
+                IconButton(
+                    onClick = { onShowLatestChangelogClick?.invoke() },
+                    enabled = onShowLatestChangelogClick != null,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Notifications,
+                        contentDescription = null,
+                        modifier = Modifier.settingsGlassGlyph(lit = onShowLatestChangelogClick != null),
+                    )
+                }
+                IconButton(
+                    onClick = { onColumnGuidesVisibleChange(!columnGuidesVisible) },
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ViewColumn,
+                        contentDescription = stringResource(Res.string.settings_desktop_toggle_column_guides),
+                        modifier = Modifier.settingsGlassGlyph(lit = columnGuidesVisible),
+                    )
+                }
+                // Centred column set vs. the whole window; lit like the guides toggle when it is on.
+                IconButton(onClick = { onFullWidthChange(!fullWidth) }) {
+                    Icon(
+                        imageVector = Icons.Rounded.WidthFull,
+                        contentDescription = stringResource(Res.string.settings_desktop_toggle_full_width),
+                        modifier = Modifier.settingsGlassGlyph(lit = fullWidth),
+                    )
+                }
+                IconButton(onClick = onQuitClick) {
+                    Icon(
+                        imageVector = Icons.Rounded.PowerSettingsNew,
+                        contentDescription = null,
+                        modifier = Modifier.settingsGlassGlyph(),
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                if (contextPanelWidth == 0.dp) {
+                    SettingsSearchField(
+                        query = query,
+                        onQueryChange = onQueryChange,
+                        onFocusChange = onSearchFocusChange,
+                        modifier = Modifier
+                            .padding(end = 18.dp)
+                            .height(44.dp)
+                            .widthIn(min = 240.dp, max = 320.dp),
+                    )
+                }
+            }
+            if (contextPanelWidth > 0.dp) {
+                Box(
+                    modifier = Modifier
+                        .width(contextPanelWidth)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SettingsSearchField(
+                        query = query,
+                        onQueryChange = onQueryChange,
+                        onFocusChange = onSearchFocusChange,
+                        modifier = Modifier
+                            .padding(horizontal = 18.dp)
+                            .height(44.dp)
+                            .widthIn(min = 240.dp, max = 268.dp),
+                    )
+                }
             }
         }
-        if (contextPanelWidth > 0.dp) {
-            Box(
-                modifier = Modifier
-                    .width(contextPanelWidth)
-                    .fillMaxHeight(),
-                contentAlignment = Alignment.Center,
-            ) {
-                SettingsSearchField(
-                    query = query,
-                    onQueryChange = onQueryChange,
-                    onFocusChange = onSearchFocusChange,
-                    modifier = Modifier
-                        .padding(horizontal = 18.dp)
-                        .height(44.dp)
-                        .widthIn(min = 240.dp, max = 268.dp),
-                )
-            }
-        }
+        DesktopSettingsRootNavigation(
+            onNavigateToHome = onNavigateToHome,
+            onNavigateToSearch = onNavigateToSearch,
+            onNavigateToLibrary = onNavigateToLibrary,
+            onNavigateToDiscover = onNavigateToDiscover,
+            onNavigateToCalendar = onNavigateToCalendar,
+            onNavigateToLiveTv = onNavigateToLiveTv,
+        )
     }
 }
 
@@ -2721,9 +2797,15 @@ private fun DesktopSettingsRootNavigation(
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsState()
     val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
+    // Laid out like the floating nav bar's quadrants (64dp a slot, 6dp inset, 2dp gaps) and in its
+    // order, with Calendar in the profile/Settings slot, so each icon sits where its tab does.
+    val slotCount = 4 + (if (discoverTabVisible) 1 else 0) + (if (liveTvTabVisible) 1 else 0)
     Row(
+        modifier = Modifier
+            .width(DesktopSettingsNavSlotWidth * slotCount)
+            .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         DesktopSettingsNavIcon(
             onClick = onNavigateToHome,
@@ -2735,10 +2817,9 @@ private fun DesktopSettingsRootNavigation(
             contentDescription = stringResource(Res.string.compose_nav_search),
             painter = painterResource(Res.drawable.sidebar_search),
         )
-        // Discover sits between Search and Library, matching the top bar and sidebar order. Settings
-        // hides the top bar entirely, so without this row Discover is only reachable by detouring
-        // through another tab or knowing the hotkey. Hidden outright when the tab is turned off,
-        // since navigation to it is refused and the button would do nothing.
+        // Settings hides the top bar entirely, so without this row Discover is only reachable by
+        // detouring through another tab or knowing the hotkey. Hidden outright when the tab is
+        // turned off, since navigation to it is refused and the button would do nothing.
         if (discoverTabVisible) {
             DesktopSettingsNavIcon(
                 onClick = onNavigateToDiscover,
@@ -2746,11 +2827,6 @@ private fun DesktopSettingsRootNavigation(
                 imageVector = Icons.Rounded.Explore,
             )
         }
-        DesktopSettingsNavIcon(
-            onClick = onNavigateToLibrary,
-            contentDescription = stringResource(Res.string.compose_nav_library),
-            painter = painterResource(Res.drawable.sidebar_library),
-        )
         // Live TV, like its tab, only once a playlist exists.
         if (liveTvTabVisible) {
             DesktopSettingsNavIcon(
@@ -2759,6 +2835,11 @@ private fun DesktopSettingsRootNavigation(
                 imageVector = Icons.Rounded.LiveTv,
             )
         }
+        DesktopSettingsNavIcon(
+            onClick = onNavigateToLibrary,
+            contentDescription = stringResource(Res.string.compose_nav_library),
+            painter = painterResource(Res.drawable.sidebar_library),
+        )
         // Calendar is a pushed route rather than a tab, so it has no sidebar entry to fall back
         // on; from Settings the only other ways in are the hotkey or the Library header icon.
         DesktopSettingsNavIcon(
@@ -2769,8 +2850,43 @@ private fun DesktopSettingsRootNavigation(
     }
 }
 
+/**
+ * The column guides as slivers of the settings glass rather than flat accent paint: the accent seen
+ * through the cards' white edge, catching the light where each line starts and thinning out along
+ * it, the same falloff the glass glyphs' sheen has. The horizontal guide catches it at both ends,
+ * where it meets the shell's two vertical lines.
+ */
 @Composable
-private fun DesktopSettingsNavIcon(
+private fun settingsColumnGuideBrush(horizontal: Boolean = false): Brush {
+    val accent = MaterialTheme.nuvio.colors.accent
+    val catchLight = lerp(accent, Color.White, 0.5f).copy(alpha = 0.62f)
+    val sheen = lerp(accent, Color.White, 0.2f).copy(alpha = 0.40f)
+    val body = lerp(accent, Color.White, 0.1f).copy(alpha = 0.22f)
+    return if (horizontal) {
+        Brush.horizontalGradient(
+            0f to catchLight,
+            0.08f to sheen,
+            0.5f to body,
+            0.92f to sheen,
+            1f to catchLight,
+        )
+    } else {
+        Brush.verticalGradient(
+            0f to catchLight,
+            0.12f to sheen,
+            1f to body,
+        )
+    }
+}
+
+/** A full pixel, as the glass edges are: a half-pixel line goes soft and patchy at 100% scale. */
+private val SettingsColumnGuideWidth = 1.dp
+
+/** One slot of the floating nav bar (`FloatingTopBarQuadrantWidth` in App.kt). */
+private val DesktopSettingsNavSlotWidth = 64.dp
+
+@Composable
+private fun RowScope.DesktopSettingsNavIcon(
     onClick: (() -> Unit)?,
     contentDescription: String,
     imageVector: ImageVector? = null,
@@ -2780,11 +2896,13 @@ private fun DesktopSettingsNavIcon(
     val iconModifier = Modifier
         .size(22.dp)
         .settingsGlassGlyph(lit = enabled)
-    IconButton(onClick = { onClick?.invoke() }, enabled = enabled) {
-        if (imageVector != null) {
-            Icon(imageVector, contentDescription, iconModifier)
-        } else if (painter != null) {
-            Icon(painter, contentDescription, iconModifier)
+    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        IconButton(onClick = { onClick?.invoke() }, enabled = enabled) {
+            if (imageVector != null) {
+                Icon(imageVector, contentDescription, iconModifier)
+            } else if (painter != null) {
+                Icon(painter, contentDescription, iconModifier)
+            }
         }
     }
 }
@@ -2822,16 +2940,16 @@ private fun DesktopSettingsContextPanel(
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .width(tokens.borders.hairline)
+                        .width(SettingsColumnGuideWidth)
                         .fillMaxHeight()
-                        .background(tokens.colors.accent.copy(alpha = 0.34f)),
+                        .background(settingsColumnGuideBrush()),
                 )
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .width(tokens.borders.hairline)
+                        .width(SettingsColumnGuideWidth)
                         .fillMaxHeight()
-                        .background(tokens.colors.accent.copy(alpha = 0.34f)),
+                        .background(settingsColumnGuideBrush()),
                 )
             }
             Column(

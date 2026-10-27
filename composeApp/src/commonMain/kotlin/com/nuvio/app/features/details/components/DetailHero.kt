@@ -636,16 +636,18 @@ private fun DetailDesktopHeroOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = laneStart, top = safeTop)
                 .then(
                     if (laneFadeStart != null && laneFade > 0f) {
                         // Fades whatever runs under the docked picker (overview, cast, actions)
-                        // so the frosted panel isn't read over the page's own text.
+                        // so the frosted panel isn't read over the page's own text. Applied
+                        // outside the lane padding: an offscreen layer clips to its bounds, and
+                        // inside the padding it cut off the focused action's ring, which is drawn
+                        // just past the button's left edge.
                         Modifier
                             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                             .drawWithContent {
                                 drawContent()
-                                val fadeEnd = (laneFadeStart - laneStart).toPx()
+                                val fadeEnd = laneFadeStart.toPx()
                                 val fadeBegin = fadeEnd - LaneFadeRamp.toPx()
                                 drawRect(
                                     brush = Brush.horizontalGradient(
@@ -660,7 +662,8 @@ private fun DetailDesktopHeroOverlay(
                     } else {
                         Modifier
                     },
-                ),
+                )
+                .padding(start = laneStart, top = safeTop),
         ) {
             DetailHeroLogoOrTitle(
                 meta = meta,

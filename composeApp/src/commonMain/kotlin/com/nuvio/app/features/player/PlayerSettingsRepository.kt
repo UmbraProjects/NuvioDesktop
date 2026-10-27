@@ -74,7 +74,7 @@ data class PlayerSettingsUiState(
     val desktopUltraHudEnabled: Boolean = false,
     val desktopOfficialHudEnabled: Boolean = false,
     // Minimal layout only: each control group sits on its own translucent pill.
-    val desktopMinimalHudPillsEnabled: Boolean = false,
+    val desktopMinimalHudPillsEnabled: Boolean = true,
     // Draw the round handle on the seek bar; off leaves the coloured fill edge as the marker.
     val desktopSeekHandleEnabled: Boolean = true,
     // The dark top/bottom edge gradients that fade in with the HUD so its controls stay legible.
@@ -128,7 +128,7 @@ data class PlayerSettingsUiState(
     // audio-description tracks. Rejected tracks are hidden from the player's lists and never
     // selected automatically. See PlayerTrackRejectKeywords.kt.
     val rejectedSubtitleKeywords: Set<SubtitleRejectKeyword> = emptySet(),
-    val rejectedAudioKeywords: Set<AudioRejectKeyword> = emptySet(),
+    val rejectedAudioKeywords: Set<AudioRejectKeyword> = DEFAULT_REJECTED_AUDIO_KEYWORDS,
     val streamReuseLastLinkEnabled: Boolean = false,
     val streamReuseLastLinkCacheHours: Int = 24,
     val streamPrefetchScope: StreamPrefetchScope = StreamPrefetchScope.OFF,
@@ -293,7 +293,7 @@ object PlayerSettingsRepository {
     private var desktopMinimalHudEnabled = true
     private var desktopUltraHudEnabled = false
     private var desktopOfficialHudEnabled = false
-    private var desktopMinimalHudPillsEnabled = false
+    private var desktopMinimalHudPillsEnabled = true
     private var desktopSeekHandleEnabled = true
     private var desktopHudVignetteEnabled = true
     private var desktopHiddenHudButtons: Set<String> = emptySet()
@@ -322,7 +322,7 @@ object PlayerSettingsRepository {
     private var addonSubtitleStartupMode = AddonSubtitleStartupMode.ALL_SUBTITLES
     private var preferAddonSubtitles = false
     private var rejectedSubtitleKeywords: Set<SubtitleRejectKeyword> = emptySet()
-    private var rejectedAudioKeywords: Set<AudioRejectKeyword> = emptySet()
+    private var rejectedAudioKeywords: Set<AudioRejectKeyword> = DEFAULT_REJECTED_AUDIO_KEYWORDS
     private var streamReuseLastLinkEnabled = false
     private var streamReuseLastLinkCacheHours = 24
     private var streamPrefetchScope = StreamPrefetchScope.OFF
@@ -446,7 +446,7 @@ object PlayerSettingsRepository {
         desktopMinimalHudEnabled = true
         desktopUltraHudEnabled = false
         desktopOfficialHudEnabled = false
-        desktopMinimalHudPillsEnabled = false
+        desktopMinimalHudPillsEnabled = true
         desktopSeekHandleEnabled = true
         desktopHudVignetteEnabled = true
         desktopHiddenHudButtons = emptySet()
@@ -475,7 +475,7 @@ object PlayerSettingsRepository {
         addonSubtitleStartupMode = AddonSubtitleStartupMode.ALL_SUBTITLES
         preferAddonSubtitles = false
         rejectedSubtitleKeywords = emptySet()
-        rejectedAudioKeywords = emptySet()
+        rejectedAudioKeywords = DEFAULT_REJECTED_AUDIO_KEYWORDS
         streamReuseLastLinkEnabled = false
         streamReuseLastLinkCacheHours = 24
         streamPrefetchScope = StreamPrefetchScope.OFF
@@ -594,7 +594,7 @@ object PlayerSettingsRepository {
             ?: (storedLegacyHud == null && storedUltraHud == null && storedOfficialHud == null)
         desktopUltraHudEnabled = storedUltraHud ?: false
         desktopOfficialHudEnabled = storedOfficialHud ?: false
-        desktopMinimalHudPillsEnabled = PlayerSettingsStorage.loadDesktopMinimalHudPillsEnabled() ?: false
+        desktopMinimalHudPillsEnabled = PlayerSettingsStorage.loadDesktopMinimalHudPillsEnabled() ?: true
         desktopSeekHandleEnabled = PlayerSettingsStorage.loadDesktopSeekHandleEnabled() ?: true
         desktopHudVignetteEnabled = PlayerSettingsStorage.loadDesktopHudVignetteEnabled() ?: true
         desktopHiddenHudButtons = PlayerSettingsStorage.loadDesktopHiddenHudButtons()
@@ -694,8 +694,10 @@ object PlayerSettingsRepository {
         preferAddonSubtitles = PlayerSettingsStorage.loadPreferAddonSubtitles() ?: false
         rejectedSubtitleKeywords =
             parseSubtitleRejectKeywords(PlayerSettingsStorage.loadRejectedSubtitleKeywords())
-        rejectedAudioKeywords =
-            parseAudioRejectKeywords(PlayerSettingsStorage.loadRejectedAudioKeywords())
+        // Null only when never saved; clearing every keyword stores an empty set, which stays empty.
+        rejectedAudioKeywords = PlayerSettingsStorage.loadRejectedAudioKeywords()
+            ?.let(::parseAudioRejectKeywords)
+            ?: DEFAULT_REJECTED_AUDIO_KEYWORDS
         streamReuseLastLinkEnabled = PlayerSettingsStorage.loadStreamReuseLastLinkEnabled() ?: false
         streamPrefetchScope = PlayerSettingsStorage.loadStreamPrefetchScope()
             ?.let { runCatching { StreamPrefetchScope.valueOf(it) }.getOrNull() }

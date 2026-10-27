@@ -1,5 +1,7 @@
 package com.nuvio.app.features.tracking
 
+import com.nuvio.app.features.metadata.nativeAnimeEntryEpisode
+
 enum class TrackingMediaKind {
     MOVIE,
     SHOW,
@@ -142,14 +144,21 @@ fun buildTrackingMediaReference(
 ): TrackingMediaReference {
     val ids = parseTrackingExternalIds(parentMetaId)
         .mergeMissing(parseTrackingExternalIds(videoId))
+    // Providers convert from the episode's own coordinates, so a native anime episode is always
+    // reported in its entry's numbering, read off its id. The player is launched with the canonical
+    // TMDB pair instead, and where the entry maps to TMDB season 1 (Apothecary Diaries S3 is TMDB
+    // S1E49) that pair looks entry-local too, so Trakt/MDBList/Floppy added the 48-episode offset
+    // a second time and sent S1E97.
+    val entryEpisode = videoId?.let { nativeAnimeEntryEpisode(parentMetaId, it) }
+        ?.takeIf { episodeNumber != null }
     return TrackingMediaReference(
         kind = trackingMediaKind(contentType, ids),
         title = title?.trim()?.takeIf(String::isNotBlank),
         year = extractTrackingYear(releaseInfo),
         ids = ids,
-        episode = episodeNumber?.let { number ->
+        episode = (entryEpisode ?: episodeNumber)?.let { number ->
             TrackingEpisode(
-                season = seasonNumber,
+                season = if (entryEpisode != null) 1 else seasonNumber,
                 number = number,
                 title = episodeTitle,
             )

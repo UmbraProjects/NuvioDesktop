@@ -35,6 +35,13 @@ private const val IPTV_REWIND_BYTES_PER_MINUTE = 90L * 1024 * 1024
  *   rewind costs disk space rather than gigabytes of RAM. mpv deletes the file when it closes.
  * - `ytdl=no`: youtube-dl has nothing to say about an IPTV stream, and its failure would bury the
  *   real error in the log.
+ * - `force-seekable` + `demuxer-seekable-cache`: a live `.ts` channel is one endless response with
+ *   no range support, so mpv marks it unseekable and refused every seek ("Cannot seek in this
+ *   stream"), even into data it already held. Go live (a jump to near the end of what has been
+ *   received) and the rewind window are both seeks within the demuxer cache, which these allow.
+ * - `sub-lavc-o=txt_format=text`: DVB teletext subtitles decode to text rather than FFmpeg's
+ *   default bitmap, a screenshot of the teletext page drawn as a blocky pixel font that ignored
+ *   the subtitle style settings. As text they go through libass like any other subtitle.
  */
 internal fun iptvMpvOptions(sourceUrl: String): List<String> {
     if (!IptvPlaybackSession.isIptvUrl(sourceUrl)) return emptyList()
@@ -43,6 +50,9 @@ internal fun iptvMpvOptions(sourceUrl: String): List<String> {
         add("ytdl=no")
         add("network-timeout=${if (sourceUrl.isHlsPlaylistUrl()) IPTV_HLS_NETWORK_TIMEOUT_SECONDS else IPTV_NETWORK_TIMEOUT_SECONDS}")
         add(iptvDemuxerOption(sourceUrl))
+        add("force-seekable=yes")
+        add("demuxer-seekable-cache=yes")
+        add("sub-lavc-o=txt_format=text")
         if (settings.proxy.enabled) add("http-proxy=${IptvProxyRelay.mpvProxyUrl()}")
     }
 }
@@ -105,6 +115,5 @@ internal fun iptvRewindMpvOptions(sourceUrl: String): List<String> {
         "cache-on-disk=yes",
         "demuxer-cache-dir=${cacheDir.absolutePath}",
         "demuxer-max-back-bytes=${minutes * IPTV_REWIND_BYTES_PER_MINUTE}",
-        "demuxer-seekable-cache=yes",
     )
 }

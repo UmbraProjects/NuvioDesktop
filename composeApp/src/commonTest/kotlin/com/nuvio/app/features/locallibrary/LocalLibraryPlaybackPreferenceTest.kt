@@ -172,4 +172,71 @@ class LocalLibraryPlaybackPreferenceTest {
         assertTrue(decision.preferLocalStreams)
         assertTrue(decision.playDownloadedFileDirectly)
     }
+
+    @Test
+    fun `forced source picker lists add-ons alongside the local file`() {
+        // Continue Watching's source shortcut under Local library: preferring local streams here
+        // made the picker show the local file alone and never query the add-ons.
+        val decision = LocalLibraryPlaybackPreference.LOCAL_LIBRARY.resolvePlaybackRouting(
+            useAlternate = false,
+            hasDownloadedFile = true,
+            hasLocalLibraryStream = true,
+            forceManualSelection = true,
+        )
+
+        assertTrue(decision.manualSelection)
+        assertFalse(decision.preferLocalStreams)
+        assertFalse(decision.playDownloadedFileDirectly)
+    }
+
+    @Test
+    fun `a title set to its best source auto-plays online under either preference`() {
+        LocalLibraryPlaybackPreference.entries.forEach { preference ->
+            val routing = preference.forTitle(LocalTitlePlayback.ONLINE_SOURCE)
+            val click = routing.resolvePlaybackRouting(
+                useAlternate = false,
+                hasDownloadedFile = true,
+                hasLocalLibraryStream = true,
+            )
+            val alternate = routing.resolvePlaybackRouting(
+                useAlternate = true,
+                hasDownloadedFile = true,
+                hasLocalLibraryStream = true,
+            )
+
+            assertFalse(click.manualSelection, "$preference click")
+            assertFalse(click.preferLocalStreams, "$preference click")
+            assertFalse(click.playDownloadedFileDirectly, "$preference click")
+            // Its alternate is the picker, and the menus label it that way.
+            assertTrue(alternate.manualSelection, "$preference alternate")
+            assertFalse(alternate.preferLocalStreams, "$preference alternate")
+            assertTrue(routing.alternateOpensSourcePicker(hasLocalFile = true), "$preference label")
+            assertTrue(routing.ignoresLocalFile)
+        }
+    }
+
+    @Test
+    fun `a title set to its local file plays it under the source picker preference`() {
+        val routing = LocalLibraryPlaybackPreference.SOURCE_PICKER.forTitle(LocalTitlePlayback.LOCAL_FILE)
+        val click = routing.resolvePlaybackRouting(
+            useAlternate = false,
+            hasDownloadedFile = true,
+            hasLocalLibraryStream = true,
+        )
+
+        assertFalse(click.manualSelection)
+        assertTrue(click.preferLocalStreams)
+        assertTrue(click.playDownloadedFileDirectly)
+        assertTrue(routing.alternateOpensSourcePicker(hasLocalFile = true))
+    }
+
+    @Test
+    fun `no title override keeps the configured preference`() {
+        LocalLibraryPlaybackPreference.entries.forEach { preference ->
+            assertEquals(
+                LocalTitleRouting(preference, ignoresLocalFile = false),
+                preference.forTitle(null),
+            )
+        }
+    }
 }

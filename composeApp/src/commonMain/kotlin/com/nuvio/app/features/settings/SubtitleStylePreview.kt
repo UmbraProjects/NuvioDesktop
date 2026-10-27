@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -22,10 +23,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.systemFontFamilyOrNull
 import com.nuvio.app.features.player.SubtitleStyleState
 
 private const val PREVIEW_LINE = "This is how your subtitles will look.\nEvery change shows up here right away."
@@ -66,7 +69,13 @@ internal fun SubtitleStylePreview(style: SubtitleStyleState, modifier: Modifier 
         val subPos = (100 - (style.bottomOffset / 2)).coerceIn(0, 100)
         val bottomEdgePx = heightPx * subPos / 100f - MPV_DEFAULT_SUB_MARGIN_Y * unit
 
+        // The family mpv will draw with: a picked system font, or its sans-serif default. A name
+        // Skia cannot resolve falls back the same way mpv's own lookup does.
+        val fontFamily = remember(style.fontFamily) {
+            style.fontFamily.takeIf { it.isNotBlank() }?.let(::systemFontFamilyOrNull) ?: FontFamily.SansSerif
+        }
         val baseStyle = TextStyle(
+            fontFamily = fontFamily,
             fontSize = with(density) { fontSizePx.toSp() },
             lineHeight = with(density) { (fontSizePx * 1.2f).toSp() },
             fontWeight = if (style.bold) FontWeight.Bold else FontWeight.Normal,

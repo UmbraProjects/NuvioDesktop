@@ -81,6 +81,11 @@ internal object NativePlayerBridge {
     external fun completeSvpStartupProfile(handle: Long)
     external fun seekTo(handle: Long, positionMs: Long)
     external fun seekBy(handle: Long, offsetMs: Long)
+    /** Live TV's Go live: [cushionMs] short of the received end, within the cache's seekable range. */
+    external fun seekToCachedLiveEdge(handle: Long, cushionMs: Long)
+    /** Live TV: seeks kept inside the demuxer cache's seekable ranges (a live .ts cannot seek beyond). */
+    external fun seekWithinCacheTo(handle: Long, positionMs: Long)
+    external fun seekWithinCacheBy(handle: Long, offsetMs: Long)
     external fun setSpeed(handle: Long, speed: Float)
     external fun setResizeMode(handle: Long, mode: Int)
     external fun durationMs(handle: Long): Long

@@ -164,7 +164,7 @@ internal fun migrateHeroInfoPrioritySlots(
  */
 internal const val HERO_CROSSFADE_MIN_MS = 0
 internal const val HERO_CROSSFADE_MAX_MS = 1000
-internal const val HERO_CROSSFADE_DEFAULT_MS = 500
+internal const val HERO_CROSSFADE_DEFAULT_MS = 300
 
 private const val HERO_INFO_LINES_MIN = 0
 private const val HERO_INFO_LINES_MAX = 6
@@ -241,8 +241,8 @@ data class HomeCatalogSettingsUiState(
     val collectionGifsOnFocusOnly: Boolean = true,
     val catalogProviderTagEnabled: Boolean = false,
     val tvRowDotsEnabled: Boolean = false,
-    val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
-    val tvRowTransition: HomeTvRowTransition = HomeTvRowTransition.Fade,
+    val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.HeroBackdrop,
+    val tvRowTransition: HomeTvRowTransition = HomeTvRowTransition.Off,
     val tvFullBackdropEnabled: Boolean = false,
     val tvAmbientBackgroundEnabled: Boolean = false,
     val randomPlayEnabled: Boolean = false,
@@ -409,52 +409,54 @@ enum class HomeTvRowTransition {
 }
 
 /**
- * Single "how the home screen presents itself" choice, consolidating adaptive cropping, ambient
- * background, and TV mode into one control instead of three independent switches.
+ * Single "how the home screen presents itself" choice, consolidating adaptive cropping and TV mode
+ * into one control instead of independent switches.
  *
- * The three backing flags are not free to vary: TV mode excludes both of the others (see
- * [normalizeHeroModes]), and ambient only means anything on top of the adaptive hero. This enum is
- * the only representation the UI should reason about — read it with [homeDisplayModeOf], write it
- * with [HomeCatalogSettingsRepository.setDisplayMode].
+ * The two backing flags are not free to vary: TV mode excludes the adaptive hero (see
+ * [normalizeHeroModes]). This enum is the only representation the UI should reason about — read it
+ * with [homeDisplayModeOf], write it with [HomeCatalogSettingsRepository.setDisplayMode].
+ *
+ * Ambient is not a mode. Adaptive and TV Mode each carry their own ambient toggle
+ * ([HomeCatalogSettingsUiState.heroAmbientBackgroundEnabled] and `tvAmbientBackgroundEnabled`),
+ * kept while another mode is active so switching back restores it; read Adaptive's through
+ * [adaptiveAmbientActive], which is false outside Adaptive.
  */
 enum class HomeDisplayMode {
     Basic,
     Adaptive,
-    AdaptiveAmbient,
     TvMode,
 }
 
 fun homeDisplayModeOf(
     adaptiveHeroEnabled: Boolean,
-    heroAmbientBackgroundEnabled: Boolean,
     tvModeEnabled: Boolean,
 ): HomeDisplayMode = when {
     tvModeEnabled -> HomeDisplayMode.TvMode
-    adaptiveHeroEnabled && heroAmbientBackgroundEnabled -> HomeDisplayMode.AdaptiveAmbient
     adaptiveHeroEnabled -> HomeDisplayMode.Adaptive
     else -> HomeDisplayMode.Basic
 }
 
-/** The three backing flags a [HomeDisplayMode] corresponds to. */
+/** The backing flags a [HomeDisplayMode] corresponds to. */
 data class HomeDisplayModeFlags(
     val adaptiveHeroEnabled: Boolean,
-    val heroAmbientBackgroundEnabled: Boolean,
     val tvModeEnabled: Boolean,
 )
+
+/** Adaptive's ambient wash as drawn: the stored toggle, but only while Adaptive is the mode. */
+val HomeCatalogSettingsUiState.adaptiveAmbientActive: Boolean
+    get() = heroAmbientBackgroundEnabled && adaptiveHeroEnabled && !tvModeEnabled
 
 /**
  * The mode → flags half of the mapping, kept pure so it can be round-tripped against
  * [homeDisplayModeOf] in a test. Everything that writes a display mode goes through this.
  */
 fun HomeDisplayMode.toFlags(): HomeDisplayModeFlags = HomeDisplayModeFlags(
-    adaptiveHeroEnabled = this == HomeDisplayMode.Adaptive || this == HomeDisplayMode.AdaptiveAmbient,
-    heroAmbientBackgroundEnabled = this == HomeDisplayMode.AdaptiveAmbient,
+    adaptiveHeroEnabled = this == HomeDisplayMode.Adaptive,
     tvModeEnabled = this == HomeDisplayMode.TvMode,
 )
 
 fun homeDisplayModeOf(flags: HomeDisplayModeFlags): HomeDisplayMode = homeDisplayModeOf(
     adaptiveHeroEnabled = flags.adaptiveHeroEnabled,
-    heroAmbientBackgroundEnabled = flags.heroAmbientBackgroundEnabled,
     tvModeEnabled = flags.tvModeEnabled,
 )
 
@@ -470,7 +472,7 @@ fun HomeCatalogSettingsUiState.hoverPreviewEnabledFor(
     mode: HomeDisplayMode = homeDisplayModeOf(this),
 ): Boolean = when (mode) {
     HomeDisplayMode.Basic -> hoverPreviewBasicEnabled
-    HomeDisplayMode.Adaptive, HomeDisplayMode.AdaptiveAmbient -> hoverPreviewAdaptiveEnabled
+    HomeDisplayMode.Adaptive -> hoverPreviewAdaptiveEnabled
     HomeDisplayMode.TvMode -> false
 }
 
@@ -492,7 +494,6 @@ fun basicHeroTrailersAllowed(
 
 fun homeDisplayModeOf(state: HomeCatalogSettingsUiState): HomeDisplayMode = homeDisplayModeOf(
     adaptiveHeroEnabled = state.adaptiveHeroEnabled,
-    heroAmbientBackgroundEnabled = state.heroAmbientBackgroundEnabled,
     tvModeEnabled = state.tvModeEnabled,
 )
 
@@ -567,8 +568,8 @@ private data class StoredHomeCatalogSettingsPayload(
     val collectionGifsOnFocusOnly: Boolean = true,
     val catalogProviderTagEnabled: Boolean = false,
     val tvRowDotsEnabled: Boolean = false,
-    val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle,
-    val tvRowTransition: HomeTvRowTransition = HomeTvRowTransition.Fade,
+    val tvRowDotsAnchor: HomeTvRowDotsAnchor = HomeTvRowDotsAnchor.HeroBackdrop,
+    val tvRowTransition: HomeTvRowTransition = HomeTvRowTransition.Off,
     val tvFullBackdropEnabled: Boolean = false,
     val tvAmbientBackgroundEnabled: Boolean = false,
     val randomPlayEnabled: Boolean = false,
@@ -648,8 +649,8 @@ object HomeCatalogSettingsRepository {
     private var collectionGifsOnFocusOnly = true
     private var catalogProviderTagEnabled = false
     private var tvRowDotsEnabled = false
-    private var tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
-    private var tvRowTransition = HomeTvRowTransition.Fade
+    private var tvRowDotsAnchor = HomeTvRowDotsAnchor.HeroBackdrop
+    private var tvRowTransition = HomeTvRowTransition.Off
     private var tvFullBackdropEnabled = false
     private var tvAmbientBackgroundEnabled = false
     private var randomPlayEnabled = false
@@ -706,8 +707,8 @@ object HomeCatalogSettingsRepository {
         collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
-        tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
-        tvRowTransition = HomeTvRowTransition.Fade
+        tvRowDotsAnchor = HomeTvRowDotsAnchor.HeroBackdrop
+        tvRowTransition = HomeTvRowTransition.Off
         tvFullBackdropEnabled = false
         tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
@@ -769,8 +770,8 @@ object HomeCatalogSettingsRepository {
         collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
-        tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
-        tvRowTransition = HomeTvRowTransition.Fade
+        tvRowDotsAnchor = HomeTvRowDotsAnchor.HeroBackdrop
+        tvRowTransition = HomeTvRowTransition.Off
         tvFullBackdropEnabled = false
         tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
@@ -1305,23 +1306,20 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
+    /** Adaptive's ambient toggle. Stored whatever the mode; drawn only in Adaptive ([adaptiveAmbientActive]). */
     fun setHeroAmbientBackgroundEnabled(enabled: Boolean) {
         ensureLoaded()
-        val next = enabled && !tvModeEnabled
-        if (heroAmbientBackgroundEnabled == next) return
-        heroAmbientBackgroundEnabled = next
+        if (heroAmbientBackgroundEnabled == enabled) return
+        heroAmbientBackgroundEnabled = enabled
         publish()
         persist()
     }
 
     fun setTvModeEnabled(enabled: Boolean) {
         ensureLoaded()
-        if (tvModeEnabled == enabled && !(enabled && (adaptiveHeroEnabled || heroAmbientBackgroundEnabled))) return
+        if (tvModeEnabled == enabled && !(enabled && adaptiveHeroEnabled)) return
         tvModeEnabled = enabled
-        if (enabled) {
-            adaptiveHeroEnabled = false
-            heroAmbientBackgroundEnabled = false
-        }
+        if (enabled) adaptiveHeroEnabled = false
         publish()
         persist()
     }
@@ -1329,24 +1327,21 @@ object HomeCatalogSettingsRepository {
     /**
      * Moves the home screen to [mode] in one write.
      *
-     * Deliberately assigns all three backing flags rather than delegating to
-     * [setAdaptiveHeroEnabled]/[setHeroAmbientBackgroundEnabled]/[setTvModeEnabled]: those clear
-     * each other, so calling them in sequence is order-dependent — ambient set before the adaptive
-     * hero, or while TV mode is still on, is silently coerced back to false. Going through them
-     * would also cost up to three persists and a Home rebuild through a transient state that is
-     * none of the four modes.
+     * Deliberately assigns both backing flags rather than delegating to
+     * [setAdaptiveHeroEnabled]/[setTvModeEnabled]: those clear each other, so calling them in
+     * sequence is order-dependent, and would cost two persists and a Home rebuild through a
+     * transient state that is none of the modes. The ambient toggles are left alone: each belongs
+     * to its mode and comes back with it.
      */
     fun setDisplayMode(mode: HomeDisplayMode) {
         ensureLoaded()
         val next = mode.toFlags()
         if (adaptiveHeroEnabled == next.adaptiveHeroEnabled &&
-            heroAmbientBackgroundEnabled == next.heroAmbientBackgroundEnabled &&
             tvModeEnabled == next.tvModeEnabled
         ) {
             return
         }
         adaptiveHeroEnabled = next.adaptiveHeroEnabled
-        heroAmbientBackgroundEnabled = next.heroAmbientBackgroundEnabled
         tvModeEnabled = next.tvModeEnabled
         publish()
         persist()
@@ -1434,7 +1429,7 @@ object HomeCatalogSettingsRepository {
                 if (hoverPreviewBasicEnabled == enabled) return
                 hoverPreviewBasicEnabled = enabled
             }
-            HomeDisplayMode.Adaptive, HomeDisplayMode.AdaptiveAmbient -> {
+            HomeDisplayMode.Adaptive -> {
                 if (hoverPreviewAdaptiveEnabled == enabled) return
                 hoverPreviewAdaptiveEnabled = enabled
             }
@@ -1610,8 +1605,8 @@ object HomeCatalogSettingsRepository {
         collectionGifsOnFocusOnly = true
         catalogProviderTagEnabled = false
         tvRowDotsEnabled = false
-        tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle
-        tvRowTransition = HomeTvRowTransition.Fade
+        tvRowDotsAnchor = HomeTvRowDotsAnchor.HeroBackdrop
+        tvRowTransition = HomeTvRowTransition.Off
         tvFullBackdropEnabled = false
         tvAmbientBackgroundEnabled = false
         resetRandomPlaySettings()
@@ -1950,10 +1945,8 @@ object HomeCatalogSettingsRepository {
     }
 
     private fun normalizeHeroModes() {
-        if (tvModeEnabled) {
-            adaptiveHeroEnabled = false
-            heroAmbientBackgroundEnabled = false
-        }
+        // Adaptive's ambient toggle is kept: it is only drawn in Adaptive, and comes back with it.
+        if (tvModeEnabled) adaptiveHeroEnabled = false
         heroInfoLines = normalizeHeroInfoLines(heroInfoLines)
         heroBackdropCrossfadeMillis = normalizeHeroCrossfade(heroBackdropCrossfadeMillis)
         heroInfoPriority = normalizeHeroInfoPriority(heroInfoPriority)

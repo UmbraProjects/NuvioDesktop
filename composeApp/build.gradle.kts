@@ -1027,7 +1027,6 @@ val externalDesktopResources = listOf(
     "torrserver/**",
     "backdrop-framing/**",
     "anime-list-mini.json",
-    "setup/**",
 )
 val desktopResourcesSourceDir = layout.projectDirectory.dir("src/desktopMain/resources").asFile
 
@@ -1358,7 +1357,9 @@ fun trimMaterialIconsExtendedJar(appDir: File, logger: org.gradle.api.logging.Lo
                     return@forEach
                 }
                 kept++
-                out.putNextEntry(ZipEntry(entry.name))
+                // The source entry's time, not now: an unchanged jar must trim to the same bytes,
+                // or everything downstream of the app image (native-image above all) reruns.
+                out.putNextEntry(ZipEntry(entry.name).apply { time = entry.time })
                 zip.getInputStream(entry).use { it.copyTo(out) }
                 out.closeEntry()
             }
@@ -1398,7 +1399,8 @@ fun trimOnnxRuntimeJar(appDir: File, logger: org.gradle.api.logging.Logger) {
                     dropped++
                     return@forEach
                 }
-                out.putNextEntry(ZipEntry(entry.name))
+                // Same as the icons trim: keep the source time so the output is reproducible.
+                out.putNextEntry(ZipEntry(entry.name).apply { time = entry.time })
                 zip.getInputStream(entry).use { it.copyTo(out) }
                 out.closeEntry()
             }
@@ -1529,6 +1531,19 @@ fun syncLearnedStartupClassList(target: File, logger: org.gradle.api.logging.Log
 // launch of that build then trains instead, behind its "Preparing Nuvio…" window).
 val trainClassArchive = providers.gradleProperty("nuvio.trainClassArchive").orNull?.toBooleanStrictOrNull() ?: true
 
+// A build heading for the GraalVM native image uses createDistributable only for its jars:
+// native-image ignores the JVM's CDS archives (createNativeDistributable drops the .jsa), so
+// generating the base archive and training the app archive there is time thrown away.
+val buildingNativeImage = gradle.startParameter.taskNames.any { name ->
+    name.substringAfterLast(':') in setOf(
+        "generateNativeMetadata",
+        "nativeCompile",
+        "createNativeDistributable",
+        "nativeSmoke",
+        "packageNativeReleaseZip",
+    )
+}
+
 // Builds the dev image's app class archive now, so its first launch is already a fast one rather
 // than the training launch (AppClassArchiveTraining). Runs the packaged app with
 // --build-class-archive: no window and none of the app's startup, it loads the startup class list
@@ -1578,6 +1593,8 @@ mapOf(
     tasks.matching { it.name == taskName }.configureEach {
         notCompatibleWithConfigurationCache("Rewrites the packaged material-icons-extended and onnxruntime jars in the app image.")
         inputs.file(layout.projectDirectory.file("startup-classes.lst")).optional()
+        // So a JVM build after a native one regenerates the archives the native one skipped.
+        inputs.property("cdsArchives", !buildingNativeImage)
         // The channel and commit are stamped into build-info.properties below, so they are inputs:
         // otherwise a stable build right after a nightly (or a nightly right after a stable) from
         // unchanged code is UP-TO-DATE and ships the other channel's image with the old stamp.
@@ -1605,7 +1622,7 @@ mapOf(
             bundleStartupClassList(appDir, layout.projectDirectory.file("startup-classes.lst").asFile, logger)
             if (isWindowsHost) {
                 enableSegmentHeap(appDir.parentFile.resolve("Nuvio.exe"), logger)
-                generateBaseCdsArchive(appDir.parentFile.resolve("runtime"), logger)
+                if (!buildingNativeImage) generateBaseCdsArchive(appDir.parentFile.resolve("runtime"), logger)
             }
             writeAppImageBuildInfo(
                 appDir = appDir,
@@ -1618,7 +1635,7 @@ mapOf(
             // Last: the archive is validated against the exact jars, so nothing may change them
             // after it is written. Dev images only — a release zip must not carry a 100 MB archive
             // tied to this machine's files; installs train their own on first launch.
-            if (isWindowsHost && imageFlavor == "main" && trainClassArchive) {
+            if (isWindowsHost && imageFlavor == "main" && trainClassArchive && !buildingNativeImage) {
                 trainClassArchive(appDir.parentFile, layout.buildDirectory.file("tmp/class-archive-training.log").get().asFile, logger)
             }
         }
@@ -1945,6 +1962,9 @@ val nativeImageMarch = providers.gradleProperty("nuvio.native.march").orNull?.tr
 // arbitrary point. Used like a nightly, its native-qa-console.log lists every metadata gap the
 // session hit (plan step 3). Never ship it.
 val nativeImageQa = providers.gradleProperty("nuvio.native.qa").orNull.toBoolean()
+// -Pnuvio.native.quick=true: GraalVM's quick build mode (-Ob) for local iteration. Skips most of the
+// compiler's optimisation work, so the image builds faster and runs somewhat slower. Never ship it.
+val nativeImageQuick = providers.gradleProperty("nuvio.native.quick").orNull.toBoolean()
 
 fun resolveGraalVmHome(): File {
     val candidates = listOfNotNull(
@@ -2171,6 +2191,7 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
     inputs.files(nativeJvmAppImageDir.map { image -> fileTree(image.dir("app")) { include("*.jar", "Nuvio.cfg") } })
     inputs.property("march", nativeImageMarch)
     inputs.property("qa", nativeImageQa)
+    inputs.property("quick", nativeImageQuick)
     inputs.property("version", desktopReleaseVersionName)
     outputs.dir(nativeImageWorkDir)
     isIgnoreExitValue = true
@@ -2237,6 +2258,7 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
             add("-Dcompose.application.configure.swing.globals=true")
             add("-Djpackage.app-version=$desktopReleasePackageVersion")
             add("-march=$nativeImageMarch")
+            if (nativeImageQuick) add("-Ob")
             // native-image enables only file: and resource: URLs by default; without this every
             // java.net.URL http(s) connection throws (OkHttp is unaffected). The Discord artwork
             // probe read that as "proxy down" and sent posters un-letterboxed, so they rendered
@@ -2309,7 +2331,7 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
             Charsets.US_ASCII,
         )
         logger.lifecycle(
-            "native-image: GraalVM ${graal.name}, -march=$nativeImageMarch${if (nativeImageQa) ", QA (reports missing registrations)" else ""}, " +
+            "native-image: GraalVM ${graal.name}, -march=$nativeImageMarch${if (nativeImageQa) ", QA (reports missing registrations)" else ""}${if (nativeImageQuick) ", quick build (-Ob)" else ""}, " +
                 "${metadataDirs.size} metadata dirs; log in $log",
         )
         commandLine("cmd", "/d", "/c", bat.absolutePath)

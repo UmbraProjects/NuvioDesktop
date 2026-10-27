@@ -1369,6 +1369,25 @@ const hideSeekThumbnail = () => {
 };
 
 const showSeekThumbnailAt = event => {
+  // Live TV: the hovered point as its distance from live ("-0:20"), since a time into the stream
+  // means nothing there. Never a frame preview: that opens a second connection to the channel,
+  // which providers that allow one connection per account answer by dropping the first.
+  const liveWindow = iptvLiveWindow();
+  if (liveWindow) {
+    const liveRect = seek.getBoundingClientRect();
+    if (liveRect.width <= 0) return hideSeekThumbnail();
+    const liveProgress = Math.max(0, Math.min(1, (event.clientX - liveRect.left) / liveRect.width));
+    const behindMs = Math.round((liveWindow.end - liveWindow.start) * (1 - liveProgress));
+    seekThumbnail.classList.add("no-preview");
+    seekThumbnail.classList.remove("seekr");
+    const liveX = Math.max(112, Math.min(liveRect.width - 112, event.clientX - liveRect.left));
+    seekThumbnail.style.left = `${liveRect.left - timeline.getBoundingClientRect().left + liveX}px`;
+    seekThumbnailTime.textContent = behindMs < 1000 ? (state.iptv.liveLabel || "LIVE") : `-${formatTime(behindMs)}`;
+    seekThumbnailChapter.hidden = true;
+    seekThumbnailImage.removeAttribute("src");
+    seekThumbnail.hidden = false;
+    return;
+  }
   // With previews off the card still shows the hovered time and chapter — those cost nothing.
   // Only the frame itself needs the second stream and its range request.
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
@@ -5003,6 +5022,44 @@ const trackListSignature = tracks =>
     ].join(":"))
     .join("|");
 
+// Live TV's loading bar. Driven by the real stages rather than a timer alone: connecting fills
+// toward 45%, playing (the opening jump still to land) toward 90%, and landing completes it as the
+// cover fades. Each stage eases toward its ceiling, so the bar always moves but never claims done.
+let iptvLoadingProgress = 0;
+let iptvLoadingFrame = 0;
+let iptvLoadingLastAt = 0;
+const iptvLoadingCeiling = () => (state.isPlaying && !state.isLoading ? 0.9 : 0.45);
+const stepIptvLoadingBar = now => {
+  const bar = document.getElementById("iptvLoadingBar");
+  const elapsed = iptvLoadingLastAt ? Math.min(100, now - iptvLoadingLastAt) : 16;
+  iptvLoadingLastAt = now;
+  const ceiling = iptvLoadingCeiling();
+  if (iptvLoadingProgress < ceiling) {
+    // About 1.2s to close most of the gap to the ceiling.
+    iptvLoadingProgress += (ceiling - iptvLoadingProgress) * (1 - Math.exp(-elapsed / 1200));
+  }
+  if (bar) bar.style.width = `${(iptvLoadingProgress * 100).toFixed(2)}%`;
+  iptvLoadingFrame = requestAnimationFrame(stepIptvLoadingBar);
+};
+const setIptvLoading = (active, channelLabel) => {
+  const bar = document.getElementById("iptvLoadingBar");
+  if (active) {
+    const name = document.getElementById("iptvLoadingName");
+    if (name) name.textContent = channelLabel || "";
+    if (!iptvLoadingFrame) {
+      iptvLoadingProgress = 0;
+      iptvLoadingLastAt = 0;
+      if (bar) bar.style.width = "0%";
+      iptvLoadingFrame = requestAnimationFrame(stepIptvLoadingBar);
+    }
+    return;
+  }
+  if (!iptvLoadingFrame) return;
+  cancelAnimationFrame(iptvLoadingFrame);
+  iptvLoadingFrame = 0;
+  if (bar) bar.style.width = "100%";
+};
+
 const renderOpeningOverlay = suppress => {
   const progress = normalizedOpeningProgress();
   const artworkUrl = setImageSource(openingArtwork, state.openingArtwork);
@@ -5012,13 +5069,21 @@ const renderOpeningOverlay = suppress => {
   const hasProgress = progress !== null;
   const openingBootstrap = !hasReceivedPlayerControls;
   const wantsOpening = Boolean(openingBootstrap || state.showOpeningOverlay);
-  const showOpening = Boolean(!suppress && wantsOpening && state.isLoading);
+  // Live TV holds the cover over a channel's opening until its jump to the edge has landed, so
+  // the stale backlog it starts on is never shown and then cut away from.
+  const iptvOpening = Boolean(state.iptv && iptvOpeningJumpPending());
+  const showOpening = Boolean(!suppress && ((wantsOpening && state.isLoading) || iptvOpening));
   const titleText = String(state.openingTitle || state.title || "").trim();
   const messageText = String(state.openingMessage || "").trim();
   const showHorizontalProgress = hasProgress && !logoUrl;
 
   root.classList.toggle("opening-active", showOpening);
   openingOverlay.classList.toggle("visible", showOpening);
+  // Kept on while the cover fades out after loading, so the fade shows the full bar, not the film
+  // layout; it changes over only when the next showing is not a channel.
+  const iptvLoading = Boolean(showOpening && state.iptv);
+  if (showOpening) openingOverlay.classList.toggle("iptv-loading", iptvLoading);
+  setIptvLoading(iptvLoading, state.iptv ? (state.iptv.channelLabel || "") : "");
   openingOverlay.classList.toggle("has-artwork", Boolean(artworkUrl));
   openingOverlay.classList.toggle("has-progress", hasProgress);
   openingOverlay.setAttribute("aria-hidden", showOpening ? "false" : "true");
@@ -5422,24 +5487,33 @@ const debouncedBuffering = wanted => {
 // reaches, `rewindWindowMs`) to the end of what has been received (`bufferedMs`, absolute, from
 // playerUpdate), which is the live edge. Within a few seconds of the edge counts as live; further
 // back, the badge shows the gap and jumps to the edge when clicked.
-const IPTV_LIVE_SLACK_MS = 10000;
-// Under IPTV_LIVE_SLACK_MS, so the badge reads LIVE after the jump.
-const IPTV_GO_LIVE_CUSHION_MS = 5000;
+const IPTV_LIVE_SLACK_MS = 15000;
+// Where Go live and a channel's opening jump land, short of the received end. 5s kept playback
+// close to live but left a 5s buffer, and a provider/proxy delivery gap longer than that stalled
+// (three 5-15s stalls in one evening's session); 10s rides those out. Under IPTV_LIVE_SLACK_MS
+// with room for the buffer to wobble, so the badge reads LIVE after the jump.
+const IPTV_GO_LIVE_CUSHION_MS = 10000;
 let iptvWindowChannel = "";
 let iptvEarliestSeenMs = null;
 
-const iptvBehindLiveMs = () => {
+const iptvRawBehindLiveMs = () => {
   const positionMs = Math.max(0, Number(state.positionMs) || 0);
   const bufferedMs = Math.max(0, Number(state.bufferedMs) || 0);
   return bufferedMs > positionMs ? bufferedMs - positionMs : 0;
 };
+
+// What the badge and seek bar show. Pinned to the edge while a channel's opening jump is pending
+// (see maybeAutoGoLive): otherwise the connect burst pulled the received end ~30s ahead within a
+// second, the thumb slid back and the badge read -0:28, and the jump then threw it forward again,
+// which looked like the player seeking back and forth when playback itself only moved once.
+const iptvBehindLiveMs = () => (iptvOpeningJumpPending() ? 0 : iptvRawBehindLiveMs());
 
 // [start, end] of the live seek bar in absolute stream time, or null when not live TV.
 const iptvLiveWindow = () => {
   const iptv = state.iptv;
   if (!iptv) return null;
   const positionMs = Math.max(0, Number(state.positionMs) || 0);
-  const end = Math.max(positionMs, Number(state.bufferedMs) || 0);
+  const end = iptvOpeningJumpPending() ? positionMs : Math.max(positionMs, Number(state.bufferedMs) || 0);
   // A new channel (or a reconnect that restarted the clock) starts a new window.
   if (iptv.channelLabel !== iptvWindowChannel || iptvEarliestSeenMs === null || positionMs + 5000 < iptvEarliestSeenMs) {
     iptvWindowChannel = iptv.channelLabel;
@@ -5451,6 +5525,47 @@ const iptvLiveWindow = () => {
   return { start, end: Math.max(end, start + 1000) };
 };
 
+// Opening a channel: the provider's connect burst lands 20-30s of backlog in the cache and mpv
+// plays from the start of it, so every channel opened that far behind live. Once per channel, just
+// into playback (the burst arrives at line speed, so it is in by then), either jump to the edge the
+// way Go live does or, when the burst was small, settle where it is. One decision, early, so it
+// never second-guesses a rewind the viewer made. The opening cover stays up until it has landed
+// (renderOpeningOverlay), so the backlog's first frames are never seen.
+const IPTV_AUTO_LIVE_FROM_MS = 500;
+// How long the display stays pinned after the jump is sent, while mpv lands it.
+const IPTV_AUTO_LIVE_LANDING_MS = 2000;
+let iptvAutoLiveChannel = null;
+let iptvAutoLiveStartMs = 0;
+let iptvAutoLiveDone = false;
+let iptvAutoLiveSentAt = 0;
+
+// True from a channel's first update until its opening jump has landed (or was not needed).
+function iptvOpeningJumpPending() {
+  const iptv = state.iptv;
+  if (!iptv) return false;
+  if (iptv.channelLabel !== iptvAutoLiveChannel || !iptvAutoLiveDone) return true;
+  return iptvAutoLiveSentAt > 0 &&
+    Date.now() - iptvAutoLiveSentAt < IPTV_AUTO_LIVE_LANDING_MS &&
+    iptvRawBehindLiveMs() > IPTV_LIVE_SLACK_MS;
+}
+
+const maybeAutoGoLive = iptv => {
+  const positionMs = Math.max(0, Number(state.positionMs) || 0);
+  if (iptv.channelLabel !== iptvAutoLiveChannel) {
+    iptvAutoLiveChannel = iptv.channelLabel;
+    iptvAutoLiveStartMs = positionMs;
+    iptvAutoLiveDone = false;
+    iptvAutoLiveSentAt = 0;
+  }
+  if (iptvAutoLiveDone) return;
+  const playedMs = positionMs - iptvAutoLiveStartMs;
+  if (!state.isPlaying || state.isLoading || playedMs < IPTV_AUTO_LIVE_FROM_MS) return;
+  iptvAutoLiveDone = true;
+  if (iptvRawBehindLiveMs() <= IPTV_LIVE_SLACK_MS) return;
+  iptvAutoLiveSentAt = Date.now();
+  send("goLive", IPTV_GO_LIVE_CUSHION_MS);
+};
+
 const renderIptvLive = () => {
   const iptv = state.iptv || null;
   root.classList.toggle("iptv-live", Boolean(iptv));
@@ -5458,6 +5573,7 @@ const renderIptvLive = () => {
   setVisible(iptvLiveBadge, Boolean(iptv));
   setVisible(iptvChannelsButton, Boolean(iptv));
   if (!iptv) return;
+  maybeAutoGoLive(iptv);
   // The previous/next buttons beside play change channel.
   document.querySelectorAll(".episode-skip").forEach(button => {
     setVisible(button, true);
@@ -5491,9 +5607,10 @@ iptvLiveBadge.addEventListener("click", event => {
   event.stopPropagation();
   if (!state.iptv || iptvBehindLiveMs() <= IPTV_LIVE_SLACK_MS) return;
   // Short of the received end, so mpv lands on data it has and keeps a cushion: at the very edge
-  // any pause in the provider's delivery longer than the gap left shows up as a stall.
-  const target = Math.max(0, (Number(state.bufferedMs) || 0) - IPTV_GO_LIVE_CUSHION_MS);
-  send("scrubFinish", target);
+  // any pause in the provider's delivery longer than the gap left shows up as a stall. The bridge
+  // picks the target from mpv's own seekable cache range rather than this side's bufferedMs; a
+  // seek past that range threw the cache away and restarted from the connection.
+  send("goLive", IPTV_GO_LIVE_CUSHION_MS);
 });
 
 // Typing a channel number: digits collect in a box and the number is sent after a pause.

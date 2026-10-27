@@ -12,6 +12,7 @@ import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.debrid.DebridStreamPresentation
 import com.nuvio.app.features.debrid.LocalDebridAvailabilityService
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.player.PlaybackStartTrace
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -249,7 +250,13 @@ object StreamsRepository {
         // hit a default install. Binge affinity still orders the picker and still drives the
         // in-player next-episode pick (PlayerNextEpisodeAutoPlay, which uses PlayerStreamsRepository
         // and is untouched by this); it just no longer starts playback by itself.
-        val isDirectAutoPlayFlow = !includeLocalInPicker && isAutoPlayEnabled
+        //
+        // A title the user set to play its best online source is the exception: its local copy is a
+        // backup, still listed should auto-play fall back to the picker, but never a reason to stop.
+        // Auto-play already skips the local group when it picks.
+        val localCopyIsBackup = includeLocalInPicker && !manualSelection &&
+            LocalLibraryRepository.routingFor(parentMetaId, effectiveVideoId).ignoresLocalFile
+        val isDirectAutoPlayFlow = (!includeLocalInPicker || localCopyIsBackup) && isAutoPlayEnabled
 
         currentCoroutineContext().ensureActive()
         if (isDirectAutoPlayFlow) {

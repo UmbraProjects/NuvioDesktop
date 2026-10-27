@@ -1284,6 +1284,10 @@ internal class NativePlayerController(
                     updateLocalProgress(value.toLong())
                 }
             }
+            "goLive" -> {
+                releaseMeteredPrefetchFreeze()
+                handle.takeIf { it != 0L }?.let { NativePlayerBridge.seekToCachedLiveEdge(it, value.toLong()) }
+            }
             "scrubFinish" -> {
                 val scrubHandled = onScrubFinished(value.toLong())
                 if (!scrubHandled) {
@@ -1594,13 +1598,28 @@ internal class NativePlayerController(
         // A seek can invalidate the cache the freeze was protecting; let the demuxer refill at the
         // preset rate. The snapshot poll re-freezes once the new position has a resumable buffer.
         releaseMeteredPrefetchFreeze()
-        handle.takeIf { it != 0L }?.let { NativePlayerBridge.seekTo(it, positionMs) }
+        val current = handle.takeIf { it != 0L } ?: return
+        if (liveCacheOnlySeeks()) {
+            NativePlayerBridge.seekWithinCacheTo(current, positionMs)
+        } else {
+            NativePlayerBridge.seekTo(current, positionMs)
+        }
     }
 
     override fun seekBy(offsetMs: Long) {
         releaseMeteredPrefetchFreeze()
-        handle.takeIf { it != 0L }?.let { NativePlayerBridge.seekBy(it, offsetMs) }
+        val current = handle.takeIf { it != 0L } ?: return
+        if (liveCacheOnlySeeks()) {
+            NativePlayerBridge.seekWithinCacheBy(current, offsetMs)
+        } else {
+            NativePlayerBridge.seekBy(current, offsetMs)
+        }
     }
+
+    // A live channel can only seek inside what mpv has cached; anything further fell through to a
+    // connection that cannot seek and broke playback (see seekWithinCacheLocked in the bridge).
+    private fun liveCacheOnlySeeks(): Boolean =
+        com.nuvio.app.features.iptv.IptvPlaybackSession.isIptvUrl(pendingSource?.sourceUrl)
 
     override fun retry() {
         val pending = pendingSource ?: return

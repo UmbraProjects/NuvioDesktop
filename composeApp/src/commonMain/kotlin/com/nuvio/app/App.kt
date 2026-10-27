@@ -3,7 +3,8 @@ package com.nuvio.app
 import androidx.compose.ui.draw.clip
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.accentFill
-import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.features.settings.settingsGlassGlyph
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -90,6 +91,11 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.nuvio.app.core.ui.PosterZoomOverlayAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.material.icons.rounded.Settings
@@ -276,6 +282,7 @@ import com.nuvio.app.features.library.toMetaPreview
 import com.nuvio.app.features.locallibrary.FilenameParser
 import com.nuvio.app.features.locallibrary.LocalLibraryPlaybackPreference
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
+import com.nuvio.app.features.locallibrary.LocalTitlePlayback
 import com.nuvio.app.features.notifications.EpisodeReleaseNotificationsRepository
 import com.nuvio.app.features.p2p.P2pConsentDialog
 import com.nuvio.app.features.p2p.P2pSettingsRepository
@@ -337,6 +344,7 @@ import com.nuvio.app.features.search.discoverCatalogDisplayLabels
 import com.nuvio.app.features.settings.ApiKeysOnboardingHost
 import com.nuvio.app.features.setup.FirstRunWizardController
 import com.nuvio.app.features.setup.FirstRunWizardHost
+import com.nuvio.app.features.setup.FirstRunWizardPanel
 import com.nuvio.app.features.settings.SettingsScreen
 import com.nuvio.app.features.settings.settingsSkyBackground
 import com.nuvio.app.features.settings.HomescreenSettingsScreen
@@ -1477,6 +1485,20 @@ private fun MainAppContent(
                 // Pushed routes (notably Calendar) can retain focus during their exit transition.
                 // Tell the tab content to reclaim it once the Tabs destination becomes active.
                 navigateToContentCount++
+            } else if (
+                destinationIsTabs &&
+                previousDestinationWasTabs == false &&
+                selectedTab == AppScreenTab.Search
+            ) {
+                // Search was left out above because its text field, not the content, holds focus
+                // there - but nothing asked the field either, so back from a result's details the
+                // keyboard had nothing focused. Back on the results the user came from when there
+                // are some; otherwise the field, as on entering the tab.
+                if (SearchRepository.uiState.value.sections.isNotEmpty()) {
+                    navigateToContentCount++
+                } else {
+                    searchFocusRequestCount++
+                }
             }
             previousDestinationWasTabs = destinationIsTabs
         }
@@ -2265,10 +2287,11 @@ private fun MainAppContent(
             // Read the repository at the moment of the click. A details destination can outlive the
             // composition that created its callbacks; using its captured UI snapshot meant changing
             // this setting to Source picker could still leave that destination opening local files.
+            // The title's own override (Continue Watching's "for this title" entries) is folded in.
             val configuredBehavior = if (preferLocalOverride == true) {
-                LocalLibraryPlaybackPreference.LOCAL_LIBRARY
+                LocalLibraryPlaybackPreference.LOCAL_LIBRARY.forTitle(null)
             } else {
-                LocalLibraryRepository.currentPlaybackPreference()
+                LocalLibraryRepository.routingFor(parentMetaId, videoId)
             }
             // The download lookup stats the file, and downloads live on the library drive: on a
             // spun-down HDD that first stat waits out the spin-up, which froze the UI on the click.
@@ -2293,9 +2316,10 @@ private fun MainAppContent(
                     useAlternate = useAlternateBehavior,
                     hasDownloadedFile = !localSourceUrl.isNullOrBlank(),
                     hasLocalLibraryStream = hasLocalLibraryStream,
+                    forceManualSelection = forceManualSelection,
                 )
                 val prefersLocalStreams = localRouting.preferLocalStreams
-                val manualSelection = localRouting.manualSelection || forceManualSelection
+                val manualSelection = localRouting.manualSelection
                 PlaybackStartTrace.markPending(
                     "localRoute configured=$configuredBehavior requested=${localRouting.requestedBehavior} " +
                         "downloaded=${!localSourceUrl.isNullOrBlank()} scanned=$hasLocalLibraryStream " +
@@ -2945,10 +2969,12 @@ private fun MainAppContent(
                 .fillMaxSize()
                 .background(MaterialTheme.nuvio.colors.background)
                 .onPreviewKeyEvent { event ->
+                    // Not while the setup panel is open: Tab is how a keyboard user moves through it.
                     val canOpenDiscovery =
                         discoverTabVisible &&
                             currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true &&
-                            selectedTab != AppScreenTab.Settings
+                            selectedTab != AppScreenTab.Settings &&
+                            !FirstRunWizardController.uiState.value.visible
                     if (event.key != Key.Tab || !canOpenDiscovery) return@onPreviewKeyEvent false
                     if (event.type == KeyEventType.KeyDown) {
                         // Tab used to open the search overlay parked on its catalog picker. Discover
@@ -3941,7 +3967,36 @@ private fun MainAppContent(
                                             onNavigateToContent = { navigateToContentCount++ },
                                         )
                                     }
-                                    if (isDesktop) {
+                                    val setupPanelOpen by remember {
+                                        FirstRunWizardController.uiState.map { it.visible }.distinctUntilChanged()
+                                    }.collectAsStateWithLifecycle(initialValue = false)
+                                    if (
+                                        setupPanelOpen &&
+                                        selectedTab == AppScreenTab.Home &&
+                                        !searchOverlayActive &&
+                                        !homeHeroPickerDocked
+                                    ) {
+                                        // Top right: the emptiest area of Home in every display mode.
+                                        // Level with the floating top bar's top edge: the bar is a
+                                        // narrow centred pill, so it never reaches this corner.
+                                        FirstRunWizardPanel(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(
+                                                    top = WindowInsets.statusBars.asPaddingValues()
+                                                        .calculateTopPadding() + NavBarTopOffset,
+                                                    end = 20.dp,
+                                                    bottom = 20.dp,
+                                                )
+                                                .zIndex(NuvioTokens.Z.navigation + 2f),
+                                            onOpenKeyboardShortcuts = {
+                                                requestedSettingsPageName = "KeyboardShortcuts"
+                                                selectedTab = AppScreenTab.Settings
+                                            },
+                                        )
+                                    }
+                                    // It shares the corner the setup panel sits in.
+                                    if (isDesktop && !(setupPanelOpen && selectedTab == AppScreenTab.Home)) {
                                         DesktopFullscreenHoverButton(
                                             modifier = Modifier
                                                 .align(Alignment.TopEnd)
@@ -4146,7 +4201,12 @@ private fun MainAppContent(
             }
             // Which of the two `useAlternate` values reaches the source picker depends on the
             // configured preference, so it is resolved here rather than hardcoded per entry.
-            val continueWatchingAlternateOpensPicker = localLibraryUiState.playbackPreference
+            val continueWatchingRouting = remember(selectedContinueWatching, localLibraryUiState) {
+                selectedContinueWatching?.let { item ->
+                    LocalLibraryRepository.routingFor(item.parentMetaId, item.videoId)
+                } ?: localLibraryUiState.playbackPreference.forTitle(null)
+            }
+            val continueWatchingAlternateOpensPicker = continueWatchingRouting
                 .alternateOpensSourcePicker(selectedContinueWatchingHasLocalPlayback)
             val continueWatchingIsPlayable = selectedContinueWatching
                 ?.isCloudLibraryContinueWatchingItem() == false
@@ -4159,6 +4219,40 @@ private fun MainAppContent(
                         selectedContinueWatchingHasLocalPlayback &&
                         !continueWatchingAlternateOpensPicker
                 }
+
+            // "For this title" overrides. Only the routes the title is not already taking are
+            // offered, so the entries also say what a plain click does now.
+            val continueWatchingLocalTitle = remember(selectedContinueWatching, localLibraryUiState) {
+                selectedContinueWatching
+                    ?.takeIf { continueWatchingIsPlayable }
+                    ?.let { item -> LocalLibraryRepository.titleFor(item.parentMetaId, item.videoId) }
+            }
+            val titlePlaybackLocalLabel = stringResource(Res.string.local_title_playback_local)
+            val titlePlaybackOnlineLabel = stringResource(Res.string.local_title_playback_online)
+            val titlePlaybackDefaultLabel = stringResource(Res.string.local_title_playback_default)
+            val continueWatchingTitlePlaybackActions = continueWatchingLocalTitle?.let { title ->
+                val current = localLibraryUiState.titlePlayback[title.key]
+                val defaultPlaysLocal =
+                    localLibraryUiState.playbackPreference == LocalLibraryPlaybackPreference.LOCAL_LIBRARY
+                fun entry(icon: ImageVector, label: String, playback: LocalTitlePlayback?) =
+                    PosterZoomOverlayAction(
+                        icon = icon,
+                        label = label,
+                        onSelected = { LocalLibraryRepository.setTitlePlayback(title.key, playback) },
+                        group = 5,
+                    )
+                buildList {
+                    if (current != LocalTitlePlayback.LOCAL_FILE && !(current == null && defaultPlaysLocal)) {
+                        add(entry(Icons.Default.Folder, titlePlaybackLocalLabel, LocalTitlePlayback.LOCAL_FILE))
+                    }
+                    if (current != LocalTitlePlayback.ONLINE_SOURCE) {
+                        add(entry(Icons.Default.Cloud, titlePlaybackOnlineLabel, LocalTitlePlayback.ONLINE_SOURCE))
+                    }
+                    if (current != null) {
+                        add(entry(Icons.Default.Restore, titlePlaybackDefaultLabel, null))
+                    }
+                }
+            }.orEmpty()
 
             val continueWatchingUsesDetailsByDefault = selectedContinueWatching?.let { item ->
                 continueWatchingPreferencesUiState.clickAction.opensDetails(
@@ -4225,6 +4319,7 @@ private fun MainAppContent(
                     ?.let { item -> { openContinueWatching(item, true, false) } },
                 // Always offered, whatever the local-library preference is: this entry is what
                 // overrides stream auto-play, which is not a local-library concern.
+                titlePlaybackActions = continueWatchingTitlePlaybackActions,
                 onChooseSource = selectedContinueWatchingForActions
                     ?.takeIf { continueWatchingIsPlayable }
                     ?.let { item ->
@@ -5256,15 +5351,18 @@ private fun MainAppContent(
                     .zIndex(26f),
             )
 
-            // Above the other startup overlays, though StartupOverlayCoordinator means only one of
-            // the three is ever composed at a time.
+            // Ahead of the other startup overlays in StartupOverlayCoordinator. The panel itself is
+            // drawn over Home (FirstRunWizardPanel, in the tabs scaffold), since its choices are
+            // previewed live on Home; this only decides whether setup runs and brings Home forward.
             FirstRunWizardHost(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .zIndex(27f),
-                onOpenKeyboardShortcuts = {
-                    requestedSettingsPageName = "KeyboardShortcuts"
-                    selectedTab = AppScreenTab.Settings
+                onShowHome = {
+                    if (navController.currentDestination?.hasRoute<TabsRoute>() != true) {
+                        navController.navigate(TabsRoute) {
+                            popUpTo<TabsRoute> { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                    selectedTab = AppScreenTab.Home
                 },
             )
 
@@ -5741,12 +5839,19 @@ private fun AppTabHost(
     }
 }
 
+/** Lets a screen whose own control sits under the corner hover zone keep the button away. */
+internal object DesktopFullscreenHoverButtonState {
+    var suppressed by mutableStateOf(false)
+}
+
 @Composable
 private fun DesktopFullscreenHoverButton(
     modifier: Modifier = Modifier,
 ) {
+    if (DesktopFullscreenHoverButtonState.suppressed) return
     var hovered by remember { mutableStateOf(false) }
     val fullscreen = isAppFullscreen()
+    val tokens = MaterialTheme.nuvio
 
     Box(
         modifier = modifier
@@ -5760,13 +5865,17 @@ private fun DesktopFullscreenHoverButton(
             enter = fadeIn(tween(120)),
             exit = fadeOut(tween(120)),
         ) {
+            // The floating nav bar's glass: the night tint at its opacity, the cards' one-pixel
+            // edge, and the icon drawn as glass like the settings top bar's.
             Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.nuvio.colors.surfaceCard.copy(alpha = 0.88f),
-                contentColor = MaterialTheme.nuvio.colors.textPrimary,
+                shape = NuvioGlass.Shape,
+                color = NuvioGlass.night(tokens.colors.background, tokens.colors.accent).copy(alpha = NavBarGlassOpacity),
+                contentColor = tokens.colors.textPrimary,
+                border = BorderStroke(1.dp, NuvioGlass.Edge),
             ) {
                 IconButton(onClick = ::toggleAppFullscreen) {
                     Icon(
+                        modifier = Modifier.settingsGlassGlyph(),
                         imageVector = if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
                         contentDescription = stringResource(
                             if (fullscreen) {
@@ -6209,9 +6318,9 @@ private fun TabletFloatingTopBar(
         onSearchSubmit(entry.query)
     }
 
-    // The settings glass: a night-blue pill with the cards' one-pixel edge, pill-shaped items that
-    // lift on hover, and the page you are on lit with the accent seen through the glass, the way a
-    // selected On/Off half is.
+    // The settings glass: a night-blue pill with the cards' one-pixel edge. No item backgrounds:
+    // the icons themselves brighten on hover and the page you are on is lit in the accent glass,
+    // like the settings top bar's icons (see NavQuadrant).
     val dividerColor = NuvioGlass.EdgeColor
     val activeIconTint = Color.White
     val inactiveIconTint = Color.White.copy(alpha = 0.55f)
@@ -6220,12 +6329,12 @@ private fun TabletFloatingTopBar(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = statusBarPadding + NuvioTokens.Space.s10, bottom = tokens.spacing.controlGap)
+            .padding(top = statusBarPadding + NavBarTopOffset, bottom = tokens.spacing.controlGap)
             .alpha(barAlpha),
         contentAlignment = Alignment.TopCenter,
     ) {
         val pickerMaxHeight = (
-            maxHeight - statusBarPadding - NuvioTokens.Space.s10 - 44.dp - tokens.spacing.controlGap - 8.dp
+            maxHeight - statusBarPadding - NavBarTopOffset - 44.dp - tokens.spacing.controlGap - 8.dp
         ).coerceIn(120.dp, 360.dp)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
@@ -6399,39 +6508,35 @@ private fun TabletFloatingTopBar(
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Home,
                             onClick = { onTabSelected(AppScreenTab.Home) },
-                        ) {
+                        ) { iconModifier, iconTint ->
                             Icon(
                                 imageVector = Icons.Filled.Home,
                                 contentDescription = stringResource(Res.string.compose_nav_home),
-                                modifier = Modifier.size(NuvioTokens.Space.s18),
-                                tint = if (selectedTab == AppScreenTab.Home) activeIconTint else inactiveIconTint,
+                                modifier = iconModifier,
+                                tint = iconTint,
                             )
                         }
                         NavQuadrant(
                             selected = isSearchActive,
                             onClick = onSearchOverlayOpen,
-                        ) {
+                        ) { iconModifier, iconTint ->
                             Icon(
                                 painter = painterResource(Res.drawable.sidebar_search),
                                 contentDescription = stringResource(Res.string.compose_nav_search),
-                                modifier = Modifier.size(NuvioTokens.Space.s18),
-                                tint = if (isSearchActive) activeIconTint else inactiveIconTint,
+                                modifier = iconModifier,
+                                tint = iconTint,
                             )
                         }
                         if (discoverTabVisible) {
                             NavQuadrant(
                                 selected = selectedTab == AppScreenTab.Discover,
                                 onClick = { onTabSelected(AppScreenTab.Discover) },
-                            ) {
+                            ) { iconModifier, iconTint ->
                                 Icon(
                                     imageVector = Icons.Rounded.Explore,
                                     contentDescription = stringResource(Res.string.compose_nav_discover),
-                                    modifier = Modifier.size(NuvioTokens.Space.s18),
-                                    tint = if (selectedTab == AppScreenTab.Discover) {
-                                        activeIconTint
-                                    } else {
-                                        inactiveIconTint
-                                    },
+                                    modifier = iconModifier,
+                                    tint = iconTint,
                                 )
                             }
                         }
@@ -6439,12 +6544,12 @@ private fun TabletFloatingTopBar(
                             NavQuadrant(
                                 selected = selectedTab == AppScreenTab.LiveTv,
                                 onClick = { onTabSelected(AppScreenTab.LiveTv) },
-                            ) {
+                            ) { iconModifier, iconTint ->
                                 Icon(
                                     imageVector = Icons.Rounded.LiveTv,
                                     contentDescription = stringResource(Res.string.iptv_settings_page),
-                                    modifier = Modifier.size(NuvioTokens.Space.s18),
-                                    tint = if (selectedTab == AppScreenTab.LiveTv) activeIconTint else inactiveIconTint,
+                                    modifier = iconModifier,
+                                    tint = iconTint,
                                 )
                             }
                         }
@@ -6452,18 +6557,19 @@ private fun TabletFloatingTopBar(
                             selected = selectedTab == AppScreenTab.Library,
                             onClick = { onTabSelected(AppScreenTab.Library) },
                             onSecondaryClick = { libraryMenuVisible = true },
-                        ) {
+                        ) { iconModifier, iconTint ->
                             Icon(
                                 painter = painterResource(Res.drawable.sidebar_library),
                                 contentDescription = stringResource(Res.string.compose_nav_library),
-                                modifier = Modifier.size(NuvioTokens.Space.s18),
-                                tint = if (selectedTab == AppScreenTab.Library) activeIconTint else inactiveIconTint,
+                                modifier = iconModifier,
+                                tint = iconTint,
                             )
                         }
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Settings,
                             onClick = { onTabSelected(AppScreenTab.Settings) },
-                        ) {
+                        ) { _, _ ->
+                            // The avatar carries its own selected ring; it is not a glyph to tint.
                             Box {
                                 ProfileSwitcherTab(
                                     selected = selectedTab == AppScreenTab.Settings,
@@ -6589,29 +6695,24 @@ private fun RowScope.NavQuadrant(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onSecondaryClick: (() -> Unit)? = null,
-    content: @Composable () -> Unit,
+    content: @Composable (iconModifier: Modifier, iconTint: Color) -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val shape = androidx.compose.foundation.shape.CircleShape
-    val tokens = MaterialTheme.nuvio
+    // State lives in the glyph rather than a highlight behind it: dim at rest, white on hover, and
+    // the current page in the accent glass (which recolours whatever tint the icon is given).
+    val iconTint by animateColorAsState(
+        targetValue = if (hovered || selected) Color.White else Color.White.copy(alpha = 0.55f),
+        animationSpec = tween(durationMillis = 140),
+    )
+    val iconModifier = Modifier
+        .size(NavBarIconSize)
+        .then(if (selected) Modifier.settingsGlassGlyph() else Modifier)
     Box(
         modifier = modifier
             .weight(1f)
             .height(NavBarItemHeight)
-            .then(
-                when {
-                    // Accent glass: a translucent tint (a brush, so gradient accents keep both stops),
-                    // a sheen across the top half and a brighter accent edge.
-                    selected -> Modifier
-                        .background(tokens.colors.accentFill(NavSelectedTintAlpha), shape)
-                        .ditheredBackground(NavSelectedSheen, shape)
-                        .border(1.dp, tokens.colors.accentFill(NavSelectedEdgeAlpha), shape)
-                    hovered -> Modifier.background(Color.White.copy(alpha = 0.07f), shape)
-                    else -> Modifier
-                },
-            )
-            // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
             .then(if (onSecondaryClick != null) Modifier.secondaryClick(onSecondaryClick) else Modifier)
             .hoverable(interaction)
@@ -6622,20 +6723,18 @@ private fun RowScope.NavQuadrant(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        content()
+        content(iconModifier, iconTint)
     }
 }
 
 /** How much of the night-blue glass base shows; the rest is the page behind it. */
 private const val NavBarGlassOpacity = 0.84f
-private const val NavSelectedTintAlpha = 0.42f
-private const val NavSelectedEdgeAlpha = 0.85f
-private val NavSelectedSheen = Brush.verticalGradient(
-    0f to Color.White.copy(alpha = 0.16f),
-    0.5f to Color.White.copy(alpha = 0.04f),
-    0.52f to Color.Transparent,
-)
 private val NavBarHeight = 48.dp
+// Bar centred 41dp from the top with 22dp icons: the same line and size as the nav icons in the
+// settings top bar (82dp tall, see DesktopSettingsRootNavigation), so switching to Settings leaves
+// every icon where it was.
+private val NavBarTopOffset = 17.dp
+private val NavBarIconSize = 22.dp
 private val NavBarItemHeight = 40.dp
 
 private fun Float.isInCenteredActivationBand(widthPx: Int): Boolean {

@@ -9,9 +9,9 @@ import kotlin.test.assertEquals
 
 class CalendarSourceTest {
     @Test
-    fun `Trakt remains the default source`() {
+    fun `the local Nuvio calendar is the default source`() {
         assertEquals(
-            CalendarSource.TRAKT,
+            CalendarSource.NUVIO,
             migratedCalendarSource(
                 mdbListWasCalendarSource = false,
                 simklWasCalendarSource = false,

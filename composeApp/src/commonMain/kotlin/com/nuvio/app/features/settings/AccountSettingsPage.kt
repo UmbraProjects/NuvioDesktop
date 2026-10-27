@@ -45,6 +45,8 @@ import com.nuvio.app.features.updater.updateChannelLabel
 import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.compose_settings_root_switch_profile_description
+import nuvio.composeapp.generated.resources.compose_settings_root_switch_profile_title
 import nuvio.composeapp.generated.resources.settings_portable_mode
 import nuvio.composeapp.generated.resources.settings_portable_mode_description
 import nuvio.composeapp.generated.resources.settings_portable_mode_disable_message
@@ -110,11 +112,17 @@ import com.nuvio.app.core.ui.accentBrush
 internal fun LazyListScope.accountSettingsContent(
     isTablet: Boolean,
     rememberLastProfileEnabled: Boolean,
+    /**
+     * Opens the profile selector. Desktop only: the settings top bar's avatar opens this page, so
+     * the selector it used to open is reached from here.
+     */
+    onOpenProfileSelector: (() -> Unit)? = null,
 ) {
     item {
         AccountSettingsBody(
             isTablet = isTablet,
             rememberLastProfileEnabled = rememberLastProfileEnabled,
+            onOpenProfileSelector = onOpenProfileSelector,
         )
     }
 }
@@ -123,6 +131,7 @@ internal fun LazyListScope.accountSettingsContent(
 private fun AccountSettingsBody(
     isTablet: Boolean,
     rememberLastProfileEnabled: Boolean,
+    onOpenProfileSelector: (() -> Unit)?,
 ) {
     val authState by AuthRepository.state.collectAsStateWithLifecycle()
     SynchronizationPreferencesRepository.ensureLoaded()
@@ -202,6 +211,16 @@ private fun AccountSettingsBody(
                 isTablet = isTablet,
                 modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("account-status")),
             ) {
+                if (onOpenProfileSelector != null) {
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_root_switch_profile_title),
+                        description = stringResource(Res.string.compose_settings_root_switch_profile_description),
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("switch-profile")),
+                        onClick = onOpenProfileSelector,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                }
                 when (val state = authState) {
                     is AuthState.Authenticated -> {
                         AccountValueRow(

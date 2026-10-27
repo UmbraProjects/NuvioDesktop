@@ -16,7 +16,7 @@ private data class StoredContinueWatchingPreferences(
     @SerialName("click_action")
     val clickAction: ContinueWatchingClickAction = ContinueWatchingClickAction.PLAY,
     @SerialName("source_shortcut")
-    val sourceShortcut: ContinueWatchingSourceShortcut = ContinueWatchingSourceShortcut.CORNER,
+    val sourceShortcut: ContinueWatchingSourceShortcut = ContinueWatchingSourceShortcut.CENTER,
     val upNextFromFurthestEpisode: Boolean = true,
     @SerialName("use_episode_thumbnails_in_cw")
     val useEpisodeThumbnails: Boolean = true,

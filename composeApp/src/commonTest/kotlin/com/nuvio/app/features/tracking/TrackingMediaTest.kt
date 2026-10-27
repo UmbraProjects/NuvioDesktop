@@ -55,4 +55,29 @@ class TrackingMediaTest {
         assertEquals("series", media.catalog?.contentType)
         assertEquals("tt4574334:2:7", media.catalog?.videoId)
     }
+
+    @Test
+    fun `a native anime episode is reported in its entry's own numbering`() {
+        // The player hands over canonical TMDB S1E49 for Apothecary Diaries S3E1; the id says E1.
+        val media = buildTrackingMediaReference(
+            contentType = "series",
+            parentMetaId = "kitsu:50021",
+            videoId = "kitsu:50021:1",
+            seasonNumber = 1,
+            episodeNumber = 49,
+        )
+        assertEquals(1, media.episode?.season)
+        assertEquals(1, media.episode?.number)
+
+        // Franchise ids and franchise-numbered native ids keep what they were given.
+        val franchise = buildTrackingMediaReference(
+            contentType = "series",
+            parentMetaId = "kitsu:8174",
+            videoId = "kitsu:8174:3:5",
+            seasonNumber = 3,
+            episodeNumber = 5,
+        )
+        assertEquals(3, franchise.episode?.season)
+        assertEquals(5, franchise.episode?.number)
+    }
 }

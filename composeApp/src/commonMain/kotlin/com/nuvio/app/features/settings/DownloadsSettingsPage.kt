@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -20,6 +22,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -60,6 +65,10 @@ internal fun LazyListScope.downloadsSettingsContent(
     onSelectedShowChange: (String?) -> Unit,
     onOpenDownload: (DownloadItem) -> Unit,
     onDeleteTarget: (DownloadsSettingsDeleteTarget) -> Unit,
+    /** False when [downloadsSummaryContent] already lists the active transfers above. */
+    includeActive: Boolean = true,
+    /** False when [downloadsSummaryContent] already says there is nothing downloaded. */
+    includeEmptyState: Boolean = true,
 ) {
     val completedEpisodes = uiState.completedItems
         .filter(DownloadItem::isEpisode)
@@ -143,7 +152,7 @@ internal fun LazyListScope.downloadsSettingsContent(
         .mapNotNull { (_, episodes) -> episodes.firstOrNull()?.let { it to episodes } }
         .sortedBy { it.first.title.lowercase() }
 
-    if (activeItems.isNotEmpty()) {
+    if (includeActive && activeItems.isNotEmpty()) {
         item {
             SettingsSection(title = stringResource(Res.string.downloads_section_active), isTablet = isTablet) {
                 DownloadSettingsGroup(activeItems, isTablet, onOpenDownload)
@@ -184,7 +193,7 @@ internal fun LazyListScope.downloadsSettingsContent(
             }
         }
     }
-    if (uiState.items.isEmpty()) {
+    if (includeEmptyState && uiState.items.isEmpty()) {
         item {
             SettingsSection(title = stringResource(Res.string.compose_settings_root_downloads_title), isTablet = isTablet) {
                 SettingsGroup(isTablet = isTablet) {
@@ -201,6 +210,103 @@ internal fun LazyListScope.downloadsSettingsContent(
                 }
             }
         }
+    }
+}
+
+/**
+ * Whether the merged Downloads page shows its finished movies and shows. Session-only and closed by
+ * default: the list can run to hundreds of rows, and it sits above the auto-download rules, so
+ * open by default it was something to scroll past on every visit.
+ */
+private var downloadsListExpanded by mutableStateOf(false)
+
+/**
+ * The top of the desktop Downloads page, which also holds the auto-download rules beneath it: one
+ * row summarising what is downloaded that opens into the full list, with transfers in progress
+ * always shown under it — there are only ever a few, and they are what the page is opened to check.
+ * A show opened from the list replaces all of this with its episodes until "Back" is clicked.
+ */
+internal fun LazyListScope.downloadsSummaryContent(
+    isTablet: Boolean,
+    uiState: DownloadsUiState,
+    selectedShowId: String?,
+    onSelectedShowChange: (String?) -> Unit,
+    onOpenDownload: (DownloadItem) -> Unit,
+    onDeleteTarget: (DownloadsSettingsDeleteTarget) -> Unit,
+) {
+    if (selectedShowId != null) {
+        downloadsSettingsContent(
+            isTablet = isTablet,
+            uiState = uiState,
+            selectedShowId = selectedShowId,
+            onSelectedShowChange = onSelectedShowChange,
+            onOpenDownload = onOpenDownload,
+            onDeleteTarget = onDeleteTarget,
+        )
+        return
+    }
+    val completedCount = uiState.completedItems.size
+    val activeItems = uiState.activeItems
+    val expanded = downloadsListExpanded && completedCount > 0
+    item(key = "downloads-summary") {
+        SettingsSection(
+            title = stringResource(Res.string.compose_settings_root_downloads_title),
+            isTablet = isTablet,
+        ) {
+            SettingsGroup(isTablet = isTablet) {
+                val title = when {
+                    completedCount == 0 && activeItems.isEmpty() -> stringResource(Res.string.downloads_empty_title)
+                    activeItems.isEmpty() -> stringResource(Res.string.downloads_summary_completed, completedCount)
+                    else -> stringResource(
+                        Res.string.downloads_summary_completed_active,
+                        completedCount,
+                        activeItems.size,
+                    )
+                }
+                SettingsNavigationRow(
+                    title = title,
+                    description = when {
+                        completedCount == 0 -> ""
+                        expanded -> stringResource(Res.string.downloads_summary_hide)
+                        else -> stringResource(Res.string.downloads_summary_show)
+                    },
+                    enabled = completedCount > 0,
+                    isTablet = isTablet,
+                    trailingContent = if (completedCount > 0) {
+                        {
+                            Icon(
+                                imageVector = if (expanded) {
+                                    Icons.Rounded.KeyboardArrowUp
+                                } else {
+                                    Icons.Rounded.KeyboardArrowDown
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.nuvio.colors.textMuted,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    onClick = { downloadsListExpanded = !downloadsListExpanded },
+                )
+                activeItems.forEach { item ->
+                    SettingsGroupDivider(isTablet)
+                    DownloadSettingsRow(item = item, isTablet = isTablet, onOpen = { onOpenDownload(item) })
+                }
+            }
+        }
+    }
+    if (expanded) {
+        downloadsSettingsContent(
+            isTablet = isTablet,
+            uiState = uiState,
+            selectedShowId = null,
+            onSelectedShowChange = onSelectedShowChange,
+            onOpenDownload = onOpenDownload,
+            onDeleteTarget = onDeleteTarget,
+            includeActive = false,
+            includeEmptyState = false,
+        )
     }
 }
 

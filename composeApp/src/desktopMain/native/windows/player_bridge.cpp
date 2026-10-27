@@ -1836,6 +1836,11 @@ public:
     // the app reads as "ended" — so a scrub/seek that resolves near the end
     // would otherwise cut straight to the end of the file.
     static constexpr double seekEndGuardSeconds = 1.0;
+    static constexpr double kLiveEdgeRangeMarginSeconds = 0.25;
+    static constexpr double kLiveEdgeMinJumpSeconds = 3.0;
+    // Kept between a live seek and the newest packet received, so it never lands on the last one.
+    static constexpr double kLiveSeekEdgeReserveSeconds = 1.0;
+    std::atomic<bool> liveHrSeekOffsetApplied{false};
     static constexpr double svpSpeedBypassThreshold = 1.50;
     static constexpr double svpSpeedRestoreThreshold = 1.25;
 
@@ -2504,6 +2509,166 @@ public:
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
         issueSeekLocked(clampSeekSecondsLocked((double)positionMs / 1000.0), exact);
+    }
+
+    struct CachedSeekRange {
+        double start;
+        double end;
+    };
+
+    // mpv's seekable demuxer-cache ranges and the received end (cache-end), for a live stream that
+    // can only seek inside its cache. False when mpv has no cache state to report.
+    bool readSeekableCacheRangesLocked(std::vector<CachedSeekRange> &ranges, double &cacheEnd) {
+        ranges.clear();
+        cacheEnd = -1.0;
+        mpv_node state{};
+        if (mpvApi().getProperty(mpv, "demuxer-cache-state", MPV_FORMAT_NODE, &state) < 0) return false;
+        if (state.format == MPV_FORMAT_NODE_MAP && state.u.list) {
+            for (int i = 0; i < state.u.list->num; ++i) {
+                const std::string key = state.u.list->keys[i] ? state.u.list->keys[i] : "";
+                const mpv_node &value = state.u.list->values[i];
+                if (key == "cache-end" && value.format == MPV_FORMAT_DOUBLE) {
+                    cacheEnd = value.u.double_;
+                } else if (key == "seekable-ranges" && value.format == MPV_FORMAT_NODE_ARRAY && value.u.list) {
+                    for (int r = 0; r < value.u.list->num; ++r) {
+                        const mpv_node &range = value.u.list->values[r];
+                        if (range.format != MPV_FORMAT_NODE_MAP || !range.u.list) continue;
+                        double start = -1.0;
+                        double end = -1.0;
+                        for (int f = 0; f < range.u.list->num; ++f) {
+                            const std::string field = range.u.list->keys[f] ? range.u.list->keys[f] : "";
+                            const mpv_node &fieldValue = range.u.list->values[f];
+                            if (fieldValue.format != MPV_FORMAT_DOUBLE) continue;
+                            if (field == "start") start = fieldValue.u.double_;
+                            if (field == "end") end = fieldValue.u.double_;
+                        }
+                        if (start >= 0.0 && end > start) ranges.push_back({start, end});
+                    }
+                }
+            }
+        }
+        mpvApi().freeNodeContents(&state);
+        return true;
+    }
+
+    // A seek target moved into a seekable range: kept where it is inside one, otherwise onto the
+    // nearest range's edge, kLiveEdgeRangeMarginSeconds in. The edge itself was judged just
+    // outside the range and fell through to FFmpeg. Negative when there is no range.
+    //
+    // The newest range reaches on to the received end ([cacheEnd], less a reserve) rather than
+    // stopping at its own end: a range ends at the newest keyframe, which on a long-GOP channel is
+    // 10s short of what has arrived, and Go live landed there (-0:10, still reading "Go live").
+    // issueCachedSeekLocked reaches past it with the hr-seek demuxer offset.
+    static double clampIntoCachedRanges(const std::vector<CachedSeekRange> &ranges, double target, double cacheEnd) {
+        double newestEnd = -1.0;
+        for (const auto &range : ranges) newestEnd = std::max(newestEnd, range.end);
+        double best = -1.0;
+        double bestDistance = 0.0;
+        for (const auto &range : ranges) {
+            const double low = range.start + kLiveEdgeRangeMarginSeconds;
+            double high = std::max(low, range.end - kLiveEdgeRangeMarginSeconds);
+            if (range.end == newestEnd && cacheEnd > range.end) {
+                high = std::max(high, cacheEnd - kLiveSeekEdgeReserveSeconds);
+            }
+            const double clamped = std::min(std::max(target, low), high);
+            const double distance = std::fabs(clamped - target);
+            if (best < 0.0 || distance < bestDistance) {
+                best = clamped;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    // Live TV seeks. A live .ts channel cannot seek on the connection, so a seek that misses the
+    // demuxer cache's seekable ranges falls through to FFmpeg ("Cannot seek backward in linear
+    // streams"): mpv drops the cache and reads on from the connection, which stalls, and the
+    // restart left the cache in pieces with mismatched timestamps that later seeks snapped back
+    // into. Every live seek is therefore kept inside a range, and dropped when there is none.
+    // Exact: a keyframe seek resolves up to a GOP (10s on some channels) earlier; inside the cache
+    // the extra decode costs nothing on the network.
+    void seekWithinCacheLocked(double target, const char *reason) {
+        std::vector<CachedSeekRange> ranges;
+        double cacheEnd = -1.0;
+        readSeekableCacheRangesLocked(ranges, cacheEnd);
+        const double clamped = clampIntoCachedRanges(ranges, target, cacheEnd);
+        char line[256];
+        std::snprintf(line, sizeof(line), "%s requested=%.2f target=%.2f cacheEnd=%.2f ranges=%d",
+                      reason, target, clamped, cacheEnd, (int)ranges.size());
+        if (clamped < 0.0) {
+            nuvioBridgeLog(std::string(line) + " skipped");
+            return;
+        }
+        nuvioBridgeLog(line);
+        issueCachedSeekLocked(ranges, clamped);
+    }
+
+    // An exact seek to [target] in the cache. Past the newest keyframe (the end of the seekable
+    // range) mpv's own range check refuses the demuxer seek and it falls through to FFmpeg, so the
+    // demuxer is sent back into the range with hr-seek-demuxer-offset and the exact seek decodes
+    // forward through the cached packets to the target. The offset is per seek: cleared again on
+    // the PLAYBACK_RESTART that ends it, so ordinary seeks never pay for the extra decode.
+    void issueCachedSeekLocked(const std::vector<CachedSeekRange> &ranges, double target) {
+        double newestEnd = -1.0;
+        for (const auto &range : ranges) newestEnd = std::max(newestEnd, range.end);
+        const double reachable = newestEnd - kLiveEdgeRangeMarginSeconds;
+        const double offset = target > reachable ? target - reachable : 0.0;
+        if (offset > 0.0 || liveHrSeekOffsetApplied.load()) {
+            mpvApi().setPropertyString(mpv, "hr-seek-demuxer-offset", std::to_string(offset).c_str());
+            liveHrSeekOffsetApplied.store(offset > 0.0);
+        }
+        issueSeekLocked(target, true);
+    }
+
+    // Live TV's "Go live": [cushionMs] short of the received end. The seekable range ends at the
+    // newest keyframe, so on a long-GOP channel it trails the received end by up to a GOP; the
+    // clamp then lands at the range end and the gap past it is the cushion, larger than asked but
+    // never a stall.
+    void seekToCachedLiveEdge(long long cushionMs) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        double timePos = -1.0;
+        tryGetDoubleLocked("time-pos", timePos);
+        std::vector<CachedSeekRange> ranges;
+        double cacheEnd = -1.0;
+        readSeekableCacheRangesLocked(ranges, cacheEnd);
+        double rangeEnd = -1.0;
+        for (const auto &range : ranges) rangeEnd = std::max(rangeEnd, range.end);
+        const double edge = cacheEnd > 0.0 ? cacheEnd : rangeEnd;
+        const double target = clampIntoCachedRanges(ranges, edge - (double)std::max(0LL, cushionMs) / 1000.0, cacheEnd);
+        char line[256];
+        std::snprintf(line, sizeof(line), "go live pos=%.2f cacheEnd=%.2f ranges=%d rangeEnd=%.2f target=%.2f",
+                      timePos, cacheEnd, (int)ranges.size(), rangeEnd, target);
+        // A jump of a second or two is not worth the visible seek.
+        if (target < 0.0 || target <= timePos + kLiveEdgeMinJumpSeconds) {
+            nuvioBridgeLog(std::string(line) + " skipped");
+            return;
+        }
+        nuvioBridgeLog(line);
+        issueCachedSeekLocked(ranges, target);
+    }
+
+    void seekWithinCacheToMilliseconds(long long positionMs) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        seekWithinCacheLocked((double)positionMs / 1000.0, "live seek");
+    }
+
+    // Relative steps chain off a seek still in flight, like seekByMilliseconds, so a held arrow
+    // keeps stepping instead of re-reading a time-pos that has not caught up yet.
+    void seekWithinCacheByMilliseconds(long long offsetMs) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        const auto now = std::chrono::steady_clock::now();
+        const bool pendingFresh = pendingSeekTargetSeconds >= 0.0 &&
+            (flagPropertyLocked("seeking", false) || (now - pendingSeekIssuedAt) < std::chrono::milliseconds(800));
+        double base = 0.0;
+        if (pendingFresh) {
+            base = pendingSeekTargetSeconds;
+        } else if (!tryGetDoubleLocked("time-pos", base)) {
+            return;
+        }
+        seekWithinCacheLocked(base + (double)offsetMs / 1000.0, "live step");
     }
 
     void seekByMilliseconds(long long offsetMs) {
@@ -5535,6 +5700,9 @@ private:
                 }
             }
             if (event->event_id == MPV_EVENT_PLAYBACK_RESTART) onAutoCropPlaybackRestart();
+            if (event->event_id == MPV_EVENT_PLAYBACK_RESTART && liveHrSeekOffsetApplied.exchange(false)) {
+                mpvApi().setPropertyString(mpv, "hr-seek-demuxer-offset", "0");
+            }
             if (event->event_id == MPV_EVENT_START_FILE) nuvioBridgeLog("media open started");
             if (event->event_id == MPV_EVENT_VIDEO_RECONFIG) {
                 nuvioBridgeLog("video reconfigured");
@@ -6939,6 +7107,24 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_seekTo(JNIEnv *, jobject, jlong handle, jlong positionMs) {
     auto player = playerFromHandle(handle);
     if (player) player->postMpvCall([p = player.get(), positionMs]() { p->seekToMilliseconds(positionMs); });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_seekToCachedLiveEdge(JNIEnv *, jobject, jlong handle, jlong cushionMs) {
+    auto player = playerFromHandle(handle);
+    if (player) player->postMpvCall([p = player.get(), cushionMs]() { p->seekToCachedLiveEdge(cushionMs); });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_seekWithinCacheTo(JNIEnv *, jobject, jlong handle, jlong positionMs) {
+    auto player = playerFromHandle(handle);
+    if (player) player->postMpvCall([p = player.get(), positionMs]() { p->seekWithinCacheToMilliseconds(positionMs); });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_seekWithinCacheBy(JNIEnv *, jobject, jlong handle, jlong offsetMs) {
+    auto player = playerFromHandle(handle);
+    if (player) player->postMpvCall([p = player.get(), offsetMs]() { p->seekWithinCacheByMilliseconds(offsetMs); });
 }
 
 extern "C" JNIEXPORT void JNICALL

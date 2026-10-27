@@ -107,6 +107,7 @@ import com.nuvio.app.features.home.HomeRowShuffleOrder
 import com.nuvio.app.features.home.canShuffleRow
 import com.nuvio.app.features.home.shuffled
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
+import com.nuvio.app.features.home.adaptiveAmbientActive
 import com.nuvio.app.features.home.HeroCastMember
 import com.nuvio.app.features.home.HeroDiscoveryFact
 import com.nuvio.app.features.home.MetaPreview
@@ -587,9 +588,9 @@ private fun ImmersiveCollectionContent(
     var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
-    // TV Mode clears the Adaptive ambient flag, so its own ambient toggle stands in for it here.
+    // Each mode's own ambient toggle, read only while that mode is active.
     val tvAmbientBackgroundEnabled = homeSettings.tvModeEnabled && homeSettings.tvAmbientBackgroundEnabled
-    val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled || tvAmbientBackgroundEnabled
+    val ambientBackgroundEnabled = homeSettings.adaptiveAmbientActive || tvAmbientBackgroundEnabled
     val catalogSeeMoreEnabled = homeSettings.catalogSeeMoreEnabled
     val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
     val backButtonAlpha by animateFloatAsState(
@@ -1014,7 +1015,7 @@ private fun AdaptiveCollectionContent(
     var activeHeroBackdrop by remember { mutableStateOf<String?>(null) }
     var activeHeroAccent by remember { mutableStateOf<Color?>(null) }
     val homeSettings by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
-    val ambientBackgroundEnabled = homeSettings.heroAmbientBackgroundEnabled
+    val ambientBackgroundEnabled = homeSettings.adaptiveAmbientActive
     val catalogSeeMoreEnabled = homeSettings.catalogSeeMoreEnabled
     val heroTrailerShowing by HomeHeroTrailerManualTrigger.active.collectAsStateWithLifecycle()
     val backButtonAlpha by animateFloatAsState(

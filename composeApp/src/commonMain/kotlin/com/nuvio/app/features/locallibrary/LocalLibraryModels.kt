@@ -116,14 +116,18 @@ enum class LocalLibraryPlaybackPreference {
         useAlternate: Boolean,
         hasDownloadedFile: Boolean,
         hasLocalLibraryStream: Boolean,
+        // A caller that demands the picker (Continue Watching's source shortcut, watch party) wants
+        // every source. Preferring local streams makes the picker show only the local file and skip
+        // the add-ons entirely, so a forced pick lists the local file alongside them instead.
+        forceManualSelection: Boolean = false,
     ): LocalPlaybackRoutingDecision {
         val hasLocalPlayback = hasDownloadedFile || hasLocalLibraryStream
         val requested = behaviorFor(useAlternate)
-        val manualSelection = shouldUseManualStreamSelection(
+        val manualSelection = forceManualSelection || shouldUseManualStreamSelection(
             useAlternate = useAlternate,
             hasLocalFile = hasLocalPlayback,
         )
-        val preferLocalStreams = requested == LOCAL_LIBRARY && hasLocalPlayback
+        val preferLocalStreams = requested == LOCAL_LIBRARY && hasLocalPlayback && !forceManualSelection
         return LocalPlaybackRoutingDecision(
             requestedBehavior = requested,
             hasLocalPlayback = hasLocalPlayback,
@@ -133,6 +137,50 @@ enum class LocalLibraryPlaybackPreference {
                 !manualSelection && preferLocalStreams && hasDownloadedFile,
         )
     }
+
+    /** The routing for one title, once its own [LocalTitlePlayback] override (if any) is applied. */
+    fun forTitle(override: LocalTitlePlayback?): LocalTitleRouting = when (override) {
+        null -> LocalTitleRouting(this, ignoresLocalFile = false)
+        LocalTitlePlayback.LOCAL_FILE -> LocalTitleRouting(LOCAL_LIBRARY, ignoresLocalFile = false)
+        // Routed exactly as if the title had no local copy: a plain click auto-plays online and the
+        // alternate is the picker, where the local file is still listed.
+        LocalTitlePlayback.ONLINE_SOURCE -> LocalTitleRouting(SOURCE_PICKER, ignoresLocalFile = true)
+    }
+}
+
+/**
+ * A per-title override of what a plain click does when the title has a local copy, for a library
+ * where only some downloads are meant for local playback and the rest are a backup of a title the
+ * user still streams. Absent means the title follows [LocalLibraryPlaybackPreference].
+ */
+@Serializable
+enum class LocalTitlePlayback {
+    LOCAL_FILE,
+    ONLINE_SOURCE,
+}
+
+/**
+ * [LocalLibraryPlaybackPreference] with a title's override folded in. Every click-time decision and
+ * every menu label goes through this, so the label an entry carries and the route it takes agree.
+ */
+data class LocalTitleRouting(
+    val preference: LocalLibraryPlaybackPreference,
+    val ignoresLocalFile: Boolean,
+) {
+    fun alternateOpensSourcePicker(hasLocalFile: Boolean): Boolean =
+        preference.alternateOpensSourcePicker(hasLocalFile && !ignoresLocalFile)
+
+    fun resolvePlaybackRouting(
+        useAlternate: Boolean,
+        hasDownloadedFile: Boolean,
+        hasLocalLibraryStream: Boolean,
+        forceManualSelection: Boolean = false,
+    ): LocalPlaybackRoutingDecision = preference.resolvePlaybackRouting(
+        useAlternate = useAlternate,
+        hasDownloadedFile = hasDownloadedFile && !ignoresLocalFile,
+        hasLocalLibraryStream = hasLocalLibraryStream && !ignoresLocalFile,
+        forceManualSelection = forceManualSelection,
+    )
 }
 
 data class LocalPlaybackRoutingDecision(
@@ -381,6 +429,9 @@ data class LocalLibraryUiState(
     val catalogs: List<LocalCatalog> = emptyList(),
     val playbackPreference: LocalLibraryPlaybackPreference =
         LocalLibraryPlaybackPreference.SOURCE_PICKER,
+    // Per-title overrides by item key. Carried here so screens that read this state recompose
+    // when one changes; the lookups themselves are LocalLibraryRepository.routingFor/titleFor.
+    val titlePlayback: Map<String, LocalTitlePlayback> = emptyMap(),
     // When true, catalogs (and the Unsorted row) with no items are hidden from the management list.
     // Default false: the four defaults are visible even when empty so the user knows they exist and
     // hides them by a deliberate choice (the eye toggle).

@@ -17,7 +17,6 @@ class HoverPreviewModeGateTest {
         val defaults = HomeCatalogSettingsUiState()
         assertTrue(defaults.hoverPreviewEnabledFor(HomeDisplayMode.Basic))
         assertFalse(defaults.hoverPreviewEnabledFor(HomeDisplayMode.Adaptive))
-        assertFalse(defaults.hoverPreviewEnabledFor(HomeDisplayMode.AdaptiveAmbient))
     }
 
     @Test
@@ -47,10 +46,11 @@ class HoverPreviewModeGateTest {
 
     @Test
     fun `ambient shares the adaptive switch`() {
-        val state = HomeCatalogSettingsUiState(hoverPreviewAdaptiveEnabled = true)
+        // Ambient is Adaptive's toggle, not a mode, so it reads the same switch.
+        val adaptive = HomeCatalogSettingsUiState(adaptiveHeroEnabled = true, hoverPreviewAdaptiveEnabled = true)
         assertEquals(
-            state.hoverPreviewEnabledFor(HomeDisplayMode.Adaptive),
-            state.hoverPreviewEnabledFor(HomeDisplayMode.AdaptiveAmbient),
+            adaptive.hoverPreviewEnabledFor(),
+            adaptive.copy(heroAmbientBackgroundEnabled = true).hoverPreviewEnabledFor(),
         )
     }
 

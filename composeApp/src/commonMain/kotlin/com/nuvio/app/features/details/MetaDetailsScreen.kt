@@ -1221,8 +1221,9 @@ fun MetaDetailsScreen(
                 // immediately and is indistinguishable from an ordinary Resume, so the gesture read
                 // as doing nothing at all. Which `useAlternate` value actually reaches the picker
                 // depends on the preference, so it is resolved rather than hardcoded.
-                val primaryAlternateOpensPicker = localLibraryUiState.playbackPreference
-                    .alternateOpensSourcePicker(primaryHasLocalPlayback)
+                val primaryAlternateOpensPicker = remember(meta.id, primaryPlaybackVideoId, localLibraryUiState) {
+                    LocalLibraryRepository.routingFor(meta.id, primaryPlaybackVideoId)
+                }.alternateOpensSourcePicker(primaryHasLocalPlayback)
                 val showManualPlayOption = alternatePlayHandler != null
                 val onPrimaryPlayLongClick: (() -> Unit)? = alternatePlayHandler
                     ?.let { alternatePlay ->
@@ -2642,8 +2643,9 @@ fun MetaDetailsScreen(
                             // on the configured preference, so it is resolved rather than assumed:
                             // under SOURCE_PICKER with a local file present it is the *normal*
                             // click that opens the picker, and the alternate that plays the file.
-                            val alternateOpensPicker = localLibraryUiState.playbackPreference
-                                .alternateOpensSourcePicker(selectedHasLocalPlayback)
+                            val alternateOpensPicker = remember(meta.id, selectedPlaybackVideoId, localLibraryUiState) {
+                                LocalLibraryRepository.routingFor(meta.id, selectedPlaybackVideoId)
+                            }.alternateOpensSourcePicker(selectedHasLocalPlayback)
                             // Only offered when there is a local file AND a normal tap is not
                             // already playing it — with none, or under the Local library
                             // preference, this entry would duplicate the tap.

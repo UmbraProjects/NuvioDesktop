@@ -1,6 +1,7 @@
 package com.nuvio.app.features.input
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -23,12 +24,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import com.nuvio.app.core.ui.NuvioBackdropDirection
+import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.core.ui.nuvioBackdropBrush
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.TextInputFocusTracker
 import com.nuvio.app.core.ui.nuvio
@@ -40,6 +49,12 @@ import kotlinx.coroutines.flow.combine
  * Deliberately not a modal: search results update as the query is typed, and covering them with a
  * scrim would hide the one thing the user is typing to see. It also never takes Compose focus — the
  * text field keeps it, which is what lets the panel type into any field without touching it.
+ *
+ * Hosted in its own non-focusable popup layer rather than drawn in the window's base layer. A field
+ * inside a dialog (naming a playlist) lives in the dialog's layer, above the base one, so the panel
+ * sat under the dialog's scrim and a click on a key landed outside the dialog — which dismissed it.
+ * The popup opens after the field takes focus, so it stacks above that dialog, and a click inside
+ * the topmost layer is not an outside click for anything beneath it.
  */
 @Composable
 internal fun OnScreenKeyboardOverlay() {
@@ -65,13 +80,25 @@ internal fun OnScreenKeyboardOverlay() {
             }
     }
 
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        AnimatedVisibility(
-            visible = visible,
-            enter = slideInVertically { it },
-            exit = slideOutVertically { it },
+    // Kept composed until the slide-out finishes, so closing still animates.
+    val transition = remember { MutableTransitionState(false) }
+    transition.targetState = visible
+    if (!transition.currentState && !transition.targetState) return
+    // The popup aligns within its parent, so give it the whole window to sit at the bottom of.
+    Box(modifier = Modifier.fillMaxSize()) {
+        Popup(
+            alignment = Alignment.BottomCenter,
+            properties = PopupProperties(focusable = false, dismissOnClickOutside = false),
         ) {
-            OnScreenKeyboardPanel()
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                AnimatedVisibility(
+                    visibleState = transition,
+                    enter = slideInVertically { it },
+                    exit = slideOutVertically { it },
+                ) {
+                    OnScreenKeyboardPanel()
+                }
+            }
         }
     }
 }
@@ -84,11 +111,20 @@ private fun OnScreenKeyboardPanel() {
     val padEnabled by GamepadSettingsRepository.enabledState.collectAsState()
     val padConnected by GamepadSettingsRepository.connected.collectAsState()
 
+    // The modal glass (see NuvioDialogSurface): the night base it needs over busy content, the
+    // glass fill and the one-pixel edge, so the panel matches the dialogs it now opens over.
+    val panelShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
-        color = tokens.colors.surfaceSheet,
-        tonalElevation = 8.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                nuvioBackdropBrush(NuvioGlass.night(tokens.colors.background, tokens.colors.accent), NuvioBackdropDirection.Vertical),
+                panelShape,
+            )
+            .ditheredBackground(NuvioGlass.Fill, panelShape)
+            .border(width = 1.dp, brush = NuvioGlass.Edge, shape = panelShape),
+        shape = panelShape,
+        color = Color.Transparent,
         shadowElevation = 16.dp,
     ) {
         Column(
@@ -153,23 +189,26 @@ private fun KeyCell(
     }
     val isCapsOn = key is OskKey.Action && key.action == OskAction.Caps && caps
 
-    val shape = RoundedCornerShape(10.dp)
+    val shape = NuvioGlass.Shape
     Box(
         modifier = modifier
             .height(46.dp)
-            // accentFill rather than a flat accent so custom themes paint the highlight with their
+            // Keys are glass like the settings controls; the highlighted one is the accent seen
+            // through it. accentFill rather than a flat accent so custom themes paint it with their
             // gradient; it resolves to the solid accent on the built-in themes.
             .then(
                 if (selected) {
-                    Modifier.background(brush = tokens.colors.accentFill, shape = shape)
+                    Modifier.background(brush = tokens.colors.accentFill, shape = shape, alpha = SelectedKeyGlassAlpha)
                 } else {
-                    Modifier.background(color = tokens.colors.surfaceCard, shape = shape)
+                    Modifier.ditheredBackground(NuvioGlass.Fill, shape)
                 },
             )
-            .border(
-                width = if (isCapsOn && !selected) tokens.borders.medium else tokens.borders.thin,
-                color = if (isCapsOn && !selected) tokens.colors.accent else tokens.colors.borderDefault,
-                shape = shape,
+            .then(
+                if (isCapsOn && !selected) {
+                    Modifier.border(width = tokens.borders.medium, color = tokens.colors.accent, shape = shape)
+                } else {
+                    Modifier.border(width = 1.dp, brush = NuvioGlass.Edge, shape = shape)
+                },
             )
             // Mouse users get the same keys. The field being typed into must keep focus, since the
             // synthetic keystrokes go to whatever holds it — so a click must never take it.
@@ -189,3 +228,5 @@ private fun KeyCell(
         )
     }
 }
+
+private const val SelectedKeyGlassAlpha = 0.85f

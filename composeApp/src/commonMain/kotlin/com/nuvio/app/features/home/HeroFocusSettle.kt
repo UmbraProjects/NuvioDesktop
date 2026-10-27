@@ -36,12 +36,17 @@ internal const val HERO_FOCUS_SETTLE_MS = 180L
  *
  * An isolated change (none in the previous [settleMs]) is returned on the same frame, so a single
  * press still updates the hero at once.
+ *
+ * [hold] keeps the last settled value outright, for a target known to be provisional. Targets seen
+ * while holding are not recorded as changes, so the one that ends the hold is judged against the
+ * last real change and shows at once instead of being taken for fast movement.
  */
 @Composable
 internal fun <T> rememberSettledHeroFocus(
     target: T,
     settleMs: Long = HERO_FOCUS_SETTLE_MS,
     nowMs: () -> Long = { System.currentTimeMillis() },
+    hold: Boolean = false,
 ): T {
     val tracker = remember { SettleTracker() }
     var settled by remember { mutableStateOf(target) }
@@ -49,17 +54,22 @@ internal fun <T> rememberSettledHeroFocus(
     val changed = target != tracker.lastTarget
     val fast = changed && now - tracker.lastChangeAtMs < settleMs
     SideEffect {
-        if (target != tracker.lastTarget) {
+        if (!hold && target != tracker.lastTarget) {
             tracker.lastTarget = target
             tracker.lastChangeAtMs = now
         }
     }
-    LaunchedEffect(target) {
+    LaunchedEffect(target, hold) {
+        if (hold) return@LaunchedEffect
         // Restarted (so the wait starts over) by every further change of target.
         if (fast) delay(settleMs)
         settled = target
     }
-    return if (target == settled || (changed && !fast)) target else settled
+    return when {
+        hold -> settled
+        target == settled || (changed && !fast) -> target
+        else -> settled
+    }
 }
 
 private class SettleTracker {

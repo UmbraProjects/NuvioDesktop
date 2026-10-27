@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.library.LibrarySourceMode
@@ -58,54 +59,35 @@ internal fun LazyListScope.integrationsContent(
     onLightsClick: () -> Unit,
     onDiscordClick: () -> Unit,
 ) {
+    // One panel for the four "which service feeds this" choices; as three headings over four rows
+    // the headings outweighed the settings.
     item {
         SettingsSection(
-            title = stringResource(Res.string.settings_library_source_section),
+            title = stringResource(Res.string.settings_integrations_sources_section),
             isTablet = isTablet,
         ) {
-            SettingsGroup(
-                isTablet = isTablet,
-                modifier = Modifier.settingsScrollAnchor(
-                    SettingsScrollAnchor.searchKey("library-source"),
-                ),
-            ) {
-                LibrarySourceRow(isTablet = isTablet)
+            SettingsGroup(isTablet = isTablet) {
+                Column(
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("library-source")),
+                ) {
+                    LibrarySourceRow(isTablet = isTablet)
+                    SettingsGroupDivider(isTablet = isTablet)
+                    // Under the Library source because that selection is what decides where a
+                    // rating is written, and whether it can be written at all.
+                    RatingPromptRow(isTablet = isTablet)
+                }
                 SettingsGroupDivider(isTablet = isTablet)
-                // Sits with the Library source because that selection is what decides where a
-                // rating is written, and whether it can be written at all.
-                RatingPromptRow(isTablet = isTablet)
-            }
-        }
-    }
-
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.settings_calendar_source_section),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(
-                isTablet = isTablet,
-                modifier = Modifier.settingsScrollAnchor(
-                    SettingsScrollAnchor.searchKey("calendar-source"),
-                ),
-            ) {
-                CalendarSourceRow(isTablet = isTablet)
-            }
-        }
-    }
-
-    item {
-        SettingsSection(
-            title = stringResource(Res.string.settings_more_like_this_section),
-            isTablet = isTablet,
-        ) {
-            SettingsGroup(
-                isTablet = isTablet,
-                modifier = Modifier.settingsScrollAnchor(
-                    SettingsScrollAnchor.searchKey("more-like-this-source"),
-                ),
-            ) {
-                MoreLikeThisSourceRow(isTablet = isTablet)
+                Column(
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("calendar-source")),
+                ) {
+                    CalendarSourceRow(isTablet = isTablet)
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                Column(
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("more-like-this-source")),
+                ) {
+                    MoreLikeThisSourceRow(isTablet = isTablet)
+                }
             }
         }
     }

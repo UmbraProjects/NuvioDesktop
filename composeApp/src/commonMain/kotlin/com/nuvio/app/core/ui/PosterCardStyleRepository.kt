@@ -70,7 +70,7 @@ private data class StoredPosterCardStylePreferences(
     val landscapeTextTitlesEnabled: Boolean = false,
     val landscapeRatingBadgeScale: String = "OutOfTen",
     val portraitRatingBadgeScale: String = "Off",
-    val posterHighlightMode: String = "Off",
+    val posterHighlightMode: String = "Shine",
     val hideLabelsEnabled: Boolean = false,
     val depthEnabled: Boolean = true,
     val depthEdgeStrength: Int = 42,
@@ -98,7 +98,7 @@ data class PosterCardStyleUiState(
     /** The same badge on portrait posters. Off by default: posters often carry their own art text. */
     val portraitRatingBadgeScale: PosterRatingBadgeScale = PosterRatingBadgeScale.Off,
     /** Ring drawn around the highlighted poster in addition to its magnification. */
-    val posterHighlightMode: PosterHighlightMode = PosterHighlightMode.Off,
+    val posterHighlightMode: PosterHighlightMode = PosterHighlightMode.Shine,
     val hideLabelsEnabled: Boolean = false,
     val depthEnabled: Boolean = true,
     val depthEdgeStrength: Int = 42,

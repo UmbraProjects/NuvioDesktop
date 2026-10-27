@@ -266,6 +266,33 @@ class TrackingIdProjectionTest {
         assertEquals(15, entryLocal.episode)
     }
 
+    @Test
+    fun `a whole-show TMDB season does not collapse entry-local episodes onto episode 1`() {
+        // Apothecary Diaries season 3 (kitsu:50021): TMDB keeps the show in one season, so the
+        // entry maps to TMDB season 1 with 48 episodes before it — the same season number the
+        // entry calls its own. Episodes at or below the offset can only be entry-local.
+        val ids = ResolvedMediaIds(
+            sourceId = "kitsu:50021",
+            contentType = "series",
+            imdb = "tt26743760",
+            tmdb = 220542,
+            tvdb = 431162,
+            simkl = 2909052,
+            kitsu = 50021,
+            isAnime = true,
+            tmdbSeason = 1,
+            tvdbSeason = 3,
+            tmdbEpisodeOffset = 48,
+        )
+
+        // The entry's own numbering (what the player reports after moving to another episode).
+        assertEquals(1, ids.entryLocal(season = 1, episode = 1).episode)
+        assertEquals(5, ids.entryLocal(season = 1, episode = 5).episode)
+        // The canonical TMDB numbering the player is launched with still converts.
+        assertEquals(1, ids.entryLocal(season = 1, episode = 49).season)
+        assertEquals(5, ids.entryLocal(season = 1, episode = 53).episode)
+    }
+
     // ── The ambiguous-franchise guard ─────────────────────────────────────────
 
     @Test

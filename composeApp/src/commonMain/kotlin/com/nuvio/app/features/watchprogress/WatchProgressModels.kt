@@ -228,7 +228,7 @@ data class ContinueWatchingPreferencesUiState(
     val isVisible: Boolean = true,
     val style: ContinueWatchingSectionStyle = ContinueWatchingSectionStyle.Card,
     val clickAction: ContinueWatchingClickAction = ContinueWatchingClickAction.PLAY,
-    val sourceShortcut: ContinueWatchingSourceShortcut = ContinueWatchingSourceShortcut.CORNER,
+    val sourceShortcut: ContinueWatchingSourceShortcut = ContinueWatchingSourceShortcut.CENTER,
     val upNextFromFurthestEpisode: Boolean = true,
     val useEpisodeThumbnails: Boolean = true,
     val showUnairedNextUp: Boolean = true,

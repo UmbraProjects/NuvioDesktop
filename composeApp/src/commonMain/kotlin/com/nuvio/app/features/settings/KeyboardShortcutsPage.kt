@@ -229,22 +229,24 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
                     actions = { ShortcutsResetLabel(onClick = { resetPlayerShortcuts(sectionActions) }) },
                 ) {
                     SettingsGroup(isTablet = isTablet) {
-                        specs.forEachIndexed { index, spec ->
-                            if (index > 0) SettingsGroupDivider(isTablet = isTablet)
-                            ShortcutRow(
-                                shortcut = spec.toShortcut(labels),
-                                isTablet = isTablet,
-                                onRebind = spec.action?.let { action -> { rebinding = action } },
-                            )
-                        }
+                        // First in the section, as Navigation leads with its own switches: a
+                        // setting among the key bindings was easy to scroll past.
                         if (sectionIndex == 0) {
-                            SettingsGroupDivider(isTablet = isTablet)
                             SettingsSwitchRow(
                                 title = "Escape goes windowed first",
                                 description = "In fullscreen playback, Escape leaves fullscreen instead of closing the player. Press it again while windowed to close.",
                                 checked = escWindowedFirst,
                                 isTablet = isTablet,
                                 onCheckedChange = ::setPlayerEscWindowedFirst,
+                            )
+                            SettingsGroupDivider(isTablet = isTablet)
+                        }
+                        specs.forEachIndexed { index, spec ->
+                            if (index > 0) SettingsGroupDivider(isTablet = isTablet)
+                            ShortcutRow(
+                                shortcut = spec.toShortcut(labels),
+                                isTablet = isTablet,
+                                onRebind = spec.action?.let { action -> { rebinding = action } },
                             )
                         }
                     }

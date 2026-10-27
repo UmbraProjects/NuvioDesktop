@@ -1867,6 +1867,35 @@ private fun PlaybackSettingsSection(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
                     SettingsGroupDivider(isTablet = isTablet)
+                    // The same family the player's own subtitle panel picks; mpv draws it, so any
+                    // installed family works. The player controls' font is the App Font instead.
+                    var showSubtitleFontSheet by remember { mutableStateOf(false) }
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_subtitle_font),
+                        description = subtitleStyle.fontFamily.ifBlank {
+                            stringResource(Res.string.settings_playback_subtitle_font_default)
+                        },
+                        enabled = subtitleRenderingEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("subtitle-font")),
+                        onClick = { showSubtitleFontSheet = true },
+                    )
+                    if (showSubtitleFontSheet) {
+                        AppearanceFontBottomSheet(
+                            selectedFontFamily = subtitleStyle.fontFamily,
+                            onFontFamilySelected = { family ->
+                                PlayerSettingsRepository.setSubtitleStyle(
+                                    PlayerSettingsRepository.uiState.value.subtitleStyle.copy(fontFamily = family),
+                                )
+                                showSubtitleFontSheet = false
+                            },
+                            onDismiss = { showSubtitleFontSheet = false },
+                            title = stringResource(Res.string.settings_playback_subtitle_font),
+                            note = stringResource(Res.string.settings_playback_subtitle_font_note),
+                            defaultLabel = stringResource(Res.string.settings_playback_subtitle_font_default),
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
                     SettingsSliderRow(
                         title = stringResource(Res.string.settings_playback_subtitle_size),
                         value = subtitleStyle.fontSizeSp,

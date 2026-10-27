@@ -1,64 +1,66 @@
 package com.nuvio.app.features.setup
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.AppTheme
+import com.nuvio.app.core.ui.BalancedPosterCardWidthDp
+import com.nuvio.app.core.ui.ComfortPosterCardWidthDp
+import com.nuvio.app.core.ui.CompactPosterCardWidthDp
+import com.nuvio.app.core.ui.DensePosterCardWidthDp
+import com.nuvio.app.core.ui.ExtraLargePosterCardWidthDp
+import com.nuvio.app.core.ui.LargePosterCardWidthDp
 import com.nuvio.app.core.ui.NuvioTokens
+import com.nuvio.app.core.ui.PosterHighlightMode
+import com.nuvio.app.core.ui.StandardPosterCardWidthDp
+import com.nuvio.app.core.ui.ThemeColors
+import com.nuvio.app.core.ui.labelRes
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.home.HomeDisplayMode
 import com.nuvio.app.features.home.HomeTvRowDotsAnchor
 import com.nuvio.app.features.settings.ApiKeySetupContent
 import com.nuvio.app.features.settings.ApiKeySetupStyle
-import com.nuvio.app.features.settings.SettingsChoiceOption
-import com.nuvio.app.features.settings.SettingsChoiceRow
-import com.nuvio.app.features.settings.SettingsGroup
-import com.nuvio.app.features.settings.SettingsGroupDivider
-import com.nuvio.app.features.settings.SettingsModernSlider
-import com.nuvio.app.features.settings.SettingsSwitchRow
+import com.nuvio.app.features.settings.DesktopNavigationLayout
+import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.settings_appearance_desktop_navigation
+import nuvio.composeapp.generated.resources.settings_appearance_desktop_top_bar_always_visible
+import nuvio.composeapp.generated.resources.settings_appearance_desktop_top_bar_always_visible_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_section_card_style
+import nuvio.composeapp.generated.resources.settings_continue_watching_separate_next_up_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_separate_next_up_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_separate_upcoming_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_separate_upcoming_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_show_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_show_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_style_card
+import nuvio.composeapp.generated.resources.settings_continue_watching_style_card_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_style_poster
+import nuvio.composeapp.generated.resources.settings_continue_watching_style_poster_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_style_wide
+import nuvio.composeapp.generated.resources.settings_continue_watching_style_wide_description
+import nuvio.composeapp.generated.resources.settings_home_adaptive_ambient_background
+import nuvio.composeapp.generated.resources.settings_home_adaptive_ambient_background_description
 import nuvio.composeapp.generated.resources.settings_home_backdrop_auto_framing
 import nuvio.composeapp.generated.resources.settings_home_backdrop_auto_framing_description
 import nuvio.composeapp.generated.resources.settings_home_backdrop_vertical_position
-import nuvio.composeapp.generated.resources.settings_home_backdrop_vertical_position_description
 import nuvio.composeapp.generated.resources.settings_home_display_mode_adaptive
-import nuvio.composeapp.generated.resources.settings_home_display_mode_adaptive_ambient
-import nuvio.composeapp.generated.resources.settings_home_display_mode_adaptive_ambient_description
 import nuvio.composeapp.generated.resources.settings_home_display_mode_adaptive_description
 import nuvio.composeapp.generated.resources.settings_home_display_mode_basic
 import nuvio.composeapp.generated.resources.settings_home_display_mode_basic_description
 import nuvio.composeapp.generated.resources.settings_home_display_mode_tv
 import nuvio.composeapp.generated.resources.settings_home_display_mode_tv_description
 import nuvio.composeapp.generated.resources.settings_home_hero_height
-import nuvio.composeapp.generated.resources.settings_home_hero_height_description
 import nuvio.composeapp.generated.resources.settings_home_row_jump_dot_position
 import nuvio.composeapp.generated.resources.settings_home_row_jump_dot_position_backdrop
 import nuvio.composeapp.generated.resources.settings_home_row_jump_dot_position_backdrop_description
@@ -68,183 +70,224 @@ import nuvio.composeapp.generated.resources.settings_home_row_jump_dots
 import nuvio.composeapp.generated.resources.settings_home_row_jump_dots_description
 import nuvio.composeapp.generated.resources.settings_home_smooth_scrolling
 import nuvio.composeapp.generated.resources.settings_home_smooth_scrolling_description
+import nuvio.composeapp.generated.resources.settings_home_tv_ambient_background
+import nuvio.composeapp.generated.resources.settings_home_tv_ambient_background_description
 import nuvio.composeapp.generated.resources.settings_home_tv_full_backdrop
 import nuvio.composeapp.generated.resources.settings_home_tv_full_backdrop_description
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_manual
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area_fullscreen
 import nuvio.composeapp.generated.resources.settings_meta_hero_trailer_playback_area_hero
-import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer
-import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_description
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_sound
 import nuvio.composeapp.generated.resources.settings_playback_hero_tv_trailer_sound_description
+import nuvio.composeapp.generated.resources.settings_poster_card_width
+import nuvio.composeapp.generated.resources.settings_poster_hide_labels
+import nuvio.composeapp.generated.resources.settings_poster_highlight
+import nuvio.composeapp.generated.resources.settings_poster_highlight_accent
+import nuvio.composeapp.generated.resources.settings_poster_highlight_description
+import nuvio.composeapp.generated.resources.settings_poster_highlight_off
+import nuvio.composeapp.generated.resources.settings_poster_highlight_shine
+import nuvio.composeapp.generated.resources.settings_poster_highlight_sweep
+import nuvio.composeapp.generated.resources.settings_poster_highlight_white
+import nuvio.composeapp.generated.resources.settings_poster_landscape_mode
+import nuvio.composeapp.generated.resources.settings_poster_width_balanced
+import nuvio.composeapp.generated.resources.settings_poster_width_comfort
+import nuvio.composeapp.generated.resources.settings_poster_width_compact
+import nuvio.composeapp.generated.resources.settings_poster_width_dense
+import nuvio.composeapp.generated.resources.settings_poster_width_extra_large
+import nuvio.composeapp.generated.resources.settings_poster_width_large
+import nuvio.composeapp.generated.resources.settings_poster_width_standard
+import nuvio.composeapp.generated.resources.setup_wizard_cw_subtitle
+import nuvio.composeapp.generated.resources.setup_wizard_cw_title
 import nuvio.composeapp.generated.resources.setup_wizard_experience_subtitle
 import nuvio.composeapp.generated.resources.setup_wizard_experience_title
 import nuvio.composeapp.generated.resources.setup_wizard_experience_tv_badge
 import nuvio.composeapp.generated.resources.setup_wizard_keys_subtitle
 import nuvio.composeapp.generated.resources.setup_wizard_keys_title
-import nuvio.composeapp.generated.resources.setup_wizard_mode_preview_close
-import nuvio.composeapp.generated.resources.setup_wizard_mode_preview_hint
-import nuvio.composeapp.generated.resources.setup_wizard_shortcuts_after_finish
+import nuvio.composeapp.generated.resources.setup_wizard_layout_tuning
+import nuvio.composeapp.generated.resources.setup_wizard_posters_subtitle
+import nuvio.composeapp.generated.resources.setup_wizard_posters_title
 import nuvio.composeapp.generated.resources.setup_wizard_renderer_note
-import nuvio.composeapp.generated.resources.setup_wizard_summary_integrations
-import nuvio.composeapp.generated.resources.setup_wizard_summary_mode
-import nuvio.composeapp.generated.resources.setup_wizard_summary_none
-import nuvio.composeapp.generated.resources.setup_wizard_summary_title
+import nuvio.composeapp.generated.resources.setup_wizard_shortcuts_after_finish
+import nuvio.composeapp.generated.resources.setup_wizard_theme_accent
+import nuvio.composeapp.generated.resources.setup_wizard_theme_subtitle
+import nuvio.composeapp.generated.resources.setup_wizard_theme_title
 import nuvio.composeapp.generated.resources.setup_wizard_trailers_area
 import nuvio.composeapp.generated.resources.setup_wizard_trailers_start
 import nuvio.composeapp.generated.resources.setup_wizard_trailers_start_auto
+import nuvio.composeapp.generated.resources.setup_wizard_trailers_subtitle
 import nuvio.composeapp.generated.resources.setup_wizard_trailers_title
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import com.nuvio.app.core.ui.accentBrush
 
 private const val AUTOPLAY_TRAILER_DELAY_SECONDS = 5
 
+/** The hero-height range Settings offers, walked in 5% steps. */
+private val HeroHeightRange = 0.75f..1.75f
+private const val HeroHeightStep = 0.05f
+
+/** Backdrop position, -1 (top) to 1 (bottom), walked in quarters. */
+private const val VerticalBiasStep = 0.25f
+
+private val PosterWidthPresets = listOf(
+    CompactPosterCardWidthDp to Res.string.settings_poster_width_compact,
+    DensePosterCardWidthDp to Res.string.settings_poster_width_dense,
+    StandardPosterCardWidthDp to Res.string.settings_poster_width_standard,
+    BalancedPosterCardWidthDp to Res.string.settings_poster_width_balanced,
+    ComfortPosterCardWidthDp to Res.string.settings_poster_width_comfort,
+    LargePosterCardWidthDp to Res.string.settings_poster_width_large,
+    ExtraLargePosterCardWidthDp to Res.string.settings_poster_width_extra_large,
+)
+
+/** Custom needs the colour fields Settings has, which do not fit a panel this size. */
+private val ThemeSwatches = listOf(AppTheme.WHITE) + AppTheme.entries.filterNot {
+    it == AppTheme.WHITE || it == AppTheme.CUSTOM
+}
+
+private typealias DraftChange = ((FirstRunWizardDraft) -> FirstRunWizardDraft) -> Unit
+
+/** Title and subtitle at the top of each step. */
 @Composable
-internal fun WizardStepHeader(title: String, subtitle: String) {
-    val tokens = MaterialTheme.nuvio
-    Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = tokens.colors.textPrimary,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = tokens.colors.textSecondary,
-        )
+internal fun FirstRunWizardStep.header(): Pair<String, String> = when (this) {
+    FirstRunWizardStep.Layout ->
+        stringResource(Res.string.setup_wizard_experience_title) to
+            stringResource(Res.string.setup_wizard_experience_subtitle)
+
+    FirstRunWizardStep.Posters ->
+        stringResource(Res.string.setup_wizard_posters_title) to
+            stringResource(Res.string.setup_wizard_posters_subtitle)
+
+    FirstRunWizardStep.ContinueWatching ->
+        stringResource(Res.string.setup_wizard_cw_title) to stringResource(Res.string.setup_wizard_cw_subtitle)
+
+    FirstRunWizardStep.Theme ->
+        stringResource(Res.string.setup_wizard_theme_title) to stringResource(Res.string.setup_wizard_theme_subtitle)
+
+    FirstRunWizardStep.Trailers ->
+        stringResource(Res.string.setup_wizard_trailers_title) to
+            stringResource(Res.string.setup_wizard_trailers_subtitle)
+
+    FirstRunWizardStep.Metadata ->
+        stringResource(Res.string.setup_wizard_keys_title) to stringResource(Res.string.setup_wizard_keys_subtitle)
+}
+
+/**
+ * The body of [step]. [firstFocus] goes on its first control, which the panel focuses whenever a
+ * step opens, so a keyboard or gamepad user always starts at the top of what is new.
+ */
+@Composable
+internal fun WizardStepContent(
+    step: FirstRunWizardStep,
+    draft: FirstRunWizardDraft,
+    onDraftChange: DraftChange,
+    firstFocus: Modifier,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        when (step) {
+            FirstRunWizardStep.Layout -> LayoutStep(draft, onDraftChange, firstFocus)
+            FirstRunWizardStep.Posters -> PostersStep(draft, onDraftChange, firstFocus)
+            FirstRunWizardStep.ContinueWatching -> ContinueWatchingStep(draft, onDraftChange, firstFocus)
+            FirstRunWizardStep.Theme -> ThemeStep(draft, onDraftChange, firstFocus)
+            FirstRunWizardStep.Trailers -> TrailersStep(draft, onDraftChange, firstFocus)
+            // The panel focuses Finish here instead: landing in a key field would open the on-screen
+            // keyboard for a gamepad user who only wanted to finish.
+            FirstRunWizardStep.Metadata -> MetadataStep(draft, onDraftChange)
+        }
     }
 }
 
 // ---------------------------------------------------------------------------------------------
-// Step 1 — display mode, its tuning, and trailers
+// Layout — display mode and its tuning
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-internal fun WizardExperienceStep(
-    draft: FirstRunWizardDraft,
-    onDraftChange: ((FirstRunWizardDraft) -> FirstRunWizardDraft) -> Unit,
-    compact: Boolean,
-    onExpandPreview: (HomeDisplayMode) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s20)) {
-        WizardStepHeader(
-            title = stringResource(Res.string.setup_wizard_experience_title),
-            subtitle = stringResource(Res.string.setup_wizard_experience_subtitle),
+private fun LayoutStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, firstFocus: Modifier) {
+    HomeDisplayMode.entries.forEachIndexed { index, mode ->
+        WizardOptionRow(
+            label = mode.label(),
+            description = mode.description(),
+            badge = if (mode == HomeDisplayMode.TvMode) {
+                stringResource(Res.string.setup_wizard_experience_tv_badge)
+            } else {
+                null
+            },
+            selected = draft.displayMode == mode,
+            onClick = { onDraftChange { it.copy(displayMode = mode) } },
+            modifier = if (index == 0) firstFocus else Modifier,
         )
-
-        val modes = HomeDisplayMode.entries
-        val rows = if (compact) modes.chunked(2) else listOf(modes)
-        Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12)) {
-            rows.forEach { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
-                ) {
-                    row.forEach { mode ->
-                        DisplayModeCard(
-                            mode = mode,
-                            selected = draft.displayMode == mode,
-                            onSelect = { onDraftChange { it.copy(displayMode = mode) } },
-                            onExpandPreview = { onExpandPreview(mode) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-            }
-        }
-
-        ModeTuning(draft = draft, onDraftChange = onDraftChange)
-        // Basic has no hero for a trailer to play in, so offering the settings there would be
-        // advertising something that cannot happen.
-        if (draft.displayMode != HomeDisplayMode.Basic) {
-            TrailerSettings(draft = draft, onDraftChange = onDraftChange)
-        }
     }
-}
 
-@Composable
-private fun DisplayModeCard(
-    mode: HomeDisplayMode,
-    selected: Boolean,
-    onSelect: () -> Unit,
-    onExpandPreview: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val tokens = MaterialTheme.nuvio
-    val borderColor by animateColorAsState(
-        if (selected) tokens.colors.accent else tokens.colors.borderSubtle,
-        label = "wizard_mode_card_border",
-    )
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(NuvioTokens.Radius.lg))
-            .background(tokens.colors.surface)
-            .border(
-                BorderStroke(if (selected) 2.dp else tokens.borders.hairline, borderColor),
-                RoundedCornerShape(NuvioTokens.Radius.lg),
+    WizardSectionLabel(stringResource(Res.string.setup_wizard_layout_tuning))
+    when (draft.displayMode) {
+        HomeDisplayMode.Adaptive -> {
+            WizardToggleRow(
+                title = stringResource(Res.string.settings_home_backdrop_auto_framing),
+                description = stringResource(Res.string.settings_home_backdrop_auto_framing_description),
+                checked = draft.adaptiveHeroAutoFraming,
+                onCheckedChange = { value -> onDraftChange { it.copy(adaptiveHeroAutoFraming = value) } },
             )
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onSelect,
+            if (!draft.adaptiveHeroAutoFraming) {
+                val bias = draft.adaptiveHeroVerticalBias
+                WizardStepperRow(
+                    title = stringResource(Res.string.settings_home_backdrop_vertical_position),
+                    valueLabel = (bias * 100).roundToInt().toString(),
+                    canDecrease = bias > -1f,
+                    canIncrease = bias < 1f,
+                    onDecrease = { onDraftChange { it.copy(adaptiveHeroVerticalBias = stepBias(bias, -1)) } },
+                    onIncrease = { onDraftChange { it.copy(adaptiveHeroVerticalBias = stepBias(bias, 1)) } },
+                )
+            }
+            val height = draft.adaptiveHeroHeightMultiplier
+            WizardStepperRow(
+                title = stringResource(Res.string.settings_home_hero_height),
+                valueLabel = "${(height * 100).roundToInt()}%",
+                canDecrease = height > HeroHeightRange.start + 0.001f,
+                canIncrease = height < HeroHeightRange.endInclusive - 0.001f,
+                onDecrease = { onDraftChange { it.copy(adaptiveHeroHeightMultiplier = stepHeight(height, -1)) } },
+                onIncrease = { onDraftChange { it.copy(adaptiveHeroHeightMultiplier = stepHeight(height, 1)) } },
             )
-            .padding(NuvioTokens.Space.s10),
-        verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s6),
-    ) {
-        // No clip and no rounding here: the captures include the app window's own rounded border,
-        // so clipping them to a different radius sliced the corners off that border. Fit rather
-        // than Crop for the same reason — the captures are not exactly 16:9, and cropping ate the
-        // edge. The box keeps a fixed aspect so all four cards stay the same height.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onExpandPreview,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                painter = setupModeScreenshotPainter(mode),
-                contentDescription = mode.label(),
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
+            WizardToggleRow(
+                title = stringResource(Res.string.settings_home_adaptive_ambient_background),
+                description = stringResource(Res.string.settings_home_adaptive_ambient_background_description),
+                checked = draft.adaptiveAmbientEnabled,
+                onCheckedChange = { value -> onDraftChange { it.copy(adaptiveAmbientEnabled = value) } },
             )
+            SmoothScrollingRow(draft, onDraftChange)
         }
-        Text(
-            text = stringResource(Res.string.setup_wizard_mode_preview_hint),
-            style = MaterialTheme.typography.labelSmall,
-            color = tokens.colors.textMuted,
-        )
-        Text(
-            text = mode.label(),
-            style = MaterialTheme.typography.titleSmall,
-            color = tokens.colors.textPrimary,
-            fontWeight = FontWeight.SemiBold,
-        )
-        // Fixed at two lines, and the badge slot is reserved on every card, so the four cards are
-        // the same height whatever their copy does.
-        Text(
-            text = mode.description(),
-            style = MaterialTheme.typography.bodySmall,
-            color = tokens.colors.textSecondary,
-            minLines = 2,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Box(modifier = Modifier.height(NuvioTokens.Space.s16)) {
-            if (mode == HomeDisplayMode.TvMode) {
-                Text(
-                    text = stringResource(Res.string.setup_wizard_experience_tv_badge),
-                    style = MaterialTheme.typography.labelSmall.accentBrush(),
-                    color = tokens.colors.accent,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+
+        HomeDisplayMode.Basic -> SmoothScrollingRow(draft, onDraftChange)
+
+        HomeDisplayMode.TvMode -> {
+            WizardToggleRow(
+                title = stringResource(Res.string.settings_home_tv_full_backdrop),
+                description = stringResource(Res.string.settings_home_tv_full_backdrop_description),
+                checked = draft.tvFullBackdropEnabled,
+                onCheckedChange = { value -> onDraftChange { it.copy(tvFullBackdropEnabled = value) } },
+            )
+            WizardToggleRow(
+                title = stringResource(Res.string.settings_home_tv_ambient_background),
+                description = stringResource(Res.string.settings_home_tv_ambient_background_description),
+                checked = draft.tvAmbientBackgroundEnabled,
+                onCheckedChange = { value -> onDraftChange { it.copy(tvAmbientBackgroundEnabled = value) } },
+            )
+            WizardToggleRow(
+                title = stringResource(Res.string.settings_home_row_jump_dots),
+                description = stringResource(Res.string.settings_home_row_jump_dots_description),
+                checked = draft.tvRowDotsEnabled,
+                onCheckedChange = { value -> onDraftChange { it.copy(tvRowDotsEnabled = value) } },
+            )
+            if (draft.tvRowDotsEnabled) {
+                WizardSectionLabel(stringResource(Res.string.settings_home_row_jump_dot_position))
+                WizardOptionRow(
+                    label = stringResource(Res.string.settings_home_row_jump_dot_position_row),
+                    description = stringResource(Res.string.settings_home_row_jump_dot_position_row_description),
+                    selected = draft.tvRowDotsAnchor == HomeTvRowDotsAnchor.RowTitle,
+                    onClick = { onDraftChange { it.copy(tvRowDotsAnchor = HomeTvRowDotsAnchor.RowTitle) } },
+                )
+                WizardOptionRow(
+                    label = stringResource(Res.string.settings_home_row_jump_dot_position_backdrop),
+                    description = stringResource(Res.string.settings_home_row_jump_dot_position_backdrop_description),
+                    selected = draft.tvRowDotsAnchor == HomeTvRowDotsAnchor.HeroBackdrop,
+                    onClick = { onDraftChange { it.copy(tvRowDotsAnchor = HomeTvRowDotsAnchor.HeroBackdrop) } },
                 )
             }
         }
@@ -252,256 +295,236 @@ private fun DisplayModeCard(
 }
 
 @Composable
-internal fun ModePreviewLightbox(mode: HomeDisplayMode, onDismiss: () -> Unit) {
-    val tokens = MaterialTheme.nuvio
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.88f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier.padding(NuvioTokens.Space.s32),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
-        ) {
-            Image(
-                painter = setupModeScreenshotPainter(mode),
-                contentDescription = mode.label(),
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .widthIn(max = 1600.dp),
-            )
-            Text(
-                text = mode.label(),
-                style = MaterialTheme.typography.titleMedium,
-                color = tokens.colors.textPrimary,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = stringResource(Res.string.setup_wizard_mode_preview_close),
-                style = MaterialTheme.typography.bodySmall,
-                color = tokens.colors.textMuted,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ModeTuning(
-    draft: FirstRunWizardDraft,
-    onDraftChange: ((FirstRunWizardDraft) -> FirstRunWizardDraft) -> Unit,
-) {
-    // The real settings rows, so a first-run user meets the same labels, subtext and controls they
-    // will see again in Settings — and gets an explanation of what "full backdrop" actually means.
-    SettingsGroup(isTablet = true) {
-        when (draft.displayMode) {
-            HomeDisplayMode.Adaptive, HomeDisplayMode.AdaptiveAmbient -> {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_home_backdrop_auto_framing),
-                    description = stringResource(Res.string.settings_home_backdrop_auto_framing_description),
-                    checked = draft.adaptiveHeroAutoFraming,
-                    isTablet = true,
-                    onCheckedChange = { value -> onDraftChange { it.copy(adaptiveHeroAutoFraming = value) } },
-                )
-                SettingsGroupDivider(isTablet = true)
-                if (!draft.adaptiveHeroAutoFraming) {
-                    WizardSliderRow(
-                        title = stringResource(Res.string.settings_home_backdrop_vertical_position),
-                        description = stringResource(Res.string.settings_home_backdrop_vertical_position_description),
-                        value = draft.adaptiveHeroVerticalBias,
-                        valueRange = -1f..1f,
-                        onValueChange = { value -> onDraftChange { it.copy(adaptiveHeroVerticalBias = value) } },
-                    )
-                    SettingsGroupDivider(isTablet = true)
-                }
-                WizardSliderRow(
-                    title = stringResource(Res.string.settings_home_hero_height),
-                    description = stringResource(Res.string.settings_home_hero_height_description),
-                    value = draft.adaptiveHeroHeightMultiplier,
-                    valueRange = 0.75f..1.75f,
-                    onValueChange = { value -> onDraftChange { it.copy(adaptiveHeroHeightMultiplier = value) } },
-                )
-                SettingsGroupDivider(isTablet = true)
-                SmoothScrollingRow(draft, onDraftChange)
-            }
-
-            HomeDisplayMode.Basic -> SmoothScrollingRow(draft, onDraftChange)
-
-            HomeDisplayMode.TvMode -> {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_home_tv_full_backdrop),
-                    description = stringResource(Res.string.settings_home_tv_full_backdrop_description),
-                    checked = draft.tvFullBackdropEnabled,
-                    isTablet = true,
-                    onCheckedChange = { value -> onDraftChange { it.copy(tvFullBackdropEnabled = value) } },
-                )
-                SettingsGroupDivider(isTablet = true)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_home_row_jump_dots),
-                    description = stringResource(Res.string.settings_home_row_jump_dots_description),
-                    checked = draft.tvRowDotsEnabled,
-                    isTablet = true,
-                    onCheckedChange = { value -> onDraftChange { it.copy(tvRowDotsEnabled = value) } },
-                )
-                if (draft.tvRowDotsEnabled) {
-                    SettingsGroupDivider(isTablet = true)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_home_row_jump_dot_position),
-                        description = draft.tvRowDotsAnchor.dotPositionDescription(),
-                        options = listOf(
-                            SettingsChoiceOption(
-                                HomeTvRowDotsAnchor.RowTitle,
-                                stringResource(Res.string.settings_home_row_jump_dot_position_row),
-                            ),
-                            SettingsChoiceOption(
-                                HomeTvRowDotsAnchor.HeroBackdrop,
-                                stringResource(Res.string.settings_home_row_jump_dot_position_backdrop),
-                            ),
-                        ),
-                        selectedValue = draft.tvRowDotsAnchor,
-                        isTablet = true,
-                        onSelected = { value -> onDraftChange { it.copy(tvRowDotsAnchor = value) } },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SmoothScrollingRow(
-    draft: FirstRunWizardDraft,
-    onDraftChange: ((FirstRunWizardDraft) -> FirstRunWizardDraft) -> Unit,
-) {
-    SettingsSwitchRow(
+private fun SmoothScrollingRow(draft: FirstRunWizardDraft, onDraftChange: DraftChange) {
+    WizardToggleRow(
         title = stringResource(Res.string.settings_home_smooth_scrolling),
         description = stringResource(Res.string.settings_home_smooth_scrolling_description),
         checked = draft.smoothScrollingEnabled,
-        isTablet = true,
         onCheckedChange = { value -> onDraftChange { it.copy(smoothScrollingEnabled = value) } },
     )
 }
 
+internal fun stepBias(current: Float, direction: Int): Float =
+    ((current / VerticalBiasStep).roundToInt() + direction).times(VerticalBiasStep).coerceIn(-1f, 1f)
+
+internal fun stepHeight(current: Float, direction: Int): Float =
+    ((current / HeroHeightStep).roundToInt() + direction).times(HeroHeightStep)
+        .coerceIn(HeroHeightRange.start, HeroHeightRange.endInclusive)
+
+// ---------------------------------------------------------------------------------------------
+// Posters
+// ---------------------------------------------------------------------------------------------
+
 @Composable
-private fun TrailerSettings(
-    draft: FirstRunWizardDraft,
-    onDraftChange: ((FirstRunWizardDraft) -> FirstRunWizardDraft) -> Unit,
-) {
-    val tokens = MaterialTheme.nuvio
-    Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12)) {
-        Text(
-            text = stringResource(Res.string.setup_wizard_trailers_title),
-            style = MaterialTheme.typography.titleMedium,
-            color = tokens.colors.textPrimary,
-            fontWeight = FontWeight.SemiBold,
-        )
-        SettingsGroup(isTablet = true) {
-            SettingsChoiceRow(
-                title = stringResource(Res.string.setup_wizard_trailers_area),
-                description = stringResource(Res.string.settings_playback_hero_tv_trailer_description),
-                options = listOf(
-                    SettingsChoiceOption(
-                        false,
-                        stringResource(Res.string.settings_meta_hero_trailer_playback_area_hero),
-                    ),
-                    SettingsChoiceOption(
-                        true,
-                        stringResource(Res.string.settings_meta_hero_trailer_playback_area_fullscreen),
-                    ),
-                ),
-                selectedValue = draft.trailerFullscreen,
-                isTablet = true,
-                onSelected = { value -> onDraftChange { it.copy(trailerFullscreen = value) } },
-            )
-            SettingsGroupDivider(isTablet = true)
-            SettingsChoiceRow(
-                title = stringResource(Res.string.setup_wizard_trailers_start),
-                description = stringResource(Res.string.settings_playback_hero_tv_trailer),
-                options = listOf(
-                    SettingsChoiceOption(false, stringResource(Res.string.settings_meta_hero_trailer_manual)),
-                    SettingsChoiceOption(true, stringResource(Res.string.setup_wizard_trailers_start_auto)),
-                ),
-                selectedValue = draft.trailerDelaySeconds > 0,
-                isTablet = true,
-                onSelected = { autoplay ->
-                    onDraftChange {
-                        it.copy(trailerDelaySeconds = if (autoplay) AUTOPLAY_TRAILER_DELAY_SECONDS else 0)
-                    }
-                },
-            )
-            SettingsGroupDivider(isTablet = true)
-            SettingsSwitchRow(
-                title = stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
-                description = stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
-                checked = draft.trailerSoundEnabled,
-                isTablet = true,
-                onCheckedChange = { value -> onDraftChange { it.copy(trailerSoundEnabled = value) } },
+private fun PostersStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, firstFocus: Modifier) {
+    // TV Mode sizes its own cards and never shows their labels, so those two rows would change
+    // nothing on Home and read as broken. The values are kept, for whichever mode comes next.
+    val tvMode = draft.displayMode == HomeDisplayMode.TvMode
+    // A width set in Settings may sit between presets; stepping starts from the nearest one.
+    val widthIndex = nearestPosterPresetIndex(draft.posterWidthDp)
+    if (!tvMode) WizardStepperRow(
+        title = stringResource(Res.string.settings_poster_card_width),
+        valueLabel = stringResource(PosterWidthPresets[widthIndex].second),
+        canDecrease = widthIndex > 0,
+        canIncrease = widthIndex < PosterWidthPresets.lastIndex,
+        onDecrease = { onDraftChange { it.copy(posterWidthDp = PosterWidthPresets[widthIndex - 1].first) } },
+        onIncrease = { onDraftChange { it.copy(posterWidthDp = PosterWidthPresets[widthIndex + 1].first) } },
+        modifier = firstFocus,
+    )
+    val highlights = PosterHighlightMode.entries
+    val highlightIndex = highlights.indexOf(draft.posterHighlightMode)
+    WizardStepperRow(
+        title = stringResource(Res.string.settings_poster_highlight),
+        description = stringResource(Res.string.settings_poster_highlight_description),
+        valueLabel = stringResource(draft.posterHighlightMode.labelRes),
+        canDecrease = highlightIndex > 0,
+        canIncrease = highlightIndex < highlights.lastIndex,
+        onDecrease = { onDraftChange { it.copy(posterHighlightMode = highlights[highlightIndex - 1]) } },
+        onIncrease = { onDraftChange { it.copy(posterHighlightMode = highlights[highlightIndex + 1]) } },
+        modifier = if (tvMode) firstFocus else Modifier,
+    )
+    WizardToggleRow(
+        title = stringResource(Res.string.settings_poster_landscape_mode),
+        checked = draft.landscapePostersEnabled,
+        onCheckedChange = { value -> onDraftChange { it.copy(landscapePostersEnabled = value) } },
+    )
+    if (!tvMode) WizardToggleRow(
+        title = stringResource(Res.string.settings_poster_hide_labels),
+        checked = draft.hidePosterLabelsEnabled,
+        onCheckedChange = { value -> onDraftChange { it.copy(hidePosterLabelsEnabled = value) } },
+    )
+}
+
+internal fun nearestPosterPresetIndex(widthDp: Int): Int =
+    PosterWidthPresets.indices.minBy { abs(PosterWidthPresets[it].first - widthDp) }
+
+private val PosterHighlightMode.labelRes: StringResource
+    get() = when (this) {
+        PosterHighlightMode.Off -> Res.string.settings_poster_highlight_off
+        PosterHighlightMode.White -> Res.string.settings_poster_highlight_white
+        PosterHighlightMode.Accent -> Res.string.settings_poster_highlight_accent
+        PosterHighlightMode.Shine -> Res.string.settings_poster_highlight_shine
+        PosterHighlightMode.Sweep -> Res.string.settings_poster_highlight_sweep
+    }
+
+// ---------------------------------------------------------------------------------------------
+// Continue Watching
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun ContinueWatchingStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, firstFocus: Modifier) {
+    WizardToggleRow(
+        title = stringResource(Res.string.settings_continue_watching_show_title),
+        description = stringResource(Res.string.settings_continue_watching_show_description),
+        checked = draft.continueWatchingVisible,
+        onCheckedChange = { value -> onDraftChange { it.copy(continueWatchingVisible = value) } },
+        modifier = firstFocus,
+    )
+    if (draft.continueWatchingVisible) {
+        WizardSectionLabel(stringResource(Res.string.settings_continue_watching_section_card_style))
+        ContinueWatchingSectionStyle.entries.forEach { style ->
+            WizardOptionRow(
+                label = stringResource(style.labelRes),
+                description = stringResource(style.descriptionRes),
+                selected = draft.continueWatchingStyle == style,
+                onClick = { onDraftChange { it.copy(continueWatchingStyle = style) } },
             )
         }
+        WizardDivider()
+        WizardToggleRow(
+            title = stringResource(Res.string.settings_continue_watching_separate_next_up_title),
+            description = stringResource(Res.string.settings_continue_watching_separate_next_up_description),
+            checked = draft.separateNextUpRow,
+            onCheckedChange = { value -> onDraftChange { it.copy(separateNextUpRow = value) } },
+        )
+        WizardToggleRow(
+            title = stringResource(Res.string.settings_continue_watching_separate_upcoming_title),
+            description = stringResource(Res.string.settings_continue_watching_separate_upcoming_description),
+            checked = draft.separateUpcomingRow,
+            onCheckedChange = { value -> onDraftChange { it.copy(separateUpcomingRow = value) } },
+        )
     }
 }
 
+private val ContinueWatchingSectionStyle.labelRes: StringResource
+    get() = when (this) {
+        ContinueWatchingSectionStyle.Card -> Res.string.settings_continue_watching_style_card
+        ContinueWatchingSectionStyle.Wide -> Res.string.settings_continue_watching_style_wide
+        ContinueWatchingSectionStyle.Poster -> Res.string.settings_continue_watching_style_poster
+    }
+
+private val ContinueWatchingSectionStyle.descriptionRes: StringResource
+    get() = when (this) {
+        ContinueWatchingSectionStyle.Card -> Res.string.settings_continue_watching_style_card_description
+        ContinueWatchingSectionStyle.Wide -> Res.string.settings_continue_watching_style_wide_description
+        ContinueWatchingSectionStyle.Poster -> Res.string.settings_continue_watching_style_poster_description
+    }
+
+// ---------------------------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------------------------
+
 @Composable
-private fun WizardSliderRow(
-    title: String,
-    description: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
-) {
+private fun ThemeStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, firstFocus: Modifier) {
     val tokens = MaterialTheme.nuvio
+    WizardSectionLabel(stringResource(Res.string.setup_wizard_theme_accent))
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // Matches the desktop settings row metrics so this sits flush with the switch and
-            // choice rows above it in the same group.
-            .padding(horizontal = 16.dp, vertical = 8.8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s16),
+            .padding(horizontal = NuvioTokens.Space.s8, vertical = NuvioTokens.Space.s6),
+        horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
     ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = tokens.colors.textPrimary,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = tokens.colors.textSecondary,
+        ThemeSwatches.forEachIndexed { index, theme ->
+            val label = stringResource(theme.labelRes)
+            WizardSwatch(
+                color = ThemeColors.getColorPalette(theme).secondary,
+                contentDescription = label,
+                selected = draft.theme == theme,
+                onClick = { onDraftChange { it.copy(theme = theme) } },
+                modifier = if (index == 0) firstFocus else Modifier,
             )
         }
-        SettingsModernSlider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            modifier = Modifier.widthIn(max = 210.dp),
+    }
+    Text(
+        text = stringResource(draft.theme.labelRes),
+        style = MaterialTheme.typography.bodyMedium,
+        color = tokens.colors.textSecondary,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(horizontal = NuvioTokens.Space.s12),
+    )
+
+    WizardSectionLabel(stringResource(Res.string.settings_appearance_desktop_navigation))
+    DesktopNavigationLayout.entries.forEach { layout ->
+        WizardOptionRow(
+            label = stringResource(layout.labelRes),
+            selected = draft.navigationLayout == layout,
+            onClick = { onDraftChange { it.copy(navigationLayout = layout) } },
+        )
+    }
+    // Only the top bar fades out until the pointer reaches it; the sidebar has no such option.
+    if (draft.navigationLayout == DesktopNavigationLayout.TopBar) {
+        WizardDivider()
+        WizardToggleRow(
+            title = stringResource(Res.string.settings_appearance_desktop_top_bar_always_visible),
+            description = stringResource(Res.string.settings_appearance_desktop_top_bar_always_visible_description),
+            checked = draft.topBarAlwaysVisible,
+            onCheckedChange = { value -> onDraftChange { it.copy(topBarAlwaysVisible = value) } },
         )
     }
 }
 
 // ---------------------------------------------------------------------------------------------
-// Step 2 — metadata keys, summary, and what happens on Finish
+// Trailers
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-internal fun WizardMetadataStep(
-    draft: FirstRunWizardDraft,
-    onDraftChange: ((FirstRunWizardDraft) -> FirstRunWizardDraft) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s20)) {
-        WizardStepHeader(
-            title = stringResource(Res.string.setup_wizard_keys_title),
-            subtitle = stringResource(Res.string.setup_wizard_keys_subtitle),
-        )
+private fun TrailersStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, firstFocus: Modifier) {
+    WizardSectionLabel(stringResource(Res.string.setup_wizard_trailers_area))
+    WizardOptionRow(
+        label = stringResource(Res.string.settings_meta_hero_trailer_playback_area_hero),
+        selected = !draft.trailerFullscreen,
+        onClick = { onDraftChange { it.copy(trailerFullscreen = false) } },
+        modifier = firstFocus,
+    )
+    WizardOptionRow(
+        label = stringResource(Res.string.settings_meta_hero_trailer_playback_area_fullscreen),
+        selected = draft.trailerFullscreen,
+        onClick = { onDraftChange { it.copy(trailerFullscreen = true) } },
+    )
+    WizardSectionLabel(stringResource(Res.string.setup_wizard_trailers_start))
+    WizardOptionRow(
+        label = stringResource(Res.string.settings_meta_hero_trailer_manual),
+        selected = draft.trailerDelaySeconds == 0,
+        onClick = { onDraftChange { it.copy(trailerDelaySeconds = 0) } },
+    )
+    WizardOptionRow(
+        label = stringResource(Res.string.setup_wizard_trailers_start_auto),
+        selected = draft.trailerDelaySeconds > 0,
+        onClick = {
+            onDraftChange {
+                if (it.trailerDelaySeconds > 0) it else it.copy(trailerDelaySeconds = AUTOPLAY_TRAILER_DELAY_SECONDS)
+            }
+        },
+    )
+    WizardDivider()
+    WizardToggleRow(
+        title = stringResource(Res.string.settings_playback_hero_tv_trailer_sound),
+        description = stringResource(Res.string.settings_playback_hero_tv_trailer_sound_description),
+        checked = draft.trailerSoundEnabled,
+        onCheckedChange = { value -> onDraftChange { it.copy(trailerSoundEnabled = value) } },
+    )
+}
+
+// ---------------------------------------------------------------------------------------------
+// Metadata keys, and what happens on Finish
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun MetadataStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange) {
+    Column(
+        modifier = Modifier.padding(horizontal = NuvioTokens.Space.s4),
+        verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s12),
+    ) {
         ApiKeySetupContent(
             tmdbApiKey = draft.tmdbApiKey,
             mdbListApiKey = draft.mdbListApiKey,
@@ -509,53 +532,8 @@ internal fun WizardMetadataStep(
             onMdbListApiKeyChange = { value -> onDraftChange { it.copy(mdbListApiKey = value) } },
             style = ApiKeySetupStyle.Staged,
         )
-        WizardSummary(draft = draft)
         WizardNote(text = stringResource(Res.string.setup_wizard_shortcuts_after_finish))
         WizardNote(text = stringResource(Res.string.setup_wizard_renderer_note))
-    }
-}
-
-@Composable
-private fun WizardSummary(draft: FirstRunWizardDraft) {
-    val tokens = MaterialTheme.nuvio
-    val none = stringResource(Res.string.setup_wizard_summary_none)
-    val integrations = buildList {
-        if (draft.tmdbApiKey.isNotBlank()) add("TMDB")
-        if (draft.mdbListApiKey.isNotBlank()) add("MDBList")
-    }
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8),
-    ) {
-        Text(
-            text = stringResource(Res.string.setup_wizard_summary_title),
-            style = MaterialTheme.typography.titleMedium,
-            color = tokens.colors.textPrimary,
-            fontWeight = FontWeight.SemiBold,
-        )
-        SummaryLine(stringResource(Res.string.setup_wizard_summary_mode), draft.displayMode.label())
-        SummaryLine(
-            stringResource(Res.string.setup_wizard_summary_integrations),
-            integrations.joinToString().ifBlank { none },
-        )
-    }
-}
-
-@Composable
-private fun SummaryLine(label: String, value: String) {
-    val tokens = MaterialTheme.nuvio
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s8)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = tokens.colors.textMuted,
-            modifier = Modifier.widthIn(min = 140.dp),
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = tokens.colors.textPrimary,
-        )
     }
 }
 
@@ -563,7 +541,6 @@ private fun SummaryLine(label: String, value: String) {
 internal fun HomeDisplayMode.label(): String = when (this) {
     HomeDisplayMode.Basic -> stringResource(Res.string.settings_home_display_mode_basic)
     HomeDisplayMode.Adaptive -> stringResource(Res.string.settings_home_display_mode_adaptive)
-    HomeDisplayMode.AdaptiveAmbient -> stringResource(Res.string.settings_home_display_mode_adaptive_ambient)
     HomeDisplayMode.TvMode -> stringResource(Res.string.settings_home_display_mode_tv)
 }
 
@@ -571,17 +548,5 @@ internal fun HomeDisplayMode.label(): String = when (this) {
 private fun HomeDisplayMode.description(): String = when (this) {
     HomeDisplayMode.Basic -> stringResource(Res.string.settings_home_display_mode_basic_description)
     HomeDisplayMode.Adaptive -> stringResource(Res.string.settings_home_display_mode_adaptive_description)
-    HomeDisplayMode.AdaptiveAmbient ->
-        stringResource(Res.string.settings_home_display_mode_adaptive_ambient_description)
-
     HomeDisplayMode.TvMode -> stringResource(Res.string.settings_home_display_mode_tv_description)
-}
-
-@Composable
-private fun HomeTvRowDotsAnchor.dotPositionDescription(): String = when (this) {
-    HomeTvRowDotsAnchor.RowTitle ->
-        stringResource(Res.string.settings_home_row_jump_dot_position_row_description)
-
-    HomeTvRowDotsAnchor.HeroBackdrop ->
-        stringResource(Res.string.settings_home_row_jump_dot_position_backdrop_description)
 }

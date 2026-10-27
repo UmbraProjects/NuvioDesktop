@@ -25,7 +25,6 @@ import nuvio.composeapp.generated.resources.compose_settings_page_homescreen
 import nuvio.composeapp.generated.resources.compose_settings_page_integrations
 import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_shortcuts
 import nuvio.composeapp.generated.resources.compose_settings_page_local_library
-import nuvio.composeapp.generated.resources.compose_settings_page_auto_downloads
 import nuvio.composeapp.generated.resources.compose_settings_root_downloads_title
 import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attributions
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
@@ -136,7 +135,7 @@ internal enum class SettingsPage(
         parentPage = Root,
     ),
     AutoDownloads(
-        titleRes = Res.string.compose_settings_page_auto_downloads,
+        titleRes = Res.string.compose_settings_root_downloads_title,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

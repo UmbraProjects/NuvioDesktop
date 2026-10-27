@@ -19,6 +19,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -295,7 +297,7 @@ internal fun SettingsModernRangeSlider(
     enabled: Boolean = true,
     steps: Int = 0,
     onValueChangeFinished: () -> Unit = {},
-    /** Shown in a bubble over the cursor while dragging; see [SettingsSliderValueBubble]. */
+    /** Shown in a bubble while the slider is held or dragged; see [SettingsSliderValueBubble]. */
     valueLabel: String? = null,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -340,6 +342,7 @@ internal fun SettingsModernRangeSlider(
             .onGloballyPositioned { size = it.size }
             // Same caveat as SettingsModernSlider: keying this to the measured size would cancel an
             // in-flight mouse gesture on recomposition and freeze the thumb until release.
+            .sliderPressPeek(enabled, drag)
             .pointerInput(enabled, valueRange.start, valueRange.endInclusive, steps) {
                 if (!enabled) return@pointerInput
                 detectDragGestures(
@@ -374,7 +377,9 @@ internal fun SettingsModernRangeSlider(
             drawGlassSliderThumb(activeBrush, Offset(lowX, centerY), thumbRadius)
             drawGlassSliderThumb(activeBrush, Offset(highX, centerY), thumbRadius)
         }
-        if (valueLabel != null && drag.active) SettingsSliderValueBubble(valueLabel, drag.x)
+        if (valueLabel != null && (drag.active || drag.pressed)) {
+            SettingsSliderValueBubble(valueLabel, if (drag.active) drag.x else drag.pressX)
+        }
     }
 }
 
@@ -387,7 +392,7 @@ internal fun SettingsModernSlider(
     enabled: Boolean = true,
     steps: Int = 0,
     onValueChangeFinished: () -> Unit = {},
-    /** Shown in a bubble over the cursor while dragging; see [SettingsSliderValueBubble]. */
+    /** Shown in a bubble while the slider is held or dragged; see [SettingsSliderValueBubble]. */
     valueLabel: String? = null,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -422,6 +427,7 @@ internal fun SettingsModernSlider(
             // Keep the gesture coroutine alive while dragging. Keying pointerInput to the measured
             // size (or a freshly-created range object) can cancel an active mouse gesture during
             // recomposition, leaving the thumb frozen until the button is released.
+            .sliderPressPeek(enabled, drag)
             .pointerInput(enabled, valueRange.start, valueRange.endInclusive, steps) {
                 if (!enabled) return@pointerInput
                 detectDragGestures(
@@ -450,7 +456,11 @@ internal fun SettingsModernSlider(
             drawGlassSliderFill(activeBrush, trackStart, thumbX, centerY)
             drawGlassSliderThumb(activeBrush, Offset(thumbX, centerY), thumbRadius)
         }
-        if (valueLabel != null && drag.active) SettingsSliderValueBubble(valueLabel, drag.x)
+        if (valueLabel != null && (drag.active || drag.pressed)) {
+            // A press without a drag points at the thumb, where the value it reads is.
+            val thumbX = thumbRadiusPx + (size.width - 2f * thumbRadiusPx).coerceAtLeast(0f) * progress
+            SettingsSliderValueBubble(valueLabel, if (drag.active) drag.x else thumbX)
+        }
     }
 }
 
@@ -470,7 +480,43 @@ private class SliderDragState {
     fun end() {
         active = false
     }
+
+    /** Held down without dragging: the bubble shows the current value and nothing changes. */
+    var pressed by mutableStateOf(false)
+        private set
+    var pressX by mutableStateOf(0f)
+        private set
+
+    fun press(pointerX: Float) {
+        pressX = pointerX
+        pressed = true
+    }
+
+    fun release() {
+        pressed = false
+    }
 }
+
+/**
+ * Shows the value bubble for as long as the slider is held, so a click reads the value without
+ * moving it; dragging takes over from [detectDragGestures] as before. Observes the press without
+ * consuming it, so the drag detector beside it sees the same events.
+ */
+private fun Modifier.sliderPressPeek(enabled: Boolean, drag: SliderDragState): Modifier =
+    pointerInput(enabled) {
+        if (!enabled) return@pointerInput
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            drag.press(down.position.x)
+            try {
+                do {
+                    val event = awaitPointerEvent()
+                } while (event.changes.any { it.pressed })
+            } finally {
+                drag.release()
+            }
+        }
+    }
 
 /** Groove height of the glass slider track. */
 private val SliderTrackHeight = 6.dp
@@ -523,7 +569,7 @@ private fun DrawScope.drawGlassSliderThumb(accent: Brush, center: Offset, radius
 private val SliderTrackFill = Color.White.copy(alpha = 0.07f)
 
 /**
- * The slider's value, shown only while it is being dragged, in a small glass bubble just above the
+ * The slider's value, shown only while it is held or dragged, in a small glass bubble just above the
  * cursor. The rows used to spend a column on a readout nobody needs until they move the slider; a
  * Popup, so the first row's bubble is not clipped by its card.
  */
@@ -1687,8 +1733,9 @@ internal fun <T> SettingsSegmentedChoiceRow(
     }
 }
 
-/** The pill-shaped two-segment control shared by [SettingsSegmentedChoiceRow] and the boolean
- * [SettingsSwitchRow], so on/off toggles read the same as any other binary choice. */
+/** The pill-shaped segmented control shared by [SettingsSegmentedChoiceRow] and the boolean
+ * [SettingsSwitchRow], so on/off toggles read the same as any other binary choice. Settings rows
+ * only route two-option choices here; a dialog may pass more, and every option is drawn. */
 @Composable
 internal fun <T> SettingsSegmentedControl(
     options: List<SettingsChoiceOption<T>>,
@@ -1710,7 +1757,7 @@ internal fun <T> SettingsSegmentedControl(
             .padding(SegmentedTrackPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        options.take(2).forEach { option ->
+        options.forEach { option ->
             val selected = option.value == selectedValue
             Box(
                 modifier = Modifier

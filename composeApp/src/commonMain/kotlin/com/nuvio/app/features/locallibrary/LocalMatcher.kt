@@ -59,8 +59,30 @@ internal object LocalMatcher {
         return search(query, type, provider)
     }
 
-    /** Text search using the provider explicitly selected in the Fix-match dialog. */
+    /**
+     * Text search using the provider explicitly selected in the Fix-match dialog.
+     *
+     * The dialog pre-fills "Title Year", and neither provider reads a year out of the query text —
+     * TMDB returned nothing at all for "10 Cloverfield Lane 2016". A trailing year is split off and
+     * used only to sort near-year results first (not as a hard filter, for the same ±1 reason as
+     * [autoMatch]). When the bare title finds nothing, the query is retried as typed, so a title
+     * that really ends in a year ("Blade Runner 2049") still resolves.
+     */
     suspend fun search(
+        query: String,
+        type: LocalFolderType,
+        provider: LocalMatchProvider,
+    ): List<LocalMatchCandidate> {
+        val (title, year) = splitTrailingYear(query)
+        if (year == null) return searchProvider(query, type, provider)
+        val results = searchProvider(title, type, provider)
+            .ifEmpty { return searchProvider(query, type, provider) }
+        return results.sortedByDescending { candidate ->
+            candidate.year?.let { kotlin.math.abs(it - year) <= 1 } ?: false
+        }
+    }
+
+    private suspend fun searchProvider(
         query: String,
         type: LocalFolderType,
         provider: LocalMatchProvider,
@@ -338,6 +360,18 @@ internal fun LocalMediaItem.withFranchiseIdentity(
     background = background,
     matchState = matchState,
 )
+
+private val TRAILING_YEAR = Regex("""^(.*\S)\s+\(?((?:19|20)\d{2})\)?$""")
+
+/**
+ * Splits "Title 2016" or "Title (2016)" into the title and the year. A query that is only a year
+ * ("2012") has no title left to search, so it is returned whole.
+ */
+internal fun splitTrailingYear(query: String): Pair<String, Int?> {
+    val trimmed = query.trim()
+    val match = TRAILING_YEAR.matchEntire(trimmed) ?: return trimmed to null
+    return match.groupValues[1] to match.groupValues[2].toInt()
+}
 
 /** Landscape cards and the TV-mode hero both read this, so w1280 rather than a thumbnail size. */
 private const val LOCAL_BACKDROP_SIZE = "w1280"

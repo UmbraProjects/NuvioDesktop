@@ -140,6 +140,7 @@ import com.nuvio.app.features.librarypvr.videoExtension
 import com.nuvio.app.features.locallibrary.LocalFolder
 import com.nuvio.app.features.locallibrary.LocalFolderType
 import com.nuvio.app.features.metadata.isAnimeNativeId
+import com.nuvio.app.features.metadata.nativeAnimeEntryEpisode
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import kotlinx.coroutines.CoroutineScope
 import com.nuvio.app.features.player.PlaybackStartTrace
@@ -274,6 +275,11 @@ fun StreamsScreen(
         }
     }
     val isEpisode = seasonNumber != null && episodeNumber != null
+    // Library downloads number episodes in the opened entry's own coordinates; see
+    // nativeAnimeEntryEpisode. Everything else (lookup, resume, badges) keeps the canonical pair.
+    val entryEpisodeNumber = remember(parentMetaId, videoId) { nativeAnimeEntryEpisode(parentMetaId, videoId) }
+    val librarySeasonNumber = if (entryEpisodeNumber != null) 1 else seasonNumber
+    val libraryEpisodeNumber = entryEpisodeNumber ?: episodeNumber
     val clipboardManager = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
     val downloadScope = rememberCoroutineScope()
@@ -546,8 +552,8 @@ fun StreamsScreen(
                 val result = SeasonPackGrabService.inspect(
                     stream = stream,
                     folder = folder,
-                    season = seasonNumber,
-                    currentEpisode = episodeNumber,
+                    season = librarySeasonNumber,
+                    currentEpisode = libraryEpisodeNumber,
                     target = libraryTarget,
                 )
             ) {
@@ -656,8 +662,8 @@ fun StreamsScreen(
                 releaseYear = resolvedReleaseYear,
                 isEpisode = isEpisode,
                 isAnimeFolder = folder.isAnime,
-                seasonNumber = seasonNumber,
-                episodeNumber = episodeNumber,
+                seasonNumber = librarySeasonNumber,
+                episodeNumber = libraryEpisodeNumber,
                 episodeTitle = episodeTitle,
                 extension = extension,
                 // Reuse whatever folder this show already occupies here. Even with the year

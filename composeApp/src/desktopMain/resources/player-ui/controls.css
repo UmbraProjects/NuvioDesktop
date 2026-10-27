@@ -1725,6 +1725,72 @@ button svg * {
   opacity: 1;
 }
 
+/* Live TV's channel loading screen: the settings sky (the night-blue wash and two faint glows the
+ * app's settings pages sit on, mixed from the accent the same way NuvioGlass.night is) instead of
+ * the film opening's blown-up artwork, which for a channel was its logo stretched across the
+ * screen. "Loading" over the channel's name and a progress bar driven by the real stages. */
+.iptv-loading-card { display: none; }
+.opening-overlay.iptv-loading {
+  --sky-base: #0d0d0f;
+  --sky-tint: color-mix(in srgb, var(--theme-accent) 16%, #07080c);
+  --sky-night: color-mix(in srgb, var(--sky-tint) 55%, var(--sky-base));
+  background:
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--theme-accent) 10%, transparent), transparent 45vmax),
+    radial-gradient(circle at 18% 78%, rgba(106, 75, 196, .08), transparent 50vmax),
+    linear-gradient(to bottom, var(--sky-night) 0%, color-mix(in srgb, var(--sky-night) 35%, var(--sky-base)) 65%, var(--sky-base) 100%);
+  transition: opacity 320ms ease;
+}
+.opening-overlay.iptv-loading::before,
+.opening-overlay.iptv-loading .opening-artwork,
+.opening-overlay.iptv-loading .opening-scrim,
+.opening-overlay.iptv-loading .opening-logo-slot,
+.opening-overlay.iptv-loading .opening-title,
+.opening-overlay.iptv-loading .opening-spinner,
+.opening-overlay.iptv-loading .opening-status,
+.opening-overlay.iptv-loading .opening-progress-track {
+  display: none !important;
+}
+.opening-overlay.iptv-loading .iptv-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 560px);
+}
+.iptv-loading-eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .55);
+}
+.iptv-loading-name {
+  max-width: 100%;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.iptv-loading-track {
+  width: min(100%, 320px);
+  height: 4px;
+  margin-top: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .12);
+  overflow: hidden;
+}
+.iptv-loading-bar {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--theme-accent-fill);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-accent) 60%, transparent);
+}
+
 .opening-logo-slot {
   position: relative;
   width: 300px;
@@ -6428,7 +6494,6 @@ svg {
   outline: none;
 }
 
-.party-chat-input:focus { border-color: rgba(255, 255, 255, .5); }
 
 /* Panel */
 .track-panel.party-panel {
@@ -6711,6 +6776,27 @@ svg {
 }
 
 .iptv-live-behind:empty { display: none; }
+
+/* Minimal + pills: the badge is one more pill in the bar, at the bar's height and in its tint,
+   edge and blur (the base badge above is a small, brighter chip that read as foreign there). */
+.player.minimal-hud.minimal-pills .time-cluster .iptv-live-badge {
+  box-sizing: border-box;
+  height: calc(var(--user-scale) * 46px);
+  margin-left: 0;
+  padding: 0 calc(var(--user-scale) * 16px);
+  border: 0;
+  border-radius: 999px;
+  background: rgba(28, 28, 34, .26);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: calc(var(--user-scale) * 14px);
+}
+.player.minimal-hud.minimal-pills .time-cluster .iptv-live-badge.behind:hover,
+.player.minimal-hud.minimal-pills .time-cluster .iptv-live-badge.behind:focus-visible {
+  background: var(--theme-accent-fill);
+  box-shadow: none;
+}
 
 /* Behind the live edge: the dot greys out and the badge becomes the "go live" button. */
 .iptv-live-badge.behind { cursor: pointer; }
@@ -7070,12 +7156,19 @@ svg {
     #streamInfoModal, #p2pConsentModal) .track-header-row {
   border-bottom: 1px solid var(--glass-edge);
 }
-#episodesModal .track-header-row { border-bottom: 0; }
+/* Live TV's search field sits right under its header, so the field already separates it; with the
+ * divider as well it sat on the line. */
+:is(#episodesModal, #iptvChannelModal) .track-header-row { border-bottom: 0; }
 /* Bodies laid out flush under an undivided header; with the divider above they need their own
  * breathing room, or the first section title sits on the line. */
 .modal-layer .track-header-row + :is(.stream-info-body, .intro-form, .consent-body, .party-body) {
   padding-top: 18px;
 }
+/* The party panel keeps its Party | Chat strip between the header and the body, hidden outside a
+ * party, so the rule above never matched it and "Watch together" sat on the divider. The strip
+ * itself needs the same room when it shows. */
+#partyModal .party-tabs[hidden] + .party-body { padding-top: 18px; }
+#partyModal .party-tabs { padding-top: 14px; }
 
 /* Buttons and chips: settings glass, accent-tinted glass when primary or selected. */
 .modal-layer :is(.panel-button, .filter-chip, .capture-button, .round-step, .segment-button, .subtitle-tab),
@@ -7337,9 +7430,14 @@ svg {
   background-color: rgba(0, 0, 0, .22);
   color: #fff;
 }
+/* Focus as a ring outside the edge with a soft halo, not a recoloured 1px border: a thin saturated
+ * line round a 10px corner stair-stepped visibly (the party chat box most of all), and the halo
+ * gives the edge pixels something to blend into. */
 .modal-layer :is(input[type="text"], input[type="number"], input:not([type]), textarea):focus {
-  border-color: var(--theme-focus);
+  border-color: transparent;
   outline: none;
+  box-shadow: 0 0 0 1.5px var(--theme-focus), 0 0 0 4px rgba(158, 202, 255, .16);
+  box-shadow: 0 0 0 1.5px var(--theme-focus), 0 0 0 4px color-mix(in srgb, var(--theme-focus) 18%, transparent);
 }
 .modal-layer .track-empty { color: rgba(255, 255, 255, .58); }
 
