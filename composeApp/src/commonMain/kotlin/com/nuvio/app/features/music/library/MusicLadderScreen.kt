@@ -281,12 +281,6 @@ private suspend fun LazyListState.ensureVisible(key: Any?, index: Int) {
     if (!inView) animateScrollToItem(index)
 }
 
-private fun requestTitle(request: LadderRequest): String = when (request) {
-    is LadderRequest.Genre -> "Into ${request.genre}"
-    is LadderRequest.Artist -> if (request.mode == LadderMode.Into) "Into ${request.name}" else "Out from ${request.name}"
-    is LadderRequest.Album -> if (request.mode == LadderMode.Into) "Into ${request.title}" else "Out from ${request.title}"
-}
-
 @Composable
 private fun LadderRungRow(
     rung: LadderRung,
