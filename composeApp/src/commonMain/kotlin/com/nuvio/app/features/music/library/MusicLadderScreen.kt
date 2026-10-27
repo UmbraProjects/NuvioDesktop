@@ -63,6 +63,8 @@ import kotlin.math.roundToInt
  * (or the artist, out from), the last rung is the core of the sound. Each rung shows a picture, the artist, a
  * one-sentence reason and how typical of the genre they are. Playing and saving a rung is phase 6.
  *
+ * Phase 10: the same screen shows a ladder from a record ([LadderRequest.Album]); the chips lead out into another genre.
+ *
  * Phase 9, audition: Up and Down move over the rungs; after a short pause ([AUDITION_SETTLE_MS]) the rung under the cursor
  * plays from its hook ([auditionRung]), and the room takes on their palette and motion ([LadderRoom]). Enter, or a click
  * on the row, auditions at once. "Play album" is the phase 6 play from the first track.
@@ -127,7 +129,7 @@ internal fun MusicLadderScreen(
     val listState = rememberLazyListState()
     val view = (shown as? LadderState.Ready)?.view
     val headerItems = (if (view?.note != null) 1 else 0) +
-        (if (view != null && view.alternatives.isNotEmpty() && request is LadderRequest.Artist) 1 else 0)
+        (if (view != null && view.alternatives.isNotEmpty() && request.hasDestinations) 1 else 0)
     LaunchedEffect(focusedId) {
         if (focusedIndex >= 0) listState.ensureVisible(focusedId, headerItems + focusedIndex)
     }
@@ -213,7 +215,7 @@ internal fun MusicLadderScreen(
                             Text(text = note, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                         }
                     }
-                    if (shown.view.alternatives.isNotEmpty() && request is LadderRequest.Artist) {
+                    if (shown.view.alternatives.isNotEmpty() && request.hasDestinations) {
                         item {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("Lead out into", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
@@ -225,7 +227,7 @@ internal fun MusicLadderScreen(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(colors.surfaceCard)
-                                            .clickable { onRequest(request.copy(destination = genre)) }
+                                            .clickable { onRequest(request.withDestination(genre)) }
                                             .padding(horizontal = 12.dp, vertical = 6.dp),
                                     )
                                 }
@@ -282,6 +284,7 @@ private suspend fun LazyListState.ensureVisible(key: Any?, index: Int) {
 private fun requestTitle(request: LadderRequest): String = when (request) {
     is LadderRequest.Genre -> "Into ${request.genre}"
     is LadderRequest.Artist -> if (request.mode == LadderMode.Into) "Into ${request.name}" else "Out from ${request.name}"
+    is LadderRequest.Album -> if (request.mode == LadderMode.Into) "Into ${request.title}" else "Out from ${request.title}"
 }
 
 @Composable

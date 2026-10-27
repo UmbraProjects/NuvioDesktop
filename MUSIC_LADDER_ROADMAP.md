@@ -59,14 +59,14 @@ Each phase fits one session, leaves the app working, and can be the last one you
 | 7 | **Feedback and progress** | Too far / too close / skip / love shift the dial and re-rank. Climbed rungs are stored. | Feedback changes remaining rungs; the ladder survives a restart. | **Done** (UI not compiled) |
 | 8 | **Hook finder** | Pure function: repeated synced-lyric lines give the chorus time; fixed-offset fallback. | Tests on sample LRC files find the chorus. | **Done** |
 | 9 | **Audition** | Arrowing over a rung seeks to the hook; palette and `MotionProfile` change the room. | Moving between rungs auditions each one. | **Done** (UI not compiled) |
-| 10 | **Album query** | Blend an album's mood, style and era into the target vector. | An album query gives a different ladder from its artist's. | |
+| 10 | **Album query** | Blend an album's mood, style and era into the target vector. | An album query gives a different ladder from its artist's. | **Done** (UI not compiled) |
 
 ## Risks
 
 - **Tag noise**: phase 0 handles spelling and junk, but sparse tags on small artists remain (fallbacks above).
 - **Rate limit**: MusicBrainz allows one request per second. Compute neighbourhoods lazily, cache them, and prefer one search call over many lookups.
 - **Playability**: some rungs will have no YouTube Music release. Show them, flagged, and pick a fallback album.
-- **Compiling**: the project as a whole has still not been compiled. Phases 0 to 9 pure logic is checked with a standalone Kotlin compiler (178 tests pass: 137 to phase 7, 21 for phase 8, 20 for phase 9), but the Compose screen, `MusicTabScreen` hook, repository and storage changes, and `DeezerClient.relatedByName` have only been read through. Build locally before phase 10 so errors don't stack up. Phase 9 added more Compose (`LadderRoom.kt`, the key handling and row changes in `MusicLadderScreen.kt`) that has only been read through.
+- **Compiling**: the project as a whole has still not been compiled. Phases 0 to 10 pure logic is checked with a standalone Kotlin compiler (the 166 ladder tests for phases 0 to 7 and 10 pass; phases 8 and 9 passed earlier: 21 and 20 more), but the Compose screen, `MusicTabScreen` hook, repository and storage changes, and `DeezerClient.relatedByName` have only been read through. Build locally now: nothing is left to build on, so errors can only stack up from here. Phase 9 added more Compose (`LadderRoom.kt`, the key handling and row changes in `MusicLadderScreen.kt`) that has only been read through.
 
 ## Phase 0 notes (done)
 
@@ -128,7 +128,7 @@ Each phase fits one session, leaves the app working, and can be the last one you
 
 `LadderScreenModel.kt` (pure), `MusicLadderScreen.kt`, `LadderArtwork.kt`, one `// fork:music` hook in `MusicTabScreen.kt`.
 
-- **Search card:** a known genre (`isKnownGenre`, so "DnB" counts) gives "Ladder into X"; any other query on the Artists tab gives "Climb into X" and "Climb out from X" for the first result; the Albums tab gets the genre pill only (album queries are phase 10).
+- **Search card:** a known genre (`isKnownGenre`, so "DnB" counts) gives "Ladder into X"; any other query on the Artists tab gives "Climb into X" and "Climb out from X" for the first result; the Albums tab gets the genre pill for a genre, and (phase 10) two record offers for anything else.
 - **Screen:** replaces the tab body while open; Back link and system back. Each rung shows step, picture, name, why line and purity. Notes say when genres were borrowed or the Library is empty. Out-from shows the other destination genres as chips.
 - Pictures come from Deezer's artist search (exact name only, cached for the session).
 - Failures are messages, with "Try again" only for connection problems.
@@ -171,3 +171,15 @@ Each phase fits one session, leaves the app working, and can be the last one you
 - **Room:** `LadderRoom` fades the ground to the artist's palette, re-tints the accent (as `MusicAccentScope` does) and runs Now Playing's `StageGlow` at the pace of `stageMotionSpec(motion)`. Reduced motion holds it still; a light theme keeps the app's colours. The palette is the Library's when the artist is saved, else sampled from their Deezer picture (cached for the session). Motion comes from `rungMotion`: the candidate's mood and style, else its top genres, joined with the saved artist's.
 - The room follows the cursor at once; audio follows after the pause.
 - Known limits: audition uses audio mode and the lyric time is for the studio cut, so a video upload with a different intro can land off the chorus (the lyric auto-sync work would help). It does not stop at the end of the hook. `LadderRoomPalettes` has no size cap (one entry per rung looked at).
+
+## Phase 10 notes (done; UI not compiled)
+
+`music/library/LadderAlbumTarget.kt` (pure logic, plus the live TheAudioDB source) and `LadderAlbumTargetTest.kt` (36 tests). Touches: `LadderBuilder.kt` (flavour), `LadderScreenModel.kt` (`LadderRequest.Album`, offers, loader), `LadderProgress.kt` (`progressKey`), `MusicSourceParsers.kt` (`parseMbTagSearch` reads the begin year), `MusicLadderScreen.kt` and `MusicTabScreen.kt` (one more `// fork:music` hook).
+
+- **Target = a blend.** The artist's MusicBrainz tag votes (top tag scaled to 50) plus the record's own genre and style from TheAudioDB (genre starts at 100 and halves down the list; style starts at 30, as it is often broad, like "Rock/Pop"). A record's own genre therefore beats its artist's usual one: a dream pop record by an alternative rock band climbs into dream pop. The result is an `ArtistTarget`, so the target genre, out-from destinations and everything after are the phase 4 code.
+- **Flavour (`LadderFlavour`).** The blended sound (genres, plus the record's mood and style) and the record's year. It never changes purity. It adds to a candidate's score for a rung: 0.6 x how much of the record's sound the candidate shares beyond the target genre, plus 0.3 x era fit (1.0 for the same year down to 0 at 25 years apart, from the artist's MusicBrainz begin year). Why lines get a second sentence: "Echoes the record's noise pop." and "Began around the same time (1991)." No flavour is the plain ladder (tested).
+- **Year:** the search result's (YouTube Music), else TheAudioDB's.
+- **Sources:** the artist through the phase 4 resolver (cached, Deezer fallback), then TheAudioDB by artist name and album title (`pickAudioDbAlbum`: exact title, else with a "(Deluxe Edition)" or "[Remastered]" tail dropped; a near title is never guessed). Answers are kept for the session. TheAudioDB failing is not an error: the ladder is built from the artist's genres and the year, and the screen says so.
+- **Into / out from.** Into climbs into the blended genre. Out from leads into another of the record's genres (or a neighbour found by co-occurrence, as in 4b), closeness is measured against the record (mood and style included) and the why lines name the record. The same destination chips work. The record's artist never stands on the ladder.
+- **Search card:** on the Albums tab, the first result gives "Climb into the sound of X" and "Climb out from X" (a genre query still gives the genre pill). Progress is stored per record, apart from the artist's ladder.
+- **Known limits:** MusicBrainz tag search returns no mood, so a candidate's mood never matches the record's; mood only shapes out-from closeness through the anchor. Era uses the year an artist began, not when a record came out. A record by a band with no TheAudioDB entry follows its artist's genres and its year only.

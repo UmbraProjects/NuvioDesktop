@@ -43,7 +43,40 @@ internal data class LadderCandidate(
     val fans: Long? = null,
     /** False when no release of this artist can be played here. It still takes a rung if it fits best, flagged. */
     val playable: Boolean = true,
+    /** Phase 10: the year the artist began, when the source gave one. Only an album ladder reads it (era match). */
+    val beginYear: Int? = null,
 )
+
+/**
+ * Phase 10: what an album adds to a ladder beyond its genre. [profile] is the record's own sound (its blended genres,
+ * style and mood, as a [TagProfile]); [year] is its era. A candidate that shares the record's sound beyond the target
+ * genre, or began around the record's time, scores higher for a rung. Null in [buildLadder] is the plain ladder.
+ */
+internal data class LadderFlavour(
+    val profile: TagProfile = emptyMap(),
+    val year: Int? = null,
+) {
+    val isEmpty: Boolean get() = profile.isEmpty() && year == null
+}
+
+/** How much a candidate's sound matching the record's counts toward a rung (proximity counts 1.0). */
+private const val FLAVOUR_WEIGHT = 0.6
+
+/** How much beginning in the record's era counts toward a rung. */
+private const val ERA_WEIGHT = 0.3
+
+/** Years apart at which an artist stops counting as of the record's era. */
+internal const val ERA_SPAN_YEARS = 25
+
+/** Within this many years the why line says "around the same time". */
+private const val SAME_ERA_YEARS = 5
+
+/** 1.0 for the same year down to 0.0 at [ERA_SPAN_YEARS] apart; 0.0 when either year is unknown. */
+internal fun eraFit(candidateYear: Int?, recordYear: Int?): Double {
+    if (candidateYear == null || recordYear == null) return 0.0
+    val apart = abs(candidateYear - recordYear)
+    return (1.0 - apart.toDouble() / ERA_SPAN_YEARS).coerceIn(0.0, 1.0)
+}
 
 internal data class LadderRung(
     /** 1 for the bridge, up to the number of rungs for the core. */
@@ -74,7 +107,11 @@ private class Scored(
     val profile: TagProfile,
     val purity: Double,
     val proximity: Double,
-)
+    val flavourFit: Double = 0.0,
+    val eraFit: Double = 0.0,
+) {
+    val flavourScore: Double get() = FLAVOUR_WEIGHT * flavourFit + ERA_WEIGHT * eraFit
+}
 
 /** The popularity bonus: 0.0 for no fans up to [FANS_BONUS] at the top of the scale. A tie-breaker, never a driver. */
 private fun fansBonus(fans: Long?): Double {
@@ -92,6 +129,10 @@ private fun fansBonus(fans: Long?): Double {
  * Phase 4b, out-from mode: [anchors] is the taste closeness is measured against instead of [artists] (the artist the
  * person already loves), and [from] is that artist's name, which the why lines use instead of "your saved ...".
  * [artists] still decides who never stands on a rung. Both null is the plain ladder.
+ *
+ * Phase 10, album query: [flavour] is the record's sound and era. It never changes who counts as of the genre (purity);
+ * it adds to a candidate's score for a rung when it shares the record's sound beyond the target, or began in its time,
+ * so a record gives a different ladder from its artist's even in the same genre. Null is the plain ladder.
  */
 internal fun buildLadder(
     target: String,
@@ -101,6 +142,7 @@ internal fun buildLadder(
     rungs: Int = LADDER_RUNGS,
     anchors: List<LibraryArtist>? = null,
     from: String? = null,
+    flavour: LadderFlavour? = null,
 ): Ladder {
     val targetName = canonicalGenre(target) ?: return Ladder(target.trim(), emptyList(), coldStart = true)
     val targetKey = genreKey(targetName)
@@ -109,6 +151,9 @@ internal fun buildLadder(
     val taste = anchors ?: artists
     val me = footprint(taste)
     val cold = unitProfile(me.filterKeys { it !in excluded }).isEmpty()
+
+    val record = flavour?.takeUnless { it.isEmpty }
+    val recordSound = record?.let { unitProfile(it.profile.filterKeys { k -> k !in excluded }) }.orEmpty()
 
     val ownedIds = artists.map { it.id }.toSet()
     val ownedNames = artists.map { genreKey(it.name) }.toSet()
@@ -120,7 +165,11 @@ internal fun buildLadder(
             val p = purity(c.votes, targetKey)
             if (p <= 0.0) return@mapNotNull null
             val profile = tagProfileFromVotes(c.votes, c.mood, c.style)
-            Scored(c, profile, p, if (cold) 0.0 else proximity(profile, me, excluded))
+            Scored(
+                c, profile, p, if (cold) 0.0 else proximity(profile, me, excluded),
+                flavourFit = if (recordSound.isEmpty()) 0.0 else proximity(profile, recordSound, excluded),
+                eraFit = eraFit(c.beginYear, record?.year),
+            )
         }
     val eligible = scored.filter { it.purity >= MIN_PURITY }.ifEmpty { scored }
     val count = minOf(rungs.coerceAtLeast(1), eligible.size)
@@ -138,7 +187,7 @@ internal fun buildLadder(
         val best = remaining.maxWithOrNull(
             compareBy<Scored> {
                 val miss = if (range > 0.0) abs(it.purity - rungTarget) / range else 0.0
-                it.proximity + bonuses(it.candidate) - PURITY_FIT_PENALTY * miss
+                it.proximity + it.flavourScore + bonuses(it.candidate) - PURITY_FIT_PENALTY * miss
             }
                 // A stable answer when two candidates score the same: the one with more fans, then by id.
                 .thenBy { it.candidate.fans ?: 0L }
@@ -158,7 +207,8 @@ internal fun buildLadder(
             purity = s.purity,
             proximity = s.proximity,
             anchorName = anchor?.name,
-            why = whyLine(index, ordered.size, targetName, targetKey, s, me, anchor, cold, from),
+            why = whyLine(index, ordered.size, targetName, targetKey, s, me, anchor, cold, from) +
+                flavourNote(s, recordSound, record?.year),
         )
     }
     return Ladder(targetName, built, cold)
@@ -243,6 +293,23 @@ private fun whyLine(
         first -> "A way into $target: tagged $tagged."
         else -> "Deeper into $target: tagged $tagged."
     }
+}
+
+/** Phase 10: what the rung shares with the record, as a sentence to add to the why line (empty when nothing). */
+private fun flavourNote(s: Scored, recordSound: TagProfile, recordYear: Int?): String {
+    val names = namesByKey(s.candidate.votes)
+    val shared = s.profile.entries
+        .filter { !it.key.startsWith(MOOD_PREFIX) && it.key in recordSound }
+        .sortedByDescending { minOf(it.value, recordSound.getValue(it.key)) }
+        .mapNotNull { names[it.key] }
+        .take(2)
+    val parts = ArrayList<String>()
+    if (shared.isNotEmpty()) parts += "Echoes the record's ${listAnd(shared)}."
+    val year = s.candidate.beginYear
+    if (year != null && recordYear != null && abs(year - recordYear) <= SAME_ERA_YEARS) {
+        parts += "Began around the same time ($year)."
+    }
+    return if (parts.isEmpty()) "" else " " + parts.joinToString(" ")
 }
 
 // endregion

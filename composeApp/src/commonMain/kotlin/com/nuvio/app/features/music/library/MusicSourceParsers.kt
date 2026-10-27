@@ -101,7 +101,8 @@ internal fun parseMbTagSearch(body: String): List<LadderCandidate> =
             val count = tag.int("count") ?: continue
             if (count > 0) votes[tagName] = (votes[tagName] ?: 0) + count
         }
-        LadderCandidate(id = id, name = name, votes = votes)
+        val begin = yearOf(a["life-span"].obj()?.text("begin"))?.toIntOrNull()
+        LadderCandidate(id = id, name = name, votes = votes, beginYear = begin)
     }
 
 private fun linkLabelFor(type: String, url: String): String? = when {

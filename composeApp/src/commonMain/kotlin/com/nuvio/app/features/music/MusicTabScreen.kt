@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.library.LadderAlbumRef // fork:music
 import com.nuvio.app.features.music.library.LadderOfferRow // fork:music
 import com.nuvio.app.features.music.library.LadderRequest // fork:music
 import com.nuvio.app.features.music.library.MusicLadderScreen // fork:music
@@ -174,7 +175,11 @@ fun MusicTabScreen(
                     MusicMessage("Nothing found. Check the spelling, or YouTube Music may be unreachable.")
                 }
                 is MusicSearchResults.Albums -> {
-                    item { LadderOfferRow(ladderOffers(query, null), onPick = { ladder = it }) } // fork:music
+                    item { // fork:music - the first record's ladder offers
+                        val first = shown.items.firstOrNull()
+                        val ref = first?.let { f -> f.artists.firstOrNull()?.name?.let { LadderAlbumRef(f.title, it, f.year) } }
+                        LadderOfferRow(ladderOffers(query, null, ref), onPick = { ladder = it })
+                    }
                     items(shown.items) { album ->
                         MusicAlbumRow(album, showArtist = true, onClick = { onAlbumClick(album.browseId) })
                     }

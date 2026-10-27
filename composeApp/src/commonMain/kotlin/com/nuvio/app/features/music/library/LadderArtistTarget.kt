@@ -170,7 +170,10 @@ internal object LadderArtistTargets {
 
     /** The one call the ladder screen makes: any [request], through the session's caches. */
     suspend fun load(request: LadderRequest, artists: List<LibraryArtist>, progress: LadderProgress = LadderProgress()): LadderState =
-        loadLadder(request, artists, resolver, { genre -> LadderCandidates.forGenre(genre) }, progress)
+        loadLadder(
+            request, artists, resolver, { genre -> LadderCandidates.forGenre(genre) }, progress,
+            albumDetails = { artist, title -> LadderAlbumSources.details(artist, title) },
+        )
 
     /**
      * Resolves [query] to an artist the person already loves and builds the ladder leading out from them into

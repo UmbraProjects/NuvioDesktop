@@ -116,6 +116,11 @@ internal fun progressKey(request: LadderRequest): String = when (request) {
         LadderMode.Into -> "into:${genreKey(request.name)}"
         LadderMode.OutFrom -> "out:${genreKey(request.name)}:${request.destination?.let(::genreKey).orEmpty()}"
     }
+    is LadderRequest.Album -> when (request.mode) {
+        LadderMode.Into -> "album-into:${genreKey(request.artist)}:${genreKey(request.title)}"
+        LadderMode.OutFrom ->
+            "album-out:${genreKey(request.artist)}:${genreKey(request.title)}:${request.destination?.let(::genreKey).orEmpty()}"
+    }
 }
 
 @Serializable
