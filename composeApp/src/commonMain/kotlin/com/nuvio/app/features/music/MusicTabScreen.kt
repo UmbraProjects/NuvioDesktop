@@ -44,6 +44,7 @@ import com.nuvio.app.features.music.library.genreTiles // fork:music
 import com.nuvio.app.features.music.library.ladderStarters // fork:music
 import com.nuvio.app.features.music.library.recentChips // fork:music
 import com.nuvio.app.features.music.library.startIsEmpty // fork:music
+import com.nuvio.app.features.music.library.startArt // fork:music
 import com.nuvio.app.features.search.SearchHistoryRepository // fork:music
 import androidx.compose.runtime.collectAsState // fork:music
 import kotlinx.coroutines.delay
@@ -177,11 +178,12 @@ fun MusicTabScreen(
             val starters = remember(libraryArtists) { ladderStarters(libraryArtists) }
             val tiles = remember(libraryArtists) { genreTiles(libraryArtists) }
             val continues = remember(libraryArtists) { continueCards(LadderProgressStore.resumable()) }
+            val startArtwork = remember(libraryArtists) { startArt(libraryArtists) }
             if (!startIsEmpty(recent, starters, continues, tiles)) {
                 SearchStartView(
                     recent = recent, starters = starters, continues = continues, tiles = tiles,
                     onRecent = { query = it }, onLadder = { ladder = it }, onGenre = { query = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f), art = startArtwork,
                 )
                 return@Column
             }
