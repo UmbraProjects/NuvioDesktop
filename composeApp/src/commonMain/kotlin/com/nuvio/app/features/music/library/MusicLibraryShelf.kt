@@ -71,7 +71,7 @@ import kotlinx.coroutines.launch
  * else oldest to newest. Hovering a cover slides its disc out and shows a star that pins the album to
  * the top five. A star by the artist's name floats it to the top of the shelf. Hovering a row tints
  * the glow with that artist's accent. Clicking a cover opens the album; the avatar, name or "All" open the room.
- * The header switches views: Shelf (this file), Eras ([LibraryErasView]); Constellation is not built yet and stays dimmed.
+ * The header switches views: Shelf (this file), Constellation ([ConstellationView]) and Eras ([LibraryErasView]).
  */
 @Composable
 fun MusicLibraryShelf(
@@ -124,9 +124,8 @@ fun MusicLibraryShelf(
                     color = colors.textSecondary,
                     modifier = Modifier.weight(1f),
                 )
-                // Constellation is not built yet; shown dimmed so the switch matches the design.
                 ActionPill("Shelf", selected = view == LibraryView.Shelf, onClick = { view = LibraryView.Shelf }) // fork:music
-                ActionPill("Constellation", enabled = false, onClick = {})
+                ActionPill("Constellation", selected = view == LibraryView.Constellation, onClick = { view = LibraryView.Constellation }) // fork:music
                 ActionPill("Eras", selected = view == LibraryView.Eras, onClick = { view = LibraryView.Eras }) // fork:music
                 LibraryIconAction(Icons.Rounded.Refresh, "Refresh all artists", enabled = state.artists.isNotEmpty()) {
                     MusicLibraryRepository.refreshAll()
@@ -138,6 +137,13 @@ fun MusicLibraryShelf(
             }
             if (state.artists.isEmpty() && state.working.isEmpty()) {
                 MusicMessage("Open an artist from Search and choose Add to library. Every album, single and EP comes with it, with artwork and details.")
+            } else if (view == LibraryView.Constellation) { // fork:music
+                ConstellationView(
+                    artists = state.artists,
+                    pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }.values.map { it.status },
+                    onArtistClick = onArtistClick,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
             } else if (view == LibraryView.Eras) { // fork:music
                 LibraryErasView(
                     artists = state.artists,
