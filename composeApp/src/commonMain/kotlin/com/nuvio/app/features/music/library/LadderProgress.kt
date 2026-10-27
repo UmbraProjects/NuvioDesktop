@@ -45,6 +45,8 @@ internal data class LadderProgress(
     val climbed: List<ClimbedRung> = emptyList(),
     /** Candidate ids the person skipped. */
     val skipped: List<String> = emptyList(),
+    /** What was asked, kept so the Search screen can offer to continue this ladder. Null on ladders saved before it existed. */
+    val request: LadderRequest? = null,
 ) {
     val isFresh: Boolean get() = dial == 0.0 && climbed.isEmpty() && skipped.isEmpty()
 }
@@ -138,10 +140,14 @@ internal class LadderProgressBook(
 
     fun get(key: String): LadderProgress = read()[key] ?: LadderProgress()
 
+    /** Every stored ladder, least recently saved first (a save moves its ladder to the end). */
+    fun all(): List<LadderProgress> = read().values.toList()
+
     /** Stores [progress]; a fresh one removes the entry, so starting over leaves nothing behind. */
     fun put(key: String, progress: LadderProgress) {
         val all = read().toMutableMap()
-        if (progress.isFresh) all.remove(key) else all[key] = progress
+        all.remove(key)
+        if (!progress.isFresh) all[key] = progress
         save(json.encodeToString(StoredLadders(all)))
     }
 }
@@ -158,5 +164,9 @@ internal object LadderProgressStore {
 
     fun get(request: LadderRequest): LadderProgress = book().get(progressKey(request))
 
-    fun put(request: LadderRequest, progress: LadderProgress) = book().put(progressKey(request), progress)
+    fun put(request: LadderRequest, progress: LadderProgress) =
+        book().put(progressKey(request), progress.copy(request = request))
+
+    /** Ladders with at least one climbed rung that can be reopened, most recently saved first. */
+    fun resumable(): List<LadderProgress> = book().all().asReversed()
 }

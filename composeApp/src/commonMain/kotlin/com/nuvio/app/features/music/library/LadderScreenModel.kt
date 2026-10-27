@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import kotlinx.serialization.Serializable
+
 /**
  * Ladder phase 5: what the search card offers and what the ladder screen shows, as pure data (no Compose, so it is
  * unit-tested). The screen itself is MusicLadderScreen.kt.
@@ -8,11 +10,14 @@ package com.nuvio.app.features.music.library
  * the same sources the earlier phases use, passed in so the whole path runs without a network.
  */
 
+@Serializable
 internal sealed interface LadderRequest {
     /** A ladder into a genre the person typed ("shoegaze"). */
+    @Serializable
     data class Genre(val genre: String) : LadderRequest
 
     /** A ladder into ([LadderMode.Into]) or out from ([LadderMode.OutFrom]) an artist. */
+    @Serializable
     data class Artist(
         val name: String,
         val mode: LadderMode,
@@ -24,6 +29,7 @@ internal sealed interface LadderRequest {
      * Phase 10: a ladder into the sound of ([LadderMode.Into]) or out from ([LadderMode.OutFrom]) one record. [year] is
      * the search result's year, when it had one.
      */
+    @Serializable
     data class Album(
         val title: String,
         val artist: String,

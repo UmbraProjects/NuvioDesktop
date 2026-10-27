@@ -37,6 +37,15 @@ import com.nuvio.app.features.music.library.MusicLadderScreen // fork:music
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.ladderOffers // fork:music
 import com.nuvio.app.features.music.library.MusicLibraryShelf
+import com.nuvio.app.features.music.library.SearchStartView // fork:music
+import com.nuvio.app.features.music.library.LadderProgressStore // fork:music
+import com.nuvio.app.features.music.library.continueCards // fork:music
+import com.nuvio.app.features.music.library.genreTiles // fork:music
+import com.nuvio.app.features.music.library.ladderStarters // fork:music
+import com.nuvio.app.features.music.library.recentChips // fork:music
+import com.nuvio.app.features.music.library.startIsEmpty // fork:music
+import com.nuvio.app.features.search.SearchHistoryRepository // fork:music
+import androidx.compose.runtime.collectAsState // fork:music
 import kotlinx.coroutines.delay
 
 private enum class MusicSearchKind { Albums, Artists }
@@ -102,6 +111,7 @@ fun MusicTabScreen(
                 if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Artists(it)
             }
         }
+        if (results !is MusicSearchResults.Empty) SearchHistoryRepository.recordSearch(q) // fork:music - feeds Recent searches
     }
 
     // fork:music - a ladder replaces the tab body while it is open
@@ -156,6 +166,24 @@ fun MusicTabScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
             return@Column
+        }
+
+        // fork:music - before anything is typed, the start screen fills the blank space (it scrolls itself)
+        if (results is MusicSearchResults.Idle) {
+            SearchHistoryRepository.ensureLoaded()
+            val libraryArtists = MusicLibraryRepository.state.collectAsState().value.artists
+            val recent = recentChips(SearchHistoryRepository.uiState.collectAsState().value)
+            val starters = remember(libraryArtists) { ladderStarters(libraryArtists) }
+            val tiles = remember(libraryArtists) { genreTiles(libraryArtists) }
+            val continues = remember(libraryArtists) { continueCards(LadderProgressStore.resumable()) }
+            if (!startIsEmpty(recent, starters, continues, tiles)) {
+                SearchStartView(
+                    recent = recent, starters = starters, continues = continues, tiles = tiles,
+                    onRecent = { query = it }, onLadder = { ladder = it }, onGenre = { query = it },
+                    modifier = Modifier.weight(1f),
+                )
+                return@Column
+            }
         }
 
         LazyColumn(

@@ -1,8 +1,8 @@
 # Music Library views: Eras and Constellation
 
-The Library screen has three views in its header: **Shelf**, **Constellation** and **Eras**. Shelf is built. The other two are dimmed placeholder pills in `MusicLibraryShelf.kt` (`ActionPill("Constellation", enabled = false)`), and the original mockup is not in the repo.
+The Library screen has three views in its header: **Shelf**, **Constellation** and **Eras**. Shelf and Eras are built. Constellation is built through C4: the logic (C0 to C2: similarity graph, layout, clusters), the drawing (C3) and the interaction (C4). Its header pill is live. The ladder link (C5) and the play buttons (C6) are next.
 
-**Status of this document: a draft.** The mockup is the source of truth. Everything below is inferred from the data and models that already exist, so wherever it disagrees with the mockup, the mockup wins (see "Open questions").
+**Status of this document: the open questions were settled on 2026-10-27** (see "Decisions"). The original mockup is still not in the repo, so the decisions below are the owner's answers to the questions this document raised, plus the extras the mockup shows (legend, side panel, extra play buttons, search/filter box; see "Extras from the mockup"). Where those extras are only described by name, the details below are marked as assumptions to confirm.
 
 ## What each view is for
 
@@ -79,24 +79,34 @@ The maths is the ladder's. `LadderModel.kt` already turns an artist into a `TagP
 - **Stars**: a circle per artist, in their palette accent; size grows with release count, favourites (the shelf's gold star) get a ring.
 - **Lines**: each artist is joined to their nearest few neighbours (3), when the similarity is high enough (cosine 0.35 or more), so the lines form constellations rather than a hairball.
 - **Clusters**: groups of stars are labelled by their shared main genre ("shoegaze", "ambient"), drawn as quiet labels and a faint halo.
-- **Hover** a star: the name, its top three genres, and the screen glow takes its accent. **Click** opens the room. **Drag** pans, **scroll** zooms, **Escape** resets.
+- **Hover** a star: the name, its top three genres, and the screen glow takes its accent. **Click** selects it and opens the side panel, which has **Open artist room**. **Drag** pans, **scroll** zooms, **Escape** clears the selection and resets the view.
 - **Genre chips** along the top (the library's biggest clusters): choose one and the rest dims.
 - **Untagged artists** (no genres or tags yet, so no profile) are not placed; they wait in a small "Not placed yet" tray with the reason, and join the map once the enricher fills their tags.
 - Fewer than 3 placeable artists: a message ("A constellation needs a few artists with tags") instead of a map.
+- The extras from the mockup (legend, side panel for the selected star, play buttons, search/filter box): see "Extras from the mockup".
 
 ### Layout
 
 Deterministic, so the same library always draws the same map, and adding one artist doesn't shuffle everything:
 
 1. **Project** the tag profiles to 2D with PCA (power iteration on the artist-by-genre matrix; no library needed, fixed iteration count, signs fixed so a flip never mirrors the map).
-2. **Relax** overlaps: a few passes pushing stars that are closer than their radii apart, moving the smaller star first. Ties and start order go by artist id.
-3. **Fit** to the view with margin; pan and zoom are a transform on top.
+2. **Orient** (`orientScores`): PCA fixes the plane but not which way is "x" or which side is "up", and those can flip when one artist is added, jumping the whole map. The cloud is turned until its anchor star (the first by id among those at least half as far from the centre as the farthest) lies on the +x axis, and mirrored so its lopsided side is up. In a stress run on generated libraries this cut a typical star's movement when one artist is added from 0.051 to 0.020 of the box. When two axes are nearly as strong the plane itself can still change (roughly one library in ten); that is inherent to PCA. If it shows on a real library, the fix is to remember the last layout and align the new one to it.
+3. **Fit** to the unit box with margin.
+4. **Relax** overlaps: up to 300 passes, every pair judged from the same positions and the pushes summed and damped, so list order does not matter; the smaller star of a pair moves further; ties go by artist id. Star radius shrinks as the library grows (`0.25 / sqrt(n)`), which keeps libraries up to about 150 artists overlap-free; around 300 two stars can touch by about a pixel.
+
+Pan and zoom are a transform on top of the unit box.
 
 Closeness on the map is an honest 2D squash of tag similarity, and the "nearest neighbours" lines are computed from the real similarity (not from map distance), so a line is never a lie about the sound.
 
-### Clusters and labels
+### Clusters and labels (built, C2)
 
-Group by main genre key (the artist's strongest profile key, by `genreKey`), merge groups of one into their nearest neighbour group, keep the biggest 8 for chips. A cluster label sits at the centroid of its stars and names the genre by `canonicalGenre`. No clustering library: this is a few lines over data already in memory.
+`ConstellationClusters.kt`, pure and tested:
+
+- **Group** by main genre: the strongest key of the artist's tag profile (by `genreKey`), ties to the key that sorts first. A mood (`mood:...`) never names a group while the artist has a genre.
+- **Merge singletons.** A group of one is not a cluster: its star joins the group of the star it is most like, by real tag similarity (`cosine`); if it shares nothing with anyone, by nearest on the map. Only groups that began with two or more stars take newcomers, so a lone star never lands on another lone star and the result does not depend on the order singletons are visited. If every group is a singleton, nothing merges.
+- **Name** the cluster by the genre as its artists spell it (`normalizeGenres`), falling back to `canonicalGenre`.
+- **Place** the label at the centroid of the cluster's stars; the halo radius reaches the far edge of the farthest star.
+- **Chips:** the biggest 8 clusters, biggest first, ties by key. `clusterOf(id)` finds the cluster of a star, for chip dimming.
 
 ### Ladder link
 
@@ -112,36 +122,65 @@ Later, not in v1: hollow "unexplored" stars for neighbouring genres your library
 
 | # | Phase | What gets built | Done when | Status |
 |---|---|---|---|---|
-| C0 | **Similarity graph** | `LibraryConstellation.kt`: profiles for artists, pairwise cosine, nearest 3 per artist above the threshold, untagged set. | Tests: similar artists link, dissimilar don't, untagged are set aside, the graph is symmetric where mutual, same input gives the same graph. | Done (untested in Gradle) |
-| C1 | **Layout** | PCA projection and overlap relaxation, fitted to a unit box. | Tests: deterministic; two similar artists end up closer than two dissimilar ones; no two stars overlap; adding one artist moves the others only slightly; sign is fixed. | Done (untested in Gradle) |
-| C2 | **Clusters** | Main-genre grouping, merge singletons, top 8 chips, label positions. | Tests on a fake library: groups, labels, singleton merged, chips ordered by size. | |
-| C3 | **Draw** | Canvas: stars, lines, labels, "Not placed yet" tray, empty state. View switch shows it. | You can switch to Constellation and see your library as a map. | |
-| C4 | **Interact** | Hover (name, genres, glow), click opens room, drag pan, scroll zoom, keys, genre-chip dimming. | Every star can be reached by mouse and by keyboard. | |
-| C5 | **Ladder link** | Star menu (climb into or out from), cluster "Ladder into", `foundVia` ring and line. | A star opens a ladder; a ladder-found artist shows how it was found. | |
+| C0 | **Similarity graph** | `LibraryConstellation.kt`: profiles for artists, pairwise cosine, nearest 3 per artist above the threshold, untagged set. | Tests: similar artists link, dissimilar don't, untagged are set aside, the graph is symmetric where mutual, same input gives the same graph. | Done (tests pass in a standalone kotlinc run; not through Gradle yet) |
+| C1 | **Layout** | PCA projection, orientation, fit to a unit box, overlap relaxation. | Tests: deterministic; two similar artists end up closer than two dissimilar ones; no two stars overlap (including a 150-artist library); orientation is the same however the plane came out; sign is fixed. | Done (as C0). Review fixes: star size and passes for big libraries, orientation step |
+| C2 | **Clusters** | Main-genre grouping, merge singletons, top 8 chips, label positions. | Tests on a fake library: groups, labels, singleton merged, chips ordered by size, mood never names a group, centroid and halo. | Done (as C0) |
+| C3 | **Draw** | Canvas: stars, lines, cluster labels and halos, **legend**, "Not placed yet" tray, empty state. View switch shows it. | You can switch to Constellation and see your library as a map. | Done (untested in Gradle) |
+| C4 | **Interact** | Hover (name, genres, glow), click selects a star, drag pan, scroll zoom, keys, genre-chip dimming, **search/filter box**, **side panel** for the selected star. | Every star can be reached by mouse and by keyboard; typing in the box dims the stars that don't match. | Done (untested in Gradle) |
+| C5 | **Ladder link** | Star menu and side-panel buttons (climb into or out from), cluster "Ladder into", `foundVia` ring and line. | A star opens a ladder; a ladder-found artist shows how it was found. | |
+| C6 | **Play buttons** | **Play** on the side panel (the star's top albums, `playTopAlbums`) and **Play cluster** (shuffled top albums of the cluster's artists), as Eras' Play era does. A star or cluster with nothing playable says so. | Playing from a star or a cluster starts audio; nothing playable says so. | |
+
+### Built in C3 and C4
+
+Pure and tested (tests not yet run through Gradle): `ConstellationModel.kt` (`buildConstellationModel`, `constellationKey`, `mapFrame`, `paddedFrame`, `linkAlpha`, `clusterLead`, `drawsClusterLabel`) and `ConstellationInteract.kt` (`Camera`, `ScreenMap`, `hitStar`, `stepStar`, `cycleStar`, `matchesQuery`, `focusIds`, `topGenres`). The drawing and the controls are `ConstellationView.kt`, hosted by one `// fork:music` branch in `MusicLibraryShelf.kt`. How it differs from the sketches above:
+
+- **Model.** Built once off the main thread, rebuilt only when the key changes. The key holds id, genres, tags, style, mood and release-card count per artist, so a palette arriving or a favourite toggled does not rebuild the map; palette, favourite and name are read live when drawing.
+- **Viewport.** The unit box is stretched along the longer side of the canvas by at most 1.6 and centred. Star radii follow the shorter side, so stars stay round and, since distances only grow along the stretched axis, relaxed stars still do not overlap.
+- **Zoom.** 1x to 8x about the cursor. Positions scale with the zoom, star radii with its square root, so zooming in also pulls crowded stars apart. The pan is clamped so the map always covers the canvas.
+- **Drawing.** Stars in the palette accent with a soft glow and a gold ring for a favourite; lines as a gradient between the two stars' colours, firmer for closer matches and for mutual picks, and bright on the selected star; halos and genre names only for groups of two or more, the name just above the halo and kept on the canvas (not hidden under the stars); a legend; the "Not placed yet" tray, whose chips open the artist room.
+- **Interaction.** Hover tooltip with the name and top three genres, flipped near the right edge. Click selects; clicking empty space clears. Arrow keys move to the nearest star that way (preferring a cone round the axis), Tab and Shift+Tab walk every star in reading order (this is what guarantees keyboard reach), Enter opens the room, + and - zoom, Escape clears the selection and resets the view. Selecting a star pans it into view.
+- **Filter.** The search box (name, genres, tags, style, mood) and the genre chips (the 8 biggest clusters) dim what does not match, in step: a star must be in the chosen cluster and match the text. Dimmed stars, their lines and halos are faded, never hidden, and keys skip them.
+- **Side panel.** Avatar, name, release count and cluster, top genres, `foundVia` when set, the closest neighbours with their similarity (click to select), and Open artist room. The map narrows while it is open. Climb into / out from (C5) and Play (C6) are not on it yet.
+- **Legend.** Size, favourite ring, line, halo, dimmed. The found-via-ladder ring is added with C5.
 
 ## Order
 
-Eras first (E0 to E3): its models and visuals already exist in the artist room, the risk is low, and it delivers the time axis the year-ago strip hints at. Then Constellation (C0 to C5), which has the new maths and the most to tune. E4 (Added axis) any time after E1. Each phase leaves the app working and can be the last one done.
+Eras first (E0 to E3): its models and visuals already exist in the artist room, the risk is low, and it delivers the time axis the year-ago strip hints at. Then Constellation (C0 to C6), which has the new maths and the most to tune. E4 (Added axis) any time after E1. Each phase leaves the app working and can be the last one done. Built so far: E0 to E4 and C0 to C4; next is C5.
 
 ## Risks
 
-- **No mockup in the repo.** Pill names are all there is to go on. Biggest risk: building the wrong picture. Settle the open questions before E1 or C3 (the first drawing phases); E0, C0, C1 and C2 are pure logic and survive most answers.
-- **Compiling.** The project as a whole has still not been compiled through Gradle. These views add more Compose; build locally first and keep logic in tested pure files.
+- **No mockup in the repo.** The open questions are settled (see "Decisions"), but the mockup's look is not available to build against; C3 follows the roadmap's picture plus the named extras, so expect a pass of visual adjustment once it is on screen.
+- **Compiling.** The Eras Compose files and the Shelf have still not been through Gradle (the first CI run found missing `getValue` and `setValue` imports in `CoverTile.kt` and `MusicLibraryShelf.kt`). The Constellation logic (C0 to C2) was compiled and tested outside Gradle with kotlinc against the real ladder files, which does not cover the Compose files. C3 and C4 (`ConstellationModel.kt`, `ConstellationInteract.kt`, `ConstellationView.kt` and their tests) were written without any compiler available, so none of it has been compiled or run yet: expect a round of small compile fixes. Keep logic in tested pure files and build the drawing phases locally first.
 - **Tag coverage.** A young or small library may have few artists with tags. Constellation's untagged tray and minimum of 3 handle it, and it improves as the enricher fills tags. Phase C0 should report how many were placed.
-- **Layout feel.** PCA plus relaxation is stable but can look flat for a narrow library (everything in one genre). Tune the relaxation distance and the line threshold with a real library; constants go at the top of the file, as in the ladder.
+- **Layout feel and stability.** PCA plus orientation plus relaxation is deterministic and usually steady, but it can look flat for a narrow library (everything in one genre), and when two axes are nearly equal the plane can change when one artist is added (see Layout, step 2). Tune the relaxation distance and the line threshold with a real library; constants go at the top of the file, as in the ladder.
 - **Big libraries.** Pairwise similarity is O(n squared): fine to about 1000 artists. Compute once per library change, cache it keyed by artist ids and tag content, and compute off the main thread.
 - **Performance of the ruler.** One bar per band is tiny; the cover grid for a busy band must be a lazy list.
 
-## Open questions
+## Decisions
 
-Answer from the mockup; each changes a phase:
+The open questions, answered 2026-10-27:
 
-1. **Eras**: one library-wide timeline, as here, or the artist-room timeline picked per artist? (E0)
-2. **Eras**: does the view show covers, artists, or both? Are bands as above, or fixed decades? (E0, E2)
-3. **Constellation**: nodes are artists, as here, or releases? Are lines "similar to" or something else (collaborators, members, labels)? (C0)
-4. **Constellation**: is the map positioned by sound (tags), as here, or by something else (genre columns, time, popularity)? (C1)
-5. **Both**: anything on the mockup beyond the above: filters, play buttons, a legend, a side panel? (E1, C3)
-6. **Ladder link**: do you want the ladder hooks and the `foundVia` ring in Constellation, or kept out? (C5)
+| # | Question | Decision |
+|---|---|---|
+| 1 | Eras: one library-wide timeline, or per artist? | One timeline for the whole library (as built). |
+| 2 | Eras: covers, artists or both? Bands as drafted, or fixed decades? | Covers; bands scale with the library's span (as built). |
+| 3 | Constellation: nodes are artists or releases? What do lines mean? | Artists are stars; a line means the two sound alike (tag similarity). |
+| 4 | Constellation: what positions the map? | Sound, from tags (PCA), as built in C1. |
+| 5 | Anything on the mockup beyond the draft? | Yes: a legend, a side panel for the selected item, extra play buttons, and a search/filter box. See below. |
+| 6 | Ladder hooks and the `foundVia` ring in Constellation? | Included (C5). |
+
+## Extras from the mockup
+
+Named by the owner; the details are assumptions until the mockup is checked against them.
+
+- **Legend** (C3): a small key for what the picture encodes: star size is release count, a gold ring is a favourite, a line is "sounds alike", the ladder ring is "found via ladder", a dimmed star is not matching the filter.
+- **Search/filter box** (C4): typing a name or genre dims the stars that don't match, like the genre chips do; clearing it restores them. *To confirm:* whether it belongs to Constellation only, or is shared by Shelf, Eras and Constellation in the header.
+- **Side panel** (C4): selecting a star opens a panel with the artist's name and avatar, top genres, release count, how it was found (`foundVia`), its closest neighbours, and buttons: Open artist room, Climb into, Climb out from, Play (C5, C6). *To confirm:* whether Eras has a side panel too (it already has an era header), and what the panel shows for a cluster label.
+- **Extra play buttons** (C6): Play on a star (top albums) and Play cluster. *To confirm:* what the mockup's buttons play, and whether Shelf rows get one too.
+
+## Status of the mockup extras
+
+Built in C3 and C4 as described above, still on the roadmap's assumptions until checked against the mockup: the legend (C3), the search/filter box and the side panel (C4). Still open: whether the search box should be shared by Shelf, Eras and Constellation in the header, whether Eras gets a side panel, and what the panel shows for a cluster label. Extra play buttons are C6.
 
 ## Not in scope
 
