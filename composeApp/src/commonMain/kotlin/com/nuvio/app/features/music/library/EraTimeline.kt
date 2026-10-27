@@ -65,7 +65,7 @@ private const val MIN_GAP_YEARS = 2
 private fun ReleaseGroup.yearInt(): Int? = releaseYearOrNull(primary.year)
 
 /** The release that names an era: the fullest album, else the fullest release of any kind. */
-private fun leadOf(groups: List<ReleaseGroup>): ReleaseGroup =
+internal fun leadOf(groups: List<ReleaseGroup>): ReleaseGroup =
     groups.maxWithOrNull(
         compareBy<ReleaseGroup> { it.kind == ReleaseKind.Album }
             .thenBy { it.kind == ReleaseKind.EP }
