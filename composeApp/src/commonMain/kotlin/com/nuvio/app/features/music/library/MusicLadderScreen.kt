@@ -108,7 +108,7 @@ internal fun MusicLadderScreen(
         // A ladder being re-ranked keeps showing the old one rather than flashing a spinner.
         if (value !is LadderState.Ready) value = LadderState.Loading
         MusicLibraryRepository.ensureLoaded()
-        value = LadderArtistTargets.load(request, MusicLibraryRepository.state.value.artists, progress)
+        value = LadderArtistTargets.load(request, MusicLibraryRepository.state.value.artists, LadderProgressStore.forBuilding(progress))
     }
     fun mark(rung: LadderRung, feedback: RungFeedback) {
         progress = applyFeedback(progress, rung, feedback).also { LadderProgressStore.put(request, it) }

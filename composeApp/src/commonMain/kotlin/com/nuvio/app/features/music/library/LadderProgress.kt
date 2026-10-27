@@ -126,7 +126,11 @@ internal fun progressKey(request: LadderRequest): String = when (request) {
 }
 
 @Serializable
-internal data class StoredLadders(val ladders: Map<String, LadderProgress> = emptyMap())
+internal data class StoredLadders(
+    val ladders: Map<String, LadderProgress> = emptyMap(),
+    /** Artists skipped on any ladder: they never stand on a rung of any ladder of this profile. */
+    val skipped: List<String> = emptyList(),
+)
 
 /** Progress by ladder key over a payload store. [load] and [save] read and write the one JSON payload. */
 internal class LadderProgressBook(
@@ -135,20 +139,27 @@ internal class LadderProgressBook(
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private fun read(): Map<String, LadderProgress> =
-        load()?.let { runCatching { json.decodeFromString<StoredLadders>(it).ladders }.getOrNull() }.orEmpty()
+    private fun readStored(): StoredLadders =
+        load()?.let { runCatching { json.decodeFromString<StoredLadders>(it) }.getOrNull() } ?: StoredLadders()
+
+    private fun read(): Map<String, LadderProgress> = readStored().ladders
 
     fun get(key: String): LadderProgress = read()[key] ?: LadderProgress()
+
+    /** Every artist skipped on any ladder. Starting a ladder over does not bring them back. */
+    fun skippedEverywhere(): Set<String> = readStored().skipped.toSet()
 
     /** Every stored ladder, least recently saved first (a save moves its ladder to the end). */
     fun all(): List<LadderProgress> = read().values.toList()
 
     /** Stores [progress]; a fresh one removes the entry, so starting over leaves nothing behind. */
     fun put(key: String, progress: LadderProgress) {
-        val all = read().toMutableMap()
+        val stored = readStored()
+        val all = stored.ladders.toMutableMap()
         all.remove(key)
         if (!progress.isFresh) all[key] = progress
-        save(json.encodeToString(StoredLadders(all)))
+        val skipped = (stored.skipped + progress.skipped).distinct()
+        save(json.encodeToString(StoredLadders(all, skipped)))
     }
 }
 
@@ -163,6 +174,10 @@ internal object LadderProgressStore {
     }
 
     fun get(request: LadderRequest): LadderProgress = book().get(progressKey(request))
+
+    /** [progress] with every artist skipped on any ladder added, for building: a skip is the listener's, not one ladder's. */
+    fun forBuilding(progress: LadderProgress): LadderProgress =
+        progress.copy(skipped = (progress.skipped + book().skippedEverywhere()).distinct())
 
     fun put(request: LadderRequest, progress: LadderProgress) =
         book().put(progressKey(request), progress.copy(request = request))

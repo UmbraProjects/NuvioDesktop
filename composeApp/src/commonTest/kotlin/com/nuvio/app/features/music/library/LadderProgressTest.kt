@@ -155,4 +155,18 @@ class LadderProgressTest {
         disk = "not json"
         assertEquals(LadderProgress(), book.get("k"))
     }
+
+    @Test
+    fun aSkipOnOneLadderHidesTheArtistOnEveryLadderAndSurvivesStartingOver() {
+        var disk: String? = null
+        val book = LadderProgressBook(load = { disk }, save = { disk = it })
+        book.put("genre:hip hop", applyFeedback(LadderProgress(), rung("nicki"), RungFeedback.Skip))
+        assertEquals(setOf("nicki"), book.skippedEverywhere())
+        // A different ladder has no skips of its own, but the book still knows who is gone.
+        assertTrue(book.get("genre:pop").skipped.isEmpty())
+        assertEquals(setOf("nicki"), book.skippedEverywhere())
+        // Starting the first ladder over does not forgive the skip.
+        book.put("genre:hip hop", LadderProgress())
+        assertEquals(setOf("nicki"), book.skippedEverywhere())
+    }
 }
