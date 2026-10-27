@@ -83,3 +83,9 @@ internal fun clusterLead(cluster: StarCluster, layout: ConstellationLayout): Str
 
 /** A halo and label mean a group; a cluster of one star is just a star, so it gets neither. */
 internal fun drawsClusterLabel(cluster: StarCluster): Boolean = cluster.size >= 2
+
+/** [mapFrame] for a canvas of [width] by [height] with [pad] pixels kept clear on every side. */
+internal fun paddedFrame(width: Float, height: Float, pad: Float): MapFrame {
+    val inner = mapFrame(width - 2 * pad, height - 2 * pad)
+    return MapFrame(inner.left + pad, inner.top + pad, inner.width, inner.height)
+}

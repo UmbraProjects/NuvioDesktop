@@ -88,6 +88,15 @@ class ConstellationModelTest {
     }
 
     @Test
+    fun paddedFrameKeepsThePaddingClear() {
+        val f = paddedFrame(400f, 300f, 24f)
+        assertEquals(24f, f.left, 0.001f)
+        assertEquals(24f, f.top, 0.001f)
+        assertEquals(352f, f.width, 0.001f)
+        assertEquals(252f, f.height, 0.001f)
+    }
+
+    @Test
     fun degenerateCanvasDoesNotBlowUp() {
         val f = mapFrame(0f, 0f)
         assertEquals(0f, f.x(0.5))

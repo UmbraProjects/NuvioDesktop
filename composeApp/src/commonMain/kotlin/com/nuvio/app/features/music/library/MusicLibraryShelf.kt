@@ -142,6 +142,7 @@ fun MusicLibraryShelf(
                     artists = state.artists,
                     pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }.values.map { it.status },
                     onArtistClick = onArtistClick,
+                    onFocusArtist = { focusedId = it },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
             } else if (view == LibraryView.Eras) { // fork:music
