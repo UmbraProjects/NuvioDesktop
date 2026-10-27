@@ -203,3 +203,20 @@ internal fun eraHeader(era: LibraryEra): String {
 }
 
 // endregion
+
+// region covers (E2)
+
+/** One artist's releases in an era, in the order the cover list shows them. */
+internal data class EraArtistGroup(val artist: LibraryArtist, val entries: List<LibraryEraEntry>)
+
+/**
+ * The era's releases grouped by artist, so an artist with several releases in the era sits together.
+ * Releases run oldest first, or newest first when [newestFirst]; artists are ordered by their first release in
+ * that order (the artist whose release comes first leads), with ties already settled by [buildLibraryEras].
+ */
+internal fun groupEraByArtist(era: LibraryEra, newestFirst: Boolean): List<EraArtistGroup> {
+    val ordered = if (newestFirst) era.entries.asReversed() else era.entries
+    return ordered.groupBy { it.artist.id }.values.map { EraArtistGroup(it.first().artist, it) }
+}
+
+// endregion

@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.MusicCover
 
 /**
  * Library views, phase E1: the Eras view's ruler and header. One bar per era, its height the number of
@@ -55,6 +58,8 @@ internal fun LibraryErasView(
     artists: List<LibraryArtist>,
     pending: List<String>,
     reducedMotion: Boolean,
+    onArtistClick: (artistId: String) -> Unit,
+    onAlbumClick: (browseId: String) -> Unit,
     modifier: Modifier = Modifier,
     yearAgo: (@Composable () -> Unit)? = null,
 ) {
@@ -64,6 +69,8 @@ internal fun LibraryErasView(
     var chosen by rememberSaveable { mutableStateOf<Int?>(null) }
     val selected = chosen?.takeIf { it in eras.eras.indices } ?: eras.defaultEraIndex()
     val era = eras.eras.getOrNull(selected)
+    var newestFirst by rememberSaveable { mutableStateOf(true) }
+    val groups = remember(era, newestFirst) { era?.let { groupEraByArtist(it, newestFirst) }.orEmpty() }
 
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
@@ -129,23 +136,31 @@ internal fun LibraryErasView(
             }
             if (era != null) {
                 item(key = "header") {
-                    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(
-                            eraHeader(era),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = colors.textPrimary,
-                        )
-                        era.lead?.let { lead ->
+                    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(
-                                "Led by ${lead.release.title} · ${lead.artist.name}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.textSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                                eraHeader(era),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary,
                             )
+                            era.lead?.let { lead ->
+                                Text(
+                                    "Led by ${lead.release.title} · ${lead.artist.name}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        if (!era.isEmpty) {
+                            ActionPill(if (newestFirst) "Newest first" else "Oldest first", onClick = { newestFirst = !newestFirst })
                         }
                     }
+                }
+                items(groups, key = { "era${era.index}:${it.artist.id}" }) { group ->
+                    EraArtistRow(group, reducedMotion, onArtistClick, onAlbumClick)
                 }
             }
         }
@@ -199,5 +214,48 @@ private fun EraBar(
             maxLines = 1,
             softWrap = false,
         )
+    }
+}
+
+/** One artist's covers in the selected era: the name opens the room, a cover opens its album. A release that cannot be played here is dimmed and opens the room instead. */
+@Composable
+private fun EraArtistRow(
+    group: EraArtistGroup,
+    reducedMotion: Boolean,
+    onArtistClick: (artistId: String) -> Unit,
+    onAlbumClick: (browseId: String) -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val artist = group.artist
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.clip(RoundedCornerShape(8.dp)).clickable { onArtistClick(artist.id) }.padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MusicCover(artist.art.thumb, artist.name, size = 32.dp, circle = true)
+            Text(
+                artist.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(group.entries, key = { it.release.key }) { entry ->
+                CoverTile(
+                    tile = ShelfTile(entry.release, rank = null, featured = false, pinned = entry.release.key in artist.pinnedTopKeys),
+                    reducedMotion = reducedMotion,
+                    dimmed = !entry.isPlayable,
+                    onClick = {
+                        val id = entry.release.ytBrowseId
+                        if (id != null) onAlbumClick(id) else onArtistClick(artist.id)
+                    },
+                    onTogglePin = { MusicLibraryRepository.toggleTopPin(artist.id, entry.release.key) },
+                )
+            }
+        }
     }
 }

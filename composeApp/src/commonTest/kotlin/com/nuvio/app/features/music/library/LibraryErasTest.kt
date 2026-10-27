@@ -304,4 +304,29 @@ class LibraryErasTest {
     }
 
     // endregion
+
+    // region covers (E2)
+
+    @Test
+    fun anArtistsReleasesSitTogetherAndTheOrderToggleFlipsEverything() {
+        val a = artist("a", r("a1", year = "2000"), r("a2", year = "2002"))
+        val b = artist("b", r("b1", year = "2003"), r("far", year = "2020"))
+        val era = buildLibraryEras(listOf(a, b)).eras.first() // 5-year bands: 2000 to 2004
+
+        val oldest = groupEraByArtist(era, newestFirst = false)
+        assertEquals(listOf("a", "b"), oldest.map { it.artist.id })
+        assertEquals(listOf("a1", "a2"), oldest[0].entries.map { it.release.key })
+
+        val newest = groupEraByArtist(era, newestFirst = true)
+        assertEquals(listOf("b", "a"), newest.map { it.artist.id })
+        assertEquals(listOf("a2", "a1"), newest[1].entries.map { it.release.key })
+    }
+
+    @Test
+    fun anEmptyEraHasNoGroups() {
+        val gap = buildLibraryEras(spanning(1991, 2006)).eras[1]
+        assertTrue(groupEraByArtist(gap, newestFirst = true).isEmpty())
+    }
+
+    // endregion
 }
