@@ -16,6 +16,9 @@ object MusicPlayback {
     /** Whether the full-window lyric view is open. [MusicNowPlayingHost] draws it. */
     val nowPlayingOpen = MutableStateFlow(false)
 
+    /** True while the person has tucked the bar away. The music keeps playing; a small chip brings the bar back. */
+    val barCollapsed = MutableStateFlow(false)
+
     /** How big the music video is. Only a real video leaves [MusicVideoView.Bar]; [MusicPlayerHost] resets it. */
     val videoView = MutableStateFlow(MusicVideoView.Bar)
 

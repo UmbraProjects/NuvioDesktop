@@ -5,6 +5,7 @@ import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.MusicArtistSummary
 import com.nuvio.app.features.music.MusicCatalog
 import com.nuvio.app.features.music.MusicPlayback
+import kotlinx.coroutines.async
 
 /**
  * Ladder phase 6: playing and saving a rung.
@@ -95,7 +96,7 @@ internal suspend fun playRungsAsPlaylist(
     play: (List<MusicAlbum>) -> Unit = { MusicPlayback.player.playAlbums(it) },
 ): Int {
     val albums = kotlinx.coroutines.coroutineScope {
-        names.map { name -> kotlinx.coroutines.async { resolveRungAlbum(catalog, name, libraryArtists, topAlbumId)?.album } }
+        names.map { name -> this.async { resolveRungAlbum(catalog, name, libraryArtists, topAlbumId)?.album } }
             .let { jobs -> kotlinx.coroutines.awaitAll(*jobs.toTypedArray()) }
     }.filterNotNull()
     if (albums.isEmpty()) return 0

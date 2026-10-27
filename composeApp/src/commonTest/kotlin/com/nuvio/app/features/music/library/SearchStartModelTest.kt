@@ -83,4 +83,51 @@ class SearchStartModelTest {
         assertEquals(listOf("Sting", "jazz"), recentChips(listOf("Sting", " ", "sting", "jazz")))
         assertTrue(startIsEmpty(emptyList(), emptyList(), emptyList(), emptyList()))
     }
+
+    @Test
+    fun fragmentsAndSingleUnknownTagsAreNotGenreCards() {
+        assertTrue(plausibleGenre("acid jazz"))
+        assertTrue(plausibleGenre("lo-fi house"))
+        assertTrue(!plausibleGenre("aln sh"))
+        assertTrue(!plausibleGenre("x"))
+        val lib = listOf(artist("1", "aln sh", "jazz"), artist("2", "aln sh", "jazz"), artist("3", "zork wave"))
+        assertEquals(setOf("jazz", "zork wave"), genreCounts(lib).map { it.genre }.toSet())
+        assertEquals(listOf("jazz"), ladderStarters(lib).map { it.genre })
+    }
+
+    @Test
+    fun genresAreShownAsTitles() {
+        assertEquals("Acid Jazz", displayGenre("acid jazz"))
+        assertEquals("Hip-Hop", displayGenre("hip-hop"))
+        assertEquals("R&B", displayGenre("r&b"))
+        assertEquals("Drum and Bass", displayGenre("drum and bass"))
+        assertEquals("IDM", displayGenre("idm"))
+    }
+
+    @Test
+    fun startersCarryTheirArtistsAndNeighbouringGenres() {
+        val starter = ladderStarters(library).first { it.genre == "soul" }
+        assertEquals(listOf("3", "4"), starter.artistIds)
+        assertEquals(listOf("Rock", "Drum and Bass"), starter.neighbours)
+    }
+
+    @Test
+    fun continueCardsKeepTheClimbedArtistNames() {
+        val progress = LadderProgress(
+            climbed = listOf(ClimbedRung("a", "Nina Simone", "why", 0.2, 0.5, feedback = RungFeedback.Love)),
+            request = LadderRequest.Genre("soul"),
+        )
+        assertEquals(listOf("Nina Simone"), continueCards(listOf(progress)).single().names)
+    }
+
+    @Test
+    fun startArtUsesPortraitThenCover() {
+        val withThumb = LibraryArtist(id = "1", name = "A", art = ArtistArtwork(thumb = "t"))
+        val withBackdrop = LibraryArtist(id = "2", name = "B", art = ArtistArtwork(backgrounds = listOf("bg")))
+        val none = LibraryArtist(id = "3", name = "C")
+        val art = startArt(listOf(withThumb, withBackdrop, none))
+        assertEquals("t", art.getValue("1").picture)
+        assertEquals("bg", art.getValue("2").picture)
+        assertNull(art.getValue("3").picture)
+    }
 }

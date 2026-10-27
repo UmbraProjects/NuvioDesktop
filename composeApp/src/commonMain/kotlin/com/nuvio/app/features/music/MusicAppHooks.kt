@@ -65,7 +65,8 @@ fun MusicTabHost(
 @Composable
 fun rememberMusicBarInset(playerHidden: Boolean): Dp {
     val state by MusicPlayback.player.state.collectAsStateWithLifecycle()
-    return if (state.isActive && !playerHidden) MusicMiniPlayerHeight else 0.dp
+    val collapsed by MusicPlayback.barCollapsed.collectAsStateWithLifecycle()
+    return if (state.isActive && !playerHidden && !collapsed) MusicMiniPlayerHeight else 0.dp
 }
 
 /** The lyric view and the mini-player bar, above the app's own content. Place in the root Box. */

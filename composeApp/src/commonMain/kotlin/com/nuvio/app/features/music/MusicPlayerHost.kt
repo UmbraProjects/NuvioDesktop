@@ -2,6 +2,24 @@ package com.nuvio.app.features.music
 
 import com.nuvio.app.features.music.identity.MusicAccentScope
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.nuvio
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,10 +53,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-/** Height of the bar; the app shell reserves this much room under its content while it shows. */
-val MusicMiniPlayerHeight: Dp = 72.dp
+/** The floating bar's card, and the gap under it. */
+val MusicBarCardHeight: Dp = 104.dp
+val MusicBarBottomMargin: Dp = 16.dp
 
-private val BarThumbnailWidth = 128.dp
+/** Height the bar reserves: the card plus its bottom margin. The app shell leaves this much room under its content while the bar shows. */
+val MusicMiniPlayerHeight: Dp = MusicBarCardHeight + MusicBarBottomMargin
+
+/** A real video's picture in the bar: 16:9-ish, inset 12dp inside the card at its left end. */
+internal val BarThumbnailWidth = 136.dp
 private val ExpandedHeaderHeight = 48.dp
 private val ExpandedFrameTop = 16.dp
 
@@ -78,6 +101,11 @@ fun MusicPlayerHost(
     val seek by player.seekRequests.collectAsStateWithLifecycle()
     val view by MusicPlayback.videoView.collectAsStateWithLifecycle()
     val realVideo = state.mode == MusicPlayMode.Video && !state.lyricVideo
+    val collapsed by MusicPlayback.barCollapsed.collectAsStateWithLifecycle()
+    // The bar comes back by itself when the player closes or a real video needs its place in the bar.
+    LaunchedEffect(state.isActive, realVideo) {
+        if (!state.isActive || realVideo) MusicPlayback.barCollapsed.value = false
+    }
 
     LaunchedEffect(hidden) {
         if (hidden) player.pause()
@@ -127,7 +155,10 @@ fun MusicPlayerHost(
         val surfaceModifier = when {
             !videoVisible -> Modifier.align(Alignment.BottomStart).size(1.dp)
             view == MusicVideoView.Bar ->
-                Modifier.align(Alignment.BottomStart).size(BarThumbnailWidth, MusicMiniPlayerHeight)
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = musicBarSideMargin(maxWidth) + 12.dp, bottom = MusicBarBottomMargin + 12.dp)
+                    .size(BarThumbnailWidth, MusicBarCardHeight - 24.dp)
             view == MusicVideoView.Expanded -> {
                 // Framed 16:9 near the top with room for the title under it, so the ambient glow shows
                 // round it (mpv letterboxes any other shape inside the frame).
@@ -190,13 +221,26 @@ fun MusicPlayerHost(
         MusicAccentScope {
             MusicMiniPlayerBar(
                 state = state,
-                visible = !hidden,
+                visible = !hidden && !collapsed,
                 player = player,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 videoView = view,
                 onSetVideoView = MusicPlayback::setVideoView,
                 onOpenNowPlaying = { MusicPlayback.nowPlayingOpen.value = true },
+                onCollapse = {
+                    MusicPlayback.nowPlayingOpen.value = false
+                    MusicPlayback.barCollapsed.value = true
+                },
             )
+            if (collapsed && !hidden && !realVideo) {
+                CollapsedChip(
+                    title = state.track?.title.orEmpty(),
+                    coverUrl = state.album?.thumbnailUrl,
+                    playing = state.playWhenReady,
+                    onExpand = { MusicPlayback.barCollapsed.value = false },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 24.dp),
+                )
+            }
         }
     }
 }
@@ -223,5 +267,59 @@ private fun ExpandedHeader(
             modifier = Modifier.weight(1f),
         )
         MusicTextChip("Fullscreen", onFullscreen)
+    }
+}
+
+/** What is left of the bar while it is tucked away: the cover and title in a small pill. Click or Enter brings the bar back. */
+@Composable
+private fun CollapsedChip(
+    title: String,
+    coverUrl: String?,
+    playing: Boolean,
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(colors.surfaceCard.copy(alpha = 0.94f))
+            .border(
+                if (focused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+                shape,
+            )
+            .clickable(interactionSource = source, indication = null, onClick = onExpand)
+            .padding(start = 8.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(48.dp).clip(CircleShape).background(colors.surfaceElevated), contentAlignment = Alignment.Center) {
+            if (coverUrl != null) {
+                NuvioAsyncImage(
+                    model = coverUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(Icons.Rounded.MusicNote, null, tint = colors.textMuted)
+            }
+        }
+        Text(
+            if (title.isBlank()) "Now playing" else title,
+            color = colors.textPrimary,
+            fontSize = 18.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 260.dp),
+        )
+        Icon(
+            Icons.Rounded.KeyboardArrowUp,
+            contentDescription = if (playing) "Show player bar, playing" else "Show player bar, paused",
+            tint = colors.accent,
+        )
     }
 }
