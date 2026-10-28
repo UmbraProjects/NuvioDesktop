@@ -15,6 +15,7 @@
 
 ### Changed
 
+- **Where Next Builds Lazily And Is Kept** - the artist page's "Where next?" ladder now starts about a second and a half after the page opens, or as soon as focus reaches its heading, and not at all if you leave first. It waits behind searches and Library refreshes, and a finished ladder is kept on disk for a week, so coming back is instant and costs no MusicBrainz call. There is a Refresh button on the strip, and a "Build Where next automatically" switch in Music settings (formerly Artwork sources) for slow connections; off, the strip offers "Show where next". The Stage view's mini ladder follows the same rules.
 - **Ladder Audition On A Button Press** - a rung's hook no longer starts by itself when you arrow onto it. Enter, A or a click plays it, pressing the same rung again stops it, and pressing another rung moves on. Arrowing stays silent, and the room still follows the cursor. The countdown ring is gone; the rung's number shows a stop mark while its hook plays.
 
 ### Fixed
