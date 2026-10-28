@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioModalDialog
 import com.nuvio.app.core.ui.nuvio
 import java.io.File
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * A folder scan in progress or awaiting confirmation. [result] is null until the scan finishes.
@@ -60,21 +62,20 @@ internal fun GameFolderImportDialog(
 
     NuvioModalDialog(
         onDismissRequest = onDismiss,
-        title = "Import games from folder",
-        subtitle = "Each folder with an executable becomes a game. Steam artwork is attached where " +
-            "the game can be matched; the executable, title and artwork can all be changed later.",
+        title = stringResource(Res.string.games_import_import_games_from_folder),
+        subtitle = stringResource(Res.string.games_import_subtitle),
         maxWidth = 760.dp,
         actions = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
             Button(
                 enabled = selected.isNotEmpty(),
                 onClick = { onImport(selected) },
             ) {
                 Text(
                     when (selected.size) {
-                        0 -> "Import"
-                        1 -> "Import 1 game"
-                        else -> "Import ${selected.size} games"
+                        0 -> stringResource(Res.string.action_import)
+                        1 -> stringResource(Res.string.games_import_import_1_game)
+                        else -> stringResource(Res.string.games_import_n_games, selected.size)
                     },
                 )
             }
@@ -96,7 +97,7 @@ internal fun GameFolderImportDialog(
             }
 
             result.candidates.isEmpty() -> Text(
-                text = "Nothing new to import here.",
+                text = stringResource(Res.string.games_import_nothing_new_to_import_here),
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.textPrimary,
                 modifier = Modifier.padding(vertical = 20.dp),
@@ -149,7 +150,7 @@ internal fun GameFolderImportDialog(
                         }
                         if (candidate.steamAppId != null) {
                             Text(
-                                text = "Steam",
+                                text = stringResource(Res.string.games_import_steam),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = colors.textMuted,
                             )
@@ -169,7 +170,7 @@ internal fun GameFolderImportDialog(
             }
             if (notes.isNotEmpty()) {
                 Text(
-                    text = "Skipped: " + notes.joinToString("  ·  "),
+                    text = stringResource(Res.string.games_import_skipped, notes.joinToString("  ·  ")),
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )

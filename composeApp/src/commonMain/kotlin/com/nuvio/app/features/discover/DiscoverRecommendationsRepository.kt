@@ -50,6 +50,8 @@ import nuvio.composeapp.generated.resources.discover_row_hidden_gems
 import nuvio.composeapp.generated.resources.discover_row_more_like_favourites
 import nuvio.composeapp.generated.resources.discover_row_trending_in
 import org.jetbrains.compose.resources.getString
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /** One generated recommendation row. */
 data class DiscoverRecommendationRow(
@@ -791,7 +793,7 @@ object DiscoverRecommendationsRepository {
             .sortedByDescending { it.score * quality(it.result) * current(it.result) }
         val reasons = rankedCandidates.associate { candidate ->
             "${if (candidate.result.isTv) "series" else "movie"}:tmdb:${candidate.result.id}" to
-                candidate.because.maxByOrNull { it.value }?.key?.takeIf(String::isNotBlank)?.let { "Because you watched $it" }
+                candidate.because.maxByOrNull { it.value }?.key?.takeIf(String::isNotBlank)?.let { localizedString(Res.string.discover_row_because_you_watched, it) }
         }
         val items = rankedCandidates.map { it.result }.toRowItems(filters)
             .map { item -> reasons["${item.type}:${item.id}"]?.let { item.copy(recommendationReason = it) } ?: item }
@@ -799,7 +801,7 @@ object DiscoverRecommendationsRepository {
         if (items.size < MIN_ROW_ITEMS) return null
         return DiscoverRecommendationRow(
             key = TOP_PICKS_ROW_KEY,
-            title = "Top picks for you",
+            title = localizedString(Res.string.discover_row_top_picks_for_you),
             items = items,
             entryId = DiscoverRowFamily.TopPicks.entryId,
         )
@@ -857,7 +859,11 @@ object DiscoverRecommendationsRepository {
                     if (items.size < MIN_ROW_ITEMS) return@async null
                     DiscoverRecommendationRow(
                         key = "$PEOPLE_ROW_KEY_PREFIX${lead.id}:${lead.isDirector}",
-                        title = if (lead.isDirector) "More from ${lead.name}" else "More with ${lead.name}",
+                        title = if (lead.isDirector) {
+                            localizedString(Res.string.discover_row_more_from, lead.name)
+                        } else {
+                            localizedString(Res.string.discover_row_more_with, lead.name)
+                        },
                         items = items,
                         entryId = DiscoverRowFamily.People.entryId,
                     )

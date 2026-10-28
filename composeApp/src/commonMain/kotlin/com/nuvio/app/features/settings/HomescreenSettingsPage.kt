@@ -360,8 +360,8 @@ internal fun LazyListScope.homescreenSettingsContent(
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
-                        title = "Animate collection GIFs on focus only",
-                        description = "Collection GIFs play only on the highlighted card. The others show their first frame.",
+                        title = stringResource(Res.string.settings_homescreen_animate_collection_gifs_on_focus_only),
+                        description = stringResource(Res.string.settings_homescreen_collection_gifs_play_only_on_the),
                         checked = homeSettings.collectionGifsOnFocusOnly,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(

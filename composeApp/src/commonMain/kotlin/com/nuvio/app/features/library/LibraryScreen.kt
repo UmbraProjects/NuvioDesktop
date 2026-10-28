@@ -124,6 +124,7 @@ import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.material.icons.rounded.Refresh
+import com.nuvio.app.core.i18n.localizedString
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -607,14 +608,14 @@ internal fun libraryNavMenuSurfaceColor(): Color {
 }
 
 internal val LibrarySortEntries: List<Pair<LibrarySortOption, String>> = listOf(
-    LibrarySortOption.DEFAULT to "Default order",
-    LibrarySortOption.ADDED_DESC to "Recently added",
-    LibrarySortOption.ADDED_ASC to "Oldest added",
-    LibrarySortOption.TITLE_ASC to "Title A–Z",
-    LibrarySortOption.TITLE_DESC to "Title Z–A",
-    LibrarySortOption.POPULAR to "Popular",
-    LibrarySortOption.TOP_RATED to "Top rated",
-    LibrarySortOption.MOST_VOTED to "Most voted",
+    LibrarySortOption.DEFAULT to localizedString(Res.string.library_sort_default_order),
+    LibrarySortOption.ADDED_DESC to localizedString(Res.string.library_sort_recently_added),
+    LibrarySortOption.ADDED_ASC to localizedString(Res.string.library_sort_oldest_added),
+    LibrarySortOption.TITLE_ASC to localizedString(Res.string.library_sort_title_a_z),
+    LibrarySortOption.TITLE_DESC to localizedString(Res.string.library_sort_title_z_a),
+    LibrarySortOption.POPULAR to localizedString(Res.string.library_sort_popular),
+    LibrarySortOption.TOP_RATED to localizedString(Res.string.library_sort_top_rated),
+    LibrarySortOption.MOST_VOTED to localizedString(Res.string.library_sort_most_voted),
     LibrarySortOption.NEWEST to "Newest",
     LibrarySortOption.OLDEST to "Oldest",
 )

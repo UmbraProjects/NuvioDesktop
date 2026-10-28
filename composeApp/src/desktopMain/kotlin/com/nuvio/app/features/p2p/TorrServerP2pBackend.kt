@@ -44,6 +44,8 @@ import java.security.MessageDigest
 import java.time.Duration
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * The original desktop P2P backend: an external TorrServer (YouROK, Go) child process on
@@ -149,7 +151,7 @@ internal object TorrServerP2pBackend : DesktopP2pBackend {
             throw e
         } catch (e: Exception) {
             if (isCurrentGeneration(generation)) {
-                _state.value = P2pStreamingState.Error(e.message ?: "Unknown torrent error")
+                _state.value = P2pStreamingState.Error(e.message ?: localizedString(Res.string.p2p_unknown_torrent_error))
             }
             throw e
         }
@@ -160,7 +162,7 @@ internal object TorrServerP2pBackend : DesktopP2pBackend {
             _state.value !is P2pStreamingState.Connecting &&
                 _state.value !is P2pStreamingState.Streaming,
         ) {
-            "Torrent cache cannot be cleared during active playback"
+            localizedString(Res.string.p2p_torrent_cache_cannot_be_cleared_during_2)
         }
         _cacheState.value = _cacheState.value.copy(isClearing = true)
         try {

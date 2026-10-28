@@ -23,6 +23,8 @@ import java.io.FileInputStream
 import java.io.IOException
 import java.net.URI
 import java.util.concurrent.TimeUnit
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private const val DOWNLOAD_PROGRESS_INTERVAL_NANOS = 500_000_000L
 private const val PARTIAL_SEGMENT_FILE_COUNT = 4
@@ -63,7 +65,7 @@ internal actual object DownloadsPlatformDownloader {
                 request.sourceUrl.hasExecutableDownloadExtension() ||
                 request.destinationFileName.hasExecutableDownloadExtension()
             ) {
-                onFailure("Executable file formats are not allowed", false)
+                onFailure(localizedString(Res.string.downloads_error_executable_file_formats_are_not_allowed), false)
                 return@launch
             }
             if (request.destinationDirOverride.isNullOrBlank()) {
@@ -106,7 +108,7 @@ internal actual object DownloadsPlatformDownloader {
 
                 if (!tempFile.hasRecognizedVideoSignature()) {
                     throw RejectedDownloadException(
-                        "Downloaded content is not a recognized video container",
+                        localizedString(Res.string.downloads_error_downloaded_content_is_not_a_recognized),
                     )
                 }
                 if (destination.exists()) {
@@ -128,7 +130,7 @@ internal actual object DownloadsPlatformDownloader {
                     removePartialDownloadFiles(tempFile)
                 }
                 log.w(error) { "Download failed for ${request.destinationFileName}" }
-                onFailure(error.message ?: "Download failed", error.isRetryableDownloadFailure())
+                onFailure(error.message ?: localizedString(Res.string.downloads_error_download_failed), error.isRetryableDownloadFailure())
             }
         }
 
@@ -333,7 +335,7 @@ internal actual object DownloadsPlatformDownloader {
                     request.maximumSizeBytes?.takeIf { it > 0L }?.let { maximum ->
                         if (downloadedBytes + read.toLong() > maximum) {
                             throw RejectedDownloadException(
-                                "Source exceeded the configured download limit",
+                                localizedString(Res.string.downloads_error_source_exceeded_the_configured_download_limit),
                             )
                         }
                     }

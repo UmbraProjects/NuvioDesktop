@@ -1,6 +1,8 @@
 package com.nuvio.app.features.debrid
 
 import kotlinx.serialization.Serializable
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 data class DebridSettings(
     val enabled: Boolean = false,
@@ -315,13 +317,13 @@ data class DebridStreamSortCriterion(
 enum class DebridStreamSortKey(val label: String) {
     RESOLUTION("Resolution"),
     QUALITY("Quality"),
-    VISUAL_TAG("Visual tag"),
+    VISUAL_TAG(localizedString(Res.string.debrid_template_field_visual_tag)),
     AUDIO_TAG("Audio"),
-    AUDIO_CHANNEL("Audio channel"),
+    AUDIO_CHANNEL(localizedString(Res.string.debrid_template_field_audio_channel)),
     ENCODE("Encode"),
     SIZE("Size"),
     LANGUAGE("Language"),
-    RELEASE_GROUP("Release group"),
+    RELEASE_GROUP(localizedString(Res.string.debrid_template_field_release_group)),
 }
 
 @Serializable

@@ -12,6 +12,8 @@ import com.nuvio.app.features.player.skip.identityKey
 import com.nuvio.app.features.player.skip.inferCapturedSegmentType
 import com.nuvio.app.features.player.skip.isOfferableSkipKind
 import kotlinx.coroutines.launch
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * One-press SkipDB contribution: the post-skip offer and capture mode. Both front the same HUD
@@ -193,15 +195,15 @@ internal fun PlayerScreenRuntime.skipSubmitToastCopy(): SkipSubmitToastCopy {
             SkipSubmitToastPhase.OFFER -> SkipSubmitToastCopy(
                 visible = true,
                 phase = "offer",
-                title = "Skipped $kind from chapters",
+                title = localizedString(Res.string.skip_submit_skipped_from_chapters, kind),
                 detail = range(interval.startTime, interval.endTime),
-                hint = "{key} · Submit to SkipDB   Esc · Dismiss",
+                hint = localizedString(Res.string.skip_submit_offer_hint),
                 key = "offer:${interval.identityKey()}",
             )
             SkipSubmitToastPhase.SUBMITTING -> SkipSubmitToastCopy(
                 visible = true,
                 phase = "submitting",
-                title = "Submitting to SkipDB…",
+                title = localizedString(Res.string.skip_submit_submitting_to_skipdb),
                 detail = "$kind ${range(interval.startTime, interval.endTime)}",
                 key = "offer-submitting:${interval.identityKey()}",
             )
@@ -214,23 +216,23 @@ internal fun PlayerScreenRuntime.skipSubmitToastCopy(): SkipSubmitToastCopy {
             SkipSubmitToastPhase.CAPTURING -> SkipSubmitToastCopy(
                 visible = true,
                 phase = "capturing",
-                title = "Capturing segment",
-                detail = "From ${formatPlayerControlsSeconds(start)} — press {key} where it ends",
-                hint = "Esc · Cancel",
+                title = localizedString(Res.string.skip_submit_capturing_segment),
+                detail = localizedString(Res.string.skip_submit_capture_from, formatPlayerControlsSeconds(start)),
+                hint = localizedString(Res.string.skip_submit_capture_hint),
                 key = "capture:$start",
             )
             SkipSubmitToastPhase.CAPTURED -> SkipSubmitToastCopy(
                 visible = true,
                 phase = "captured",
-                title = "Submit ${kindLabel(session.segmentType.orEmpty())} to SkipDB?",
+                title = localizedString(Res.string.skip_submit_confirm_title, kindLabel(session.segmentType.orEmpty())),
                 detail = range(start, session.endSec ?: start),
-                hint = "{key} · Submit   Esc · Cancel",
+                hint = localizedString(Res.string.skip_submit_confirm_hint),
                 key = "captured:$start",
             )
             SkipSubmitToastPhase.SUBMITTING -> SkipSubmitToastCopy(
                 visible = true,
                 phase = "submitting",
-                title = "Submitting to SkipDB…",
+                title = localizedString(Res.string.skip_submit_submitting_to_skipdb),
                 detail = "${kindLabel(session.segmentType.orEmpty())} ${range(start, session.endSec ?: start)}",
                 key = "capture-submitting:$start",
             )
@@ -243,7 +245,7 @@ internal fun PlayerScreenRuntime.skipSubmitToastCopy(): SkipSubmitToastCopy {
 private fun resultCopy(accepted: Boolean, message: String, key: String) = SkipSubmitToastCopy(
     visible = true,
     phase = "result",
-    title = if (accepted) "Sent to SkipDB" else "Not submitted",
+    title = if (accepted) localizedString(Res.string.skip_submit_sent_to_skipdb) else localizedString(Res.string.skip_submit_not_submitted),
     // SkipDB explains itself — an overlap, a failed validation, a rate limit — and that is far
     // more actionable than a generic failure line.
     detail = message,
@@ -264,7 +266,7 @@ internal fun PlayerScreenRuntime.submitSkipSegment(
 ) {
     val imdbId = activeSubmitIntroImdbId()
     if (imdbId.isNullOrBlank() || endSec <= startSec) {
-        onOutcome(false, "Check the start and end times.")
+        onOutcome(false, localizedString(Res.string.skip_submit_check_the_start_and_end_times))
         return
     }
     val season = activeSeasonNumber

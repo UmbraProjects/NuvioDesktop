@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.p2p.P2pSettingsRepository
 import com.nuvio.app.features.home.RandomPlayGenres
 import com.nuvio.app.features.updater.AppUpdaterPlatform
 import com.nuvio.app.isDesktop
@@ -677,28 +678,28 @@ private fun settingsSearchEntries(
         addRow(
             page = SettingsPage.KeyboardShortcuts,
             key = "gamepad-control",
-            title = "Gamepad control",
-            description = "Controller support: navigate Nuvio with an Xbox or XInput pad.",
+            title = resolve(Res.string.settings_shortcuts_gamepad_control),
+            description = resolve(Res.string.settings_search_controller_support_navigate_nuvio_with_an),
             pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
-            section = "Controller",
+            section = resolve(Res.string.settings_shortcuts_controller),
             icon = Icons.Rounded.Keyboard,
         )
         addRow(
             page = SettingsPage.KeyboardShortcuts,
             key = "esc-windowed-first",
-            title = "Escape goes windowed first",
-            description = "In fullscreen playback, Escape leaves fullscreen before it closes the player.",
+            title = resolve(Res.string.settings_shortcuts_esc_windowed_first),
+            description = resolve(Res.string.settings_search_in_fullscreen_playback_escape_leaves_fullscreen),
             pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
-            section = "Player · Playback",
+            section = resolve(Res.string.settings_shortcuts_section_player_playback),
             icon = Icons.Rounded.Keyboard,
         )
         addRow(
             page = SettingsPage.KeyboardShortcuts,
             key = "osk-mouse",
-            title = "On-screen keyboard for mouse",
-            description = "Click letters to type in search, for a mouse-only couch setup.",
+            title = resolve(Res.string.settings_search_on_screen_keyboard_for_mouse),
+            description = resolve(Res.string.settings_search_click_letters_to_type_in_search),
             pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
-            section = "On-screen keyboard",
+            section = resolve(Res.string.settings_shortcuts_on_screen_keyboard),
             icon = Icons.Rounded.Keyboard,
         )
     }
@@ -1811,6 +1812,24 @@ private fun settingsSearchEntries(
             if (pluginsEnabled) add(PlaybackSearchRow("allowed-plugins", resolve(Res.string.settings_playback_allowed_plugins)))
         },
     )
+    if (P2pSettingsRepository.isVisible) {
+        addPlaybackRows(
+            addRow = ::addRow,
+            pageLabel = streamsPage,
+            section = resolve(Res.string.settings_p2p_title),
+            page = SettingsPage.Streams,
+            icon = Icons.Rounded.PlayArrow,
+            rows = listOf(
+                PlaybackSearchRow("p2p-enabled", resolve(Res.string.settings_p2p_title), resolve(Res.string.settings_p2p_subtitle)),
+                PlaybackSearchRow("p2p-engine", resolve(Res.string.settings_p2p_engine_title), resolve(Res.string.settings_p2p_engine_description)),
+                PlaybackSearchRow("p2p-upload", resolve(Res.string.settings_p2p_upload_title), resolve(Res.string.settings_p2p_upload_subtitle)),
+                PlaybackSearchRow("p2p-profile", resolve(Res.string.settings_p2p_profile_title), resolve(Res.string.settings_p2p_profile_description)),
+                PlaybackSearchRow("p2p-ram-only", resolve(Res.string.settings_p2p_ram_only_title), resolve(Res.string.settings_p2p_ram_only_description)),
+                PlaybackSearchRow("p2p-cache-size", resolve(Res.string.settings_p2p_cache_size_title), resolve(Res.string.settings_p2p_cache_size_description)),
+                PlaybackSearchRow("p2p-clear-cache", resolve(Res.string.settings_p2p_clear_cache_title)),
+            ),
+        )
+    }
     if (!isIos) {
         addPlaybackRows(
             addRow = ::addRow,
@@ -1980,7 +1999,7 @@ private fun settingsSearchEntries(
         PlaybackSearchRow(
             "poster-width",
             resolve(Res.string.settings_poster_card_width),
-            "Includes Compact, Dense, Standard, Balanced, Comfort, Large, and Extra Large poster sizes.",
+            resolve(Res.string.settings_search_includes_compact_dense_standard_balanced_comfort),
             anchor = SettingsScrollAnchor.ExtraLargePosters,
         ),
         PlaybackSearchRow("poster-radius", resolve(Res.string.settings_poster_card_radius)),
@@ -2033,36 +2052,36 @@ private fun settingsSearchEntries(
     val homeLayoutSection = resolve(Res.string.settings_homescreen_section_hero)
     listOf(
         PlaybackSearchRow("home-hero", resolve(Res.string.settings_homescreen_show_hero), resolve(Res.string.settings_homescreen_show_hero_description)),
-        PlaybackSearchRow("home-hero-badge-count", "Hero badge count", "Choose how many hero badges are shown.", anchor = SettingsScrollAnchor.HeroBadgeCount),
-        PlaybackSearchRow("home-hero-badge-position", "Hero badge position", "Choose where hero badges appear.", anchor = SettingsScrollAnchor.HeroBadgePosition),
-        PlaybackSearchRow("home-hero-badge-size", "Hero badge size", "Scale badges for desktop or TV viewing.", anchor = SettingsScrollAnchor.HeroBadgeSize),
-        PlaybackSearchRow("home-hero-badge-priority", "Hero info priority", "Choose which hero badges are preferred first.", anchor = SettingsScrollAnchor.HeroBadgePriority),
-        PlaybackSearchRow("home-hero-release-status", "Only show unavailable release status", "Show release status only for cinema and production titles.", anchor = SettingsScrollAnchor.HeroReleaseStatus),
+        PlaybackSearchRow("home-hero-badge-count", resolve(Res.string.settings_home_hero_badge_count), resolve(Res.string.settings_search_choose_how_many_hero_badges_are), anchor = SettingsScrollAnchor.HeroBadgeCount),
+        PlaybackSearchRow("home-hero-badge-position", resolve(Res.string.settings_home_hero_badge_position), resolve(Res.string.settings_search_choose_where_hero_badges_appear), anchor = SettingsScrollAnchor.HeroBadgePosition),
+        PlaybackSearchRow("home-hero-badge-size", resolve(Res.string.settings_home_hero_badge_size), resolve(Res.string.settings_search_scale_badges_for_desktop_or_tv), anchor = SettingsScrollAnchor.HeroBadgeSize),
+        PlaybackSearchRow("home-hero-badge-priority", resolve(Res.string.settings_home_hero_info_priority), resolve(Res.string.settings_home_hero_info_priority_description), anchor = SettingsScrollAnchor.HeroBadgePriority),
+        PlaybackSearchRow("home-hero-release-status", resolve(Res.string.settings_home_release_status_unavailable_only), resolve(Res.string.settings_home_release_status_unavailable_only_description), anchor = SettingsScrollAnchor.HeroReleaseStatus),
         PlaybackSearchRow("home-hide-unreleased", resolve(Res.string.layout_hide_unreleased), resolve(Res.string.layout_hide_unreleased_sub)),
         PlaybackSearchRow("home-hide-watched", resolve(Res.string.layout_hide_watched), resolve(Res.string.layout_hide_watched_sub)),
         PlaybackSearchRow("home-hide-catalog-underline", resolve(Res.string.settings_homescreen_hide_catalog_underline), resolve(Res.string.settings_homescreen_hide_catalog_underline_description)),
         PlaybackSearchRow("home-row-shuffle", resolve(Res.string.settings_homescreen_row_shuffle), resolve(Res.string.settings_homescreen_row_shuffle_description)),
-        PlaybackSearchRow("home-display-mode", "Display Mode", "Basic, Adaptive, Adaptive Ambient, or TV Mode.", anchor = SettingsScrollAnchor.DisplayMode),
+        PlaybackSearchRow("home-display-mode", resolve(Res.string.settings_home_display_mode), resolve(Res.string.settings_search_basic_adaptive_adaptive_ambient_or_tv), anchor = SettingsScrollAnchor.DisplayMode),
         PlaybackSearchRow("home-hero-trailer", resolve(Res.string.settings_playback_hero_tv_trailer), resolve(Res.string.settings_playback_hero_tv_trailer_description), anchor = SettingsScrollAnchor.AutoPlayTrailer),
-        PlaybackSearchRow("home-hero-trailer-delay", resolve(Res.string.settings_playback_hero_tv_trailer_delay), "Delay before focused hero trailers start playing.", anchor = SettingsScrollAnchor.TrailerDelay),
+        PlaybackSearchRow("home-hero-trailer-delay", resolve(Res.string.settings_playback_hero_tv_trailer_delay), resolve(Res.string.settings_search_delay_before_focused_hero_trailers_start), anchor = SettingsScrollAnchor.TrailerDelay),
         PlaybackSearchRow("home-hero-trailer-sound", resolve(Res.string.settings_playback_hero_tv_trailer_sound), resolve(Res.string.settings_playback_hero_tv_trailer_sound_description), anchor = SettingsScrollAnchor.TrailerSound),
-        PlaybackSearchRow("home-hero-trailer-search", "Trailers in Search", "Allow focused search results to play hero trailers.", anchor = SettingsScrollAnchor.TrailerSearch),
+        PlaybackSearchRow("home-hero-trailer-search", resolve(Res.string.settings_home_search_trailers), resolve(Res.string.settings_home_search_trailers_description), anchor = SettingsScrollAnchor.TrailerSearch),
         PlaybackSearchRow("home-adaptive-hero-auto-framing", resolve(Res.string.settings_home_backdrop_auto_framing), resolve(Res.string.settings_home_backdrop_auto_framing_description)),
-        PlaybackSearchRow("home-adaptive-hero-position", "Backdrop vertical position", "Manually tune how adaptive hero backdrops crop vertically.", anchor = SettingsScrollAnchor.AdaptiveHeroPosition),
-        PlaybackSearchRow("home-adaptive-hero-height", "Hero height", "Set how much of the window the adaptive hero occupies.", anchor = SettingsScrollAnchor.AdaptiveHeroHeight),
+        PlaybackSearchRow("home-adaptive-hero-position", resolve(Res.string.settings_home_backdrop_vertical_position), resolve(Res.string.settings_search_manually_tune_how_adaptive_hero_backdrops), anchor = SettingsScrollAnchor.AdaptiveHeroPosition),
+        PlaybackSearchRow("home-adaptive-hero-height", resolve(Res.string.settings_home_hero_height), resolve(Res.string.settings_home_hero_height_description), anchor = SettingsScrollAnchor.AdaptiveHeroHeight),
         PlaybackSearchRow("home-adaptive-ambient-background", resolve(Res.string.settings_home_adaptive_ambient_background), resolve(Res.string.settings_home_adaptive_ambient_background_description)),
         PlaybackSearchRow("home-smooth-scrolling", resolve(Res.string.settings_home_smooth_scrolling), resolve(Res.string.settings_home_smooth_scrolling_description)),
         PlaybackSearchRow("home-hover-preview", resolve(Res.string.settings_home_hover_preview), resolve(Res.string.settings_home_hover_preview_description)),
         PlaybackSearchRow("home-catalog-see-more", resolve(Res.string.settings_home_see_more_arrows), resolve(Res.string.settings_home_see_more_arrows_description)),
-        PlaybackSearchRow("home-catalog-row-numbers", "Number catalog rows", "Append each row's position to its name, including collections."),
-        PlaybackSearchRow("home-collection-gifs-on-focus", "Animate collection GIFs on focus only", "Collection GIFs play only on the highlighted card. The others show their first frame."),
-        PlaybackSearchRow("home-catalog-provider-tag", "Show catalog provider", "Tag each catalog row with the addon that supplies it."),
-        PlaybackSearchRow("hero-backdrop-crossfade", "Backdrop crossfade", "How long the hero backdrop takes to fade when moving between titles."),
-        PlaybackSearchRow("home-tv-row-transition", "Row change", "Cut, cross-fade, or cross-fade with a nudge when TV Mode moves between rows."),
-        PlaybackSearchRow("home-tv-full-backdrop", "Full backdrop", "Extend the TV Mode backdrop to the bottom of the screen and let the rows float over it."),
-        PlaybackSearchRow("home-tv-ambient-background", "Ambient background", "Tint the TV Mode screen with a blurred wash of the backdrop instead of black."),
-        PlaybackSearchRow("home-tv-row-dots", "Row jump dots", "Click a dot beside the TV Mode row name to jump straight to that catalog."),
-        PlaybackSearchRow("home-tv-row-dots-anchor", "Row jump dot position", "Put the TV Mode jump dots on the row name's line or over the backdrop."),
+        PlaybackSearchRow("home-catalog-row-numbers", resolve(Res.string.settings_home_number_catalog_rows), resolve(Res.string.settings_search_append_each_rows_position_to_its)),
+        PlaybackSearchRow("home-collection-gifs-on-focus", resolve(Res.string.settings_search_animate_collection_gifs_on_focus_only), resolve(Res.string.settings_search_collection_gifs_play_only_on_the)),
+        PlaybackSearchRow("home-catalog-provider-tag", resolve(Res.string.settings_home_catalog_provider_tag), resolve(Res.string.settings_search_tag_each_catalog_row_with_the)),
+        PlaybackSearchRow("hero-backdrop-crossfade", resolve(Res.string.settings_hero_backdrop_crossfade), resolve(Res.string.settings_search_how_long_the_hero_backdrop_takes)),
+        PlaybackSearchRow("home-tv-row-transition", resolve(Res.string.settings_home_tv_row_transition), resolve(Res.string.settings_search_cut_cross_fade_or_cross_fade)),
+        PlaybackSearchRow("home-tv-full-backdrop", resolve(Res.string.settings_home_tv_full_backdrop), resolve(Res.string.settings_search_extend_the_tv_mode_backdrop_to)),
+        PlaybackSearchRow("home-tv-ambient-background", resolve(Res.string.settings_home_tv_ambient_background), resolve(Res.string.settings_search_tint_the_tv_mode_screen_with)),
+        PlaybackSearchRow("home-tv-row-dots", resolve(Res.string.settings_home_row_jump_dots), resolve(Res.string.settings_search_click_a_dot_beside_the_tv)),
+        PlaybackSearchRow("home-tv-row-dots-anchor", resolve(Res.string.settings_home_row_jump_dot_position), resolve(Res.string.settings_search_put_the_tv_mode_jump_dots)),
         PlaybackSearchRow("home-hero-sources", resolve(Res.string.settings_homescreen_section_hero_sources)),
         PlaybackSearchRow("home-catalogs", resolve(Res.string.settings_homescreen_section_catalogs)),
     ).forEach { row ->
@@ -2171,9 +2190,9 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("tmdb-enable", resolve(Res.string.settings_tmdb_enable_enrichment), resolve(Res.string.settings_tmdb_enable_enrichment_description), resolve(Res.string.settings_tmdb_section_title)),
         PlaybackSearchRow("tmdb-api-key", resolve(Res.string.settings_tmdb_personal_api_key), "", resolve(Res.string.settings_tmdb_section_title)),
         PlaybackSearchRow("tvdb-api-key", resolve(Res.string.settings_licenses_attributions_tvdb_title), resolve(Res.string.settings_licenses_attributions_tvdb_body), resolve(Res.string.settings_tmdb_artwork_catalogs_section), anchor = SettingsScrollAnchor.TvdbApiKey),
-        PlaybackSearchRow("tmdb-hero-images", "Hero backdrop & logo", "Choose addon artwork, TMDB artwork, or TVDB artwork for TV and anime.", resolve(Res.string.settings_tmdb_artwork_catalogs_section), anchor = SettingsScrollAnchor.TmdbHeroImages),
+        PlaybackSearchRow("tmdb-hero-images", resolve(Res.string.settings_search_hero_backdrop_logo), resolve(Res.string.settings_search_choose_addon_artwork_tmdb_artwork_or), resolve(Res.string.settings_tmdb_artwork_catalogs_section), anchor = SettingsScrollAnchor.TmdbHeroImages),
         PlaybackSearchRow("tmdb-language", resolve(Res.string.settings_tmdb_preferred_language), resolve(Res.string.settings_tmdb_preferred_language_description), resolve(Res.string.settings_tmdb_section_title)),
-        PlaybackSearchRow("tmdb-filename-catalogs", "Resolve filenames via TMDB", "Look up catalog rows that arrive as raw release filenames (TorBox, AIOStreams library) by name and year.", resolve(Res.string.settings_tmdb_artwork_catalogs_section)),
+        PlaybackSearchRow("tmdb-filename-catalogs", resolve(Res.string.settings_tmdb_filename_catalogs), resolve(Res.string.settings_search_look_up_catalog_rows_that_arrive), resolve(Res.string.settings_tmdb_artwork_catalogs_section)),
         PlaybackSearchRow("tmdb-show-enrichment", resolve(Res.string.settings_tmdb_show_enrichment_title), resolve(Res.string.settings_tmdb_show_enrichment_source_aware_description), tmdbModulesSection),
         PlaybackSearchRow("tmdb-trailers", resolve(Res.string.settings_tmdb_module_trailers), resolve(Res.string.settings_tmdb_module_trailers_description), tmdbModulesSection),
         PlaybackSearchRow("tmdb-artwork", resolve(Res.string.settings_tmdb_module_artwork), resolve(Res.string.settings_tmdb_module_artwork_description), tmdbModulesSection),
@@ -2243,13 +2262,13 @@ private fun settingsSearchEntries(
     }
 
     listOf(
-        PlaybackSearchRow("qualicache-enable", "Show quality badges", "Highlight notable release quality on the Home hero, from your QualiCache server.", "QUALICACHE"),
-        PlaybackSearchRow("qualicache-url", "Server address", "Where your QualiCache instance is reachable.", "SERVER"),
-        PlaybackSearchRow("qualicache-access-key", "Access key", "Only needed if you set ACCESS_KEY on the server.", "SERVER"),
-        PlaybackSearchRow("qualicache-minimum-trust", "Minimum release trust", "Choose which QualiCache release-group tiers may be used.", "SERVER"),
-        PlaybackSearchRow("qualicache-resolution", "Resolution", "The 4K disc and stream badges", "BADGES"),
-        PlaybackSearchRow("qualicache-dynamic-range", "Dynamic range", "Dolby Vision, HDR", "BADGES"),
-        PlaybackSearchRow("qualicache-audio", "Audio", "Dolby Atmos, DTS", "BADGES"),
+        PlaybackSearchRow("qualicache-enable", resolve(Res.string.settings_qualicache_show_badges), resolve(Res.string.settings_search_highlight_notable_release_quality_on_the), resolve(Res.string.settings_search_qualicache)),
+        PlaybackSearchRow("qualicache-url", resolve(Res.string.settings_qualicache_server_address), resolve(Res.string.settings_search_where_your_qualicache_instance_is_reachable), resolve(Res.string.settings_search_server)),
+        PlaybackSearchRow("qualicache-access-key", resolve(Res.string.settings_qualicache_access_key), resolve(Res.string.settings_search_only_needed_if_you_set_access), resolve(Res.string.settings_search_server)),
+        PlaybackSearchRow("qualicache-minimum-trust", resolve(Res.string.settings_qualicache_minimum_trust), resolve(Res.string.settings_search_choose_which_qualicache_release_group_tiers), resolve(Res.string.settings_search_server)),
+        PlaybackSearchRow("qualicache-resolution", resolve(Res.string.settings_qualicache_category_resolution), resolve(Res.string.settings_qualicache_category_resolution_description), resolve(Res.string.settings_search_badges)),
+        PlaybackSearchRow("qualicache-dynamic-range", resolve(Res.string.settings_qualicache_category_dynamic_range), resolve(Res.string.settings_qualicache_category_dynamic_range_description), resolve(Res.string.settings_search_badges)),
+        PlaybackSearchRow("qualicache-audio", resolve(Res.string.compose_player_audio), resolve(Res.string.settings_qualicache_category_audio_description), resolve(Res.string.settings_search_badges)),
     ).forEach { row ->
         addRow(
             page = SettingsPage.QualiCache,
@@ -2257,7 +2276,7 @@ private fun settingsSearchEntries(
             title = row.title,
             description = row.description,
             pageLabel = qualiCachePage,
-            section = row.sectionOverride ?: "QUALICACHE",
+            section = row.sectionOverride ?: resolve(Res.string.settings_search_qualicache),
             icon = Icons.Rounded.Link,
         )
     }

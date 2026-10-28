@@ -25,6 +25,7 @@ internal object NativeBridge {
         streamInactivityTimeoutMilliseconds: Int,
         warmTorrentTimeoutMilliseconds: Int,
         tlsCaBundlePath: String,
+        ramOnlyMode: Boolean,
     ): LongArray
 
     external fun nativeDestroy(handle: Long)

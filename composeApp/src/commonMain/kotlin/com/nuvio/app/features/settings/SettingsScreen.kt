@@ -237,6 +237,7 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * The settings page last shown, so `(PerfScreen)` can name it when the Settings tab is re-entered
@@ -3192,7 +3193,7 @@ private fun DesktopActionRow(
 
 private fun enabledLabel(enabled: Boolean): String = if (enabled) "Enabled" else "Disabled"
 
-private fun connectedLabel(connected: Boolean): String = if (connected) "Connected" else "Not connected"
+private fun connectedLabel(connected: Boolean): String = if (connected) localizedString(Res.string.settings_connected) else localizedString(Res.string.settings_not_connected)
 
 /**
  * The Watch party page: join with a code or an invite link, or manage the party you are in.

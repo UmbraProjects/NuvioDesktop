@@ -1,6 +1,8 @@
 package com.nuvio.app.features.games
 
 import kotlinx.serialization.Serializable
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * One game in the library. The on-disk shape is kept byte-compatible with the standalone
@@ -80,8 +82,8 @@ fun ensureDefaultGameRows(rows: List<GameRow>): List<GameRow> {
     if (missing.isEmpty()) return rows
     return rows + missing.map { bucket ->
         when (bucket) {
-            GameRowBucket.Installed -> GameRow(GameInstalledRowId, "Installed", defaultBucket = bucket)
-            GameRowBucket.Uninstalled -> GameRow(GameUninstalledRowId, "Uninstalled", defaultBucket = bucket)
+            GameRowBucket.Installed -> GameRow(GameInstalledRowId, localizedString(Res.string.games_row_installed), defaultBucket = bucket)
+            GameRowBucket.Uninstalled -> GameRow(GameUninstalledRowId, localizedString(Res.string.games_row_uninstalled), defaultBucket = bucket)
         }
     }
 }
@@ -175,7 +177,7 @@ data class ArtworkCandidate(
     val source: ArtworkSource,
 ) {
     val resolutionLabel: String
-        get() = if (width > 0 && height > 0) "$width × $height" else "Resolution unknown"
+        get() = if (width > 0 && height > 0) "$width × $height" else localizedString(Res.string.games_artwork_resolution_unknown)
 }
 
 data class LogoCandidate(
@@ -188,7 +190,7 @@ data class LogoCandidate(
     val source: ArtworkSource = ArtworkSource.STEAMGRIDDB,
 ) {
     val resolutionLabel: String
-        get() = if (width > 0 && height > 0) "$width × $height" else "Resolution unknown"
+        get() = if (width > 0 && height > 0) "$width × $height" else localizedString(Res.string.games_artwork_resolution_unknown)
 
     val languageLabel: String?
         get() = language

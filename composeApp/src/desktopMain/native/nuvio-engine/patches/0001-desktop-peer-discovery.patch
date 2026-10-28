@@ -1,18 +1,18 @@
-From a626b627a5f8313c5dad69a14977311f2cd16d82 Mon Sep 17 00:00:00 2001
+From 29ea80cea5027865b331be7a12ee62dfb1b4e819 Mon Sep 17 00:00:00 2001
 From: Nuvio Desktop <nuviodesktop@local>
 Date: Fri, 11 Sep 2026 23:58:16 +0100
 Subject: [PATCH] desktop: Stremio-parity peer discovery (bootstrap routers,
- 30s peer search, patient connects, TCP-only outgoing)
+ 30s peer search, patient connects, 8-strike failcount)
 
 ---
- src/torrent/libtorrent_backend.cpp | 59 +++++++++++++++++++++++++++++-
- 1 file changed, 58 insertions(+), 1 deletion(-)
+ src/torrent/libtorrent_backend.cpp | 56 +++++++++++++++++++++++++++++-
+ 1 file changed, 55 insertions(+), 1 deletion(-)
 
 diff --git a/src/torrent/libtorrent_backend.cpp b/src/torrent/libtorrent_backend.cpp
-index c479962..7904677 100644
+index cd93754..0ae13dc 100644
 --- a/src/torrent/libtorrent_backend.cpp
 +++ b/src/torrent/libtorrent_backend.cpp
-@@ -40,10 +40,25 @@ namespace {
+@@ -42,14 +42,29 @@ namespace {
  constexpr std::size_t maximum_session_state_size = 4 * 1024 * 1024;
  constexpr std::size_t maximum_resume_state_size = 16 * 1024 * 1024;
  constexpr std::size_t maximum_pending_disk_reclaims = 256;
@@ -27,6 +27,10 @@ index c479962..7904677 100644
  constexpr int peer_reconnect_floor_seconds = 4;
 +constexpr int peer_max_failcount = 8;
  constexpr int piece_request_timeout_seconds = 4;
+ constexpr int request_queue_seconds = 1;
+ constexpr int maximum_outstanding_requests_per_peer = 64;
+ constexpr int idle_session_tick_milliseconds = 500;
+ constexpr int streaming_session_tick_milliseconds = 100;
 +// Stremio re-runs every tracker and a DHT lookup on this cadence while the swarm is below
 +// peer_search_target peers; libtorrent alone would honour tracker intervals (>= 5 min).
 +constexpr auto peer_search_interval = std::chrono::seconds(30);
@@ -39,19 +43,16 @@ index c479962..7904677 100644
  
  struct TorrentProfileSettings {
      int connection_limit;
-@@ -101,6 +116,11 @@ lt::settings_pack make_settings(const ProtocolBackendConfig& config) {
-     settings.set_str(lt::settings_pack::user_agent, "Nuvio Engine/0.1.1");
+@@ -107,6 +122,8 @@ lt::settings_pack make_settings(const ProtocolBackendConfig& config) {
+     settings.set_str(lt::settings_pack::user_agent, "Nuvio Engine/0.1.6");
      settings.set_str(lt::settings_pack::listen_interfaces, "0.0.0.0:0,[::]:0");
      settings.set_bool(lt::settings_pack::enable_dht, true);
 +    settings.set_str(lt::settings_pack::dht_bootstrap_nodes, dht_bootstrap_nodes);
-+    // TCP-only outgoing, like Stremio: a uTP attempt to a TCP-only peer is a wasted strike
-+    // against its failcount, and desktop networks rarely need uTP's NAT behaviour.
-+    settings.set_bool(lt::settings_pack::enable_outgoing_utp, false);
 +    settings.set_int(lt::settings_pack::max_failcount, peer_max_failcount);
      settings.set_bool(lt::settings_pack::enable_lsd, true);
      settings.set_bool(lt::settings_pack::enable_upnp, true);
      settings.set_bool(lt::settings_pack::enable_natpmp, true);
-@@ -383,6 +403,7 @@ public:
+@@ -401,6 +418,7 @@ public:
          touch_disk_cache(id);
          warm_since_.erase(id);
          quiesced_torrents_.erase(id);
@@ -59,7 +60,7 @@ index c479962..7904677 100644
          stream_bridge_->remove_torrent(id);
          try {
              storage::remove_file_if_present(resume_path(id));
-@@ -538,6 +559,7 @@ public:
+@@ -579,6 +597,7 @@ public:
              }
          }
          run_periodic_checkpoints(events);
@@ -67,7 +68,7 @@ index c479962..7904677 100644
          run_warm_quiescence();
          process_disk_reclaims(events);
          run_disk_cache_enforcement(events);
-@@ -1220,6 +1242,40 @@ private:
+@@ -1293,6 +1312,40 @@ private:
          );
          quiesced_torrents_.erase(id);
          warm_since_.erase(id);
@@ -108,7 +109,7 @@ index c479962..7904677 100644
      }
  
      void run_warm_quiescence() {
-@@ -1705,6 +1761,7 @@ private:
+@@ -1819,6 +1872,7 @@ private:
      std::unordered_map<RequestContext*, std::unique_ptr<RequestContext>> pending_;
      std::unordered_map<std::string, std::unique_ptr<RequestContext>> active_;
      std::unordered_map<std::string, lt::torrent_handle> handles_;

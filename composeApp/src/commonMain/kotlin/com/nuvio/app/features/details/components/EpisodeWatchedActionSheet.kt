@@ -122,7 +122,7 @@ fun EpisodeWatchedActionSheet(
             add(
                 PosterZoomOverlayAction(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = "Add episode to playlist",
+                    label = stringResource(Res.string.playlist_add_episode_to_playlist),
                     onSelected = onAddToPlaylist,
                     group = 2,
                 ),
@@ -132,7 +132,7 @@ fun EpisodeWatchedActionSheet(
             add(
                 PosterZoomOverlayAction(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = "Add $seasonLabel to playlist",
+                    label = stringResource(Res.string.playlist_add_season_to_playlist, seasonLabel),
                     onSelected = onAddSeasonToPlaylist,
                     group = 2,
                 ),
@@ -206,7 +206,7 @@ fun SeasonWatchedActionSheet(
             add(
                 PosterZoomOverlayAction(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = "Add $seasonLabel to playlist",
+                    label = stringResource(Res.string.playlist_add_season_to_playlist, seasonLabel),
                     onSelected = onAddSeasonToPlaylist,
                     group = 2,
                 ),

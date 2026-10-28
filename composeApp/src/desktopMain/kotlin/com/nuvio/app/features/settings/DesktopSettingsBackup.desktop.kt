@@ -28,6 +28,8 @@ import javax.swing.filechooser.FileNameExtensionFilter
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private val CredentialStoreNames = setOf(
     "nuvio_auth.properties",
@@ -289,7 +291,7 @@ internal actual object DesktopSettingsBackup {
         installSystemLookAndFeel()
         val chosen = runCatching {
             val chooser = JFileChooser().apply {
-                dialogTitle = "Back up Nuvio settings"
+                dialogTitle = localizedString(Res.string.settings_backup_back_up_nuvio_settings)
                 fileFilter = FileNameExtensionFilter("Nuvio settings backup (*.zip)", "zip")
                 selectedFile = DesktopStorage.rootDir.resolve(
                     "nuvio-settings-${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))}.zip",
@@ -297,7 +299,9 @@ internal actual object DesktopSettingsBackup {
             }
             if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) chooser.selectedFile.toPath() else null
         }.getOrElse { error ->
-            return DesktopSettingsBackupResult.Failed("Could not open the file picker: ${error.message ?: error::class.simpleName}")
+            return DesktopSettingsBackupResult.Failed(
+                localizedString(Res.string.settings_backup_picker_failed, error.message ?: error::class.simpleName.orEmpty()),
+            )
         } ?: return DesktopSettingsBackupResult.Cancelled
         val destination = if (chosen.extension.equals("zip", ignoreCase = true)) {
             chosen
@@ -358,7 +362,7 @@ internal actual object DesktopSettingsBackup {
             }
             DesktopSettingsBackupResult.Saved(destination.toString())
         }.getOrElse { error ->
-            DesktopSettingsBackupResult.Failed(error.message ?: "Unable to create settings backup")
+            DesktopSettingsBackupResult.Failed(error.message ?: localizedString(Res.string.settings_backup_unable_to_create_settings_backup))
         }
     }
 
@@ -366,28 +370,30 @@ internal actual object DesktopSettingsBackup {
         installSystemLookAndFeel()
         val selected = runCatching {
             val chooser = JFileChooser(DesktopStorage.rootDir.toFile()).apply {
-                dialogTitle = "Import Nuvio settings"
+                dialogTitle = localizedString(Res.string.settings_backup_import_nuvio_settings)
                 fileFilter = FileNameExtensionFilter("Nuvio settings backup (*.zip)", "zip")
             }
             if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) chooser.selectedFile else null
         }.getOrElse { error ->
-            return DesktopSettingsImportResult.Failed("Could not open the file picker: ${error.message ?: error::class.simpleName}")
+            return DesktopSettingsImportResult.Failed(
+                localizedString(Res.string.settings_backup_picker_failed, error.message ?: error::class.simpleName.orEmpty()),
+            )
         } ?: return DesktopSettingsImportResult.Cancelled
         val source = selected.toPath().toAbsolutePath().normalize()
         return runCatching {
             // Read in full now, so a bad file is reported here rather than discovered at next launch.
             val contents = Files.newInputStream(source).use(::readSettingsBackup)
             val signIns = if (contents.credentialsIncluded) {
-                "This backup includes sign-ins and keys, which replace the ones on this PC."
+                localizedString(Res.string.settings_backup_this_backup_includes_sign_ins_and)
             } else {
-                "This backup has no sign-ins or keys, so the ones on this PC are kept."
+                localizedString(Res.string.settings_backup_this_backup_has_no_sign_ins)
             }
             val confirmed = JOptionPane.showConfirmDialog(
                 null,
-                "Import ${contents.stores.size} settings files from ${source.fileName}?\n\n" +
-                    "$signIns\nSettings the backup does not contain are left as they are.\n\n" +
-                    "Nuvio will restart to apply them.",
-                "Import Nuvio settings",
+                localizedString(Res.string.settings_backup_import_confirm, contents.stores.size, source.fileName.toString()) + "\n\n" +
+                    signIns + "\n" + localizedString(Res.string.settings_backup_import_untouched) + "\n\n" +
+                    localizedString(Res.string.settings_backup_nuvio_will_restart_to_apply_them),
+                localizedString(Res.string.settings_backup_import_nuvio_settings),
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.QUESTION_MESSAGE,
             )
@@ -397,7 +403,7 @@ internal actual object DesktopSettingsBackup {
         }.getOrElse { error ->
             DesktopSettingsImportResult.Failed(
                 (error as? IllegalArgumentException)?.message
-                    ?: "Could not read that backup: ${error.message ?: error::class.simpleName}",
+                    ?: localizedString(Res.string.settings_backup_read_failed, error.message ?: error::class.simpleName.orEmpty()),
             )
         }
     }

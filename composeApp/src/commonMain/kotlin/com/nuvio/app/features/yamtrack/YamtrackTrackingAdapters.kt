@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 internal object YamtrackTrackingAuthProvider : TrackingAuthProvider {
     private val log = Logger.withTag("Yamtrack")
@@ -73,7 +75,7 @@ internal object YamtrackTrackingAuthProvider : TrackingAuthProvider {
     suspend fun testConnection(baseUrl: String, apiToken: String): YamtrackConnectionState {
         val normalized = normalizeBaseUrl(baseUrl)
         if (normalized.isBlank() || apiToken.isBlank()) {
-            return YamtrackConnectionState.Unreachable("Enter both a URL and a token")
+            return YamtrackConnectionState.Unreachable(localizedString(Res.string.yamtrack_enter_both_a_url_and_a))
         }
         YamtrackSettingsRepository.setConnectionState(YamtrackConnectionState.Testing)
 

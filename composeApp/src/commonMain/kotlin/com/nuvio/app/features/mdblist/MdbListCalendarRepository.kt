@@ -21,6 +21,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * Calendar data backed by MDBList's authenticated `/calendar/events` endpoint.
@@ -129,7 +131,7 @@ internal object MdbListCalendarRepository {
                         _uiState.value = TraktCalendarUiState(
                             isLoading = false,
                             isAuthenticated = true,
-                            errorMessage = "Failed to load calendar",
+                            errorMessage = localizedString(Res.string.calendar_failed_to_load_calendar_2),
                             hasLoaded = true,
                         )
                     }

@@ -78,6 +78,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.random.Random
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * How long a community skip lookup waits for the player to report a runtime before giving up and
@@ -785,7 +786,7 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
         if (playbackSnapshot.isLoading) {
             DiscordRichPresenceController.setPlaybackActivity(
                 DiscordRichPresenceActivity(
-                    title = "Starting stream",
+                    title = localizedString(Res.string.discord_presence_starting_stream),
                     subtitle = presenceTitle,
                     imageUrl = discordPresenceImageUrl(discordSettings.episodeArtwork),
                     fallbackImageUrl = discordPresenceFallbackImageUrl(discordSettings.episodeArtwork),
@@ -1094,7 +1095,7 @@ private fun PlayerScreenRuntime.discordPresenceEpisodeLabel(): String? {
     val episodeNumber = activeEpisodeNumber ?: return null
     return activeSeasonNumber?.let { seasonNumber ->
         "S${seasonNumber.toString().padStart(2, '0')}E${episodeNumber.toString().padStart(2, '0')}"
-    } ?: "Episode $episodeNumber"
+    } ?: localizedString(Res.string.discord_presence_episode, episodeNumber)
 }
 
 /** Leading four-digit release year from the loaded meta (e.g. "2021" from "2021" or "2019–2023"). */
@@ -1545,7 +1546,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             }
             if (playlist != null && entry != null) {
                 val position = playlist.entries.indexOfFirst { it.entryId == entry.entryId } + 1
-                playlistUpNextHeader = "Up next · ${playlist.name} ($position/${playlist.entries.size})"
+                playlistUpNextHeader = localizedString(Res.string.playlist_player_up_next_header, playlist.name, position, playlist.entries.size)
             }
             PlaylistPlaybackSession.log.i {
                 "player opened in playlist mode entry=${entry?.entryId} upNext=${playlistUpNext?.entryId ?: "<end>"}"

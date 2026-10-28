@@ -1,5 +1,8 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.i18n.localizedString
+import nuvio.composeapp.generated.resources.*
+
 /**
  * What clicking a hero discovery badge opens — the reverse of the badge itself.
  *
@@ -148,12 +151,12 @@ fun HeroDiscoveryBadgeTarget.cacheKey(): String =
  * ("Cinema", "Production", "New") and read wrong as a list name, so those three get their own.
  */
 fun HeroDiscoveryBadgeTarget.browseTitle(badgeLabel: String): String = when (this) {
-    HeroDiscoveryBadgeTarget.NewAtHome -> "New at Home"
-    HeroDiscoveryBadgeTarget.NowPlaying -> "In Cinemas"
-    HeroDiscoveryBadgeTarget.Upcoming -> "Coming Soon"
+    HeroDiscoveryBadgeTarget.NewAtHome -> localizedString(Res.string.hero_browse_title_new_at_home)
+    HeroDiscoveryBadgeTarget.NowPlaying -> localizedString(Res.string.hero_browse_title_in_cinemas)
+    HeroDiscoveryBadgeTarget.Upcoming -> localizedString(Res.string.hero_browse_title_coming_soon)
     is HeroDiscoveryBadgeTarget.Keyword -> when {
         // "Mid-Credits Scene" would promise a filter the query does not make; both stingers are listed.
-        keywordIds.size > 1 -> "Post-Credits Scenes"
+        keywordIds.size > 1 -> localizedString(Res.string.hero_browse_title_post_credits)
         else -> badgeLabel
     }
     else -> badgeLabel

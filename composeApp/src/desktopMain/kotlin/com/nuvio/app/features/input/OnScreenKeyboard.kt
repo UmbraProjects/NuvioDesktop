@@ -1,5 +1,6 @@
 package com.nuvio.app.features.input
 
+import com.nuvio.app.core.storage.DesktopStorage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,6 +75,61 @@ internal object OskLayout {
         if (fromWidth <= 1 || toWidth <= 1) return 0
         val ratio = column.toFloat() / (fromWidth - 1)
         return (ratio * (toWidth - 1)).roundToInt().coerceIn(0, toWidth - 1)
+    }
+}
+
+/**
+ * Where a floating keyboard sits. [xFraction]/[yFraction] are fractions of the window's free space
+ * (window minus panel), so the panel stays on screen whatever size the window is next time.
+ */
+internal data class OskPlacementState(
+    val floating: Boolean = false,
+    val xFraction: Float = 0.5f,
+    val yFraction: Float = 0.92f,
+    val widthDp: Float = OskPlacement.DEFAULT_FLOATING_WIDTH_DP,
+)
+
+/** Docked or floating, and the floating panel's position and size. Per PC, not per account. */
+internal object OskPlacement {
+    const val DEFAULT_FLOATING_WIDTH_DP = 560f
+    const val MIN_FLOATING_WIDTH_DP = 340f
+    const val MAX_FLOATING_WIDTH_DP = 1100f
+
+    private const val KEY_FLOATING = "osk_floating"
+    private const val KEY_X = "osk_x_fraction"
+    private const val KEY_Y = "osk_y_fraction"
+    private const val KEY_WIDTH = "osk_width_dp"
+
+    private val store by lazy { DesktopStorage.store("nuvio_osk_layout") }
+
+    private val _state by lazy {
+        MutableStateFlow(
+            OskPlacementState(
+                floating = store.getBoolean(KEY_FLOATING) ?: false,
+                xFraction = (store.getFloat(KEY_X) ?: 0.5f).coerceIn(0f, 1f),
+                yFraction = (store.getFloat(KEY_Y) ?: 0.92f).coerceIn(0f, 1f),
+                widthDp = (store.getFloat(KEY_WIDTH) ?: DEFAULT_FLOATING_WIDTH_DP)
+                    .coerceIn(MIN_FLOATING_WIDTH_DP, MAX_FLOATING_WIDTH_DP),
+            ),
+        )
+    }
+    val state: StateFlow<OskPlacementState> get() = _state.asStateFlow()
+
+    fun setFloating(floating: Boolean) {
+        _state.value = _state.value.copy(floating = floating)
+        store.putBoolean(KEY_FLOATING, floating)
+    }
+
+    fun setFloatingBounds(xFraction: Float, yFraction: Float, widthDp: Float) {
+        val next = _state.value.copy(
+            xFraction = xFraction.coerceIn(0f, 1f),
+            yFraction = yFraction.coerceIn(0f, 1f),
+            widthDp = widthDp.coerceIn(MIN_FLOATING_WIDTH_DP, MAX_FLOATING_WIDTH_DP),
+        )
+        _state.value = next
+        store.putFloat(KEY_X, next.xFraction)
+        store.putFloat(KEY_Y, next.yFraction)
+        store.putFloat(KEY_WIDTH, next.widthDp)
     }
 }
 

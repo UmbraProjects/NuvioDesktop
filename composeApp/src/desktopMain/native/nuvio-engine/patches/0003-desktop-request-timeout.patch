@@ -1,18 +1,17 @@
-From 03bf06f4b6813381ea32655c3c3da3540428c79a Mon Sep 17 00:00:00 2001
+From 73972f15a27013d46b384fea3a00357ed76f72d9 Mon Sep 17 00:00:00 2001
 From: Nuvio Desktop <nuviodesktop@local>
 Date: Sat, 12 Sep 2026 01:10:16 +0100
-Subject: [PATCH] desktop: block request timeout 15 s; prioritize partial
- pieces
+Subject: [PATCH] desktop: block request timeout 15 s
 
 ---
- src/torrent/libtorrent_backend.cpp | 16 +++++++++++++++-
- 1 file changed, 15 insertions(+), 1 deletion(-)
+ src/torrent/libtorrent_backend.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
 
 diff --git a/src/torrent/libtorrent_backend.cpp b/src/torrent/libtorrent_backend.cpp
-index 7904677..7a54d35 100644
+index 0ae13dc..2f17725 100644
 --- a/src/torrent/libtorrent_backend.cpp
 +++ b/src/torrent/libtorrent_backend.cpp
-@@ -49,7 +49,12 @@ constexpr int peer_connect_timeout_seconds = 10;
+@@ -51,7 +51,12 @@ constexpr int peer_connect_timeout_seconds = 10;
  constexpr int peer_handshake_timeout_seconds = 20;
  constexpr int peer_reconnect_floor_seconds = 4;
  constexpr int peer_max_failcount = 8;
@@ -20,42 +19,12 @@ index 7904677..7a54d35 100644
 +// The engine shipped 4 s, which at desktop rates marks a healthy seed "snubbed" (one
 +// outstanding request) whenever its queue takes longer than that to drain - measured as
 +// 2 Mbps/seed vs 14 Mbps/seed. libtorrent's default 60 s lets a peer that went silent pin a
-+// block for a minute. 15 s: a fast peer's queue (request_queue_time 3 s) never trips it, a
-+// dead peer costs at most 15 s.
++// block for a minute; 15 s caps that, and the urgent-hedge libtorrent patch re-requests the
++// blocking piece's stuck blocks elsewhere well before it expires.
 +constexpr int piece_request_timeout_seconds = 15;
- // Stremio re-runs every tracker and a DHT lookup on this cadence while the swarm is below
- // peer_search_target peers; libtorrent alone would honour tracker intervals (>= 5 min).
- constexpr auto peer_search_interval = std::chrono::seconds(30);
-@@ -121,6 +126,12 @@ lt::settings_pack make_settings(const ProtocolBackendConfig& config) {
-     // against its failcount, and desktop networks rarely need uTP's NAT behaviour.
-     settings.set_bool(lt::settings_pack::enable_outgoing_utp, false);
-     settings.set_int(lt::settings_pack::max_failcount, peer_max_failcount);
-+    // Streaming: the piece the player is waiting on is by construction the one partial piece.
-+    // With this off, libtorrent only prefers partial pieces once there are more of them than
-+    // peers, so a fast seed arriving mid-piece takes an untouched readahead piece and leaves the
-+    // blocking piece to whoever started it (measured: 10-17 s at 90-157 Mbps with one 16 MiB
-+    // piece stalled).
-+    settings.set_bool(lt::settings_pack::prioritize_partial_pieces, true);
-     settings.set_bool(lt::settings_pack::enable_lsd, true);
-     settings.set_bool(lt::settings_pack::enable_upnp, true);
-     settings.set_bool(lt::settings_pack::enable_natpmp, true);
-@@ -153,6 +164,7 @@ lt::settings_pack make_settings(const ProtocolBackendConfig& config) {
-             lt::alert_category::status |
-             lt::alert_category::performance_warning |
-             lt::alert_category::dht |
-+            lt::alert_category::piece_progress |
-             lt::alert_category::file_progress
-     );
-     if (config.upload_mode == NUVIO_ENGINE_UPLOAD_LIMITED) {
-@@ -517,6 +529,8 @@ public:
-                 handle_added(*added, events);
-             } else if (const auto* piece = lt::alert_cast<lt::read_piece_alert>(alert)) {
-                 stream_bridge_->handle_read_piece(*piece);
-+            } else if (const auto* finished = lt::alert_cast<lt::piece_finished_alert>(alert)) {
-+                stream_bridge_->handle_piece_finished(*finished);
-             } else if (const auto* metadata = lt::alert_cast<lt::metadata_received_alert>(alert)) {
-                 handle_metadata(*metadata, events);
-             } else if (const auto* error = lt::alert_cast<lt::torrent_error_alert>(alert)) {
+ constexpr int request_queue_seconds = 1;
+ constexpr int maximum_outstanding_requests_per_peer = 64;
+ constexpr int idle_session_tick_milliseconds = 500;
 -- 
 2.54.0.windows.1
 

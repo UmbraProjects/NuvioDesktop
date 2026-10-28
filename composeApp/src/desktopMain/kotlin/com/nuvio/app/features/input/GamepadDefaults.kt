@@ -2,7 +2,9 @@ package com.nuvio.app.features.input
 
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.PlayerShortcutAction
-import java.awt.event.KeyEvent
+import java.awt.event.KeyEvent
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.StringResource
 
 /**
  * The default pad layout, in the shape a console user expects: A selects, B backs out, the
@@ -17,7 +19,7 @@ internal object GamepadDefaults {
     // The description says what the key does here, not which key it is — the same arrow means
     // "move the focus" while browsing and "volume" during playback, and the settings inventory is
     // read to find out what a button does.
-    private fun fixed(keyCode: Int, description: String) = GamepadTarget.FixedKey(keyCode, description)
+    private fun fixed(keyCode: Int, description: StringResource) = GamepadTarget.FixedKey(keyCode, description)
     private fun app(action: AppShortcutAction) = GamepadTarget.AppAction(action)
     private fun player(action: PlayerShortcutAction) = GamepadTarget.PlayerAction(action)
 
@@ -25,20 +27,20 @@ internal object GamepadDefaults {
         // Same key in both contexts, different meaning: the player's dispatcher pins the arrows to
         // volume and seek, while every browsing screen matches them as focus movement.
         GamepadButton.DpadUp to GamepadBinding(
-            browsing = fixed(KeyEvent.VK_UP, "Move up"),
-            player = fixed(KeyEvent.VK_UP, "Volume up"),
+            browsing = fixed(KeyEvent.VK_UP, Res.string.gamepad_target_move_up),
+            player = fixed(KeyEvent.VK_UP, Res.string.gamepad_target_volume_up),
         ),
         GamepadButton.DpadDown to GamepadBinding(
-            browsing = fixed(KeyEvent.VK_DOWN, "Move down"),
-            player = fixed(KeyEvent.VK_DOWN, "Volume down"),
+            browsing = fixed(KeyEvent.VK_DOWN, Res.string.gamepad_target_move_down),
+            player = fixed(KeyEvent.VK_DOWN, Res.string.gamepad_target_volume_down),
         ),
         GamepadButton.DpadLeft to GamepadBinding(
-            browsing = fixed(KeyEvent.VK_LEFT, "Move left"),
-            player = fixed(KeyEvent.VK_LEFT, "Seek backward"),
+            browsing = fixed(KeyEvent.VK_LEFT, Res.string.gamepad_target_move_left),
+            player = fixed(KeyEvent.VK_LEFT, Res.string.gamepad_target_seek_backward),
         ),
         GamepadButton.DpadRight to GamepadBinding(
-            browsing = fixed(KeyEvent.VK_RIGHT, "Move right"),
-            player = fixed(KeyEvent.VK_RIGHT, "Seek forward"),
+            browsing = fixed(KeyEvent.VK_RIGHT, Res.string.gamepad_target_move_right),
+            player = fixed(KeyEvent.VK_RIGHT, Res.string.gamepad_target_seek_forward),
         ),
 
         GamepadButton.A to GamepadBinding(
@@ -75,11 +77,11 @@ internal object GamepadDefaults {
         // rate control. Putting speed here also clears the right stick to hold the picture
         // pipeline as one group.
         GamepadButton.LeftTrigger to GamepadBinding(
-            browsing = fixed(KeyEvent.VK_PAGE_UP, "Page up"),
+            browsing = fixed(KeyEvent.VK_PAGE_UP, Res.string.gamepad_target_page_up),
             player = player(PlayerShortcutAction.SpeedDown),
         ),
         GamepadButton.RightTrigger to GamepadBinding(
-            browsing = fixed(KeyEvent.VK_PAGE_DOWN, "Page down"),
+            browsing = fixed(KeyEvent.VK_PAGE_DOWN, Res.string.gamepad_target_page_down),
             player = player(PlayerShortcutAction.SpeedUp),
         ),
 
@@ -114,7 +116,7 @@ internal object GamepadDefaults {
             player = player(PlayerShortcutAction.CycleSvp),
         ),
         GamepadButton.RightStickUp to GamepadBinding(
-            browsing = fixed(KeyEvent.VK_HOME, "Jump to top"),
+            browsing = fixed(KeyEvent.VK_HOME, Res.string.gamepad_target_jump_to_top),
             player = player(PlayerShortcutAction.CycleColorProfile),
         ),
         GamepadButton.RightStickDown to GamepadBinding(

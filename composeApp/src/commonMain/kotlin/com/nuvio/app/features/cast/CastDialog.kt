@@ -38,6 +38,9 @@ import com.nuvio.app.core.ui.NuvioModalDialog
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.nuvio
 import kotlinx.coroutines.launch
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.getString
 
 /** Hosts the "Play on device" picker once, at the app root. See [CastController]. */
 @Composable
@@ -72,7 +75,7 @@ private fun CastDialog(
         scope.launch {
             when (val result = DeviceCastPlatform.cast(device, request, dolbyVision)) {
                 CastStartResult.Started -> {
-                    NuvioToastController.show("Playing on ${device.name}")
+                    NuvioToastController.show(getString(Res.string.cast_toast_playing_on, device.name))
                     onDismiss()
                 }
                 is CastStartResult.Failed -> {
@@ -85,12 +88,12 @@ private fun CastDialog(
 
     NuvioModalDialog(
         onDismissRequest = onDismiss,
-        title = "Play on device",
+        title = stringResource(Res.string.cast_dialog_title),
         subtitle = request.title,
         maxWidth = 520.dp,
         actions = {
-            TextButton(onClick = { scanGeneration++ }, enabled = !scanning && startingOn == null) { Text("Search again") }
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = { scanGeneration++ }, enabled = !scanning && startingOn == null) { Text(stringResource(Res.string.cast_search_again)) }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
         },
     ) {
         Column(
@@ -112,11 +115,10 @@ private fun CastDialog(
                     modifier = Modifier.padding(vertical = 6.dp),
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("Looking for TVs and players on your network…", color = tokens.colors.textMuted)
+                    Text(stringResource(Res.string.cast_searching), color = tokens.colors.textMuted)
                 }
                 devices.isEmpty() -> Text(
-                    "No devices found. The TV or player must be on, on the same network, and have DLNA " +
-                        "(media sharing / UPnP) enabled. Windows may also ask to let Nuvio through its firewall.",
+                    stringResource(Res.string.cast_no_devices),
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.colors.textMuted,
                 )
@@ -129,13 +131,12 @@ private fun CastDialog(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Dolby Vision (beta)", style = MaterialTheme.typography.bodyLarge, color = tokens.colors.textPrimary)
+                Text(stringResource(Res.string.cast_dolby_vision), style = MaterialTheme.typography.bodyLarge, color = tokens.colors.textPrimary)
                 Text(
                     text = if (dolbyVisionAvailable) {
-                        "Repackages the stream as MP4 so TVs that ignore Dolby Vision in MKV can use it. " +
-                            "Seeking is slower and less tested. Kodi always gets the original stream."
+                        stringResource(Res.string.cast_dolby_vision_description)
                     } else {
-                        "Needs ffmpeg installed on this PC (for example: winget install Gyan.FFmpeg)."
+                        stringResource(Res.string.cast_dolby_vision_needs_ffmpeg)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.colors.textMuted,
@@ -191,7 +192,7 @@ private fun CastDeviceRow(
         } else {
             Icon(
                 imageVector = Icons.Rounded.Cast,
-                contentDescription = "Play here",
+                contentDescription = stringResource(Res.string.cast_play_here),
                 tint = if (enabled) tokens.colors.accent else tokens.colors.textDisabled,
             )
         }

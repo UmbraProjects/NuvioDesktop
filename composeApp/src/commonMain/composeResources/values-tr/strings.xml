@@ -487,7 +487,7 @@
     <string name="settings_account_email">E-posta</string>
     <string name="settings_account_not_signed_in">Giriş yapılmadı</string>
     <string name="settings_account_sign_out">Çıkış yap</string>
-    <string name="settings_account_sign_out_confirm_message">Giriş ekranına geri döneceksin.</string>
+    <string name="settings_account_sign_out_confirm_message">Ayarların, tekrar giriş yaptığında kullanılmak üzere bu PC\'de kalır ve burada oturum açan diğer kişilerden ayrı tutulur. Paylaşılan veya herkese açık bir bilgisayarda ayarlarını, girişlerini ve anahtarlarını bu PC\'den de kaldırmak için Çıkış Yap ve Sil\'i seç. Nuvio her iki durumda da yeniden başlar.</string>
     <string name="settings_account_sign_out_confirm_title">Çıkış yapılsın mı?</string>
     <string name="settings_account_status">Durum</string>
     <string name="settings_account_status_anonymous">Anonim</string>
@@ -533,7 +533,7 @@
     <string name="settings_homescreen_summary_hint">Bir kataloğu yalnızca adını değiştirmek veya sıralamak gerektiğinde aç.</string>
     <string name="settings_homescreen_visible">Görünür</string>
     <string name="settings_hide_secret">Değeri gizle</string>
-    <string name="settings_playback_subtitle">Oynatıcı, altyazılar ve otomatik oynatma</string>
+    <string name="settings_playback_subtitle">Görüntü kalitesi, HDR, yükseltme ve ses çıkışı</string>
     <string name="settings_poster_card_radius">Kart yuvarlaklığı</string>
     <string name="settings_poster_card_style">POSTER KART STİLİ</string>
     <string name="settings_poster_card_width">Kart genişliği</string>
@@ -558,7 +558,7 @@
     <string name="settings_poster_width_large">Büyük</string>
     <string name="settings_poster_width_standard">Standart</string>
     <string name="settings_show_secret">Değeri göster</string>
-    <string name="settings_continue_watching_resume_prompt_description">Oynatıcıdan çıktıktan sonra uygulamayı açınca kaldığın yerden devam etmen için bir pencere göster.</string>
+    <string name="settings_continue_watching_resume_prompt_description">Bir video oynatılırken Nuvio kapanır veya çökerse, bir sonraki açılışta kaldığın yerden devam etmeyi önerir.</string>
     <string name="settings_continue_watching_resume_prompt_title">Açılışta devam et uyarısı</string>
     <string name="settings_continue_watching_blur_next_up_description">Sürprizbozanları (spoiler) önlemek için İzlemeye Devam Et rafındaki sonraki bölüm küçük resimlerini bulanıklaştır.</string>
     <string name="settings_continue_watching_blur_next_up_title">İzlemeye Devam Et Rafında İzlenmeyenleri Bulanıklaştır</string>
@@ -566,10 +566,10 @@
     <string name="settings_continue_watching_show_unaired_next_up_title">Henüz Yayınlanmamış Gelecek Bölümleri Göster</string>
     <string name="settings_continue_watching_section_sort_order">SIRALAMA DÜZENİ</string>
     <string name="settings_continue_watching_sort_mode_title">Sıralama Düzeni</string>
-    <string name="settings_continue_watching_sort_mode_default">Varsayılan</string>
-    <string name="settings_continue_watching_sort_mode_default_desc">Tüm içerikleri son izleme zamanına göre sırala</string>
-    <string name="settings_continue_watching_sort_mode_streaming">Yayın Tarzı</string>
-    <string name="settings_continue_watching_sort_mode_streaming_desc">Yayınlanan içerikler önde, yakında çıkacaklar ise sonda yer alır</string>
+    <string name="settings_continue_watching_sort_mode_default">Son izlenen</string>
+    <string name="settings_continue_watching_sort_mode_default_desc">Her şeyi en son ne zaman izlediğine göre sırala</string>
+    <string name="settings_continue_watching_sort_mode_streaming">Yayınlananlar önce</string>
+    <string name="settings_continue_watching_sort_mode_streaming_desc">Henüz yayınlanmamış Sıradaki bölümler sona gider, en yakın olan önce</string>
     <string name="settings_continue_watching_section_card_style">KART STİLİ</string>
     <string name="settings_continue_watching_section_on_launch">AÇILIŞTA</string>
     <string name="settings_continue_watching_section_up_next_behavior">SONRAKİ DAVRANIŞI</string>
@@ -580,7 +580,7 @@
     <string name="settings_continue_watching_style_poster_description">Görsel odaklı poster kartı</string>
     <string name="settings_continue_watching_style_wide">Geniş</string>
     <string name="settings_continue_watching_style_wide_description">Bilgi ağırlıklı yatay kart</string>
-    <string name="settings_continue_watching_up_next_description">Açıksa Sonraki, her zaman en ileri izlenen bölümden devam eder. Kapalıysa en son izlenen bölümden ilerler. Önceki bölümleri yeniden izliyorsan işe yarar.</string>
+    <string name="settings_continue_watching_up_next_description">Yeniden izlemeler için aç.</string>
     <string name="settings_continue_watching_up_next_title">Sonraki en ileri bölümden başlasın</string>
     <string name="settings_continue_watching_use_episode_thumbnails_description">Varsa bölüm küçük resimlerini tercih et.</string>
     <string name="settings_continue_watching_use_episode_thumbnails_title">İzlemeye Devam Et Rafında Bölüm Küçük Resimlerini Tercih Et</string>
@@ -600,7 +600,7 @@
     <string name="settings_debrid_cloud_library">Bulut kitaplığı</string>
     <string name="settings_debrid_cloud_library_description">Bağlı hesaplarında zaten bulunan dosyaları gözden geçir ve oynat.</string>
     <string name="settings_debrid_enable">Oynatılabilir bağlantıları çöz</string>
-    <string name="settings_debrid_enable_description">Bir sonuç gerektiğinde bağlı bir servisten oynatılabilir bağlantılar iste. Bu işlem, içeriği o servise ekleyebilir.</string>
+    <string name="settings_debrid_enable_description">Bir sonuç gerektirdiğinde bağlı bir servisten oynatılabilir bağlantılar ister.</string>
     <string name="settings_debrid_resolve_with">Şununla çöz</string>
     <string name="settings_debrid_resolve_with_description">Oynatılabilir bağlantıları hangi bağlı hesabın işleyeceğini seç.</string>
     <string name="settings_debrid_add_key_first">Önce bir hesap bağla.</string>
@@ -628,7 +628,7 @@
     <string name="settings_debrid_prepare_instant_playback">Bağlantıları hazırla</string>
     <string name="settings_debrid_prepare_instant_playback_description">Oynatma başlamadan önce oynatılabilir bağlantıları çöz.</string>
     <string name="settings_debrid_prepare_stream_count">Hazırlanacak bağlantı sayısı</string>
-    <string name="settings_debrid_prepare_stream_count_warning">Mümkünse daha düşük bir sayı seç. Bağlı servisler, belirli bir sürede çözülebilecek bağlantı sayısını sınırlayabilir. Bir filmi veya bölümü açmak, İzle butonuna basmasan bile limitlerini etkileyebilir, çünkü bağlantılar önceden hazırlanır.</string>
+    <string name="settings_debrid_prepare_stream_count_warning">Düşük tut: servisler bağlantı çözümlemeyi sınırlayabilir ve bağlantılar önceden hazırlandığı için bir yapımı açmak, İzle\'ye basmasan bile sayılır.</string>
     <string name="settings_debrid_prepare_count_one">1 bağlantı</string>
     <string name="settings_debrid_prepare_count_many">%1$d bağlantı</string>
     <string name="settings_debrid_section_formatting">Biçimlendirme</string>
@@ -738,12 +738,12 @@
     <string name="settings_playback_anime_skip_client_id">AnimeSkip Client ID</string>
     <string name="settings_playback_anime_skip_client_id_description">AnimeSkip API client ID'ni gir. anime-skip.com üzerinden alabilirsin.</string>
     <string name="settings_playback_intro_submit_enabled">Giriş Geçme Gönderimini Aç</string>
-    <string name="settings_playback_intro_submit_enabled_description">Giriş/jenerik zaman damgalarını topluluk veritabanına göndermek için bir buton göster.</string>
+    <string name="settings_playback_intro_submit_enabled_description">Giriş/bitiş sürelerini SkipDB\'ye gönder. Bir bölüm atlamasından sonra göndermek için atla tuşuna tekrar bas; aksi halde bir bölümün başında, sonunda ve göndermek için bir kez daha bas.</string>
     <string name="settings_playback_introdb_api_key">IntroDB API Anahtarı</string>
     <string name="settings_playback_introdb_api_key_description">Zaman damgası göndermek için IntroDB API anahtarını gir. Gönderim için zorunludur.</string>
     <string name="settings_playback_anime_skip_description">Geçme zamanları için AnimeSkip'te de ara (client ID gerekir).</string>
     <string name="settings_playback_auto_play_next_episode">Sonraki bölümü otomatik oynat</string>
-    <string name="settings_playback_auto_play_next_episode_description">Eşik değere ulaşılınca sonraki bölümü otomatik bulup oynat.</string>
+    <string name="settings_playback_auto_play_next_episode_description">Sonraki bölümü otomatik kabul et ve geri sayımı atla.</string>
     <string name="settings_playback_decoder_device_only">Sadece cihaz</string>
     <string name="settings_playback_decoder_prefer_app">Uygulamayı tercih et (FFmpeg)</string>
     <string name="settings_playback_decoder_prefer_device">Cihazı tercih et</string>
@@ -778,7 +778,7 @@
     <string name="settings_playback_option_forced">Zorunlu</string>
     <string name="settings_playback_option_none">Yok</string>
     <string name="settings_playback_prefer_binge_group">Binge grubunu tercih et</string>
-    <string name="settings_playback_prefer_binge_group_description">Otomatik oynatırken mevcut yayınla aynı binge grubundan bir yayın tercih et.</string>
+    <string name="settings_playback_prefer_binge_group_description">Önce aynı kaynak profilini dene (aynı eklenti/kalite grubu.)</string>
     <string name="settings_playback_reuse_binge_group">Binge Grubunu Tekrar Kullan</string>
     <string name="settings_playback_reuse_binge_group_description">Oturumlar arasında en son kullanılan binge grubunu hatırla ve tekrar kullan (İzlemeye Devam Et, Detaylar vb.).</string>
     <string name="settings_playback_preferred_audio_language">Tercih edilen ses dili</string>
@@ -830,10 +830,10 @@
     <string name="settings_playback_source_scope_all_sources_description">Hem eklentilerden hem pluginlerden gelen yayınları dikkate al.</string>
     <string name="settings_playback_source_scope_enabled_plugins_only">Sadece açık pluginler</string>
     <string name="settings_playback_source_scope_enabled_plugins_only_description">Yalnızca açık pluginlerden gelen yayınları dikkate al.</string>
-    <string name="settings_playback_source_scope_installed_addons_only">Sadece kurulu eklentiler</string>
+    <string name="settings_playback_source_scope_installed_addons_only">Kurulu eklentiler</string>
     <string name="settings_playback_source_scope_installed_addons_only_description">Yalnızca kurulu eklentilerden gelen yayınları dikkate al.</string>
     <string name="settings_playback_stream_selection_mode">Yayın seçme modu</string>
-    <string name="settings_playback_stream_selection_mode_first_stream">İlk uygun yayın</string>
+    <string name="settings_playback_stream_selection_mode_first_stream">İlk kaynak</string>
     <string name="settings_playback_stream_selection_mode_first_stream_description">Bulunan ilk yayını otomatik oynat.</string>
     <string name="settings_playback_stream_selection_mode_manual">Manuel</string>
     <string name="settings_playback_stream_selection_mode_manual_description">Her seferinde yayını kendin seç.</string>
@@ -1401,16 +1401,16 @@
     <string name="cw_airs_today">Bugün yayında</string>
     <string name="cw_airs_tomorrow">Yarın yayında</string>
     <plurals name="cw_airs_in_days">
-        <item quantity="one">Yayın tarihi: %1$d gün sonra</item>
-        <item quantity="other">Yayın tarihi: %1$d gün sonra</item>
-    </plurals>
+            <item quantity="one">Yayın tarihi: %1$d gün sonra</item>
+            <item quantity="other">Yayın tarihi: %1$d gün sonra</item>
+        </plurals>
     <string name="cw_airs_date_short">%1$s</string>
     <string name="cw_airs_today_short">Bugün</string>
     <string name="cw_airs_tomorrow_short">Yarın</string>
     <plurals name="cw_airs_in_days_short">
-        <item quantity="one">%1$d gün sonra</item>
-        <item quantity="other">%1$d gün sonra</item>
-    </plurals>
+            <item quantity="one">%1$d gün sonra</item>
+            <item quantity="other">%1$d gün sonra</item>
+        </plurals>
     <string name="cw_new_episode">Yeni Bölüm</string>
     <string name="cw_new_season">Yeni Sezon</string>
 </resources>

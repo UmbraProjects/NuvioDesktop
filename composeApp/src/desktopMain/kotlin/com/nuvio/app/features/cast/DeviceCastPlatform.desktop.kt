@@ -18,6 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private val castLog = Logger.withTag("Cast")
 
@@ -47,7 +49,7 @@ internal actual object DeviceCastPlatform {
                 start(device, request, dolbyVision && Ffmpeg.available)
             } catch (error: Exception) {
                 castLog.w(error) { "Cast to ${device.name} failed" }
-                CastStartResult.Failed("Couldn't play on ${device.name}: ${error.message ?: error::class.simpleName}")
+                CastStartResult.Failed(localizedString(Res.string.cast_error_failed, device.name, error.message ?: error::class.simpleName.orEmpty()))
             }
         }
 
@@ -57,10 +59,10 @@ internal actual object DeviceCastPlatform {
 
     private fun start(device: CastDevice, request: CastRequest, dolbyVision: Boolean): CastStartResult {
         val renderer = renderers[device.id]
-            ?: return CastStartResult.Failed("${device.name} is no longer available. Search again.")
+            ?: return CastStartResult.Failed(localizedString(Res.string.cast_error_device_gone, device.name))
         val scheme = runCatching { URI(request.sourceUrl).scheme?.lowercase(Locale.ROOT) }.getOrNull()
         if (scheme != "http" && scheme != "https") {
-            return CastStartResult.Failed("Only online streams can be played on another device for now.")
+            return CastStartResult.Failed(localizedString(Res.string.cast_error_online_only))
         }
         active?.finish(stopRenderer = false)
         if (dolbyVision && renderer.isKodi) {
@@ -84,8 +86,8 @@ internal actual object DeviceCastPlatform {
         var castStartS = 0.0
         var castDurationS = durationS
         if (dolbyVision) {
-            val duration = durationS ?: return CastStartResult.Failed("Couldn't read the stream's length for Dolby Vision mode.")
-            val byteRate = (source.sizeBytes ?: return CastStartResult.Failed("The stream didn't report its size.")) / duration
+            val duration = durationS ?: return CastStartResult.Failed(localizedString(Res.string.cast_error_no_duration))
+            val byteRate = (source.sizeBytes ?: return CastStartResult.Failed(localizedString(Res.string.cast_error_no_size))) / duration
             if (request.resumePositionMs >= RESUME_MIN_MS) {
                 castStartS = Ffmpeg.keyframeAtOrBeforeS(source.url, request.sourceHeaders, request.resumePositionMs / 1000.0)
             }
@@ -138,7 +140,7 @@ internal actual object DeviceCastPlatform {
         } catch (error: UpnpException) {
             relay.clear()
             spoolDir?.deleteRecursively()
-            return CastStartResult.Failed("${device.name} refused to play the stream (${error.message}).")
+            return CastStartResult.Failed(localizedString(Res.string.cast_error_refused, device.name, error.message.toString()))
         }
 
         active = ActiveCast(

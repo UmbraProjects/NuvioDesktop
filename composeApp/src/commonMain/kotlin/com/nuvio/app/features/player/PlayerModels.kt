@@ -1,7 +1,9 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.i18n.localizedString
 import androidx.compose.runtime.Composable
 import kotlinx.serialization.Serializable
+import nuvio.composeapp.generated.resources.*
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.player_ios_hardware_decoder_off
 import nuvio.composeapp.generated.resources.player_ios_preset_compatibility_desc
@@ -12,6 +14,7 @@ import nuvio.composeapp.generated.resources.player_ios_preset_native_edr_desc
 import nuvio.composeapp.generated.resources.player_ios_preset_native_edr_label
 import nuvio.composeapp.generated.resources.player_ios_preset_sdr_tone_mapped_desc
 import nuvio.composeapp.generated.resources.player_ios_preset_sdr_tone_mapped_label
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 @Serializable
@@ -187,17 +190,17 @@ enum class IosAudioOutputMode(
     AudioUnit("audiounit", "AudioUnit"),
 }
 
-enum class DesktopHdrMode(val label: String, val description: String) {
-    Auto("Auto", "Let the OS decide between passthrough and tonemapping based on your display."),
-    AlwaysTonemap("Always Tonemap", "Force HDR content to be tonemapped to SDR, even on HDR displays."),
-    AlwaysPassthrough("Always Passthrough", "Always attempt HDR passthrough, even on SDR displays."),
+enum class DesktopHdrMode(val labelRes: StringResource, val descriptionRes: StringResource) {
+    Auto(Res.string.player_hdr_mode_auto_label, Res.string.player_hdr_mode_auto_desc),
+    AlwaysTonemap(Res.string.player_hdr_mode_always_tonemap_label, Res.string.player_hdr_mode_always_tonemap_desc),
+    AlwaysPassthrough(Res.string.player_hdr_mode_always_passthrough_label, Res.string.player_hdr_mode_always_passthrough_desc),
 }
 
-enum class DesktopColorProfile(val label: String, val description: String) {
-    Neutral("Neutral", "No color adjustments applied. Accurate to the source."),
-    Cinematic("Cinematic", "Slightly deeper contrast with richer colors for a cinematic look."),
-    Vivid("Vivid", "Boosted contrast and saturation for a punchier image."),
-    Custom("Custom", "Your own contrast, brightness, saturation and gamma offsets."),
+enum class DesktopColorProfile(val labelRes: StringResource, val descriptionRes: StringResource) {
+    Neutral(Res.string.player_color_profile_neutral_label, Res.string.player_color_profile_neutral_desc),
+    Cinematic(Res.string.player_color_profile_cinematic_label, Res.string.player_color_profile_cinematic_desc),
+    Vivid(Res.string.player_color_profile_vivid_label, Res.string.player_color_profile_vivid_desc),
+    Custom(Res.string.player_color_profile_custom_label, Res.string.player_color_profile_custom_desc),
 }
 
 /**
@@ -219,10 +222,10 @@ enum class DesktopColorProfile(val label: String, val description: String) {
  * Anime4K and custom GLSL chains are left alone in every mode — they are an explicit, visible user
  * choice, and silently dropping them would be a worse surprise than the quality loss here.
  */
-enum class DesktopLowVramMode(val label: String, val description: String) {
-    Off("Off", "Always use the full rendering pipeline, whatever the GPU reports."),
-    Auto("Auto", "Trim the pipeline on integrated graphics and GPUs with under 2 GB of video memory."),
-    On("On", "Always trim: bilinear scaling, no debanding, dithering or HDR peak detection."),
+enum class DesktopLowVramMode(val labelRes: StringResource, val descriptionRes: StringResource) {
+    Off(Res.string.player_low_vram_off_label, Res.string.player_low_vram_off_desc),
+    Auto(Res.string.player_low_vram_auto_label, Res.string.player_low_vram_auto_desc),
+    On(Res.string.player_low_vram_on_label, Res.string.player_low_vram_on_desc),
 }
 
 enum class DesktopSourceNotchPosition {
@@ -282,15 +285,11 @@ enum class DesktopHudLayout {
     Official,
 }
 
-enum class DesktopBufferPreset(val label: String, val description: String) {
-    Metered(
-        "Metered",
-        "Smallest buffer, and pausing stops the download instead of filling the buffer. " +
-            "For capped or metered connections; high-bitrate files may stall.",
-    ),
-    LowData("Low Data", "Minimizes network and memory use with a short playback buffer."),
-    Balanced("Balanced", "Keeps a moderate buffer for reliable playback without excessive read-ahead."),
-    Resilient("Resilient", "Uses a large buffer for unstable or high-latency connections."),
+enum class DesktopBufferPreset(val labelRes: StringResource, val descriptionRes: StringResource) {
+    Metered(Res.string.player_buffer_metered_label, Res.string.player_buffer_metered_desc),
+    LowData(Res.string.player_buffer_low_data_label, Res.string.player_buffer_low_data_desc),
+    Balanced(Res.string.player_buffer_balanced_label, Res.string.player_buffer_balanced_desc),
+    Resilient(Res.string.player_buffer_resilient_label, Res.string.player_buffer_resilient_desc),
 }
 
 /**
@@ -298,20 +297,11 @@ enum class DesktopBufferPreset(val label: String, val description: String) {
  * one byte-range request per hovered position. Against a debrid CDN those opens are exactly what
  * gets rate-limited, so previews can be limited to sources the user controls.
  */
-enum class DesktopSeekThumbnailMode(val label: String, val description: String) {
-    Off("Off", "No preview frames. The hover card still shows the time and chapter."),
-    Local(
-        "Local",
-        "Previews only for files on this PC and servers on your home network. Debrid and other internet streams, and torrents, get none.",
-    ),
-    LocalAndSeekr(
-        "Local + Seekr",
-        "Local previews for files on this PC and your home network. Debrid streams and torrents use Seekr's ready-made thumbnails when it has the title and show none otherwise, so the stream's host is never asked. If Seekr switches its thumbnails off, debrid streams fall back to local previews. Needs a Seekr key under Integrations.",
-    ),
-    Streaming(
-        "Streaming",
-        "Previews for every source. With a Seekr key, streams use Seekr's thumbnails first. Otherwise each hovered position is another request to the stream's host, which can get you rate-limited by debrid providers.",
-    ),
+enum class DesktopSeekThumbnailMode(val labelRes: StringResource, val descriptionRes: StringResource) {
+    Off(Res.string.player_seek_thumbnails_off_label, Res.string.player_seek_thumbnails_off_desc),
+    Local(Res.string.player_seek_thumbnails_local_label, Res.string.player_seek_thumbnails_local_desc),
+    LocalAndSeekr(Res.string.player_seek_thumbnails_local_seekr_label, Res.string.player_seek_thumbnails_local_seekr_desc),
+    Streaming(Res.string.player_seek_thumbnails_streaming_label, Res.string.player_seek_thumbnails_streaming_desc),
 }
 
 /**
@@ -320,19 +310,10 @@ enum class DesktopSeekThumbnailMode(val label: String, val description: String) 
  * ban on one `nexus-N` node lasting over an hour (measured 2026-09-26), so for TorBox "reconnect"
  * means reopening the same link through another node; other hosts are reopened after a wait.
  */
-enum class DesktopRateLimitRecoveryMode(val label: String, val description: String) {
-    Off(
-        "Off",
-        "Never reconnect. A rate limit fails over to another source if Stream Failover is on, otherwise playback stops.",
-    ),
-    PreferFailover(
-        "Prefer Failover",
-        "Fail over to another source when Stream Failover is on; reconnect only when it is off.",
-    ),
-    PreferReconnect(
-        "Prefer Reconnect",
-        "Reconnect to the same stream first (TorBox links switch server instantly), then fail over.",
-    ),
+enum class DesktopRateLimitRecoveryMode(val labelRes: StringResource, val descriptionRes: StringResource) {
+    Off(Res.string.player_rate_limit_recovery_off_label, Res.string.player_rate_limit_recovery_off_desc),
+    PreferFailover(Res.string.player_rate_limit_recovery_prefer_failover_label, Res.string.player_rate_limit_recovery_prefer_failover_desc),
+    PreferReconnect(Res.string.player_rate_limit_recovery_prefer_reconnect_label, Res.string.player_rate_limit_recovery_prefer_reconnect_desc),
 }
 
 /** Choices for the two reconnect waits used on hosts other than TorBox. */
@@ -340,11 +321,11 @@ val RATE_LIMIT_RECONNECT_DELAY_VALUES: List<Int> = listOf(3, 5, 10, 20, 30, 60, 
 const val RATE_LIMIT_RECONNECT_FIRST_DEFAULT_SECONDS = 5
 const val RATE_LIMIT_RECONNECT_SECOND_DEFAULT_SECONDS = 20
 
-enum class DesktopMpvConfigMode(val label: String, val description: String) {
-    Off("Off", "Use Nuvio's mpv configuration and ignore the custom options below."),
-    Add("Add", "Add custom options only when Nuvio has not already configured that option."),
-    Replace("Replace", "Custom options override matching Nuvio options; unspecified options keep Nuvio defaults."),
-    Full("Full", "Use only the custom configuration plus the options required to embed mpv in Nuvio."),
+enum class DesktopMpvConfigMode(val labelRes: StringResource, val descriptionRes: StringResource) {
+    Off(Res.string.player_mpv_config_off_label, Res.string.player_mpv_config_off_desc),
+    Add(Res.string.player_mpv_config_add_label, Res.string.player_mpv_config_add_desc),
+    Replace(Res.string.player_mpv_config_replace_label, Res.string.player_mpv_config_replace_desc),
+    Full(Res.string.player_mpv_config_full_label, Res.string.player_mpv_config_full_desc),
 }
 
 /**
@@ -357,15 +338,15 @@ enum class DesktopMpvConfigMode(val label: String, val description: String) {
  * HDR rather than the GPU model, so it cannot be predicted. OpenGL renders the UI slightly better
  * and stays selectable as an opt-in.
  */
-enum class DesktopRendererApi(val label: String, val description: String, val skikoRenderApi: String) {
+enum class DesktopRendererApi(val label: String, val descriptionRes: StringResource, val skikoRenderApi: String) {
     OpenGL(
         "OpenGL",
-        "More polished UI. If fullscreen playback shows a black screen, switch back to Direct3D 11.",
+        Res.string.player_renderer_opengl_desc,
         "OPENGL",
     ),
     D3D11(
         "Direct3D 11",
-        "Most compatible. Recommended for most systems.",
+        Res.string.player_renderer_d3d11_desc,
         "DIRECT3D",
     ),
 }
@@ -376,18 +357,18 @@ enum class DesktopRendererApi(val label: String, val description: String, val sk
  * "Auto-apply to Anime" is on); CustomShader points at a user-provided shader from the desktop
  * shader library. F10 cycles a session-scoped force instead — see [DesktopAnimeSessionOverride].
  */
-enum class DesktopAnimeMode(val label: String, val description: String) {
-    Off("Off", "Never apply anime enhancements."),
-    Optimized("Optimized", "Anime4K Optimized — razor-sharp edges with the lightest GPU load."),
-    Fast("Fast", "Anime4K Eye-Candy (Fast) — stronger restore and line-thinning."),
-    Hq("HQ", "Anime4K Eye-Candy (HQ) — maximum quality, heaviest GPU load."),
-    ModeAFast("Mode A (Fast)", "Anime4K Mode A — best for blurry/compressed sources. Balanced speed and quality."),
-    ModeAHq("Mode A (HQ)", "Anime4K Mode A — best for blurry/compressed sources. Highest quality, heavier GPU load."),
-    ModeBFast("Mode B (Fast)", "Anime4K Mode B — best for already-clean or soft sources. Balanced speed and quality."),
-    ModeBHq("Mode B (HQ)", "Anime4K Mode B — best for already-clean or soft sources. Highest quality, heavier GPU load."),
-    ModeCFast("Mode C (Fast)", "Anime4K Mode C — best for noisy or heavily compressed sources. Balanced speed and quality."),
-    ModeCHq("Mode C (HQ)", "Anime4K Mode C — best for noisy or heavily compressed sources. Highest quality, heavier GPU load."),
-    CustomShader("Custom Shader", "Use the selected user shader from the desktop shader library."),
+enum class DesktopAnimeMode(val labelRes: StringResource, val descriptionRes: StringResource) {
+    Off(Res.string.player_anime_mode_off_label, Res.string.player_anime_mode_off_desc),
+    Optimized(Res.string.player_anime_mode_optimized_label, Res.string.player_anime_mode_optimized_desc),
+    Fast(Res.string.player_anime_mode_fast_label, Res.string.player_anime_mode_fast_desc),
+    Hq(Res.string.player_anime_mode_hq_label, Res.string.player_anime_mode_hq_desc),
+    ModeAFast(Res.string.player_anime_mode_a_fast_label, Res.string.player_anime_mode_a_fast_desc),
+    ModeAHq(Res.string.player_anime_mode_a_hq_label, Res.string.player_anime_mode_a_hq_desc),
+    ModeBFast(Res.string.player_anime_mode_b_fast_label, Res.string.player_anime_mode_b_fast_desc),
+    ModeBHq(Res.string.player_anime_mode_b_hq_label, Res.string.player_anime_mode_b_hq_desc),
+    ModeCFast(Res.string.player_anime_mode_c_fast_label, Res.string.player_anime_mode_c_fast_desc),
+    ModeCHq(Res.string.player_anime_mode_c_hq_label, Res.string.player_anime_mode_c_hq_desc),
+    CustomShader(Res.string.player_anime_mode_custom_shader_label, Res.string.player_anime_mode_custom_shader_desc),
 }
 
 /**
@@ -400,7 +381,7 @@ data class DesktopAnimeSessionOverride(
     val mode: DesktopAnimeMode,
     val customShaderPath: String = "",
     // Display label for pills/HUD: the preset label, or the shader file name for CustomShader.
-    val label: String = mode.label,
+    val label: String = localizedString(mode.labelRes),
 )
 
 /**

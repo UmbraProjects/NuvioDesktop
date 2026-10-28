@@ -286,6 +286,48 @@ const p2pConsentBody = document.getElementById("p2pConsentBody");
 const p2pConsentCancelButton = document.getElementById("p2pConsentCancelButton");
 const p2pConsentEnableButton = document.getElementById("p2pConsentEnableButton");
 
+// The HUD's own text comes from the app's string resources: Kotlin sends them once per page as
+// `hudLabels` (key = strings.xml name) with the first controls push. Every call site keeps its
+// English as the fallback, so a missing key, or text drawn before that push, still reads right.
+function hudText(key, fallback) {
+  const labels = typeof state === "object" && state ? state.hudLabels : null;
+  const value = labels && key ? labels[key] : null;
+  return typeof value === "string" && value ? value : fallback;
+}
+
+// hudText for a string resource with %1$s-style arguments.
+function hudFormat(key, fallback, ...args) {
+  return hudText(key, fallback).replace(/%(\d+)\$[sd]/g, (match, index) => {
+    const arg = args[Number(index) - 1];
+    return arg == null ? "" : String(arg);
+  });
+}
+
+// Static markup carries its key in data-i18n* attributes (controls.html); this rewrites those
+// nodes once the labels arrive. Text JS sets later goes through hudText at its own call site.
+const HUD_I18N_ATTRIBUTES = [
+  ["i18nAriaLabel", "aria-label"],
+  ["i18nTitle", "title"],
+  ["i18nPlaceholder", "placeholder"],
+  ["i18nTooltip", "data-tooltip"],
+  ["i18nAlt", "alt"],
+];
+function applyHudLabels(root = document) {
+  root.querySelectorAll("[data-i18n]").forEach(element => {
+    element.textContent = hudText(element.dataset.i18n, element.textContent);
+  });
+  HUD_I18N_ATTRIBUTES.forEach(([datasetKey, attribute]) => {
+    const selector = `[data-${datasetKey.replace(/[A-Z]/g, c => "-" + c.toLowerCase())}]`;
+    root.querySelectorAll(selector).forEach(element => {
+      element.setAttribute(attribute, hudText(element.dataset[datasetKey], element.getAttribute(attribute) || ""));
+    });
+  });
+  // Context-menu rows whose checkmark compares against their own (now translated) label.
+  root.querySelectorAll("[data-i18n-selected-value]").forEach(element => {
+    element.dataset.selectedValue = hudText(element.dataset.i18nSelectedValue, element.dataset.selectedValue || "");
+  });
+}
+
 let state = {
   title: "",
   episodeText: "",
@@ -1068,7 +1110,7 @@ const durationLabelText = (durationMs, positionMs) => {
 const applyDurationLabel = () => {
   const durationMs = Math.max(0, Number(state.durationMs) || 0);
   durationLabel.textContent = durationLabelText(durationMs, Number(state.positionMs) || 0);
-  durationLabel.title = showRemainingTime ? "Click to show total duration" : "Click to show time remaining";
+  durationLabel.title = showRemainingTime ? hudText("player_hud_click_to_show_total_duration", "Click to show total duration") : hudText("player_hud_click_to_show_time_remaining", "Click to show time remaining");
 };
 
 durationLabel.addEventListener("click", event => {
@@ -1127,7 +1169,7 @@ const applyUltraHudLayout = enabled => {
     minimalTime.parentElement.insertBefore(playerVolumeControl, minimalTime);
   }
   // The same toggle is "the rest of the icons" everywhere else and "the options" here.
-  if (actionOverflowButton) actionOverflowButton.dataset.tooltip = enabled ? "Options" : "More controls";
+  if (actionOverflowButton) actionOverflowButton.dataset.tooltip = enabled ? hudText("player_hud_options", "Options") : hudText("player_hud_more_controls", "More controls");
   // The fold rule changes with the layout (everything folds in ultra), so re-measure.
   invalidateActionRowOverflow();
 };
@@ -1763,10 +1805,10 @@ const rangePositionMs = (input = seek) => {
 // packed 0xAARRGGBB integer - exact in a Double, and no new string channel to thread through the
 // native player. Alpha is resolved here, on the side that knows the current style.
 const SUBTITLE_COLOR_FIELDS = {
-  textColor: { title: "Custom Text Color", event: "subtitleTextColorArgb" },
-  outlineColor: { title: "Custom Outline Color", event: "subtitleOutlineColorArgb" },
-  backgroundColor: { title: "Custom Background Color", event: "subtitleBackgroundColorArgb" },
-  shadowColor: { title: "Custom Shadow Color", event: "subtitleShadowColorArgb" },
+  textColor: { get title() { return hudText("player_hud_custom_text_color", "Custom Text Color"); }, event: "subtitleTextColorArgb" },
+  outlineColor: { get title() { return hudText("player_hud_custom_outline_color", "Custom Outline Color"); }, event: "subtitleOutlineColorArgb" },
+  backgroundColor: { get title() { return hudText("player_hud_custom_background_color", "Custom Background Color"); }, event: "subtitleBackgroundColorArgb" },
+  shadowColor: { get title() { return hudText("player_hud_custom_shadow_color", "Custom Shadow Color"); }, event: "subtitleShadowColorArgb" },
 };
 
 const SUBTITLE_COLOR_EVENT_FIELDS = {
@@ -1808,7 +1850,7 @@ const updateSubtitleHexPreview = () => {
   const typed = String(subtitleHexInput.value || "").trim();
   const argb = parseHexColorInput(typed, subtitleHexField);
   const valid = argb !== null;
-  subtitleHexStatus.textContent = valid || !typed ? "" : "Enter a hex color like #FFD700 or #B3000000.";
+  subtitleHexStatus.textContent = valid || !typed ? "" : hudText("player_hud_enter_a_hex_color_like_ffd700", "Enter a hex color like #FFD700 or #B3000000.");
   subtitleHexApplyButton.disabled = !valid;
   if (!valid) return;
   const alpha = Math.floor(argb / 0x1000000);
@@ -2542,11 +2584,12 @@ const playbackSpeedMenuItems = [
 // Player HUD UI-scale presets (-50..+50%, matching the Playback settings slider). Exposed in the
 // right-click menu for quick testing; each preset checkmarks against the live uiScalePercent and
 // the two nudge rows step by the same 5% as the slider.
-const uiScalePresetItems = [{ label: "Increase (+5%)", action: "uiScaleDelta:5" },
-  { label: "Decrease (−5%)", action: "uiScaleDelta:-5" }];
+const uiScalePresetItems = [{ label: "Increase (+5%)", textKey: "player_hud_increase_5", action: "uiScaleDelta:5" },
+  { label: "Decrease (−5%)", textKey: "player_hud_decrease_5", action: "uiScaleDelta:-5" }];
 for (let pct = 50; pct >= -50; pct -= 10) {
   uiScalePresetItems.push({
     label: pct === 0 ? "Default (0%)" : `${pct > 0 ? "+" : ""}${pct}%`,
+    ...(pct === 0 ? { textKey: "player_hud_default_0" } : {}),
     action: `uiScaleSet:${pct}`,
     selectedField: "uiScalePercentValue",
     selectedValue: String(pct),
@@ -2557,13 +2600,14 @@ for (let pct = 50; pct >= -50; pct -= 10) {
 // leaving playback. Index = DesktopHudLayout.entries order; the checkmark reads the four HUD flags
 // the page already receives (hudLayoutValue below), so it tracks whichever side changed it.
 const hudLayoutItems = [
-  ["standard", "Standard"],
-  ["legacy", "Legacy"],
-  ["minimal", "Minimal"],
-  ["ultra", "Ultra Minimal"],
-  ["official", "Official Nuvio"],
-].map(([value, label], index) => ({
+  ["standard", "Standard", "player_hud_standard"],
+  ["legacy", "Legacy", "player_hud_legacy"],
+  ["minimal", "Minimal", "player_hud_minimal"],
+  ["ultra", "Ultra Minimal", "player_hud_ultra_minimal"],
+  ["official", "Official Nuvio", "player_hud_official_nuvio"],
+].map(([value, label, textKey], index) => ({
   label,
+  textKey,
   action: `hudLayout:${index}`,
   selectedField: "hudLayoutValue",
   selectedValue: value,
@@ -2578,147 +2622,147 @@ const currentHudLayoutValue = () => {
 
 const contextMenuItems = [
   {
-    label: "Playback",
+    label: "Playback", textKey: "player_hud_playback",
     children: [
-      { label: "Play / Pause", action: "send:toggle", shortcut: "K" },
+      { label: "Play / Pause", textKey: "player_hud_play_pause", action: "send:toggle", shortcut: "K" },
       // Labels carry the configured step, so they are rewritten by refreshSeekStepLabels()
       // whenever the setting changes rather than baked in at build time.
-      { label: "Seek back 10 seconds", labelKey: "seekBack", action: "send:seekBack", shortcut: "←" },
-      { label: "Seek forward 10 seconds", labelKey: "seekForward", action: "send:seekForward", shortcut: "→" },
-      { label: "Playback speed", children: playbackSpeedMenuItems },
-      { label: "Previous episode", action: "send:previousEpisode" },
-      { label: "Next episode", action: "send:nextEpisode" },
-      { label: "Picture in picture", action: "send:pictureInPicture" },
+      { label: "Seek back 10 seconds", textKey: "player_hud_seek_back_10_seconds", labelKey: "seekBack", action: "send:seekBack", shortcut: "←" },
+      { label: "Seek forward 10 seconds", textKey: "player_hud_seek_forward_10_seconds", labelKey: "seekForward", action: "send:seekForward", shortcut: "→" },
+      { label: "Playback speed", textKey: "player_hud_playback_speed", children: playbackSpeedMenuItems },
+      { label: "Previous episode", textKey: "player_hud_previous_episode", action: "send:previousEpisode" },
+      { label: "Next episode", textKey: "player_hud_next_episode", action: "send:nextEpisode" },
+      { label: "Picture in picture", textKey: "player_hud_picture_in_picture", action: "send:pictureInPicture" },
     ],
   },
   {
-    label: "Subtitles",
+    label: "Subtitles", textKey: "player_hud_subtitles",
     children: [
-      { label: "Built-in", dynamicKey: "subtitleTracks", children: [] },
-      { label: "Addon", dynamicKey: "addonSubtitles", children: [] },
+      { label: "Built-in", textKey: "player_hud_built_in", dynamicKey: "subtitleTracks", children: [] },
+      { label: "Addon", textKey: "player_hud_addon", dynamicKey: "addonSubtitles", children: [] },
       {
-        label: "Style",
+        label: "Style", textKey: "player_hud_style",
         children: [
-          { label: "Outline", action: "subtitleStyle:outline", toggleKey: "outlineEnabled" },
-          { label: "Outline width", children: [
-            { label: "Increase", action: "send:subtitleOutlineWidthDelta:1" },
-            { label: "Decrease", action: "send:subtitleOutlineWidthDelta:-1" },
+          { label: "Outline", textKey: "player_hud_outline", action: "subtitleStyle:outline", toggleKey: "outlineEnabled" },
+          { label: "Outline width", textKey: "player_hud_outline_width_2", children: [
+            { label: "Increase", textKey: "player_hud_increase", action: "send:subtitleOutlineWidthDelta:1" },
+            { label: "Decrease", textKey: "player_hud_decrease", action: "send:subtitleOutlineWidthDelta:-1" },
           ] },
-          { label: "Shadow", action: "subtitleStyle:shadow", toggleKey: "shadowEnabled" },
-          { label: "Shadow offset", children: [
-            { label: "Increase", action: "send:subtitleShadowOffsetDelta:5" },
-            { label: "Decrease", action: "send:subtitleShadowOffsetDelta:-5" },
+          { label: "Shadow", textKey: "player_hud_shadow", action: "subtitleStyle:shadow", toggleKey: "shadowEnabled" },
+          { label: "Shadow offset", textKey: "player_hud_shadow_offset_2", children: [
+            { label: "Increase", textKey: "player_hud_increase", action: "send:subtitleShadowOffsetDelta:5" },
+            { label: "Decrease", textKey: "player_hud_decrease", action: "send:subtitleShadowOffsetDelta:-5" },
           ] },
-          { label: "Shadow intensity", children: [
-            { label: "Increase", action: "subtitleShadowOpacity:10" },
-            { label: "Decrease", action: "subtitleShadowOpacity:-10" },
+          { label: "Shadow intensity", textKey: "player_hud_shadow_intensity_2", children: [
+            { label: "Increase", textKey: "player_hud_increase", action: "subtitleShadowOpacity:10" },
+            { label: "Decrease", textKey: "player_hud_decrease", action: "subtitleShadowOpacity:-10" },
           ] },
-          { label: "Blur", children: [
-            { label: "Increase", action: "send:subtitleBlurDelta:1" },
-            { label: "Decrease", action: "send:subtitleBlurDelta:-1" },
+          { label: "Blur", textKey: "player_hud_blur", children: [
+            { label: "Increase", textKey: "player_hud_increase", action: "send:subtitleBlurDelta:1" },
+            { label: "Decrease", textKey: "player_hud_decrease", action: "send:subtitleBlurDelta:-1" },
           ] },
-          { label: "Bold", action: "subtitleStyle:bold", toggleKey: "bold" },
-          { label: "Italic", action: "subtitleStyle:italic", toggleKey: "italic" },
-          { label: "Font", dynamicKey: "fontFamilies", children: [] },
-          { label: "Text color", dynamicKey: "subtitleColors", children: [] },
-          { label: "Outline color", dynamicKey: "outlineColors", children: [] },
-          { label: "Font size", children: [
-            { label: "Increase", action: "send:subtitleFontSizeDelta:2" },
-            { label: "Decrease", action: "send:subtitleFontSizeDelta:-2" },
+          { label: "Bold", textKey: "player_hud_bold", action: "subtitleStyle:bold", toggleKey: "bold" },
+          { label: "Italic", textKey: "player_hud_italic", action: "subtitleStyle:italic", toggleKey: "italic" },
+          { label: "Font", textKey: "player_hud_font", dynamicKey: "fontFamilies", children: [] },
+          { label: "Text color", textKey: "player_hud_text_color", dynamicKey: "subtitleColors", children: [] },
+          { label: "Outline color", textKey: "player_hud_outline_color_2", dynamicKey: "outlineColors", children: [] },
+          { label: "Font size", textKey: "player_hud_font_size_2", children: [
+            { label: "Increase", textKey: "player_hud_increase", action: "send:subtitleFontSizeDelta:2" },
+            { label: "Decrease", textKey: "player_hud_decrease", action: "send:subtitleFontSizeDelta:-2" },
           ] },
-          { label: "Bottom offset", children: [
-            { label: "Increase", action: "send:subtitleBottomOffsetDelta:5" },
-            { label: "Decrease", action: "send:subtitleBottomOffsetDelta:-5" },
+          { label: "Bottom offset", textKey: "player_hud_bottom_offset_2", children: [
+            { label: "Increase", textKey: "player_hud_increase", action: "send:subtitleBottomOffsetDelta:5" },
+            { label: "Decrease", textKey: "player_hud_decrease", action: "send:subtitleBottomOffsetDelta:-5" },
           ] },
           // ASS/SSA scripts ignore everything above unless the styling level says otherwise;
           // "Override" is the only level under which Font size and Bottom offset move them.
           // Listed by name with a tick on the active one, like the HDR and colour-profile menus.
-          { label: "ASS/SSA styling", children: [
-            { label: "Original", action: "send:subtitleAssStyleMode:0", selectedField: "assStyleModeValueLabel" },
-            { label: "Resize", action: "send:subtitleAssStyleMode:1", selectedField: "assStyleModeValueLabel" },
-            { label: "Override", action: "send:subtitleAssStyleMode:2", selectedField: "assStyleModeValueLabel" },
+          { label: "ASS/SSA styling", textKey: "player_hud_ass_ssa_styling_2", children: [
+            { label: "Original", textKey: "player_hud_original", selectedValue: "Original", action: "send:subtitleAssStyleMode:0", selectedField: "assStyleModeValueLabel" },
+            { label: "Resize", textKey: "player_hud_resize", selectedValue: "Resize", action: "send:subtitleAssStyleMode:1", selectedField: "assStyleModeValueLabel" },
+            { label: "Override", textKey: "player_hud_override", selectedValue: "Override", action: "send:subtitleAssStyleMode:2", selectedField: "assStyleModeValueLabel" },
           ] },
-          { label: "ASS/SSA size", children: [
-            { label: "Increase", action: "send:subtitleAssScaleDelta:5" },
-            { label: "Decrease", action: "send:subtitleAssScaleDelta:-5" },
+          { label: "ASS/SSA size", textKey: "player_hud_ass_ssa_size_2", children: [
+            { label: "Increase", textKey: "player_hud_increase", action: "send:subtitleAssScaleDelta:5" },
+            { label: "Decrease", textKey: "player_hud_decrease", action: "send:subtitleAssScaleDelta:-5" },
           ] },
-          { label: "Text opacity", children: [
-            { label: "Increase", action: "subtitleOpacity:10" },
-            { label: "Decrease", action: "subtitleOpacity:-10" },
+          { label: "Text opacity", textKey: "player_hud_text_opacity_2", children: [
+            { label: "Increase", textKey: "player_hud_increase", action: "subtitleOpacity:10" },
+            { label: "Decrease", textKey: "player_hud_decrease", action: "subtitleOpacity:-10" },
           ] },
-          { label: "Open style panel", action: "subtitleTab:2" },
-          { label: "Reset style defaults", action: "send:subtitleStyleReset" },
+          { label: "Open style panel", textKey: "player_hud_open_style_panel", action: "subtitleTab:2" },
+          { label: "Reset style defaults", textKey: "player_hud_reset_style_defaults", action: "send:subtitleStyleReset" },
         ],
       },
       // Auto sync needs its full card (status text + cue list) to be usable, so the menu
       // entry opens the style panel where it lives instead of firing blind Reload/Capture.
-      { label: "Auto sync", action: "subtitleTab:2" },
-      { label: "Subtitle delay", children: [
-        { label: "Increase", action: "send:subtitleDelayDelta:100" },
-        { label: "Decrease", action: "send:subtitleDelayDelta:-100" },
-        { label: "Reset", action: "send:subtitleDelayReset" },
+      { label: "Auto sync", textKey: "player_hud_auto_sync_2", action: "subtitleTab:2" },
+      { label: "Subtitle delay", textKey: "player_hud_subtitle_delay_2", children: [
+        { label: "Increase", textKey: "player_hud_increase", action: "send:subtitleDelayDelta:100" },
+        { label: "Decrease", textKey: "player_hud_decrease", action: "send:subtitleDelayDelta:-100" },
+        { label: "Reset", textKey: "player_hud_reset", action: "send:subtitleDelayReset" },
       ] },
     ],
   },
   {
-    label: "Audio",
+    label: "Audio", textKey: "player_hud_audio",
     children: [
-      { label: "Audio tracks", dynamicKey: "audioTracks", children: [] },
-      { label: "Mute", action: "send:keyboardToggleMute", toggleKey: "localMuted" },
+      { label: "Audio tracks", textKey: "player_hud_audio_tracks", dynamicKey: "audioTracks", children: [] },
+      { label: "Mute", textKey: "player_hud_mute", action: "send:keyboardToggleMute", toggleKey: "localMuted" },
     ],
   },
   {
-    label: "Video",
+    label: "Video", textKey: "player_hud_video",
     children: [
-      { label: "Aspect ratio", children: [
-        { label: "Fit", action: "resizeMode:0", selectedField: "resizeModeLabel" },
-        { label: "Fill", action: "resizeMode:1", selectedField: "resizeModeLabel" },
-        { label: "Zoom", action: "resizeMode:2", selectedField: "resizeModeLabel" },
-        { label: "Auto crop", action: "resizeMode:3", selectedField: "resizeModeLabel" },
+      { label: "Aspect ratio", textKey: "player_hud_aspect_ratio", children: [
+        { label: "Fit", textKey: "compose_player_resize_fit", action: "resizeMode:0", selectedField: "resizeModeLabel" },
+        { label: "Fill", textKey: "compose_player_resize_fill", action: "resizeMode:1", selectedField: "resizeModeLabel" },
+        { label: "Zoom", textKey: "compose_player_resize_zoom", action: "resizeMode:2", selectedField: "resizeModeLabel" },
+        { label: "Auto crop", textKey: "compose_player_resize_auto_crop", action: "resizeMode:3", selectedField: "resizeModeLabel" },
       ] },
-      { label: "Video settings", children: [
-        { label: "Auto", action: "send:selectDesktopHdrMode:0", selectedField: "desktopHdrModeLabel" },
-        { label: "Always Tonemap", action: "send:selectDesktopHdrMode:1", selectedField: "desktopHdrModeLabel" },
-        { label: "Always Passthrough", action: "send:selectDesktopHdrMode:2", selectedField: "desktopHdrModeLabel" },
+      { label: "Video settings", textKey: "player_hud_video_settings", children: [
+        { label: "Auto", textKey: "player_hdr_mode_auto_label", action: "send:selectDesktopHdrMode:0", selectedField: "desktopHdrModeLabel" },
+        { label: "Always Tonemap", textKey: "player_hdr_mode_always_tonemap_label", action: "send:selectDesktopHdrMode:1", selectedField: "desktopHdrModeLabel" },
+        { label: "Always Passthrough", textKey: "player_hdr_mode_always_passthrough_label", action: "send:selectDesktopHdrMode:2", selectedField: "desktopHdrModeLabel" },
       ] },
-      { label: "Color profile", children: [
-        { label: "Neutral", action: "send:selectDesktopColorProfile:0", selectedField: "desktopColorProfileLabel" },
-        { label: "Cinematic", action: "send:selectDesktopColorProfile:1", selectedField: "desktopColorProfileLabel" },
-        { label: "Vivid", action: "send:selectDesktopColorProfile:2", selectedField: "desktopColorProfileLabel" },
+      { label: "Color profile", textKey: "player_hud_color_profile_2", children: [
+        { label: "Neutral", textKey: "player_color_profile_neutral_label", action: "send:selectDesktopColorProfile:0", selectedField: "desktopColorProfileLabel" },
+        { label: "Cinematic", textKey: "player_color_profile_cinematic_label", action: "send:selectDesktopColorProfile:1", selectedField: "desktopColorProfileLabel" },
+        { label: "Vivid", textKey: "player_color_profile_vivid_label", action: "send:selectDesktopColorProfile:2", selectedField: "desktopColorProfileLabel" },
         // Selection only: the offsets themselves live in Settings > Playback. Picking Custom here is
         // what makes the C hotkey an A/B between neutral and the user's own grade mid-playback.
-        { label: "Custom", action: "send:selectDesktopColorProfile:3", selectedField: "desktopColorProfileLabel" },
-        { label: "Adjust custom color…", action: "colorGradePanel" },
+        { label: "Custom", textKey: "player_color_profile_custom_label", action: "send:selectDesktopColorProfile:3", selectedField: "desktopColorProfileLabel" },
+        { label: "Adjust custom color…", textKey: "player_hud_adjust_custom_color", action: "colorGradePanel" },
       ] },
-      { label: "Anime shader", dynamicKey: "animeShaders", children: [] },
-      { label: "SVP interpolation", action: "send:keyboardCycleAnimeSvp", toggleKey: "desktopAnimeSvpEnabled" },
+      { label: "Anime shader", textKey: "player_hud_anime_shader", dynamicKey: "animeShaders", children: [] },
+      { label: "SVP interpolation", textKey: "player_hud_svp_interpolation", action: "send:keyboardCycleAnimeSvp", toggleKey: "desktopAnimeSvpEnabled" },
       // This session only; the saved defaults stay in Settings > Playback. Neither runs with SVP.
-      { label: "RTX Super Resolution", action: "send:toggleRtxVsr", toggleKey: "rtxVsrEnabled" },
-      { label: "RTX True HDR", action: "send:toggleRtxTrueHdr", toggleKey: "rtxTrueHdrEnabled" },
-      { label: "Advanced (mpv)", dynamicKey: "mpvOptions", children: [] },
-      { label: "UI scale", children: uiScalePresetItems },
-      { label: "Controls layout", children: hudLayoutItems },
+      { label: "RTX Super Resolution", textKey: "player_hud_rtx_super_resolution", action: "send:toggleRtxVsr", toggleKey: "rtxVsrEnabled" },
+      { label: "RTX True HDR", textKey: "player_hud_rtx_true_hdr", action: "send:toggleRtxTrueHdr", toggleKey: "rtxTrueHdrEnabled" },
+      { label: "Advanced (mpv)", textKey: "player_hud_advanced_mpv", dynamicKey: "mpvOptions", children: [] },
+      { label: "UI scale", textKey: "player_hud_ui_scale", children: uiScalePresetItems },
+      { label: "Controls layout", textKey: "player_hud_controls_layout", children: hudLayoutItems },
     ],
   },
   {
-    label: "Tools",
+    label: "Tools", textKey: "player_hud_tools",
     children: [
-      { label: "Sources", action: "modal:sources" },
-      { label: "Episodes", action: "modal:episodes" },
-      { label: "Submit intro / outro", action: "modal:submitIntro" },
+      { label: "Sources", textKey: "player_hud_sources", action: "modal:sources" },
+      { label: "Episodes", textKey: "player_hud_episodes", action: "modal:episodes" },
+      { label: "Submit intro / outro", textKey: "player_hud_submit_intro_outro", action: "modal:submitIntro" },
     ],
   },
   {
-    label: "Window",
+    label: "Window", textKey: "player_hud_window",
     children: [
-      { label: "Fullscreen", action: "send:toggleFullscreen", shortcut: "F11" },
-      { label: "Close playback", action: "send:back", shortcut: "Esc" },
+      { label: "Fullscreen", textKey: "player_hud_fullscreen", action: "send:toggleFullscreen", shortcut: "F11" },
+      { label: "Close playback", textKey: "player_hud_close_playback", action: "send:back", shortcut: "Esc" },
     ],
   },
-  { label: "Copy stream link", action: "copyStreamUrl" },
-  { label: "Stream failover", action: "toggleStreamFailover", toggleKey: "streamFailoverEnabled" },
-  { label: "MPV diagnostics", action: "toggleMpvDiagnostics", toggleKey: "mpvDiagnosticsEnabled" },
-  { label: "Close menu after selecting", action: "toggleCloseOnSelect", toggleKey: "closeMenuOnSelect" },
+  { label: "Copy stream link", textKey: "player_hud_copy_stream_link", action: "copyStreamUrl" },
+  { label: "Stream failover", textKey: "player_hud_stream_failover", action: "toggleStreamFailover", toggleKey: "streamFailoverEnabled" },
+  { label: "MPV diagnostics", textKey: "player_hud_mpv_diagnostics", action: "toggleMpvDiagnostics", toggleKey: "mpvDiagnosticsEnabled" },
+  { label: "Close menu after selecting", textKey: "player_hud_close_menu_after_selecting", action: "toggleCloseOnSelect", toggleKey: "closeMenuOnSelect" },
 ];
 
 let contextMenuOpen = false;
@@ -2737,7 +2781,7 @@ window.nuvioToggleMpvDiagnostics = () => {
   mpvDiagnosticsEnabled = !mpvDiagnosticsEnabled;
   renderChrome();
   refreshContextMenuIndicators();
-  window.nuvioShowPresetPill("MPV diagnostics", mpvDiagnosticsEnabled ? "On" : "Off");
+  window.nuvioShowPresetPill(hudText("player_hud_mpv_diagnostics", "MPV diagnostics"), mpvDiagnosticsEnabled ? hudText("compose_action_on", "On") : hudText("compose_action_off", "Off"));
   send("toggleMpvDiagnostics", mpvDiagnosticsEnabled ? 1 : 0);
 };
 
@@ -2806,10 +2850,9 @@ const seekStepSeconds = () => {
 // there is no number to redraw there.
 const refreshSeekStepLabels = () => {
   const seconds = seekStepSeconds();
-  const unit = seconds === 1 ? "second" : "seconds";
   const labels = {
-    seekBack: `Seek back ${seconds} ${unit}`,
-    seekForward: `Seek forward ${seconds} ${unit}`,
+    seekBack: seconds === 1 ? hudText("player_hud_seek_back_1_second", "Seek back 1 second") : hudFormat("player_hud_seek_back_1_s_seconds", "Seek back %1$s seconds", seconds),
+    seekForward: seconds === 1 ? hudText("player_hud_seek_forward_1_second", "Seek forward 1 second") : hudFormat("player_hud_seek_forward_1_s_seconds", "Seek forward %1$s seconds", seconds),
   };
   Object.entries(labels).forEach(([key, text]) => {
     if (contextMenu) {
@@ -2862,7 +2905,7 @@ const setContextMenuDynamicItems = (key, items) => {
   contextMenuDynamicSignatures.set(key, signature);
   submenu.textContent = "";
   buildContextMenu(entries.map((item, index) => ({
-    label: String(item.label || item.display || item.languageLabel || item.title || "Option"),
+    label: String(item.label || item.display || item.languageLabel || item.title || hudText("player_hud_option", "Option")),
     action: item.action || (key === "subtitleTracks"
       ? `send:selectBuiltInSubtitleTrack:${Number(item.index ?? index)}`
       : key === "addonSubtitles"
@@ -2882,7 +2925,7 @@ const setContextMenuDynamicItems = (key, items) => {
   if (normalized.length === 0) {
     const empty = document.createElement("div");
     empty.className = "context-menu-empty";
-    empty.textContent = key === "addonSubtitles" ? "No addon subtitles loaded" : "No tracks available";
+    empty.textContent = key === "addonSubtitles" ? hudText("player_hud_no_addon_subtitles_loaded", "No addon subtitles loaded") : hudText("player_hud_no_tracks_available", "No tracks available");
     submenu.appendChild(empty);
   }
   refreshContextMenuIndicators();
@@ -2929,14 +2972,14 @@ const renderColorGradePanel = () => {
   Object.entries(COLOR_GRADE_VALUE_ELEMENTS).forEach(([command, element]) => {
     if (element) element.textContent = formatColorGradeValue(state[COLOR_GRADE_STATE_FIELDS[command]]);
   });
-  const isCustom = String(state.desktopColorProfileLabel || "") === "Custom";
+  const isCustom = String(state.desktopColorProfileLabel || "") === hudText("player_color_profile_custom_label", "Custom");
   if (colorGradeNote) {
     // Two different reasons the panel can look like it is doing nothing, and the user cannot tell
     // them apart from the picture alone: a preset is active (so these values are not in play), or
     // the grade is suppressed because the content is HDR.
     colorGradeNote.textContent = isCustom
-      ? "Not applied to HDR playback"
-      : `${state.desktopColorProfileLabel || "Neutral"} active — adjusting switches to Custom`;
+      ? hudText("player_hud_not_applied_to_hdr_playback", "Not applied to HDR playback")
+      : hudFormat("player_hud_1_s_active_adjusting_switches_to", "%1$s active — adjusting switches to Custom", state.desktopColorProfileLabel || hudText("player_color_profile_neutral_label", "Neutral"));
   }
   if (colorGradeReset) {
     const isNeutral = Object.values(COLOR_GRADE_STATE_FIELDS)
@@ -3028,16 +3071,23 @@ const openSubtitleContextTab = tab => {
 // Auto crop needs a few frames (~10 s) before the bars come off, so its pill says so and stays
 // up longer; otherwise picking it looks like nothing happened.
 const showAspectPill = label => {
-  if (label === "Auto crop") {
-    window.nuvioShowPresetPill("Aspect ratio", "Auto crop · detecting bars, ~10s", 4000);
+  if (label === resizeModeLabels()[3]) {
+    window.nuvioShowPresetPill(hudText("player_hud_aspect_ratio", "Aspect ratio"), hudText("player_hud_auto_crop_detecting_bars_10s", "Auto crop · detecting bars, ~10s"), 4000);
   } else {
-    window.nuvioShowPresetPill("Aspect ratio", label);
+    window.nuvioShowPresetPill(hudText("player_hud_aspect_ratio", "Aspect ratio"), label);
   }
 };
 
+const resizeModeLabels = () => [
+  hudText("compose_player_resize_fit", "Fit"),
+  hudText("compose_player_resize_fill", "Fill"),
+  hudText("compose_player_resize_zoom", "Zoom"),
+  hudText("compose_player_resize_auto_crop", "Auto crop"),
+];
+
 const cycleAspectFromControls = () => {
-  const modes = ["Fit", "Fill", "Zoom", "Auto crop"];
-  const currentIndex = Math.max(0, modes.findIndex(mode => mode.toLowerCase() === String(state.resizeModeLabel || "Fit").toLowerCase()));
+  const modes = resizeModeLabels();
+  const currentIndex = Math.max(0, modes.findIndex(mode => mode.toLowerCase() === String(state.resizeModeLabel || modes[0]).toLowerCase()));
   const next = modes[(currentIndex + 1) % modes.length];
   state = { ...state, resizeModeLabel: next };
   if (resizeLabel) resizeLabel.textContent = next;
@@ -3075,7 +3125,7 @@ const executeContextAction = action => {
   }
   if (kind === "resizeMode") {
     const index = Number(parts.shift() || 0);
-    const label = ["Fit", "Fill", "Zoom", "Auto crop"][index] || "Fit";
+    const label = resizeModeLabels()[index] || resizeModeLabels()[0];
     state = { ...state, resizeModeLabel: label };
     if (resizeLabel) resizeLabel.textContent = label;
     refreshContextMenuIndicators();
@@ -3084,7 +3134,7 @@ const executeContextAction = action => {
     return;
   }
   if (kind === "copyStreamUrl") {
-    window.nuvioShowPresetPill("Stream link", "Copied");
+    window.nuvioShowPresetPill(hudText("player_hud_stream_link", "Stream link"), hudText("player_hud_copied", "Copied"));
     send("copyStreamUrl", 0);
     return;
   }
@@ -3097,7 +3147,7 @@ const executeContextAction = action => {
     // persists the setting and pushes the corrected value back.
     const enabled = Boolean(state.streamFailoverEnabled);
     refreshContextMenuIndicators();
-    window.nuvioShowPresetPill("Stream failover", enabled ? "On" : "Off");
+    window.nuvioShowPresetPill(hudText("player_hud_stream_failover", "Stream failover"), enabled ? hudText("compose_action_on", "On") : hudText("compose_action_off", "Off"));
     send("toggleStreamFailover", enabled ? 1 : 0);
     return;
   }
@@ -3108,7 +3158,7 @@ const executeContextAction = action => {
     state = { ...state, uiScalePercent: clamped };
     applyUserUiScale(clamped);
     refreshContextMenuIndicators();
-    window.nuvioShowPresetPill("UI scale", `${clamped > 0 ? "+" : ""}${clamped}%`);
+    window.nuvioShowPresetPill(hudText("player_hud_ui_scale", "UI scale"), `${clamped > 0 ? "+" : ""}${clamped}%`);
     send("setDesktopUiScalePercent", clamped);
     return;
   }
@@ -3126,7 +3176,7 @@ const executeContextAction = action => {
     };
     renderChrome();
     refreshContextMenuIndicators();
-    window.nuvioShowPresetPill("Controls layout", hudLayoutItems[index].label);
+    window.nuvioShowPresetPill(hudText("player_hud_controls_layout", "Controls layout"), hudText(hudLayoutItems[index].textKey, hudLayoutItems[index].label));
     send("selectDesktopHudLayout", index);
     return;
   }
@@ -3136,7 +3186,7 @@ const executeContextAction = action => {
     state = { ...state, playbackSpeedLabel: label };
     speedLabel.textContent = label;
     refreshContextMenuIndicators();
-    window.nuvioShowPresetPill("Playback speed", label);
+    window.nuvioShowPresetPill(hudText("player_hud_playback_speed", "Playback speed"), label);
     send("setPlaybackSpeed", next);
     return;
   }
@@ -3247,7 +3297,8 @@ const buildContextMenu = (items, parent) => {
     if (item.labelKey) button.dataset.labelKey = item.labelKey;
     if (item.selectedField) {
       button.dataset.selectedField = item.selectedField;
-      button.dataset.selectedValue = String(item.selectedValue ?? item.label);
+      button.dataset.selectedValue = String(item.selectedValue ?? hudText(item.textKey, item.label));
+      if (item.selectedValue == null && item.textKey) button.dataset.i18nSelectedValue = item.textKey;
     }
     if (item.swatch) {
       const dot = document.createElement("span");
@@ -3257,7 +3308,8 @@ const buildContextMenu = (items, parent) => {
     }
     const label = document.createElement("span");
     label.className = "context-menu-label";
-    label.textContent = item.label;
+    label.textContent = hudText(item.textKey, item.label);
+    if (item.textKey) label.dataset.i18n = item.textKey;
     button.appendChild(label);
     if (item.toggleKey || item.selectedField || item.selected) {
       const indicator = document.createElement("span");
@@ -3330,9 +3382,9 @@ window.nuvioOpenAnimeShaderContextMenu = items => {
 // option) mid-interaction even with "Close menu after selecting" turned off. A selection-only
 // change is therefore applied to the existing rows instead of rebuilding them.
 const mpvOptionsStructureSignature = list => JSON.stringify(list.map(option => [
-  String(option.label || "Option"),
+  String(option.label || hudText("player_hud_option", "Option")),
   (Array.isArray(option.choices) ? option.choices : [])
-    .map(choice => [String(choice.label || "Option"), Number(choice.index) || 0]),
+    .map(choice => [String(choice.label || hudText("player_hud_option", "Option")), Number(choice.index) || 0]),
 ]));
 
 let mpvOptionsMenuSignature = "";
@@ -3379,14 +3431,14 @@ window.nuvioSetMpvOptionsMenu = options => {
   if (list.length === 0) {
     const empty = document.createElement("div");
     empty.className = "context-menu-empty";
-    empty.textContent = "No options available";
+    empty.textContent = hudText("player_hud_no_options_available", "No options available");
     submenu.appendChild(empty);
     return;
   }
   buildContextMenu(list.map(option => ({
-    label: String(option.label || "Option"),
+    label: String(option.label || hudText("player_hud_option", "Option")),
     children: (Array.isArray(option.choices) ? option.choices : []).map(choice => ({
-      label: String(choice.label || "Option"),
+      label: String(choice.label || hudText("player_hud_option", "Option")),
       action: `send:selectMpvOption:${Number(choice.index) || 0}`,
       selected: Boolean(choice.selected),
     })),
@@ -3411,7 +3463,8 @@ const SUBTITLE_COLOR_NAMES = {
 const describeSubtitleColor = value => {
   const clean = String(value || "").replace(/^#/, "").toUpperCase();
   const rgb = clean.length >= 6 ? clean.slice(-6) : clean.padStart(6, "0");
-  return { css: `#${rgb}`, name: SUBTITLE_COLOR_NAMES[rgb] || null };
+  const name = SUBTITLE_COLOR_NAMES[rgb];
+  return { css: `#${rgb}`, name: name ? hudText(`player_hud_color_${name.toLowerCase()}`, name) : null };
 };
 
 const subtitleColorContextEntries = field => {
@@ -3419,7 +3472,7 @@ const subtitleColorContextEntries = field => {
   const entries = (state.subtitleColorSwatches || []).map((value, index) => {
     const info = describeSubtitleColor(value);
     return {
-      label: info.name || `Color ${index + 1}`,
+      label: info.name || hudFormat("player_hud_color_1_s", "Color %1$s", index + 1),
       swatch: info.css,
       // Compared on RGB alone, like the swatch row: the opacity stepper moves the alpha of the
       // same chosen colour, and that should not read as "nothing is selected".
@@ -3428,7 +3481,7 @@ const subtitleColorContextEntries = field => {
   });
   const custom = !entries.some(entry => entry.selected);
   entries.push({
-    label: "Custom...",
+    label: hudText("player_hud_custom", "Custom..."),
     action: `subtitleColorPrompt:${field}`,
     swatch: custom ? describeSubtitleColor(style[field]).css : undefined,
     selected: custom,
@@ -3442,7 +3495,7 @@ const refreshSubtitleStyleContextSubmenus = () => {
     "fontFamilies",
     (state.subtitleFontFamilies || []).map(value => ({
       value,
-      label: value || "Default",
+      label: value || hudText("player_hud_default", "Default"),
       selected: value === style.fontFamily,
     })),
   );
@@ -3665,19 +3718,19 @@ const renderAudioTrackList = () => {
     if (context) {
       context.font = `700 15px ${uiFontStack}`;
       const widest = tracks.reduce((width, track, index) => {
-        const label = track.label || track.language || `Track ${Number(track.index || index) + 1}`;
+        const label = track.label || track.language || hudFormat("player_hud_track_1_s", "Track %1$s", Number(track.index || index) + 1);
         return Math.max(width, context.measureText(String(label)).width);
-      }, context.measureText("Audio tracks").width);
+      }, context.measureText(hudText("player_hud_audio_tracks", "Audio tracks")).width);
       const viewportLimit = Math.max(320, window.innerWidth * .70);
       audioPanel.style.width = `${Math.round(Math.min(viewportLimit, Math.max(360, (widest + 104) * 1.15)))}px`;
     }
   }
   if (tracks.length === 0) {
-    appendEmptyTrackState(audioTrackList, "No audio tracks available");
+    appendEmptyTrackState(audioTrackList, hudText("player_hud_no_audio_tracks_available", "No audio tracks available"));
     return;
   }
   tracks.forEach(track => {
-    const label = track.label || track.language || `Track ${Number(track.index || 0) + 1}`;
+    const label = track.label || track.language || hudFormat("player_hud_track_1_s", "Track %1$s", Number(track.index || 0) + 1);
     // A track whose label is already just its language ("Tamil", from a title-less track) would
     // otherwise repeat itself on both lines.
     const languageLabel = String(track.languageLabel || "");
@@ -3724,7 +3777,7 @@ const renderSubtitleTrackList = () => {
     () => send("selectBuiltInSubtitleTrack", -1),
   );
   tracks.forEach(track => {
-    const label = track.label || track.language || `Subtitle ${Number(track.index || 0) + 1}`;
+    const label = track.label || track.language || hudFormat("player_hud_subtitle_1_s", "Subtitle %1$s", Number(track.index || 0) + 1);
     const detail = [track.language, track.id ? `ID: ${track.id}` : ""].filter(Boolean).join(" · ");
     appendSubtitleTrackRow(
       subtitleTrackList,
@@ -3761,7 +3814,7 @@ const renderAddonSubtitleList = () => {
   addonSubtitleListRenderKey = nextRenderKey;
   addonSubtitleList.textContent = "";
   if (state.isLoadingAddonSubtitles) {
-    appendEmptyTrackState(addonSubtitleList, "Loading subtitles...");
+    appendEmptyTrackState(addonSubtitleList, hudText("player_hud_loading_subtitles", "Loading subtitles..."));
     return;
   }
   if (items.length === 0) {
@@ -3781,7 +3834,7 @@ const renderAddonSubtitleList = () => {
   }
   const anyDownloadInProgress = items.some(candidate => Boolean(candidate.isDownloading));
   items.forEach(item => {
-    const label = item.display || item.languageLabel || "Subtitle";
+    const label = item.display || item.languageLabel || hudText("player_hud_subtitle", "Subtitle");
     const secondary = [item.languageLabel, item.addonName, item.id ? `ID: ${item.id}` : ""]
       .filter(Boolean)
       .join(" · ");
@@ -3921,7 +3974,7 @@ const renderSwatches = (container, selectedColor, eventType, availableColors = s
   const custom = document.createElement("button");
   custom.type = "button";
   custom.className = `swatch custom${isCustom ? " has-color selected" : ""}`;
-  custom.title = "Custom color";
+  custom.title = hudText("player_hud_custom_color", "Custom color");
   if (isCustom) {
     custom.style.setProperty("--swatch", parseArgb(selectedColor).css);
   } else {
@@ -4064,7 +4117,7 @@ const renderSubtitleStylePanel = () => {
       fonts.forEach((family, index) => {
         const option = document.createElement("option");
         option.value = String(index);
-        option.textContent = family === "" ? "Default" : family;
+        option.textContent = family === "" ? hudText("player_hud_default", "Default") : family;
         fontFamilySelect.appendChild(option);
       });
       fontFamilySelect.dataset.count = String(fonts.length);
@@ -4251,7 +4304,7 @@ const buildSourceRow = (item, onSelect) => {
   top.className = "track-row-top";
   const name = document.createElement("span");
   name.className = "stream-name";
-  name.textContent = item.label || "Stream";
+  name.textContent = item.label || hudText("player_hud_stream", "Stream");
   top.appendChild(name);
   if (item.isCurrent) {
     const chip = document.createElement("span");
@@ -4266,7 +4319,7 @@ const buildSourceRow = (item, onSelect) => {
     const tone = item.scoreRejected || item.score < 0 ? " negative" : item.score > 0 ? " positive" : "";
     scoreChip.className = `score-chip${tone}`;
     scoreChip.textContent = item.score > 0 ? `+${item.score}` : String(item.score);
-    if (item.scoreRejected) scoreChip.title = "Below the minimum score";
+    if (item.scoreRejected) scoreChip.title = hudText("player_hud_below_the_minimum_score", "Below the minimum score");
     top.appendChild(scoreChip);
   }
   // The addon name rides at the end of the title line, as a quiet glass tag, rather than taking a
@@ -4518,7 +4571,7 @@ const renderSourceSortMenu = () => {
   const divider = document.createElement("div");
   divider.className = "source-sort-divider";
   sourceSortMenu.appendChild(divider);
-  appendFilterChip(sourceSortMenu, "Cached first", Boolean(state.sourceCachedFirst), () => {
+  appendFilterChip(sourceSortMenu, hudText("player_hud_cached_first", "Cached first"), Boolean(state.sourceCachedFirst), () => {
     pinSourceListTop();
     send("setSourceCachedFirst", state.sourceCachedFirst ? 0 : 1);
   });
@@ -4559,7 +4612,7 @@ const renderSourceModal = () => {
     sourceVirtualRenderRaf = 0;
     appendEmptyTrackState(
       sourceList,
-      state.sourceIsLoading ? "Loading streams..." : (state.noStreamsLabel || "No streams found"),
+      state.sourceIsLoading ? hudText("player_hud_loading_streams", "Loading streams...") : (state.noStreamsLabel || "No streams found"),
     );
     return;
   }
@@ -4672,7 +4725,7 @@ const appendEpisodeRow = (container, item, keyboardIndex) => {
   if (item.isWatched) {
     const watched = document.createElement("span");
     watched.className = "episode-watched";
-    watched.setAttribute("aria-label", "Watched");
+    watched.setAttribute("aria-label", hudText("player_hud_watched", "Watched"));
     watched.appendChild(buildCheckIcon());
     top.appendChild(watched);
   }
@@ -4681,7 +4734,7 @@ const appendEpisodeRow = (container, item, keyboardIndex) => {
   copy.className = "episode-copy";
   const name = document.createElement("span");
   name.className = "episode-name";
-  name.textContent = item.title || item.code || "Episode";
+  name.textContent = item.title || item.code || hudText("player_hud_episode", "Episode");
   copy.appendChild(name);
   if (item.overview) {
     const overview = document.createElement("span");
@@ -4848,7 +4901,7 @@ const renderEpisodeStreams = () => {
   if (items.length === 0) {
     appendEmptyTrackState(
       episodeStreamList,
-      state.episodeStreamsIsLoading ? "Loading streams..." : (state.noStreamsLabel || "No streams found"),
+      state.episodeStreamsIsLoading ? hudText("player_hud_loading_streams", "Loading streams...") : (state.noStreamsLabel || "No streams found"),
     );
     return;
   }
@@ -5388,7 +5441,7 @@ const finishChromePointerInteraction = event => {
 const renderPlaylistPeek = () => {
   const items = Array.isArray(state.playlistPeekItems) ? state.playlistPeekItems : [];
   const hasPeek = items.length > 0 && Boolean(state.playlistPeekTitle);
-  setText(playlistPeekTag, hasPeek ? `Playlist · ${state.playlistPeekTitle}` : "");
+  setText(playlistPeekTag, hasPeek ? hudFormat("player_hud_playlist_1_s", "Playlist · %1$s", state.playlistPeekTitle) : "");
   // Called from renderChrome, so close without re-rendering (setPlaylistPeekOpen would recurse).
   if (!hasPeek && playlistPeekOpen) {
     playlistPeekOpen = false;
@@ -5409,7 +5462,7 @@ const renderPlaylistPeek = () => {
       row.disabled = true;
       row.setAttribute("aria-current", "true");
     } else {
-      row.title = "Play this now";
+      row.title = hudText("player_hud_play_this_now", "Play this now");
       row.addEventListener("click", event => {
         event.stopPropagation();
         setPlaylistPeekOpen(false);
@@ -5426,7 +5479,7 @@ const renderPlaylistPeek = () => {
     rowTitle.textContent = String(item.title || "");
     const rowSubtitle = document.createElement("span");
     rowSubtitle.className = "playlist-peek-subtitle";
-    const label = item.state === "next" ? "Up next" : item.state === "played" ? "Played" : "";
+    const label = item.state === "next" ? hudText("player_hud_up_next", "Up next") : item.state === "played" ? hudText("player_hud_played", "Played") : "";
     rowSubtitle.textContent = [String(item.subtitle || ""), label].filter(Boolean).join(" · ");
     copy.append(rowTitle, rowSubtitle);
     row.append(position, copy);
@@ -5954,12 +6007,12 @@ const renderChrome = () => {
   submitIntroButton.dataset.tooltip = submitIntroButtonLabel;
   videoSettingsButton.setAttribute("aria-label", state.videoSettingsLabel || "Video settings");
   const pictureInPictureLabel = state.pictureInPictureActive
-    ? "Exit picture in picture"
+    ? hudText("player_hud_exit_picture_in_picture", "Exit picture in picture")
     : (state.pictureInPictureLabel || "Picture in picture");
   pictureInPictureButton.setAttribute("aria-label", pictureInPictureLabel);
   pictureInPictureButton.setAttribute("title", pictureInPictureLabel);
   pictureInPictureButton.classList.toggle("selected", Boolean(state.pictureInPictureActive));
-  pictureInPictureExitButton.setAttribute("aria-label", "Exit picture in picture");
+  pictureInPictureExitButton.setAttribute("aria-label", hudText("player_hud_exit_picture_in_picture", "Exit picture in picture"));
   const pictureInPicturePlaybackLabel = isPlaying ? (state.pauseLabel || "Pause") : (state.playLabel || "Play");
   pictureInPicturePlayButton.setAttribute("aria-label", pictureInPicturePlaybackLabel);
   pictureInPicturePlayButton.setAttribute("title", pictureInPicturePlaybackLabel);
@@ -5993,7 +6046,7 @@ const updatePlayerClock = () => {
   const speed = Number.isFinite(parsedSpeed) && parsedSpeed > 0 ? parsedSpeed : 1;
   const remainingWallMs = Math.max(0, durationMs - positionMs) / speed;
   const endTime = new Date(now.getTime() + remainingWallMs);
-  const contentLabel = String(state.episodeText || "").trim() ? "Episode" : "Movie";
+  const contentLabel = String(state.episodeText || "").trim() ? hudText("player_hud_episode", "Episode") : hudText("player_hud_movie", "Movie");
   // Live TV never ends; the same spot (and its click, "back") is the way out.
   playerEndTime.textContent = state.iptv
     ? (state.iptv.exitLabel || state.closeLabel || "Exit")
@@ -6342,7 +6395,7 @@ const syncPlayerVolumeControl = () => {
   }
   setIconHref(playerVolumeIcon, volumeIconHref());
   if (volumeMuteButton) {
-    const label = localMuted ? "Unmute" : "Mute";
+    const label = localMuted ? hudText("player_hud_unmute", "Unmute") : hudText("player_hud_mute", "Mute");
     volumeMuteButton.setAttribute("aria-label", label);
     volumeMuteButton.title = label;
   }
@@ -7363,7 +7416,7 @@ submitIntroSubmitButton.addEventListener("click", event => {
   const start = parseIntroTime(submitIntroDraft.startTime);
   const end = parseIntroTime(submitIntroDraft.endTime);
   if (start == null || end == null || end <= start) {
-    submitIntroDraft.status = "Check the start and end times.";
+    submitIntroDraft.status = hudText("player_hud_check_the_start_and_end_times", "Check the start and end times.");
     renderSubmitIntroModal();
     return;
   }
@@ -7675,7 +7728,12 @@ window.playerControls = nextState => {
   const previousCloseToken = Number(state.closeModalsToken) || 0;
   const previousPartyPanelToken = Number(currentParty().openPanelToken) || 0;
   const previousOpenSourcesToken = Number(state.openSourcesToken) || 0;
+  const previousHudLabels = state.hudLabels;
   state = { ...state, ...nextState };
+  if (state.hudLabels && state.hudLabels !== previousHudLabels) {
+    applyHudLabels();
+    refreshSeekStepLabels();
+  }
   reconcileOptimisticSubtitleStyle();
   applyUiFontFamily(state.uiFontFamily);
   syncSeekrTrack();
@@ -7801,7 +7859,7 @@ const endHoldSpeed = () => {
   consumeHoldSpeedClick = true;
   window.setTimeout(() => { consumeHoldSpeedClick = false; }, 500);
   send("setPlaybackSpeed", restore);
-  window.nuvioShowPresetPill("Playback speed", `${restore.toFixed(2).replace(/\.?0+$/, "")}x`);
+  window.nuvioShowPresetPill(hudText("player_hud_playback_speed", "Playback speed"), `${restore.toFixed(2).replace(/\.?0+$/, "")}x`);
 };
 
 root.addEventListener("pointerdown", event => {
@@ -7818,7 +7876,7 @@ root.addEventListener("pointerdown", event => {
     holdSpeedRestoreValue = parsedPlaybackSpeed();
     send("setPlaybackSpeed", HoldSpeedValue);
     // Pinned for the whole hold; endHoldSpeed replaces it with the restored speed.
-    window.nuvioShowPresetPill("Playback speed", `${HoldSpeedValue}x`, 24 * 60 * 60 * 1000);
+    window.nuvioShowPresetPill(hudText("player_hud_playback_speed", "Playback speed"), `${HoldSpeedValue}x`, 24 * 60 * 60 * 1000);
   }, HoldSpeedDelayMs);
 });
 ["pointerup", "pointercancel"].forEach(type => window.addEventListener(type, event => {

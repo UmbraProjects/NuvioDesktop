@@ -73,6 +73,7 @@ import nuvio.composeapp.generated.resources.details_episode_search_placeholder
 import org.jetbrains.compose.resources.stringResource
 import androidx.compose.material.icons.rounded.Search
 import com.nuvio.app.core.ui.trackTextInputFocus
+import nuvio.composeapp.generated.resources.*
 
 data class DetailSecondaryAction(
     val label: String,
@@ -108,7 +109,7 @@ fun DetailActionButtons(
     modifier: Modifier = Modifier,
     playLabel: String = stringResource(Res.string.action_play),
     secondaryActions: List<DetailSecondaryAction> = emptyList(),
-    actionsMenuLabel: String = "More actions",
+    actionsMenuLabel: String = stringResource(Res.string.details_more_actions),
     isTablet: Boolean = false,
     /**
      * Which button in the row holds keyboard focus: 0 is Play, 1+ index into [secondaryActions] in

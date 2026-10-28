@@ -1,5 +1,6 @@
 package com.nuvio.app.features.input
 
+import nuvio.composeapp.generated.resources.*
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -144,7 +145,7 @@ class GamepadInjectionRouteTest {
             return
         }
         assertTrue(
-            !GamepadKeyInjector.send(GamepadTarget.FixedKey(KeyEvent.VK_DOWN, "↓")),
+            !GamepadKeyInjector.send(GamepadTarget.FixedKey(KeyEvent.VK_DOWN, Res.string.gamepad_target_move_down)),
             "the injector posted a key with no focused window",
         )
     }

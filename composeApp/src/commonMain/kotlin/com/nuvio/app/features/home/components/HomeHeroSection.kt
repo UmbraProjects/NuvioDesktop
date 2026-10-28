@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home.components
 
+import com.nuvio.app.core.i18n.localizedString
 import com.nuvio.app.core.ui.LocalScreenCovered
 import androidx.compose.ui.layout.onSizeChanged
 import coil3.SingletonImageLoader
@@ -3733,7 +3734,7 @@ private fun HeroDiscoveryAwardMedal(
     scale: Float = 1f,
     onClick: (() -> Unit)? = null,
 ) {
-    val awardLabel = fact.heroDiscoveryAwardLabel()
+    val awardLabel = remember(fact) { fact.heroDiscoveryAwardLabel() }
     var hoverPosition by remember { mutableStateOf<Offset?>(null) }
     // Same affordance as the cast avatars: no ripple, a soft highlight while hovered — and only
     // on medals that actually go somewhere, so an inert badge doesn't invite a click.
@@ -3933,23 +3934,23 @@ private fun List<HeroDiscoveryFact>.heroVisibleAwardFacts(maxCount: Int): List<H
 
 internal fun HeroDiscoveryFact.heroDiscoveryAwardLabel(): String =
     when (category) {
-        "award:best_picture" -> "Best Picture"
-        "award:best_picture_nom" -> "Best Picture Nominee"
-        "award:globe_win" -> "Golden Globe"
-        "award:globe_nom" -> "Globe Nominee"
-        "award:emmy_win" -> "Emmy Winner"
-        "award:emmy_nom" -> "Emmy Nominee"
-        "award:palme" -> "Palme d'Or"
-        "award:golden_lion" -> "Golden Lion"
-        "award:golden_bear" -> "Golden Bear"
-        "award:people_choice" -> "People's Choice"
-        "metacritic" -> "Must-See"
-        "cult" -> "Cult Classic"
-        "trending" -> "Trending"
-        "short_film" -> "Short Film"
-        "mini_series" -> "Mini Series"
-        "binge_ready" -> "Binge Ready"
-        "new_release", "digital_release" -> "New Release"
+        "award:best_picture" -> localizedString(Res.string.hero_badge_label_award_best_picture)
+        "award:best_picture_nom" -> localizedString(Res.string.hero_badge_label_award_best_picture_nom)
+        "award:globe_win" -> localizedString(Res.string.hero_badge_label_award_globe_win)
+        "award:globe_nom" -> localizedString(Res.string.hero_badge_label_award_globe_nom)
+        "award:emmy_win" -> localizedString(Res.string.hero_badge_label_award_emmy_win)
+        "award:emmy_nom" -> localizedString(Res.string.hero_badge_label_award_emmy_nom)
+        "award:palme" -> localizedString(Res.string.hero_badge_label_award_palme)
+        "award:golden_lion" -> localizedString(Res.string.hero_badge_label_award_golden_lion)
+        "award:golden_bear" -> localizedString(Res.string.hero_badge_label_award_golden_bear)
+        "award:people_choice" -> localizedString(Res.string.hero_badge_label_award_people_choice)
+        "metacritic" -> localizedString(Res.string.hero_badge_label_metacritic)
+        "cult" -> localizedString(Res.string.hero_badge_label_cult)
+        "trending" -> localizedString(Res.string.hero_badge_label_trending)
+        "short_film" -> localizedString(Res.string.hero_badge_label_short_film)
+        "mini_series" -> localizedString(Res.string.hero_badge_label_mini_series)
+        "binge_ready" -> localizedString(Res.string.hero_badge_label_binge_ready)
+        "new_release", "digital_release" -> localizedString(Res.string.hero_badge_label_new_release)
         // festival, foreign:<lang>, director, studio, release_status, stinger carry a dynamic label.
         else -> label
     }
@@ -3957,91 +3958,91 @@ internal fun HeroDiscoveryFact.heroDiscoveryAwardLabel(): String =
 private fun HeroDiscoveryFact.heroDiscoveryTooltipDescription(): String =
     // Foreign carries a `foreign:<lang>` category, so match the prefix before the exact keys.
     if (category.startsWith("foreign:")) {
-        "The title's original language is not English, shown as a quick language context badge."
+        localizedString(Res.string.hero_badge_desc_foreign)
     } else when (category) {
         "award:best_picture" ->
-            "The Academy Award for Best Picture, the top film award presented annually by the Academy of Motion Picture Arts and Sciences."
+            localizedString(Res.string.hero_badge_desc_award_best_picture)
         "award:best_picture_nom" ->
-            "Nominated for the Academy Award for Best Picture, the Academy's top annual film category."
+            localizedString(Res.string.hero_badge_desc_award_best_picture_nom)
         "award:globe_win" ->
-            "Won a major Golden Globe, presented by the Hollywood Foreign Press Association for film and television."
+            localizedString(Res.string.hero_badge_desc_award_globe_win)
         "award:globe_nom" ->
-            "Nominated for a major Golden Globe, highlighting higher-profile film or television categories."
+            localizedString(Res.string.hero_badge_desc_award_globe_nom)
         "award:emmy_win" ->
-            "Won a major Emmy Award, one of television's most recognized industry honors."
+            localizedString(Res.string.hero_badge_desc_award_emmy_win)
         "award:emmy_nom" ->
-            "Nominated for a major Emmy Award, filtered to highlight higher-profile television recognition."
+            localizedString(Res.string.hero_badge_desc_award_emmy_nom)
         "award:palme" ->
-            "The most prestigious award from the Cannes Film Festival held in France, awarded to one film per year since 1975."
+            localizedString(Res.string.hero_badge_desc_award_palme)
         "award:golden_lion" ->
-            "The top prize from the Venice Film Festival, awarded to the best film in the main competition."
+            localizedString(Res.string.hero_badge_desc_award_golden_lion)
         "award:golden_bear" ->
-            "The top prize from the Berlin International Film Festival, awarded to the best film in competition."
+            localizedString(Res.string.hero_badge_desc_award_golden_bear)
         "award:people_choice" ->
-            "Toronto International Film Festival's audience-voted top prize, often a strong signal for broad festival appeal."
+            localizedString(Res.string.hero_badge_desc_award_people_choice)
         "metacritic" ->
-            "Metacritic's Must-See designation, reserved for titles with especially strong critic consensus."
+            localizedString(Res.string.hero_badge_desc_metacritic)
         "cult" ->
-            "Flagged by cult-film keywords or curated metadata as a title with lasting niche, midnight-movie, or fan-driven appeal."
+            localizedString(Res.string.hero_badge_desc_cult)
         "release_status" ->
             when {
                 label.equals("Cinema", ignoreCase = true) ->
-                    "This title is still marked as cinema-only, so it may not be available to stream or watch yet."
+                    localizedString(Res.string.hero_badge_desc_release_cinema)
                 label.equals("Production", ignoreCase = true) ->
-                    "This title is still marked as in production, so it may not be available to stream or watch yet."
+                    localizedString(Res.string.hero_badge_desc_release_production)
                 label.equals("Streaming", ignoreCase = true) ->
-                    "This title is marked as available to stream or watch at home."
+                    localizedString(Res.string.hero_badge_desc_release_streaming)
                 label.equals("Physical", ignoreCase = true) ->
-                    "This title has a physical home release, such as Blu-ray or DVD."
+                    localizedString(Res.string.hero_badge_desc_release_physical)
                 else ->
-                    "Release status: $label."
+                    localizedString(Res.string.hero_badge_desc_release_other, label)
             }
         "true_story" ->
-            "Detected from true-story metadata and keywords, meaning the title is based on real people, events, or reported history."
+            localizedString(Res.string.hero_badge_desc_true_story)
         "stinger" ->
             when {
                 label.startsWith("Mid &") ->
-                    "This film has an extra scene partway through the credits and another after they finish, so it is worth staying to the end."
+                    localizedString(Res.string.hero_badge_desc_stinger_mid_and_post)
                 label.startsWith("Mid-") ->
-                    "This film has an extra scene partway through the credits, so it is worth staying past the first block of names."
+                    localizedString(Res.string.hero_badge_desc_stinger_mid)
                 else ->
-                    "This film has an extra scene once the credits have finished, so it is worth staying to the very end."
+                    localizedString(Res.string.hero_badge_desc_stinger_post)
             }
         "studio", "prestige" ->
-            "Highlights a favored or notable production company attached to the title."
+            localizedString(Res.string.hero_badge_desc_studio)
         "director" ->
-            "Highlights a favored or notable director attached to the title."
+            localizedString(Res.string.hero_badge_desc_director)
         "foreign", "info" ->
-            "The title's original language is not English, shown as a quick language context badge."
+            localizedString(Res.string.hero_badge_desc_foreign)
         "award:festival", "festival" ->
             when (label) {
                 "Sundance Grand Jury" ->
-                    "The Grand Jury Prize from the Sundance Film Festival, the top honor at the leading festival for American independent film."
+                    localizedString(Res.string.hero_badge_desc_festival_sundance)
                 "New Currents" ->
-                    "The New Currents award from the Busan International Film Festival, recognizing first or second features by Asian directors."
+                    localizedString(Res.string.hero_badge_desc_festival_new_currents)
                 "Golden Leopard" ->
-                    "The top prize from the Locarno Film Festival in Switzerland, one of the longest-running festivals for auteur and independent cinema."
+                    localizedString(Res.string.hero_badge_desc_festival_golden_leopard)
                 "Tiger Award" ->
-                    "The top prize from the International Film Festival Rotterdam, spotlighting bold work from first- or second-time filmmakers."
+                    localizedString(Res.string.hero_badge_desc_festival_tiger)
                 "SXSW Jury" ->
-                    "The jury-selected top prize at South by Southwest (SXSW), a major festival for independent film."
+                    localizedString(Res.string.hero_badge_desc_festival_sxsw)
                 "Tribeca Audience Award" ->
-                    "The audience-voted top prize at the Tribeca Festival in New York."
+                    localizedString(Res.string.hero_badge_desc_festival_tribeca)
                 else ->
-                    "Recognized at a major film festival, such as Cannes, Venice, Berlin, Sundance, or Toronto."
+                    localizedString(Res.string.hero_badge_desc_festival_other)
             }
         "trending" ->
-            "Currently trending, among the most popular titles being watched right now."
+            localizedString(Res.string.hero_badge_desc_trending)
         "short_film" ->
-            "A short film, with a runtime under 40 minutes."
+            localizedString(Res.string.hero_badge_desc_short_film)
         "mini_series" ->
-            "A limited or mini series, a self-contained story told over a single short season."
+            localizedString(Res.string.hero_badge_desc_mini_series)
         "binge_ready" ->
-            "A finished series with a small enough episode count to watch from start to end in a few sittings."
+            localizedString(Res.string.hero_badge_desc_binge_ready)
         "new_release", "digital_release" ->
-            "Recently released or newly available to stream, based on the title's release date."
+            localizedString(Res.string.hero_badge_desc_new_release)
         else ->
-            "Shown because this title matched one of your configured hero discovery signals."
+            localizedString(Res.string.hero_badge_desc_other)
     }
 
 private fun heroDiscoveryBadgeResource(category: String, label: String): DrawableResource =

@@ -31,6 +31,8 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * The screensaver proper: watches for idle input, drops a translucent black shade over the app
@@ -326,8 +328,8 @@ internal object DesktopScreensaver {
                 val seconds = countdownSeconds ?: return
                 val g2 = g as Graphics2D
                 g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-                val headline = "Shutting down in $seconds s"
-                val hint = "Move the mouse or press a key to cancel"
+                val headline = localizedString(Res.string.screensaver_shutdown_countdown, seconds)
+                val hint = localizedString(Res.string.screensaver_shutdown_cancel_hint)
                 val headlineSize = max(20f, height / 18f)
                 val hintSize = max(14f, height / 40f)
                 g2.font = Font(Font.SANS_SERIF, Font.BOLD, headlineSize.roundToInt())

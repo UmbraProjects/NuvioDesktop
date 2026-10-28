@@ -497,7 +497,7 @@
     <string name="settings_account_email">E-mail</string>
     <string name="settings_account_not_signed_in">Niezalogowany</string>
     <string name="settings_account_sign_out">Wyloguj się</string>
-    <string name="settings_account_sign_out_confirm_message">Zostaniesz przeniesiony do ekranu logowania.</string>
+    <string name="settings_account_sign_out_confirm_message">Twoje ustawienia pozostają na tym komputerze do ponownego zalogowania, oddzielone od ustawień innych osób logujących się tutaj. Na komputerze współdzielonym lub publicznym wybierz Wyloguj i wyczyść, aby usunąć z tego komputera także ustawienia, logowania i klucze. W obu przypadkach Nuvio uruchomi się ponownie.</string>
     <string name="settings_account_sign_out_confirm_title">Wylogować się?</string>
     <string name="settings_account_status">Status</string>
     <string name="settings_account_status_anonymous">Anonimowy</string>
@@ -543,7 +543,7 @@
     <string name="settings_homescreen_summary_hint">Otwórz katalog tylko wtedy, gdy chcesz zmienić jego nazwę lub kolejność.</string>
     <string name="settings_homescreen_visible">Widoczne</string>
     <string name="settings_hide_secret">Ukryj wartość</string>
-    <string name="settings_playback_subtitle">Odtwarzacz, napisy i automatyczne odtwarzanie</string>
+    <string name="settings_playback_subtitle">Jakość obrazu, HDR, skalowanie i wyjście audio</string>
     <string name="settings_poster_card_radius">Zaokrąglenie karty</string>
     <string name="settings_poster_card_style">STYL KARTY PLAKATU</string>
     <string name="settings_poster_card_width">Szerokość karty</string>
@@ -568,7 +568,7 @@
     <string name="settings_poster_width_large">Duży</string>
     <string name="settings_poster_width_standard">Standardowy</string>
     <string name="settings_show_secret">Pokaż wartość</string>
-    <string name="settings_continue_watching_resume_prompt_description">Pokaż okno kontynuowania od miejsca, w którym skończyłeś, po otwarciu aplikacji po wyjściu z odtwarzacza.</string>
+    <string name="settings_continue_watching_resume_prompt_description">Jeśli Nuvio zamknie się lub ulegnie awarii podczas odtwarzania wideo, zaproponuje jego wznowienie przy następnym uruchomieniu.</string>
     <string name="settings_continue_watching_resume_prompt_title">Monit o wznowienie przy uruchomieniu</string>
     <string name="settings_continue_watching_blur_next_up_description">Rozmyj miniatury następnych odcinków w Kontynuuj oglądanie, aby uniknąć spoilerów.</string>
     <string name="settings_continue_watching_blur_next_up_title">Rozmyj nieobejrzane w Kontynuuj oglądanie</string>
@@ -576,10 +576,10 @@
     <string name="settings_continue_watching_show_unaired_next_up_title">Pokaż niewyemitowane następne odcinki</string>
     <string name="settings_continue_watching_section_sort_order">KOLEJNOŚĆ SORTOWANIA</string>
     <string name="settings_continue_watching_sort_mode_title">Kolejność sortowania</string>
-    <string name="settings_continue_watching_sort_mode_default">Domyślna</string>
-    <string name="settings_continue_watching_sort_mode_default_desc">Sortuj wszystkie elementy według czasu</string>
-    <string name="settings_continue_watching_sort_mode_streaming">Styl streamingowy</string>
-    <string name="settings_continue_watching_sort_mode_streaming_desc">Wydane najpierw, nadchodzące na końcu</string>
+    <string name="settings_continue_watching_sort_mode_default">Ostatnio oglądane</string>
+    <string name="settings_continue_watching_sort_mode_default_desc">Sortuj wszystko według czasu ostatniego oglądania</string>
+    <string name="settings_continue_watching_sort_mode_streaming">Najpierw wyemitowane</string>
+    <string name="settings_continue_watching_sort_mode_streaming_desc">Niewyemitowane odcinki Następny trafiają na koniec, najbliższe jako pierwsze</string>
     <string name="settings_continue_watching_section_card_style">STYL KARTY</string>
     <string name="settings_continue_watching_section_on_launch">PRZY URUCHOMIENIU</string>
     <string name="settings_continue_watching_section_up_next_behavior">ZACHOWANIE NASTĘPNEGO</string>
@@ -639,7 +639,7 @@
     <string name="settings_debrid_prepare_instant_playback">Przygotuj linki</string>
     <string name="settings_debrid_prepare_instant_playback_description">Rozwiąż pierwsze źródła przed rozpoczęciem odtwarzania.</string>
     <string name="settings_debrid_prepare_stream_count">Źródła do przygotowania</string>
-    <string name="settings_debrid_prepare_stream_count_warning">Używaj niższej liczby, gdy to możliwe. Usługi Debrid mogą ograniczać liczbę linków rozwiązywanych w danym okresie. Otwarcie filmu lub odcinka może się wliczać do tych limitów, nawet jeśli nie naciśniesz Odtwórz, ponieważ linki są przygotowywane z wyprzedzeniem.</string>
+    <string name="settings_debrid_prepare_stream_count_warning">Ustaw niską wartość: usługi mogą ograniczać liczbę rozwiązywanych linków, a otwarcie tytułu się wlicza, nawet jeśli nie naciśniesz Oglądaj, ponieważ linki są przygotowywane z wyprzedzeniem.</string>
     <string name="settings_debrid_prepare_count_one">1 źródło</string>
     <string name="settings_debrid_prepare_count_many">%1$d źródeł</string>
     <string name="settings_debrid_section_formatting">Formatowanie</string>
@@ -749,7 +749,7 @@
     <string name="settings_playback_anime_skip_client_id">ID klienta AnimeSkip</string>
     <string name="settings_playback_anime_skip_client_id_description">Wprowadź ID klienta API AnimeSkip. Pobierz je na anime-skip.com.</string>
     <string name="settings_playback_intro_submit_enabled">Włącz przesyłanie intro</string>
-    <string name="settings_playback_intro_submit_enabled_description">Pokaż przycisk do przesyłania znaczników intro/outro do bazy społeczności.</string>
+    <string name="settings_playback_intro_submit_enabled_description">Wyślij czasy intra/outra do SkipDB. Po pominięciu rozdziału naciśnij klawisz pomijania ponownie, aby je wysłać; w przeciwnym razie naciśnij go na początku segmentu, na jego końcu, a potem jeszcze raz, aby wysłać.</string>
     <string name="settings_playback_introdb_api_key">Klucz API IntroDB</string>
     <string name="settings_playback_introdb_api_key_description">Wprowadź klucz API IntroDB, aby przesyłać znaczniki czasowe. Wymagany do przesyłania.</string>
     <string name="settings_playback_anime_skip_description">Wyszukuj również w AnimeSkip znaczniki pomijania (wymaga ID klienta).</string>
@@ -773,7 +773,7 @@
     <string name="settings_playback_external_player_description_ios">Otwórz nowe odtwarzanie w wybranym zainstalowanym odtwarzaczu.</string>
     <string name="settings_playback_external_player_none_available">Brak zainstalowanych obsługiwanych zewnętrznych odtwarzaczy</string>
     <string name="settings_playback_external_player_forward_subtitles">Przekazuj napisy do zewnętrznego odtwarzacza</string>
-    <string name="settings_playback_external_player_forward_subtitles_description">Pobierz napisy z dodatków w preferowanym języku i przekaż je do zewnętrznego odtwarzacza.</string>
+    <string name="settings_playback_external_player_forward_subtitles_description">Pobierz napisy z dodatków w preferowanym języku (w języku urządzenia, jeśli nie ustawiono) i przekaż je zewnętrznemu odtwarzaczowi.</string>
     <string name="settings_playback_hold_speed">Prędkość przy przytrzymaniu</string>
     <string name="settings_playback_hold_to_speed">Przytrzymaj, aby przyspieszyć</string>
     <string name="settings_playback_hold_to_speed_description">Przytrzymaj dowolne miejsce na powierzchni odtwarzacza, aby tymczasowo zwiększyć prędkość odtwarzania.</string>
@@ -866,12 +866,12 @@
     <string name="settings_playback_source_scope_all_sources_description">Uwzględnij strumienie zarówno z dodatków, jak i wtyczek.</string>
     <string name="settings_playback_source_scope_enabled_plugins_only">Tylko włączone wtyczki</string>
     <string name="settings_playback_source_scope_enabled_plugins_only_description">Uwzględnij tylko strumienie z włączonych wtyczek.</string>
-    <string name="settings_playback_source_scope_installed_addons_only">Tylko zainstalowane dodatki</string>
+    <string name="settings_playback_source_scope_installed_addons_only">Zainstalowane dodatki</string>
     <string name="settings_playback_source_scope_installed_addons_only_description">Uwzględnij tylko strumienie z zainstalowanych dodatków.</string>
     <string name="settings_playback_stream_selection_mode">Tryb wyboru strumienia</string>
-    <string name="settings_playback_stream_selection_mode_first_stream">Pierwszy dostępny strumień</string>
+    <string name="settings_playback_stream_selection_mode_first_stream">Pierwsze źródło</string>
     <string name="settings_playback_stream_selection_mode_first_stream_description">Automatycznie odtwórz pierwszy znaleziony strumień.</string>
-    <string name="settings_playback_stream_selection_mode_manual">Ręczny</string>
+    <string name="settings_playback_stream_selection_mode_manual">Ręcznie</string>
     <string name="settings_playback_stream_selection_mode_manual_description">Wybieraj strumienie ręcznie za każdym razem.</string>
     <string name="settings_playback_stream_selection_mode_regex">Dopasowanie regex</string>
     <string name="settings_playback_stream_selection_mode_regex_description">Automatycznie wybierz strumień pasujący do wzorca regex.</string>
@@ -1409,20 +1409,20 @@
     <string name="cw_airs_today">Emisja dzisiaj</string>
     <string name="cw_airs_tomorrow">Emisja jutro</string>
     <plurals name="cw_airs_in_days">
-        <item quantity="one">Emisja za %1$d dzień</item>
-        <item quantity="few">Emisja za %1$d dni</item>
-        <item quantity="many">Emisja za %1$d dni</item>
-        <item quantity="other">Emisja za %1$d dni</item>
-    </plurals>
+            <item quantity="one">Emisja za %1$d dzień</item>
+            <item quantity="few">Emisja za %1$d dni</item>
+            <item quantity="many">Emisja za %1$d dni</item>
+            <item quantity="other">Emisja za %1$d dni</item>
+        </plurals>
     <string name="cw_airs_date_short">%1$s</string>
     <string name="cw_airs_today_short">Dzisiaj</string>
     <string name="cw_airs_tomorrow_short">Jutro</string>
     <plurals name="cw_airs_in_days_short">
-        <item quantity="one">Za %1$d dzień</item>
-        <item quantity="few">Za %1$d dni</item>
-        <item quantity="many">Za %1$d dni</item>
-        <item quantity="other">Za %1$d dni</item>
-    </plurals>
+            <item quantity="one">Za %1$d dzień</item>
+            <item quantity="few">Za %1$d dni</item>
+            <item quantity="many">Za %1$d dni</item>
+            <item quantity="other">Za %1$d dni</item>
+        </plurals>
     <string name="cw_new_episode">Nowy odcinek</string>
     <string name="cw_new_season">Nowy sezon</string>
     <string name="cloud_library_connect_action">Połącz konto</string>

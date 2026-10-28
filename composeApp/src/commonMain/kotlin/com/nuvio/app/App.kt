@@ -471,6 +471,7 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.trackTextInputFocus
+import com.nuvio.app.core.i18n.localizedString
 
 @Serializable
 object TabsRoute
@@ -2080,8 +2081,8 @@ private fun MainAppContent(
                     }
                     val isWebStream = mediaUri.startsWith("https://", ignoreCase = true) ||
                         mediaUri.startsWith("http://", ignoreCase = true)
-                    val provider = if (isWebStream) "Web Stream" else "Local File"
-                    val fallbackTitle = if (isWebStream) "Web Stream" else "Local File"
+                    val provider = if (isWebStream) getString(Res.string.app_paste_web_stream) else getString(Res.string.app_paste_local_file)
+                    val fallbackTitle = provider
 
                     // Cloud/debrid links commonly use an opaque object id as the path segment and
                     // carry the real release name in a `filename=` query param, so recover the name
@@ -3356,7 +3357,7 @@ private fun MainAppContent(
                                     launchPlaylistEntry(playlistPlayback.playlistId, next.entryId)
                                 } else {
                                     PlaylistPlaybackSession.clear()
-                                    NuvioToastController.show("Playlist finished")
+                                    NuvioToastController.show(localizedString(Res.string.playlist_finished))
                                 }
                                 return@completed
                             }
@@ -4113,21 +4114,30 @@ private fun MainAppContent(
                         }
                     }
                 },
+                onAddToAllLibraries = selectedPosterActionTarget
+                    ?.takeIf { LibraryRepository.hasConnectedLibraryProviders() }
+                    ?.let { target ->
+                        {
+                            LibraryRepository.addToAllLibraries(
+                                target.libraryItem ?: target.preview.toLibraryItem(savedAtEpochMs = 0L),
+                            )
+                        }
+                    },
                 onOpenLibraryPicker = selectedPosterActionTarget?.let { target ->
                     {
                         val preview = target.preview
                         val libraryItem = target.libraryItem ?: preview.toLibraryItem(savedAtEpochMs = 0L)
                         pickerItem = libraryItem
                         pickerTitle = preview.name
-                        pickerTabs = LibraryRepository.libraryListTabs()
+                        pickerTabs = LibraryRepository.connectedLibraryTabs()
                         pickerMembership = pickerTabs.associate { it.key to false }
                         pickerPending = true
                         pickerError = null
                         showLibraryListPicker = true
                         coroutineScope.launch {
                             runCatching {
-                                val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
-                                val tabs = LibraryRepository.libraryListTabs()
+                                val snapshot = LibraryRepository.connectedMembershipSnapshot(libraryItem)
+                                val tabs = LibraryRepository.connectedLibraryTabs().filter { tab -> tab.key in snapshot }
                                 pickerTabs = tabs
                                 pickerMembership = tabs.associate { tab ->
                                     tab.key to (snapshot[tab.key] == true)
@@ -4279,13 +4289,13 @@ private fun MainAppContent(
                 // "Bung all my new episodes into a playlist and press play": the whole row the card
                 // is in, as drawn, in its order.
                 addRowToPlaylistLabel = if (continueWatchingRowIsNextUp) {
-                    "Add all of Up Next to playlist"
+                    stringResource(Res.string.cw_add_row_up_next_to_playlist)
                 } else {
-                    "Add all of Continue Watching to playlist"
+                    stringResource(Res.string.cw_add_row_to_playlist)
                 },
                 onAddRowToPlaylist = playlistAddTargetForContinueWatching(
                     items = continueWatchingPlaylistRow,
-                    label = if (continueWatchingRowIsNextUp) "Up Next" else "Continue Watching",
+                    label = if (continueWatchingRowIsNextUp) stringResource(Res.string.cw_row_up_next) else stringResource(Res.string.cw_row_continue_watching),
                 )
                     ?.takeIf { (it as PlaylistAddTarget.Entries).entries.size > 1 }
                     ?.let { target -> { PlaylistAddController.request(target) } },
@@ -4368,7 +4378,7 @@ private fun MainAppContent(
                         pickerPending = true
                         pickerError = null
                         runCatching {
-                            LibraryRepository.applyMembershipChanges(
+                            LibraryRepository.applyConnectedMembershipChanges(
                                 item = item,
                                 desiredMembership = pickerMembership,
                             )
@@ -4381,6 +4391,12 @@ private fun MainAppContent(
                         }
                         pickerPending = false
                     }
+                },
+                onAddToAll = {
+                    pickerItem?.let(LibraryRepository::addToAllLibraries)
+                    showLibraryListPicker = false
+                    pickerItem = null
+                    pickerError = null
                 },
             )
 
@@ -5448,8 +5464,8 @@ private fun BindDiscordBrowsingPresence(
         val pickerLaunch = streamPickerRequest?.launch
         if (pickerLaunch != null && currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() != true) {
             return@remember browsingActivity(
-                title = "Choosing a stream for ${pickerLaunch.title}",
-                subtitle = "Sources",
+                title = localizedString(Res.string.discord_presence_choosing_stream, pickerLaunch.title),
+                subtitle = localizedString(Res.string.discord_presence_sources),
                 imageUrl = pickerLaunch.poster ?: detailsUiState.meta?.poster,
             )
         }
@@ -5522,51 +5538,51 @@ private fun NavBackStackEntry.toDiscordBrowsingActivity(
                 ?.takeIf { route == null || MetaDetailsRepository.peek(route.type, route.id)?.name == it }
                 ?: route?.let { MetaDetailsRepository.peek(it.type, it.id)?.name }
             browsingActivity(
-                title = title?.let { "Viewing $it" } ?: "Viewing details",
-                subtitle = "Details",
+                title = title?.let { localizedString(Res.string.discord_presence_viewing_title, it) } ?: localizedString(Res.string.discord_presence_viewing_details),
+                subtitle = localizedString(Res.string.discord_presence_details),
                 imageUrl = detailPoster,
             )
         }
         destination.hasRoute<PersonDetailRoute>() -> {
             val route = routeOrNull<PersonDetailRoute>()
             browsingActivity(
-                title = route?.personName?.let { "Viewing $it" } ?: "Viewing a person",
-                subtitle = "Person",
+                title = route?.personName?.let { localizedString(Res.string.discord_presence_viewing_title, it) } ?: localizedString(Res.string.discord_presence_viewing_a_person),
+                subtitle = localizedString(Res.string.discord_presence_person),
             )
         }
         destination.hasRoute<EntityBrowseRoute>() -> {
             val route = routeOrNull<EntityBrowseRoute>()
             browsingActivity(
-                title = route?.entityName?.let { "Browsing $it" } ?: "Browsing titles",
-                subtitle = "Discovery",
+                title = route?.entityName?.let { localizedString(Res.string.discord_presence_browsing_title, it) } ?: localizedString(Res.string.discord_presence_browsing_titles),
+                subtitle = localizedString(Res.string.discord_presence_discovery),
             )
         }
         destination.hasRoute<BadgeBrowseRoute>() -> {
             val route = routeOrNull<BadgeBrowseRoute>()
             browsingActivity(
-                title = route?.title?.let { "Browsing $it" } ?: "Browsing titles",
-                subtitle = "Discovery",
+                title = route?.title?.let { localizedString(Res.string.discord_presence_browsing_title, it) } ?: localizedString(Res.string.discord_presence_browsing_titles),
+                subtitle = localizedString(Res.string.discord_presence_discovery),
             )
         }
         destination.hasRoute<CatalogRoute>() -> {
             val route = routeOrNull<CatalogRoute>()
             browsingActivity(
-                title = route?.title?.let { "Browsing $it" } ?: "Browsing a catalog",
+                title = route?.title?.let { localizedString(Res.string.discord_presence_browsing_title, it) } ?: localizedString(Res.string.discord_presence_browsing_a_catalog),
                 subtitle = route?.subtitle?.takeIf { it.isNotBlank() },
             )
         }
-        destination.hasRoute<CalendarRoute>() -> browsingActivity("Viewing Calendar")
-        destination.hasRoute<CollectionEditorRoute>() -> browsingActivity("Editing Collections")
-        destination.hasRoute<FolderDetailRoute>() -> browsingActivity("Viewing a collection")
-        destination.hasRoute<HomescreenSettingsRoute>() -> settingsBrowsingActivity("Home Screen")
-        destination.hasRoute<MetaScreenSettingsRoute>() -> settingsBrowsingActivity("Meta Screen")
-        destination.hasRoute<ContinueWatchingSettingsRoute>() -> settingsBrowsingActivity("Continue Watching")
-        destination.hasRoute<AddonsSettingsRoute>() -> settingsBrowsingActivity("Addons")
-        destination.hasRoute<PluginsSettingsRoute>() -> settingsBrowsingActivity("Plugins")
-        destination.hasRoute<AccountSettingsRoute>() -> settingsBrowsingActivity("Account")
-        destination.hasRoute<SupportersContributorsSettingsRoute>() -> settingsBrowsingActivity("Supporters")
-        destination.hasRoute<LicensesAttributionsSettingsRoute>() -> settingsBrowsingActivity("Licenses")
-        else -> browsingActivity("Browsing Nuvio")
+        destination.hasRoute<CalendarRoute>() -> browsingActivity(localizedString(Res.string.discord_presence_viewing_calendar))
+        destination.hasRoute<CollectionEditorRoute>() -> browsingActivity(localizedString(Res.string.discord_presence_editing_collections))
+        destination.hasRoute<FolderDetailRoute>() -> browsingActivity(localizedString(Res.string.discord_presence_viewing_a_collection))
+        destination.hasRoute<HomescreenSettingsRoute>() -> settingsBrowsingActivity(localizedString(Res.string.discord_presence_home_screen))
+        destination.hasRoute<MetaScreenSettingsRoute>() -> settingsBrowsingActivity(localizedString(Res.string.discord_presence_meta_screen))
+        destination.hasRoute<ContinueWatchingSettingsRoute>() -> settingsBrowsingActivity(localizedString(Res.string.discord_presence_continue_watching))
+        destination.hasRoute<AddonsSettingsRoute>() -> settingsBrowsingActivity(localizedString(Res.string.discord_presence_addons))
+        destination.hasRoute<PluginsSettingsRoute>() -> settingsBrowsingActivity(localizedString(Res.string.discord_presence_plugins))
+        destination.hasRoute<AccountSettingsRoute>() -> settingsBrowsingActivity(localizedString(Res.string.discord_presence_account))
+        destination.hasRoute<SupportersContributorsSettingsRoute>() -> settingsBrowsingActivity(localizedString(Res.string.discord_presence_supporters))
+        destination.hasRoute<LicensesAttributionsSettingsRoute>() -> settingsBrowsingActivity(localizedString(Res.string.discord_presence_licenses))
+        else -> browsingActivity(localizedString(Res.string.discord_presence_browsing_nuvio))
     }
 }
 
@@ -5579,19 +5595,19 @@ private fun tabsDiscordBrowsingActivity(
     val query = submittedSearchQuery.ifBlank { searchQuery }.trim()
     return when {
         searchOverlayActive || selectedTab == AppScreenTab.Search -> browsingActivity(
-            title = query.takeIf { it.isNotBlank() }?.let { "Searching for $it" } ?: "Searching",
+            title = query.takeIf { it.isNotBlank() }?.let { localizedString(Res.string.discord_presence_searching_for, it) } ?: localizedString(Res.string.discord_presence_searching),
         )
-        selectedTab == AppScreenTab.Library -> browsingActivity("Viewing Library")
-        selectedTab == AppScreenTab.Discover -> browsingActivity("Browsing Discover")
-        selectedTab == AppScreenTab.LiveTv -> browsingActivity("Browsing Live TV")
+        selectedTab == AppScreenTab.Library -> browsingActivity(localizedString(Res.string.discord_presence_viewing_library))
+        selectedTab == AppScreenTab.Discover -> browsingActivity(localizedString(Res.string.discord_presence_browsing_discover))
+        selectedTab == AppScreenTab.LiveTv -> browsingActivity(localizedString(Res.string.discord_presence_browsing_live_tv))
         selectedTab == AppScreenTab.Settings -> settingsBrowsingActivity()
-        else -> browsingActivity("Browsing Nuvio")
+        else -> browsingActivity(localizedString(Res.string.discord_presence_browsing_nuvio))
     }
 }
 
 private fun settingsBrowsingActivity(page: String? = null): DiscordRichPresenceActivity =
     browsingActivity(
-        title = "Changing settings",
+        title = localizedString(Res.string.discord_presence_changing_settings),
         subtitle = page,
     )
 

@@ -48,20 +48,23 @@ import com.nuvio.app.features.discover.browseRatingLabel
 import com.nuvio.app.features.discover.browseRuntimeLabel
 import com.nuvio.app.features.discover.browseYearLabel
 import com.nuvio.app.features.discover.formatRating
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
+import org.jetbrains.compose.resources.stringResource
 
 private val WatchChoices = listOf(
     LibraryWatchFilter.All to "Everything",
-    LibraryWatchFilter.Unwatched to "Not started",
-    LibraryWatchFilter.InProgress to "In progress",
+    LibraryWatchFilter.Unwatched to localizedString(Res.string.browse_filter_not_started),
+    LibraryWatchFilter.InProgress to localizedString(Res.string.browse_filter_in_progress),
     LibraryWatchFilter.Watched to "Watched",
 )
 
 private val LibraryStatusChoices = listOf(
-    TmdbBrowseStatus.Any to "Any status",
-    TmdbBrowseStatus.Returning to "Still running",
+    TmdbBrowseStatus.Any to localizedString(Res.string.browse_filter_any_status_2),
+    TmdbBrowseStatus.Returning to localizedString(Res.string.browse_filter_still_running_2),
     TmdbBrowseStatus.Ended to "Ended",
     TmdbBrowseStatus.HomeRelease to "Released",
-    TmdbBrowseStatus.Upcoming to "Coming soon",
+    TmdbBrowseStatus.Upcoming to localizedString(Res.string.browse_filter_coming_soon_2),
 )
 
 /**
@@ -93,7 +96,10 @@ fun LibraryFilterBar(
         val sortChoices = LibrarySortEntries.filter { (option, _) -> tmdbAvailable || !option.needsFacts() }
         BrowseFilterMenu(
             icon = Icons.AutoMirrored.Rounded.Sort,
-            label = "Sort: ${sortChoices.firstOrNull { it.first == sort }?.second ?: "Default order"}",
+            label = stringResource(
+                Res.string.library_sort_label,
+                sortChoices.firstOrNull { it.first == sort }?.second ?: stringResource(Res.string.library_sort_default_order),
+            ),
             on = false,
             onOpenChange = onMenuOpenChange,
         ) { close ->
@@ -122,13 +128,13 @@ fun LibraryFilterBar(
             )
         }
         if (!tmdbAvailable) {
-            BrowseFilterCaption("Add a TMDB API key in Settings to filter by genre, studio, year and more")
+            BrowseFilterCaption(stringResource(Res.string.browse_filter_add_a_tmdb_api_key_in))
         } else {
             BrowseFilterSeparator()
 
             BrowseFilterMenu(icon = Icons.Rounded.TheaterComedy, label = browseFilterSummary("Genres", filters.genres), on = filters.genres.isNotEmpty(), onOpenChange = onMenuOpenChange) {
                 BrowseMenuCheck(on = filters.allGenres, onClick = { update { it.copy(allGenres = !it.allGenres) } }) {
-                    Text("Must match every genre picked")
+                    Text(stringResource(Res.string.browse_filter_must_match_every_genre_picked_2))
                 }
                 BrowseMenuCheckColumns(
                     items = genres,
@@ -194,7 +200,7 @@ fun LibraryFilterBar(
                 on = filters.language != null,
                 onOpenChange = onMenuOpenChange,
             ) { close ->
-                BrowseMenuChoices(options = listOf("" to "Any language") + BrowseLanguages, value = filters.language.orEmpty(), onPick = { picked ->
+                BrowseMenuChoices(options = listOf("" to stringResource(Res.string.browse_filter_any_language_2)) + BrowseLanguages, value = filters.language.orEmpty(), onPick = { picked ->
                     update { it.copy(language = picked.ifBlank { null }) }
                     close()
                 })
@@ -213,12 +219,12 @@ fun LibraryFilterBar(
             }
 
             if (filters.hasFilters) {
-                BrowseFilterIconAction(Icons.Rounded.FilterAltOff, "Clear filters") { update { it.clearedFilters() } }
+                BrowseFilterIconAction(Icons.Rounded.FilterAltOff, stringResource(Res.string.browse_filter_clear_filters_2)) { update { it.clearedFilters() } }
             }
             val needsFacts = filters.needsFacts || settings.sortOption.needsFacts()
             BrowseFilterCaption(
                 when {
-                    needsFacts && factsLoading -> "Looking up titles…"
+                    needsFacts && factsLoading -> stringResource(Res.string.browse_filter_looking_up_titles)
                     filters.needsFacts || filters.watch != LibraryWatchFilter.All -> "%,d titles".format(shownCount)
                     else -> ""
                 },

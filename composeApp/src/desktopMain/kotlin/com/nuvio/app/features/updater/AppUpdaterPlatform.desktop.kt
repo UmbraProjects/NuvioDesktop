@@ -16,6 +16,8 @@ import java.time.Duration
 import java.util.Locale
 import java.util.zip.ZipFile
 import kotlin.system.exitProcess
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private const val updaterPreferencesName = "nuvio_updater"
 private const val ignoredTagKey = "ignored_release_tag"
@@ -132,13 +134,13 @@ actual object AppUpdaterPlatform {
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             require(assetName.endsWith(".zip", ignoreCase = true)) {
-                "This portable build only supports ZIP update archives."
+                localizedString(Res.string.updater_this_portable_build_only_supports_zip)
             }
             // Fail closed. The update is unpacked and run automatically, so an asset with no
             // published digest cannot be checked at all; GitHub has published one for every asset
             // uploaded since mid-2025, so a missing one is itself a sign something is off.
             requireNotNull(expectedSha256?.takeIf { it.isNotBlank() }) {
-                "Update refused: GitHub published no SHA-256 checksum for this download, so it cannot be verified."
+                localizedString(Res.string.updater_update_refused_github_published_no_sha)
             }
             tryDeltaDownload(assetUrl, onProgress)?.let { marker -> return@runCatching marker.absolutePath }
 
@@ -156,7 +158,7 @@ actual object AppUpdaterPlatform {
                 .build()
             val response = updaterHttpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
             check(response.statusCode() in 200..299) {
-                "Update download failed with HTTP ${response.statusCode()}."
+                localizedString(Res.string.updater_download_http_failed, response.statusCode())
             }
 
             val totalBytes = response.headers().firstValue("Content-Length").orElse(null)
@@ -358,7 +360,7 @@ private fun tryDeltaDownload(
         val source = HttpZipRangeSource(updaterHttpClient, assetUrl)
         val index = ZipDelta.readIndex(source)
         val plan = checkNotNull(ZipDelta.plan(index.entries, target.installRoot, launcherExeName)) {
-            "No app image in the archive"
+            localizedString(Res.string.updater_no_app_image_in_the_archive)
         }
         updaterLog.i {
             "Delta update: ${plan.changed.size} of ${plan.newFiles.size} files changed, " +

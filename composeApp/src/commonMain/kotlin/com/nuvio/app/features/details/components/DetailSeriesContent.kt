@@ -118,6 +118,7 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+import com.nuvio.app.core.i18n.localizedString
 
 private val log = Logger.withTag("SeriesContent")
 private const val TRAILER_SELECTOR_SEASON = Int.MIN_VALUE
@@ -126,7 +127,7 @@ private const val MORE_LIKE_THIS_SELECTOR_SEASON = Int.MAX_VALUE
 private const val SAME_CAST_SELECTOR_SEASON = Int.MAX_VALUE - 2
 
 /** The tab name for the main cast's other work (literal: see nuviodesktop-build-facts on new string keys). */
-private const val SAME_CAST_TAB_LABEL = "Same Cast"
+private val SAME_CAST_TAB_LABEL: String get() = localizedString(Res.string.details_same_cast_tab)
 
 /** The line under a landscape card when its reason is shown below it. */
 private val COMPACT_REASON_BELOW_HEIGHT = 22.dp

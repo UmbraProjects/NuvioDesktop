@@ -22,6 +22,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private const val API_URL = "https://api.simkl.com"
 private const val MAX_CONCURRENT_EPISODE_FETCHES = 5
@@ -101,7 +103,7 @@ internal object SimklCalendarRepository {
                 _uiState.value = TraktCalendarUiState(
                     isLoading = false,
                     isAuthenticated = true,
-                    errorMessage = "Failed to load calendar",
+                    errorMessage = localizedString(Res.string.calendar_failed_to_load_calendar_3),
                     hasLoaded = true,
                 )
             }
@@ -155,7 +157,7 @@ internal object SimklCalendarRepository {
                     _uiState.value = TraktCalendarUiState(
                         isLoading = false,
                         isAuthenticated = true,
-                        errorMessage = "Failed to load calendar",
+                        errorMessage = localizedString(Res.string.calendar_failed_to_load_calendar_3),
                         hasLoaded = true,
                     )
                 }

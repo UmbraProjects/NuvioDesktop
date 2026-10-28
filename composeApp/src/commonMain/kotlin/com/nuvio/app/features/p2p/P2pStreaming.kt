@@ -4,6 +4,8 @@ import com.nuvio.app.core.build.AppFeaturePolicy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 data class P2pSettingsUiState(
     val p2pEnabled: Boolean = false,
@@ -12,6 +14,12 @@ data class P2pSettingsUiState(
     val torrentProfile: P2pTorrentProfile = P2pTorrentProfile.BALANCED,
     val cacheSize: P2pCacheSize = P2pCacheSize.GB_2,
     val engineBackend: P2pEngineBackend = P2pEngineBackend.NUVIO_ENGINE,
+    /**
+     * Nuvio Engine only: torrent pieces live in memory and nothing is written to the drive. The
+     * engine holds the playback buffer preset's window plus a little behind it, so the preset
+     * sets the memory it uses; the disk cache size does not apply.
+     */
+    val ramOnlyMode: Boolean = false,
 )
 
 /** Mirrors Stremio's Soft / Default / Fast swarm profiles; the engine owns the actual numbers. */
@@ -66,6 +74,7 @@ object P2pSettingsRepository {
     private var torrentProfile = P2pTorrentProfile.BALANCED
     private var cacheSize = P2pCacheSize.GB_2
     private var engineBackend = P2pEngineBackend.NUVIO_ENGINE
+    private var ramOnlyMode = false
 
     fun ensureLoaded() {
         if (hasLoaded) return
@@ -84,6 +93,7 @@ object P2pSettingsRepository {
         torrentProfile = P2pTorrentProfile.BALANCED
         cacheSize = P2pCacheSize.GB_2
         engineBackend = P2pEngineBackend.NUVIO_ENGINE
+        ramOnlyMode = false
         publish()
     }
 
@@ -135,6 +145,14 @@ object P2pSettingsRepository {
         publish()
     }
 
+    fun setRamOnlyMode(enabled: Boolean) {
+        ensureLoaded()
+        if (ramOnlyMode == enabled) return
+        ramOnlyMode = enabled
+        P2pSettingsStorage.saveRamOnlyMode(enabled)
+        publish()
+    }
+
     private fun loadFromDisk() {
         hasLoaded = true
         p2pEnabled = P2pSettingsStorage.loadP2pEnabled() ?: false
@@ -149,6 +167,7 @@ object P2pSettingsRepository {
         engineBackend = P2pSettingsStorage.loadEngineBackend()
             ?.let { stored -> P2pEngineBackend.entries.firstOrNull { it.name == stored } }
             ?: P2pEngineBackend.NUVIO_ENGINE
+        ramOnlyMode = P2pSettingsStorage.loadRamOnlyMode() ?: false
         publish()
     }
 
@@ -160,6 +179,7 @@ object P2pSettingsRepository {
             torrentProfile = torrentProfile,
             cacheSize = cacheSize,
             engineBackend = engineBackend,
+            ramOnlyMode = ramOnlyMode,
         )
     }
 }
@@ -177,6 +197,8 @@ internal expect object P2pSettingsStorage {
     fun saveCacheSize(size: String)
     fun loadEngineBackend(): String?
     fun saveEngineBackend(backend: String)
+    fun loadRamOnlyMode(): Boolean?
+    fun saveRamOnlyMode(enabled: Boolean)
 }
 
 data class P2pStreamRequest(
@@ -192,7 +214,7 @@ internal fun canonicalP2pInfoHash(infoHash: String): String {
         (canonical.length == 40 || canonical.length == 64) &&
             canonical.all { it in '0'..'9' || it in 'a'..'f' },
     ) {
-        "Torrent info hash must be 40 or 64 hexadecimal characters"
+        localizedString(Res.string.p2p_torrent_info_hash_must_be_40)
     }
     return canonical
 }

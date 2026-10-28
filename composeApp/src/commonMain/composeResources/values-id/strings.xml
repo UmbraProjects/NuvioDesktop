@@ -497,7 +497,7 @@
     <string name="settings_account_email">Email</string>
     <string name="settings_account_not_signed_in">Belum masuk</string>
     <string name="settings_account_sign_out">Keluar</string>
-    <string name="settings_account_sign_out_confirm_message">Anda akan dikembalikan ke layar masuk.</string>
+    <string name="settings_account_sign_out_confirm_message">Pengaturan Anda tetap ada di PC ini saat Anda masuk kembali, terpisah dari siapa pun yang masuk di sini. Di komputer bersama atau publik, pilih Keluar dan Hapus untuk menghapus pengaturan, data masuk, dan kunci Anda dari PC ini juga. Nuvio dimulai ulang dalam kedua kasus.</string>
     <string name="settings_account_sign_out_confirm_title">Keluar?</string>
     <string name="settings_account_status">Status</string>
     <string name="settings_account_status_anonymous">Anonim</string>
@@ -543,7 +543,7 @@
     <string name="settings_homescreen_summary_hint">Buka katalog hanya jika perlu mengganti nama atau mengurutkannya.</string>
     <string name="settings_homescreen_visible">Terlihat</string>
     <string name="settings_hide_secret">Sembunyikan nilai</string>
-    <string name="settings_playback_subtitle">Pemutar, subtitle, dan putar otomatis</string>
+    <string name="settings_playback_subtitle">Kualitas gambar, HDR, upscaling, dan output audio</string>
     <string name="settings_poster_card_radius">Radius Sudut</string>
     <string name="settings_poster_card_style">Gaya Kartu Poster</string>
     <string name="settings_poster_card_width">Lebar</string>
@@ -568,7 +568,7 @@
     <string name="settings_poster_width_large">Besar</string>
     <string name="settings_poster_width_standard">Standar</string>
     <string name="settings_show_secret">Tampilkan nilai</string>
-    <string name="settings_continue_watching_resume_prompt_description">Tampilkan popup untuk melanjutkan dari tempat Anda berhenti saat membuka aplikasi setelah keluar dari pemutar.</string>
+    <string name="settings_continue_watching_resume_prompt_description">Jika Nuvio tertutup atau mogok saat video diputar, tawarkan untuk melanjutkannya saat dibuka berikutnya.</string>
     <string name="settings_continue_watching_resume_prompt_title">Prompt lanjutkan saat dibuka</string>
     <string name="settings_continue_watching_blur_next_up_description">Buramkan thumbnail episode berikutnya di Lanjutkan Menonton untuk menghindari spoiler.</string>
     <string name="settings_continue_watching_blur_next_up_title">Buramkan yang Belum Ditonton di Lanjutkan Menonton</string>
@@ -576,10 +576,10 @@
     <string name="settings_continue_watching_show_unaired_next_up_title">Tampilkan Episode Berikutnya yang Belum Tayang</string>
     <string name="settings_continue_watching_section_sort_order">URUTAN SORTIR</string>
     <string name="settings_continue_watching_sort_mode_title">Urutan Sortir</string>
-    <string name="settings_continue_watching_sort_mode_default">Setelan Bawaan</string>
-    <string name="settings_continue_watching_sort_mode_default_desc">Urutkan semua item berdasarkan yang terbaru</string>
-    <string name="settings_continue_watching_sort_mode_streaming">Gaya Streaming</string>
-    <string name="settings_continue_watching_sort_mode_streaming_desc">Item yang sudah rilis lebih dulu, yang mendatang di akhir</string>
+    <string name="settings_continue_watching_sort_mode_default">Terakhir ditonton</string>
+    <string name="settings_continue_watching_sort_mode_default_desc">Urutkan semuanya berdasarkan kapan terakhir Anda menontonnya</string>
+    <string name="settings_continue_watching_sort_mode_streaming">Yang tayang dulu</string>
+    <string name="settings_continue_watching_sort_mode_streaming_desc">Episode Berikutnya yang belum tayang diletakkan di akhir, yang paling dekat lebih dulu</string>
     <string name="settings_continue_watching_section_card_style">Gaya Kartu Poster</string>
     <string name="settings_continue_watching_section_on_launch">SAAT DIBUKA</string>
     <string name="settings_continue_watching_section_up_next_behavior">PERILAKU BERIKUTNYA</string>
@@ -638,7 +638,7 @@
     <string name="settings_debrid_prepare_instant_playback">Menyiapkan tautan</string>
     <string name="settings_debrid_prepare_instant_playback_description">Siapkan sumber video sebelum mulai pemutaran dimulai.</string>
     <string name="settings_debrid_prepare_stream_count">Jumlah sumber yang disiapkan</string>
-    <string name="settings_debrid_prepare_stream_count_warning">Gunakan jumlah sekecil mungkin. Penyedia layanan Debrid bisa saja membatasi seberapa banyak tautan yang dapat diurai dalam jangka waktu tertentu. Membuka film atau episode serial dihitung dalam batas tersebut meskipun Anda tidak menonton, karena tautan tetap disiapkan terlebih dahulu.</string>
+    <string name="settings_debrid_prepare_stream_count_warning">Jaga agar tetap rendah: layanan dapat membatasi laju penyelesaian tautan, dan membuka judul tetap dihitung meski Anda tidak menekan Tonton, karena tautan disiapkan lebih dulu.</string>
     <string name="settings_debrid_prepare_count_one">1 sumber</string>
     <string name="settings_debrid_prepare_count_many">%1$d sumber</string>
     <string name="settings_debrid_section_formatting">Format</string>
@@ -748,7 +748,7 @@
     <string name="settings_playback_anime_skip_client_id">ID Klien AnimeSkip</string>
     <string name="settings_playback_anime_skip_client_id_description">Masukkan ID klien API AnimeSkip Anda. Dapatkan di anime-skip.com.</string>
     <string name="settings_playback_intro_submit_enabled">Aktifkan Pengiriman Intro</string>
-    <string name="settings_playback_intro_submit_enabled_description">Tampilkan tombol untuk mengirim cap waktu intro/outro ke database komunitas.</string>
+    <string name="settings_playback_intro_submit_enabled_description">Kirim waktu intro/outro ke SkipDB. Setelah melompati bab, tekan tombol lompat lagi untuk mengirimkannya; jika tidak, tekan di awal segmen, di akhirnya, lalu sekali lagi untuk mengirim.</string>
     <string name="settings_playback_introdb_api_key">Kunci API IntroDB</string>
     <string name="settings_playback_introdb_api_key_description">Masukkan kunci API IntroDB Anda untuk mengirim cap waktu. Diperlukan untuk pengiriman.</string>
     <string name="settings_playback_anime_skip_description">Juga cari AnimeSkip untuk cap waktu lewati (memerlukan ID klien).</string>
@@ -859,14 +859,14 @@
     <string name="settings_playback_source_scope_all_sources_description">Putar otomatis dapat menggunakan addon terpasang maupun plugin yang diaktifkan.</string>
     <string name="settings_playback_source_scope_enabled_plugins_only">Hanya plugin yang diaktifkan</string>
     <string name="settings_playback_source_scope_enabled_plugins_only_description">Putar otomatis hanya mempertimbangkan stream dari plugin yang diaktifkan.</string>
-    <string name="settings_playback_source_scope_installed_addons_only">Hanya addon terpasang</string>
+    <string name="settings_playback_source_scope_installed_addons_only">Addon terpasang</string>
     <string name="settings_playback_source_scope_installed_addons_only_description">Putar otomatis hanya mempertimbangkan stream dari addon yang terpasang.</string>
     <string name="settings_playback_stream_selection_mode">Pemilihan Stream Otomatis</string>
-    <string name="settings_playback_stream_selection_mode_first_stream">Putar otomatis sumber pertama</string>
+    <string name="settings_playback_stream_selection_mode_first_stream">Sumber pertama</string>
     <string name="settings_playback_stream_selection_mode_first_stream_description">Putar sumber yang tersedia pertama secara otomatis.</string>
-    <string name="settings_playback_stream_selection_mode_manual">Manual (pilih stream)</string>
+    <string name="settings_playback_stream_selection_mode_manual">Manual</string>
     <string name="settings_playback_stream_selection_mode_manual_description">Selalu tampilkan daftar sumber dan biarkan saya memilih.</string>
-    <string name="settings_playback_stream_selection_mode_regex">Putar otomatis cocokkan regex</string>
+    <string name="settings_playback_stream_selection_mode_regex">Cocok regex</string>
     <string name="settings_playback_stream_selection_mode_regex_description">Putar sumber pertama yang teksnya cocok dengan pola regex Anda.</string>
     <string name="settings_playback_stream_timeout">Batas Waktu Pemilihan Stream</string>
     <string name="settings_playback_stream_timeout_description">Waktu tunggu addon sebelum memilih.</string>
@@ -1432,12 +1432,12 @@
     <string name="cw_airs_today">Tayang hari ini</string>
     <string name="cw_airs_tomorrow">Tayang besok</string>
     <plurals name="cw_airs_in_days">
-        <item quantity="other">Tayang dalam %1$d hari</item>
-    </plurals>
+            <item quantity="other">Tayang dalam %1$d hari</item>
+        </plurals>
     <string name="cw_airs_date_short">%1$s</string>
     <string name="cw_airs_today_short">Hari ini</string>
     <string name="cw_airs_tomorrow_short">Besok</string>
     <plurals name="cw_airs_in_days_short">
-        <item quantity="other">%1$d hari lagi</item>
-    </plurals>
+            <item quantity="other">%1$d hari lagi</item>
+        </plurals>
 </resources>

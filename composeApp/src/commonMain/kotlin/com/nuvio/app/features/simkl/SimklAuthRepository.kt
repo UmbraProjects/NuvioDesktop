@@ -18,6 +18,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /** See [SimklAuthRepository.fetchActivities]. */
 private const val ACTIVITIES_BURST_WINDOW_MS = 15_000L
@@ -235,7 +237,7 @@ internal object SimklAuthRepository {
         val clientId = SimklSettingsRepository.clientId()
         if (clientId.isBlank()) {
             _uiState.value = baseUiState().copy(
-                errorMessage = "Enter your SIMKL Client ID and save it before connecting.",
+                errorMessage = localizedString(Res.string.simkl_auth_enter_your_simkl_client_id_and),
             )
             return
         }
@@ -299,7 +301,7 @@ internal object SimklAuthRepository {
         }.getOrElse {
             if (it is CancellationException) throw it
             log.w(it) { "Device code request exception" }
-            "Couldn't reach SIMKL. Check your connection."
+            localizedString(Res.string.simkl_auth_couldnt_reach_simkl_check_your_connection)
         }
         _uiState.value = baseUiState().copy(errorMessage = failure)
         return null
@@ -351,7 +353,7 @@ internal object SimklAuthRepository {
                 }
             }
         }
-        _uiState.value = baseUiState().copy(errorMessage = "The SIMKL code expired. Please try connecting again.")
+        _uiState.value = baseUiState().copy(errorMessage = localizedString(Res.string.simkl_auth_the_simkl_code_expired_please_try))
     }
 
     private suspend fun completeSignIn(clientId: String, token: SimklTokenResponse) {

@@ -1,0 +1,358 @@
+From a3524e6ca53af037ff9edd6dc2c92ef7dc41074c Mon Sep 17 00:00:00 2001
+From: Nuvio Desktop <nuviodesktop@local>
+Date: Tue, 27 Oct 2026 19:02:43 +0000
+Subject: [PATCH] desktop: Windows payload paths past MAX_PATH (extended-length
+ paths for reader, range release, disk cache) and a working directory touch
+
+---
+ src/cache/disk_cache_manager.cpp | 187 ++++++++++++++++++++++++++++++-
+ src/storage/payload_reader.cpp   |   4 +-
+ src/storage/range_release.cpp    |   4 +-
+ src/storage/windows_path.hpp     |  42 +++++++
+ 4 files changed, 234 insertions(+), 3 deletions(-)
+ create mode 100644 src/storage/windows_path.hpp
+
+diff --git a/src/cache/disk_cache_manager.cpp b/src/cache/disk_cache_manager.cpp
+index 0270d34..2f5511b 100644
+--- a/src/cache/disk_cache_manager.cpp
++++ b/src/cache/disk_cache_manager.cpp
+@@ -14,6 +14,8 @@
+ #define NOMINMAX
+ #endif
+ #include <windows.h>
++
++#include "storage/windows_path.hpp"
+ #else
+ #include <sys/stat.h>
+ #endif
+@@ -56,7 +58,7 @@ void increment(std::uint64_t& value) {
+ std::uint64_t stored_file_size(const std::filesystem::path& path) {
+ #if defined(_WIN32)
+     const auto handle = CreateFileW(
+-        path.c_str(),
++        storage::win32_path(path).c_str(),
+         FILE_READ_ATTRIBUTES,
+         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+         nullptr,
+@@ -125,10 +127,154 @@ std::uint64_t stored_file_size(const std::filesystem::path& path) {
+ #endif
+ }
+ 
++#if defined(_WIN32)
++// Nuvio desktop: payload trees are walked and deleted through Win32 with extended-length paths
++// (storage/windows_path.hpp). MinGW's std::filesystem reports any entry past MAX_PATH as
++// missing, which made every scan of a long-named release throw ("inspect torrent payload
++// entry") and left the whole disk cache unmeasured and unenforced. Reparse points are never
++// followed, matching symlink_status on the other platforms.
++class FindHandle {
++public:
++    explicit FindHandle(const HANDLE value) : value_(value) {}
++    ~FindHandle() {
++        if (value_ != INVALID_HANDLE_VALUE) {
++            FindClose(value_);
++        }
++    }
++    FindHandle(const FindHandle&) = delete;
++    FindHandle& operator=(const FindHandle&) = delete;
++    [[nodiscard]] HANDLE get() const {
++        return value_;
++    }
++
++private:
++    HANDLE value_;
++};
++
++bool dot_entry(const wchar_t* name) {
++    return (name[0] == L'.' && name[1] == L'\0') ||
++        (name[0] == L'.' && name[1] == L'.' && name[2] == L'\0');
++}
++
++// Calls visit(child path, find data) for each entry of directory; false when it does not exist.
++template <typename Visitor>
++bool visit_win32_directory(const std::wstring& directory, const char* operation, Visitor&& visit) {
++    WIN32_FIND_DATAW data{};
++    const FindHandle find(FindFirstFileExW(
++        (directory + L"\\*").c_str(),
++        FindExInfoBasic,
++        &data,
++        FindExSearchNameMatch,
++        nullptr,
++        FIND_FIRST_EX_LARGE_FETCH
++    ));
++    if (find.get() == INVALID_HANDLE_VALUE) {
++        const auto error = GetLastError();
++        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
++            return false;
++        }
++        throw std::system_error(static_cast<int>(error), std::system_category(), operation);
++    }
++    do {
++        if (!dot_entry(data.cFileName)) {
++            visit(directory + L"\\" + data.cFileName, data);
++        }
++    } while (FindNextFileW(find.get(), &data));
++    const auto error = GetLastError();
++    if (error != ERROR_NO_MORE_FILES) {
++        throw std::system_error(static_cast<int>(error), std::system_category(), operation);
++    }
++    return true;
++}
++
++std::uint64_t win32_directory_size(
++    const std::wstring& directory,
++    std::size_t& inspected_entries
++) {
++    std::uint64_t size = 0;
++    visit_win32_directory(
++        directory,
++        "scan torrent payload directory",
++        [&](const std::wstring& child, const WIN32_FIND_DATAW& data) {
++            if (++inspected_entries > maximum_payload_entries) {
++                throw std::runtime_error("torrent payload scan entry limit exceeded");
++            }
++            if ((data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
++                return;
++            }
++            if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
++                saturating_add(size, win32_directory_size(child, inspected_entries));
++                return;
++            }
++            saturating_add(size, stored_file_size(std::filesystem::path(child)));
++        }
++    );
++    return size;
++}
++
++void win32_remove_entry(const std::wstring& path, DWORD attributes, std::uintmax_t& removed);
++
++void win32_remove_children(const std::wstring& directory, std::uintmax_t& removed) {
++    visit_win32_directory(
++        directory,
++        "evict disk cache directory",
++        [&](const std::wstring& child, const WIN32_FIND_DATAW& data) {
++            win32_remove_entry(child, data.dwFileAttributes, removed);
++        }
++    );
++}
++
++void win32_remove_entry(const std::wstring& path, const DWORD attributes, std::uintmax_t& removed) {
++    if ((attributes & FILE_ATTRIBUTE_READONLY) != 0) {
++        SetFileAttributesW(path.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
++    }
++    const auto directory = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
++    if (directory && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0) {
++        win32_remove_children(path, removed);
++    }
++    const auto succeeded = directory ? RemoveDirectoryW(path.c_str()) : DeleteFileW(path.c_str());
++    if (!succeeded) {
++        const auto error = GetLastError();
++        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
++            return;
++        }
++        throw std::system_error(
++            static_cast<int>(error),
++            std::system_category(),
++            "evict disk cache directory"
++        );
++    }
++    ++removed;
++}
++
++// std::filesystem::remove_all, for trees with entries past MAX_PATH.
++std::uintmax_t win32_remove_all(const std::filesystem::path& root) {
++    const auto path = storage::win32_path(root);
++    const auto attributes = GetFileAttributesW(path.c_str());
++    if (attributes == INVALID_FILE_ATTRIBUTES) {
++        const auto error = GetLastError();
++        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
++            return 0;
++        }
++        throw std::system_error(
++            static_cast<int>(error),
++            std::system_category(),
++            "evict disk cache directory"
++        );
++    }
++    std::uintmax_t removed = 0;
++    win32_remove_entry(path, attributes, removed);
++    return removed;
++}
++#endif
++
+ std::uint64_t directory_size(
+     const std::filesystem::path& root,
+     std::size_t& inspected_entries
+ ) {
++#if defined(_WIN32)
++    return win32_directory_size(storage::win32_path(root), inspected_entries);
++#else
+     std::uint64_t size = 0;
+     std::error_code error;
+     std::filesystem::recursive_directory_iterator entries(
+@@ -156,6 +302,7 @@ std::uint64_t directory_size(
+         saturating_add(size, stored_file_size(entry.path()));
+     }
+     return size;
++#endif
+ }
+ 
+ template <typename Visitor>
+@@ -225,6 +372,39 @@ void DiskCacheManager::touch(const std::string& torrent_id) {
+     if (status.type() != std::filesystem::file_type::directory) {
+         throw std::runtime_error("disk cache entry is not a real directory");
+     }
++#if defined(_WIN32)
++    // Nuvio desktop: MinGW's last_write_time goes through _wutime, which cannot open a
++    // directory, so every touch failed with "Permission denied" and the cache's recency order
++    // was the directory's creation time instead of its last use.
++    const auto handle = CreateFileW(
++        storage::win32_path(path).c_str(),
++        FILE_WRITE_ATTRIBUTES,
++        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
++        nullptr,
++        OPEN_EXISTING,
++        FILE_FLAG_BACKUP_SEMANTICS,
++        nullptr
++    );
++    if (handle == INVALID_HANDLE_VALUE) {
++        throw std::system_error(
++            static_cast<int>(GetLastError()),
++            std::system_category(),
++            "touch disk cache entry"
++        );
++    }
++    FILETIME now{};
++    GetSystemTimeAsFileTime(&now);
++    const auto touched = SetFileTime(handle, nullptr, nullptr, &now);
++    const auto touch_error = touched ? ERROR_SUCCESS : GetLastError();
++    CloseHandle(handle);
++    if (!touched) {
++        throw std::system_error(
++            static_cast<int>(touch_error),
++            std::system_category(),
++            "touch disk cache entry"
++        );
++    }
++#else
+     std::filesystem::last_write_time(
+         path,
+         std::filesystem::file_time_type::clock::now(),
+@@ -233,6 +413,7 @@ void DiskCacheManager::touch(const std::string& torrent_id) {
+     if (error) {
+         throw std::system_error(error, "touch disk cache entry");
+     }
++#endif
+ }
+ 
+ DiskCacheStats DiskCacheManager::enforce(
+@@ -281,11 +462,15 @@ DiskCacheStats DiskCacheManager::enforce(
+         if (used <= target_bytes) {
+             break;
+         }
++#if defined(_WIN32)
++        const auto removed = win32_remove_all(candidate.path);
++#else
+         std::error_code error;
+         const auto removed = std::filesystem::remove_all(candidate.path, error);
+         if (error) {
+             throw std::system_error(error, "evict disk cache directory");
+         }
++#endif
+         if (removed == 0) {
+             continue;
+         }
+diff --git a/src/storage/payload_reader.cpp b/src/storage/payload_reader.cpp
+index ee2d318..046af9e 100644
+--- a/src/storage/payload_reader.cpp
++++ b/src/storage/payload_reader.cpp
+@@ -10,6 +10,8 @@
+ #define NOMINMAX
+ #endif
+ #include <windows.h>
++
++#include "storage/windows_path.hpp"
+ #else
+ #include <fcntl.h>
+ #include <unistd.h>
+@@ -20,7 +22,7 @@ namespace nuvio::storage {
+ PayloadReader::PayloadReader(const std::filesystem::path& path) {
+ #if defined(_WIN32)
+     const auto handle = CreateFileW(
+-        path.c_str(),
++        win32_path(path).c_str(),
+         GENERIC_READ,
+         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+         nullptr,
+diff --git a/src/storage/range_release.cpp b/src/storage/range_release.cpp
+index 06311a3..8ee4c6c 100644
+--- a/src/storage/range_release.cpp
++++ b/src/storage/range_release.cpp
+@@ -14,6 +14,8 @@
+ #endif
+ #include <windows.h>
+ #include <winioctl.h>
++
++#include "storage/windows_path.hpp"
+ #else
+ #include <fcntl.h>
+ #include <sys/stat.h>
+@@ -44,7 +46,7 @@ class FileHandle {
+ public:
+     FileHandle(const std::filesystem::path& path, const DWORD access, const DWORD disposition)
+         : value_(CreateFileW(
+-              path.c_str(),
++              win32_path(path).c_str(),
+               access,
+               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+               nullptr,
+diff --git a/src/storage/windows_path.hpp b/src/storage/windows_path.hpp
+new file mode 100644
+index 0000000..c683c96
+--- /dev/null
++++ b/src/storage/windows_path.hpp
+@@ -0,0 +1,42 @@
++#ifndef NUVIO_ENGINE_WINDOWS_PATH_HPP
++#define NUVIO_ENGINE_WINDOWS_PATH_HPP
++
++#if defined(_WIN32)
++
++#include <filesystem>
++#include <string>
++
++namespace nuvio::storage {
++
++// Nuvio desktop: the extended-length ("\\?\") form of an absolute path, for Win32 file calls.
++// Payload paths are <cache>/payload/<info hash>/<the torrent's own folders and file name>, and
++// release names routinely take that past MAX_PATH (260): measured 299 characters for a UHD
++// remux under %LOCALAPPDATA%. Without the prefix CreateFileW reports such a file as missing
++// unless the host process is long-path aware (a manifest opt-in plus a machine-wide registry
++// switch, neither of which the engine controls). libtorrent already writes through this form.
++// MinGW's std::filesystem cannot use prefixed paths at all, so callers pair it with Win32 calls.
++// Relative paths are returned unchanged.
++inline std::wstring win32_path(const std::filesystem::path& path) {
++    if (path.native().starts_with(L"\\\\?\\")) {
++        return path.native();
++    }
++    auto native = path.lexically_normal().native();
++    for (auto& character : native) {
++        if (character == L'/') {
++            character = L'\\';
++        }
++    }
++    if (native.starts_with(L"\\\\")) {
++        return L"\\\\?\\UNC\\" + native.substr(2);
++    }
++    if (native.size() >= 3 && native[1] == L':' && native[2] == L'\\') {
++        return L"\\\\?\\" + native;
++    }
++    return native;
++}
++
++}
++
++#endif
++
++#endif
+-- 
+2.54.0.windows.1
+

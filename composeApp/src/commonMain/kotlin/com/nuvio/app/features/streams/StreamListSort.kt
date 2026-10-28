@@ -4,15 +4,17 @@ import com.nuvio.app.features.debrid.DebridStreamAudioChannel
 import com.nuvio.app.features.debrid.DebridStreamAudioTag
 import com.nuvio.app.features.debrid.DebridStreamQuality
 import com.nuvio.app.features.debrid.DebridStreamVisualTag
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /** User-chosen order for the source list. [DEFAULT] leaves the addon/score order alone. */
 enum class StreamListSortOrder(val label: String) {
-    DEFAULT("Default order"),
-    SIZE_DESC("Largest first"),
-    SIZE_ASC("Smallest first"),
-    QUALITY("Highest quality"),
-    VIDEO("Best video (HDR/DV)"),
-    AUDIO("Best audio"),
+    DEFAULT(localizedString(Res.string.streams_sort_default_order)),
+    SIZE_DESC(localizedString(Res.string.streams_sort_largest_first)),
+    SIZE_ASC(localizedString(Res.string.streams_sort_smallest_first)),
+    QUALITY(localizedString(Res.string.streams_sort_highest_quality)),
+    VIDEO(localizedString(Res.string.streams_sort_best_video_hdr_dv)),
+    AUDIO(localizedString(Res.string.streams_sort_best_audio)),
 }
 
 /**

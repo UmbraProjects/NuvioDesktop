@@ -134,6 +134,8 @@ import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import com.nuvio.app.core.ui.accentBrush
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 internal fun LazyListScope.metaScreenSettingsContent(
     isTablet: Boolean,
@@ -306,8 +308,8 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     description = SAME_CAST_LABEL_DESCRIPTION,
                     options = listOf(
                         SettingsChoiceOption(SameCastLabelPlacement.AUTO, "Auto"),
-                        SettingsChoiceOption(SameCastLabelPlacement.ON_POSTER, "On Poster"),
-                        SettingsChoiceOption(SameCastLabelPlacement.BELOW_POSTER, "Below Poster"),
+                        SettingsChoiceOption(SameCastLabelPlacement.ON_POSTER, stringResource(Res.string.settings_meta_on_poster)),
+                        SettingsChoiceOption(SameCastLabelPlacement.BELOW_POSTER, stringResource(Res.string.settings_meta_below_poster)),
                     ),
                     selectedValue = uiState.sameCastLabelPlacement,
                     isTablet = isTablet,
@@ -320,9 +322,9 @@ internal fun LazyListScope.metaScreenSettingsContent(
 }
 
 // Literal, like the other Same Cast strings: see nuviodesktop-build-facts on new string keys.
-internal const val SAME_CAST_LABEL_TITLE = "Same Cast Label"
-internal const val SAME_CAST_LABEL_DESCRIPTION =
-    "Where Same Cast cards say who from the cast is in them. Auto puts it below the card when the art comes from a poster service, which often has its own badges there, and on the card otherwise."
+internal val SAME_CAST_LABEL_TITLE: String get() = localizedString(Res.string.settings_meta_same_cast_label)
+internal val SAME_CAST_LABEL_DESCRIPTION: String
+    get() = localizedString(Res.string.settings_meta_same_cast_label_description)
 
 private enum class HeroTrailerPlaybackArea {
     Off,

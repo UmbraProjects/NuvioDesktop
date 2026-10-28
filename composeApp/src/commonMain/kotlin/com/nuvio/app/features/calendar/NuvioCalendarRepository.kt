@@ -33,6 +33,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.concurrent.Volatile
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private const val MAX_CONCURRENT_FETCHES = 4
 
@@ -79,7 +81,7 @@ internal object NuvioCalendarRepository {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     hasLoaded = true,
-                    errorMessage = "Failed to load calendar",
+                    errorMessage = localizedString(Res.string.calendar_failed_to_load_calendar),
                 )
             }
         }

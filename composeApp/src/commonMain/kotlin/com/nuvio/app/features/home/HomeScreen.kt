@@ -252,6 +252,7 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.roundToInt
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * Session-scoped memory of the Home tab's vertical scroll position. Lets the user
@@ -5000,7 +5001,7 @@ internal const val DISCOVER_BROWSER_ROW_KEY = "discover:browser"
 /** The empty row the Library keeps when its filters match nothing, so the filter bar stays up. */
 internal const val LIBRARY_FILTER_EMPTY_ROW_KEY = "library:filters-empty"
 
-private const val LibraryFilterEmptyText = "Nothing in your library matches these filters."
+private val LibraryFilterEmptyText: String get() = localizedString(Res.string.library_filter_empty)
 
 /** Space kept between a title-replacing header and the TV row-jump dots. */
 private val TvRowDotsTitleGap = 24.dp

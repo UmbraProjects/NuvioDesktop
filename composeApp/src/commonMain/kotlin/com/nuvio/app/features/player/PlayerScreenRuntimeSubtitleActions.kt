@@ -6,6 +6,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 internal fun PlayerScreenRuntime.fetchAddonSubtitlesForActiveItem(): Job? {
     val type = activeAddonSubtitleType.takeIf { it.isNotBlank() } ?: return null
@@ -83,12 +85,12 @@ internal fun PlayerScreenRuntime.loadAddonSubtitle(subtitle: AddonSubtitle, allo
                     selectedAddonSubtitleId = synced.id.ifBlank { synced.url }
                 }
                 applySyncedSubtitle(result)
-                showAutomaticSyncMessage(if (synced.url != subtitle.url) "Synced (better match found)" else "Synced")
+                showAutomaticSyncMessage(if (synced.url != subtitle.url) localizedString(Res.string.subtitle_sync_synced_better_match_found) else localizedString(Res.string.subtitle_sync_synced))
             }
             AutomaticSubtitleSyncResult.NoReference ->
-                showAutomaticSyncMessage("No built-in subtitles to sync against")
+                showAutomaticSyncMessage(localizedString(Res.string.subtitle_sync_no_built_in_subtitles_to_sync))
             AutomaticSubtitleSyncResult.NotConfident ->
-                showAutomaticSyncMessage("No confident match, kept original timing")
+                showAutomaticSyncMessage(localizedString(Res.string.subtitle_sync_no_confident_match_kept_original_timing))
             AutomaticSubtitleSyncResult.SubtitleUnavailable, null ->
                 showAutomaticSyncMessage("Failed, kept original timing")
         }
@@ -121,7 +123,7 @@ private suspend fun PlayerScreenRuntime.syncToAudio(
     player: PlayerEngineController,
     stillSelected: () -> Boolean,
 ): AutomaticSubtitleSyncResult? {
-    showAutomaticSyncMessage("No built-in subtitles, syncing to the audio")
+    showAutomaticSyncMessage(localizedString(Res.string.subtitle_sync_no_built_in_subtitles_syncing_to))
     // Applying a mapping resets the delay to 0; any other change is the viewer's own.
     var expectedDelayMs = subtitleDelayMs
     fun stillWanted() = stillSelected() && subtitleDelayMs == expectedDelayMs
@@ -140,14 +142,18 @@ private suspend fun PlayerScreenRuntime.syncToAudio(
                     expectedDelayMs = subtitleDelayMs
                     val offset = formatSyncOffset(update.offsetMs)
                     showAutomaticSyncMessage(
-                        if (update.confirmed) "Synced to the audio ($offset)" else "Estimated from the audio ($offset)",
+                        if (update.confirmed) {
+                            localizedString(Res.string.subtitle_sync_synced_to_audio, offset)
+                        } else {
+                            localizedString(Res.string.subtitle_sync_estimated_from_audio, offset)
+                        },
                     )
                 }
                 AudioSubtitleSyncUpdate.Withdrawn -> {
                     automaticallySyncedSubtitle = null
                     subtitleAutoSyncState = SubtitleAutoSyncUiState()
                     playerController?.setSubtitleUri(subtitle.url)
-                    showAutomaticSyncMessage("Audio estimate withdrawn, original timing")
+                    showAutomaticSyncMessage(localizedString(Res.string.subtitle_sync_audio_estimate_withdrawn_original_timing))
                 }
             }
         }
@@ -207,9 +213,9 @@ private suspend fun PlayerScreenRuntime.awaitTorrentBufferForAutomaticSync(still
 private fun PlayerScreenRuntime.showAutomaticSyncMessage(value: String) {
     val controller = playerController
     if (controller != null) {
-        controller.showTransientMessage("Subtitle sync", value)
+        controller.showTransientMessage(localizedString(Res.string.subtitle_sync_subtitle_sync), value)
     } else {
-        showGestureMessage("Subtitle sync: $value")
+        showGestureMessage(localizedString(Res.string.subtitle_sync_gesture_message, value))
     }
 }
 
@@ -244,13 +250,13 @@ internal fun PlayerScreenRuntime.loadSubtitleAutoSyncCues(force: Boolean = false
                 subtitleAutoSyncState = subtitleAutoSyncState.copy(
                     cues = cues,
                     isLoading = false,
-                    errorMessage = if (cues.isEmpty()) "No subtitle lines found" else null,
+                    errorMessage = if (cues.isEmpty()) localizedString(Res.string.subtitle_sync_no_subtitle_lines_found) else null,
                 )
             },
             onFailure = { error ->
                 subtitleAutoSyncState = subtitleAutoSyncState.copy(
                     isLoading = false,
-                    errorMessage = error.message ?: "Unable to load subtitle lines",
+                    errorMessage = error.message ?: localizedString(Res.string.subtitle_sync_unable_to_load_subtitle_lines),
                 )
             },
         )

@@ -1,4 +1,4 @@
-// Copy of nuvio-engine/platform/android/engine/src/main/cpp/jni_bridge.cpp (v0.1.1) with one
+// Copy of nuvio-engine/platform/android/engine/src/main/cpp/jni_bridge.cpp (v0.1.6) with one
 // desktop change, marked "Desktop change" below. Re-copy and re-apply it on an engine bump.
 #include <jni.h>
 
@@ -131,7 +131,8 @@ Java_com_nuvio_engine_internal_NativeBridge_nativeCreate(
     const jlong upload_limit,
     const jint stream_inactivity_timeout,
     const jint warm_torrent_timeout,
-    jstring tls_ca_bundle_path_value
+    jstring tls_ca_bundle_path_value,
+    const jboolean ram_only_mode
 ) {
     std::string data_path;
     std::string cache_path;
@@ -160,6 +161,8 @@ Java_com_nuvio_engine_internal_NativeBridge_nativeCreate(
     // only accepts as nullptr (an empty string is INVALID_ARGUMENT). Without a bundle the Windows
     // build validates TLS peers against the live system certificate store.
     config.tls_ca_bundle_path = tls_ca_bundle_path.empty() ? nullptr : tls_ca_bundle_path.c_str();
+    // Desktop change: RAM-only mode (patches/0005-desktop-ram-only-mode.patch).
+    config.ram_only_mode = ram_only_mode != JNI_FALSE ? 1U : 0U;
 
     nuvio_engine* engine = nullptr;
     const auto status = nuvio_engine_create(&config, &engine);

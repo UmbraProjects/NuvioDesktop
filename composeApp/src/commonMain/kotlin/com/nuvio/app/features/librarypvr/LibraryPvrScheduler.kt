@@ -36,6 +36,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * Drives library auto-download: a periodic sweep (optional app-start catch-up + configured interval +
@@ -411,7 +413,7 @@ object LibraryPvrScheduler {
                 video = video,
             )
             if (downloadId == null) {
-                markTerminal(grabId, GrabStatus.FAILED, "Pack file could not be resolved", emptySet())
+                markTerminal(grabId, GrabStatus.FAILED, localizedString(Res.string.library_pvr_pack_file_could_not_be_resolved), emptySet())
                 continue
             }
             queued += downloadId
@@ -754,7 +756,7 @@ object LibraryPvrScheduler {
         if (streams.isEmpty()) {
             // Sources for a freshly aired episode often show up later, so this is retry-budgeted
             // rather than final.
-            markTerminal(grabId, GrabStatus.SKIPPED, "No sources found", attemptedStreamKeys)
+            markTerminal(grabId, GrabStatus.SKIPPED, localizedString(Res.string.library_pvr_no_sources_found), attemptedStreamKeys)
             return null
         }
 
@@ -772,7 +774,7 @@ object LibraryPvrScheduler {
             ),
         )
         if (orderedStreams.isEmpty()) {
-            markTerminal(grabId, GrabStatus.SKIPPED, "No sources met the score threshold", attemptedStreamKeys)
+            markTerminal(grabId, GrabStatus.SKIPPED, localizedString(Res.string.library_pvr_no_sources_met_the_score_threshold), attemptedStreamKeys)
             return null
         }
 
@@ -783,7 +785,7 @@ object LibraryPvrScheduler {
         for (candidate in orderedStreams) {
             if (attempts >= MAX_CANDIDATES_PER_GRAB) break
             if (candidate.exceedsSizeLimit(maximumSizeBytes)) {
-                lastReason = "Source exceeds the configured size limit"
+                lastReason = localizedString(Res.string.library_pvr_source_exceeds_the_configured_size_limit)
                 continue
             }
             val streamKey = candidate.downloadCandidateKey()
@@ -797,13 +799,13 @@ object LibraryPvrScheduler {
             val resolved = when (val result = DirectDebridPlaybackResolver.resolveToPlayableStream(candidate, season, episode)) {
                 is DirectDebridPlayableResult.Success -> result.stream
                 else -> {
-                    lastReason = "Debrid resolve failed"
+                    lastReason = localizedString(Res.string.library_pvr_debrid_resolve_failed)
                     continue
                 }
             }
             if (resolved.exceedsSizeLimit(maximumSizeBytes)) {
                 attempts--
-                lastReason = "Source exceeds the configured size limit"
+                lastReason = localizedString(Res.string.library_pvr_source_exceeds_the_configured_size_limit)
                 continue
             }
             val downloadId = runCatching { enqueue(resolved, extensionOf(resolved)) }.getOrNull()
@@ -820,16 +822,16 @@ object LibraryPvrScheduler {
                 }
                 return resolved
             }
-            lastReason = "No downloadable source"
+            lastReason = localizedString(Res.string.library_pvr_no_downloadable_source)
         }
 
         markTerminal(
             grabId = grabId,
             status = GrabStatus.FAILED,
             reason = if (!foundUntriedCandidate && attempted.isNotEmpty()) {
-                "No untried downloadable sources remain"
+                localizedString(Res.string.library_pvr_no_untried_downloadable_sources_remain)
             } else {
-                lastReason ?: "No downloadable source"
+                lastReason ?: localizedString(Res.string.library_pvr_no_downloadable_source)
             },
             attempted = attempted.toSet(),
         )
@@ -1025,7 +1027,7 @@ object LibraryPvrScheduler {
                 LibraryPvrRepository.updateGrab(grab.id) {
                     it.copy(
                         status = GrabStatus.CANCELLED,
-                        failReason = "Nuvio closed before this download started",
+                        failReason = localizedString(Res.string.library_pvr_nuvio_closed_before_this_download_started),
                     )
                 }
             }

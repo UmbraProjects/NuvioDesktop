@@ -1,6 +1,8 @@
 package com.nuvio.app.features.posterservice
 
 import com.nuvio.app.features.addons.httpRequestRaw
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * A title the probe below asks for. Any long-established film works; what matters is that a failure
@@ -46,14 +48,14 @@ internal suspend fun probeCustomPosterTemplate(
         shape = shape,
         keys = CustomPosterKeys.snapshot(),
     ) ?: return CustomPosterTemplateProbe.Failed(
-        "The template has no supported id placeholder to fill in.",
+        localizedString(Res.string.poster_template_the_template_has_no_supported_id),
     )
 
     val response = runCatching {
         httpRequestRaw(method = "GET", url = url, headers = emptyMap(), body = "")
     }.getOrElse { error ->
         return CustomPosterTemplateProbe.Failed(
-            error.message?.takeIf { it.isNotBlank() } ?: "The request could not be made.",
+            error.message?.takeIf { it.isNotBlank() } ?: localizedString(Res.string.poster_template_the_request_could_not_be_made),
         )
     }
 
@@ -64,5 +66,5 @@ internal suspend fun probeCustomPosterTemplate(
         .takeIf { it.isNotBlank() }
         ?.let { ": $it" }
         .orEmpty()
-    return CustomPosterTemplateProbe.Failed("The service answered HTTP ${response.status}$detail")
+    return CustomPosterTemplateProbe.Failed(localizedString(Res.string.poster_template_http_status, response.status.toString(), detail))
 }

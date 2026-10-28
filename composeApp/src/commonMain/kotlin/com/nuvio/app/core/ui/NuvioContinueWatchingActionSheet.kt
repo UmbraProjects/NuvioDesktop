@@ -38,6 +38,7 @@ import nuvio.composeapp.generated.resources.cw_action_resync
 import nuvio.composeapp.generated.resources.cw_action_start_from_beginning
 import nuvio.composeapp.generated.resources.play_choose_source
 import org.jetbrains.compose.resources.stringResource
+import nuvio.composeapp.generated.resources.*
 
 @Composable
 fun NuvioContinueWatchingActionSheet(
@@ -114,7 +115,7 @@ fun NuvioContinueWatchingActionSheet(
             add(
                 PosterZoomOverlayAction(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = "Add to playlist",
+                    label = stringResource(Res.string.playlist_add_to_playlist),
                     onSelected = addToPlaylist,
                     group = 2,
                 ),

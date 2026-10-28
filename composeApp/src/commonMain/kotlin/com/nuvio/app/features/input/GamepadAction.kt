@@ -1,7 +1,10 @@
 package com.nuvio.app.features.input
 
+import com.nuvio.app.core.i18n.localizedString
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.PlayerShortcutAction
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.StringResource
 
 /**
  * A physical control on an XInput pad. Face-button names follow the Xbox layout because that is
@@ -12,31 +15,33 @@ import com.nuvio.app.features.player.PlayerShortcutAction
  * zone, and the right stick is unbound. Only controls that can be *bound to an action* appear
  * here — [displayName] is what the settings inventory shows.
  */
-enum class GamepadButton(val id: String, val displayName: String) {
-    DpadUp("dpad_up", "D-pad / stick up"),
-    DpadDown("dpad_down", "D-pad / stick down"),
-    DpadLeft("dpad_left", "D-pad / stick left"),
-    DpadRight("dpad_right", "D-pad / stick right"),
-    A("a", "A"),
-    B("b", "B"),
-    X("x", "X"),
-    Y("y", "Y"),
-    LeftShoulder("lb", "LB"),
-    RightShoulder("rb", "RB"),
-    LeftTrigger("lt", "LT"),
-    RightTrigger("rt", "RT"),
-    Start("start", "Start / Menu"),
-    Back("back", "Back / View"),
-    LeftThumb("ls", "Left stick click"),
-    RightThumb("rs", "Right stick click"),
+enum class GamepadButton(val id: String, val displayNameRes: StringResource) {
+    DpadUp("dpad_up", Res.string.gamepad_button_dpad_up),
+    DpadDown("dpad_down", Res.string.gamepad_button_dpad_down),
+    DpadLeft("dpad_left", Res.string.gamepad_button_dpad_left),
+    DpadRight("dpad_right", Res.string.gamepad_button_dpad_right),
+    A("a", Res.string.gamepad_button_a),
+    B("b", Res.string.gamepad_button_b),
+    X("x", Res.string.gamepad_button_x),
+    Y("y", Res.string.gamepad_button_y),
+    LeftShoulder("lb", Res.string.gamepad_button_lb),
+    RightShoulder("rb", Res.string.gamepad_button_rb),
+    LeftTrigger("lt", Res.string.gamepad_button_lt),
+    RightTrigger("rt", Res.string.gamepad_button_rt),
+    Start("start", Res.string.gamepad_button_start),
+    Back("back", Res.string.gamepad_button_back),
+    LeftThumb("ls", Res.string.gamepad_button_ls),
+    RightThumb("rs", Res.string.gamepad_button_rs),
     // The right stick is a set of one-shot controls, not navigation: each push past the dead zone
     // fires once and has to return to centre before it fires again. That is what makes it usable
     // for stepping playback speed, where a repeat would run the speed away from the user.
-    RightStickUp("rs_up", "Right stick up"),
-    RightStickDown("rs_down", "Right stick down"),
-    RightStickLeft("rs_left", "Right stick back"),
-    RightStickRight("rs_right", "Right stick forward"),
+    RightStickUp("rs_up", Res.string.gamepad_button_rs_up),
+    RightStickDown("rs_down", Res.string.gamepad_button_rs_down),
+    RightStickLeft("rs_left", Res.string.gamepad_button_rs_left),
+    RightStickRight("rs_right", Res.string.gamepad_button_rs_right),
     ;
+
+    val displayName: String get() = localizedString(displayNameRes)
 
     companion object {
         fun fromId(id: String): GamepadButton? = entries.firstOrNull { it.id == id }
@@ -54,7 +59,7 @@ enum class GamepadButton(val id: String, val displayName: String) {
  * user's current binding at the moment of the press.
  */
 sealed interface GamepadTarget {
-    data class FixedKey(val keyCode: Int, val description: String) : GamepadTarget
+    data class FixedKey(val keyCode: Int, val description: StringResource) : GamepadTarget
 
     data class AppAction(val action: AppShortcutAction) : GamepadTarget
 

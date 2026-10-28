@@ -82,6 +82,8 @@ import com.nuvio.app.core.ui.CursorMenuPositionProvider
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.secondaryClick
 import kotlin.math.roundToInt
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 /*
  * The Nuvio Tracker site's filter bar, in Compose: a row of dropdown pills — each names its filter,
@@ -498,7 +500,7 @@ fun BrowseYearsEditor(
                                 if (isFrom) onChange(parsed(text), yearTo) else onChange(yearFrom, parsed(text))
                             }
                         },
-                        placeholder = "Any",
+                        placeholder = stringResource(Res.string.browse_filter_any),
                         keyboardType = KeyboardType.Number,
                     )
                 }
@@ -511,7 +513,7 @@ fun BrowseYearsEditor(
         ) {
             // "Any year" clears typed years too, and a picked decade's chip toggles it back off —
             // otherwise the only way out of a year filter was deleting the digits by hand.
-            BrowseMenuChip(text = "Any year", on = yearFrom == null && yearTo == null) { onChange(null, null) }
+            BrowseMenuChip(text = stringResource(Res.string.browse_filter_any_year), on = yearFrom == null && yearTo == null) { onChange(null, null) }
             BrowseDecades.forEach { (label, from, to) ->
                 val on = yearFrom == from && yearTo == to
                 BrowseMenuChip(text = label, on = on) { if (on) onChange(null, null) else onChange(from, to) }
@@ -537,7 +539,7 @@ fun BrowseStudioPicker(onPick: (TmdbBrowseStudio) -> Unit) {
         NuvioTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = "Find a studio…",
+            placeholder = stringResource(Res.string.browse_filter_find_a_studio),
             modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
         )
         hits.forEach { studio ->

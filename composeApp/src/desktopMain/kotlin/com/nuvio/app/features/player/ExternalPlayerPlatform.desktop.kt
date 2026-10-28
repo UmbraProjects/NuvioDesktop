@@ -16,6 +16,8 @@ import javax.swing.JFileChooser
 import javax.swing.SwingUtilities
 import javax.swing.UIManager
 import javax.swing.filechooser.FileNameExtensionFilter
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private val externalPlayerLog = Logger.withTag("ExternalPlayer")
 
@@ -283,8 +285,8 @@ internal actual object ExternalPlayerPlatform {
             val defaultLabel = defaultMediaAssociation
                 ?.displayName
                 ?.takeIf { it.isNotBlank() }
-                ?.let { "System default ($it)" }
-                ?: "System default"
+                ?.let { localizedString(Res.string.player_external_system_default_named, it) }
+                ?: localizedString(Res.string.player_external_system_default)
             add(
                 ExternalPlayerApp(
                     id = systemPlayerId,

@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.floor
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * An unaired episode with no still yet (common on a new season): a little alarm clock whose
@@ -41,7 +43,7 @@ import kotlin.math.floor
 internal fun EpisodeNoStillPlaceholder(
     modifier: Modifier = Modifier,
     clockSize: Dp = 44.dp,
-    label: String? = "Not available yet",
+    label: String? = stringResource(Res.string.details_not_available_yet),
     labelSize: TextUnit = 13.sp,
     contentAlignment: Alignment.Vertical = Alignment.CenterVertically,
 ) {

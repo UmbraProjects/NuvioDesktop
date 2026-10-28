@@ -63,6 +63,9 @@ import java.util.UUID
 import com.nuvio.app.core.ui.accentFill
 import androidx.compose.ui.graphics.SolidColor
 import com.nuvio.app.core.ui.accentBrush
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.getString
 
 /**
  * Add / edit a game.
@@ -160,7 +163,7 @@ internal fun GameEditorDialog(
             error = null
             val steamGridLogos = if (steamGridDbConfigured) {
                 runCatching { onLoadLogos(gameTitle) }
-                    .onFailure { error = it.message ?: "SteamGridDB logo search failed" }
+                    .onFailure { error = it.message ?: getString(Res.string.games_editor_logo_search_failed) }
                     .getOrDefault(emptyList())
             } else {
                 emptyList()
@@ -169,7 +172,7 @@ internal fun GameEditorDialog(
             logoCandidates = (steamGridLogos + steamLogos).distinctBy(LogoCandidate::url)
             loadingLogos = false
             if (logoCandidates.isEmpty()) {
-                if (error == null) error = "No logos found for $gameTitle."
+                if (error == null) error = getString(Res.string.games_editor_no_logos, gameTitle)
             } else {
                 showLogoPicker = true
             }
@@ -183,7 +186,7 @@ internal fun GameEditorDialog(
         if (!showBackdropPicker || !steamGridDbConfigured || gameTitle.isBlank()) return@LaunchedEffect
         loadingHeroes = true
         steamGridHeroes = runCatching { onLoadHeroes(gameTitle) }
-            .onFailure { error = it.message ?: "SteamGridDB backdrop search failed" }
+            .onFailure { error = it.message ?: getString(Res.string.games_editor_backdrop_search_failed) }
             .getOrDefault(emptyList())
         loadingHeroes = false
     }
@@ -223,19 +226,19 @@ internal fun GameEditorDialog(
             if (onDelete != null) {
                 if (confirmDelete) {
                     Text(
-                        text = "Delete this game?",
+                        text = stringResource(Res.string.games_editor_delete_this_game),
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.danger,
                     )
-                    TextButton(onClick = onDelete) { Text("Confirm", color = colors.danger) }
-                    TextButton(onClick = { confirmDelete = false }) { Text("Keep") }
+                    TextButton(onClick = onDelete) { Text(stringResource(Res.string.games_editor_confirm), color = colors.danger) }
+                    TextButton(onClick = { confirmDelete = false }) { Text(stringResource(Res.string.games_editor_keep)) }
                 } else {
                     TextButton(onClick = { confirmDelete = true }) {
-                        Text("Delete", color = colors.danger)
+                        Text(stringResource(Res.string.action_delete), color = colors.danger)
                     }
                 }
             }
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
             Button(
                 enabled = gameTitle.isNotBlank(),
                 onClick = {
@@ -283,7 +286,7 @@ internal fun GameEditorDialog(
                     )
                 },
             ) {
-                Text(if (initial == null) "Add game" else "Save changes")
+                Text(if (initial == null) stringResource(Res.string.games_mode_add_game) else stringResource(Res.string.games_editor_save_changes))
             }
         },
     ) {
@@ -291,7 +294,7 @@ internal fun GameEditorDialog(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            FieldColumn("Executable, shortcut or launch URL (optional)", Modifier.weight(1f)) {
+            FieldColumn(stringResource(Res.string.games_editor_executable_shortcut_or_launch_url_optional), Modifier.weight(1f)) {
                 NuvioTextField(
                     value = executablePath,
                     onValueChange = {
@@ -301,7 +304,7 @@ internal fun GameEditorDialog(
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = "C:\\Games\\Example\\game.exe,  a .lnk shortcut,  or  steam://rungameid/620",
+                    placeholder = stringResource(Res.string.games_editor_c_games_example_game_exe_a),
                 )
             }
             OutlinedButton(
@@ -322,20 +325,20 @@ internal fun GameEditorDialog(
             ) {
                 Icon(Icons.Rounded.FolderOpen, null)
                 Spacer(Modifier.width(7.dp))
-                Text("Browse")
+                Text(stringResource(Res.string.games_editor_browse))
             }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FieldColumn("Display title", Modifier.weight(1f)) {
+            FieldColumn(stringResource(Res.string.games_editor_display_title), Modifier.weight(1f)) {
                 NuvioTextField(
                     value = gameTitle,
                     onValueChange = { gameTitle = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = "Shown in the library",
+                    placeholder = stringResource(Res.string.games_editor_shown_in_the_library),
                 )
             }
-            FieldColumn("Launch arguments (optional)", Modifier.weight(1f)) {
+            FieldColumn(stringResource(Res.string.games_editor_launch_arguments_optional), Modifier.weight(1f)) {
                 NuvioTextField(
                     value = arguments,
                     onValueChange = { arguments = it },
@@ -346,15 +349,15 @@ internal fun GameEditorDialog(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FieldColumn("Working directory (optional)", Modifier.weight(1f)) {
+            FieldColumn(stringResource(Res.string.games_editor_working_directory_optional), Modifier.weight(1f)) {
                 NuvioTextField(
                     value = workingDirectory,
                     onValueChange = { workingDirectory = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = "Defaults to the folder holding the executable",
+                    placeholder = stringResource(Res.string.games_editor_defaults_to_the_folder_holding_the),
                 )
             }
-            FieldColumn("Row", Modifier.weight(1f)) {
+            FieldColumn(stringResource(Res.string.games_editor_row), Modifier.weight(1f)) {
                 GameRowPicker(
                     rows = rows,
                     selectedRowId = selectedRowId,
@@ -381,11 +384,11 @@ internal fun GameEditorDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Add your Twitch application credentials before searching IGDB.",
+                        text = stringResource(Res.string.games_editor_add_your_twitch_application_credentials_before),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    TextButton(onClick = onOpenSettings) { Text("Open settings") }
+                    TextButton(onClick = onOpenSettings) { Text(stringResource(Res.string.games_editor_open_settings)) }
                 }
             }
         } else {
@@ -397,7 +400,7 @@ internal fun GameEditorDialog(
                     value = searchText,
                     onValueChange = { searchText = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = "Search $providerName",
+                    placeholder = stringResource(Res.string.games_editor_search_provider, providerName),
                     onImeAction = ::runSearch,
                 )
                 Button(onClick = ::runSearch, enabled = searchText.isNotBlank() && !searching) {
@@ -407,7 +410,7 @@ internal fun GameEditorDialog(
                         Icon(Icons.Rounded.Search, null)
                     }
                     Spacer(Modifier.width(7.dp))
-                    Text("Search")
+                    Text(stringResource(Res.string.games_editor_search))
                 }
             }
         }
@@ -424,8 +427,8 @@ internal fun GameEditorDialog(
             when {
                 searching -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 results.isEmpty() -> Text(
-                    text = selectedMetadata?.let { "Metadata selected: ${it.title}" }
-                        ?: "Search results will appear here. You can also save a game without metadata.",
+                    text = selectedMetadata?.let { stringResource(Res.string.games_editor_metadata_selected, it.title) }
+                        ?: stringResource(Res.string.games_editor_search_results_hint),
                     modifier = Modifier.align(Alignment.Center),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.textMuted,
@@ -461,12 +464,12 @@ internal fun GameEditorDialog(
         ) {
             ArtworkChoice(
                 modifier = Modifier.weight(1f),
-                label = "BACKDROP",
+                label = stringResource(Res.string.games_editor_backdrop),
                 count = (backdrops.size + steamGridHeroes.size + steamHeroes.size).takeIf { it > 0 },
                 detail = when {
                     selectedBackdrop != null -> "${selectedBackdrop.source.label}  •  ${selectedBackdrop.resolutionLabel}"
-                    !selectedBackdropUrl.isNullOrBlank() -> "Current backdrop"
-                    else -> "Artwork from IGDB, Steam and SteamGridDB"
+                    !selectedBackdropUrl.isNullOrBlank() -> stringResource(Res.string.games_editor_current_backdrop)
+                    else -> stringResource(Res.string.games_editor_artwork_from_igdb_steam_and_steamgriddb)
                 },
                 // No longer gated on an IGDB match: Steam art is found from the executable or the
                 // title alone, so a game with no match at all can still have a backdrop.
@@ -475,13 +478,13 @@ internal fun GameEditorDialog(
             )
             ArtworkChoice(
                 modifier = Modifier.weight(1f),
-                label = "LOGO",
+                label = stringResource(Res.string.games_editor_logo),
                 count = logoCandidates.size.takeIf { it > 0 },
                 detail = when {
-                    logoManuallySelected -> "Chosen artwork"
-                    !selectedLogoUrl.isNullOrBlank() -> "Current logo • choose another if needed"
-                    !steamGridDbConfigured -> "Steam logos • add a SteamGridDB key for more"
-                    else -> "Automatic English-first selection on save"
+                    logoManuallySelected -> stringResource(Res.string.games_editor_chosen_artwork)
+                    !selectedLogoUrl.isNullOrBlank() -> stringResource(Res.string.games_editor_current_logo_choose_another_if_needed)
+                    !steamGridDbConfigured -> stringResource(Res.string.games_editor_steam_logos_add_a_steamgriddb_key)
+                    else -> stringResource(Res.string.games_editor_automatic_english_first_selection_on_save)
                 },
                 enabled = gameTitle.isNotBlank() && !loadingLogos,
                 busy = loadingLogos,
@@ -536,7 +539,7 @@ private fun GameRowPicker(
     onSelected: (String?) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val automaticLabel = "Automatic (Installed / Uninstalled)"
+    val automaticLabel = stringResource(Res.string.games_editor_row_automatic)
     val selectedLabel = rows.firstOrNull { it.id == selectedRowId }?.name ?: automaticLabel
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -730,10 +733,10 @@ private fun BackdropPickerDialog(
 
     NuvioModalDialog(
         onDismissRequest = onDismiss,
-        title = "Choose backdrop",
+        title = stringResource(Res.string.games_editor_choose_backdrop),
         subtitle = "$gameTitle  •  $breakdown",
         maxWidth = 1040.dp,
-        actions = { TextButton(onClick = onDismiss) { Text("Close") } },
+        actions = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_close)) } },
     ) {
         if (candidates.isEmpty()) {
             Box(Modifier.fillMaxWidth().height(520.dp), contentAlignment = Alignment.Center) {
@@ -741,7 +744,7 @@ private fun BackdropPickerDialog(
                     CircularProgressIndicator()
                 } else {
                     Text(
-                        text = "No artwork found for $gameTitle.",
+                        text = stringResource(Res.string.games_editor_no_artwork, gameTitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.textMuted,
                     )
@@ -782,9 +785,9 @@ private fun BackdropPickerDialog(
                         Spacer(Modifier.width(10.dp))
                         Text(
                             text = if (loadingSteamGrid) {
-                                "Looking for SteamGridDB backdrops"
+                                stringResource(Res.string.games_editor_looking_steamgriddb)
                             } else {
-                                "Looking for Steam backdrops"
+                                stringResource(Res.string.games_editor_looking_steam)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.textMuted,
@@ -812,10 +815,10 @@ private fun LogoPickerDialog(
 
     NuvioModalDialog(
         onDismissRequest = onDismiss,
-        title = "Choose logo",
+        title = stringResource(Res.string.games_editor_choose_logo),
         subtitle = "$gameTitle  •  $breakdown",
         maxWidth = 1040.dp,
-        actions = { TextButton(onClick = onDismiss) { Text("Close") } },
+        actions = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_close)) } },
     ) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 260.dp),
@@ -839,7 +842,7 @@ private fun LogoPickerDialog(
                     Box(Modifier.fillMaxSize().background(Color(0xFF0A080D))) {
                         AsyncImage(
                             model = logo.url,
-                            contentDescription = "Logo ${logo.resolutionLabel}",
+                            contentDescription = stringResource(Res.string.games_editor_logo_cd, logo.resolutionLabel),
                             modifier = Modifier.fillMaxSize().padding(14.dp),
                             contentScale = ContentScale.Fit,
                         )
@@ -882,7 +885,7 @@ private fun ArtworkTile(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Check,
-                            contentDescription = "Selected",
+                            contentDescription = stringResource(Res.string.games_editor_selected),
                             modifier = Modifier.padding(5.dp).size(17.dp),
                             tint = colors.onAccent,
                         )
@@ -951,7 +954,7 @@ private fun MetadataResultRow(game: GameMetadata, selected: Boolean, onClick: ()
                     text = buildList {
                         year?.let { add(it.toString()) }
                         game.platforms.take(2).let(::addAll)
-                    }.joinToString("  •  ").ifBlank { "No release information" },
+                    }.joinToString("  •  ").ifBlank { stringResource(Res.string.games_editor_no_release_info) },
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textMuted,
                     maxLines = 1,

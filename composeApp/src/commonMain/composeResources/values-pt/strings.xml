@@ -203,8 +203,8 @@
     <string name="collections_editor_trakt_trending">Listas do momento</string>
     <string name="collections_editor_trakt_popular">Listas populares</string>
     <string name="collections_editor_trakt_direction">Ordem</string>
-    <string name="collections_editor_trakt_ascending">Ascendente</string>
-    <string name="collections_editor_trakt_descending">Descendente</string>
+    <string name="collections_editor_trakt_ascending">Asc.</string>
+    <string name="collections_editor_trakt_descending">Desc.</string>
     <string name="collections_editor_trakt_sort_list_order">Ordem da lista</string>
     <string name="collections_editor_trakt_sort_recently_added">Adicionado recentemente</string>
     <string name="collections_editor_trakt_sort_title">Título</string>
@@ -487,7 +487,7 @@
     <string name="settings_account_email">E-mail</string>
     <string name="settings_account_not_signed_in">Sessão não iniciada</string>
     <string name="settings_account_sign_out">Terminar sessão</string>
-    <string name="settings_account_sign_out_confirm_message">Irás regressar ao ecrã de início de sessão.</string>
+    <string name="settings_account_sign_out_confirm_message">As tuas definições ficam neste PC para quando voltares a iniciar sessão, separadas das de qualquer outra pessoa que inicie sessão aqui. Num computador partilhado ou público, escolhe Terminar sessão e apagar para remover também as definições, as sessões e as chaves deste PC. O Nuvio reinicia em qualquer dos casos.</string>
     <string name="settings_account_sign_out_confirm_title">Terminar sessão?</string>
     <string name="settings_account_status">Estado</string>
     <string name="settings_account_status_anonymous">Anónimo</string>
@@ -533,7 +533,7 @@
     <string name="settings_homescreen_summary_hint">Abre um catálogo apenas quando precisares de o renomear ou reordenar.</string>
     <string name="settings_homescreen_visible">Visível</string>
     <string name="settings_hide_secret">Ocultar valor</string>
-    <string name="settings_playback_subtitle">Leitor, legendas e reprodução automática</string>
+    <string name="settings_playback_subtitle">Qualidade de imagem, HDR, upscaling e saída de áudio</string>
     <string name="settings_poster_card_radius">Raio dos cantos</string>
     <string name="settings_poster_card_style">Estilo dos cartões de póster</string>
     <string name="settings_poster_card_width">Largura</string>
@@ -558,7 +558,7 @@
     <string name="settings_poster_width_large">Grande</string>
     <string name="settings_poster_width_standard">Padrão</string>
     <string name="settings_show_secret">Mostrar valor</string>
-    <string name="settings_continue_watching_resume_prompt_description">Mostra uma mensagem para continuares de onde ficaste quando abrires a app após teres saído do leitor.</string>
+    <string name="settings_continue_watching_resume_prompt_description">Se o Nuvio fechar ou falhar durante a reprodução de um vídeo, oferece retomá-lo na próxima vez que abrir.</string>
     <string name="settings_continue_watching_resume_prompt_title">Confirmar retoma ao iniciar</string>
     <string name="settings_continue_watching_blur_next_up_description">Desfoca as miniaturas do próximo episódio no Continuar a Ver para evitar spoilers.</string>
     <string name="settings_continue_watching_blur_next_up_title">Desfocar não vistos no Continuar a Ver</string>
@@ -566,10 +566,10 @@
     <string name="settings_continue_watching_show_unaired_next_up_title">Mostrar próximos episódios não emitidos</string>
     <string name="settings_continue_watching_section_sort_order">ORDEM DE ORDENAÇÃO</string>
     <string name="settings_continue_watching_sort_mode_title">Ordem de ordenação</string>
-    <string name="settings_continue_watching_sort_mode_default">Predefinida</string>
-    <string name="settings_continue_watching_sort_mode_default_desc">Ordena todos os itens pelos mais recentes</string>
-    <string name="settings_continue_watching_sort_mode_streaming">Estilo Plataforma de Streaming</string>
-    <string name="settings_continue_watching_sort_mode_streaming_desc">Itens já lançados primeiro, os próximos no fim</string>
+    <string name="settings_continue_watching_sort_mode_default">Visto por último</string>
+    <string name="settings_continue_watching_sort_mode_default_desc">Ordena tudo pela última vez que viste</string>
+    <string name="settings_continue_watching_sort_mode_streaming">Emitidos primeiro</string>
+    <string name="settings_continue_watching_sort_mode_streaming_desc">Os episódios Seguinte ainda não emitidos ficam no fim, os mais próximos primeiro</string>
     <string name="settings_continue_watching_section_card_style">Estilo dos Cartões de Póster</string>
     <string name="settings_continue_watching_section_on_launch">AO INICIAR</string>
     <string name="settings_continue_watching_section_up_next_behavior">COMPORTAMENTO DO SEGUINTE</string>
@@ -580,7 +580,7 @@
     <string name="settings_continue_watching_style_poster_description">Cartão de póster focado na imagem</string>
     <string name="settings_continue_watching_style_wide">Panorâmico</string>
     <string name="settings_continue_watching_style_wide_description">Cartão horizontal com mais informação</string>
-    <string name="settings_continue_watching_up_next_description">Mostra o próximo episódio com base no episódio visto mais avançado. Desativa para repetições de séries, usando assim o episódio visto mais recentemente.</string>
+    <string name="settings_continue_watching_up_next_description">Ativa para voltar a ver.</string>
     <string name="settings_continue_watching_up_next_title">Seguinte a partir do mais avançado</string>
     <string name="settings_continue_watching_use_episode_thumbnails_description">Preferir miniaturas dos episódios quando disponíveis.</string>
     <string name="settings_continue_watching_use_episode_thumbnails_title">Preferir miniaturas de episódios no Continuar a Ver</string>
@@ -600,7 +600,7 @@
     <string name="settings_debrid_cloud_library">Biblioteca na nuvem</string>
     <string name="settings_debrid_cloud_library_description">Explora e reproduz ficheiros que já se encontram nas tuas contas ligadas.</string>
     <string name="settings_debrid_enable">Resolver links reproduzíveis</string>
-    <string name="settings_debrid_enable_description">Solicita links reproduzíveis a um serviço ligado sempre que um resultado precisar. Isto pode adicionar o item a esse serviço.</string>
+    <string name="settings_debrid_enable_description">Pede links reproduzíveis a um serviço ligado quando um resultado precisar.</string>
     <string name="settings_debrid_resolve_with">Resolver com</string>
     <string name="settings_debrid_resolve_with_description">Escolhe qual das contas ligadas deve gerir os links reproduzíveis.</string>
     <string name="settings_debrid_add_key_first">Liga uma conta primeiro.</string>
@@ -628,12 +628,12 @@
     <string name="settings_debrid_prepare_instant_playback">Preparar links</string>
     <string name="settings_debrid_prepare_instant_playback_description">Resolve links reproduzíveis antes de a reprodução começar.</string>
     <string name="settings_debrid_prepare_stream_count">Links a preparar</string>
-    <string name="settings_debrid_prepare_stream_count_warning">Usa um número mais baixo quando possível. Os serviços ligados podem limitar a taxa de links que podem ser resolvidos num determinado período de tempo. Abrir um filme ou episódio pode contar para esses limites mesmo que não carregues em Ver, porque os links são preparados antecipadamente.</string>
+    <string name="settings_debrid_prepare_stream_count_warning">Mantém um valor baixo: os serviços podem limitar a resolução de links e abrir um título conta mesmo que não carregues em Ver, porque os links são preparados antecipadamente.</string>
     <string name="settings_debrid_prepare_count_one">1 link</string>
     <string name="settings_debrid_prepare_count_many">%1$d links</string>
     <string name="settings_debrid_section_formatting">Formatação</string>
     <string name="settings_debrid_name_template">Modelo de nome</string>
-    <string name="settings_debrid_name_template_description">Controla a forma como os nomes dos resultados aparecem.</string>
+    <string name="settings_debrid_name_template_description">Controla como aparecem os nomes dos resultados.</string>
     <string name="settings_debrid_description_template">Modelo de descrição</string>
     <string name="settings_debrid_description_template_description">Controla os metadados apresentados sob cada resultado.</string>
     <string name="settings_debrid_formatter_reset_title">Repor formatação</string>
@@ -738,12 +738,12 @@
     <string name="settings_playback_anime_skip_client_id">ID de Cliente do AnimeSkip</string>
     <string name="settings_playback_anime_skip_client_id_description">Introduz o teu ID de cliente da API do AnimeSkip. Obtém um em anime-skip.com.</string>
     <string name="settings_playback_intro_submit_enabled">Ativar envio de introduções</string>
-    <string name="settings_playback_intro_submit_enabled_description">Mostra um botão para enviares marcas de tempo de introduções/finais para a base de dados da comunidade.</string>
+    <string name="settings_playback_intro_submit_enabled_description">Envia os tempos de intro/outro para o SkipDB. Depois de saltar um capítulo, carrega novamente na tecla de saltar para os enviar; caso contrário, carrega no início de um segmento, no fim e depois mais uma vez para enviar.</string>
     <string name="settings_playback_introdb_api_key">Chave API do IntroDB</string>
     <string name="settings_playback_introdb_api_key_description">Introduz a tua chave API do IntroDB para enviares marcas de tempo. Obrigatório para a submissão.</string>
     <string name="settings_playback_anime_skip_description">Pesquisa também no AnimeSkip por marcas de tempo para saltar conteúdo (requer ID de cliente).</string>
     <string name="settings_playback_auto_play_next_episode">Reproduzir automaticamente o próximo episódio</string>
-    <string name="settings_playback_auto_play_next_episode_description">Inicia o próximo episódio automaticamente assim que o aviso aparecer.</string>
+    <string name="settings_playback_auto_play_next_episode_description">Aceita automaticamente o próximo episódio e salta a contagem decrescente.</string>
     <string name="settings_playback_decoder_device_only">Apenas descodificadores do dispositivo</string>
     <string name="settings_playback_decoder_prefer_app">Preferir descodificadores da app (FFmpeg)</string>
     <string name="settings_playback_decoder_prefer_device">Preferir descodificadores do dispositivo</string>
@@ -778,7 +778,7 @@
     <string name="settings_playback_option_forced">Forçadas</string>
     <string name="settings_playback_option_none">Nenhum</string>
     <string name="settings_playback_prefer_binge_group">Preferir grupo de maratona (Próximo episódio)</string>
-    <string name="settings_playback_prefer_binge_group_description">Tenta primeiro o mesmo perfil de fonte (mesmo addon/grupo de qualidade) antes das regras normais de reprodução automática.</string>
+    <string name="settings_playback_prefer_binge_group_description">Tenta primeiro o mesmo perfil de fonte (mesmo addon/grupo de qualidade.)</string>
     <string name="settings_playback_reuse_binge_group">Reutilizar grupo de maratona</string>
     <string name="settings_playback_reuse_binge_group_description">Lembra-te e reutiliza o último grupo de maratona entre sessões (Continuar a Ver, Detalhes, etc.).</string>
     <string name="settings_playback_preferred_audio_language">Idioma de áudio preferido</string>
@@ -830,14 +830,14 @@
     <string name="settings_playback_source_scope_all_sources_description">A reprodução automática pode usar tanto os addons instalados como os plugins ativos.</string>
     <string name="settings_playback_source_scope_enabled_plugins_only">Apenas plugins ativos</string>
     <string name="settings_playback_source_scope_enabled_plugins_only_description">A reprodução automática apenas considera streams provenientes de plugins ativos.</string>
-    <string name="settings_playback_source_scope_installed_addons_only">Apenas addons instalados</string>
+    <string name="settings_playback_source_scope_installed_addons_only">Addons instalados</string>
     <string name="settings_playback_source_scope_installed_addons_only_description">A reprodução automática apenas considera streams provenientes dos teus addons instalados.</string>
     <string name="settings_playback_stream_selection_mode">Seleção automática de stream</string>
-    <string name="settings_playback_stream_selection_mode_first_stream">Reproduzir automaticamente a primeira fonte</string>
+    <string name="settings_playback_stream_selection_mode_first_stream">Primeira fonte</string>
     <string name="settings_playback_stream_selection_mode_first_stream_description">Reproduz automaticamente a primeira fonte disponível.</string>
-    <string name="settings_playback_stream_selection_mode_manual">Manual (escolher stream)</string>
+    <string name="settings_playback_stream_selection_mode_manual">Manual</string>
     <string name="settings_playback_stream_selection_mode_manual_description">Mostra sempre a lista de fontes e deixa-me escolher.</string>
-    <string name="settings_playback_stream_selection_mode_regex">Reprodução automática por correspondência regex</string>
+    <string name="settings_playback_stream_selection_mode_regex">Correspondência regex</string>
     <string name="settings_playback_stream_selection_mode_regex_description">Reproduz a primeira fonte cujo texto corresponda ao teu padrão regex.</string>
     <string name="settings_playback_stream_timeout">Tempo limite de seleção de stream</string>
     <string name="settings_playback_stream_timeout_description">Tempo de espera pelos addons antes de efetuar a seleção.</string>
@@ -1401,16 +1401,16 @@
     <string name="cw_airs_today">Emitido hoje</string>
     <string name="cw_airs_tomorrow">Emitido amanhã</string>
     <plurals name="cw_airs_in_days">
-        <item quantity="one">Emitido em %1$d dia</item>
-        <item quantity="other">Emitido em %1$d dias</item>
-    </plurals>
+            <item quantity="one">Emitido em %1$d dia</item>
+            <item quantity="other">Emitido em %1$d dias</item>
+        </plurals>
     <string name="cw_airs_date_short">%1$s</string>
     <string name="cw_airs_today_short">Hoje</string>
     <string name="cw_airs_tomorrow_short">Amanhã</string>
     <plurals name="cw_airs_in_days_short">
-        <item quantity="one">Em %1$d dia</item>
-        <item quantity="other">Em %1$d dias</item>
-    </plurals>
+            <item quantity="one">Em %1$d dia</item>
+            <item quantity="other">Em %1$d dias</item>
+        </plurals>
     <string name="cw_new_episode">Novo episódio</string>
     <string name="cw_new_season">Nova temporada</string>
 </resources>

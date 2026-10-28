@@ -28,6 +28,7 @@ import kotlinx.serialization.json.Json
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * Trakt connection state and token lifecycle.
@@ -260,12 +261,12 @@ object TraktAuthRepository {
             if (response.status == 401 || response.status == 403) {
                 INVALID_CLIENT_ID_MESSAGE
             } else {
-                "Trakt refused the sign-in request (${response.status}). Try again in a moment."
+                localizedString(Res.string.trakt_auth_refused, response.status.toString())
             }
         }.getOrElse {
             if (it is CancellationException) throw it
             log.w(it) { "Trakt device code request exception" }
-            "Couldn't reach Trakt. Check your connection."
+            localizedString(Res.string.trakt_auth_couldnt_reach_trakt_check_your_connection)
         }
         if (isCurrentProfile(profileId, generation)) {
             publish(isLoading = false, errorMessage = failure)
@@ -313,8 +314,8 @@ object TraktAuthRepository {
                 }
                 400 -> Unit // pending: the user has not approved yet
                 429 -> intervalMs += SLOW_DOWN_STEP_MS
-                404 -> return finishDeviceFlow("Trakt didn't recognise the sign-in code. Please try connecting again.")
-                409 -> return finishDeviceFlow("That code was already used. Please try connecting again.")
+                404 -> return finishDeviceFlow(localizedString(Res.string.trakt_auth_trakt_didnt_recognise_the_sign_in))
+                409 -> return finishDeviceFlow(localizedString(Res.string.trakt_auth_that_code_was_already_used_please))
                 410 -> return finishDeviceFlow(CODE_EXPIRED_MESSAGE)
                 418 -> return finishDeviceFlow("Sign-in was declined on Trakt.")
                 else -> log.w { "Trakt device token poll: ${response.status}" } // transient; keep polling
@@ -588,7 +589,7 @@ object TraktAuthRepository {
         return TraktPlatformClock.nowEpochMs() / 1_000L >= expiresAt - 60
     }
 
-    private const val CODE_EXPIRED_MESSAGE = "The Trakt code expired. Please try connecting again."
+    private val CODE_EXPIRED_MESSAGE: String get() = localizedString(Res.string.trakt_auth_code_expired)
     private const val INVALID_CLIENT_ID_MESSAGE =
         "Trakt rejected this Client ID. Copy it again from app.trakt.tv/settings/apps and save it here."
 }

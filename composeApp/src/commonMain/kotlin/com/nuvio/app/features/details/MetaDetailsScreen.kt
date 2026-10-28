@@ -203,6 +203,7 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.random.Random
 import androidx.compose.material.icons.rounded.Search
 import com.nuvio.app.core.ui.trackTextInputFocus
+import com.nuvio.app.core.i18n.localizedString
 
 private fun dominantBackdropBlendColor(dominantColor: Color, backgroundColor: Color): Color =
     backgroundColor.blendTowards(dominantColor, fraction = 0.42f)
@@ -600,15 +601,15 @@ fun MetaDetailsScreen(
                 val openLibraryListPicker = remember(meta) {
                     {
                         val libraryItem = meta.toLibraryItem(savedAtEpochMs = 0L)
-                        pickerTabs = LibraryRepository.libraryListTabs()
+                        pickerTabs = LibraryRepository.connectedLibraryTabs()
                         pickerMembership = pickerTabs.associate { it.key to false }
                         pickerPending = true
                         pickerError = null
                         showLibraryListPicker = true
                         detailsScope.launch {
                             runCatching {
-                                val snapshot = LibraryRepository.getMembershipSnapshot(libraryItem)
-                                val tabs = LibraryRepository.libraryListTabs()
+                                val snapshot = LibraryRepository.connectedMembershipSnapshot(libraryItem)
+                                val tabs = LibraryRepository.connectedLibraryTabs().filter { tab -> tab.key in snapshot }
                                 pickerTabs = tabs
                                 pickerMembership = tabs.associate { tab ->
                                     tab.key to (snapshot[tab.key] == true)
@@ -1089,7 +1090,7 @@ fun MetaDetailsScreen(
                     // fall through to the bare show id below: that searches streams for "any
                     // episode" and records progress no episode can ever match.
                     if (hasEpisodes && seriesAction == null) {
-                        NuvioToastController.show("No released episode to play yet")
+                        NuvioToastController.show(localizedString(Res.string.details_no_released_episode_to_play_yet))
                         return@primaryPlay
                     }
                     if (onPlay != null) {
@@ -1235,7 +1236,7 @@ fun MetaDetailsScreen(
                                 return@playSecondary
                             }
                             if (hasEpisodes && seriesAction == null) {
-                                NuvioToastController.show("No released episode to play yet")
+                                NuvioToastController.show(localizedString(Res.string.details_no_released_episode_to_play_yet))
                                 return@playSecondary
                             }
                             dropTrailerForPlaybackNavigation()
@@ -2766,7 +2767,7 @@ fun MetaDetailsScreen(
                                         PlaylistAddController.request(
                                             playlistAddTargetForEpisodes(
                                                 meta = meta,
-                                                label = selectedEpisode.season?.let { "Season $it" } ?: "Specials",
+                                                label = selectedEpisode.season?.let { localizedString(Res.string.playlist_add_season, it) } ?: localizedString(Res.string.playlist_specials),
                                                 videos = episodes,
                                             ),
                                         )
@@ -2917,7 +2918,7 @@ fun MetaDetailsScreen(
                                     pickerPending = true
                                     pickerError = null
                                     runCatching {
-                                        LibraryRepository.applyMembershipChanges(
+                                        LibraryRepository.applyConnectedMembershipChanges(
                                             item = meta.toLibraryItem(savedAtEpochMs = 0L),
                                             desiredMembership = pickerMembership,
                                         )
@@ -2928,6 +2929,10 @@ fun MetaDetailsScreen(
                                     }
                                     pickerPending = false
                                 }
+                            },
+                            onAddToAll = {
+                                showLibraryListPicker = false
+                                LibraryRepository.addToAllLibraries(meta.toLibraryItem(savedAtEpochMs = 0L))
                             },
                         )
 
@@ -3678,7 +3683,7 @@ private fun ConfiguredMetaSections(
                             )
                         },
                         DetailSecondaryAction(
-                            label = "Add to playlist",
+                            label = stringResource(Res.string.playlist_add_to_playlist_2),
                             icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                             onClick = { PlaylistAddController.request(playlistAddTargetFor(meta)) },
                         ),

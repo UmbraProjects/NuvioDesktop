@@ -1,6 +1,8 @@
 package com.nuvio.app.features.player.skip
 
 import com.nuvio.app.features.player.PlayerSettingsRepository
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 object SkipIntroRepository {
 
@@ -360,7 +362,7 @@ object SkipIntroRepository {
     ): SkipSubmitOutcome {
         val settings = PlayerSettingsRepository.uiState.value
         if (!settings.introSubmitEnabled) {
-            return SkipSubmitOutcome(accepted = false, message = "Submitting timestamps is turned off.")
+            return SkipSubmitOutcome(accepted = false, message = localizedString(Res.string.skip_submit_submitting_timestamps_is_turned_off))
         }
 
         val startMs = (startSec * 1000).toLong()
@@ -369,7 +371,7 @@ object SkipIntroRepository {
         val introDbKey = settings.introDbApiKey.trim()
 
         if (skipDbKey.isBlank() && introDbKey.isBlank()) {
-            return SkipSubmitOutcome(accepted = false, message = "Add a SkipDB key in settings first.")
+            return SkipSubmitOutcome(accepted = false, message = localizedString(Res.string.skip_submit_add_a_skipdb_key_in_settings))
         }
 
         val skipDbOutcome = if (skipDbKey.isNotBlank()) {
@@ -397,7 +399,7 @@ object SkipIntroRepository {
             }.getOrDefault(false)
             SkipSubmitOutcome(
                 accepted = accepted,
-                message = if (accepted) "Submitted to IntroDB." else "IntroDB rejected the submission.",
+                message = if (accepted) localizedString(Res.string.skip_submit_submitted_to_introdb) else localizedString(Res.string.skip_submit_introdb_rejected_the_submission),
             )
         } else {
             null
@@ -409,7 +411,7 @@ object SkipIntroRepository {
             // does take movies, has no key to submit with.
             ?: SkipSubmitOutcome(
                 accepted = false,
-                message = "Add a SkipDB key in settings to submit timestamps for a movie.",
+                message = localizedString(Res.string.skip_submit_add_a_skipdb_key_in_settings_2),
             )
         return finishSubmit(outcome, imdbId, season, episode)
     }
@@ -435,7 +437,7 @@ object SkipIntroRepository {
                 endMs = endMs,
                 durationMs = durationSeconds?.takeIf { it > 0L }?.let { it * 1000L },
             ),
-        ) ?: return SkipSubmitOutcome(accepted = false, message = "Could not reach SkipDB.")
+        ) ?: return SkipSubmitOutcome(accepted = false, message = localizedString(Res.string.skip_submit_could_not_reach_skipdb))
 
         return response.toOutcome()
     }

@@ -15,6 +15,8 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import javax.swing.JOptionPane
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private const val SubtitleDownloadDestinationStoreName = "nuvio_addon_subtitle_download"
 private const val LastSubtitleDownloadDirectoryKey = "last_directory"
@@ -30,7 +32,7 @@ actual object AddonSubtitleDownloadProvider {
             downloadSubtitleFile(request.subtitleUrl)
         } ?: run {
             subtitleDownloadLog.w { "Fetch failed or rejected for ${request.subtitleLabel}" }
-            return AddonSubtitleDownloadResult.Failed("The provider did not return a valid subtitle file.")
+            return AddonSubtitleDownloadResult.Failed(localizedString(Res.string.subtitle_download_the_provider_did_not_return_a))
         }
         subtitleDownloadLog.i { "Fetched ${downloaded.bytes.size} bytes as .${downloaded.extension}" }
 
@@ -69,7 +71,7 @@ actual object AddonSubtitleDownloadProvider {
                 )
             }.getOrElse { error ->
                 subtitleDownloadLog.w(error) { "Write failed for ${target.absolutePath}" }
-                AddonSubtitleDownloadResult.Failed(error.message ?: "The subtitle could not be written.")
+                AddonSubtitleDownloadResult.Failed(error.message ?: localizedString(Res.string.subtitle_download_the_subtitle_could_not_be_written))
             }
         }
     }
@@ -182,7 +184,7 @@ private fun confirmOverwriteOnSwingThread(target: File): Boolean {
     return JOptionPane.showConfirmDialog(
         subtitleDialogOwner(),
         "${target.name} already exists. Replace it?",
-        "Replace subtitle?",
+        localizedString(Res.string.subtitle_download_replace_subtitle),
         JOptionPane.YES_NO_OPTION,
         JOptionPane.WARNING_MESSAGE,
     ) == JOptionPane.YES_OPTION

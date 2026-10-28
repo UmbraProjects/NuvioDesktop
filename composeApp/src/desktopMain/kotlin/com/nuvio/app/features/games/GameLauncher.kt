@@ -8,6 +8,8 @@ import javax.swing.JFileChooser
 import javax.swing.SwingUtilities
 import javax.swing.UIManager
 import javax.swing.filechooser.FileNameExtensionFilter
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 object GameLauncher {
     suspend fun chooseExecutable(initialPath: String? = null): String? = withContext(Dispatchers.IO) {
@@ -21,10 +23,10 @@ object GameLauncher {
                 else -> null
             }
             val chooser = JFileChooser(initialDirectory).apply {
-                dialogTitle = "Choose game executable or shortcut"
+                dialogTitle = localizedString(Res.string.games_launcher_choose_executable)
                 fileSelectionMode = JFileChooser.FILES_ONLY
                 isMultiSelectionEnabled = false
-                fileFilter = FileNameExtensionFilter("Applications and shortcuts (*.exe, *.lnk, *.url)", "exe", "lnk", "url")
+                fileFilter = FileNameExtensionFilter(localizedString(Res.string.games_launcher_filter_apps), "exe", "lnk", "url")
                 if (initialFile?.isFile == true) selectedFile = initialFile
             }
             if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
@@ -47,7 +49,7 @@ object GameLauncher {
                 else -> null
             }
             val chooser = JFileChooser(initialDirectory).apply {
-                dialogTitle = "Choose a folder of games"
+                dialogTitle = localizedString(Res.string.games_launcher_choose_folder)
                 fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
                 isMultiSelectionEnabled = false
             }
@@ -84,8 +86,8 @@ object GameLauncher {
         }
         val executable = File(target.path)
         require(executable.isFile) {
-            if (isShortcutFile(configuredPath)) "Shortcut target not found: ${target.path}"
-            else "Executable not found: ${target.path}"
+            if (isShortcutFile(configuredPath)) localizedString(Res.string.games_launcher_shortcut_target_missing, target.path)
+            else localizedString(Res.string.games_launcher_executable_missing, target.path)
         }
         val command = buildList {
             add(executable.absolutePath)
@@ -118,9 +120,9 @@ object GameLauncher {
      * anything typed into the arguments field is a mistake worth refusing rather than dropping.
      */
     private fun launchProtocol(url: String, arguments: List<String>) {
-        require(arguments.isEmpty()) { "Launch arguments cannot be used with a protocol URL; put them in the URL instead." }
+        require(arguments.isEmpty()) { localizedString(Res.string.games_launcher_args_with_url) }
         val target = url.trim()
-        runCatching { URI(target) }.getOrElse { error("Not a valid launch URL: $url") }
+        runCatching { URI(target) }.getOrElse { error(localizedString(Res.string.games_launcher_invalid_url, url)) }
         openWithShell(target)
     }
 
@@ -130,7 +132,7 @@ object GameLauncher {
      * the shell performs the shortcut's default verb, which is to launch it.
      */
     private fun launchShellItem(path: String) {
-        require(File(path).isFile) { "Shortcut not found: $path" }
+        require(File(path).isFile) { localizedString(Res.string.games_launcher_shortcut_missing, path) }
         openWithShell(File(path).absolutePath)
     }
 

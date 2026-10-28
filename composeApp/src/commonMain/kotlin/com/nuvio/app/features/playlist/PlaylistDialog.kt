@@ -71,6 +71,8 @@ import com.nuvio.app.core.ui.accentFill
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import sh.calvin.reorderable.ReorderableColumn
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * One playlist, as a popup over the Library: play it, reorder by dragging, remove entries, rename,
@@ -109,15 +111,15 @@ fun PlaylistDialog(
             TextButton(onClick = { confirmingDelete = true }) {
                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = tokens.colors.textMuted)
                 Spacer(Modifier.width(6.dp))
-                Text("Delete", color = tokens.colors.textMuted)
+                Text(stringResource(Res.string.action_delete), color = tokens.colors.textMuted)
             }
             TextButton(onClick = { renaming = true }) {
                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = tokens.colors.textMuted)
                 Spacer(Modifier.width(6.dp))
-                Text("Rename", color = tokens.colors.textMuted)
+                Text(stringResource(Res.string.playlist_rename), color = tokens.colors.textMuted)
             }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_close)) }
         },
     ) {
         PlaylistControls(
@@ -131,8 +133,7 @@ fun PlaylistDialog(
         )
         if (playlist.entries.isEmpty()) {
             Text(
-                text = "This playlist is empty. Add movies and episodes with \"Add to playlist\" " +
-                    "from a poster's menu, a details page, an episode's menu or Continue Watching.",
+                text = stringResource(Res.string.playlist_empty_message),
                 style = MaterialTheme.typography.bodyLarge,
                 color = tokens.colors.textMuted,
                 modifier = Modifier.padding(vertical = 12.dp),
@@ -171,16 +172,16 @@ fun PlaylistDialog(
     if (confirmingDelete) {
         NuvioAlertDialog(
             onDismissRequest = { confirmingDelete = false },
-            title = { Text("Delete \"${playlist.name}\"?") },
-            text = { Text("The playlist is removed. Nothing in it is unsaved from your library or unmarked as watched.") },
-            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") } },
+            title = { Text(stringResource(Res.string.playlist_delete_title, playlist.name)) },
+            text = { Text(stringResource(Res.string.playlist_delete_message)) },
+            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text(stringResource(Res.string.action_cancel)) } },
             confirmButton = {
                 TextButton(
                     onClick = {
                         confirmingDelete = false
                         PlaylistRepository.delete(playlist.id)
                     },
-                ) { Text("Delete", color = tokens.colors.danger) }
+                ) { Text(stringResource(Res.string.action_delete), color = tokens.colors.danger) }
             },
         )
     }
@@ -206,8 +207,8 @@ private fun PlaylistControls(
     ) {
         Text(
             text = buildString {
-                append(if (playlist.entries.size == 1) "1 item" else "${playlist.entries.size} items")
-                if (resuming) append(" · Up next: ${resume.displayTitle()} (${playlist.resumeIndex + 1}/${playlist.entries.size})")
+                append(if (playlist.entries.size == 1) stringResource(Res.string.playlist_one_item) else stringResource(Res.string.playlist_n_items, playlist.entries.size))
+                if (resuming) append(" · " + stringResource(Res.string.playlist_resume_up_next, resume.displayTitle(), playlist.resumeIndex + 1, playlist.entries.size))
             },
             style = MaterialTheme.typography.bodyMedium,
             color = tokens.colors.textMuted,
@@ -220,14 +221,14 @@ private fun PlaylistControls(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             NuvioPrimaryButton(
-                text = if (resuming) "Resume" else "Play",
+                text = if (resuming) stringResource(Res.string.action_resume) else stringResource(Res.string.action_play),
                 modifier = Modifier.width(132.dp),
                 height = 40.dp,
                 enabled = resume != null,
                 onClick = onPlay,
             )
             if (resuming) {
-                TextButton(onClick = onPlayFromStart) { Text("Play from start") }
+                TextButton(onClick = onPlayFromStart) { Text(stringResource(Res.string.playlist_play_from_start)) }
             }
         }
         // Playlist-wide options on a row of their own, wrapping on a narrow window.
@@ -238,25 +239,25 @@ private fun PlaylistControls(
         ) {
             PlaylistToggleChip(
                 icon = Icons.Default.Shuffle,
-                label = "Shuffle",
+                label = stringResource(Res.string.playlist_option_shuffle),
                 enabled = playlist.shuffled,
                 onClick = onToggleShuffle,
             )
             PlaylistToggleChip(
                 icon = Icons.Default.Repeat,
-                label = "Loop",
+                label = stringResource(Res.string.playlist_option_loop),
                 enabled = playlist.loop,
                 onClick = onToggleLoop,
             )
             PlaylistToggleChip(
                 icon = Icons.Default.PlaylistRemove,
-                label = "Remove watched",
+                label = stringResource(Res.string.playlist_option_remove_watched),
                 enabled = playlist.removeWatched,
                 onClick = onToggleRemoveWatched,
             )
             PlaylistToggleChip(
                 icon = Icons.Default.Folder,
-                label = "Prefer local files",
+                label = stringResource(Res.string.playlist_option_prefer_local),
                 enabled = playlist.preferLocalLibrary,
                 onClick = onTogglePreferLocal,
             )
@@ -273,6 +274,7 @@ private fun PlaylistToggleChip(
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val stateText = if (enabled) stringResource(Res.string.compose_action_on) else stringResource(Res.string.compose_action_off)
     Row(
         modifier = Modifier
             .clip(tokens.shapes.compactCard)
@@ -285,7 +287,7 @@ private fun PlaylistToggleChip(
                 shape = tokens.shapes.compactCard,
             )
             .clickable(onClick = onClick)
-            .semantics { stateDescription = if (enabled) "On" else "Off" }
+            .semantics { stateDescription = stateText }
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -382,7 +384,7 @@ private fun PlaylistEntryRow(
     ) {
         Icon(
             imageVector = Icons.Default.DragIndicator,
-            contentDescription = "Drag to reorder",
+            contentDescription = stringResource(Res.string.playlist_drag_to_reorder),
             tint = tokens.colors.textMuted,
             modifier = dragHandle.size(24.dp),
         )
@@ -457,9 +459,9 @@ private fun PlaylistEntryRow(
             )
             Text(
                 text = buildString {
-                    append(if (entry.isEpisode || entry.randomEpisode) entry.title else "Movie")
-                    if (progress?.isCompleted == true) append(" · Watched")
-                    if (isUpNext) append(" · Up next")
+                    append(if (entry.isEpisode || entry.randomEpisode) entry.title else stringResource(Res.string.media_movie))
+                    if (progress?.isCompleted == true) append(" · " + stringResource(Res.string.playlist_entry_watched))
+                    if (isUpNext) append(" · " + stringResource(Res.string.playlist_entry_up_next))
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = tokens.colors.textMuted,
@@ -468,10 +470,10 @@ private fun PlaylistEntryRow(
             )
         }
         IconButton(onClick = onOpenDetails) {
-            Icon(Icons.Default.Info, contentDescription = "Details", tint = tokens.colors.textMuted)
+            Icon(Icons.Default.Info, contentDescription = stringResource(Res.string.playlist_entry_details), tint = tokens.colors.textMuted)
         }
         IconButton(onClick = onRemove) {
-            Icon(Icons.Default.Close, contentDescription = "Remove from playlist", tint = tokens.colors.textMuted)
+            Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.playlist_entry_remove), tint = tokens.colors.textMuted)
         }
     }
 }
@@ -485,11 +487,11 @@ private fun RenamePlaylistDialog(
     var name by remember { mutableStateOf(currentName) }
     NuvioModalDialog(
         onDismissRequest = onDismiss,
-        title = "Rename playlist",
+        title = stringResource(Res.string.playlist_rename_title),
         maxWidth = 460.dp,
         actions = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-            TextButton(onClick = { onRename(name) }, enabled = name.isNotBlank()) { Text("Save") }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
+            TextButton(onClick = { onRename(name) }, enabled = name.isNotBlank()) { Text(stringResource(Res.string.action_save)) }
         },
     ) {
         NuvioTextField(

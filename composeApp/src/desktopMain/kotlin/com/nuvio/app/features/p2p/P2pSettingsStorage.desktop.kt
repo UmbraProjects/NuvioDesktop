@@ -10,6 +10,7 @@ internal actual object P2pSettingsStorage {
     private const val torrentProfileKey = "torrent_profile"
     private const val cacheSizeKey = "cache_size"
     private const val engineBackendKey = "engine_backend"
+    private const val ramOnlyModeKey = "ram_only_mode"
     private val store = DesktopStorage.store("torrent_settings")
 
     actual fun loadP2pEnabled(): Boolean? = loadBoolean(p2pEnabledKey)
@@ -24,6 +25,8 @@ internal actual object P2pSettingsStorage {
     actual fun saveCacheSize(size: String) = saveString(cacheSizeKey, size)
     actual fun loadEngineBackend(): String? = loadString(engineBackendKey)
     actual fun saveEngineBackend(backend: String) = saveString(engineBackendKey, backend)
+    actual fun loadRamOnlyMode(): Boolean? = loadBoolean(ramOnlyModeKey)
+    actual fun saveRamOnlyMode(enabled: Boolean) = saveBoolean(ramOnlyModeKey, enabled)
 
     private fun loadBoolean(key: String): Boolean? = store.getBoolean(ProfileScopedKey.of(key))
     private fun saveBoolean(key: String, value: Boolean) = store.putBoolean(ProfileScopedKey.of(key), value)

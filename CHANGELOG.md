@@ -4,6 +4,8 @@
 
 ### Added
 
+- **RAM-only P2P** - a new switch under Settings → Streams → P2P keeps torrents in memory instead of writing them to your drive, so streaming over P2P no longer adds wear to an SSD. It uses about your playback buffer size plus 200–300 MB of RAM while playing (around 500 MB on Balanced, 800 MB on Resilient), a little more after a lot of seeking. Nothing is kept between sessions, so seeking back past the buffer or replaying a film downloads it again, and reopening a torrent takes a moment longer to find its details. Turning it on deletes the torrent cache on disk. Nuvio Engine only. Based on a RAM caching patch sent in by a user.
+
 - **SDR To HDR (mpv)** - a playback setting under HDR mode that turns on mpv's inverse tone mapping, which expands SDR video to HDR on any GPU, with an adjustable peak brightness. It's an alternative to RTX Video True HDR, and True HDR takes over whenever it's running. Needs Windows HDR on. Unlike True HDR it also works with Anime4K, custom shaders and SVP. Before this it could only be set up by hand in the custom mpv options.
 - **Keep Continue Watching Sources** - the sources found for a title in Continue Watching are kept for up to a week, so opening it again shows the list at once while it refreshes in the background (a list under 6 hours old is used as it is). Only kept for releases at least 3 days old with 10 or more results, and for films only when there is a 1080p or better non-cam release. Cached sections say how old they are, and autoplay never starts a cached link that hasn't been proven, unless it goes through your debrid service first. On by default under Playback → Stream selection.
 - **Preload Next Episode Sources** - with Binge Mode on, searches for the next episode's sources 10–30 seconds before the next-episode card appears, so the next episode can start without waiting on every addon. Off by default, under Playback → Next episode. From upstream Nuvio.
@@ -22,6 +24,7 @@
 - **SVG logos with pictures inside** - SVG logos and posters that embed or link an image no longer show up empty. From upstream Nuvio.
 - **Debrid stream lists** - building long debrid stream lists does less repeated work. From upstream Nuvio.
 - **Black bars in hero trailers** - trailers on Home and details pages now trim black bars baked into the video (a widescreen film in a 16:9 upload) before filling the hero, using the player's Auto Crop.
+- **P2P disk use** - the P2P engine is updated to Nuvio Engine 0.1.6. A torrent that is playing now stays within your P2P cache size on disk: parts of the file far from where you are watching are freed as playback moves on, where before the whole file was kept until the cache was cleaned up later. Seeks also start faster, because stalled pieces near the playhead are asked from faster peers. Seeking back to a part that was freed downloads it again. Also fixed: torrents whose folder and file names made a path longer than 260 characters (common for full release names) were never cleaned out of the P2P cache, so finished torrents could pile up past your cache size, and playback from them waited for whole pieces instead of streaming as each block arrived.
 
 ## 1.16.0 - 2026-10-23
 

@@ -109,6 +109,8 @@ import nuvio.composeapp.generated.resources.calendar_next_month
 import nuvio.composeapp.generated.resources.calendar_previous_month
 import nuvio.composeapp.generated.resources.calendar_title
 import org.jetbrains.compose.resources.stringResource
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private val MONTH_NAMES = arrayOf(
     "January", "February", "March", "April", "May", "June",
@@ -406,7 +408,7 @@ fun CalendarScreen(
                         notConnected -> CalendarMessage(
                             when (calendarSource) {
                                 CalendarSource.MDBLIST -> stringResource(Res.string.calendar_connect_mdblist)
-                                CalendarSource.SIMKL -> "Connect your SIMKL account to see your calendar."
+                                CalendarSource.SIMKL -> stringResource(Res.string.calendar_connect_your_simkl_account_to_see)
                                 CalendarSource.TRAKT -> stringResource(Res.string.calendar_connect_trakt)
                                 // The local calendar needs no account, so never reports one missing.
                                 CalendarSource.NUVIO -> ""
@@ -767,7 +769,7 @@ private fun DayPanel(
         DayHeading(dayKey, todayKey)
         if (groups.isEmpty()) {
             Text(
-                text = "Nothing airing.",
+                text = stringResource(Res.string.calendar_nothing_airing),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -835,7 +837,7 @@ private fun EntryRow(
     val isMovie = e.type == "movie"
     val time = calendarAirTimeLabel(e.airAt).orEmpty()
     val what = when {
-        isMovie -> "Film release"
+        isMovie -> stringResource(Res.string.calendar_film_release)
         many -> "S${e.seasonNumber} · E${e.episodeNumber}–E${last.episodeNumber} · ${group.entries.size} episodes"
         e.seasonNumber != null && e.episodeNumber != null ->
             "S${e.seasonNumber} · E${e.episodeNumber}" + (e.episodeTitle?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
@@ -923,7 +925,7 @@ private fun EntryRow(
                 ) {
                     if (premiere) {
                         CalendarChip(
-                            text = if (e.seasonNumber == 1) "Series premiere" else "Season premiere",
+                            text = if (e.seasonNumber == 1) stringResource(Res.string.calendar_series_premiere) else stringResource(Res.string.calendar_season_premiere),
                             accent = true,
                         )
                     }
@@ -1042,9 +1044,9 @@ private fun dayHeading(key: String, todayKey: String): String {
         java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(todayKey), java.time.LocalDate.parse(key))
     }.getOrNull()
     return when (diff) {
-        0L -> "Today · $date"
-        1L -> "Tomorrow · $date"
-        -1L -> "Yesterday · $date"
+        0L -> localizedString(Res.string.calendar_day_today, date)
+        1L -> localizedString(Res.string.calendar_day_tomorrow, date)
+        -1L -> localizedString(Res.string.calendar_day_yesterday, date)
         else -> date
     }
 }

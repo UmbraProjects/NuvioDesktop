@@ -5,6 +5,8 @@ import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * Lists every file behind a magnet on the user's active debrid provider, and resolves a direct
@@ -116,7 +118,7 @@ internal object DebridSourceInspector {
         if (create.status == 409) return DebridSourceResult.NotCached
         val torrentId = create.body?.takeIf { it.success != false }?.data?.resolvedTorrentId()
             ?: return when (create.status) {
-                401, 403 -> DebridSourceResult.Failed("Torbox rejected the API key")
+                401, 403 -> DebridSourceResult.Failed(localizedString(Res.string.debrid_inspector_torbox_rejected_the_api_key))
                 else -> DebridSourceResult.Failed(create.body?.detail ?: create.body?.error)
             }
 
@@ -150,7 +152,7 @@ internal object DebridSourceInspector {
                 )
             }
             if (!allowUncached || deadline.hasPassedNow()) {
-                return DebridSourceResult.Failed("Torbox did not return the torrent contents")
+                return DebridSourceResult.Failed(localizedString(Res.string.debrid_inspector_torbox_did_not_return_the_torrent))
             }
             delay(UNCACHED_METADATA_POLL)
         }
@@ -160,7 +162,7 @@ internal object DebridSourceInspector {
         val response = PremiumizeApiClient.directDownload(apiKey = apiKey, source = magnet)
         if (!response.isSuccessful) {
             return when (response.status) {
-                401, 403 -> DebridSourceResult.Failed("Premiumize rejected the API key")
+                401, 403 -> DebridSourceResult.Failed(localizedString(Res.string.debrid_inspector_premiumize_rejected_the_api_key))
                 else -> DebridSourceResult.Failed(null)
             }
         }

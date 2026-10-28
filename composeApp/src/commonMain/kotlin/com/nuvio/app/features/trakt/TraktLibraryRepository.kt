@@ -28,6 +28,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.nuvio.app.core.i18n.localizedString
 
 private const val BASE_URL = "https://api.trakt.tv"
 private const val WATCHLIST_KEY = "trakt:watchlist"
@@ -510,7 +511,7 @@ object TraktLibraryRepository {
                 val traktId = list.ids?.trakt
                 val listIdPath = traktId?.toString() ?: list.ids?.slug ?: return@mapNotNull null
                 val fallbackTitle = traktId?.let { getString(Res.string.trakt_list_fallback_title, it) }
-                    ?: "List $listIdPath"
+                    ?: getString(Res.string.trakt_list_fallback_title, listIdPath)
                 TraktListTab(
                     key = "$PERSONAL_LIST_PREFIX$listIdPath",
                     title = list.name?.ifBlank { null } ?: fallbackTitle,
@@ -839,10 +840,10 @@ object TraktLibraryRepository {
 
     private fun errorMessageForStatus(status: Int, defaultMessage: String): String =
         when (status) {
-            401, 403 -> "Trakt authorization expired"
-            404 -> "Trakt list not found"
-            420 -> "Trakt list limit reached"
-            429 -> "Trakt rate limit reached"
+            401, 403 -> localizedString(Res.string.trakt_library_trakt_authorization_expired)
+            404 -> localizedString(Res.string.trakt_library_trakt_list_not_found)
+            420 -> localizedString(Res.string.trakt_library_trakt_list_limit_reached)
+            429 -> localizedString(Res.string.trakt_library_trakt_rate_limit_reached)
             else -> "$defaultMessage ($status)"
         }
 

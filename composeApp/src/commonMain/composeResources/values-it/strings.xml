@@ -288,7 +288,7 @@
   <string name="settings_account_email">Email</string>
   <string name="settings_account_not_signed_in">Accesso non effettuato</string>
   <string name="settings_account_sign_out">Disconnetti</string>
-  <string name="settings_account_sign_out_confirm_message">Verrai riportato alla schermata di accesso.</string>
+  <string name="settings_account_sign_out_confirm_message">Le tue impostazioni restano su questo PC per quando accederai di nuovo, separate da quelle di chiunque altro acceda qui. Su un computer condiviso o pubblico, scegli Esci e cancella per rimuovere da questo PC anche impostazioni, accessi e chiavi. In entrambi i casi Nuvio si riavvia.</string>
   <string name="settings_account_sign_out_confirm_title">Disconnettersi?</string>
   <string name="settings_account_status">Stato</string>
   <string name="settings_account_status_anonymous">Anonimo</string>
@@ -327,7 +327,7 @@
   <string name="settings_homescreen_summary">%1$d su %2$d cataloghi visibili • %3$d sorgenti hero selezionate</string>
   <string name="settings_homescreen_summary_hint">Apri un catalogo solo quando hai bisogno di rinominarlo o riordinarlo.</string>
   <string name="settings_homescreen_visible">Visibile</string>
-  <string name="settings_playback_subtitle">Player, sottotitoli e riproduzione automatica</string>
+  <string name="settings_playback_subtitle">Qualità dell\'immagine, HDR, upscaling e uscita audio</string>
   <string name="settings_poster_card_radius">Raggio angoli</string>
   <string name="settings_poster_card_style">STILE LOCANDINA</string>
   <string name="settings_poster_card_width">Larghezza locandina</string>
@@ -351,7 +351,7 @@
   <string name="settings_poster_width_dense">Denso</string>
   <string name="settings_poster_width_large">Grande</string>
   <string name="settings_poster_width_standard">Standard</string>
-  <string name="settings_continue_watching_resume_prompt_description">Mostra un popup per riprendere la visione all'apertura dell'app se eri uscito dal player.</string>
+  <string name="settings_continue_watching_resume_prompt_description">Se Nuvio si chiude o va in crash durante la riproduzione di un video, propone di riprenderlo alla successiva apertura.</string>
   <string name="settings_continue_watching_resume_prompt_title">Richiesta ripresa all'avvio</string>
   <string name="settings_continue_watching_section_card_style">STILE SCHEDA</string>
   <string name="settings_continue_watching_section_on_launch">ALL'AVVIO</string>
@@ -363,7 +363,7 @@
   <string name="settings_continue_watching_style_poster_description">Scheda focalizzata sulla locandina</string>
   <string name="settings_continue_watching_style_wide">Orizzontale</string>
   <string name="settings_continue_watching_style_wide_description">Scheda orizzontale ricca di informazioni</string>
-  <string name="settings_continue_watching_up_next_description">Se abilitato, "Prossimo episodio" continua sempre dall'ultimo episodio visto. Se disabilitato, segue l'episodio visto più di recente. Utile se riguardi spesso episodi precedenti.</string>
+  <string name="settings_continue_watching_up_next_description">Abilita per le rivisioni.</string>
   <string name="settings_continue_watching_up_next_title">Prossimo episodio dall'ultimo visto</string>
   <string name="settings_content_discovery_section_home">HOME</string>
   <string name="settings_content_discovery_section_sources">SORGENTI</string>
@@ -472,7 +472,7 @@
   <string name="settings_playback_anime_skip_client_id_description">Inserisci il tuo ID client API AnimeSkip. Ottienine uno su anime-skip.com.</string>
   <string name="settings_playback_anime_skip_description">Cerca anche su AnimeSkip i timestamp per saltare le sigle (richiede ID client).</string>
   <string name="settings_playback_auto_play_next_episode">Riproduzione automatica prossimo episodio</string>
-  <string name="settings_playback_auto_play_next_episode_description">Trova e riproduce automaticamente l'episodio successivo al raggiungimento della soglia.</string>
+  <string name="settings_playback_auto_play_next_episode_description">Accetta automaticamente l\'episodio successivo e salta il conto alla rovescia.</string>
   <string name="settings_playback_decoder_device_only">Solo dispositivo</string>
   <string name="settings_playback_decoder_prefer_app">Preferisci App (FFmpeg)</string>
   <string name="settings_playback_decoder_prefer_device">Preferisci dispositivo</string>
@@ -502,7 +502,7 @@
   <string name="settings_playback_option_forced">Forzati</string>
   <string name="settings_playback_option_none">Nessuno</string>
   <string name="settings_playback_prefer_binge_group">Preferisci Binge Group</string>
-  <string name="settings_playback_prefer_binge_group_description">Durante la riproduzione automatica, preferisci un flusso dello stesso "binge group" di quello attuale.</string>
+  <string name="settings_playback_prefer_binge_group_description">Prova prima lo stesso profilo di sorgente (stesso addon/gruppo di qualità.)</string>
   <string name="settings_playback_preferred_audio_language">Lingua audio preferita</string>
   <string name="settings_playback_preferred_subtitle_language">Lingua sottotitoli preferita</string>
   <string name="settings_playback_presets">Preset</string>
@@ -552,14 +552,14 @@
   <string name="settings_playback_source_scope_all_sources_description">Considera i flussi sia dagli addon che dai plugin.</string>
   <string name="settings_playback_source_scope_enabled_plugins_only">Solo plugin abilitati</string>
   <string name="settings_playback_source_scope_enabled_plugins_only_description">Considera solo i flussi provenienti dai plugin abilitati.</string>
-  <string name="settings_playback_source_scope_installed_addons_only">Solo addon installati</string>
+  <string name="settings_playback_source_scope_installed_addons_only">Addon installati</string>
   <string name="settings_playback_source_scope_installed_addons_only_description">Considera solo i flussi provenienti dagli addon installati.</string>
   <string name="settings_playback_stream_selection_mode">Modalità selezione flusso</string>
-  <string name="settings_playback_stream_selection_mode_first_stream">Primo flusso disponibile</string>
+  <string name="settings_playback_stream_selection_mode_first_stream">Prima sorgente</string>
   <string name="settings_playback_stream_selection_mode_first_stream_description">Riproduci automaticamente il primo flusso trovato.</string>
   <string name="settings_playback_stream_selection_mode_manual">Manuale</string>
   <string name="settings_playback_stream_selection_mode_manual_description">Seleziona i flussi manualmente ogni volta.</string>
-  <string name="settings_playback_stream_selection_mode_regex">Corrispondenza Regex</string>
+  <string name="settings_playback_stream_selection_mode_regex">Corrispondenza regex</string>
   <string name="settings_playback_stream_selection_mode_regex_description">Seleziona automaticamente un flusso che corrisponde a un pattern regex.</string>
   <string name="settings_playback_stream_timeout">Timeout del flusso</string>
   <string name="settings_playback_stream_timeout_description">Quanto attendere i flussi prima della selezione automatica.</string>
@@ -1253,10 +1253,10 @@
   <string name="settings_continue_watching_show_unaired_next_up_title">Mostra prossimi episodi non trasmessi</string>
   <string name="settings_continue_watching_section_sort_order">ORDINE DI ORDINAMENTO</string>
   <string name="settings_continue_watching_sort_mode_title">Ordine di ordinamento</string>
-  <string name="settings_continue_watching_sort_mode_default">Predefinito</string>
-  <string name="settings_continue_watching_sort_mode_default_desc">Ordina tutti gli elementi in base ai più recenti</string>
-  <string name="settings_continue_watching_sort_mode_streaming">Stile streaming</string>
-  <string name="settings_continue_watching_sort_mode_streaming_desc">Prima gli elementi rilasciati, i prossimi in arrivo alla fine</string>
+  <string name="settings_continue_watching_sort_mode_default">Ultimo visto</string>
+  <string name="settings_continue_watching_sort_mode_default_desc">Ordina tutto in base a quando l\'hai guardato l\'ultima volta</string>
+  <string name="settings_continue_watching_sort_mode_streaming">Prima i già usciti</string>
+  <string name="settings_continue_watching_sort_mode_streaming_desc">I prossimi episodi non ancora usciti vanno in fondo, i più vicini per primi</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Prediligi le miniature dell'episodio quando disponibili.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">Prediligi miniature episodio in Inizia a guardare</string>
   <string name="settings_integrations_debrid_description">Connetti gli account per i link e l'accesso alla libreria</string>
@@ -1265,7 +1265,7 @@
   <string name="settings_debrid_cloud_library">Libreria cloud</string>
   <string name="settings_debrid_cloud_library_description">Sfoglia e riproduci i file già presenti nei tuoi account connessi.</string>
   <string name="settings_debrid_enable">Risolvi link riproducibili</string>
-  <string name="settings_debrid_enable_description">Richiedi un link riproducibile a un servizio connesso quando un risultato lo richiede. Questo potrebbe aggiungere l'elemento a tale servizio.</string>
+  <string name="settings_debrid_enable_description">Chiede link riproducibili a un servizio connesso quando un risultato ne ha bisogno.</string>
   <string name="settings_debrid_resolve_with">Risolvi con</string>
   <string name="settings_debrid_resolve_with_description">Scegli quale account connesso gestisce i link riproducibili.</string>
   <string name="settings_debrid_add_key_first">Connetti prima un account.</string>
@@ -1293,7 +1293,7 @@
   <string name="settings_debrid_prepare_instant_playback">Prepara i link</string>
   <string name="settings_debrid_prepare_instant_playback_description">Risolvi i link riproducibili prima dell'inizio della riproduzione.</string>
   <string name="settings_debrid_prepare_stream_count">Link da preparare</string>
-  <string name="settings_debrid_prepare_stream_count_warning">Usa un numero inferiore quando possibile. I servizi connessi potrebbero limitare la frequenza dei link che possono essere risolti in un determinato periodo di tempo. L'apertura di un film o di un episodio può essere conteggiata ai fini di tali limiti anche se non premi Guarda, poiché i link vengono preparati in anticipo.</string>
+  <string name="settings_debrid_prepare_stream_count_warning">Tienilo basso: i servizi possono limitare la risoluzione dei link e aprire un titolo conta anche se non premi Guarda, perché i link vengono preparati in anticipo.</string>
   <string name="settings_debrid_prepare_count_one">1 link</string>
   <string name="settings_debrid_prepare_count_many">%1$d link</string>
   <string name="settings_debrid_section_formatting">Formattazione</string>
@@ -1308,7 +1308,7 @@
   <string name="settings_meta_blur_unwatched_episodes">Sfoca episodi non visti</string>
   <string name="settings_meta_blur_unwatched_episodes_description">Sfoca le miniature degli episodi finché non vengono visti per evitare spoiler.</string>
   <string name="settings_playback_intro_submit_enabled">Abilita invio intro</string>
-  <string name="settings_playback_intro_submit_enabled_description">Mostra un pulsante per inviare i timestamp di intro/sigle finali al database della community.</string>
+  <string name="settings_playback_intro_submit_enabled_description">Invia i tempi di intro/outro a SkipDB. Dopo un salto di capitolo, premi di nuovo il tasto salta per inviarli; altrimenti premilo all\'inizio di un segmento, alla sua fine, poi ancora una volta per inviare.</string>
   <string name="settings_playback_introdb_api_key">Chiave API IntroDB</string>
   <string name="settings_playback_introdb_api_key_description">Inserisci la tua chiave API IntroDB per inviare i timestamp. Richiesta per l'invio.</string>
   <string name="settings_playback_external_player">Lettore esterno</string>
@@ -1401,18 +1401,18 @@
   <string name="cw_airs_today">In onda oggi</string>
   <string name="cw_airs_tomorrow">In onda domani</string>
   <plurals name="cw_airs_in_days">
-      <item quantity="one">In onda tra %1$d giorno</item>
-      <item quantity="many">In onda tra %1$d giorni</item>
-      <item quantity="other">In onda tra %1$d giorni</item>
-  </plurals>
+          <item quantity="one">In onda tra %1$d giorno</item>
+          <item quantity="many">In onda tra %1$d giorni</item>
+          <item quantity="other">In onda tra %1$d giorni</item>
+      </plurals>
   <string name="cw_airs_date_short">%1$s</string>
   <string name="cw_airs_today_short">Oggi</string>
   <string name="cw_airs_tomorrow_short">Domani</string>
   <plurals name="cw_airs_in_days_short">
-      <item quantity="one">Tra %1$d giorno</item>
-      <item quantity="many">Tra %1$d giorni</item>
-      <item quantity="other">Tra %1$d giorni</item>
-  </plurals>
+          <item quantity="one">Tra %1$d giorno</item>
+          <item quantity="many">Tra %1$d giorni</item>
+          <item quantity="other">Tra %1$d giorni</item>
+      </plurals>
   <string name="cw_new_episode">Nuovo episodio</string>
   <string name="cw_new_season">Nuova stagione</string>
 </resources>

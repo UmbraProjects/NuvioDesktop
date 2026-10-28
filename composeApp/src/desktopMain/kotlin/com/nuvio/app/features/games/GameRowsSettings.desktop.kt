@@ -46,6 +46,8 @@ import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.settings.SettingsGroup
 import com.nuvio.app.features.settings.SettingsGroupDivider
 import com.nuvio.app.features.settings.SettingsSection
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 // The local library's catalog palette, so a row dot and a catalog dot read the same way.
 private val ROW_COLORS: List<Long> = listOf(
@@ -75,17 +77,14 @@ internal actual fun GameRowsSettingsSection(isTablet: Boolean, title: String) {
         isTablet = isTablet,
         actions = {
             NuvioActionLabel(
-                text = "Add",
+                text = stringResource(Res.string.games_rows_add),
                 onClick = { showAddBox = !showAddBox },
             )
         },
     ) {
         SettingsGroup(isTablet = isTablet) {
             Text(
-                text = "Games land in Installed or Uninstalled by whether they have something to launch. " +
-                    "Add rows here — Upcoming, Finished, Dropped for now — and move a game into one from " +
-                    "its editor (right-click a cover or press E). Rows appear on the shelf in this order; " +
-                    "empty ones are skipped.",
+                text = stringResource(Res.string.games_rows_intro),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -101,10 +100,10 @@ internal actual fun GameRowsSettingsSection(isTablet: Boolean, title: String) {
                         value = newName,
                         onValueChange = { newName = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = "New row name",
+                        placeholder = stringResource(Res.string.games_rows_new_row_name),
                     )
                     NuvioActionLabel(
-                        text = "Add",
+                        text = stringResource(Res.string.games_rows_add),
                         onClick = if (newName.isBlank()) {
                             null
                         } else {
@@ -213,7 +212,7 @@ private fun GameRowRow(
         IconButton(onClick = { onMoveUp?.invoke() }, enabled = onMoveUp != null) {
             Icon(
                 Icons.Rounded.KeyboardArrowUp,
-                contentDescription = "Move up",
+                contentDescription = stringResource(Res.string.games_rows_move_up),
                 tint = if (onMoveUp != null) tokens.colors.textMuted else tokens.colors.textDisabled,
                 modifier = Modifier.size(20.dp),
             )
@@ -221,7 +220,7 @@ private fun GameRowRow(
         IconButton(onClick = { onMoveDown?.invoke() }, enabled = onMoveDown != null) {
             Icon(
                 Icons.Rounded.KeyboardArrowDown,
-                contentDescription = "Move down",
+                contentDescription = stringResource(Res.string.games_rows_move_down),
                 tint = if (onMoveDown != null) tokens.colors.textMuted else tokens.colors.textDisabled,
                 modifier = Modifier.size(20.dp),
             )
@@ -232,7 +231,7 @@ private fun GameRowRow(
             IconButton(onClick = onRemove) {
                 Icon(
                     Icons.Rounded.Close,
-                    contentDescription = "Remove",
+                    contentDescription = stringResource(Res.string.action_remove),
                     tint = tokens.colors.danger,
                     modifier = Modifier.size(20.dp),
                 )
@@ -241,7 +240,7 @@ private fun GameRowRow(
         IconButton(onClick = onStartEdit) {
             Icon(
                 Icons.Rounded.Edit,
-                contentDescription = "Rename",
+                contentDescription = stringResource(Res.string.games_rows_rename),
                 tint = tokens.colors.textMuted,
                 modifier = Modifier.size(20.dp),
             )
@@ -287,7 +286,7 @@ private fun GameRowEditRow(
             IconButton(onClick = onSave, enabled = editName.isNotBlank()) {
                 Icon(
                     Icons.Rounded.Check,
-                    contentDescription = "Save",
+                    contentDescription = stringResource(Res.string.action_save),
                     tint = tokens.colors.accent,
                     modifier = Modifier.size(20.dp),
                 )
@@ -295,7 +294,7 @@ private fun GameRowEditRow(
             IconButton(onClick = onCancel) {
                 Icon(
                     Icons.Rounded.Close,
-                    contentDescription = "Cancel",
+                    contentDescription = stringResource(Res.string.action_cancel),
                     tint = tokens.colors.textMuted,
                     modifier = Modifier.size(20.dp),
                 )

@@ -62,6 +62,7 @@ import com.nuvio.app.features.input.setGamepadEnabled
 import com.nuvio.app.features.input.setGamepadRepeatIntervalMs
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.NuvioActionLabel
 
@@ -88,20 +89,22 @@ private data class Shortcut(
 private fun key(vararg alternatives: String): List<List<String>> =
     alternatives.map { listOf(it) }
 
+@Composable
 private fun navigationShortcuts(labels: Map<AppShortcutAction, String>): List<Shortcut> =
     AppShortcutAction.entries.map { action ->
-        Shortcut(action.displayName, key(labels[action] ?: "—"), appAction = action)
+        Shortcut(stringResource(action.displayNameRes), key(labels[action] ?: "—"), appAction = action)
     } + browsingShortcuts()
 
 /**
  * Fixed browsing keys on Home, Library, Search and Collections. Not rebindable, so they carry no
  * [AppShortcutAction] — they are listed here because this page is the shortcut inventory.
  */
+@Composable
 private fun browsingShortcuts(): List<Shortcut> = listOf(
-    Shortcut("Page down (row in TV mode, page otherwise)", key("Page Down")),
-    Shortcut("Page up (row in TV mode, page otherwise)", key("Page Up")),
-    Shortcut("Jump to top", key("Home")),
-    Shortcut("Jump to bottom", key("End")),
+    Shortcut(stringResource(Res.string.settings_shortcuts_page_down), key("Page Down")),
+    Shortcut(stringResource(Res.string.settings_shortcuts_page_up), key("Page Up")),
+    Shortcut(stringResource(Res.string.settings_shortcuts_jump_to_top), key("Home")),
+    Shortcut(stringResource(Res.string.settings_shortcuts_jump_to_bottom), key("End")),
 )
 
 /**
@@ -110,44 +113,45 @@ private fun browsingShortcuts(): List<Shortcut> = listOf(
  * When [action] is null the row is fully fixed and uses [fixedKeys].
  */
 private class PlayerRowSpec(
-    val label: String,
+    val label: StringResource,
     val action: PlayerShortcutAction?,
     val extraKeys: List<String> = emptyList(),
     val fixedKeys: List<String> = emptyList(),
 )
 
+@Composable
 private fun PlayerRowSpec.toShortcut(labels: Map<PlayerShortcutAction, String>): Shortcut {
     val caps = if (action != null) listOfNotNull(labels[action]) + extraKeys else fixedKeys
-    return Shortcut(label, caps.map { listOf(it) })
+    return Shortcut(stringResource(label), caps.map { listOf(it) })
 }
 
-private val playerRowSections: List<Pair<String, List<PlayerRowSpec>>> = listOf(
-    "Player · Playback" to listOf(
-        PlayerRowSpec(PlayerShortcutAction.PlayPause.displayName, PlayerShortcutAction.PlayPause),
-        PlayerRowSpec(PlayerShortcutAction.AlternatePlayPause.displayName, PlayerShortcutAction.AlternatePlayPause),
-        PlayerRowSpec(PlayerShortcutAction.ToggleMute.displayName, PlayerShortcutAction.ToggleMute),
-        PlayerRowSpec(PlayerShortcutAction.SeekBackward.displayName, PlayerShortcutAction.SeekBackward, extraKeys = listOf("←")),
-        PlayerRowSpec(PlayerShortcutAction.SeekForward.displayName, PlayerShortcutAction.SeekForward, extraKeys = listOf("→")),
-        PlayerRowSpec(PlayerShortcutAction.SpeedUp.displayName, PlayerShortcutAction.SpeedUp),
-        PlayerRowSpec(PlayerShortcutAction.SpeedDown.displayName, PlayerShortcutAction.SpeedDown),
-        PlayerRowSpec(PlayerShortcutAction.ToggleSpeed.displayName, PlayerShortcutAction.ToggleSpeed),
-        PlayerRowSpec("Volume up", null, fixedKeys = listOf("↑")),
-        PlayerRowSpec("Volume down", null, fixedKeys = listOf("↓")),
+private val playerRowSections: List<Pair<StringResource, List<PlayerRowSpec>>> = listOf(
+    Res.string.settings_shortcuts_section_player_playback to listOf(
+        PlayerRowSpec(PlayerShortcutAction.PlayPause.displayNameRes, PlayerShortcutAction.PlayPause),
+        PlayerRowSpec(PlayerShortcutAction.AlternatePlayPause.displayNameRes, PlayerShortcutAction.AlternatePlayPause),
+        PlayerRowSpec(PlayerShortcutAction.ToggleMute.displayNameRes, PlayerShortcutAction.ToggleMute),
+        PlayerRowSpec(PlayerShortcutAction.SeekBackward.displayNameRes, PlayerShortcutAction.SeekBackward, extraKeys = listOf("←")),
+        PlayerRowSpec(PlayerShortcutAction.SeekForward.displayNameRes, PlayerShortcutAction.SeekForward, extraKeys = listOf("→")),
+        PlayerRowSpec(PlayerShortcutAction.SpeedUp.displayNameRes, PlayerShortcutAction.SpeedUp),
+        PlayerRowSpec(PlayerShortcutAction.SpeedDown.displayNameRes, PlayerShortcutAction.SpeedDown),
+        PlayerRowSpec(PlayerShortcutAction.ToggleSpeed.displayNameRes, PlayerShortcutAction.ToggleSpeed),
+        PlayerRowSpec(Res.string.settings_shortcuts_volume_up, null, fixedKeys = listOf("↑")),
+        PlayerRowSpec(Res.string.settings_shortcuts_volume_down, null, fixedKeys = listOf("↓")),
     ),
-    "Player · Tracks & Panels" to listOf(
-        PlayerRowSpec(PlayerShortcutAction.NextSubtitle.displayName, PlayerShortcutAction.NextSubtitle),
-        PlayerRowSpec(PlayerShortcutAction.NextAudio.displayName, PlayerShortcutAction.NextAudio),
-        PlayerRowSpec(PlayerShortcutAction.OpenSources.displayName, PlayerShortcutAction.OpenSources),
-        PlayerRowSpec(PlayerShortcutAction.OpenEpisodes.displayName, PlayerShortcutAction.OpenEpisodes),
-        PlayerRowSpec(PlayerShortcutAction.CycleZoom.displayName, PlayerShortcutAction.CycleZoom),
-        PlayerRowSpec(PlayerShortcutAction.SkipInterval.displayName, PlayerShortcutAction.SkipInterval),
+    Res.string.settings_shortcuts_section_player_tracks to listOf(
+        PlayerRowSpec(PlayerShortcutAction.NextSubtitle.displayNameRes, PlayerShortcutAction.NextSubtitle),
+        PlayerRowSpec(PlayerShortcutAction.NextAudio.displayNameRes, PlayerShortcutAction.NextAudio),
+        PlayerRowSpec(PlayerShortcutAction.OpenSources.displayNameRes, PlayerShortcutAction.OpenSources),
+        PlayerRowSpec(PlayerShortcutAction.OpenEpisodes.displayNameRes, PlayerShortcutAction.OpenEpisodes),
+        PlayerRowSpec(PlayerShortcutAction.CycleZoom.displayNameRes, PlayerShortcutAction.CycleZoom),
+        PlayerRowSpec(PlayerShortcutAction.SkipInterval.displayNameRes, PlayerShortcutAction.SkipInterval),
     ),
-    "Player · Video Enhancement" to listOf(
-        PlayerRowSpec(PlayerShortcutAction.CycleSvp.displayName, PlayerShortcutAction.CycleSvp),
-        PlayerRowSpec(PlayerShortcutAction.CycleHdr.displayName, PlayerShortcutAction.CycleHdr),
-        PlayerRowSpec(PlayerShortcutAction.CycleColorProfile.displayName, PlayerShortcutAction.CycleColorProfile),
-        PlayerRowSpec(PlayerShortcutAction.CycleAnime.displayName, PlayerShortcutAction.CycleAnime),
-        PlayerRowSpec(PlayerShortcutAction.ToggleMpvDiagnostics.displayName, PlayerShortcutAction.ToggleMpvDiagnostics),
+    Res.string.settings_shortcuts_section_player_video to listOf(
+        PlayerRowSpec(PlayerShortcutAction.CycleSvp.displayNameRes, PlayerShortcutAction.CycleSvp),
+        PlayerRowSpec(PlayerShortcutAction.CycleHdr.displayNameRes, PlayerShortcutAction.CycleHdr),
+        PlayerRowSpec(PlayerShortcutAction.CycleColorProfile.displayNameRes, PlayerShortcutAction.CycleColorProfile),
+        PlayerRowSpec(PlayerShortcutAction.CycleAnime.displayNameRes, PlayerShortcutAction.CycleAnime),
+        PlayerRowSpec(PlayerShortcutAction.ToggleMpvDiagnostics.displayNameRes, PlayerShortcutAction.ToggleMpvDiagnostics),
     ),
 )
 
@@ -224,7 +228,7 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
             playerRowSections.forEachIndexed { sectionIndex, (title, specs) ->
                 val sectionActions = specs.mapNotNull { it.action }
                 SettingsSection(
-                    title = title,
+                    title = stringResource(title),
                     isTablet = isTablet,
                     actions = { ShortcutsResetLabel(onClick = { resetPlayerShortcuts(sectionActions) }) },
                 ) {
@@ -233,8 +237,8 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
                         // setting among the key bindings was easy to scroll past.
                         if (sectionIndex == 0) {
                             SettingsSwitchRow(
-                                title = "Escape goes windowed first",
-                                description = "In fullscreen playback, Escape leaves fullscreen instead of closing the player. Press it again while windowed to close.",
+                                title = stringResource(Res.string.settings_shortcuts_esc_windowed_first),
+                                description = stringResource(Res.string.settings_shortcuts_esc_windowed_first_description),
                                 checked = escWindowedFirst,
                                 isTablet = isTablet,
                                 onCheckedChange = ::setPlayerEscWindowedFirst,
@@ -354,12 +358,11 @@ private fun GamepadSection(isTablet: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s18)) {
         // Its own section rather than a Controller row: it works with no controller at all, and
         // the Controller rows grey out while gamepad control is off.
-        SettingsSection(title = "On-screen keyboard", isTablet = isTablet) {
+        SettingsSection(title = stringResource(Res.string.settings_shortcuts_on_screen_keyboard), isTablet = isTablet) {
             SettingsGroup(isTablet = isTablet) {
                 SettingsSwitchRow(
-                    title = "Show for mouse",
-                    description = "Open the on-screen keyboard whenever a text box is clicked, so you can " +
-                        "search by clicking letters — for a wireless mouse on the couch with no keyboard.",
+                    title = stringResource(Res.string.settings_shortcuts_osk_show_for_mouse),
+                    description = stringResource(Res.string.settings_shortcuts_osk_show_for_mouse_description),
                     checked = mouseKeyboard,
                     isTablet = isTablet,
                     onCheckedChange = { setMouseKeyboard(it) },
@@ -368,17 +371,17 @@ private fun GamepadSection(isTablet: Boolean) {
         }
 
         SettingsSection(
-            title = "Controller",
+            title = stringResource(Res.string.settings_shortcuts_controller),
             isTablet = isTablet,
             actions = { ShortcutsResetLabel(onClick = { resetGamepadSettings() }) },
         ) {
             SettingsGroup(isTablet = isTablet) {
                 SettingsSwitchRow(
-                    title = "Gamepad control",
+                    title = stringResource(Res.string.settings_shortcuts_gamepad_control),
                     description = when {
-                        !enabled -> "Drive Nuvio with a PlayStation or Xbox controller, wired or over Bluetooth."
-                        connected -> "Controller connected."
-                        else -> "No controller detected. Connect one over USB or Bluetooth — no extra drivers needed."
+                        !enabled -> stringResource(Res.string.settings_shortcuts_gamepad_control_off_description)
+                        connected -> stringResource(Res.string.settings_shortcuts_gamepad_connected)
+                        else -> stringResource(Res.string.settings_shortcuts_gamepad_not_detected)
                     },
                     checked = enabled,
                     isTablet = isTablet,
@@ -386,8 +389,8 @@ private fun GamepadSection(isTablet: Boolean) {
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 GamepadSliderRow(
-                    title = "Stick dead zone",
-                    description = "How far the left stick must move before it counts. Raise this if the UI drifts on its own.",
+                    title = stringResource(Res.string.settings_shortcuts_gamepad_dead_zone),
+                    description = stringResource(Res.string.settings_shortcuts_gamepad_dead_zone_description),
                     value = deadZone,
                     valueRange = gamepadDeadZoneRange(),
                     valueLabel = "${(deadZone * 100).roundToInt()}%",
@@ -397,8 +400,8 @@ private fun GamepadSection(isTablet: Boolean) {
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 GamepadSliderRow(
-                    title = "Repeat speed",
-                    description = "Gap between steps while a direction is held.",
+                    title = stringResource(Res.string.settings_shortcuts_gamepad_repeat_speed),
+                    description = stringResource(Res.string.settings_shortcuts_gamepad_repeat_speed_description),
                     value = repeatInterval.toFloat(),
                     valueRange = gamepadRepeatIntervalRange().let { it.first.toFloat()..it.last.toFloat() },
                     valueLabel = "$repeatInterval ms",
@@ -410,9 +413,9 @@ private fun GamepadSection(isTablet: Boolean) {
         }
 
         SettingsSection(
-            title = "Controller · Buttons",
+            title = stringResource(Res.string.settings_shortcuts_controller_buttons),
             isTablet = isTablet,
-            subtitle = "While a panel is open during playback, the D-pad navigates the panel instead.",
+            subtitle = stringResource(Res.string.settings_shortcuts_controller_buttons_note),
         ) {
             SettingsGroup(isTablet = isTablet) {
                 rows.forEachIndexed { index, row ->
@@ -422,7 +425,7 @@ private fun GamepadSection(isTablet: Boolean) {
                     ShortcutRow(
                         shortcut = Shortcut(row.browsingLabel, key(row.button.displayName)),
                         isTablet = isTablet,
-                        description = "In player: ${row.playerLabel}",
+                        description = stringResource(Res.string.settings_shortcuts_gamepad_in_player, row.playerLabel),
                     )
                 }
             }

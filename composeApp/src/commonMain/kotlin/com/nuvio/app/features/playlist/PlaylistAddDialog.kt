@@ -51,6 +51,9 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.effectiveSeasonNumber
 import com.nuvio.app.features.watched.releasedPlayableEpisodes
 import com.nuvio.app.features.watchprogress.CurrentDateProvider
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.i18n.localizedString
 
 /** Hosts the add-to-playlist dialog once, at the app root. See [PlaylistAddController]. */
 @Composable
@@ -135,10 +138,10 @@ private fun PlaylistAddDialog(
         val added = PlaylistRepository.addEntries(playlist.id, entries)
         NuvioToastController.show(
             when {
-                added == 0 -> "Already in ${playlist.name}"
-                entries.size == 1 -> "Added to ${playlist.name}"
-                added < entries.size -> "Added $added new items to ${playlist.name}"
-                else -> "Added $added items to ${playlist.name}"
+                added == 0 -> localizedString(Res.string.playlist_add_toast_already, playlist.name)
+                entries.size == 1 -> localizedString(Res.string.playlist_add_toast_added_one, playlist.name)
+                added < entries.size -> localizedString(Res.string.playlist_add_toast_added_new, added, playlist.name)
+                else -> localizedString(Res.string.playlist_add_toast_added_many, added, playlist.name)
             },
         )
         PlaylistPlaybackSession.log.i { "added $added/${entries.size} ($label) to playlist=${playlist.id}" }
@@ -154,11 +157,11 @@ private fun PlaylistAddDialog(
 
     NuvioModalDialog(
         onDismissRequest = onDismiss,
-        title = "Add to playlist",
+        title = stringResource(Res.string.playlist_add_title),
         subtitle = subtitle,
         maxWidth = 560.dp,
         actions = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
         },
     ) {
         if (target is PlaylistAddTarget.Series) {
@@ -168,22 +171,22 @@ private fun PlaylistAddDialog(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("Loading episodes…", color = tokens.colors.textMuted)
+                    Text(stringResource(Res.string.playlist_add_loading_episodes), color = tokens.colors.textMuted)
                 }
                 SeriesLoad.Failed -> Text(
-                    "Couldn't load this show's episodes. Try again from its details page.",
+                    stringResource(Res.string.playlist_add_load_failed),
                     color = tokens.colors.danger,
                 )
                 is SeriesLoad.Loaded -> if (load.seasons.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SeasonChip(
-                            label = "Episodes",
+                            label = stringResource(Res.string.playlist_add_mode_episodes),
                             selected = mode == SeriesAddMode.Episodes,
                             icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                             onClick = { mode = SeriesAddMode.Episodes },
                         )
                         SeasonChip(
-                            label = "Random episode",
+                            label = stringResource(Res.string.action_random_episode),
                             selected = mode == SeriesAddMode.RandomSlot,
                             icon = Icons.Default.Shuffle,
                             onClick = { mode = SeriesAddMode.RandomSlot },
@@ -195,18 +198,18 @@ private fun PlaylistAddDialog(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = if (mode == SeriesAddMode.RandomSlot) "Pick from seasons" else "Seasons",
+                            text = if (mode == SeriesAddMode.RandomSlot) stringResource(Res.string.playlist_add_pick_from_seasons) else stringResource(Res.string.playlist_add_seasons),
                             style = MaterialTheme.typography.labelLarge,
                             color = tokens.colors.textMuted,
                             modifier = Modifier.weight(1f),
                         )
                         if (mainSeasons.size > 1) {
-                            TextButton(onClick = { selectedSeasons = mainSeasons.toSet() }) { Text("All") }
+                            TextButton(onClick = { selectedSeasons = mainSeasons.toSet() }) { Text(stringResource(Res.string.playlist_add_all)) }
                         }
                         TextButton(
                             onClick = { selectedSeasons = emptySet() },
                             enabled = selectedSeasons.isNotEmpty(),
-                        ) { Text("Clear") }
+                        ) { Text(stringResource(Res.string.action_clear)) }
                     }
                     // Every season visible at once, wrapping, so a long-running show no longer hides
                     // its later seasons off the end of a row that cannot scroll.
@@ -222,7 +225,7 @@ private fun PlaylistAddDialog(
                         (mainSeasons + load.seasons.keys.filter { it <= 0 }).forEach { season ->
                             val selected = season in selectedSeasons
                             SeasonChip(
-                                label = if (season <= 0) "Specials" else "Season $season",
+                                label = if (season <= 0) stringResource(Res.string.playlist_specials) else stringResource(Res.string.playlist_add_season, season),
                                 selected = selected,
                                 onClick = {
                                     selectedSeasons = if (selected) selectedSeasons - season else selectedSeasons + season
@@ -233,19 +236,17 @@ private fun PlaylistAddDialog(
                     Text(
                         text = if (mode == SeriesAddMode.RandomSlot) {
                             val scope = pending?.second?.firstOrNull()?.randomSeasons
-                                ?.let { "from ${seasonsSummary(it)}" }
-                                ?: "from any season"
-                            "Adds one slot that plays a random episode $scope each time it comes up. " +
-                                "It plays from the start and isn't tracked or scrobbled. " +
-                                "Click a playlist again to add more."
+                                ?.let { stringResource(Res.string.playlist_add_random_scope_from, seasonsSummary(it)) }
+                                ?: stringResource(Res.string.playlist_add_random_scope_any)
+                            stringResource(Res.string.playlist_add_random_slot_note, scope)
                         } else {
                             val count = pending?.second?.size ?: 0
                             val seasons = selectedSeasons.size
                             if (seasons == 0) {
-                                "Pick one or more seasons"
+                                stringResource(Res.string.playlist_add_pick_seasons)
                             } else {
-                                "${if (seasons == 1) "1 season" else "$seasons seasons"} · " +
-                                    if (count == 1) "1 episode" else "$count episodes"
+                                (if (seasons == 1) stringResource(Res.string.playlist_add_one_season) else stringResource(Res.string.playlist_add_n_seasons, seasons)) + " · " +
+                                    if (count == 1) stringResource(Res.string.playlist_add_one_episode) else stringResource(Res.string.playlist_add_n_episodes, count)
                             }
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -277,7 +278,7 @@ private fun PlaylistAddDialog(
                 value = newName,
                 onValueChange = { newName = it },
                 modifier = Modifier.weight(1f),
-                placeholder = if (playlists.isEmpty()) "Name your first playlist" else "New playlist",
+                placeholder = if (playlists.isEmpty()) stringResource(Res.string.playlist_add_name_first) else stringResource(Res.string.playlist_add_new_playlist),
                 onImeAction = {
                     if (newName.isNotBlank() && pending != null) {
                         addTo(PlaylistRepository.create(newName))
@@ -286,7 +287,7 @@ private fun PlaylistAddDialog(
                 },
             )
             NuvioPrimaryButton(
-                text = "Create",
+                text = stringResource(Res.string.playlist_add_create),
                 modifier = Modifier.width(120.dp),
                 enabled = newName.isNotBlank() && pending != null,
                 onClick = {
@@ -302,9 +303,12 @@ private fun PlaylistAddDialog(
 private fun seasonsSummary(seasons: List<Int>): String {
     val sorted = seasons.sorted()
     return when {
-        sorted.size == 1 && sorted[0] <= 0 -> "Specials"
-        sorted.size == 1 -> "Season ${sorted[0]}"
-        else -> "Seasons " + sorted.joinToString(", ") { if (it <= 0) "Specials" else "$it" }
+        sorted.size == 1 && sorted[0] <= 0 -> localizedString(Res.string.playlist_specials)
+        sorted.size == 1 -> localizedString(Res.string.playlist_add_season, sorted[0])
+        else -> localizedString(
+            Res.string.playlist_add_seasons_list,
+            sorted.joinToString(", ") { if (it <= 0) localizedString(Res.string.playlist_specials) else "$it" },
+        )
     }
 }
 
@@ -341,14 +345,14 @@ private fun PlaylistPickRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = if (playlist.entries.size == 1) "1 item" else "${playlist.entries.size} items",
+                text = if (playlist.entries.size == 1) stringResource(Res.string.playlist_one_item) else stringResource(Res.string.playlist_n_items, playlist.entries.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = tokens.colors.textMuted,
             )
         }
         Icon(
             imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
-            contentDescription = "Add",
+            contentDescription = stringResource(Res.string.playlist_add_cd_add),
             tint = if (enabled) tokens.colors.accent else tokens.colors.textDisabled,
         )
     }

@@ -1,0 +1,1563 @@
+From 422f9852a946ed1de4b5e42120dab5b8783ca28b Mon Sep 17 00:00:00 2001
+From: Nuvio Desktop <nuviodesktop@local>
+Date: Tue, 27 Oct 2026 19:39:25 +0000
+Subject: [PATCH] desktop: RAM-only mode (pieces held in a RAM disk_interface,
+ no session/resume state, retention budget = the stream window; based on a
+ community patch)
+
+---
+ CMakeLists.txt                           |   1 +
+ include/nuvio_engine/nuvio_engine.h      |   3 +-
+ src/cache/verified_piece_cache.cpp       |   7 +
+ src/cache/verified_piece_cache.hpp       |   1 +
+ src/core/engine.cpp                      |  37 +-
+ src/torrent/libtorrent_backend.cpp       | 104 +++-
+ src/torrent/libtorrent_stream_bridge.cpp |  76 ++-
+ src/torrent/libtorrent_stream_bridge.hpp |   4 +-
+ src/torrent/protocol_backend.hpp         |   1 +
+ src/torrent/ram_disk_io.cpp              | 718 +++++++++++++++++++++++
+ src/torrent/ram_disk_io.hpp              | 110 ++++
+ tests/engine_api_test.cpp                | 122 ++++
+ 12 files changed, 1130 insertions(+), 54 deletions(-)
+ create mode 100644 src/torrent/ram_disk_io.cpp
+ create mode 100644 src/torrent/ram_disk_io.hpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 18180db..b5b160d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -58,6 +58,7 @@ if(NUVIO_ENGINE_ENABLE_LIBTORRENT)
+         PRIVATE
+             src/torrent/libtorrent_backend.cpp
+             src/torrent/libtorrent_stream_bridge.cpp
++            src/torrent/ram_disk_io.cpp
+     )
+     target_link_libraries(nuvio_engine PRIVATE $<BUILD_INTERFACE:torrent-rasterbar>)
+     target_compile_definitions(nuvio_engine PRIVATE NUVIO_ENGINE_HAS_LIBTORRENT=1)
+diff --git a/include/nuvio_engine/nuvio_engine.h b/include/nuvio_engine/nuvio_engine.h
+index 10e59e7..7eace00 100644
+--- a/include/nuvio_engine/nuvio_engine.h
++++ b/include/nuvio_engine/nuvio_engine.h
+@@ -59,7 +59,8 @@ typedef struct nuvio_engine_config {
+     uint32_t reserved_2;
+     const char* tls_ca_bundle_path;
+     nuvio_engine_torrent_profile torrent_profile;
+-    uint32_t reserved_3;
++    uint8_t ram_only_mode;
++    uint8_t reserved_3[3];
+ } nuvio_engine_config;
+ 
+ typedef uint32_t nuvio_engine_event_type;
+diff --git a/src/cache/verified_piece_cache.cpp b/src/cache/verified_piece_cache.cpp
+index 557cae9..f3caa79 100644
+--- a/src/cache/verified_piece_cache.cpp
++++ b/src/cache/verified_piece_cache.cpp
+@@ -73,6 +73,13 @@ void VerifiedPieceCache::put(
+     }
+ }
+ 
++void VerifiedPieceCache::erase_piece(const PieceCacheKey& key) {
++    const auto found = entries_.find(key);
++    if (found != entries_.end()) {
++        erase(found);
++    }
++}
++
+ void VerifiedPieceCache::erase_torrent(const std::string& torrent_id) {
+     for (auto entry = entries_.begin(); entry != entries_.end();) {
+         if (entry->first.torrent_id == torrent_id) {
+diff --git a/src/cache/verified_piece_cache.hpp b/src/cache/verified_piece_cache.hpp
+index f7e3b22..9c9374a 100644
+--- a/src/cache/verified_piece_cache.hpp
++++ b/src/cache/verified_piece_cache.hpp
+@@ -37,6 +37,7 @@ public:
+     [[nodiscard]] std::shared_ptr<std::vector<char>> get(const PieceCacheKey& key);
+     [[nodiscard]] bool contains(const PieceCacheKey& key) const;
+     void put(PieceCacheKey key, std::shared_ptr<std::vector<char>> data);
++    void erase_piece(const PieceCacheKey& key);
+     void erase_torrent(const std::string& torrent_id);
+     void clear();
+ 
+diff --git a/src/core/engine.cpp b/src/core/engine.cpp
+index 82a59ca..0a9d2d5 100644
+--- a/src/core/engine.cpp
++++ b/src/core/engine.cpp
+@@ -46,7 +46,7 @@ constexpr std::size_t config_v3_size =
+ constexpr std::size_t config_v4_size =
+     offsetof(nuvio_engine_config, tls_ca_bundle_path) + sizeof(const char*);
+ constexpr std::size_t config_v5_size =
+-    offsetof(nuvio_engine_config, reserved_3) + sizeof(std::uint32_t);
++    offsetof(nuvio_engine_config, reserved_3) + sizeof(nuvio_engine_config{}.reserved_3);
+ constexpr std::size_t torrent_request_v1_size =
+     offsetof(nuvio_engine_torrent_request, magnet_uri) + sizeof(const char*);
+ constexpr std::size_t torrent_request_v2_size =
+@@ -284,11 +284,15 @@ nuvio_engine_status nuvio_engine_create(
+     if (config->struct_size < config_v1_size) {
+         return NUVIO_ENGINE_STATUS_INCOMPATIBLE_ABI;
+     }
+-    if (config->data_directory == nullptr || config->cache_directory == nullptr) {
+-        return NUVIO_ENGINE_STATUS_INVALID_ARGUMENT;
+-    }
+-    if (config->data_directory[0] == '\0' || config->cache_directory[0] == '\0') {
+-        return NUVIO_ENGINE_STATUS_INVALID_ARGUMENT;
++    const bool ram_only_mode =
++        config->struct_size >= config_v5_size && config->ram_only_mode != 0;
++    if (!ram_only_mode) {
++        if (config->data_directory == nullptr || config->cache_directory == nullptr) {
++            return NUVIO_ENGINE_STATUS_INVALID_ARGUMENT;
++        }
++        if (config->data_directory[0] == '\0' || config->cache_directory[0] == '\0') {
++            return NUVIO_ENGINE_STATUS_INVALID_ARGUMENT;
++        }
+     }
+     if (!valid_upload_configuration(*config)) {
+         return NUVIO_ENGINE_STATUS_INVALID_ARGUMENT;
+@@ -319,11 +323,17 @@ nuvio_engine_status nuvio_engine_create(
+             }
+             tls_ca_bundle_path.assign(config->tls_ca_bundle_path, length);
+         }
++        const std::string data_directory =
++            !ram_only_mode && config->data_directory != nullptr ? config->data_directory : "";
++        const std::string cache_directory =
++            !ram_only_mode && config->cache_directory != nullptr ? config->cache_directory : "";
++        const std::uint64_t disk_cache_capacity_bytes =
++            ram_only_mode ? 0ULL : config->disk_cache_capacity_bytes;
+         *engine = new nuvio_engine{
+-            config->data_directory,
+-            config->cache_directory,
++            data_directory,
++            cache_directory,
+             config->memory_cache_capacity_bytes,
+-            config->disk_cache_capacity_bytes,
++            disk_cache_capacity_bytes,
+             config->listen_port,
+             config->upload_mode,
+             config->upload_limit_bytes_per_second,
+@@ -334,17 +344,18 @@ nuvio_engine_status nuvio_engine_create(
+                 nuvio::torrent::create_protocol_backend({
+                     config->upload_mode,
+                     config->upload_limit_bytes_per_second,
+-                    config->data_directory,
+-                    config->cache_directory,
++                    data_directory,
++                    cache_directory,
+                     config->listen_port,
+                     config->memory_cache_capacity_bytes,
+-                    config->disk_cache_capacity_bytes,
++                    disk_cache_capacity_bytes,
+                     stream_inactivity_timeout,
+                     warm_torrent_timeout,
+                     torrent_profile,
+                     std::move(tls_ca_bundle_path),
++                    ram_only_mode,
+                 }),
+-                config->cache_directory
++                cache_directory
+             ),
+         };
+     } catch (const std::bad_alloc&) {
+diff --git a/src/torrent/libtorrent_backend.cpp b/src/torrent/libtorrent_backend.cpp
+index 2f17725..c6de80b 100644
+--- a/src/torrent/libtorrent_backend.cpp
++++ b/src/torrent/libtorrent_backend.cpp
+@@ -1,5 +1,6 @@
+ #include "torrent/protocol_backend.hpp"
+ #include "torrent/libtorrent_stream_bridge.hpp"
++#include "torrent/ram_disk_io.hpp"
+ #include "cache/disk_cache_manager.hpp"
+ #include "storage/atomic_file.hpp"
+ 
+@@ -191,10 +192,19 @@ std::filesystem::path state_root(const ProtocolBackendConfig& config) {
+ struct SessionBootstrap {
+     lt::session_params params;
+     std::string diagnostic;
++    std::shared_ptr<RamStorageRegistry> ram_storage;
+ };
+ 
+ SessionBootstrap make_session_bootstrap(const ProtocolBackendConfig& config) {
+-    SessionBootstrap bootstrap{lt::session_params(make_settings(config)), {}};
++    SessionBootstrap bootstrap{lt::session_params(make_settings(config)), {}, nullptr};
++    // Nuvio desktop RAM-only mode: libtorrent stores pieces through RamDiskIo instead of files,
++    // and no session state is restored (nothing was saved).
++    if (config.ram_only_mode) {
++        bootstrap.ram_storage = std::make_shared<RamStorageRegistry>();
++        bootstrap.params.disk_io_constructor =
++            make_ram_disk_io_constructor(bootstrap.ram_storage);
++        return bootstrap;
++    }
+ #if !defined(_WIN32)
+     bootstrap.params.disk_io_constructor = lt::posix_disk_io_constructor;
+ #endif
+@@ -425,16 +435,18 @@ public:
+         quiesced_torrents_.erase(id);
+         last_peer_search_.erase(id);
+         stream_bridge_->remove_torrent(id);
+-        try {
+-            storage::remove_file_if_present(resume_path(id));
+-        } catch (const std::exception& error) {
+-            queued_events_.push_back({
+-                BackendEventType::torrent_error,
+-                request_id,
+-                id,
+-                std::string("failed to remove persisted torrent state: ") + error.what(),
+-                {},
+-            });
++        if (!ram_only_mode_) {
++            try {
++                storage::remove_file_if_present(resume_path(id));
++            } catch (const std::exception& error) {
++                queued_events_.push_back({
++                    BackendEventType::torrent_error,
++                    request_id,
++                    id,
++                    std::string("failed to remove persisted torrent state: ") + error.what(),
++                    {},
++                });
++            }
+         }
+         const auto prepare = pending_prepares_.find(id);
+         if (prepare != pending_prepares_.end()) {
+@@ -806,14 +818,20 @@ private:
+         const ProtocolBackendConfig& config,
+         SessionBootstrap bootstrap
+     )
+-        : state_root_(state_root(config)),
+-          resume_directory_(state_root_ / "resume"),
+-          session_state_path_(state_root_ / "session.dht"),
++        : ram_only_mode_(config.ram_only_mode),
++          ram_storage_(std::move(bootstrap.ram_storage)),
++          state_root_(config.ram_only_mode ? std::filesystem::path{} : state_root(config)),
++          resume_directory_(config.ram_only_mode ? std::filesystem::path{} : state_root_ / "resume"),
++          session_state_path_(
++              config.ram_only_mode ? std::filesystem::path{} : state_root_ / "session.dht"
++          ),
+           payload_directory_(
+-              std::filesystem::path(config.download_directory) / "payload"
++              config.ram_only_mode
++                  ? std::filesystem::path{}
++                  : std::filesystem::path(config.download_directory) / "payload"
+           ),
+           warm_torrent_timeout_(config.warm_torrent_timeout_milliseconds),
+-          disk_cache_(payload_directory_, config.disk_cache_capacity_bytes),
++          disk_cache_(payload_directory_, config.ram_only_mode ? 0 : config.disk_cache_capacity_bytes),
+           session_(std::move(bootstrap.params)) {
+         if (!bootstrap.diagnostic.empty()) {
+             queued_events_.push_back({
+@@ -827,8 +845,9 @@ private:
+         stream_bridge_ = std::make_unique<LibtorrentStreamBridge>(
+             config.listen_port,
+             config.memory_cache_capacity_bytes,
+-            config.disk_cache_capacity_bytes,
+-            std::chrono::milliseconds(config.stream_inactivity_timeout_milliseconds)
++            config.ram_only_mode ? 0 : config.disk_cache_capacity_bytes,
++            std::chrono::milliseconds(config.stream_inactivity_timeout_milliseconds),
++            ram_storage_
+         );
+     }
+ 
+@@ -856,6 +875,10 @@ private:
+         if (!is_canonical_torrent_id(id)) {
+             throw std::runtime_error("payload path requires a canonical info hash");
+         }
++        if (ram_only_mode_) {
++            // Never created: RamDiskIo ignores it, and the bridge reads from the RAM store.
++            return std::filesystem::path("ram") / id;
++        }
+         std::error_code error;
+         std::filesystem::create_directories(payload_directory_, error);
+         if (error) {
+@@ -905,6 +928,9 @@ private:
+     }
+ 
+     std::optional<lt::add_torrent_params> load_resume_state(const std::string& id) {
++        if (ram_only_mode_) {
++            return std::nullopt;
++        }
+         try {
+             const auto path = resume_path(id);
+             const auto contents = storage::read_bounded_file(
+@@ -957,7 +983,7 @@ private:
+         const lt::torrent_handle& handle,
+         const lt::resume_data_flags_t flags
+     ) {
+-        if (!handle.is_valid()) {
++        if (ram_only_mode_ || !handle.is_valid()) {
+             return;
+         }
+         auto* context = handle.userdata().get<RequestContext>();
+@@ -1089,7 +1115,7 @@ private:
+     }
+ 
+     void discard_stale_resume_state(const std::string& id) {
+-        if (!stream_bridge_->has_unpersisted_evictions(id)) {
++        if (ram_only_mode_ || !stream_bridge_->has_unpersisted_evictions(id)) {
+             return;
+         }
+         try {
+@@ -1100,6 +1126,9 @@ private:
+     }
+ 
+     void save_session_state() {
++        if (ram_only_mode_) {
++            return;
++        }
+         const auto state = session_.session_state(lt::session::save_dht_state);
+         const auto contents = lt::write_session_params_buf(
+             state,
+@@ -1112,7 +1141,7 @@ private:
+     }
+ 
+     void run_periodic_checkpoints(std::vector<BackendEvent>& events) {
+-        if (shutting_down_) {
++        if (ram_only_mode_ || shutting_down_) {
+             return;
+         }
+         const auto now = std::chrono::steady_clock::now();
+@@ -1167,6 +1196,9 @@ private:
+     }
+ 
+     void touch_disk_cache(const std::string& id) {
++        if (ram_only_mode_) {
++            return;
++        }
+         try {
+             disk_cache_.touch(id);
+             last_disk_cache_error_.clear();
+@@ -1210,6 +1242,9 @@ private:
+     }
+ 
+     void enforce_disk_cache(std::vector<BackendEvent>& events) {
++        if (ram_only_mode_) {
++            return;
++        }
+         try {
+             const auto stats = disk_cache_.enforce(protected_torrents());
+             last_disk_cache_error_.clear();
+@@ -1236,6 +1271,22 @@ private:
+         pending_disk_reclaims_.clear();
+         next_disk_cache_check_ = std::chrono::steady_clock::now() +
+             std::chrono::seconds(30);
++        if (ram_only_mode_) {
++            // Nothing on disk to reclaim; a reclaim with no torrent loaded drops the RAM store.
++            if (ram_storage_ != nullptr && handles_.empty()) {
++                ram_storage_->clear_all();
++            }
++            for (const auto& request : requests) {
++                events.push_back({
++                    BackendEventType::disk_cache_reclaimed,
++                    request.request_id,
++                    {},
++                    "disk cache reclaim target reached",
++                    {},
++                });
++            }
++            return;
++        }
+         auto target_bytes = disk_cache_.stats().capacity_bytes;
+         for (const auto& request : requests) {
+             target_bytes = std::min(target_bytes, request.target_bytes);
+@@ -1278,7 +1329,7 @@ private:
+         const std::chrono::steady_clock::time_point now,
+         std::vector<BackendEvent>& events
+     ) {
+-        if (now < next_disk_cache_measurement_) {
++        if (ram_only_mode_ || now < next_disk_cache_measurement_) {
+             return;
+         }
+         next_disk_cache_measurement_ = now + std::chrono::seconds(5);
+@@ -1291,7 +1342,7 @@ private:
+     }
+ 
+     void run_disk_cache_enforcement(std::vector<BackendEvent>& events) {
+-        if (shutting_down_) {
++        if (ram_only_mode_ || shutting_down_) {
+             return;
+         }
+         const auto now = std::chrono::steady_clock::now();
+@@ -1839,9 +1890,12 @@ private:
+         warm_since_.erase(id);
+         quiesced_torrents_.erase(id);
+         stream_bridge_->remove_torrent(id);
++        if (ram_storage_ != nullptr) {
++            ram_storage_->remove_torrent_by_id(id);
++        }
+         pending_prepares_.erase(id);
+         pending_resume_saves_.erase(context);
+-        if (!cache_removal) {
++        if (!ram_only_mode_ && !cache_removal) {
+             try {
+                 storage::remove_file_if_present(resume_path(id));
+             } catch (const std::exception& error) {
+@@ -1868,6 +1922,8 @@ private:
+         }
+     }
+ 
++    const bool ram_only_mode_ = false;
++    std::shared_ptr<RamStorageRegistry> ram_storage_;
+     std::filesystem::path state_root_;
+     std::filesystem::path resume_directory_;
+     std::filesystem::path session_state_path_;
+diff --git a/src/torrent/libtorrent_stream_bridge.cpp b/src/torrent/libtorrent_stream_bridge.cpp
+index bab4a04..733a256 100644
+--- a/src/torrent/libtorrent_stream_bridge.cpp
++++ b/src/torrent/libtorrent_stream_bridge.cpp
+@@ -365,7 +365,8 @@ struct LibtorrentStreamBridge::Impl {
+         const std::uint16_t requested_port,
+         const std::uint64_t memory_capacity_bytes,
+         const std::uint64_t disk_capacity_bytes,
+-        const std::chrono::milliseconds inactivity
++        const std::chrono::milliseconds inactivity,
++        std::shared_ptr<RamStorageRegistry> ram_storage_registry
+     )
+         : window{
+               critical_window_bytes,
+@@ -376,6 +377,7 @@ struct LibtorrentStreamBridge::Impl {
+           },
+           disk_capacity(disk_capacity_bytes),
+           inactivity_timeout(inactivity),
++          ram_storage(std::move(ram_storage_registry)),
+           piece_cache(memory_capacity_bytes),
+           server(std::make_unique<http::LoopbackServer>(
+               requested_port,
+@@ -666,15 +668,22 @@ struct LibtorrentStreamBridge::Impl {
+                 add_delivered_bytes(route.counters, static_cast<std::uint64_t>(bytes.size()));
+                 return true;
+             }
+-            if (!payload.has_value()) {
+-                payload.emplace(route.payload_path);
+-            }
+             buffer.resize(static_cast<std::size_t>(unverified_end - cursor));
+-            const auto absolute = slice.piece_start + cursor;
+-            if (absolute < route.file_offset ||
+-                !payload->read_exact(absolute - route.file_offset, buffer)) {
+-                payload_readable = false;
+-                continue;
++            if (ram_storage != nullptr) {
++                if (!ram_storage->read_piece_slice(route.torrent_id, piece, cursor, buffer)) {
++                    payload_readable = false;
++                    continue;
++                }
++            } else {
++                if (!payload.has_value()) {
++                    payload.emplace(route.payload_path);
++                }
++                const auto absolute = slice.piece_start + cursor;
++                if (absolute < route.file_offset ||
++                    !payload->read_exact(absolute - route.file_offset, buffer)) {
++                    payload_readable = false;
++                    continue;
++                }
+             }
+             if (!writer(buffer)) {
+                 abandon();
+@@ -1310,10 +1319,15 @@ struct LibtorrentStreamBridge::Impl {
+             fail_piece(key, alert.error ? alert.error.message() : "verified piece is empty");
+             return;
+         }
+-        auto data = std::make_shared<std::vector<char>>(
+-            alert.buffer.get(),
+-            alert.buffer.get() + alert.size
+-        );
++        // RAM-only mode: the store already holds this piece; share its buffer rather than keep a
++        // second copy in the verified-piece cache.
++        auto data = ram_storage != nullptr ? ram_storage->read_piece(key.torrent_id, key.piece) : nullptr;
++        if (!data || static_cast<int>(data->size()) != alert.size) {
++            data = std::make_shared<std::vector<char>>(
++                alert.buffer.get(),
++                alert.buffer.get() + alert.size
++            );
++        }
+         last_ready_pieces.insert_or_assign(key.torrent_id, key.piece);
+         piece_cache.put(key, data);
+         const auto found = piece_waiters.find(key);
+@@ -1634,6 +1648,11 @@ struct LibtorrentStreamBridge::Impl {
+             saturating_sum(window.playback_bytes, window.readahead_bytes),
+             saturating_sum(retained_behind_bytes, 2 * retained_edge_bytes)
+         );
++        if (ram_storage != nullptr) {
++            // RAM-only mode holds exactly what streaming needs: the window ahead of the reader
++            // (the buffer preset), what is kept behind it, and the file's head and tail.
++            return minimum;
++        }
+         auto budget = std::max(disk_capacity, minimum);
+         std::error_code error;
+         const auto space = std::filesystem::space(save_path, error);
+@@ -1738,6 +1757,22 @@ struct LibtorrentStreamBridge::Impl {
+         if (evictions.empty()) {
+             return;
+         }
++        if (ram_storage != nullptr) {
++            // RAM-only mode: libtorrent forgets the pieces now, the RAM store drops them in
++            // release_evicted_ranges after range_release_grace, the same path the file ranges
++            // take. Dropping them here would race an upload read already queued against the
++            // store, and libtorrent pauses the whole torrent on a failed read. There is no
++            // resume data to persist, so the evictions count as persisted from the start.
++            std::vector<lt::piece_index_t> indices;
++            indices.reserve(evictions.size());
++            for (const auto piece : evictions) {
++                indices.emplace_back(static_cast<int>(piece));
++                piece_cache.erase_piece(PieceKey{route.torrent_id, piece});
++                state.evicted.push_back({piece, now, true});
++            }
++            route.handle.nuvio_evict_pieces(indices);
++            return;
++        }
+         if (!range_release_available(state.save_path.parent_path())) {
+             state.release_supported = false;
+             return;
+@@ -1822,6 +1857,10 @@ struct LibtorrentStreamBridge::Impl {
+                 remaining.push_back(evicted);
+                 continue;
+             }
++            if (ram_storage != nullptr) {
++                ram_storage->erase_piece(id, evicted.piece);
++                continue;
++            }
+             if (!state.release_supported) {
+                 continue;
+             }
+@@ -1914,6 +1953,10 @@ struct LibtorrentStreamBridge::Impl {
+         }
+         result.pending_piece_reads = static_cast<std::uint32_t>(pending_reads);
+         result.cache = piece_cache.stats();
++        if (ram_storage != nullptr) {
++            result.cache.used_bytes = std::max(result.cache.used_bytes, ram_storage->used_bytes());
++            result.cache.entries = std::max(result.cache.entries, ram_storage->piece_count());
++        }
+         return result;
+     }
+ 
+@@ -1967,6 +2010,7 @@ struct LibtorrentStreamBridge::Impl {
+     const scheduler::StreamWindow window;
+     const std::uint64_t disk_capacity;
+     const std::chrono::milliseconds inactivity_timeout;
++    const std::shared_ptr<RamStorageRegistry> ram_storage;
+     std::mutex routes_mutex;
+     std::unordered_map<std::string, StreamRoute> routes;
+     std::vector<BackendStats::Stream> stream_progress_cache;
+@@ -2009,13 +2053,15 @@ LibtorrentStreamBridge::LibtorrentStreamBridge(
+     const std::uint16_t requested_port,
+     const std::uint64_t memory_capacity_bytes,
+     const std::uint64_t disk_capacity_bytes,
+-    const std::chrono::milliseconds inactivity_timeout
++    const std::chrono::milliseconds inactivity_timeout,
++    std::shared_ptr<RamStorageRegistry> ram_storage
+ )
+     : impl_(std::make_unique<Impl>(
+           requested_port,
+           memory_capacity_bytes,
+           disk_capacity_bytes,
+-          inactivity_timeout
++          inactivity_timeout,
++          std::move(ram_storage)
+       )) {
+ }
+ 
+diff --git a/src/torrent/libtorrent_stream_bridge.hpp b/src/torrent/libtorrent_stream_bridge.hpp
+index cab56db..e364a6a 100644
+--- a/src/torrent/libtorrent_stream_bridge.hpp
++++ b/src/torrent/libtorrent_stream_bridge.hpp
+@@ -12,6 +12,7 @@
+ 
+ #include "cache/verified_piece_cache.hpp"
+ #include "torrent/protocol_backend.hpp"
++#include "torrent/ram_disk_io.hpp"
+ 
+ namespace nuvio::torrent {
+ 
+@@ -40,7 +41,8 @@ public:
+         std::uint16_t requested_port,
+         std::uint64_t memory_capacity_bytes,
+         std::uint64_t disk_capacity_bytes,
+-        std::chrono::milliseconds inactivity_timeout
++        std::chrono::milliseconds inactivity_timeout,
++        std::shared_ptr<RamStorageRegistry> ram_storage = nullptr
+     );
+     ~LibtorrentStreamBridge();
+ 
+diff --git a/src/torrent/protocol_backend.hpp b/src/torrent/protocol_backend.hpp
+index 0629e17..dd92bf1 100644
+--- a/src/torrent/protocol_backend.hpp
++++ b/src/torrent/protocol_backend.hpp
+@@ -24,6 +24,7 @@ struct ProtocolBackendConfig {
+     std::uint32_t warm_torrent_timeout_milliseconds;
+     nuvio_engine_torrent_profile torrent_profile;
+     std::string tls_ca_bundle_path;
++    bool ram_only_mode = false;
+ };
+ 
+ enum class TorrentInputType {
+diff --git a/src/torrent/ram_disk_io.cpp b/src/torrent/ram_disk_io.cpp
+new file mode 100644
+index 0000000..c6daf22
+--- /dev/null
++++ b/src/torrent/ram_disk_io.cpp
+@@ -0,0 +1,718 @@
++#include "torrent/ram_disk_io.hpp"
++
++#include <algorithm>
++#include <cctype>
++#include <cstring>
++#include <filesystem>
++#include <utility>
++
++#include <boost/asio/error.hpp>
++#include <boost/asio/post.hpp>
++#include <libtorrent/disk_buffer_holder.hpp>
++#include <libtorrent/error_code.hpp>
++#include <libtorrent/hasher.hpp>
++#include <libtorrent/hex.hpp>
++
++namespace nuvio::torrent {
++namespace {
++
++std::string normalize_hex(std::string value) {
++    std::ranges::transform(value, value.begin(), [](const unsigned char character) {
++        return static_cast<char>(std::tolower(character));
++    });
++    return value;
++}
++
++bool is_hex_id(const std::string& value) {
++    if (value.size() != 40 && value.size() != 64) {
++        return false;
++    }
++    return std::ranges::all_of(value, [](const unsigned char character) {
++        return std::isxdigit(character) != 0;
++    });
++}
++
++std::string derive_torrent_id(const lt::storage_params& params) {
++    const auto leaf = std::filesystem::path(params.path).filename().string();
++    if (is_hex_id(leaf)) {
++        return normalize_hex(leaf);
++    }
++    if (!params.info_hash.is_all_zeros()) {
++        return normalize_hex(lt::aux::to_hex(params.info_hash));
++    }
++    return {};
++}
++
++class RamDiskIo final : public lt::disk_interface, public lt::buffer_allocator_interface {
++public:
++    RamDiskIo(
++        lt::io_context& ioc,
++        std::shared_ptr<RamStorageRegistry> registry
++    )
++        : ioc_(ioc),
++          registry_(std::move(registry)) {
++    }
++
++    void settings_updated() override {
++    }
++
++    lt::storage_holder new_torrent(
++        const lt::storage_params& params,
++        const std::shared_ptr<void>&
++    ) override {
++        const auto idx = registry_->register_torrent(params, derive_torrent_id(params));
++        return lt::storage_holder(idx, *this);
++    }
++
++    void remove_torrent(const lt::storage_index_t idx) override {
++        registry_->remove_torrent(idx);
++    }
++
++    void abort(bool) override {
++    }
++
++    void async_read(
++        const lt::storage_index_t storage,
++        const lt::peer_request& r,
++        std::function<void(lt::disk_buffer_holder, const lt::storage_error&)> handler,
++        const lt::disk_job_flags_t
++    ) override {
++        lt::storage_error error;
++        auto data = registry_->read_block(storage, r, error);
++        char* raw_buffer = nullptr;
++        int raw_size = 0;
++        if (!error && !data.empty()) {
++            raw_size = static_cast<int>(data.size());
++            raw_buffer = new char[data.size()];
++            std::memcpy(raw_buffer, data.data(), data.size());
++        }
++        boost::asio::post(
++            ioc_,
++            [this, handler = std::move(handler), raw_buffer, raw_size, error]() mutable {
++                handler(
++                    raw_buffer != nullptr
++                        ? lt::disk_buffer_holder(*this, raw_buffer, raw_size)
++                        : lt::disk_buffer_holder{},
++                    error
++                );
++            }
++        );
++    }
++
++    bool async_write(
++        const lt::storage_index_t storage,
++        const lt::peer_request& r,
++        const char* const buf,
++        std::shared_ptr<lt::disk_observer>,
++        std::function<void(const lt::storage_error&)> handler,
++        const lt::disk_job_flags_t
++    ) override {
++        if (buf != nullptr && r.length > 0 && r.start >= 0) {
++            registry_->write_block(
++                storage,
++                r.piece,
++                r.start,
++                std::span<const char>(buf, static_cast<std::size_t>(r.length))
++            );
++        }
++        boost::asio::post(ioc_, [handler = std::move(handler)]() mutable {
++            handler(lt::storage_error{});
++        });
++        return false;
++    }
++
++    void async_hash(
++        const lt::storage_index_t storage,
++        const lt::piece_index_t piece,
++        const lt::span<lt::sha256_hash> block_hashes,
++        const lt::disk_job_flags_t flags,
++        std::function<void(lt::piece_index_t, const lt::sha1_hash&, const lt::storage_error&)>
++            handler
++    ) override {
++        lt::storage_error error;
++        const auto hash = registry_->hash_piece(storage, piece, block_hashes, flags, error);
++        boost::asio::post(ioc_, [handler = std::move(handler), piece, hash, error]() mutable {
++            handler(piece, hash, error);
++        });
++    }
++
++    void async_hash2(
++        const lt::storage_index_t storage,
++        const lt::piece_index_t piece,
++        const int offset,
++        const lt::disk_job_flags_t,
++        std::function<void(lt::piece_index_t, const lt::sha256_hash&, const lt::storage_error&)>
++            handler
++    ) override {
++        lt::storage_error error;
++        const auto hash = registry_->hash_block2(storage, piece, offset, error);
++        boost::asio::post(ioc_, [handler = std::move(handler), piece, hash, error]() mutable {
++            handler(piece, hash, error);
++        });
++    }
++
++    void async_move_storage(
++        const lt::storage_index_t,
++        std::string p,
++        const lt::move_flags_t,
++        std::function<void(lt::status_t, const std::string&, const lt::storage_error&)> handler
++    ) override {
++        boost::asio::post(ioc_, [handler = std::move(handler), path = std::move(p)]() mutable {
++            handler(lt::status_t::no_error, path, lt::storage_error{});
++        });
++    }
++
++    void async_release_files(
++        const lt::storage_index_t,
++        std::function<void()> handler
++    ) override {
++        if (handler) {
++            boost::asio::post(ioc_, std::move(handler));
++        }
++    }
++
++    void async_delete_files(
++        const lt::storage_index_t storage,
++        const lt::remove_flags_t,
++        std::function<void(const lt::storage_error&)> handler
++    ) override {
++        registry_->clear_storage(storage);
++        boost::asio::post(ioc_, [handler = std::move(handler)]() mutable {
++            handler(lt::storage_error{});
++        });
++    }
++
++    void async_check_files(
++        const lt::storage_index_t,
++        const lt::add_torrent_params*,
++        lt::aux::vector<std::string, lt::file_index_t>,
++        std::function<void(lt::status_t, const lt::storage_error&)> handler
++    ) override {
++        boost::asio::post(ioc_, [handler = std::move(handler)]() mutable {
++            handler(lt::status_t::no_error, lt::storage_error{});
++        });
++    }
++
++    void async_rename_file(
++        const lt::storage_index_t,
++        const lt::file_index_t idx,
++        std::string name,
++        std::function<void(const std::string&, lt::file_index_t, const lt::storage_error&)> handler
++    ) override {
++        boost::asio::post(
++            ioc_,
++            [handler = std::move(handler), renamed = std::move(name), idx]() mutable {
++                handler(renamed, idx, lt::storage_error{});
++            }
++        );
++    }
++
++    void async_stop_torrent(
++        const lt::storage_index_t,
++        std::function<void()> handler
++    ) override {
++        if (handler) {
++            boost::asio::post(ioc_, std::move(handler));
++        }
++    }
++
++    void async_set_file_priority(
++        const lt::storage_index_t,
++        lt::aux::vector<lt::download_priority_t, lt::file_index_t> prio,
++        std::function<void(
++            const lt::storage_error&,
++            lt::aux::vector<lt::download_priority_t, lt::file_index_t>
++        )> handler
++    ) override {
++        boost::asio::post(
++            ioc_,
++            [handler = std::move(handler), priorities = std::move(prio)]() mutable {
++                handler(lt::storage_error{}, std::move(priorities));
++            }
++        );
++    }
++
++    void async_clear_piece(
++        const lt::storage_index_t storage,
++        const lt::piece_index_t index,
++        std::function<void(lt::piece_index_t)> handler
++    ) override {
++        registry_->clear_piece_by_storage(storage, index);
++        boost::asio::post(ioc_, [handler = std::move(handler), index]() mutable {
++            handler(index);
++        });
++    }
++
++    void free_disk_buffer(char* const buf) override {
++        delete[] buf;
++    }
++
++    void update_stats_counters(lt::counters&) const override {
++    }
++
++    std::vector<lt::open_file_state> get_status(lt::storage_index_t) const override {
++        return {};
++    }
++
++    void submit_jobs() override {
++    }
++
++private:
++    lt::io_context& ioc_;
++    std::shared_ptr<RamStorageRegistry> registry_;
++};
++
++}
++
++int RamStorageRegistry::TorrentStorage::piece_size(const lt::piece_index_t piece) const {
++    if (files.total_size() <= 0 || files.piece_length() <= 0) {
++        return 0;
++    }
++    const auto num_pieces = static_cast<int>(
++        (files.total_size() + files.piece_length() - 1) / files.piece_length()
++    );
++    const auto index = static_cast<int>(piece);
++    if (index < 0 || index >= num_pieces) {
++        return 0;
++    }
++    return index < num_pieces - 1
++        ? files.piece_length()
++        : static_cast<int>(
++              files.total_size() -
++              static_cast<std::int64_t>(num_pieces - 1) * files.piece_length()
++          );
++}
++
++lt::storage_index_t RamStorageRegistry::register_torrent(
++    const lt::storage_params& params,
++    std::string canonical_id
++) {
++    std::lock_guard lock(mutex_);
++    auto storage = std::make_shared<TorrentStorage>(TorrentStorage{
++        std::move(canonical_id),
++        params.files,
++        {},
++    });
++    lt::storage_index_t idx{0};
++    if (!free_slots_.empty()) {
++        idx = free_slots_.back();
++        free_slots_.pop_back();
++        storages_[static_cast<std::size_t>(static_cast<std::uint32_t>(idx))] = storage;
++    } else {
++        idx = lt::storage_index_t(static_cast<std::uint32_t>(storages_.size()));
++        storages_.push_back(storage);
++    }
++    if (!storage->torrent_id.empty()) {
++        const auto existing = by_id_.find(storage->torrent_id);
++        if (existing != by_id_.end() && existing->second) {
++            for (const auto& [piece, data] : existing->second->pieces) {
++                static_cast<void>(piece);
++                if (data) {
++                    used_bytes_ -= std::min<std::uint64_t>(used_bytes_, data->size());
++                }
++                if (piece_count_ > 0) {
++                    --piece_count_;
++                }
++            }
++            existing->second->pieces.clear();
++        }
++        by_id_.insert_or_assign(storage->torrent_id, storage);
++    }
++    return idx;
++}
++
++void RamStorageRegistry::remove_torrent(const lt::storage_index_t storage) {
++    std::lock_guard lock(mutex_);
++    const auto index = static_cast<std::size_t>(static_cast<std::uint32_t>(storage));
++    if (index >= storages_.size() || !storages_[index]) {
++        return;
++    }
++    auto entry = std::move(storages_[index]);
++    for (const auto& [piece, data] : entry->pieces) {
++        static_cast<void>(piece);
++        if (data) {
++            used_bytes_ -= std::min<std::uint64_t>(used_bytes_, data->size());
++        }
++        if (piece_count_ > 0) {
++            --piece_count_;
++        }
++    }
++    entry->pieces.clear();
++    if (!entry->torrent_id.empty()) {
++        const auto found = by_id_.find(entry->torrent_id);
++        if (found != by_id_.end() && found->second == entry) {
++            by_id_.erase(found);
++        }
++    }
++    free_slots_.push_back(storage);
++}
++
++void RamStorageRegistry::remove_torrent_by_id(const std::string& torrent_id) {
++    std::lock_guard lock(mutex_);
++    const auto found = by_id_.find(torrent_id);
++    if (found == by_id_.end()) {
++        return;
++    }
++    if (found->second) {
++        for (const auto& [piece, data] : found->second->pieces) {
++            static_cast<void>(piece);
++            if (data) {
++                used_bytes_ -= std::min<std::uint64_t>(used_bytes_, data->size());
++            }
++            if (piece_count_ > 0) {
++                --piece_count_;
++            }
++        }
++        found->second->pieces.clear();
++    }
++    by_id_.erase(found);
++}
++
++std::shared_ptr<std::vector<char>> RamStorageRegistry::read_piece(
++    const std::string& torrent_id,
++    const std::uint32_t piece
++) const {
++    std::lock_guard lock(mutex_);
++    const auto found = by_id_.find(torrent_id);
++    if (found == by_id_.end() || !found->second) {
++        return {};
++    }
++    const auto piece_it = found->second->pieces.find(piece);
++    if (piece_it == found->second->pieces.end()) {
++        return {};
++    }
++    return piece_it->second;
++}
++
++bool RamStorageRegistry::read_piece_slice(
++    const std::string& torrent_id,
++    const std::uint32_t piece,
++    const std::uint64_t offset_in_piece,
++    const std::span<char> destination
++) const {
++    if (destination.empty()) {
++        return true;
++    }
++    std::lock_guard lock(mutex_);
++    const auto found = by_id_.find(torrent_id);
++    if (found == by_id_.end() || !found->second) {
++        return false;
++    }
++    const auto piece_it = found->second->pieces.find(piece);
++    if (piece_it == found->second->pieces.end() || !piece_it->second) {
++        return false;
++    }
++    const auto& data = *piece_it->second;
++    if (offset_in_piece > data.size() ||
++        destination.size() > data.size() - static_cast<std::size_t>(offset_in_piece)) {
++        return false;
++    }
++    std::memcpy(
++        destination.data(),
++        data.data() + static_cast<std::size_t>(offset_in_piece),
++        destination.size()
++    );
++    return true;
++}
++
++void RamStorageRegistry::erase_piece(
++    const std::string& torrent_id,
++    const std::uint32_t piece
++) {
++    std::lock_guard lock(mutex_);
++    const auto found = by_id_.find(torrent_id);
++    if (found == by_id_.end() || !found->second) {
++        return;
++    }
++    const auto piece_it = found->second->pieces.find(piece);
++    if (piece_it == found->second->pieces.end()) {
++        return;
++    }
++    if (piece_it->second) {
++        used_bytes_ -= std::min<std::uint64_t>(used_bytes_, piece_it->second->size());
++    }
++    if (piece_count_ > 0) {
++        --piece_count_;
++    }
++    found->second->pieces.erase(piece_it);
++}
++
++void RamStorageRegistry::erase_pieces(
++    const std::string& torrent_id,
++    const std::vector<std::uint32_t>& pieces
++) {
++    std::lock_guard lock(mutex_);
++    const auto found = by_id_.find(torrent_id);
++    if (found == by_id_.end() || !found->second) {
++        return;
++    }
++    for (const auto piece : pieces) {
++        const auto piece_it = found->second->pieces.find(piece);
++        if (piece_it == found->second->pieces.end()) {
++            continue;
++        }
++        if (piece_it->second) {
++            used_bytes_ -= std::min<std::uint64_t>(used_bytes_, piece_it->second->size());
++        }
++        if (piece_count_ > 0) {
++            --piece_count_;
++        }
++        found->second->pieces.erase(piece_it);
++    }
++}
++
++void RamStorageRegistry::clear_all() {
++    std::lock_guard lock(mutex_);
++    for (auto& storage : storages_) {
++        if (storage) {
++            storage->pieces.clear();
++        }
++    }
++    used_bytes_ = 0;
++    piece_count_ = 0;
++}
++
++std::uint64_t RamStorageRegistry::used_bytes() const {
++    std::lock_guard lock(mutex_);
++    return used_bytes_;
++}
++
++std::uint64_t RamStorageRegistry::piece_count() const {
++    std::lock_guard lock(mutex_);
++    return piece_count_;
++}
++
++void RamStorageRegistry::write_block(
++    const lt::storage_index_t storage,
++    const lt::piece_index_t piece,
++    const int offset,
++    const std::span<const char> data
++) {
++    if (offset < 0 || data.empty()) {
++        return;
++    }
++    std::lock_guard lock(mutex_);
++    const auto index = static_cast<std::size_t>(static_cast<std::uint32_t>(storage));
++    if (index >= storages_.size() || !storages_[index]) {
++        return;
++    }
++    auto& torrent = *storages_[index];
++    const auto piece_index = static_cast<std::uint32_t>(static_cast<int>(piece));
++    auto& piece_buffer = torrent.pieces[piece_index];
++    const auto expected_size = std::max(
++        torrent.piece_size(piece),
++        offset + static_cast<int>(data.size())
++    );
++    if (!piece_buffer) {
++        piece_buffer = std::make_shared<std::vector<char>>(
++            static_cast<std::size_t>(expected_size),
++            0
++        );
++        used_bytes_ += piece_buffer->size();
++        ++piece_count_;
++    } else if (static_cast<int>(piece_buffer->size()) < expected_size) {
++        const auto previous = piece_buffer->size();
++        auto resized = std::make_shared<std::vector<char>>(*piece_buffer);
++        resized->resize(static_cast<std::size_t>(expected_size), 0);
++        piece_buffer = std::move(resized);
++        used_bytes_ += piece_buffer->size() - previous;
++    }
++    std::memcpy(
++        piece_buffer->data() + static_cast<std::size_t>(offset),
++        data.data(),
++        data.size()
++    );
++}
++
++std::vector<char> RamStorageRegistry::read_block(
++    const lt::storage_index_t storage,
++    const lt::peer_request& request,
++    lt::storage_error& error
++) const {
++    std::lock_guard lock(mutex_);
++    const auto index = static_cast<std::size_t>(static_cast<std::uint32_t>(storage));
++    if (index >= storages_.size() || !storages_[index] || request.start < 0 ||
++        request.length <= 0) {
++        error.operation = lt::operation_t::file_read;
++        error.ec = boost::asio::error::eof;
++        return {};
++    }
++    const auto& torrent = *storages_[index];
++    const auto piece_index = static_cast<std::uint32_t>(static_cast<int>(request.piece));
++    const auto found = torrent.pieces.find(piece_index);
++    if (found == torrent.pieces.end() || !found->second ||
++        static_cast<int>(found->second->size()) <= request.start) {
++        error.operation = lt::operation_t::file_read;
++        error.ec = boost::asio::error::eof;
++        return {};
++    }
++    const auto available = std::min(
++        request.length,
++        static_cast<int>(found->second->size()) - request.start
++    );
++    return std::vector<char>(
++        found->second->begin() + request.start,
++        found->second->begin() + request.start + available
++    );
++}
++
++lt::sha1_hash RamStorageRegistry::hash_piece(
++    const lt::storage_index_t storage,
++    const lt::piece_index_t piece,
++    const lt::span<lt::sha256_hash> block_hashes,
++    const lt::disk_job_flags_t flags,
++    lt::storage_error& error
++) const {
++    std::shared_ptr<std::vector<char>> piece_data;
++    int piece_size2 = 0;
++    int blocks_in_piece2 = 0;
++    {
++        std::lock_guard lock(mutex_);
++        const auto index = static_cast<std::size_t>(static_cast<std::uint32_t>(storage));
++        if (index >= storages_.size() || !storages_[index]) {
++            error.operation = lt::operation_t::file_read;
++            error.ec = boost::asio::error::eof;
++            return {};
++        }
++        const auto& torrent = *storages_[index];
++        const auto piece_index = static_cast<std::uint32_t>(static_cast<int>(piece));
++        const auto found = torrent.pieces.find(piece_index);
++        if (found == torrent.pieces.end() || !found->second) {
++            error.operation = lt::operation_t::file_read;
++            error.ec = boost::asio::error::eof;
++            return {};
++        }
++        piece_data = found->second;
++        if (!block_hashes.empty()) {
++            piece_size2 = torrent.files.piece_size2(piece);
++            blocks_in_piece2 = torrent.files.blocks_in_piece2(piece);
++        }
++    }
++    if (!block_hashes.empty()) {
++        const char* buf = piece_data->data();
++        std::int64_t offset = 0;
++        const auto max_blocks = std::min<int>(
++            blocks_in_piece2,
++            static_cast<int>(block_hashes.size())
++        );
++        for (int k = 0; k < max_blocks; ++k) {
++            lt::hasher256 h2;
++            const auto remaining = std::min<std::int64_t>(
++                static_cast<std::int64_t>(piece_size2) - offset,
++                static_cast<std::int64_t>(piece_data->size()) - offset
++            );
++            if (remaining <= 0) {
++                break;
++            }
++            const auto len2 = static_cast<std::ptrdiff_t>(
++                std::min<std::int64_t>(lt::default_block_size, remaining)
++            );
++            h2.update({buf, len2});
++            buf += len2;
++            offset += len2;
++            block_hashes[k] = h2.final();
++        }
++    }
++    if (!(flags & lt::disk_interface::v1_hash) && !block_hashes.empty()) {
++        return {};
++    }
++    return lt::hasher(*piece_data).final();
++}
++
++lt::sha256_hash RamStorageRegistry::hash_block2(
++    const lt::storage_index_t storage,
++    const lt::piece_index_t piece,
++    const int offset,
++    lt::storage_error& error
++) const {
++    std::shared_ptr<std::vector<char>> piece_data;
++    int piece_size2 = 0;
++    {
++        std::lock_guard lock(mutex_);
++        const auto index = static_cast<std::size_t>(static_cast<std::uint32_t>(storage));
++        if (index >= storages_.size() || !storages_[index] || offset < 0) {
++            error.operation = lt::operation_t::file_read;
++            error.ec = boost::asio::error::eof;
++            return {};
++        }
++        const auto& torrent = *storages_[index];
++        const auto piece_index = static_cast<std::uint32_t>(static_cast<int>(piece));
++        const auto found = torrent.pieces.find(piece_index);
++        if (found == torrent.pieces.end() || !found->second ||
++            offset >= static_cast<int>(found->second->size())) {
++            error.operation = lt::operation_t::file_read;
++            error.ec = boost::asio::error::eof;
++            return {};
++        }
++        piece_data = found->second;
++        piece_size2 = torrent.files.piece_size2(piece);
++    }
++    const auto available = std::min(
++        piece_size2 - offset,
++        static_cast<int>(piece_data->size()) - offset
++    );
++    if (available <= 0) {
++        error.operation = lt::operation_t::file_read;
++        error.ec = boost::asio::error::eof;
++        return {};
++    }
++    const auto len = static_cast<std::ptrdiff_t>(std::min(lt::default_block_size, available));
++    return lt::hasher256(lt::span<const char>(piece_data->data() + offset, len)).final();
++}
++
++void RamStorageRegistry::clear_piece_by_storage(
++    const lt::storage_index_t storage,
++    const lt::piece_index_t piece
++) {
++    std::lock_guard lock(mutex_);
++    const auto index = static_cast<std::size_t>(static_cast<std::uint32_t>(storage));
++    if (index >= storages_.size() || !storages_[index]) {
++        return;
++    }
++    auto& pieces = storages_[index]->pieces;
++    const auto piece_it = pieces.find(static_cast<std::uint32_t>(static_cast<int>(piece)));
++    if (piece_it == pieces.end()) {
++        return;
++    }
++    if (piece_it->second) {
++        used_bytes_ -= std::min<std::uint64_t>(used_bytes_, piece_it->second->size());
++    }
++    if (piece_count_ > 0) {
++        --piece_count_;
++    }
++    pieces.erase(piece_it);
++}
++
++void RamStorageRegistry::clear_storage(const lt::storage_index_t storage) {
++    std::lock_guard lock(mutex_);
++    const auto index = static_cast<std::size_t>(static_cast<std::uint32_t>(storage));
++    if (index >= storages_.size() || !storages_[index]) {
++        return;
++    }
++    for (const auto& [piece, data] : storages_[index]->pieces) {
++        static_cast<void>(piece);
++        if (data) {
++            used_bytes_ -= std::min<std::uint64_t>(used_bytes_, data->size());
++        }
++        if (piece_count_ > 0) {
++            --piece_count_;
++        }
++    }
++    storages_[index]->pieces.clear();
++}
++
++std::function<std::unique_ptr<lt::disk_interface>(
++    lt::io_context&,
++    const lt::settings_interface&,
++    lt::counters&
++)> make_ram_disk_io_constructor(std::shared_ptr<RamStorageRegistry> registry) {
++    return [shared_registry = std::move(registry)](
++               lt::io_context& ioc,
++               const lt::settings_interface&,
++               lt::counters&
++           ) -> std::unique_ptr<lt::disk_interface> {
++        return std::make_unique<RamDiskIo>(ioc, shared_registry);
++    };
++}
++
++}
+diff --git a/src/torrent/ram_disk_io.hpp b/src/torrent/ram_disk_io.hpp
+new file mode 100644
+index 0000000..0cdc6d2
+--- /dev/null
++++ b/src/torrent/ram_disk_io.hpp
+@@ -0,0 +1,110 @@
++#ifndef NUVIO_ENGINE_RAM_DISK_IO_HPP
++#define NUVIO_ENGINE_RAM_DISK_IO_HPP
++
++#include <cstdint>
++#include <functional>
++#include <memory>
++#include <mutex>
++#include <span>
++#include <string>
++#include <unordered_map>
++#include <vector>
++
++#include <libtorrent/disk_interface.hpp>
++#include <libtorrent/file_storage.hpp>
++#include <libtorrent/fwd.hpp>
++#include <libtorrent/io_context.hpp>
++#include <libtorrent/storage_defs.hpp>
++
++namespace nuvio::torrent {
++
++class RamStorageRegistry {
++public:
++    RamStorageRegistry() = default;
++
++    lt::storage_index_t register_torrent(
++        const lt::storage_params& params,
++        std::string canonical_id
++    );
++    void remove_torrent(lt::storage_index_t storage);
++    void remove_torrent_by_id(const std::string& torrent_id);
++
++    [[nodiscard]] std::shared_ptr<std::vector<char>> read_piece(
++        const std::string& torrent_id,
++        std::uint32_t piece
++    ) const;
++
++    [[nodiscard]] bool read_piece_slice(
++        const std::string& torrent_id,
++        std::uint32_t piece,
++        std::uint64_t offset_in_piece,
++        std::span<char> destination
++    ) const;
++
++    void erase_piece(const std::string& torrent_id, std::uint32_t piece);
++    void erase_pieces(
++        const std::string& torrent_id,
++        const std::vector<std::uint32_t>& pieces
++    );
++    void clear_all();
++
++    [[nodiscard]] std::uint64_t used_bytes() const;
++    [[nodiscard]] std::uint64_t piece_count() const;
++
++    void write_block(
++        lt::storage_index_t storage,
++        lt::piece_index_t piece,
++        int offset,
++        std::span<const char> data
++    );
++
++    [[nodiscard]] std::vector<char> read_block(
++        lt::storage_index_t storage,
++        const lt::peer_request& request,
++        lt::storage_error& error
++    ) const;
++
++    [[nodiscard]] lt::sha1_hash hash_piece(
++        lt::storage_index_t storage,
++        lt::piece_index_t piece,
++        lt::span<lt::sha256_hash> block_hashes,
++        lt::disk_job_flags_t flags,
++        lt::storage_error& error
++    ) const;
++
++    [[nodiscard]] lt::sha256_hash hash_block2(
++        lt::storage_index_t storage,
++        lt::piece_index_t piece,
++        int offset,
++        lt::storage_error& error
++    ) const;
++
++    void clear_piece_by_storage(lt::storage_index_t storage, lt::piece_index_t piece);
++    void clear_storage(lt::storage_index_t storage);
++
++private:
++    struct TorrentStorage {
++        std::string torrent_id;
++        lt::file_storage files;
++        std::unordered_map<std::uint32_t, std::shared_ptr<std::vector<char>>> pieces;
++
++        [[nodiscard]] int piece_size(lt::piece_index_t piece) const;
++    };
++
++    mutable std::mutex mutex_;
++    std::vector<std::shared_ptr<TorrentStorage>> storages_;
++    std::vector<lt::storage_index_t> free_slots_;
++    std::unordered_map<std::string, std::shared_ptr<TorrentStorage>> by_id_;
++    std::uint64_t used_bytes_ = 0;
++    std::uint64_t piece_count_ = 0;
++};
++
++[[nodiscard]] std::function<std::unique_ptr<lt::disk_interface>(
++    lt::io_context&,
++    const lt::settings_interface&,
++    lt::counters&
++)> make_ram_disk_io_constructor(std::shared_ptr<RamStorageRegistry> registry);
++
++}
++
++#endif
+diff --git a/tests/engine_api_test.cpp b/tests/engine_api_test.cpp
+index 000bd0e..755205a 100644
+--- a/tests/engine_api_test.cpp
++++ b/tests/engine_api_test.cpp
+@@ -2134,4 +2134,126 @@ NUVIO_TEST("concurrent distant HTTP ranges remain blocking until disconnect") {
+     NUVIO_EXPECT_TRUE(received_removed);
+     nuvio_engine_destroy(engine);
+ }
++
++NUVIO_TEST("ram_only_mode streams without creating any files or directories on disk") {
++    static std::uint64_t next_ram_dir = 1;
++    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
++    const auto forbidden_root = std::filesystem::temp_directory_path() /
++        ("nuvio-ram-only-forbidden-" + std::to_string(nonce) + "-" +
++         std::to_string(next_ram_dir++));
++    const auto forbidden_data = (forbidden_root / "data").string();
++    const auto forbidden_cache = (forbidden_root / "cache").string();
++    NUVIO_EXPECT_TRUE(!std::filesystem::exists(forbidden_root));
++
++    std::string torrent =
++        "d4:infod6:lengthi4e4:name8:test.bin12:piece lengthi16384e6:pieces20:";
++    torrent.append(20, '\0');
++    torrent += "ee";
++
++    nuvio_engine_config config;
++    nuvio_engine_config_init(&config);
++    config.data_directory = forbidden_data.c_str();
++    config.cache_directory = forbidden_cache.c_str();
++    config.ram_only_mode = 1;
++    config.memory_cache_capacity_bytes = 512ULL * 1024ULL * 1024ULL;
++    config.disk_cache_capacity_bytes = 4ULL * 1024ULL * 1024ULL * 1024ULL;
++
++    nuvio_engine* engine = nullptr;
++    NUVIO_EXPECT_EQ(nuvio_engine_create(&config, &engine), NUVIO_ENGINE_STATUS_OK);
++    NUVIO_EXPECT_TRUE(engine != nullptr);
++
++    nuvio_engine_torrent_request request;
++    nuvio_engine_torrent_request_init(&request);
++    request.source_type = NUVIO_ENGINE_TORRENT_SOURCE_DATA;
++    request.torrent_data = reinterpret_cast<const std::uint8_t*>(torrent.data());
++    request.torrent_data_size = torrent.size();
++    std::uint64_t add_request_id = 0;
++    NUVIO_EXPECT_EQ(
++        nuvio_engine_add_torrent(engine, &request, &add_request_id),
++        NUVIO_ENGINE_STATUS_OK
++    );
++
++    nuvio_engine_event event;
++    nuvio_engine_event_init(&event);
++    std::string torrent_id;
++    bool metadata_ready = false;
++    for (int attempt = 0; attempt < 200 && !metadata_ready; ++attempt) {
++        const auto status = nuvio_engine_poll_event(engine, &event);
++        if (status == NUVIO_ENGINE_STATUS_NO_EVENT) {
++            std::this_thread::sleep_for(std::chrono::milliseconds(10));
++            continue;
++        }
++        NUVIO_EXPECT_EQ(status, NUVIO_ENGINE_STATUS_OK);
++        if (event.type == NUVIO_ENGINE_EVENT_TORRENT_METADATA_READY) {
++            torrent_id = event.torrent_id;
++            metadata_ready = true;
++        }
++    }
++    NUVIO_EXPECT_TRUE(metadata_ready);
++    NUVIO_EXPECT_TRUE(!torrent_id.empty());
++
++    nuvio_engine_stream_request stream_request;
++    nuvio_engine_stream_request_init(&stream_request);
++    stream_request.torrent_id = torrent_id.c_str();
++    stream_request.file_index = 0;
++    std::uint64_t prepare_request_id = 0;
++    NUVIO_EXPECT_EQ(
++        nuvio_engine_prepare_stream(engine, &stream_request, &prepare_request_id),
++        NUVIO_ENGINE_STATUS_OK
++    );
++
++    std::string stream_id;
++    bool stream_prepared = false;
++    for (int attempt = 0; attempt < 200 && !stream_prepared; ++attempt) {
++        const auto status = nuvio_engine_poll_event(engine, &event);
++        if (status == NUVIO_ENGINE_STATUS_NO_EVENT) {
++            std::this_thread::sleep_for(std::chrono::milliseconds(10));
++            continue;
++        }
++        NUVIO_EXPECT_EQ(status, NUVIO_ENGINE_STATUS_OK);
++        if (event.type == NUVIO_ENGINE_EVENT_STREAM_PREPARED &&
++            event.request_id == prepare_request_id) {
++            stream_id = event.stream_id;
++            stream_prepared = true;
++        }
++    }
++    NUVIO_EXPECT_TRUE(stream_prepared);
++    NUVIO_EXPECT_TRUE(!stream_id.empty());
++
++    nuvio_engine_stats stats;
++    nuvio_engine_stats_init(&stats);
++    NUVIO_EXPECT_EQ(nuvio_engine_get_stats(engine, &stats), NUVIO_ENGINE_STATUS_OK);
++    NUVIO_EXPECT_EQ(stats.memory_cache_capacity_bytes, 512ULL * 1024ULL * 1024ULL);
++    NUVIO_EXPECT_EQ(stats.disk_cache_capacity_bytes, std::uint64_t(0));
++    NUVIO_EXPECT_EQ(stats.disk_cache_used_bytes, std::uint64_t(0));
++
++    std::uint64_t stop_request_id = 0;
++    NUVIO_EXPECT_EQ(
++        nuvio_engine_stop_stream(engine, stream_id.c_str(), &stop_request_id),
++        NUVIO_ENGINE_STATUS_OK
++    );
++    std::uint64_t remove_request_id = 0;
++    NUVIO_EXPECT_EQ(
++        nuvio_engine_remove_torrent(engine, torrent_id.c_str(), &remove_request_id),
++        NUVIO_ENGINE_STATUS_OK
++    );
++    bool removed = false;
++    for (int attempt = 0; attempt < 200 && !removed; ++attempt) {
++        const auto status = nuvio_engine_poll_event(engine, &event);
++        if (status == NUVIO_ENGINE_STATUS_NO_EVENT) {
++            std::this_thread::sleep_for(std::chrono::milliseconds(10));
++            continue;
++        }
++        NUVIO_EXPECT_EQ(status, NUVIO_ENGINE_STATUS_OK);
++        if (event.type == NUVIO_ENGINE_EVENT_TORRENT_REMOVED &&
++            event.request_id == remove_request_id) {
++            removed = true;
++        }
++    }
++    NUVIO_EXPECT_TRUE(removed);
++    nuvio_engine_destroy(engine);
++
++    NUVIO_EXPECT_TRUE(!std::filesystem::exists(forbidden_root));
++    NUVIO_EXPECT_TRUE(!std::filesystem::exists(std::filesystem::path("ram")));
++}
+ #endif
+-- 
+2.54.0.windows.1
+

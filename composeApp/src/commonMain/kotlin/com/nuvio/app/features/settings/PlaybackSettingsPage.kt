@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.i18n.localizedString
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.build.AppFeaturePolicy
 import androidx.compose.foundation.BorderStroke
@@ -482,13 +483,13 @@ private sealed interface DesktopAnimeEnhancementChoice {
     val description: String
 
     data class BuiltIn(val mode: DesktopAnimeMode) : DesktopAnimeEnhancementChoice {
-        override val label: String = mode.label
-        override val description: String = mode.description
+        override val label: String = localizedString(mode.labelRes)
+        override val description: String = localizedString(mode.descriptionRes)
     }
 
     data class Custom(val shader: DesktopCustomShaderOption) : DesktopAnimeEnhancementChoice {
         override val label: String = shader.fileName
-        override val description: String = "Custom shader: ${shader.path}"
+        override val description: String = localizedString(Res.string.settings_playback_anime_custom_shader_description, shader.path)
     }
 }
 
@@ -535,7 +536,7 @@ private fun subtitleTextColorOptions(): List<SubtitleColorOption> =
 private fun subtitleBackgroundColorOptions(): List<SubtitleColorOption> =
     listOf(
         SubtitleColorOption(Color.Transparent, stringResource(Res.string.settings_playback_subtitle_color_transparent)),
-        SubtitleColorOption(Color.Black.copy(alpha = 0.55f), "Soft black"),
+        SubtitleColorOption(Color.Black.copy(alpha = 0.55f), localizedString(Res.string.settings_subtitle_color_soft_black)),
         SubtitleColorOption(Color(0xFF111827).copy(alpha = 0.72f), "Charcoal"),
         SubtitleColorOption(Color(0xFF7F1D1D).copy(alpha = 0.68f), "Burgundy"),
         SubtitleColorOption(Color(0xFF064E3B).copy(alpha = 0.68f), "Forest"),
@@ -1252,8 +1253,8 @@ private fun PlaybackSettingsSection(
                     SettingsGroup(isTablet = isTablet) {
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_hdr_mode),
-                            description = autoPlayPlayerSettings.desktopHdrMode.description,
-                            options = DesktopHdrMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            description = stringResource(autoPlayPlayerSettings.desktopHdrMode.descriptionRes),
+                            options = DesktopHdrMode.entries.map { SettingsChoiceOption(it, stringResource(it.labelRes)) },
                             selectedValue = autoPlayPlayerSettings.desktopHdrMode,
                             isTablet = isTablet,
                             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.HdrMode),
@@ -1285,8 +1286,8 @@ private fun PlaybackSettingsSection(
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_color_profile),
-                            description = autoPlayPlayerSettings.desktopColorProfile.description,
-                            options = DesktopColorProfile.entries.map { SettingsChoiceOption(it, it.label) },
+                            description = stringResource(autoPlayPlayerSettings.desktopColorProfile.descriptionRes),
+                            options = DesktopColorProfile.entries.map { SettingsChoiceOption(it, stringResource(it.labelRes)) },
                             selectedValue = autoPlayPlayerSettings.desktopColorProfile,
                             isTablet = isTablet,
                             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.ColorProfile),
@@ -1359,7 +1360,7 @@ private fun PlaybackSettingsSection(
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_renderer),
-                            description = autoPlayPlayerSettings.desktopRendererApi.description,
+                            description = stringResource(autoPlayPlayerSettings.desktopRendererApi.descriptionRes),
                             options = DesktopRendererApi.entries.map { SettingsChoiceOption(it, it.label) },
                             selectedValue = autoPlayPlayerSettings.desktopRendererApi,
                             isTablet = isTablet,
@@ -1387,8 +1388,8 @@ private fun PlaybackSettingsSection(
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_low_vram),
-                            description = autoPlayPlayerSettings.desktopLowVramMode.description,
-                            options = DesktopLowVramMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            description = stringResource(autoPlayPlayerSettings.desktopLowVramMode.descriptionRes),
+                            options = DesktopLowVramMode.entries.map { SettingsChoiceOption(it, stringResource(it.labelRes)) },
                             selectedValue = autoPlayPlayerSettings.desktopLowVramMode,
                             isTablet = isTablet,
                             onSelected = PlayerSettingsRepository::setDesktopLowVramMode,
@@ -1396,8 +1397,8 @@ private fun PlaybackSettingsSection(
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_buffer_preset),
-                            description = autoPlayPlayerSettings.desktopBufferPreset.description,
-                            options = DesktopBufferPreset.entries.map { SettingsChoiceOption(it, it.label) },
+                            description = stringResource(autoPlayPlayerSettings.desktopBufferPreset.descriptionRes),
+                            options = DesktopBufferPreset.entries.map { SettingsChoiceOption(it, stringResource(it.labelRes)) },
                             selectedValue = autoPlayPlayerSettings.desktopBufferPreset,
                             isTablet = isTablet,
                             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BufferPreset),
@@ -1406,8 +1407,8 @@ private fun PlaybackSettingsSection(
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_seek_thumbnails),
-                            description = autoPlayPlayerSettings.desktopSeekThumbnailMode.description,
-                            options = DesktopSeekThumbnailMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            description = stringResource(autoPlayPlayerSettings.desktopSeekThumbnailMode.descriptionRes),
+                            options = DesktopSeekThumbnailMode.entries.map { SettingsChoiceOption(it, stringResource(it.labelRes)) },
                             selectedValue = autoPlayPlayerSettings.desktopSeekThumbnailMode,
                             isTablet = isTablet,
                             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SeekThumbnails),
@@ -1582,9 +1583,9 @@ private fun PlaybackSettingsSection(
                         val mpvOptionsNotSet = stringResource(Res.string.settings_playback_not_set)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_mpv_configuration_mode),
-                            description = autoPlayPlayerSettings.desktopMpvConfigMode.description,
+                            description = stringResource(autoPlayPlayerSettings.desktopMpvConfigMode.descriptionRes),
                             options = DesktopMpvConfigMode.entries.map { mode ->
-                                SettingsChoiceOption(mode, mode.label)
+                                SettingsChoiceOption(mode, stringResource(mode.labelRes))
                             },
                             selectedValue = autoPlayPlayerSettings.desktopMpvConfigMode,
                             isTablet = isTablet,
@@ -2225,6 +2226,19 @@ private fun PlaybackSettingsSection(
                             onSelected = P2pSettingsRepository::setTorrentProfile,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_p2p_ram_only_title),
+                            description = stringResource(Res.string.settings_p2p_ram_only_description),
+                            checked = p2pSettings.ramOnlyMode,
+                            enabled = nuvioEngineSelected,
+                            isTablet = isTablet,
+                            onCheckedChange = { enabled ->
+                                P2pSettingsRepository.setRamOnlyMode(enabled)
+                                p2pCacheClearResult = null
+                            },
+                        )
+                        val diskCacheInUse = nuvioEngineSelected && !p2pSettings.ramOnlyMode
+                        SettingsGroupDivider(isTablet = isTablet)
                         SettingsDropdownChoiceRow(
                             title = stringResource(Res.string.settings_p2p_cache_size_title),
                             description = stringResource(Res.string.settings_p2p_cache_size_description),
@@ -2247,7 +2261,7 @@ private fun PlaybackSettingsSection(
                                 ),
                             ),
                             selectedValue = p2pSettings.cacheSize,
-                            enabled = nuvioEngineSelected,
+                            enabled = diskCacheInUse,
                             isTablet = isTablet,
                             onSelected = { size ->
                                 P2pSettingsRepository.setCacheSize(size)
@@ -2257,7 +2271,7 @@ private fun PlaybackSettingsSection(
                         SettingsGroupDivider(isTablet = isTablet)
                         val p2pCacheState by P2pStreamingEngine.cacheState.collectAsStateWithLifecycle()
                         val p2pStreamingState by P2pStreamingEngine.state.collectAsStateWithLifecycle()
-                        val cacheClearAvailable = nuvioEngineSelected &&
+                        val cacheClearAvailable = diskCacheInUse &&
                             p2pStreamingState !is P2pStreamingState.Connecting &&
                             p2pStreamingState !is P2pStreamingState.Streaming &&
                             !p2pCacheState.isClearing
@@ -2266,6 +2280,8 @@ private fun PlaybackSettingsSection(
                             description = when {
                                 p2pCacheState.isClearing ->
                                     stringResource(Res.string.settings_p2p_clear_cache_clearing)
+                                nuvioEngineSelected && p2pSettings.ramOnlyMode ->
+                                    stringResource(Res.string.settings_p2p_clear_cache_ram_only)
                                 nuvioEngineSelected && !cacheClearAvailable ->
                                     stringResource(Res.string.settings_p2p_clear_cache_playback_active)
                                 p2pCacheClearFailed ->
@@ -2431,8 +2447,8 @@ private fun PlaybackSettingsSection(
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_rate_limit_recovery),
-                            description = autoPlayPlayerSettings.desktopRateLimitRecoveryMode.description,
-                            options = DesktopRateLimitRecoveryMode.entries.map { SettingsChoiceOption(it, it.label) },
+                            description = stringResource(autoPlayPlayerSettings.desktopRateLimitRecoveryMode.descriptionRes),
+                            options = DesktopRateLimitRecoveryMode.entries.map { SettingsChoiceOption(it, stringResource(it.labelRes)) },
                             selectedValue = autoPlayPlayerSettings.desktopRateLimitRecoveryMode,
                             isTablet = isTablet,
                             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.RateLimitRecovery),

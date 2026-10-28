@@ -27,6 +27,8 @@ import com.nuvio.app.features.watched.WatchedRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * Ports for the existing SIMKL repositories. Like the Trakt adapters, these forward without adding
@@ -196,14 +198,14 @@ internal object SimklLibraryAdapter : TrackingLibraryProvider {
         return TrackingLibrarySnapshot(
             items = state.allItems,
             sections = buildList {
-                if (state.shows.isNotEmpty()) add(LibrarySection("simkl_shows", "My Shows", state.shows))
-                if (state.movies.isNotEmpty()) add(LibrarySection("simkl_movies", "My Movies", state.movies))
-                if (state.anime.isNotEmpty()) add(LibrarySection("simkl_anime", "My Anime", state.anime))
+                if (state.shows.isNotEmpty()) add(LibrarySection("simkl_shows", localizedString(Res.string.tracking_library_my_shows_2), state.shows))
+                if (state.movies.isNotEmpty()) add(LibrarySection("simkl_movies", localizedString(Res.string.tracking_library_my_movies_2), state.movies))
+                if (state.anime.isNotEmpty()) add(LibrarySection("simkl_anime", localizedString(Res.string.tracking_library_my_anime), state.anime))
             },
             tabs = listOf(
                 TrackingLibraryTab(
                     key = PLAN_TO_WATCH_KEY,
-                    title = "SIMKL Plan to Watch",
+                    title = localizedString(Res.string.tracking_library_simkl_plan_to_watch),
                     providerId = providerId,
                     kind = TrackingLibraryTabKind.WATCHLIST,
                 ),
@@ -244,8 +246,10 @@ internal object SimklLibraryAdapter : TrackingLibraryProvider {
             WatchedRepository.hasAnyWatched(item.id, item.type)
         ) {
             error(
-                "${item.name.ifBlank { "This title" }} has watch history on SIMKL. Removing it from Plan to " +
-                    "Watch here would erase that history, so Nuvio won't do it — remove it on simkl.com instead.",
+                localizedString(
+                    Res.string.simkl_remove_plan_to_watch_blocked,
+                    item.name.ifBlank { localizedString(Res.string.simkl_this_title) },
+                ),
             )
         }
         if (desired != contains(item.id, item.type)) {

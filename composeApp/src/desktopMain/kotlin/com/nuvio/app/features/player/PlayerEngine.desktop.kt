@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.i18n.localizedString
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,6 +74,8 @@ import org.jetbrains.compose.resources.getString
 import java.awt.KeyboardFocusManager
 import java.awt.event.KeyEvent
 import javax.swing.text.JTextComponent
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 actual fun PlatformPlayerSurface(
@@ -1278,9 +1281,9 @@ private fun desktopColorProfileInfoLabel(
     isHdr: Boolean?,
     hdrMode: DesktopHdrMode,
 ): String = if (isHdr != false && hdrMode != DesktopHdrMode.AlwaysTonemap) {
-    DesktopColorProfile.Neutral.label
+    localizedString(DesktopColorProfile.Neutral.labelRes)
 } else {
-    colorProfile.label
+    localizedString(colorProfile.labelRes)
 }
 
 /**
@@ -1831,7 +1834,7 @@ private fun applyDesktopAnimeProfile(
     // Anime4K_* files, which is not something to print, and the bare preset label ("Mode A (HQ)")
     // never says what is doing the work.
     return DesktopAnimeProfileResult(
-        shaderLabel = "Anime4K ${effectivePreset.label}".withTrueHdrSuffix(shaderTrueHdrVf.isNotEmpty()),
+        shaderLabel = "Anime4K ${localizedString(effectivePreset.labelRes)}".withTrueHdrSuffix(shaderTrueHdrVf.isNotEmpty()),
         svpActive = svpActive,
         rtxTrueHdrActive = shaderTrueHdrVf.isNotEmpty(),
     )
@@ -1876,7 +1879,7 @@ private fun DesktopStubPlayerSurface(
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "Desktop in-app playback is not available yet.",
+            text = stringResource(Res.string.player_desktop_unavailable),
             color = Color.White,
             style = MaterialTheme.typography.bodyMedium,
         )

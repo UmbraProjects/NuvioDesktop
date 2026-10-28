@@ -1,5 +1,8 @@
 package com.nuvio.app.features.player
 
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
+
 /**
  * The languages an external player launch should be handed subtitles for, in priority order.
  *
@@ -54,7 +57,7 @@ suspend fun prepareExternalPlayerLaunch(
         )
         type.isBlank() || videoId.isBlank() -> null
         else -> {
-            onOverlayMessage("Loading subtitles from addons...")
+            onOverlayMessage(localizedString(Res.string.player_external_loading_subtitles_from_addons))
             SubtitleForwarder.fetchForExternalPlayer(
                 type = type,
                 videoId = videoId,
@@ -70,7 +73,7 @@ suspend fun prepareExternalPlayerLaunch(
         .take(SubtitleForwarder.MAX_FORWARDED_SUBTITLES)
     if (subtitles.isEmpty()) return request
 
-    onOverlayMessage("Downloading subtitles...")
+    onOverlayMessage(localizedString(Res.string.player_external_downloading_subtitles))
     // Players such as MPC-HC and PotPlayer only take subtitle paths; fall back to the original
     // URLs if caching fails.
     val cachedSubtitles = SubtitleCacheProvider.cacheForExternalPlayer(subtitles)

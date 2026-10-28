@@ -7,6 +7,8 @@ import javax.swing.JFileChooser
 import javax.swing.SwingUtilities
 import javax.swing.UIManager
 import javax.swing.filechooser.FileNameExtensionFilter
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 internal actual object DiscoverCatalogFilePicker {
 
@@ -33,7 +35,7 @@ internal actual object DiscoverCatalogFilePicker {
             val chooser = JFileChooser().apply {
                 fileSelectionMode = JFileChooser.FILES_ONLY
                 isMultiSelectionEnabled = false
-                dialogTitle = if (save) "Export Discover row" else "Import Discover row"
+                dialogTitle = if (save) localizedString(Res.string.discover_export_export_discover_row) else localizedString(Res.string.discover_export_import_discover_row)
                 fileFilter = FileNameExtensionFilter("Discover catalog (*.json)", "json")
                 suggestedName?.let { selectedFile = File(it) }
             }

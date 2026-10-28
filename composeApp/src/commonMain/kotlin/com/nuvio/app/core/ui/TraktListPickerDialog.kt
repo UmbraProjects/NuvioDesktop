@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +49,8 @@ fun TraktListPickerDialog(
     onToggle: (String) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
+    /** Ticks every list and saves in one go. Null hides the button. */
+    onAddToAll: (() -> Unit)? = null,
 ) {
     if (!visible) return
     val tokens = MaterialTheme.nuvio
@@ -146,6 +150,15 @@ fun TraktListPickerDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s10, Alignment.End),
                 ) {
+                    if (onAddToAll != null && tabs.size > 1) {
+                        TextButton(
+                            onClick = onAddToAll,
+                            enabled = !isPending,
+                        ) {
+                            Text("Add to all")
+                        }
+                        Spacer(Modifier.weight(1f))
+                    }
                     Button(
                         onClick = onDismiss,
                         enabled = !isPending,

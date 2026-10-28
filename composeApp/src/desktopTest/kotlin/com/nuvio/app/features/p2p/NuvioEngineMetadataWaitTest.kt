@@ -42,4 +42,31 @@ class NuvioEngineWindowTest {
         assertTrue(windows.first() >= 4L * 16 * 1024 * 1024)
         assertEquals(256L * 1024 * 1024, nuvioEngineWindowBytes(com.nuvio.app.features.player.DesktopBufferPreset.Balanced))
     }
+
+    @Test
+    fun `RAM-only mode keeps the window and drops the disk cache`() {
+        val window = nuvioEngineWindowBytes(com.nuvio.app.features.player.DesktopBufferPreset.Resilient)
+        val config = buildNuvioEngineConfig(
+            stateDirectory = java.io.File("state"),
+            cacheDirectory = java.io.File("cache"),
+            uploadEnabled = true,
+            torrentProfile = P2pTorrentProfile.BALANCED,
+            diskCacheCapacityBytes = P2pCacheSize.GB_5.bytes,
+            windowBytes = window,
+            ramOnlyMode = true,
+        )
+        assertTrue(config.ramOnlyMode)
+        assertEquals(window, config.memoryCacheCapacityBytes)
+        assertEquals(0L, config.diskCacheCapacityBytes)
+        val disk = buildNuvioEngineConfig(
+            stateDirectory = java.io.File("state"),
+            cacheDirectory = java.io.File("cache"),
+            uploadEnabled = true,
+            torrentProfile = P2pTorrentProfile.BALANCED,
+            diskCacheCapacityBytes = P2pCacheSize.GB_5.bytes,
+            windowBytes = window,
+        )
+        assertEquals(false, disk.ramOnlyMode)
+        assertEquals(P2pCacheSize.GB_5.bytes, disk.diskCacheCapacityBytes)
+    }
 }

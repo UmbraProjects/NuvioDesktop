@@ -1,6 +1,6 @@
 package com.nuvio.engine
 
-// Desktop port of nuvio-engine's Android Kotlin wrapper (platform/android/engine, v0.1.1). Kept
+// Desktop port of nuvio-engine's Android Kotlin wrapper (platform/android/engine, v0.1.6). Kept
 // source-identical apart from trust-store handling so an engine bump is a re-copy plus this diff.
 
 import com.nuvio.engine.internal.NativeBridge
@@ -254,16 +254,16 @@ public class NuvioEngine private constructor(
         throw NuvioEngineException(-1, "verified preload target was not reflected in stream stats")
     }
 
-    public suspend fun stopStream(streamId: String) {
+    public suspend fun stopStream(streamId: String): NuvioEvent {
         validateStreamId(streamId)
-        awaitCommand(NuvioEventType.StreamStopped) { handle ->
+        return awaitCommand(NuvioEventType.StreamStopped) { handle ->
             NativeBridge.nativeStopStream(handle, streamId)
         }
     }
 
-    public suspend fun removeTorrent(torrentId: String) {
+    public suspend fun removeTorrent(torrentId: String): NuvioEvent {
         validateTorrentId(torrentId)
-        awaitCommand(NuvioEventType.TorrentRemoved) { handle ->
+        return awaitCommand(NuvioEventType.TorrentRemoved) { handle ->
             NativeBridge.nativeRemoveTorrent(handle, torrentId)
         }
     }
@@ -479,6 +479,7 @@ public class NuvioEngine private constructor(
                 streamInactivityTimeoutMilliseconds = config.streamInactivityTimeoutMilliseconds,
                 warmTorrentTimeoutMilliseconds = config.warmTorrentTimeoutMilliseconds,
                 tlsCaBundlePath = tlsCaBundle?.absolutePath.orEmpty(),
+                ramOnlyMode = config.ramOnlyMode,
             )
             require(result.size >= 2) { "invalid native create result" }
             val status = result[0].toInt()

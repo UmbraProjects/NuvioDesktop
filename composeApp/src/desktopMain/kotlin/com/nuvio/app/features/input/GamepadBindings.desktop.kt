@@ -1,7 +1,9 @@
 package com.nuvio.app.features.input
 
 import com.nuvio.app.features.player.desktop.DesktopHostOs
+import com.nuvio.app.core.i18n.localizedString
 import kotlinx.coroutines.flow.StateFlow
+import nuvio.composeapp.generated.resources.*
 
 actual fun gamepadSupported(): Boolean = DesktopHostOs.current == DesktopHostOs.WINDOWS
 
@@ -42,9 +44,9 @@ actual fun gamepadMappingRows(): List<GamepadMappingRow> = GamepadButton.entries
  * one — repeating them on every row was noise.
  */
 private fun describe(target: GamepadTarget): String = when (target) {
-    is GamepadTarget.FixedKey -> target.description
-    is GamepadTarget.AppAction -> target.action.displayName
-    is GamepadTarget.PlayerAction -> target.action.displayName
-    is GamepadTarget.ShaderOrHdr -> "Cycle shader, or HDR mode when no shader is running"
-    GamepadTarget.Unbound -> "Not bound"
+    is GamepadTarget.FixedKey -> localizedString(target.description)
+    is GamepadTarget.AppAction -> localizedString(target.action.displayNameRes)
+    is GamepadTarget.PlayerAction -> localizedString(target.action.displayNameRes)
+    is GamepadTarget.ShaderOrHdr -> localizedString(Res.string.gamepad_target_shader_or_hdr)
+    GamepadTarget.Unbound -> localizedString(Res.string.gamepad_target_unbound)
 }

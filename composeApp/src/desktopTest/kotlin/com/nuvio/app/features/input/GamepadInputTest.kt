@@ -1,5 +1,6 @@
 package com.nuvio.app.features.input
 
+import com.nuvio.app.core.i18n.localizedString
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.PlayerShortcutAction
 import kotlin.test.Test
@@ -310,11 +311,11 @@ class GamepadInputTest {
 
         // A read "Select / open focused item (Enter)" before; the action name stands alone now.
         assertEquals(
-            AppShortcutAction.SelectFocused.displayName,
+            localizedString(AppShortcutAction.SelectFocused.displayNameRes),
             rows.getValue(GamepadButton.A).browsingLabel,
         )
         assertEquals(
-            PlayerShortcutAction.PlayPause.displayName,
+            localizedString(PlayerShortcutAction.PlayPause.displayNameRes),
             rows.getValue(GamepadButton.A).playerLabel,
         )
         assertEquals("Move up", rows.getValue(GamepadButton.DpadUp).browsingLabel)

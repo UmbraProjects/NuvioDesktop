@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * A pinned settings heading. [anchor] is the stable scroll-anchor id the heading registers
@@ -36,37 +38,37 @@ internal object SettingsFavoritesRepository {
         SettingsFavorite(
             page = SettingsPage.Homescreen.name,
             anchor = "heading:Homescreen:Display Mode",
-            title = "Display Mode",
+            title = localizedString(Res.string.settings_favorites_display_mode),
         ),
         SettingsFavorite(
             page = SettingsPage.Homescreen.name,
             anchor = "heading:Homescreen:Home Layout",
-            title = "Home Layout",
+            title = localizedString(Res.string.settings_favorites_home_layout),
         ),
         SettingsFavorite(
             page = SettingsPage.Appearance.name,
             anchor = "heading:Appearance:DISPLAY",
-            title = "Display",
+            title = localizedString(Res.string.settings_favorites_display),
         ),
         SettingsFavorite(
             page = SettingsPage.MetaScreen.name,
             anchor = "heading:MetaScreen:APPEARANCE",
-            title = "Appearance",
+            title = localizedString(Res.string.settings_favorites_appearance),
         ),
         SettingsFavorite(
             page = SettingsPage.Player.name,
             anchor = "heading:Player:PLAYER",
-            title = "Player",
+            title = localizedString(Res.string.settings_favorites_player),
         ),
         SettingsFavorite(
             page = SettingsPage.Integrations.name,
             anchor = "heading:Integrations:Integrations",
-            title = "Integrations",
+            title = localizedString(Res.string.settings_favorites_integrations),
         ),
         SettingsFavorite(
             page = SettingsPage.KeyboardShortcuts.name,
             anchor = "heading:KeyboardShortcuts:Navigation",
-            title = "Navigation",
+            title = localizedString(Res.string.settings_favorites_navigation),
         ),
     )
 

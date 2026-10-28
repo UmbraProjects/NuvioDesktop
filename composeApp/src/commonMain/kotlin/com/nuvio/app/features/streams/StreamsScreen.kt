@@ -1863,7 +1863,7 @@ private fun StreamSortChip() {
     var expanded by remember { mutableStateOf(false) }
     val label = listOfNotNull(
         order.takeIf { it != StreamListSortOrder.DEFAULT }?.label,
-        "Cached first".takeIf { cachedFirst },
+        stringResource(Res.string.streams_sort_cached_first).takeIf { cachedFirst },
     ).joinToString(" · ")
     Box {
         FilterChip(
@@ -1890,7 +1890,7 @@ private fun StreamSortChip() {
             // A toggle, not an order: it stacks on whichever order is picked above, so the menu
             // stays open to show the check flip.
             HorizontalDivider(color = LibraryNavMenuBorderColor, modifier = Modifier.padding(vertical = 4.dp))
-            LibraryMenuItem(label = "Cached first", selected = cachedFirst) {
+            LibraryMenuItem(label = stringResource(Res.string.streams_sort_cached_first), selected = cachedFirst) {
                 StreamBadgeSettingsRepository.setListCachedFirst(!cachedFirst)
             }
         }

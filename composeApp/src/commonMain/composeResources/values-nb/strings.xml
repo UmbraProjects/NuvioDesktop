@@ -481,7 +481,7 @@
     <string name="settings_account_email">E-post</string>
     <string name="settings_account_not_signed_in">Ikke innlogget</string>
     <string name="settings_account_sign_out">Logg ut</string>
-    <string name="settings_account_sign_out_confirm_message">Du vil bli sendt tilbake til innloggingsskjermen.</string>
+    <string name="settings_account_sign_out_confirm_message">Innstillingene dine blir liggende på denne PC-en til du logger inn igjen, adskilt fra alle andre som logger inn her. På en delt eller offentlig datamaskin velger du Logg ut og slett for å fjerne innstillinger, innlogginger og nøkler fra denne PC-en også. Nuvio starter på nytt uansett.</string>
     <string name="settings_account_sign_out_confirm_title">Logge ut?</string>
     <string name="settings_account_status">Status</string>
     <string name="settings_account_status_anonymous">Anonym</string>
@@ -527,7 +527,7 @@
     <string name="settings_homescreen_summary_hint">Åpne en katalog kun når du skal gi nytt navn eller endre rekkefølge.</string>
     <string name="settings_homescreen_visible">Synlig</string>
     <string name="settings_hide_secret">Skjul verdi</string>
-    <string name="settings_playback_subtitle">Avspiller, undertekster og auto-play</string>
+    <string name="settings_playback_subtitle">Bildekvalitet, HDR, oppskalering og lydutgang</string>
     <string name="settings_poster_card_radius">Hjørneradius</string>
     <string name="settings_poster_card_style">Plakatstil</string>
     <string name="settings_poster_card_width">Bredde</string>
@@ -552,7 +552,7 @@
     <string name="settings_poster_width_large">Stor</string>
     <string name="settings_poster_width_standard">Standard</string>
     <string name="settings_show_secret">Vis verdi</string>
-    <string name="settings_continue_watching_resume_prompt_description">Vis popup for å fortsette der du slapp ved oppstart.</string>
+    <string name="settings_continue_watching_resume_prompt_description">Hvis Nuvio lukkes eller krasjer mens en video spilles av, tilbys det å fortsette der du slapp neste gang appen åpnes.</string>
     <string name="settings_continue_watching_resume_prompt_title">Fortsett-prompt ved oppstart</string>
     <string name="settings_continue_watching_blur_next_up_description">Slør neste episode-miniature for å unngå spoilere.</string>
     <string name="settings_continue_watching_blur_next_up_title">Slør usette i Fortsett å se</string>
@@ -560,10 +560,10 @@
     <string name="settings_continue_watching_show_unaired_next_up_title">Vis ikke-sendte neste episoder</string>
     <string name="settings_continue_watching_section_sort_order">SORTERINGSREKKefølge</string>
     <string name="settings_continue_watching_sort_mode_title">Sorteringsrekkefølge</string>
-    <string name="settings_continue_watching_sort_mode_default">Standard</string>
-    <string name="settings_continue_watching_sort_mode_default_desc">Sorter alle etter nyhet</string>
-    <string name="settings_continue_watching_sort_mode_streaming">Streaming-stil</string>
-    <string name="settings_continue_watching_sort_mode_streaming_desc">Utgitt først, kommende til slutt</string>
+    <string name="settings_continue_watching_sort_mode_default">Sist sett</string>
+    <string name="settings_continue_watching_sort_mode_default_desc">Sorter alt etter når du sist så det</string>
+    <string name="settings_continue_watching_sort_mode_streaming">Utgitt først</string>
+    <string name="settings_continue_watching_sort_mode_streaming_desc">Neste-episoder som ikke er utgitt ennå havner sist, nærmeste først</string>
     <string name="settings_continue_watching_section_card_style">Plakatstil</string>
     <string name="settings_continue_watching_section_on_launch">VED OPPSTART</string>
     <string name="settings_continue_watching_section_up_next_behavior">NESTE OPPFØRSEL</string>
@@ -574,7 +574,7 @@
     <string name="settings_continue_watching_style_poster_description">Kunst-først plakatkort</string>
     <string name="settings_continue_watching_style_wide">Bred</string>
     <string name="settings_continue_watching_style_wide_description">Info-tett horisontalt kort</string>
-    <string name="settings_continue_watching_up_next_description">Vis neste episode basert på lengst sett episode.</string>
+    <string name="settings_continue_watching_up_next_description">Slå på for å se på nytt.</string>
     <string name="settings_continue_watching_up_next_title">Neste fra lengst sett episode</string>
     <string name="settings_continue_watching_use_episode_thumbnails_description">Foretrekk episode-miniatyrer når tilgjengelig.</string>
     <string name="settings_continue_watching_use_episode_thumbnails_title">Foretrekk episode-miniatyrer i Fortsett å se</string>
@@ -594,7 +594,7 @@
     <string name="settings_debrid_cloud_library">Skybibliotek</string>
     <string name="settings_debrid_cloud_library_description">Bla gjennom og spill filer som allerede finnes i tilkoblede kontoer.</string>
     <string name="settings_debrid_enable">Løs spillbare lenker</string>
-    <string name="settings_debrid_enable_description">Be en tilkoblet tjeneste om spillbare lenker når et resultat trenger det. Dette kan legge elementet til i den tjenesten.</string>
+    <string name="settings_debrid_enable_description">Be en tilkoblet tjeneste om spillbare lenker når et resultat trenger det.</string>
     <string name="settings_debrid_resolve_with">Løs med</string>
     <string name="settings_debrid_resolve_with_description">Velg hvilken tilkoblet konto som håndterer spillbare lenker.</string>
     <string name="settings_debrid_add_key_first">Koble til en konto først.</string>
@@ -728,12 +728,12 @@
     <string name="settings_playback_anime_skip_client_id">AnimeSkip Client ID</string>
     <string name="settings_playback_anime_skip_client_id_description">Skriv inn din AnimeSkip API client ID. Hent en på anime-skip.com.</string>
     <string name="settings_playback_intro_submit_enabled">Aktiver intro-innsending</string>
-    <string name="settings_playback_intro_submit_enabled_description">Vis en knapp for å sende intro/outro-tidsstempler til fellesskapsdatabasen.</string>
+    <string name="settings_playback_intro_submit_enabled_description">Send intro-/outro-tider til SkipDB. Etter et kapittelhopp trykker du på hopp-tasten igjen for å sende dem; ellers trykker du ved starten av et segment, ved slutten, og så en gang til for å sende.</string>
     <string name="settings_playback_introdb_api_key">IntroDB API-nøkkel</string>
     <string name="settings_playback_introdb_api_key_description">Skriv inn din IntroDB API-nøkkel for å sende tidsstempler.</string>
     <string name="settings_playback_anime_skip_description">Søk også i AnimeSkip etter hopp-tidsstempler (krever client ID).</string>
     <string name="settings_playback_auto_play_next_episode">Auto-spill neste episode</string>
-    <string name="settings_playback_auto_play_next_episode_description">Start neste episode automatisk når prompt vises.</string>
+    <string name="settings_playback_auto_play_next_episode_description">Godta neste episode automatisk og hopp over nedtellingen.</string>
     <string name="settings_playback_decoder_device_only">Kun enhets-dekodere</string>
     <string name="settings_playback_decoder_prefer_app">Foretrekk app-dekodere (FFmpeg)</string>
     <string name="settings_playback_decoder_prefer_device">Foretrekk enhets-dekodere</string>
@@ -768,7 +768,7 @@
     <string name="settings_playback_option_forced">Tvungen</string>
     <string name="settings_playback_option_none">Ingen</string>
     <string name="settings_playback_prefer_binge_group">Foretrekk binge-gruppe (neste episode)</string>
-    <string name="settings_playback_prefer_binge_group_description">Prøv samme kildeprofil først før vanlige auto-play-regler.</string>
+    <string name="settings_playback_prefer_binge_group_description">Prøv samme kildeprofil først (samme tillegg/kvalitetsgruppe.)</string>
     <string name="settings_playback_preferred_audio_language">Foretrukket lydspråk</string>
     <string name="settings_playback_preferred_subtitle_language">Foretrukket undertekst-språk</string>
     <string name="settings_playback_presets">Forhåndsinnstillinger</string>
@@ -818,14 +818,14 @@
     <string name="settings_playback_source_scope_all_sources_description">Auto-play kan bruke både installerte tillegg og aktiverte plugins.</string>
     <string name="settings_playback_source_scope_enabled_plugins_only">Kun aktiverte plugins</string>
     <string name="settings_playback_source_scope_enabled_plugins_only_description">Auto-play vurderer kun strømmer fra aktiverte plugins.</string>
-    <string name="settings_playback_source_scope_installed_addons_only">Kun installerte tillegg</string>
+    <string name="settings_playback_source_scope_installed_addons_only">Installerte tillegg</string>
     <string name="settings_playback_source_scope_installed_addons_only_description">Auto-play vurderer kun strømmer fra installerte tillegg.</string>
     <string name="settings_playback_stream_selection_mode">Auto-strømvalg</string>
-    <string name="settings_playback_stream_selection_mode_first_stream">Auto-spill første kilde</string>
+    <string name="settings_playback_stream_selection_mode_first_stream">Første kilde</string>
     <string name="settings_playback_stream_selection_mode_first_stream_description">Spill første tilgjengelige kilde automatisk.</string>
-    <string name="settings_playback_stream_selection_mode_manual">Manuell (velg kilde)</string>
+    <string name="settings_playback_stream_selection_mode_manual">Manuell</string>
     <string name="settings_playback_stream_selection_mode_manual_description">Vis alltid kildeliste og la meg velge.</string>
-    <string name="settings_playback_stream_selection_mode_regex">Auto-play regex-treff</string>
+    <string name="settings_playback_stream_selection_mode_regex">Regex-treff</string>
     <string name="settings_playback_stream_selection_mode_regex_description">Spill første kilde som matcher regex-mønsteret ditt.</string>
     <string name="settings_playback_stream_timeout">Tidsfrist for strømvalg</string>
     <string name="settings_playback_stream_timeout_description">Ventetid for tillegg før valg.</string>
@@ -1358,14 +1358,14 @@
     <string name="cw_airs_today">Sendes i dag</string>
     <string name="cw_airs_tomorrow">Sendes i morgen</string>
     <plurals name="cw_airs_in_days">
-        <item quantity="one">Sendes om %d dag</item>
-        <item quantity="other">Sendes om %d dager</item>
-    </plurals>
+            <item quantity="one">Sendes om %d dag</item>
+            <item quantity="other">Sendes om %d dager</item>
+        </plurals>
     <string name="cw_airs_date_short">%1$s</string>
     <string name="cw_airs_today_short">I dag</string>
     <string name="cw_airs_tomorrow_short">I morgen</string>
     <plurals name="cw_airs_in_days_short">
-        <item quantity="one">Om %d dag</item>
-        <item quantity="other">Om %d dager</item>
-    </plurals>
+            <item quantity="one">Om %d dag</item>
+            <item quantity="other">Om %d dager</item>
+        </plurals>
 </resources>

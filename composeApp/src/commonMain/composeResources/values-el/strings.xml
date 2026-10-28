@@ -288,7 +288,7 @@
     <string name="settings_account_email">Email</string>
     <string name="settings_account_not_signed_in">Δεν είστε συνδεδεμένοι</string>
     <string name="settings_account_sign_out">Αποσύνδεση</string>
-    <string name="settings_account_sign_out_confirm_message">Θα επιστρέψετε στην οθόνη σύνδεσης.</string>
+    <string name="settings_account_sign_out_confirm_message">Οι ρυθμίσεις σας παραμένουν σε αυτόν τον υπολογιστή για όταν συνδεθείτε ξανά, χωριστά από οποιονδήποτε άλλο συνδέεται εδώ. Σε κοινόχρηστο ή δημόσιο υπολογιστή, επιλέξτε Αποσύνδεση και διαγραφή για να αφαιρεθούν από αυτόν τον υπολογιστή και οι ρυθμίσεις, οι συνδέσεις και τα κλειδιά σας. Το Nuvio επανεκκινείται και στις δύο περιπτώσεις.</string>
     <string name="settings_account_sign_out_confirm_title">Αποσύνδεση;</string>
     <string name="settings_account_status">Κατάσταση</string>
     <string name="settings_account_status_anonymous">Ανώνυμος</string>
@@ -327,7 +327,7 @@
     <string name="settings_homescreen_summary">%1$d από %2$d καταλόγους ορατοί • %3$d πηγές hero επιλεγμένες</string>
     <string name="settings_homescreen_summary_hint">Ανοίξτε έναν κατάλογο μόνο όταν χρειάζεστε να τον μετονομάσετε ή να τον αναδιατάξετε.</string>
     <string name="settings_homescreen_visible">Ορατό</string>
-    <string name="settings_playback_subtitle">Αναπαραγωγή, υπότιτλοι και αυτόματη εκκίνηση</string>
+    <string name="settings_playback_subtitle">Ποιότητα εικόνας, HDR, upscaling και έξοδος ήχου</string>
     <string name="settings_poster_card_radius">Ακτίνα κάρτας</string>
     <string name="settings_poster_card_style">ΣΤΥΛ ΚΑΡΤΑΣ ΑΦΙΣΑΣ</string>
     <string name="settings_poster_card_width">Πλάτος κάρτας</string>
@@ -351,7 +351,7 @@
     <string name="settings_poster_width_dense">Πυκνό</string>
     <string name="settings_poster_width_large">Μεγάλο</string>
     <string name="settings_poster_width_standard">Τυπικό</string>
-    <string name="settings_continue_watching_resume_prompt_description">Εμφάνιση αναδυόμενου παραθύρου για συνέχεια από εκεί που σταματήσατε κατά το άνοιγμα της εφαρμογής μετά από έξοδο από τον player.</string>
+    <string name="settings_continue_watching_resume_prompt_description">Αν το Nuvio κλείσει ή καταρρεύσει κατά την αναπαραγωγή βίντεο, προσφέρει συνέχιση την επόμενη φορά που θα ανοίξει.</string>
     <string name="settings_continue_watching_resume_prompt_title">Προτροπή συνέχισης κατά την εκκίνηση</string>
     <string name="settings_continue_watching_section_card_style">ΣΤΥΛ ΚΑΡΤΑΣ</string>
     <string name="settings_continue_watching_section_on_launch">ΚΑΤΑ ΤΗΝ ΕΚΚΙΝΗΣΗ</string>
@@ -363,7 +363,7 @@
     <string name="settings_continue_watching_style_poster_description">Κάρτα αφίσας με προτεραιότητα στο artwork</string>
     <string name="settings_continue_watching_style_wide">Πλατύ</string>
     <string name="settings_continue_watching_style_wide_description">Οριζόντια κάρτα με πλούσιες πληροφορίες</string>
-    <string name="settings_continue_watching_up_next_description">Όταν είναι ενεργοποιημένο, το Up Next συνεχίζει πάντα από το πιο απομακρυσμένο παρακολουθημένο επεισόδιο. Όταν είναι απενεργοποιημένο, ακολουθεί το πιο πρόσφατα παρακολουθηθέν επεισόδιο. Χρήσιμο αν ξαναβλέπετε παλαιότερα επεισόδια.</string>
+    <string name="settings_continue_watching_up_next_description">Ενεργοποιήστε το για επαναπαρακολουθήσεις.</string>
     <string name="settings_continue_watching_up_next_title">Up Next από το πιο απομακρυσμένο επεισόδιο</string>
     <string name="settings_content_discovery_section_home">ΑΡΧΙΚΗ</string>
     <string name="settings_content_discovery_section_sources">ΠΗΓΕΣ</string>
@@ -472,7 +472,7 @@
     <string name="settings_playback_anime_skip_client_id_description">Εισάγετε το client ID API AnimeSkip. Αποκτήστε ένα στο anime-skip.com.</string>
     <string name="settings_playback_anime_skip_description">Αναζήτηση επίσης στο AnimeSkip για χρονικές σημάνσεις παράλειψης (απαιτείται client ID).</string>
     <string name="settings_playback_auto_play_next_episode">Αυτόματη αναπαραγωγή επόμενου επεισοδίου</string>
-    <string name="settings_playback_auto_play_next_episode_description">Αυτόματη εύρεση και αναπαραγωγή του επόμενου επεισοδίου όταν φτάνει το κατώφλι.</string>
+    <string name="settings_playback_auto_play_next_episode_description">Αυτόματη αποδοχή του επόμενου επεισοδίου και παράλειψη της αντίστροφης μέτρησης.</string>
     <string name="settings_playback_decoder_device_only">Μόνο συσκευή</string>
     <string name="settings_playback_decoder_prefer_app">Προτίμηση εφαρμογής (FFmpeg)</string>
     <string name="settings_playback_decoder_prefer_device">Προτίμηση συσκευής</string>
@@ -502,7 +502,7 @@
     <string name="settings_playback_option_forced">Αναγκαστικό</string>
     <string name="settings_playback_option_none">Κανένα</string>
     <string name="settings_playback_prefer_binge_group">Προτίμηση ομάδας binge</string>
-    <string name="settings_playback_prefer_binge_group_description">Κατά την αυτόματη αναπαραγωγή, προτίμηση ροής από την ίδια ομάδα binge με την τρέχουσα.</string>
+    <string name="settings_playback_prefer_binge_group_description">Δοκιμή πρώτα του ίδιου προφίλ πηγής (ίδιο πρόσθετο/ομάδα ποιότητας.)</string>
     <string name="settings_playback_preferred_audio_language">Προτιμώμενη γλώσσα ήχου</string>
     <string name="settings_playback_preferred_subtitle_language">Προτιμώμενη γλώσσα υποτίτλων</string>
     <string name="settings_playback_presets">Προεπιλογές</string>
@@ -552,10 +552,10 @@
     <string name="settings_playback_source_scope_all_sources_description">Εξέταση ροών τόσο από πρόσθετα όσο και από plugins.</string>
     <string name="settings_playback_source_scope_enabled_plugins_only">Μόνο ενεργοποιημένα plugins</string>
     <string name="settings_playback_source_scope_enabled_plugins_only_description">Εξέταση ροών μόνο από ενεργοποιημένα plugins.</string>
-    <string name="settings_playback_source_scope_installed_addons_only">Μόνο εγκατεστημένα πρόσθετα</string>
+    <string name="settings_playback_source_scope_installed_addons_only">Εγκατεστημένα πρόσθετα</string>
     <string name="settings_playback_source_scope_installed_addons_only_description">Εξέταση ροών μόνο από εγκατεστημένα πρόσθετα.</string>
     <string name="settings_playback_stream_selection_mode">Λειτουργία επιλογής ροής</string>
-    <string name="settings_playback_stream_selection_mode_first_stream">Πρώτη διαθέσιμη ροή</string>
+    <string name="settings_playback_stream_selection_mode_first_stream">Πρώτη πηγή</string>
     <string name="settings_playback_stream_selection_mode_first_stream_description">Αυτόματη αναπαραγωγή της πρώτης ροής που βρέθηκε.</string>
     <string name="settings_playback_stream_selection_mode_manual">Χειροκίνητο</string>
     <string name="settings_playback_stream_selection_mode_manual_description">Χειροκίνητη επιλογή ροών κάθε φορά.</string>
@@ -1044,16 +1044,16 @@
     <string name="cw_airs_today">Πρεμιέρα σήμερα</string>
     <string name="cw_airs_tomorrow">Πρεμιέρα αύριο</string>
     <plurals name="cw_airs_in_days">
-        <item quantity="one">Πρεμιέρα σε %1$d ημέρα</item>
-        <item quantity="other">Πρεμιέρα σε %1$d ημέρες</item>
-    </plurals>
+            <item quantity="one">Πρεμιέρα σε %1$d ημέρα</item>
+            <item quantity="other">Πρεμιέρα σε %1$d ημέρες</item>
+        </plurals>
     <string name="cw_airs_date_short">%1$s</string>
     <string name="cw_airs_today_short">Σήμερα</string>
     <string name="cw_airs_tomorrow_short">Αύριο</string>
     <plurals name="cw_airs_in_days_short">
-        <item quantity="one">Σε %1$d ημέρα</item>
-        <item quantity="other">Σε %1$d ημέρες</item>
-    </plurals>
+            <item quantity="one">Σε %1$d ημέρα</item>
+            <item quantity="other">Σε %1$d ημέρες</item>
+        </plurals>
     <string name="cw_new_episode">Νέο επεισόδιο</string>
     <string name="cw_new_season">Νέα σεζόν</string>
 </resources>

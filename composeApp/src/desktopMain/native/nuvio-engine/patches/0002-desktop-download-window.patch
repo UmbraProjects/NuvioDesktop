@@ -1,33 +1,54 @@
-From e78d359e6dccc3a78427084b1e0933be78424e1c Mon Sep 17 00:00:00 2001
+From e7f4434cf04ecfdf321b3b773bbebe8f6ad0e860 Mon Sep 17 00:00:00 2001
 From: Nuvio Desktop <nuviodesktop@local>
 Date: Sat, 12 Sep 2026 01:10:16 +0100
-Subject: [PATCH] desktop: rolling selection ceiling 15 MiB -> 1 GiB; the app
- sizes the window via memory cache capacity per buffer preset
+Subject: [PATCH] desktop: download window follows the app's buffer preset
+ (memory cache capacity), bounded by disk/4; drops upstream's fixed 256 MiB
+ ceiling
 
 ---
- src/torrent/libtorrent_stream_bridge.cpp | 9 ++++++++-
- 1 file changed, 8 insertions(+), 1 deletion(-)
+ src/torrent/libtorrent_stream_bridge.cpp | 22 +++++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
 
 diff --git a/src/torrent/libtorrent_stream_bridge.cpp b/src/torrent/libtorrent_stream_bridge.cpp
-index a41a6bd..449cd90 100644
+index 25fa513..bab4a04 100644
 --- a/src/torrent/libtorrent_stream_bridge.cpp
 +++ b/src/torrent/libtorrent_stream_bridge.cpp
-@@ -40,7 +40,14 @@ namespace {
- constexpr std::size_t maximum_http_commands = 4096;
- constexpr std::size_t stream_worker_count = 8;
- constexpr std::chrono::seconds piece_wait_timeout{60};
--constexpr std::uint64_t rolling_selection_limit = 15 * 1024 * 1024;
-+// Nuvio desktop tuning: the rolling selection is the download window ahead of the reader, and
-+// with it at 15 MiB a 16 MiB-piece release (the norm for 4K remuxes and BTM WEB-DLs) has less
-+// than one piece in flight - every piece is fetched serially and waits on its slowest block.
-+// Measured on a 160-peer WEB-DL: 1 MB/s with 13 seeds and the request queue emptying at every
-+// piece boundary. This is only a ceiling: the effective window is min(this, memory cache
-+// capacity), and the desktop app sets the cache per the user's playback buffer preset
-+// (64 MiB metered ... 512 MiB resilient).
-+constexpr std::uint64_t rolling_selection_limit = 1024 * 1024 * 1024;
- constexpr std::uint64_t critical_front_limit = 1024 * 1024;
+@@ -83,6 +83,26 @@ std::uint64_t readahead_for_disk_budget(const std::uint64_t disk_capacity_bytes)
+     );
+ }
  
++// Nuvio desktop: the download window ahead of the reader follows the app's playback buffer preset,
++// which it passes as the memory cache capacity (64 MiB metered ... 512 MiB resilient). Upstream
++// sizes it from the disk budget alone and caps it at 256 MiB; the disk/4 bound is kept, so the
++// window still fits the cache the user gave the engine, but the fixed 256 MiB ceiling is not -
++// the resilient preset exists for swarms that stall for tens of seconds at a time. A zero disk
++// budget (the app's "no cache") leaves the window as the whole budget (retention_budget never
++// goes below it), so there the preset applies unbounded.
++std::uint64_t readahead_for_budgets(
++    const std::uint64_t memory_capacity_bytes,
++    const std::uint64_t disk_capacity_bytes
++) {
++    if (memory_capacity_bytes == 0) {
++        return readahead_for_disk_budget(disk_capacity_bytes);
++    }
++    const auto ceiling = disk_capacity_bytes == 0
++        ? memory_capacity_bytes
++        : std::min(memory_capacity_bytes, disk_capacity_bytes / 4);
++    return std::max(minimum_readahead_bytes, ceiling);
++}
++
  std::string torrent_id(const lt::torrent_handle& handle) {
+     const auto hashes = handle.info_hashes();
+     if (hashes.has_v1()) {
+@@ -351,7 +371,7 @@ struct LibtorrentStreamBridge::Impl {
+               critical_window_bytes,
+               critical_piece_limit,
+               playback_window_bytes,
+-              readahead_for_disk_budget(disk_capacity_bytes) - playback_window_bytes,
++              readahead_for_budgets(memory_capacity_bytes, disk_capacity_bytes) - playback_window_bytes,
+               metadata_tail_bytes,
+           },
+           disk_capacity(disk_capacity_bytes),
 -- 
 2.54.0.windows.1
 

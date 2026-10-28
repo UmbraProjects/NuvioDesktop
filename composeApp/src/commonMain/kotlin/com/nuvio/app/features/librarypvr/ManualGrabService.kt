@@ -18,6 +18,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * The manual half of library auto-download: instead of searching addons for an episode, the user
@@ -118,7 +120,7 @@ internal object ManualGrabService {
             runCatching { start(source, entry, item, folder) }
                 .onFailure { error ->
                     log.w(error) { "manual grab failed for ${entry.row.fileName}" }
-                    fail(entry.grabId, error.message ?: "Manual grab failed")
+                    fail(entry.grabId, error.message ?: localizedString(Res.string.library_pvr_manual_grab_failed))
                 }
         }
     }
@@ -237,11 +239,11 @@ internal object ManualGrabService {
             fail(
                 entry.grabId,
                 when (result) {
-                    DownloadEnqueueResult.MissingUrl -> "The link had no downloadable URL"
-                    DownloadEnqueueResult.MissingDestination -> "The Local Library destination is missing"
-                    DownloadEnqueueResult.UnsupportedFormat -> "Unsupported file type"
-                    DownloadEnqueueResult.InsufficientSpace -> "Not enough free disk space"
-                    else -> "Could not start the download"
+                    DownloadEnqueueResult.MissingUrl -> localizedString(Res.string.library_pvr_the_link_had_no_downloadable_url)
+                    DownloadEnqueueResult.MissingDestination -> localizedString(Res.string.library_pvr_the_local_library_destination_is_missing)
+                    DownloadEnqueueResult.UnsupportedFormat -> localizedString(Res.string.library_pvr_unsupported_file_type)
+                    DownloadEnqueueResult.InsufficientSpace -> localizedString(Res.string.library_pvr_not_enough_free_disk_space)
+                    else -> localizedString(Res.string.library_pvr_could_not_start_the_download)
                 },
             )
             return

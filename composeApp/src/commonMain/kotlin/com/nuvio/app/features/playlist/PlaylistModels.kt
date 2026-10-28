@@ -1,6 +1,8 @@
 package com.nuvio.app.features.playlist
 
 import kotlinx.serialization.Serializable
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * A hand-picked, ordered list of things to watch that plays through in order.
@@ -101,7 +103,7 @@ fun PlaylistEntry.displayTitle(): String {
 /** "Random episode", or "Random episode · S2–S4" for a slot narrowed to some seasons. */
 fun PlaylistEntry.randomSlotLabel(): String {
     val seasons = randomSeasons?.sorted().orEmpty()
-    if (seasons.isEmpty()) return "Random episode"
+    if (seasons.isEmpty()) return localizedString(Res.string.action_random_episode)
     val runs = mutableListOf<String>()
     var start = seasons.first()
     var prev = start
@@ -111,7 +113,7 @@ fun PlaylistEntry.randomSlotLabel(): String {
         prev = season
     }
     close()
-    return "Random episode · ${runs.joinToString(", ")}"
+    return localizedString(Res.string.playlist_random_slot_seasons, runs.joinToString(", "))
 }
 
-private fun seasonLabel(season: Int): String = if (season == 0) "Specials" else "S$season"
+private fun seasonLabel(season: Int): String = if (season == 0) localizedString(Res.string.playlist_specials) else "S$season"

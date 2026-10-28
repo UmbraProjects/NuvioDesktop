@@ -4,13 +4,15 @@ import com.nuvio.app.features.player.VIDEO_EXTENSIONS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 internal actual object FolderScanner {
 
     actual suspend fun scan(folder: LocalFolder): LocalScanResult = withContext(Dispatchers.IO) {
         val root = File(folder.path)
         if (!root.exists() || !root.isDirectory) {
-            return@withContext LocalScanResult(errorMessage = "Folder not found: ${folder.path}")
+            return@withContext LocalScanResult(errorMessage = localizedString(Res.string.local_library_folder_not_found, folder.path))
         }
         val items = runCatching {
             when (folder.type) {
@@ -18,7 +20,7 @@ internal actual object FolderScanner {
                 LocalFolderType.SERIES -> scanSeries(folder, root)
             }
         }.getOrElse { error ->
-            return@withContext LocalScanResult(errorMessage = error.message ?: "Failed to scan ${folder.path}")
+            return@withContext LocalScanResult(errorMessage = error.message ?: localizedString(Res.string.local_library_scan_failed, folder.path))
         }
         LocalScanResult(items = items.sortedBy { it.title.lowercase() })
     }

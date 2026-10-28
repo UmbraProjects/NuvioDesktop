@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +55,7 @@ import nuvio.composeapp.generated.resources.hero_remove_from_library
 import nuvio.composeapp.generated.resources.poster_go_to_local_library
 import org.jetbrains.compose.resources.stringResource
 import dev.chrisbanes.haze.HazeState
+import nuvio.composeapp.generated.resources.*
 
 @Composable
 fun NuvioPosterActionSheet(
@@ -75,6 +77,8 @@ fun NuvioPosterActionSheet(
      * the active library provider, the secondary click opens the list picker instead.
      */
     onOpenLibraryPicker: (() -> Unit)? = null,
+    /** Adds the title to the Nuvio library and every connected provider. Null hides the row. */
+    onAddToAllLibraries: (() -> Unit)? = null,
     /** Opens the add-to-playlist dialog for this title. Null hides the row. */
     onAddToPlaylist: (() -> Unit)? = null,
     /** Discover's "Not interested": hides the title from every Discover row for good. Null hides the row. */
@@ -97,6 +101,15 @@ fun NuvioPosterActionSheet(
                 onSecondarySelected = onOpenLibraryPicker,
             ),
         )
+        onAddToAllLibraries?.let { addToAll ->
+            add(
+                PosterZoomOverlayAction(
+                    icon = Icons.Default.LibraryAdd,
+                    label = "Add to all libraries",
+                    onSelected = addToAll,
+                ),
+            )
+        }
         add(
             PosterZoomOverlayAction(
                 icon = if (isWatched) Icons.Default.CheckCircle else Icons.Default.CheckCircleOutline,
@@ -117,7 +130,7 @@ fun NuvioPosterActionSheet(
             add(
                 PosterZoomOverlayAction(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
-                    label = "Add to playlist",
+                    label = stringResource(Res.string.poster_actions_add_to_playlist),
                     onSelected = addToPlaylist,
                     group = 1,
                 ),
@@ -127,7 +140,7 @@ fun NuvioPosterActionSheet(
             add(
                 PosterZoomOverlayAction(
                     icon = Icons.Default.Block,
-                    label = "Not interested",
+                    label = stringResource(Res.string.poster_actions_not_interested),
                     onSelected = notInterested,
                     group = 2,
                 ),

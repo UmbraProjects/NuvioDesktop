@@ -37,6 +37,9 @@ import com.nuvio.app.features.search.DiscoverCatalogOption
 import com.nuvio.app.features.search.DiscoverUiState
 import com.nuvio.app.features.search.SearchRepository
 import com.nuvio.app.features.search.discoverCatalogDisplayLabels
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
+import org.jetbrains.compose.resources.stringResource
 
 /*
  * Discover row 1's header: the Nuvio Tracker's filter bar. An addon catalog offers what the addon
@@ -56,9 +59,9 @@ private val TmdbMediaChoices = listOf(
 
 private val TmdbSortChoices = listOf(
     TmdbBrowseSort.Popular to "Popular",
-    TmdbBrowseSort.Trending to "Trending this week",
-    TmdbBrowseSort.TopRated to "Top rated",
-    TmdbBrowseSort.MostVoted to "Most voted",
+    TmdbBrowseSort.Trending to localizedString(Res.string.browse_filter_trending_this_week),
+    TmdbBrowseSort.TopRated to localizedString(Res.string.browse_filter_top_rated),
+    TmdbBrowseSort.MostVoted to localizedString(Res.string.browse_filter_most_voted),
     TmdbBrowseSort.Newest to "Newest",
     TmdbBrowseSort.Oldest to "Oldest",
 )
@@ -71,17 +74,17 @@ val BrowseLanguages: List<Pair<String, String>> = listOf(
 )
 
 val BrowseRatings: List<Pair<String, String>> = listOf(
-    "" to "Any rating", "5" to "5+", "6" to "6+", "7" to "7+", "7.5" to "7.5+", "8" to "8+",
+    "" to localizedString(Res.string.browse_filter_any_rating), "5" to "5+", "6" to "6+", "7" to "7+", "7.5" to "7.5+", "8" to "8+",
 )
 
 val BrowseVotes: List<Pair<String, String>> = listOf(
-    "" to "Any number of votes", "50" to "50+ votes", "200" to "200+ votes", "1000" to "1,000+ votes",
+    "" to localizedString(Res.string.browse_filter_any_number_of_votes), "50" to localizedString(Res.string.browse_filter_50_votes), "200" to localizedString(Res.string.browse_filter_200_votes), "1000" to localizedString(Res.string.browse_filter_1_000_votes),
     "5000" to "5,000+ votes", "20000" to "20,000+ votes",
 )
 
 /** Length bands: min, max, label. */
 val BrowseRuntimes: List<Triple<Int?, Int?, String>> = listOf(
-    Triple(null, null, "Any length"), Triple(null, 30, "Under 30 min"), Triple(30, 60, "30–60 min"),
+    Triple(null, null, localizedString(Res.string.browse_filter_any_length)), Triple(null, 30, localizedString(Res.string.browse_filter_under_30_min)), Triple(30, 60, localizedString(Res.string.browse_filter_30_60_min)),
     Triple(60, 90, "60–90 min"), Triple(90, 120, "90–120 min"), Triple(120, 150, "2–2½ hours"),
     Triple(150, null, "Over 2½ hours"),
 )
@@ -247,7 +250,7 @@ private fun TmdbFilterMenus(state: DiscoverUiState, onMenuOpenChange: (Boolean) 
     val genreNames = q.genres.mapNotNull { id -> opts.genres.firstOrNull { it.id == id }?.name }
     BrowseFilterMenu(icon = Icons.Rounded.TheaterComedy, label = browseFilterSummary("Genres", genreNames), on = q.genres.isNotEmpty(), onOpenChange = onMenuOpenChange) {
         BrowseMenuCheck(on = q.allGenres, onClick = { update { it.copy(allGenres = !it.allGenres) } }) {
-            Text("Must match every genre picked")
+            Text(stringResource(Res.string.browse_filter_must_match_every_genre_picked))
         }
         BrowseMenuCheckColumns(
             items = opts.genres,
@@ -260,7 +263,7 @@ private fun TmdbFilterMenus(state: DiscoverUiState, onMenuOpenChange: (Boolean) 
     if (opts.providers.isNotEmpty()) {
         val providerNames = q.providers.mapNotNull { id -> opts.providers.firstOrNull { it.id == id }?.name }
         BrowseFilterMenu(icon = Icons.Rounded.LiveTv, label = browseFilterSummary("Streaming", providerNames), on = q.providers.isNotEmpty(), onOpenChange = onMenuOpenChange) {
-            BrowseMenuNote("Subscription services in ${opts.region}")
+            BrowseMenuNote(stringResource(Res.string.browse_filter_subscription_services_in, opts.region))
             opts.providers.forEach { provider ->
                 BrowseMenuCheck(on = provider.id in q.providers, onClick = { update { it.copy(providers = it.providers.toggle(provider.id)) } }) {
                     provider.logoUrl?.let { url ->
@@ -334,23 +337,23 @@ private fun TmdbFilterMenus(state: DiscoverUiState, onMenuOpenChange: (Boolean) 
         on = q.language != null,
         onOpenChange = onMenuOpenChange,
     ) { close ->
-        BrowseMenuChoices(options = listOf("" to "Any language") + BrowseLanguages, value = q.language.orEmpty(), onPick = { picked ->
+        BrowseMenuChoices(options = listOf("" to stringResource(Res.string.browse_filter_any_language)) + BrowseLanguages, value = q.language.orEmpty(), onPick = { picked ->
             update { it.copy(language = picked.ifBlank { null }) }
             close()
         })
     }
 
     val statusOptions = buildList {
-        add(TmdbBrowseStatus.Any to "Any status")
+        add(TmdbBrowseStatus.Any to stringResource(Res.string.browse_filter_any_status))
         if (!movies) {
-            add(TmdbBrowseStatus.Returning to "Still running")
-            add(TmdbBrowseStatus.Ended to "Ended")
+            add(TmdbBrowseStatus.Returning to stringResource(Res.string.browse_filter_still_running))
+            add(TmdbBrowseStatus.Ended to stringResource(Res.string.browse_filter_ended))
         }
         if (!tv) {
-            add(TmdbBrowseStatus.InCinemas to "In cinemas")
-            add(TmdbBrowseStatus.HomeRelease to "Out at home")
+            add(TmdbBrowseStatus.InCinemas to stringResource(Res.string.browse_filter_in_cinemas))
+            add(TmdbBrowseStatus.HomeRelease to stringResource(Res.string.browse_filter_out_at_home))
         }
-        add(TmdbBrowseStatus.Upcoming to "Coming soon")
+        add(TmdbBrowseStatus.Upcoming to stringResource(Res.string.browse_filter_coming_soon))
     }
     BrowseFilterMenu(
         icon = Icons.Rounded.Update,
@@ -367,7 +370,7 @@ private fun TmdbFilterMenus(state: DiscoverUiState, onMenuOpenChange: (Boolean) 
     if (!tv) {
         BrowseFilterMenu(
             icon = Icons.Rounded.Shield,
-            label = q.certification?.let { "Rated $it" } ?: "US film rating",
+            label = q.certification?.let { stringResource(Res.string.browse_filter_rated, it) } ?: stringResource(Res.string.browse_filter_us_film_rating),
             on = q.certification != null,
             onOpenChange = onMenuOpenChange,
         ) { close ->
@@ -384,7 +387,7 @@ private fun TmdbFilterMenus(state: DiscoverUiState, onMenuOpenChange: (Boolean) 
     }
 
     if (q.hasFilters) {
-        BrowseFilterIconAction(Icons.Rounded.FilterAltOff, "Clear filters") { update { it.clearedFilters() } }
+        BrowseFilterIconAction(Icons.Rounded.FilterAltOff, stringResource(Res.string.browse_filter_clear_filters)) { update { it.clearedFilters() } }
     }
     val count = when {
         state.isLoading && state.items.isEmpty() -> "Loading…"

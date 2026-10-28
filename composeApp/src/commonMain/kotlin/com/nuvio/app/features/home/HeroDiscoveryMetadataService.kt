@@ -13,6 +13,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 object HeroDiscoveryMetadataService {
     const val CACHE_VERSION = 18
@@ -424,7 +426,7 @@ object HeroDiscoveryMetadataService {
                 else "${lang.languageDisplayName()} Film"
             }
             "studio" -> meta.matchedStudios.firstOrNull()?.label
-            "director" -> meta.matchedDirectors.firstOrNull()?.let { "Directed by $it" }
+            "director" -> meta.matchedDirectors.firstOrNull()?.let { localizedString(Res.string.hero_badge_label_directed_by, it) }
             "trending" -> if (meta.isTrending) "Trending" else null
             "new_release", "digital_release" -> if (meta.isNewRelease) "New" else null
             "metacritic" -> if (meta.isMetacriticMustSee) "Must-See" else null

@@ -108,6 +108,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * Where the user was in the library the last time game mode was open.
@@ -241,19 +244,19 @@ actual fun GameModeScreen(
 
     fun launchGame(game: GameEntry) {
         controller.launch(game).onSuccess { pid ->
-            message = if (pid != null) "Started ${game.title}  •  PID $pid" else "Started ${game.title}"
+            message = if (pid != null) localizedString(Res.string.games_mode_started_pid, game.title, pid) else localizedString(Res.string.games_mode_started, game.title)
             if (settings.closeAfterLaunch) {
                 // The process (or the shell hand-off for a protocol/shortcut launch) is already
                 // under way; the pause is only so the status line is readable before the window
                 // goes, and so a launcher that re-execs itself is not racing our exit.
-                message = "Started ${game.title}  •  closing Nuvio"
+                message = localizedString(Res.string.games_mode_started_closing, game.title)
                 scope.launch {
                     delay(CloseAfterLaunchDelayMs)
                     withContext(Dispatchers.Main) { DesktopApplicationExit.request() }
                 }
             }
         }.onFailure { error ->
-            message = error.message ?: "Could not start ${game.title}"
+            message = error.message ?: localizedString(Res.string.games_mode_start_failed, game.title)
         }
     }
 
@@ -423,7 +426,7 @@ actual fun GameModeScreen(
 
     if (showAddDialog) {
         GameEditorDialog(
-            title = "Add game",
+            title = stringResource(Res.string.games_mode_add_game),
             initial = null,
             rows = rows,
             lastExecutableDirectory = lastExecutableDirectory,
@@ -460,9 +463,9 @@ actual fun GameModeScreen(
                     // Land on the first new game, in the row it went to.
                     pendingFocusGameId = added.first().id
                     message = if (added.size == 1) {
-                        "Imported ${added.first().title}"
+                        localizedString(Res.string.games_mode_imported_one, added.first().title)
                     } else {
-                        "Imported ${added.size} games"
+                        localizedString(Res.string.games_mode_imported_many, added.size)
                     }
                 }
             },
@@ -472,7 +475,7 @@ actual fun GameModeScreen(
 
     editingGame?.let { game ->
         GameEditorDialog(
-            title = "Edit game",
+            title = stringResource(Res.string.games_mode_edit_game),
             initial = game,
             rows = rows,
             lastExecutableDirectory = lastExecutableDirectory,
@@ -924,11 +927,11 @@ private fun GameTopBar(onAdd: () -> Unit, onImportFolder: () -> Unit, onSettings
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onAdd) { Icon(Icons.Rounded.Add, "Add game", tint = silver) }
+        IconButton(onClick = onAdd) { Icon(Icons.Rounded.Add, stringResource(Res.string.games_mode_add_game), tint = silver) }
         IconButton(onClick = onImportFolder) {
-            Icon(Icons.Rounded.CreateNewFolder, "Import games from folder", tint = silver)
+            Icon(Icons.Rounded.CreateNewFolder, stringResource(Res.string.games_mode_import_games_from_folder), tint = silver)
         }
-        IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Game settings", tint = silver) }
+        IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, stringResource(Res.string.games_mode_game_settings), tint = silver) }
     }
 }
 
@@ -945,14 +948,14 @@ private fun EmptyGameLibrary(onAdd: () -> Unit, onImportFolder: () -> Unit, onSe
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "Your games, centre stage.",
+                stringResource(Res.string.games_mode_empty_title),
                 color = Color.White,
                 fontSize = 38.sp,
                 fontWeight = FontWeight.Black,
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "Link a local executable, match it with IGDB, and launch it from a clean TV interface.",
+                stringResource(Res.string.games_mode_empty_message),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 17.sp,
                 lineHeight = 25.sp,
@@ -962,17 +965,17 @@ private fun EmptyGameLibrary(onAdd: () -> Unit, onImportFolder: () -> Unit, onSe
                 Button(onClick = onAdd) {
                     Icon(Icons.Rounded.Add, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Add your first game")
+                    Text(stringResource(Res.string.games_mode_add_your_first_game))
                 }
                 OutlinedButton(onClick = onImportFolder) {
                     Icon(Icons.Rounded.CreateNewFolder, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Import a folder")
+                    Text(stringResource(Res.string.games_mode_import_a_folder))
                 }
             }
             Spacer(Modifier.height(16.dp))
             Text(
-                "A add   •   I import folder   •   S settings   •   G back to Nuvio",
+                stringResource(Res.string.games_mode_key_hints),
                 color = Color.White.copy(alpha = 0.48f),
                 fontSize = 12.sp,
             )

@@ -54,7 +54,7 @@
     <string name="collections_count_summary">%1$d kolekce, %2$d složka(y)</string>
     <string name="collections_delete_message">Smazat "%1$s"? Tuto akci nelze vrátit zpět.</string>
     <string name="collections_delete_title">Smazat kolekci</string>
-   <string name="collections_editor_add_catalog">Přidat katalog</string>
+    <string name="collections_editor_add_catalog">Přidat katalog</string>
     <string name="collections_editor_add_folder">Přidat složku</string>
     <string name="collections_editor_all_genres">Všechny žánry</string>
     <string name="collections_editor_catalog_sources_empty_subtitle">Přidejte katalogy z nainstalovaných doplňků a určete, co se má v této složce zobrazovat.</string>
@@ -304,7 +304,7 @@
     <string name="compose_player_episode_code_full">S%1$dE%2$d</string>
     <string name="compose_player_episode_title_format">S%1$dE%2$d • %3$s</string>
     <string name="compose_player_episodes">Epizody</string>
-   <string name="compose_player_font_size">Velikost písma</string>
+    <string name="compose_player_font_size">Velikost písma</string>
     <string name="compose_player_font_size_value">%1$dsp</string>
     <string name="compose_player_lock_controls">Uzamknout ovládání přehrávače</string>
     <string name="compose_player_no_audio_tracks_available">Nejsou k dispozici žádné zvukové stopy</string>
@@ -442,7 +442,7 @@
     <string name="settings_account_email">E-mail</string>
     <string name="settings_account_not_signed_in">Nepřihlášen</string>
     <string name="settings_account_sign_out">Odhlásit se</string>
-    <string name="settings_account_sign_out_confirm_message">Budete vráceni na přihlašovací obrazovku.</string>
+    <string name="settings_account_sign_out_confirm_message">Vaše nastavení zůstane na tomto PC pro případ, že se znovu přihlásíte, odděleně od ostatních, kteří se zde přihlásí. Na sdíleném nebo veřejném počítači zvolte Odhlásit a vymazat, abyste z tohoto PC odstranili i svá nastavení, přihlášení a klíče. Nuvio se v obou případech restartuje.</string>
     <string name="settings_account_sign_out_confirm_title">Odhlásit se?</string>
     <string name="settings_account_status">Stav</string>
     <string name="settings_account_status_anonymous">Anonymní</string>
@@ -486,8 +486,8 @@
     <string name="settings_homescreen_summary_hint">Otevřete katalog pouze tehdy, když jej potřebujete přejmenovat nebo změnit jeho pořadí.</string>
     <string name="settings_homescreen_visible">Viditelné</string>
     <string name="settings_hide_secret">Skrýt hodnotu</string>
-    <string name="settings_playback_subtitle">Přehrávač, titulky a automatické přehrávání</string>
-   <string name="settings_poster_card_radius">Poloměr rohů</string>
+    <string name="settings_playback_subtitle">Kvalita obrazu, HDR, upscaling a zvukový výstup</string>
+    <string name="settings_poster_card_radius">Poloměr rohů</string>
     <string name="settings_poster_card_style">Styl karty plakátu</string>
     <string name="settings_poster_card_width">Šířka</string>
     <string name="settings_poster_custom">Vlastní</string>
@@ -511,7 +511,7 @@
     <string name="settings_poster_width_large">Velká</string>
     <string name="settings_poster_width_standard">Standardní</string>
     <string name="settings_show_secret">Zobrazit hodnotu</string>
-    <string name="settings_continue_watching_resume_prompt_description">Zobrazit vyskakovací okno pro pokračování, když aplikaci otevřete poté, co jste ji opustili z přehrávače.</string>
+    <string name="settings_continue_watching_resume_prompt_description">Pokud se Nuvio během přehrávání videa zavře nebo spadne, nabídne jeho pokračování při příštím spuštění.</string>
     <string name="settings_continue_watching_resume_prompt_title">Výzva k pokračování po spuštění</string>
     <string name="settings_continue_watching_blur_next_up_description">Rozmazat náhledy dalších epizod v sekci Pokračovat ve sledování, abyste se vyhnuli spoilerům.</string>
     <string name="settings_continue_watching_blur_next_up_title">Rozmazat nezhlédnuté v Pokračovat ve sledování</string>
@@ -527,7 +527,7 @@
     <string name="settings_continue_watching_style_poster_description">Karta plakátu zaměřená na grafiku</string>
     <string name="settings_continue_watching_style_wide">Široký</string>
     <string name="settings_continue_watching_style_wide_description">Horizontální karta s vysokou hustotou informací</string>
-    <string name="settings_continue_watching_up_next_description">Zobrazit další epizodu podle nejdále zhlédnuté epizody. Vypněte pro opakované sledování, aby se použila naposledy zhlédnutá epizoda.</string>
+    <string name="settings_continue_watching_up_next_description">Zapněte pro opakované sledování.</string>
     <string name="settings_continue_watching_up_next_title">Další na řadě od nejdále zhlédnuté</string>
     <string name="settings_continue_watching_use_episode_thumbnails_description">Upřednostňovat náhledy epizod, pokud jsou k dispozici.</string>
     <string name="settings_continue_watching_use_episode_thumbnails_title">Upřednostňovat náhledy epizod v Pokračovat ve sledování</string>
@@ -618,7 +618,7 @@
     <string name="community_error_contributors_request_failed">Momentálně nelze načíst přispěvatele.</string>
     <string name="community_error_supporters_request_failed">Momentálně nelze načíst podporovatele.</string>
     <string name="community_total_commits">%1$d celkových commitů</string>
-  <string name="community_month_jan">Led</string>
+    <string name="community_month_jan">Led</string>
     <string name="community_month_feb">Úno</string>
     <string name="community_month_mar">Bře</string>
     <string name="community_month_apr">Dub</string>
@@ -639,12 +639,12 @@
     <string name="settings_playback_anime_skip_client_id">AnimeSkip Client ID</string>
     <string name="settings_playback_anime_skip_client_id_description">Zadejte své AnimeSkip API klientské ID. Získáte jej na anime-skip.com.</string>
     <string name="settings_playback_intro_submit_enabled">Povolit odesílání intra</string>
-    <string name="settings_playback_intro_submit_enabled_description">Zobrazit tlačítko pro odeslání časových značek intra/outra do komunitní databáze.</string>
+    <string name="settings_playback_intro_submit_enabled_description">Odeslat časování intra/outra do SkipDB. Po přeskočení kapitoly stiskněte klávesu přeskočení znovu pro odeslání; jinak ji stiskněte na začátku segmentu, na jeho konci a poté ještě jednou pro odeslání.</string>
     <string name="settings_playback_introdb_api_key">IntroDB API klíč</string>
     <string name="settings_playback_introdb_api_key_description">Zadejte svůj IntroDB API klíč pro odesílání časových značek. Vyžadováno pro odesílání.</string>
     <string name="settings_playback_anime_skip_description">Hledat také časové značky pro přeskočení v AnimeSkip (vyžaduje klientské ID).</string>
     <string name="settings_playback_auto_play_next_episode">Automaticky přehrát další epizodu</string>
-    <string name="settings_playback_auto_play_next_episode_description">Po zobrazení výzvy automaticky spustit další epizodu.</string>
+    <string name="settings_playback_auto_play_next_episode_description">Automaticky přijmout další epizodu a přeskočit odpočet.</string>
     <string name="settings_playback_decoder_device_only">Pouze dekodéry zařízení</string>
     <string name="settings_playback_decoder_prefer_app">Upřednostnit dekodéry aplikace (FFmpeg)</string>
     <string name="settings_playback_decoder_prefer_device">Upřednostnit dekodéry zařízení</string>
@@ -674,7 +674,7 @@
     <string name="settings_playback_option_forced">Vynucené</string>
     <string name="settings_playback_option_none">Žádné</string>
     <string name="settings_playback_prefer_binge_group">Upřednostnit Binge skupinu (Další epizoda)</string>
-    <string name="settings_playback_prefer_binge_group_description">Zkusit přednostně stejný profil zdroje (stejný doplněk/skupinu kvality) před běžnými pravidly automatického přehrávání.</string>
+    <string name="settings_playback_prefer_binge_group_description">Nejdříve zkusit stejný profil zdroje (stejný doplněk/skupina kvality.)</string>
     <string name="settings_playback_preferred_audio_language">Preferovaný jazyk zvuku</string>
     <string name="settings_playback_preferred_subtitle_language">Preferovaný jazyk titulků</string>
     <string name="settings_playback_presets">Předvolby</string>
@@ -724,14 +724,14 @@
     <string name="settings_playback_source_scope_all_sources_description">Automatické přehrávání může používat nainstalované doplňky i povolené pluginy.</string>
     <string name="settings_playback_source_scope_enabled_plugins_only">Pouze povolené pluginy</string>
     <string name="settings_playback_source_scope_enabled_plugins_only_description">Automatické přehrávání zvažuje pouze streamy pocházející z povolených pluginů.</string>
-    <string name="settings_playback_source_scope_installed_addons_only">Pouze nainstalované doplňky</string>
+    <string name="settings_playback_source_scope_installed_addons_only">Nainstalované doplňky</string>
     <string name="settings_playback_source_scope_installed_addons_only_description">Automatické přehrávání zvažuje pouze streamy pocházející z vašich nainstalovaných doplňků.</string>
     <string name="settings_playback_stream_selection_mode">Automatický výběr streamu</string>
-    <string name="settings_playback_stream_selection_mode_first_stream">Automaticky přehrát první zdroj</string>
+    <string name="settings_playback_stream_selection_mode_first_stream">První zdroj</string>
     <string name="settings_playback_stream_selection_mode_first_stream_description">Automaticky přehrát první dostupný zdroj.</string>
-    <string name="settings_playback_stream_selection_mode_manual">Ručně (vybrat stream)</string>
+    <string name="settings_playback_stream_selection_mode_manual">Ručně</string>
     <string name="settings_playback_stream_selection_mode_manual_description">Vždy zobrazit seznam zdrojů a nechat mě vybrat.</string>
-    <string name="settings_playback_stream_selection_mode_regex">Automatické přehrávání (shoda regex)</string>
+    <string name="settings_playback_stream_selection_mode_regex">Shoda regex</string>
     <string name="settings_playback_stream_selection_mode_regex_description">Přehrát první zdroj, jehož text odpovídá vašemu vzoru regulárního výrazu.</string>
     <string name="settings_playback_stream_timeout">Časový limit výběru streamu</string>
     <string name="settings_playback_stream_timeout_description">Čas čekání na doplňky před výběrem.</string>
@@ -752,7 +752,7 @@
     <string name="settings_tmdb_enable_enrichment">Povolit obohacení TMDB</string>
     <string name="settings_tmdb_enable_enrichment_description">Použít TMDB jako zdroj metadat k vylepšení dat z doplňků.</string>
     <string name="settings_tmdb_enter_api_key">Zadejte svůj TMDB v3 API klíč.</string>
-   <string name="settings_tmdb_language_code_label">Kód jazyka</string>
+    <string name="settings_tmdb_language_code_label">Kód jazyka</string>
     <string name="settings_tmdb_module_artwork">Grafika</string>
     <string name="settings_tmdb_module_artwork_description">Loga a obrázky na pozadí z TMDB</string>
     <string name="settings_tmdb_module_basic_info">Základní informace</string>

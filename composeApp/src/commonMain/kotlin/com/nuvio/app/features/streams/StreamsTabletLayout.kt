@@ -563,7 +563,7 @@ internal fun PanelStreamsLayout(
                 // Shows the layout a click switches to.
                 if (twoColumnsFit) PanelHeaderIconButton(
                     icon = if (twoColumns) Icons.Rounded.ViewAgenda else Icons.Rounded.GridView,
-                    contentDescription = if (twoColumns) "Single column" else "Two columns",
+                    contentDescription = if (twoColumns) stringResource(Res.string.streams_single_column) else stringResource(Res.string.streams_two_columns),
                     onClick = { StreamBadgeSettingsRepository.setListTwoColumns(!twoColumns) },
                 )
                 PanelHeaderIconButton(

@@ -148,11 +148,11 @@
   <div class="player" id="playerRoot" tabindex="-1">
     <div class="top-gradient"></div>
     <div class="bottom-gradient"></div>
-    <div class="context-menu" id="contextMenu" role="menu" aria-label="Player menu" hidden></div>
-    <section class="opening-overlay" id="openingOverlay" aria-label="Opening player" aria-hidden="true">
+    <div class="context-menu" id="contextMenu" role="menu" aria-label="Player menu" hidden data-i18n-aria-label="player_hud_player_menu"></div>
+    <section class="opening-overlay" id="openingOverlay" aria-label="Opening player" aria-hidden="true" data-i18n-aria-label="player_hud_opening_player">
       <img class="opening-artwork" id="openingArtwork" alt="">
       <div class="opening-scrim"></div>
-      <button class="opening-back" id="openingBackButton" data-command="back" aria-label="Close player">
+      <button class="opening-back" id="openingBackButton" data-command="back" aria-label="Close player" data-i18n-aria-label="player_hud_close_player">
         <svg><use href="#icon-close"></use></svg>
       </button>
       <div class="opening-content">
@@ -180,7 +180,7 @@
     </section>
     <div class="content">
       <header class="header">
-        <section class="metadata" aria-label="Playback metadata">
+        <section class="metadata" aria-label="Playback metadata" data-i18n-aria-label="player_hud_playback_metadata">
           <div class="title" id="title"></div>
           <div class="episode" id="episode" hidden></div>
           <!-- Live TV only: what is on now (with how far through it is) and next. -->
@@ -199,15 +199,15 @@
           <!-- Playlist mode only: a hint under the title, and on hovering the title block a short
                window of the playlist around the playing entry (display only). -->
           <div class="playlist-peek-tag" id="playlistPeekTag" hidden></div>
-          <div class="playlist-peek" id="playlistPeek" aria-label="Playlist" hidden>
+          <div class="playlist-peek" id="playlistPeek" aria-label="Playlist" hidden data-i18n-aria-label="player_hud_playlist">
             <div class="playlist-peek-header" id="playlistPeekHeader"></div>
             <ol class="playlist-peek-list" id="playlistPeekList"></ol>
           </div>
         </section>
-        <nav class="header-actions" aria-label="Player actions">
-          <button class="header-button" id="lockButton" data-command="lock" aria-label="Lock controls"><svg><use id="lockIcon" href="#icon-lock"></use></svg></button>
-          <button class="header-button" id="videoSettingsButton" data-command="videoSettings" aria-label="Video settings"><svg><use href="#icon-build"></use></svg></button>
-          <button class="header-button" id="backButton" data-command="back" aria-label="Close player"><svg><use href="#icon-close"></use></svg></button>
+        <nav class="header-actions" aria-label="Player actions" data-i18n-aria-label="player_hud_player_actions">
+          <button class="header-button" id="lockButton" data-command="lock" aria-label="Lock controls" data-i18n-aria-label="player_hud_lock_controls"><svg><use id="lockIcon" href="#icon-lock"></use></svg></button>
+          <button class="header-button" id="videoSettingsButton" data-command="videoSettings" aria-label="Video settings" data-i18n-aria-label="player_hud_video_settings"><svg><use href="#icon-build"></use></svg></button>
+          <button class="header-button" id="backButton" data-command="back" aria-label="Close player" data-i18n-aria-label="player_hud_close_player"><svg><use href="#icon-close"></use></svg></button>
         </nav>
         <div class="player-clock" id="playerClock">
           <time class="player-clock-time" id="playerClockTime"></time>
@@ -216,83 +216,83 @@
         <!-- Inside the header on purpose: it anchors to the header's bottom edge so it always sits
              under the title/episode block instead of on top of it. Absolute, so it adds nothing to
              the header's flex layout. -->
-        <section class="parental-guide" id="parentalGuide" aria-label="Parental guide" aria-hidden="true">
+        <section class="parental-guide" id="parentalGuide" aria-label="Parental guide" aria-hidden="true" data-i18n-aria-label="player_hud_parental_guide">
           <div class="parental-guide-line" id="parentalGuideLine"></div>
           <div class="parental-guide-list" id="parentalGuideList"></div>
         </section>
       </header>
 
-      <aside class="playback-info" id="playbackInfoPanel" aria-label="Playback information" aria-hidden="true">
+      <aside class="playback-info" id="playbackInfoPanel" aria-label="Playback information" aria-hidden="true" data-i18n-aria-label="player_hud_playback_information">
         <div class="playback-info-rows" id="playbackInfoRows"></div>
       </aside>
 
       <!-- Deliberately NOT a .modal-layer: that draws a 54% black scrim over the video, and a
            colour grade can only be judged against the real picture. This panel floats over playback
            instead, and holding a stepper repeats so a value can be swept without clicking 40 times. -->
-      <section class="grade-panel" id="colorGradePanel" aria-label="Custom color" aria-hidden="true">
+      <section class="grade-panel" id="colorGradePanel" aria-label="Custom color" aria-hidden="true" data-i18n-aria-label="player_hud_custom_color">
         <div class="grade-head">
-          <span class="grade-title">Custom color</span>
-          <button class="grade-close" id="colorGradeClose" type="button" aria-label="Close color panel"><svg><use href="#icon-close"></use></svg></button>
+          <span class="grade-title" data-i18n="player_hud_custom_color">Custom color</span>
+          <button class="grade-close" id="colorGradeClose" type="button" aria-label="Close color panel" data-i18n-aria-label="player_hud_close_color_panel"><svg><use href="#icon-close"></use></svg></button>
         </div>
         <div class="grade-rows">
           <div class="style-row">
-            <span class="style-label">Contrast</span>
+            <span class="style-label" data-i18n="player_hud_contrast">Contrast</span>
             <div class="stepper">
-              <button class="round-step" type="button" data-grade-command="adjustDesktopColorContrast" data-grade-delta="-1" aria-label="Decrease contrast">-</button>
+              <button class="round-step" type="button" data-grade-command="adjustDesktopColorContrast" data-grade-delta="-1" aria-label="Decrease contrast" data-i18n-aria-label="player_hud_decrease_contrast">-</button>
               <span class="stepper-value" id="colorGradeContrastValue">+0</span>
-              <button class="round-step" type="button" data-grade-command="adjustDesktopColorContrast" data-grade-delta="1" aria-label="Increase contrast">+</button>
+              <button class="round-step" type="button" data-grade-command="adjustDesktopColorContrast" data-grade-delta="1" aria-label="Increase contrast" data-i18n-aria-label="player_hud_increase_contrast">+</button>
             </div>
           </div>
           <div class="style-row">
-            <span class="style-label">Brightness</span>
+            <span class="style-label" data-i18n="player_hud_brightness">Brightness</span>
             <div class="stepper">
-              <button class="round-step" type="button" data-grade-command="adjustDesktopColorBrightness" data-grade-delta="-1" aria-label="Decrease brightness">-</button>
+              <button class="round-step" type="button" data-grade-command="adjustDesktopColorBrightness" data-grade-delta="-1" aria-label="Decrease brightness" data-i18n-aria-label="player_hud_decrease_brightness">-</button>
               <span class="stepper-value" id="colorGradeBrightnessValue">+0</span>
-              <button class="round-step" type="button" data-grade-command="adjustDesktopColorBrightness" data-grade-delta="1" aria-label="Increase brightness">+</button>
+              <button class="round-step" type="button" data-grade-command="adjustDesktopColorBrightness" data-grade-delta="1" aria-label="Increase brightness" data-i18n-aria-label="player_hud_increase_brightness">+</button>
             </div>
           </div>
           <div class="style-row">
-            <span class="style-label">Saturation</span>
+            <span class="style-label" data-i18n="player_hud_saturation">Saturation</span>
             <div class="stepper">
-              <button class="round-step" type="button" data-grade-command="adjustDesktopColorSaturation" data-grade-delta="-1" aria-label="Decrease saturation">-</button>
+              <button class="round-step" type="button" data-grade-command="adjustDesktopColorSaturation" data-grade-delta="-1" aria-label="Decrease saturation" data-i18n-aria-label="player_hud_decrease_saturation">-</button>
               <span class="stepper-value" id="colorGradeSaturationValue">+0</span>
-              <button class="round-step" type="button" data-grade-command="adjustDesktopColorSaturation" data-grade-delta="1" aria-label="Increase saturation">+</button>
+              <button class="round-step" type="button" data-grade-command="adjustDesktopColorSaturation" data-grade-delta="1" aria-label="Increase saturation" data-i18n-aria-label="player_hud_increase_saturation">+</button>
             </div>
           </div>
           <div class="style-row">
-            <span class="style-label">Gamma</span>
+            <span class="style-label" data-i18n="player_hud_gamma">Gamma</span>
             <div class="stepper">
-              <button class="round-step" type="button" data-grade-command="adjustDesktopColorGamma" data-grade-delta="-1" aria-label="Decrease gamma">-</button>
+              <button class="round-step" type="button" data-grade-command="adjustDesktopColorGamma" data-grade-delta="-1" aria-label="Decrease gamma" data-i18n-aria-label="player_hud_decrease_gamma">-</button>
               <span class="stepper-value" id="colorGradeGammaValue">+0</span>
-              <button class="round-step" type="button" data-grade-command="adjustDesktopColorGamma" data-grade-delta="1" aria-label="Increase gamma">+</button>
+              <button class="round-step" type="button" data-grade-command="adjustDesktopColorGamma" data-grade-delta="1" aria-label="Increase gamma" data-i18n-aria-label="player_hud_increase_gamma">+</button>
             </div>
           </div>
         </div>
         <div class="grade-foot">
-          <span class="grade-note" id="colorGradeNote">SDR only</span>
-          <button class="panel-button" id="colorGradeReset" type="button">Reset</button>
+          <span class="grade-note" id="colorGradeNote" data-i18n="player_hud_sdr_only">SDR only</span>
+          <button class="panel-button" id="colorGradeReset" type="button" data-i18n="player_hud_reset">Reset</button>
         </div>
       </section>
 
-      <button class="episode-notch optional" id="episodeNotch" data-command="episodes" aria-label="Open episodes">
+      <button class="episode-notch optional" id="episodeNotch" data-command="episodes" aria-label="Open episodes" data-i18n-aria-label="player_hud_open_episodes">
         <svg><use href="#icon-video"></use></svg>
-        <span id="episodeNotchLabel">Episodes</span>
+        <span id="episodeNotchLabel" data-i18n="player_hud_episodes">Episodes</span>
       </button>
-      <button class="source-notch optional" id="sourceNotch" data-command="sources" aria-label="Open sources">
+      <button class="source-notch optional" id="sourceNotch" data-command="sources" aria-label="Open sources" data-i18n-aria-label="player_hud_open_sources">
         <svg><use href="#icon-swap"></use></svg>
-        <span>Sources</span>
+        <span data-i18n="player_hud_sources">Sources</span>
       </button>
 
-      <section class="center-status" id="bufferingStatus" aria-label="Buffering" aria-hidden="true">
+      <section class="center-status" id="bufferingStatus" aria-label="Buffering" aria-hidden="true" data-i18n-aria-label="player_hud_buffering">
         <span class="center-spinner" aria-hidden="true"></span>
       </section>
 
-      <section class="playback-error" id="playbackError" aria-label="Playback error" aria-hidden="true">
+      <section class="playback-error" id="playbackError" aria-label="Playback error" aria-hidden="true" data-i18n-aria-label="player_hud_playback_error">
         <div class="playback-error-content">
-          <h1 class="playback-error-title" id="playbackErrorTitle">Playback error</h1>
+          <h1 class="playback-error-title" id="playbackErrorTitle" data-i18n="player_hud_playback_error">Playback error</h1>
           <p class="playback-error-message" id="playbackErrorMessage"></p>
           <button class="playback-error-action" id="playbackErrorAction" type="button" data-command="back">
-            <span id="playbackErrorActionLabel">Go back</span>
+            <span id="playbackErrorActionLabel" data-i18n="player_hud_go_back">Go back</span>
           </button>
         </div>
       </section>
@@ -302,7 +302,7 @@
           <ul class="pause-cast-list" id="pauseCastList"></ul>
         </div>
         <div class="pause-metadata-content">
-          <div class="pause-kicker" id="pauseWatchingLabel">You're watching</div>
+          <div class="pause-kicker" id="pauseWatchingLabel" data-i18n="player_hud_youre_watching">You're watching</div>
           <img class="pause-logo" id="pauseLogo" alt="">
           <div class="pause-title" id="pauseTitle"></div>
           <div class="pause-episode-line" id="pauseEpisodeLine">
@@ -339,10 +339,10 @@
 
       <div class="control-tooltip" id="controlTooltip" role="tooltip" hidden></div>
 
-      <button class="skip-prompt" id="skipPrompt" type="button" aria-label="Skip" aria-hidden="true">
+      <button class="skip-prompt" id="skipPrompt" type="button" aria-label="Skip" aria-hidden="true" data-i18n-aria-label="player_hud_skip">
         <span class="skip-prompt-row">
           <svg><use href="#icon-skip-next"></use></svg>
-          <span class="skip-prompt-label" id="skipPromptLabel">Skip</span>
+          <span class="skip-prompt-label" id="skipPromptLabel" data-i18n="player_hud_skip">Skip</span>
         </span>
         <span class="skip-progress-track">
           <span class="skip-progress-fill" id="skipPromptProgress"></span>
@@ -367,21 +367,21 @@
           <img id="nextEpisodeThumb" alt="">
         </span>
         <span class="next-episode-copy">
-          <span class="next-episode-header" id="nextEpisodeHeader">Next episode</span>
+          <span class="next-episode-header" id="nextEpisodeHeader" data-i18n="player_hud_next_episode">Next episode</span>
           <span class="next-episode-title" id="nextEpisodeTitle"></span>
           <span class="next-episode-status" id="nextEpisodeStatus"></span>
         </span>
         <span class="next-episode-action">
           <svg><use href="#icon-play"></use></svg>
-          <span id="nextEpisodeAction">Play</span>
+          <span id="nextEpisodeAction" data-i18n="player_hud_play">Play</span>
         </span>
       </button>
 
-      <section class="progress" aria-label="Playback progress">
+      <section class="progress" aria-label="Playback progress" data-i18n-aria-label="player_hud_playback_progress">
         <div class="timeline-row">
           <span class="timeline-time timeline-time-current" id="position">00:00</span>
           <div class="timeline" id="timeline">
-            <input id="seek" class="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek">
+            <input id="seek" class="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek" data-i18n-aria-label="player_hud_seek">
             <div class="chapter-markers" id="chapterMarkers" aria-hidden="true"></div>
             <div class="seek-thumbnail" id="seekThumbnail" hidden>
               <img id="seekThumbnailImage" alt="">
@@ -391,71 +391,71 @@
             </div>
             <div class="chapter-tooltip" id="chapterTooltip" role="status" hidden></div>
           </div>
-          <span class="timeline-time timeline-time-duration timeline-time-toggle" id="duration" title="Click to show time remaining">00:00</span>
+          <span class="timeline-time timeline-time-duration timeline-time-toggle" id="duration" title="Click to show time remaining" data-i18n-title="player_hud_click_to_show_time_remaining">00:00</span>
           <!-- Live TV replaces the timeline with this: LIVE at the live edge, otherwise how far
                behind it is, and a click jumps back to live. -->
           <button class="iptv-live-badge" id="iptvLiveBadge" type="button" hidden>
             <span class="iptv-live-dot" aria-hidden="true"></span>
-            <span class="iptv-live-label" id="iptvLiveLabel">LIVE</span>
+            <span class="iptv-live-label" id="iptvLiveLabel" data-i18n="player_hud_live">LIVE</span>
             <span class="iptv-live-behind" id="iptvLiveBehind"></span>
           </button>
         </div>
         <div class="desktop-control-row">
-          <div class="time-cluster"><span class="player-volume-control" id="playerVolumeControl"><button class="volume-mute-button" id="volumeMuteButton" type="button" data-command="keyboardToggleMute" aria-label="Mute" title="Mute"><svg class="player-volume-icon" aria-hidden="true"><use id="playerVolumeIcon" href="#icon-volume-high"></use></svg></button><input id="playerVolumeSlider" class="hero-trailer-volume player-volume" type="range" min="0" max="200" step="1" value="100" aria-label="Player volume"></span><span class="minimal-time" id="minimalTime" aria-hidden="true"><span class="minimal-time-separator" id="minimalTimeSeparator">/</span></span></div>
+          <div class="time-cluster"><span class="player-volume-control" id="playerVolumeControl"><button class="volume-mute-button" id="volumeMuteButton" type="button" data-command="keyboardToggleMute" aria-label="Mute" title="Mute" data-i18n-aria-label="player_hud_mute" data-i18n-title="player_hud_mute"><svg class="player-volume-icon" aria-hidden="true"><use id="playerVolumeIcon" href="#icon-volume-high"></use></svg></button><input id="playerVolumeSlider" class="hero-trailer-volume player-volume" type="range" min="0" max="200" step="1" value="100" aria-label="Player volume" data-i18n-aria-label="player_hud_player_volume"></span><span class="minimal-time" id="minimalTime" aria-hidden="true"><span class="minimal-time-separator" id="minimalTimeSeparator">/</span></span></div>
           <div class="center-controls">
-            <button class="side-control episode-skip" data-command="previousEpisode" aria-label="Previous episode"><svg><use href="#icon-previous"></use></svg></button>
-            <button class="side-control seek-control" data-command="seekBack" aria-label="Seek back 10 seconds"><svg><use href="#icon-seek-back"></use></svg></button>
-            <button class="play-control" id="toggle" data-command="toggle" aria-label="Play"><svg><use id="toggleIcon" href="#icon-play"></use></svg></button>
-            <button class="side-control seek-control" data-command="seekForward" aria-label="Seek forward 10 seconds"><svg><use href="#icon-seek-forward"></use></svg></button>
-            <button class="side-control episode-skip" data-command="nextEpisode" aria-label="Next episode"><svg><use href="#icon-next"></use></svg></button>
+            <button class="side-control episode-skip" data-command="previousEpisode" aria-label="Previous episode" data-i18n-aria-label="player_hud_previous_episode"><svg><use href="#icon-previous"></use></svg></button>
+            <button class="side-control seek-control" data-command="seekBack" aria-label="Seek back 10 seconds" data-i18n-aria-label="player_hud_seek_back_10_seconds"><svg><use href="#icon-seek-back"></use></svg></button>
+            <button class="play-control" id="toggle" data-command="toggle" aria-label="Play" data-i18n-aria-label="player_hud_play"><svg><use id="toggleIcon" href="#icon-play"></use></svg></button>
+            <button class="side-control seek-control" data-command="seekForward" aria-label="Seek forward 10 seconds" data-i18n-aria-label="player_hud_seek_forward_10_seconds"><svg><use href="#icon-seek-forward"></use></svg></button>
+            <button class="side-control episode-skip" data-command="nextEpisode" aria-label="Next episode" data-i18n-aria-label="player_hud_next_episode"><svg><use href="#icon-next"></use></svg></button>
           </div>
           <div class="action-row">
             <button class="action tertiary-action" data-action-priority="90" id="streamInfoButton" data-command="streamInfo" aria-label="Stream info" title="Stream info"><svg><use href="#icon-info"></use></svg><span>Info</span></button>
-            <button class="action tertiary-action" data-action-priority="60" data-command="resize" aria-label="Aspect ratio" title="Aspect ratio"><svg><use href="#icon-aspect"></use></svg><span id="resizeLabel">Fit</span></button>
-            <button class="action tertiary-action" data-action-priority="55" id="speedButton" data-command="speed" aria-label="Playback speed" title="Playback speed"><svg><use href="#icon-speed"></use></svg><span id="speedLabel">1x</span></button>
-            <button class="action" data-action-priority="5" data-command="subtitles" aria-label="Subtitles" title="Subtitles"><svg><use href="#icon-subs"></use></svg><span id="subtitlesLabel">Subs</span></button>
-            <button class="action" data-action-priority="10" data-command="audio" aria-label="Audio tracks" title="Audio tracks"><svg><use href="#icon-audio"></use></svg><span id="audioLabel">Audio</span></button>
-            <button class="action desktop-preset-action" data-action-priority="70" data-command="keyboardCycleHdrMode" aria-label="Cycle HDR mode" title="HDR mode"><svg><use href="#icon-hdr"></use></svg><span>HDR</span></button>
-            <button class="action desktop-preset-action" data-action-priority="75" data-command="keyboardCycleColorProfile" aria-label="Cycle color profile" title="Color profile"><svg><use href="#icon-color-profile"></use></svg><span>Color</span></button>
-            <button class="action desktop-preset-action" data-action-priority="80" id="animeShaderButton" data-command="keyboardCycleAnimeMode" aria-label="Cycle anime shader" title="Anime shaders"><svg><use href="#icon-anime-shader"></use></svg><span>Anime</span></button>
-            <button class="action desktop-preset-action" data-action-priority="85" data-command="keyboardCycleAnimeSvp" aria-label="Toggle SVP" title="SVP interpolation"><svg><use href="#icon-svp"></use></svg><span>SVP</span></button>
-            <button class="action" data-action-priority="3" id="iptvChannelsButton" data-command="iptvChannels" aria-label="Channels" title="Channels" hidden><svg><use href="#icon-video"></use></svg><span id="iptvChannelsLabel">Channels</span></button>
-            <button class="action optional" data-action-priority="20" id="sourcesButton" data-command="sources"><svg><use href="#icon-swap"></use></svg><span id="sourcesLabel">Sources</span></button>
-            <button class="action optional" data-action-priority="25" id="episodesButton" data-command="episodes" hidden><svg><use href="#icon-video"></use></svg><span id="episodesLabel">Episodes</span></button>
-            <button class="action" data-action-priority="65" id="submitIntroButton" data-command="submitIntro" aria-label="Submit intro" title="Submit intro"><svg><use href="#icon-flag"></use></svg><span>Submit</span></button>
-            <button class="action" data-action-priority="35" id="partyButton" data-command="party" aria-label="Watch party" title="Watch party" hidden><svg><use href="#icon-party"></use></svg><span id="partyButtonLabel">Party</span></button>
-            <button class="action pip-action" data-action-priority="30" id="pictureInPictureButton" data-command="pictureInPicture" aria-label="Picture in picture" title="Picture in picture"><svg><use href="#icon-pip"></use></svg><span>PiP</span></button>
-            <button class="action action-overflow-toggle" id="actionOverflowButton" type="button" aria-label="More controls" title="More controls" aria-haspopup="true" aria-expanded="false" hidden><svg><use href="#icon-action-overflow"></use></svg><svg class="ultra-gear-glyph" aria-hidden="true"><use href="#icon-settings"></use></svg><span>More</span></button>
+            <button class="action tertiary-action" data-action-priority="60" data-command="resize" aria-label="Aspect ratio" title="Aspect ratio" data-i18n-aria-label="player_hud_aspect_ratio" data-i18n-title="player_hud_aspect_ratio"><svg><use href="#icon-aspect"></use></svg><span id="resizeLabel" data-i18n="player_hud_fit">Fit</span></button>
+            <button class="action tertiary-action" data-action-priority="55" id="speedButton" data-command="speed" aria-label="Playback speed" title="Playback speed" data-i18n-aria-label="player_hud_playback_speed" data-i18n-title="player_hud_playback_speed"><svg><use href="#icon-speed"></use></svg><span id="speedLabel">1x</span></button>
+            <button class="action" data-action-priority="5" data-command="subtitles" aria-label="Subtitles" title="Subtitles" data-i18n-aria-label="player_hud_subtitles" data-i18n-title="player_hud_subtitles"><svg><use href="#icon-subs"></use></svg><span id="subtitlesLabel" data-i18n="player_hud_subs">Subs</span></button>
+            <button class="action" data-action-priority="10" data-command="audio" aria-label="Audio tracks" title="Audio tracks" data-i18n-aria-label="player_hud_audio_tracks" data-i18n-title="player_hud_audio_tracks"><svg><use href="#icon-audio"></use></svg><span id="audioLabel" data-i18n="player_hud_audio">Audio</span></button>
+            <button class="action desktop-preset-action" data-action-priority="70" data-command="keyboardCycleHdrMode" aria-label="Cycle HDR mode" title="HDR mode" data-i18n-aria-label="player_hud_cycle_hdr_mode" data-i18n-title="player_hud_hdr_mode_2"><svg><use href="#icon-hdr"></use></svg><span data-i18n="player_hud_hdr">HDR</span></button>
+            <button class="action desktop-preset-action" data-action-priority="75" data-command="keyboardCycleColorProfile" aria-label="Cycle color profile" title="Color profile" data-i18n-aria-label="player_hud_cycle_color_profile" data-i18n-title="player_hud_color_profile_2"><svg><use href="#icon-color-profile"></use></svg><span data-i18n="player_hud_color">Color</span></button>
+            <button class="action desktop-preset-action" data-action-priority="80" id="animeShaderButton" data-command="keyboardCycleAnimeMode" aria-label="Cycle anime shader" title="Anime shaders" data-i18n-aria-label="player_hud_cycle_anime_shader" data-i18n-title="player_hud_anime_shaders"><svg><use href="#icon-anime-shader"></use></svg><span data-i18n="player_hud_anime">Anime</span></button>
+            <button class="action desktop-preset-action" data-action-priority="85" data-command="keyboardCycleAnimeSvp" aria-label="Toggle SVP" title="SVP interpolation" data-i18n-aria-label="player_hud_toggle_svp" data-i18n-title="player_hud_svp_interpolation"><svg><use href="#icon-svp"></use></svg><span data-i18n="player_hud_svp">SVP</span></button>
+            <button class="action" data-action-priority="3" id="iptvChannelsButton" data-command="iptvChannels" aria-label="Channels" title="Channels" hidden data-i18n-aria-label="player_hud_channels" data-i18n-title="player_hud_channels"><svg><use href="#icon-video"></use></svg><span id="iptvChannelsLabel" data-i18n="player_hud_channels">Channels</span></button>
+            <button class="action optional" data-action-priority="20" id="sourcesButton" data-command="sources"><svg><use href="#icon-swap"></use></svg><span id="sourcesLabel" data-i18n="player_hud_sources">Sources</span></button>
+            <button class="action optional" data-action-priority="25" id="episodesButton" data-command="episodes" hidden><svg><use href="#icon-video"></use></svg><span id="episodesLabel" data-i18n="player_hud_episodes">Episodes</span></button>
+            <button class="action" data-action-priority="65" id="submitIntroButton" data-command="submitIntro" aria-label="Submit intro" title="Submit intro" data-i18n-aria-label="player_hud_submit_intro" data-i18n-title="player_hud_submit_intro"><svg><use href="#icon-flag"></use></svg><span data-i18n="player_hud_submit">Submit</span></button>
+            <button class="action" data-action-priority="35" id="partyButton" data-command="party" aria-label="Watch party" title="Watch party" hidden data-i18n-aria-label="player_hud_watch_party" data-i18n-title="player_hud_watch_party"><svg><use href="#icon-party"></use></svg><span id="partyButtonLabel" data-i18n="player_hud_party">Party</span></button>
+            <button class="action pip-action" data-action-priority="30" id="pictureInPictureButton" data-command="pictureInPicture" aria-label="Picture in picture" title="Picture in picture" data-i18n-aria-label="player_hud_picture_in_picture" data-i18n-title="player_hud_picture_in_picture"><svg><use href="#icon-pip"></use></svg><span data-i18n="player_hud_pip">PiP</span></button>
+            <button class="action action-overflow-toggle" id="actionOverflowButton" type="button" aria-label="More controls" title="More controls" aria-haspopup="true" aria-expanded="false" hidden data-i18n-aria-label="player_hud_more_controls" data-i18n-title="player_hud_more_controls"><svg><use href="#icon-action-overflow"></use></svg><svg class="ultra-gear-glyph" aria-hidden="true"><use href="#icon-settings"></use></svg><span data-i18n="player_hud_more">More</span></button>
             <!-- Ultra layout only (see .player.ultra-hud in controls.css). Not overflow-capable on
                  purpose: it must stay in the row beside the gear, never fold into the popover. -->
-            <button class="action ultra-fullscreen-action" id="fullscreenButton" type="button" data-command="toggleFullscreen" aria-label="Fullscreen" title="Fullscreen"><svg><use href="#icon-fullscreen"></use></svg><span>Fullscreen</span></button>
+            <button class="action ultra-fullscreen-action" id="fullscreenButton" type="button" data-command="toggleFullscreen" aria-label="Fullscreen" title="Fullscreen" data-i18n-aria-label="player_hud_fullscreen" data-i18n-title="player_hud_fullscreen"><svg><use href="#icon-fullscreen"></use></svg><span data-i18n="player_hud_fullscreen">Fullscreen</span></button>
             <!-- Two static children for the ultra layout's popover: controls.js parks
                  #playerVolumeControl in the volume row and folds the .action buttons into the icon
                  row beneath it (every other layout appends them to the menu itself). Both are
                  hidden outside ultra. -->
-            <div class="action-overflow-menu" id="actionOverflowMenu" role="menu" aria-label="More controls" hidden><div class="ultra-menu-volume" id="ultraMenuVolume"></div><div class="ultra-menu-actions" id="ultraMenuActions"></div></div>
+            <div class="action-overflow-menu" id="actionOverflowMenu" role="menu" aria-label="More controls" hidden data-i18n-aria-label="player_hud_more_controls"><div class="ultra-menu-volume" id="ultraMenuVolume"></div><div class="ultra-menu-actions" id="ultraMenuActions"></div></div>
           </div>
         </div>
       </section>
-      <section class="locked-overlay" id="lockedOverlay" aria-label="Locked player controls">
+      <section class="locked-overlay" id="lockedOverlay" aria-label="Locked player controls" data-i18n-aria-label="player_hud_locked_player_controls">
         <div class="locked-content">
-          <button class="locked-button" data-command="lock" aria-label="Unlock player controls"><svg><use href="#icon-lock"></use></svg></button>
-          <div class="locked-label" id="lockedLabel">Tap to unlock</div>
+          <button class="locked-button" data-command="lock" aria-label="Unlock player controls" data-i18n-aria-label="player_hud_unlock_player_controls"><svg><use href="#icon-lock"></use></svg></button>
+          <div class="locked-label" id="lockedLabel" data-i18n="player_hud_tap_to_unlock">Tap to unlock</div>
         </div>
       </section>
-      <section class="modal-layer" id="audioModal" aria-label="Audio tracks" hidden>
+      <section class="modal-layer" id="audioModal" aria-label="Audio tracks" hidden data-i18n-aria-label="player_hud_audio_tracks">
         <div class="track-panel">
-          <div class="track-header">Audio tracks</div>
+          <div class="track-header" data-i18n="player_hud_audio_tracks">Audio tracks</div>
           <div class="track-list" id="audioTrackList"></div>
         </div>
       </section>
-      <section class="modal-layer" id="subtitleModal" aria-label="Subtitles" hidden>
+      <section class="modal-layer" id="subtitleModal" aria-label="Subtitles" hidden data-i18n-aria-label="player_hud_subtitles">
         <div class="track-panel">
-          <div class="track-header" id="subtitlePanelTitle">Subtitles</div>
+          <div class="track-header" id="subtitlePanelTitle" data-i18n="player_hud_subtitles">Subtitles</div>
           <div class="subtitle-tabs">
-            <button class="subtitle-tab selected" id="subtitleBuiltInTab" type="button">Built-in</button>
-            <button class="subtitle-tab" id="subtitleAddonsTab" type="button">Addons</button>
-            <button class="subtitle-tab" id="subtitleStyleTab" type="button">Style</button>
+            <button class="subtitle-tab selected" id="subtitleBuiltInTab" type="button" data-i18n="player_hud_built_in">Built-in</button>
+            <button class="subtitle-tab" id="subtitleAddonsTab" type="button" data-i18n="player_hud_addons">Addons</button>
+            <button class="subtitle-tab" id="subtitleStyleTab" type="button" data-i18n="player_hud_style">Style</button>
           </div>
           <div class="track-list" id="subtitleTrackList"></div>
           <div class="track-list" id="addonSubtitleList" hidden></div>
@@ -463,7 +463,7 @@
             <section class="style-group">
               <div class="style-group-head"><span class="style-group-title">Timing</span></div>
               <div class="style-row">
-                <span class="style-label" id="subtitleDelayLabel">Subtitle Delay</span>
+                <span class="style-label" id="subtitleDelayLabel" data-i18n="player_hud_subtitle_delay">Subtitle Delay</span>
                 <!-- mpv's sub-delay: positive shows each line later. Without this, "-" read as
                      "delay them" and moved subtitles that were already early further ahead. -->
                 <span class="stream-subtitle" id="subtitleDelayHint">+ shows subtitles later</span>
@@ -473,16 +473,16 @@
                     <span class="stepper-value" id="subtitleDelayValue">+0.000s</span>
                     <button class="round-step" id="subtitleDelayPlus" type="button">+</button>
                   </div>
-                  <button class="panel-button icon-reset-button" id="subtitleDelayReset" type="button" aria-label="Reset subtitle delay" title="Reset subtitle delay"><svg><use href="#icon-reset"></use></svg></button>
+                  <button class="panel-button icon-reset-button" id="subtitleDelayReset" type="button" aria-label="Reset subtitle delay" title="Reset subtitle delay" data-i18n-aria-label="player_hud_reset_subtitle_delay" data-i18n-title="player_hud_reset_subtitle_delay"><svg><use href="#icon-reset"></use></svg></button>
                 </div>
               </div>
               <div class="auto-sync-card">
                 <div class="style-row">
-                  <span class="style-label" id="autoSyncLabel">Auto Sync</span>
+                  <span class="style-label" id="autoSyncLabel" data-i18n="player_hud_auto_sync">Auto Sync</span>
                   <span class="stream-subtitle" id="autoSyncStatus"></span>
                   <div class="panel-actions">
-                    <button class="panel-button" id="autoSyncReload" type="button">Reload</button>
-                    <button class="panel-button" id="autoSyncCapture" type="button">Capture</button>
+                    <button class="panel-button" id="autoSyncReload" type="button" data-i18n="player_hud_reload">Reload</button>
+                    <button class="panel-button" id="autoSyncCapture" type="button" data-i18n="player_hud_capture">Capture</button>
                   </div>
                 </div>
                 <div id="autoSyncCueList"></div>
@@ -495,7 +495,7 @@
                 <select class="style-select" id="fontFamilySelect"></select>
               </div>
               <div class="style-row">
-                <span class="style-label" id="fontSizeLabel">Font Size</span>
+                <span class="style-label" id="fontSizeLabel" data-i18n="player_hud_font_size">Font Size</span>
                 <div class="stepper">
                   <button class="round-step" id="fontSizeMinus" type="button">-</button>
                   <span class="stepper-value" id="fontSizeValue">18sp</span>
@@ -503,15 +503,15 @@
                 </div>
               </div>
               <div class="style-row">
-                <span class="style-label" id="boldLabel">Bold</span>
-                <button class="style-switch" id="boldToggle" type="button" role="switch" aria-labelledby="boldLabel">Off</button>
+                <span class="style-label" id="boldLabel" data-i18n="player_hud_bold">Bold</span>
+                <button class="style-switch" id="boldToggle" type="button" role="switch" aria-labelledby="boldLabel" data-i18n="compose_action_off">Off</button>
               </div>
               <div class="style-row">
-                <span class="style-label" id="italicLabel">Italic</span>
-                <button class="style-switch" id="italicToggle" type="button" role="switch" aria-labelledby="italicLabel">Off</button>
+                <span class="style-label" id="italicLabel" data-i18n="player_hud_italic">Italic</span>
+                <button class="style-switch" id="italicToggle" type="button" role="switch" aria-labelledby="italicLabel" data-i18n="compose_action_off">Off</button>
               </div>
               <div class="style-row">
-                <span class="style-label" id="textOpacityLabel">Text Opacity</span>
+                <span class="style-label" id="textOpacityLabel" data-i18n="player_hud_text_opacity">Text Opacity</span>
                 <div class="stepper">
                   <button class="round-step" id="textOpacityMinus" type="button">-</button>
                   <span class="stepper-value" id="textOpacityValue">100%</span>
@@ -519,7 +519,7 @@
                 </div>
               </div>
               <div class="style-row">
-                <span class="style-label" id="blurLabel">Blur</span>
+                <span class="style-label" id="blurLabel" data-i18n="player_hud_blur">Blur</span>
                 <div class="stepper">
                   <button class="round-step" id="blurMinus" type="button">-</button>
                   <span class="stepper-value" id="blurValue">0</span>
@@ -527,7 +527,7 @@
                 </div>
               </div>
               <div class="swatch-section">
-                <span class="style-label" id="subtitleColorLabel">Color</span>
+                <span class="style-label" id="subtitleColorLabel" data-i18n="player_hud_color">Color</span>
                 <div class="swatch-row" id="subtitleColorSwatches"></div>
               </div>
             </section>
@@ -588,7 +588,7 @@
             <section class="style-group">
               <div class="style-group-head"><span class="style-group-title">Position &amp; ASS/SSA</span></div>
               <div class="style-row">
-                <span class="style-label" id="bottomOffsetLabel">Bottom Offset</span>
+                <span class="style-label" id="bottomOffsetLabel" data-i18n="player_hud_bottom_offset">Bottom Offset</span>
                 <div class="stepper">
                   <button class="round-step" id="bottomOffsetMinus" type="button">-</button>
                   <span class="stepper-value" id="bottomOffsetValue">20</span>
@@ -596,11 +596,11 @@
                 </div>
               </div>
               <div class="style-row">
-                <span class="style-label" id="assStyleModeLabel">ASS/SSA Styling</span>
+                <span class="style-label" id="assStyleModeLabel" data-i18n="player_hud_ass_ssa_styling">ASS/SSA Styling</span>
                 <select class="style-select" id="assStyleModeSelect"></select>
               </div>
               <div class="style-row" id="assScaleRow">
-                <span class="style-label" id="assScaleLabel">ASS/SSA Size</span>
+                <span class="style-label" id="assScaleLabel" data-i18n="player_hud_ass_ssa_size">ASS/SSA Size</span>
                 <div class="stepper">
                   <button class="round-step" id="assScaleMinus" type="button">-</button>
                   <span class="stepper-value" id="assScaleValue">100%</span>
@@ -609,36 +609,36 @@
               </div>
             </section>
             <div class="style-footer">
-              <button class="panel-button" id="subtitleStyleReset" type="button">Reset Defaults</button>
+              <button class="panel-button" id="subtitleStyleReset" type="button" data-i18n="player_hud_reset_defaults">Reset Defaults</button>
             </div>
           </div>
         </div>
       </section>
-      <section class="modal-layer" id="sourceModal" aria-label="Sources" hidden>
+      <section class="modal-layer" id="sourceModal" aria-label="Sources" hidden data-i18n-aria-label="player_hud_sources">
         <div class="track-panel wide">
-          <div class="source-resize-handle" id="sourcePanelResizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sources panel" title="Drag to resize. Double-click to reset."></div>
+          <div class="source-resize-handle" id="sourcePanelResizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sources panel" title="Drag to resize. Double-click to reset." data-i18n-aria-label="player_hud_resize_sources_panel" data-i18n-title="player_hud_drag_to_resize_double_click_to"></div>
           <div class="track-header-row">
-            <div class="track-title" id="sourcePanelTitle">Sources</div>
+            <div class="track-title" id="sourcePanelTitle" data-i18n="player_hud_sources">Sources</div>
             <div class="panel-actions">
               <div class="source-sort-anchor">
-                <button class="panel-button" id="sourceSortButton" type="button" aria-haspopup="menu" aria-expanded="false">Sort</button>
+                <button class="panel-button" id="sourceSortButton" type="button" aria-haspopup="menu" aria-expanded="false" data-i18n="player_hud_sort">Sort</button>
                 <div class="source-sort-menu" id="sourceSortMenu" role="menu" hidden></div>
               </div>
-              <button class="panel-button" id="sourceReloadButton" type="button">Reload</button>
-              <button class="panel-button" id="sourceCloseButton" type="button">Close</button>
+              <button class="panel-button" id="sourceReloadButton" type="button" data-i18n="player_hud_reload">Reload</button>
+              <button class="panel-button" id="sourceCloseButton" type="button" data-i18n="action_close">Close</button>
             </div>
           </div>
           <div class="filter-row" id="sourceFilterList"></div>
           <div class="track-list" id="sourceList"></div>
         </div>
       </section>
-      <section class="modal-layer" id="episodesModal" aria-label="Episodes" hidden>
+      <section class="modal-layer" id="episodesModal" aria-label="Episodes" hidden data-i18n-aria-label="player_hud_episodes">
         <div class="track-panel wide">
           <div id="episodeListView">
             <div class="track-header-row">
-              <div class="track-title" id="episodesPanelTitle">Episodes</div>
+              <div class="track-title" id="episodesPanelTitle" data-i18n="player_hud_episodes">Episodes</div>
               <div class="panel-actions">
-                <button class="panel-button" id="episodesCloseButton" type="button">Close</button>
+                <button class="panel-button" id="episodesCloseButton" type="button" data-i18n="action_close">Close</button>
               </div>
             </div>
             <div class="filter-row" id="seasonFilterList"></div>
@@ -646,11 +646,11 @@
           </div>
           <div id="episodeStreamsView" hidden>
             <div class="track-header-row">
-              <div class="track-title" id="streamsPanelTitle">Streams</div>
+              <div class="track-title" id="streamsPanelTitle" data-i18n="player_hud_streams">Streams</div>
               <div class="panel-actions">
-                <button class="panel-button" id="episodeBackButton" type="button">Back</button>
-                <button class="panel-button" id="episodeReloadButton" type="button">Reload</button>
-                <button class="panel-button" id="episodeStreamsCloseButton" type="button">Close</button>
+                <button class="panel-button" id="episodeBackButton" type="button" data-i18n="action_back">Back</button>
+                <button class="panel-button" id="episodeReloadButton" type="button" data-i18n="player_hud_reload">Reload</button>
+                <button class="panel-button" id="episodeStreamsCloseButton" type="button" data-i18n="action_close">Close</button>
               </div>
             </div>
             <div class="filter-row" id="episodeStreamFilterList"></div>
@@ -658,69 +658,69 @@
           </div>
         </div>
       </section>
-      <section class="modal-layer" id="submitIntroModal" aria-label="Submit timestamps" hidden>
+      <section class="modal-layer" id="submitIntroModal" aria-label="Submit timestamps" hidden data-i18n-aria-label="player_hud_submit_timestamps">
         <div class="track-panel submit">
           <div class="track-header-row">
-            <div class="track-title" id="submitIntroPanelTitle">Submit Timestamps</div>
+            <div class="track-title" id="submitIntroPanelTitle" data-i18n="player_hud_submit_timestamps_2">Submit Timestamps</div>
             <div class="panel-actions">
-              <button class="panel-button" id="submitIntroCloseButton" type="button">Close</button>
+              <button class="panel-button" id="submitIntroCloseButton" type="button" data-i18n="action_close">Close</button>
             </div>
           </div>
           <div class="intro-form">
             <div class="time-field-wrap">
-              <div class="form-label" id="segmentTypeLabel">SEGMENT TYPE</div>
+              <div class="form-label" id="segmentTypeLabel" data-i18n="player_hud_segment_type">SEGMENT TYPE</div>
               <div class="segment-row">
-                <button class="segment-button selected" id="segmentIntroButton" type="button" data-segment="intro">Intro</button>
-                <button class="segment-button" id="segmentRecapButton" type="button" data-segment="recap">Recap</button>
-                <button class="segment-button" id="segmentOutroButton" type="button" data-segment="outro">Outro</button>
-                <button class="segment-button" id="segmentPreviewButton" type="button" data-segment="preview">Preview</button>
+                <button class="segment-button selected" id="segmentIntroButton" type="button" data-segment="intro" data-i18n="player_hud_intro">Intro</button>
+                <button class="segment-button" id="segmentRecapButton" type="button" data-segment="recap" data-i18n="player_hud_recap">Recap</button>
+                <button class="segment-button" id="segmentOutroButton" type="button" data-segment="outro" data-i18n="player_hud_outro">Outro</button>
+                <button class="segment-button" id="segmentPreviewButton" type="button" data-segment="preview" data-i18n="player_hud_preview">Preview</button>
               </div>
             </div>
             <div class="time-field-row">
               <label class="time-field-wrap">
-                <span class="form-label" id="startTimeLabel">START TIME (MM:SS)</span>
+                <span class="form-label" id="startTimeLabel" data-i18n="player_hud_start_time_mm_ss">START TIME (MM:SS)</span>
                 <input class="time-input" id="submitIntroStartInput" value="00:00" inputmode="decimal">
               </label>
-              <button class="capture-button" id="captureStartButton" type="button">Capture</button>
+              <button class="capture-button" id="captureStartButton" type="button" data-i18n="player_hud_capture">Capture</button>
             </div>
             <div class="time-field-row">
               <label class="time-field-wrap">
-                <span class="form-label" id="endTimeLabel">END TIME (MM:SS)</span>
+                <span class="form-label" id="endTimeLabel" data-i18n="player_hud_end_time_mm_ss">END TIME (MM:SS)</span>
                 <input class="time-input" id="submitIntroEndInput" value="00:00" inputmode="decimal">
               </label>
-              <button class="capture-button" id="captureEndButton" type="button">Capture</button>
+              <button class="capture-button" id="captureEndButton" type="button" data-i18n="player_hud_capture">Capture</button>
             </div>
             <div class="submit-status" id="submitIntroStatus"></div>
             <div class="modal-actions">
-              <button class="panel-button" id="submitIntroCancelButton" type="button">Cancel</button>
-              <button class="panel-button primary" id="submitIntroSubmitButton" type="button">Submit</button>
+              <button class="panel-button" id="submitIntroCancelButton" type="button" data-i18n="action_cancel">Cancel</button>
+              <button class="panel-button primary" id="submitIntroSubmitButton" type="button" data-i18n="player_hud_submit">Submit</button>
             </div>
           </div>
         </div>
       </section>
       <!-- Not registered in modalByName: it floats above the subtitle panel that opened it, so
            closePlayerModal must not sweep it away with the modal underneath. -->
-      <section class="modal-layer" id="subtitleHexModal" aria-label="Custom subtitle color" hidden>
+      <section class="modal-layer" id="subtitleHexModal" aria-label="Custom subtitle color" hidden data-i18n-aria-label="player_hud_custom_subtitle_color">
         <div class="track-panel submit narrow">
           <div class="track-header-row">
-            <div class="track-title" id="subtitleHexTitle">Custom Color</div>
+            <div class="track-title" id="subtitleHexTitle" data-i18n="player_hud_custom_color_2">Custom Color</div>
             <div class="panel-actions">
-              <button class="panel-button" id="subtitleHexCloseButton" type="button">Close</button>
+              <button class="panel-button" id="subtitleHexCloseButton" type="button" data-i18n="action_close">Close</button>
             </div>
           </div>
           <div class="intro-form">
             <div class="hex-field-row">
               <span class="hex-preview" id="subtitleHexPreview"></span>
               <label class="time-field-wrap">
-                <span class="form-label" id="subtitleHexFieldLabel">HEX COLOR</span>
+                <span class="form-label" id="subtitleHexFieldLabel" data-i18n="player_hud_hex_color">HEX COLOR</span>
                 <input class="time-input" id="subtitleHexInput" value="#FFFFFF" spellcheck="false" autocomplete="off" autocapitalize="off">
               </label>
             </div>
-            <div class="hex-hint" id="subtitleHexHint">#RRGGBB, or #AARRGGBB to set opacity too.</div>
+            <div class="hex-hint" id="subtitleHexHint" data-i18n="player_hud_rrggbb_or_aarrggbb_to_set_opacity">#RRGGBB, or #AARRGGBB to set opacity too.</div>
             <div class="submit-status" id="subtitleHexStatus"></div>
             <div class="modal-actions">
-              <button class="panel-button" id="subtitleHexCancelButton" type="button">Cancel</button>
-              <button class="panel-button primary" id="subtitleHexApplyButton" type="button">Apply</button>
+              <button class="panel-button" id="subtitleHexCancelButton" type="button" data-i18n="action_cancel">Cancel</button>
+              <button class="panel-button primary" id="subtitleHexApplyButton" type="button" data-i18n="player_hud_apply">Apply</button>
             </div>
           </div>
         </div>
@@ -729,28 +729,28 @@
            edge and opens from it, and lists the channels of one category, the categories, or the
            channels matching a search. Mouse, keyboard and the pad's D-pad (keyboard panel mode)
            all drive it. -->
-      <section class="modal-layer" id="iptvChannelModal" aria-label="Channels" hidden>
+      <section class="modal-layer" id="iptvChannelModal" aria-label="Channels" hidden data-i18n-aria-label="player_hud_channels">
         <div class="track-panel wide iptv-panel">
           <div class="track-header-row">
             <button class="panel-button iptv-group-button" id="iptvGroupButton" type="button"></button>
             <div class="panel-actions">
-              <button class="panel-button" id="iptvChannelCloseButton" type="button">Close</button>
+              <button class="panel-button" id="iptvChannelCloseButton" type="button" data-i18n="action_close">Close</button>
             </div>
           </div>
           <div class="iptv-search-row">
-            <input class="iptv-search-input" id="iptvSearchInput" type="search" placeholder="Search channels" spellcheck="false" autocomplete="off" autocapitalize="off">
+            <input class="iptv-search-input" id="iptvSearchInput" type="search" placeholder="Search channels" spellcheck="false" autocomplete="off" autocapitalize="off" data-i18n-placeholder="player_hud_search_channels">
           </div>
           <div class="iptv-panel-note" id="iptvPanelNote" hidden></div>
           <div class="track-list iptv-channel-list" id="iptvChannelList"></div>
           <div class="track-list iptv-group-list" id="iptvGroupList" hidden></div>
         </div>
       </section>
-      <section class="modal-layer" id="partyModal" aria-label="Watch party" hidden>
+      <section class="modal-layer" id="partyModal" aria-label="Watch party" hidden data-i18n-aria-label="player_hud_watch_party">
         <div class="track-panel party-panel">
           <div class="track-header-row">
-            <div class="track-title" id="partyPanelTitle">Watch party</div>
+            <div class="track-title" id="partyPanelTitle" data-i18n="player_hud_watch_party">Watch party</div>
             <div class="panel-actions">
-              <button class="panel-button" id="partyCloseButton" type="button">Close</button>
+              <button class="panel-button" id="partyCloseButton" type="button" data-i18n="action_close">Close</button>
             </div>
           </div>
           <!-- Party | Chat, only while in a party. The chat lives outside partyBody so the composer
@@ -784,30 +784,30 @@
           <div class="stream-info-body" id="streamInfoBody"></div>
         </div>
       </section>
-      <section class="modal-layer" id="p2pConsentModal" aria-label="P2P streaming consent" hidden>
+      <section class="modal-layer" id="p2pConsentModal" aria-label="P2P streaming consent" hidden data-i18n-aria-label="player_hud_p2p_streaming_consent">
         <div class="track-panel submit">
           <div class="track-header-row">
-            <div class="track-title" id="p2pConsentTitle">P2P Streaming</div>
+            <div class="track-title" id="p2pConsentTitle" data-i18n="player_hud_p2p_streaming">P2P Streaming</div>
             <div class="panel-actions">
-              <button class="panel-button" id="p2pConsentCloseButton" type="button">Cancel</button>
+              <button class="panel-button" id="p2pConsentCloseButton" type="button" data-i18n="action_cancel">Cancel</button>
             </div>
           </div>
           <div class="consent-body" id="p2pConsentBody"></div>
           <div class="modal-actions">
-            <button class="panel-button" id="p2pConsentCancelButton" type="button">Cancel</button>
-            <button class="panel-button primary" id="p2pConsentEnableButton" type="button">Enable P2P</button>
+            <button class="panel-button" id="p2pConsentCancelButton" type="button" data-i18n="action_cancel">Cancel</button>
+            <button class="panel-button primary" id="p2pConsentEnableButton" type="button" data-i18n="player_hud_enable_p2p">Enable P2P</button>
           </div>
         </div>
       </section>
     </div>
-    <button class="pip-play-button" id="pictureInPicturePlayButton" data-command="toggle" aria-label="Pause" title="Pause">
+    <button class="pip-play-button" id="pictureInPicturePlayButton" data-command="toggle" aria-label="Pause" title="Pause" data-i18n-aria-label="player_hud_pause" data-i18n-title="player_hud_pause">
       <svg><use id="pictureInPictureToggleIcon" href="#icon-pause"></use></svg>
     </button>
-    <button class="pip-exit-button" id="pictureInPictureExitButton" data-command="pictureInPicture" aria-label="Exit picture in picture" title="Exit picture in picture">
+    <button class="pip-exit-button" id="pictureInPictureExitButton" data-command="pictureInPicture" aria-label="Exit picture in picture" title="Exit picture in picture" data-i18n-aria-label="player_hud_exit_picture_in_picture" data-i18n-title="player_hud_exit_picture_in_picture">
       <svg><use href="#icon-pip"></use></svg>
     </button>
     <div class="pip-seek" id="pipSeekBar">
-      <input id="pipSeek" class="pip-scrub" type="range" min="0" max="1000" value="0" aria-label="Seek">
+      <input id="pipSeek" class="pip-scrub" type="range" min="0" max="1000" value="0" aria-label="Seek" data-i18n-aria-label="player_hud_seek">
     </div>
     <div class="pip-resize-handle pip-resize-n" data-pip-resize="1"></div>
     <div class="pip-resize-handle pip-resize-ne" data-pip-resize="2"></div>
@@ -819,6 +819,6 @@
     <div class="pip-resize-handle pip-resize-nw" data-pip-resize="8"></div>
   </div>
 
-  <script src="controls.js?v=20261026-accent-night-2"></script>
+  <script src="controls.js?v=20261027-hud-labels-accent-night"></script>
 </body>
 </html>

@@ -24,6 +24,7 @@ internal val MACHINE_STORE_NAMES = setOf(
     DesktopAccountSlots.REGISTRY_STORE,
     "server_configuration",
     "nuvio_window_state",
+    "nuvio_osk_layout",
     "nuvio_updater",
     "nuvio_image_cache_settings",
     "nuvio_hs_err_pid",

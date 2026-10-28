@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player.desktop
 
+import com.nuvio.app.core.i18n.localizedString
 import androidx.compose.ui.graphics.Color
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.streams.badgeFillCssColorOrNull
@@ -86,6 +87,7 @@ import javax.swing.SwingUtilities
 import kotlin.concurrent.Volatile
 import kotlin.concurrent.thread
 import kotlin.math.floor
+import nuvio.composeapp.generated.resources.*
 
 /**
  * mpv audio-filter chain applied to trailer playback (hero previews, fullscreen trailers, and
@@ -105,12 +107,12 @@ internal class NativePlayerController(
     private data class AnimeShaderChoice(
         val mode: DesktopAnimeMode,
         val customShaderPath: String = "",
-        val label: String = mode.label,
+        val label: String = localizedString(mode.labelRes),
     )
 
     private companion object {
         val json = Json { ignoreUnknownKeys = true }
-        const val CONTROLS_PAGE_REVISION = "20260926-thumb-settle-1"
+        const val CONTROLS_PAGE_REVISION = "20261027-hud-labels-1"
         const val MPV_STARTUP_ERROR_EVENT_PREFIX = "mpvStartupError:"
         const val MPV_PLAYBACK_ERROR_EVENT_PREFIX = "mpvPlaybackError:"
 
@@ -191,6 +193,8 @@ internal class NativePlayerController(
     var rateLimitFailoverFallback: ((String) -> Boolean)? = null
     private var controlsState = PlayerControlsState()
     private var lastSentControlsStructureKey: PlayerControlsState? = null
+    // The HUD's own text (see HudLabels.kt) rides on the first controls push of each page.
+    private var hudLabelsSent = false
     private var lastSentMediaSessionKey: String? = null
     private var lastSentMpvMediaTitle: String? = null
     private var onAction: (PlayerControlsAction) -> Boolean = { false }
@@ -237,7 +241,7 @@ internal class NativePlayerController(
             val verdict = com.nuvio.app.features.player.PlaybackSourcePolicy.checkInProcess(source)
             if (verdict is com.nuvio.app.features.player.PlaybackSourcePolicy.Verdict.Rejected) {
                 Logger.withTag("PlaybackSourcePolicy").w { "Refusing playback source: ${verdict.reason}" }
-                onError("This stream points at a network share and was blocked.")
+                onError(localizedString(Res.string.player_hud_this_stream_points_at_a_network))
                 return
             }
         }
@@ -366,6 +370,7 @@ internal class NativePlayerController(
             val previousHandle = takePlayerHandle()
             keyboardPanelOpen = false
             lastSentControlsStructureKey = null
+            hudLabelsSent = false
             lastSentMediaSessionKey = null
             lastSentMpvMediaTitle = null
             thread(isDaemon = true, name = "Nuvio-Player-Attach") {
@@ -529,8 +534,10 @@ internal class NativePlayerController(
                 PlayerShortcutsRepository.keyCode(PlayerShortcutAction.SkipInterval),
             ),
         )
-        if (!controlsJsonIsWellFormed(controlsJson)) return
-        NativePlayerBridge.updateControls(current, controlsJson)
+        val payload = if (hudLabelsSent) controlsJson else controlsJson.withHudLabels()
+        if (!controlsJsonIsWellFormed(payload)) return
+        NativePlayerBridge.updateControls(current, payload)
+        hudLabelsSent = true
     }
 
     /**
@@ -700,7 +707,7 @@ internal class NativePlayerController(
         } else {
             "${"%.2f".format(speed).trimEnd('0').trimEnd('.')}x"
         }
-        showPresetPill("Playback speed", value)
+        showPresetPill(localizedString(Res.string.player_hud_playback_speed), value)
     }
 
     fun cycleDesktopHdrMode() {
@@ -708,13 +715,13 @@ internal class NativePlayerController(
         val current = PlayerSettingsRepository.uiState.value.desktopHdrMode
         val next = modes[(modes.indexOf(current) + 1) % modes.size]
         PlayerSettingsRepository.setDesktopHdrMode(next)
-        showPresetPill("HDR Mode", next.label)
+        showPresetPill(localizedString(Res.string.player_hud_hdr_mode), localizedString(next.labelRes))
     }
 
     private fun selectDesktopHdrMode(index: Int) {
         DesktopHdrMode.entries.getOrNull(index)?.let { mode ->
             PlayerSettingsRepository.setDesktopHdrMode(mode)
-            showPresetPill("HDR Mode", mode.label)
+            showPresetPill(localizedString(Res.string.player_hud_hdr_mode), localizedString(mode.labelRes))
         }
     }
 
@@ -723,7 +730,7 @@ internal class NativePlayerController(
         val current = PlayerSettingsRepository.uiState.value.desktopColorProfile
         val next = profiles[(profiles.indexOf(current) + 1) % profiles.size]
         PlayerSettingsRepository.setDesktopColorProfile(next)
-        showPresetPill("Color Profile", next.label)
+        showPresetPill(localizedString(Res.string.player_hud_color_profile), localizedString(next.labelRes))
     }
 
     /**
@@ -763,7 +770,7 @@ internal class NativePlayerController(
     private fun selectDesktopColorProfile(index: Int) {
         DesktopColorProfile.entries.getOrNull(index)?.let { profile ->
             PlayerSettingsRepository.setDesktopColorProfile(profile)
-            showPresetPill("Color Profile", profile.label)
+            showPresetPill(localizedString(Res.string.player_hud_color_profile), localizedString(profile.labelRes))
         }
     }
 
@@ -816,7 +823,7 @@ internal class NativePlayerController(
                 label = choice.label,
             ),
         )
-        showPresetPill("Anime", choice.label)
+        showPresetPill(localizedString(Res.string.player_hud_anime), choice.label)
     }
 
     private fun openAnimeShaderContextMenu() {
@@ -848,53 +855,53 @@ internal class NativePlayerController(
     private val mpvOptionCatalog = listOf(
         MpvOption(
             key = "deband",
-            label = "Debanding",
+            label = localizedString(Res.string.player_hud_debanding),
             // Nuvio's baseline enables deband (player_bridge startMpv), so On is the default here.
-            choices = listOf(MpvChoice("On", "yes", isDefault = true), MpvChoice("Off", "no")),
+            choices = listOf(MpvChoice(localizedString(Res.string.compose_action_on), "yes", isDefault = true), MpvChoice(localizedString(Res.string.compose_action_off), "no")),
         ),
         MpvOption(
             key = "deinterlace",
-            label = "Deinterlace",
-            choices = listOf(MpvChoice("Off", "no", isDefault = true), MpvChoice("On", "yes")),
+            label = localizedString(Res.string.player_hud_deinterlace),
+            choices = listOf(MpvChoice(localizedString(Res.string.compose_action_off), "no", isDefault = true), MpvChoice(localizedString(Res.string.compose_action_on), "yes")),
         ),
         MpvOption(
             // Not mpv's `sharpen` (vo=gpu only, a no-op on gpu-next): the saved value picks a CAS
             // strength that the video profile appends to the active shader chain.
             key = DESKTOP_SHARPEN_OVERRIDE_KEY,
-            label = "Sharpen",
+            label = localizedString(Res.string.player_hud_sharpen),
             choices = listOf(
-                MpvChoice("Off", "0", isDefault = true),
-                MpvChoice("Low", "1.0"),
-                MpvChoice("High", "2.0"),
+                MpvChoice(localizedString(Res.string.compose_action_off), "0", isDefault = true),
+                MpvChoice(localizedString(Res.string.player_hud_low), "1.0"),
+                MpvChoice(localizedString(Res.string.player_hud_high), "2.0"),
             ),
         ),
         MpvOption(
             // Luma upscaler. Only honoured for live-action; anime/custom-shader profiles force their
             // own sharp scaler (see applyDesktopVideoProfile). Default matches the live-action baseline.
             key = "scale",
-            label = "Upscaling",
+            label = localizedString(Res.string.player_hud_upscaling),
             choices = listOf(
-                MpvChoice("Default", "spline36", isDefault = true),
-                MpvChoice("Sharp", "ewa_lanczossharp"),
-                MpvChoice("Fast", "bilinear"),
+                MpvChoice(localizedString(Res.string.player_hud_default), "spline36", isDefault = true),
+                MpvChoice(localizedString(Res.string.player_hud_sharp), "ewa_lanczossharp"),
+                MpvChoice(localizedString(Res.string.player_hud_fast), "bilinear"),
             ),
         ),
         MpvOption(
             // Added grain (deband-grain), not the grain an AV1 encode carries, which mpv always
             // applies. Owned by the video profile; Light/Heavy need Deband, see selectMpvOption.
             key = DESKTOP_FILM_GRAIN_OVERRIDE_KEY,
-            label = "Film grain",
+            label = localizedString(Res.string.player_hud_film_grain),
             choices = listOf(
-                MpvChoice("Default", "default", isDefault = true),
-                MpvChoice("None", DESKTOP_FILM_GRAIN_NONE),
-                MpvChoice("Light", DESKTOP_FILM_GRAIN_LIGHT),
-                MpvChoice("Heavy", DESKTOP_FILM_GRAIN_HEAVY),
+                MpvChoice(localizedString(Res.string.player_hud_default), "default", isDefault = true),
+                MpvChoice(localizedString(Res.string.player_hud_none), DESKTOP_FILM_GRAIN_NONE),
+                MpvChoice(localizedString(Res.string.player_hud_light), DESKTOP_FILM_GRAIN_LIGHT),
+                MpvChoice(localizedString(Res.string.player_hud_heavy), DESKTOP_FILM_GRAIN_HEAVY),
             ),
         ),
         MpvOption(
             // target-contrast for SDR tone mapping. Owned by the video profile (HDR mode sets it).
             key = DESKTOP_DISPLAY_PANEL_OVERRIDE_KEY,
-            label = "Display type",
+            label = localizedString(Res.string.player_hud_display_type),
             choices = listOf(
                 MpvChoice("LCD", "lcd", isDefault = true),
                 MpvChoice("OLED", DESKTOP_DISPLAY_PANEL_OLED),
@@ -904,32 +911,32 @@ internal class NativePlayerController(
             // mpv's built-in frame-timing interpolation. Owned by the video profile so it can never
             // run together with SVP.
             key = DESKTOP_INTERPOLATION_OVERRIDE_KEY,
-            label = "Motion interpolation",
-            choices = listOf(MpvChoice("Off", "no", isDefault = true), MpvChoice("On", "yes")),
+            label = localizedString(Res.string.player_hud_motion_interpolation),
+            choices = listOf(MpvChoice(localizedString(Res.string.compose_action_off), "no", isDefault = true), MpvChoice(localizedString(Res.string.compose_action_on), "yes")),
         ),
         MpvOption(
             // Nothing else sets `af` on the main player. The filters are one chain, so each choice
             // replaces the last. Loudness keeps its old value so a saved choice carries over.
             key = "af",
-            label = "Audio profile",
+            label = localizedString(Res.string.player_hud_audio_profile),
             choices = listOf(
-                MpvChoice("Off", "", isDefault = true),
-                MpvChoice("Loudness normalize", "dynaudnorm=f=150:g=15"),
-                MpvChoice("Night mode", "lavfi=[acompressor=ratio=3:threshold=-20dB:attack=20:release=300:makeup=4dB]"),
-                MpvChoice("Vocal clarity", "lavfi=[equalizer=f=300:t=q:w=1:g=-3,equalizer=f=2800:t=q:w=1:g=5]"),
-                MpvChoice("Bass boost", "lavfi=[bass=g=7:f=110:w=0.6]"),
-                MpvChoice("Less bass", "lavfi=[bass=g=-8:f=110:w=0.6]"),
+                MpvChoice(localizedString(Res.string.compose_action_off), "", isDefault = true),
+                MpvChoice(localizedString(Res.string.player_hud_loudness_normalize), "dynaudnorm=f=150:g=15"),
+                MpvChoice(localizedString(Res.string.player_hud_night_mode), "lavfi=[acompressor=ratio=3:threshold=-20dB:attack=20:release=300:makeup=4dB]"),
+                MpvChoice(localizedString(Res.string.player_hud_vocal_clarity), "lavfi=[equalizer=f=300:t=q:w=1:g=-3,equalizer=f=2800:t=q:w=1:g=5]"),
+                MpvChoice(localizedString(Res.string.player_hud_bass_boost), "lavfi=[bass=g=7:f=110:w=0.6]"),
+                MpvChoice(localizedString(Res.string.player_hud_less_bass), "lavfi=[bass=g=-8:f=110:w=0.6]"),
             ),
         ),
         // Shared with the Playback settings page; see DesktopAudioDownmix.kt.
         MpvOption(
             key = DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY,
-            label = "Audio channels",
+            label = localizedString(Res.string.player_hud_audio_channels),
             choices = desktopAudioChannelChoices.map { MpvChoice(it.label, it.value, it.isDefault) },
         ),
         MpvOption(
             key = DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY,
-            label = "Dialogue boost (downmix)",
+            label = localizedString(Res.string.player_hud_dialogue_boost_downmix),
             choices = desktopAudioDialogueChoices.map { MpvChoice(it.label, it.value, it.isDefault) },
         ),
     )
@@ -1011,8 +1018,8 @@ internal class NativePlayerController(
         if (key != DESKTOP_INTERPOLATION_OVERRIDE_KEY || choice.value != "yes") return choice.label
         val settings = PlayerSettingsRepository.uiState.value
         return when {
-            settings.desktopAudioPassthroughEnabled -> "On (off during audio passthrough)"
-            settings.desktopAnimeSvpEnabled -> "On (off while SVP runs)"
+            settings.desktopAudioPassthroughEnabled -> localizedString(Res.string.player_hud_on_off_during_audio_passthrough)
+            settings.desktopAnimeSvpEnabled -> localizedString(Res.string.player_hud_on_off_while_svp_runs)
             else -> choice.label
         }
     }
@@ -1024,7 +1031,7 @@ internal class NativePlayerController(
         // An explicit in-player toggle also forces SVP for this session even when the title isn't
         // detected as anime (the persisted toggle alone only fires on effectively-anime content).
         PlayerSettingsRepository.setDesktopAnimeSvpSessionForced(next)
-        showPresetPill("Anime SVP", if (next) "On" else "Off")
+        showPresetPill(localizedString(Res.string.player_hud_anime_svp), if (next) localizedString(Res.string.compose_action_on) else localizedString(Res.string.compose_action_off))
     }
 
     // The player menu's RTX rows: session-only, so the video profile swaps the d3d11vpp filter
@@ -1036,7 +1043,7 @@ internal class NativePlayerController(
         val next = !settings.effectiveRtxVsrEnabled
         PlayerSettingsRepository.setDesktopRtxVsrSessionOverride(next)
         val driverOff = NvidiaRtxDriverState.settings.value.superResolutionEnabled == false
-        showPresetPill("RTX Super Resolution", rtxPillValue(next, settings.desktopAnimeSvpEnabled, driverOff))
+        showPresetPill(localizedString(Res.string.player_hud_rtx_super_resolution), rtxPillValue(next, settings.desktopAnimeSvpEnabled, driverOff))
     }
 
     private fun toggleRtxTrueHdrForSession() {
@@ -1044,14 +1051,14 @@ internal class NativePlayerController(
         val next = !settings.effectiveRtxTrueHdrEnabled
         PlayerSettingsRepository.setDesktopRtxTrueHdrSessionOverride(next)
         val driverOff = NvidiaRtxDriverState.settings.value.trueHdrEnabled == false
-        showPresetPill("RTX True HDR", rtxPillValue(next, settings.desktopAnimeSvpEnabled, driverOff))
+        showPresetPill(localizedString(Res.string.player_hud_rtx_true_hdr), rtxPillValue(next, settings.desktopAnimeSvpEnabled, driverOff))
     }
 
     private fun rtxPillValue(enabled: Boolean, svpEnabled: Boolean, driverOff: Boolean): String = when {
-        !enabled -> "Off"
-        driverOff -> "On (off in the NVIDIA App)"
-        svpEnabled -> "On (off while SVP runs)"
-        else -> "On"
+        !enabled -> localizedString(Res.string.compose_action_off)
+        driverOff -> localizedString(Res.string.player_hud_on_off_in_the_nvidia_app)
+        svpEnabled -> localizedString(Res.string.player_hud_on_off_while_svp_runs)
+        else -> localizedString(Res.string.compose_action_on)
     }
 
     /**
@@ -1152,7 +1159,7 @@ internal class NativePlayerController(
         }
         if (errorPrefix != null) {
             val message = type.removePrefix(errorPrefix).trim()
-                .ifBlank { "MPV failed to start playback." }
+                .ifBlank { localizedString(Res.string.player_hud_mpv_failed_to_start_playback) }
             pendingSource?.onError(message)
             return
         }
@@ -1161,7 +1168,7 @@ internal class NativePlayerController(
             // reload (0). Either way video is still buffering, so hold the notice for the first
             // rendered frame like the failover pill — shown now it would expire unseen.
             audioPassthroughLog.i { "rejected by output device; bridge fell back to PCM (trackReloaded=${value >= 1.0})" }
-            transientMessageForNextAttach = "Audio passthrough" to "Not supported by output device — decoding to PCM"
+            transientMessageForNextAttach = localizedString(Res.string.player_hud_audio_passthrough) to localizedString(Res.string.player_hud_not_supported_by_output_device_decoding)
             return
         }
         if (type == "keyboardCycleHdrMode") {
@@ -1557,6 +1564,7 @@ internal class NativePlayerController(
         }
         keyboardPanelOpen = false
         lastSentControlsStructureKey = null
+        hudLabelsSent = false
         lastSentMediaSessionKey = null
         lastSentMpvMediaTitle = null
         // The clamp lived on the handle being torn down; the next handle starts from its pre-init
@@ -1722,7 +1730,7 @@ internal class NativePlayerController(
         val trackId = resolveTrackId(index, decodeTracks { NativePlayerBridge.audioTracksJson(it) }) ?: return false
         val selected = NativePlayerBridge.selectAudioTrack(current, trackId)
         if (!selected) {
-            showPresetPill("Audio track", "Stream is rate-limited - try again shortly")
+            showPresetPill(localizedString(Res.string.player_hud_audio_track), localizedString(Res.string.player_hud_stream_is_rate_limited_try_again))
         }
         return selected
     }

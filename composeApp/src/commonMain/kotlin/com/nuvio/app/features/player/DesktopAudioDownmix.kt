@@ -1,5 +1,8 @@
 package com.nuvio.app.features.player
 
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
+
 /*
  * Audio output channel count and the dialogue (centre channel) level used when mpv downmixes.
  *
@@ -19,8 +22,8 @@ data class DesktopAudioChoice(val label: String, val value: String, val isDefaul
 
 /** mpv's own default is `auto-safe`: the layout the Windows audio device is set to. */
 val desktopAudioChannelChoices = listOf(
-    DesktopAudioChoice("Auto (device layout)", "auto-safe", isDefault = true),
-    DesktopAudioChoice("Stereo (downmix)", "stereo"),
+    DesktopAudioChoice(localizedString(Res.string.player_audio_choice_auto_device_layout), "auto-safe", isDefault = true),
+    DesktopAudioChoice(localizedString(Res.string.player_audio_choice_stereo_downmix), "stereo"),
     DesktopAudioChoice("5.1", "5.1"),
     DesktopAudioChoice("7.1", "7.1"),
 )
@@ -30,7 +33,7 @@ val desktopAudioChannelChoices = listOf(
  * surround track is mixed down to fewer channels.
  */
 val desktopAudioDialogueChoices = listOf(
-    DesktopAudioChoice("Normal", "", isDefault = true),
+    DesktopAudioChoice(localizedString(Res.string.player_audio_choice_normal), "", isDefault = true),
     DesktopAudioChoice("+3 dB", "center_mix_level=1.0"),
     DesktopAudioChoice("+6 dB", "center_mix_level=1.414"),
     DesktopAudioChoice("+9 dB", "center_mix_level=2.0"),

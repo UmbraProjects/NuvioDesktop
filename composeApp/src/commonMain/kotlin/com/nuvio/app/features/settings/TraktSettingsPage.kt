@@ -94,6 +94,7 @@ import nuvio.composeapp.generated.resources.trakt_watch_progress_trakt_selected
 import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.accentBrush
+import nuvio.composeapp.generated.resources.*
 
 internal fun LazyListScope.traktSettingsContent(
     isTablet: Boolean,
@@ -450,7 +451,7 @@ private fun TraktConnectionCard(
         if (connected) {
             if (uiState.needsReconnect) {
                 SettingsGlassButton(
-                    text = "Reconnect",
+                    text = stringResource(Res.string.settings_trakt_reconnect),
                     onClick = { TraktAuthRepository.onConnectRequested() },
                     enabled = uiState.credentialsConfigured && !uiState.isLoading,
                     accent = true,
@@ -525,12 +526,12 @@ private fun TraktDeviceCodeDialog(
             ) {
                 // Literal strings: newly added resource keys do not always resolve (see build notes).
                 Text(
-                    text = "Connect Trakt",
+                    text = stringResource(Res.string.settings_trakt_connect_trakt),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "Enter this code at ${verificationUrl.removePrefix("https://")} and approve Nuvio.",
+                    text = stringResource(Res.string.settings_trakt_enter_code_at, verificationUrl.removePrefix("https://")),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -545,10 +546,10 @@ private fun TraktDeviceCodeDialog(
                 val expiryText = expiresAtMillis?.let {
                     val minutes = remainingSeconds / 60
                     val seconds = (remainingSeconds % 60).toString().padStart(2, '0')
-                    "Code expires in $minutes:$seconds"
+                    stringResource(Res.string.settings_code_expires_in, minutes, seconds)
                 }
                 val footer = listOfNotNull(
-                    "Copied to clipboard".takeIf { copied },
+                    stringResource(Res.string.settings_trakt_copied_to_clipboard).takeIf { copied },
                     expiryText,
                 ).joinToString(" · ")
                 if (footer.isNotEmpty()) {
@@ -569,7 +570,7 @@ private fun TraktDeviceCodeDialog(
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
-                        Text("Copy code")
+                        Text(stringResource(Res.string.settings_trakt_copy_code))
                     }
                 }
                 CircularProgressIndicator()

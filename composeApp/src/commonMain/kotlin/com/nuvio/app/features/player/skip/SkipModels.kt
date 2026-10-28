@@ -2,6 +2,8 @@ package com.nuvio.app.features.player.skip
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 data class SkipInterval(
     val startTime: Double,
@@ -271,7 +273,7 @@ internal fun SkipDbSubmitResponse.toOutcome(): SkipSubmitOutcome {
         accepted = accepted,
         message = message?.takeIf { it.isNotBlank() }
             ?: reasons.firstOrNull { it.isNotBlank() }
-            ?: if (accepted) "Submitted to SkipDB." else "SkipDB rejected the submission.",
+            ?: if (accepted) localizedString(Res.string.skip_submit_submitted_to_skipdb) else localizedString(Res.string.skip_submit_skipdb_rejected_the_submission),
     )
 }
 

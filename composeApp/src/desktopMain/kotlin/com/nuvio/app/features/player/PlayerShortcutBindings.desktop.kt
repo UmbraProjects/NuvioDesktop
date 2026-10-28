@@ -33,11 +33,14 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import com.nuvio.app.core.i18n.localizedString
 import com.nuvio.app.core.ui.NuvioDialogSurface
 import com.nuvio.app.core.ui.NuvioTokens
 import com.nuvio.app.core.ui.nuvio
 import kotlinx.coroutines.flow.StateFlow
 import java.awt.event.KeyEvent
+import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.stringResource
 
 actual fun playerShortcutKeyLabels(): StateFlow<Map<PlayerShortcutAction, String>> =
     PlayerShortcutsRepository.keyLabels
@@ -122,13 +125,13 @@ actual fun PlayerShortcutRebindDialog(action: PlayerShortcutAction, onDismiss: (
                             vk == KeyEvent.VK_ESCAPE -> onDismiss()
                             vk in ModifierKeyCodes -> Unit // keep listening
                             event.isCtrlPressed || event.isAltPressed || event.isMetaPressed ->
-                                error = "Modifier combos aren't supported — press a single key."
+                                error = localizedString(Res.string.shortcuts_rebind_modifier_unsupported)
                             vk in ReservedKeyCodes ->
-                                error = "\"${playerShortcutKeyCodeLabel(vk)}\" is reserved for navigation and playback."
+                                error = localizedString(Res.string.shortcuts_rebind_player_reserved, playerShortcutKeyCodeLabel(vk))
                             else -> {
                                 val existing = PlayerShortcutsRepository.actionForKeyCode(vk)
                                 if (existing != null && existing != action) {
-                                    error = "\"${playerShortcutKeyCodeLabel(vk)}\" is already assigned to \"${existing.displayName}\"."
+                                    error = localizedString(Res.string.shortcuts_rebind_player_conflict, playerShortcutKeyCodeLabel(vk), localizedString(existing.displayNameRes))
                                 } else {
                                     PlayerShortcutsRepository.setBinding(action, vk)
                                     onDismiss()
@@ -140,13 +143,13 @@ actual fun PlayerShortcutRebindDialog(action: PlayerShortcutAction, onDismiss: (
                 verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
             ) {
                 Text(
-                    text = action.displayName,
+                    text = stringResource(action.displayNameRes),
                     style = MaterialTheme.typography.titleLarge,
                     color = tokens.colors.textPrimary,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "Currently bound to \"$currentLabel\". Press a new key to rebind.",
+                    text = stringResource(Res.string.shortcuts_rebind_player_current, currentLabel),
                     style = MaterialTheme.typography.bodyMedium,
                     color = tokens.colors.textSecondary,
                 )
@@ -157,7 +160,7 @@ actual fun PlayerShortcutRebindDialog(action: PlayerShortcutAction, onDismiss: (
                     border = BorderStroke(tokens.borders.medium, tokens.colors.borderFocus),
                 ) {
                     Text(
-                        text = "Listening for a key…",
+                        text = stringResource(Res.string.shortcuts_rebind_listening),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = NuvioTokens.Space.s16),
@@ -185,10 +188,10 @@ actual fun PlayerShortcutRebindDialog(action: PlayerShortcutAction, onDismiss: (
                             onDismiss()
                         },
                     ) {
-                        Text(text = "Reset to default", maxLines = 1)
+                        Text(text = stringResource(Res.string.shortcuts_rebind_reset_default), maxLines = 1)
                     }
                     TextButton(onClick = onDismiss) {
-                        Text(text = "Cancel", maxLines = 1)
+                        Text(text = stringResource(Res.string.action_cancel), maxLines = 1)
                     }
                 }
             }
@@ -220,13 +223,13 @@ actual fun AppShortcutRebindDialog(action: AppShortcutAction, onDismiss: () -> U
                             vk == KeyEvent.VK_ESCAPE -> onDismiss()
                             vk in ModifierKeyCodes -> Unit
                             event.isCtrlPressed || event.isAltPressed || event.isMetaPressed ->
-                                error = "Modifier combos aren't supported — press a single key."
+                                error = localizedString(Res.string.shortcuts_rebind_modifier_unsupported)
                             vk in ReservedKeyCodes ->
-                                error = "${playerShortcutKeyCodeLabel(vk)} is reserved for directional navigation."
+                                error = localizedString(Res.string.shortcuts_rebind_app_reserved, playerShortcutKeyCodeLabel(vk))
                             else -> {
                                 val existing = AppShortcutsRepository.actionForKeyCode(vk)
                                 if (existing != null && existing != action) {
-                                    error = "${playerShortcutKeyCodeLabel(vk)} is already assigned to ${existing.displayName}."
+                                    error = localizedString(Res.string.shortcuts_rebind_app_conflict, playerShortcutKeyCodeLabel(vk), localizedString(existing.displayNameRes))
                                 } else {
                                     AppShortcutsRepository.setBinding(action, vk)
                                     onDismiss()
@@ -237,9 +240,9 @@ actual fun AppShortcutRebindDialog(action: AppShortcutAction, onDismiss: () -> U
                     },
                 verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
             ) {
-                Text(action.displayName, style = MaterialTheme.typography.titleLarge, color = tokens.colors.textPrimary)
+                Text(stringResource(action.displayNameRes), style = MaterialTheme.typography.titleLarge, color = tokens.colors.textPrimary)
                 Text(
-                    "Currently bound to $currentLabel. Press a new key to rebind.",
+                    stringResource(Res.string.shortcuts_rebind_app_current, currentLabel),
                     style = MaterialTheme.typography.bodyMedium,
                     color = tokens.colors.textSecondary,
                 )
@@ -249,9 +252,9 @@ actual fun AppShortcutRebindDialog(action: AppShortcutAction, onDismiss: () -> U
                     horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap, Alignment.End),
                 ) {
                     TextButton(onClick = { AppShortcutsRepository.resetToDefault(action); onDismiss() }) {
-                        Text("Reset to default")
+                        Text(stringResource(Res.string.shortcuts_rebind_reset_default))
                     }
-                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
                 }
             }
         }

@@ -2,6 +2,8 @@ package com.nuvio.app.features.playlist
 
 import com.nuvio.app.features.home.HomeCatalogSection
 import com.nuvio.app.features.home.MetaPreview
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 /**
  * Content type of the synthetic posters the Library tab's Playlists row is made of. Like the cloud
@@ -22,7 +24,7 @@ internal fun playlistLibrarySection(playlists: List<Playlist>): HomeCatalogSecti
     if (playlists.isEmpty()) return null
     return HomeCatalogSection(
         key = PlaylistLibraryRowKey,
-        title = "Playlists",
+        title = localizedString(Res.string.playlist_playlists),
         subtitle = "",
         addonName = "",
         target = null,
@@ -35,7 +37,7 @@ private fun Playlist.toLibraryPreview(): MetaPreview {
     // The card shows whatever Play would start with, so a half-watched playlist looks like where
     // it left off rather than always like its first entry.
     val cover = resumeEntry ?: entries.firstOrNull()
-    val count = if (entries.size == 1) "1 item" else "${entries.size} items"
+    val count = if (entries.size == 1) localizedString(Res.string.playlist_one_item) else localizedString(Res.string.playlist_n_items, entries.size)
     return MetaPreview(
         id = id,
         type = PlaylistContentType,

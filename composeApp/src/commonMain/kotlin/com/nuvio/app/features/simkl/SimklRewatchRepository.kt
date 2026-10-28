@@ -21,6 +21,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.core.i18n.localizedString
 
 private const val SIMKL_BASE_URL = "https://api.simkl.com"
 private const val MAX_REWATCH_SESSIONS_PER_ITEM = 50
@@ -214,7 +216,7 @@ internal object SimklRewatchRepository {
     suspend fun startRewatch(item: MetaPreview): SimklRewatchStartResult {
         ensureLoaded()
         if (!SimklSettingsRepository.isRewatchTrackingEnabled()) {
-            return SimklRewatchStartResult.Failed("Enable Track SIMKL rewatches in Settings first.")
+            return SimklRewatchStartResult.Failed(localizedString(Res.string.simkl_rewatch_enable_track_simkl_rewatches_in_settings))
         }
         if (!SimklAuthRepository.isAuthenticated.value) {
             return SimklRewatchStartResult.Failed("SIMKL is not connected.")
@@ -233,11 +235,11 @@ internal object SimklRewatchRepository {
                 isAnimeHint = kind == SimklRewatchKind.ANIME,
             )
         }.getOrElse { error ->
-            return SimklRewatchStartResult.Failed(error.message ?: "The title could not be resolved for SIMKL.")
+            return SimklRewatchStartResult.Failed(error.message ?: localizedString(Res.string.simkl_rewatch_the_title_could_not_be_resolved))
         }
         val ids = resolved.toSimklIds()
         if (!ids.hasRewatchIdentity()) {
-            return SimklRewatchStartResult.Failed("No SIMKL-compatible id could be found for this title.")
+            return SimklRewatchStartResult.Failed(localizedString(Res.string.simkl_rewatch_no_simkl_compatible_id_could_be))
         }
         if (sessions.count { it.ids.matches(ids) } >= MAX_REWATCH_SESSIONS_PER_ITEM) {
             return SimklRewatchStartResult.Failed("SIMKL allows at most 50 rewatch sessions per title.")

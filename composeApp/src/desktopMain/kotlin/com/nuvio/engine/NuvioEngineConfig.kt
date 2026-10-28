@@ -26,6 +26,8 @@ public data class NuvioEngineConfig(
     val streamInactivityTimeoutMilliseconds: Int = 30_000,
     val warmTorrentTimeoutMilliseconds: Int = 60_000,
     val tlsCaBundle: File? = null,
+    /** Desktop: pieces and engine state stay in memory; nothing is written to the directories. */
+    val ramOnlyMode: Boolean = false,
 ) {
     internal fun validate() {
         require(memoryCacheCapacityBytes >= 0) { "memory cache capacity must be non-negative" }
