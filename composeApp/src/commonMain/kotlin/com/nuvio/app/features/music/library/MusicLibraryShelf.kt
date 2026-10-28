@@ -59,6 +59,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.LocalPlatformContext
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.settings.ThemeSettingsRepository
+import com.nuvio.app.isDesktop
 import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.features.music.MusicCover
 import com.nuvio.app.features.music.MusicMessage
@@ -137,6 +139,20 @@ internal fun MusicLibraryShelf(
                     color = colors.textSecondary,
                     modifier = Modifier.weight(1f),
                 )
+                if (isDesktop) { // fork:music - quick UI size, same setting as Settings > Appearance > App UI scale
+                    val uiScale by remember { ThemeSettingsRepository.desktopAppUiScalePercent }.collectAsStateWithLifecycle()
+                    ActionPill("A−", enabled = uiScale > -50, onClick = { ThemeSettingsRepository.stepDesktopAppUiScalePercent(-10) })
+                    Text(
+                        "${if (uiScale > 0) "+" else ""}$uiScale%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                        modifier = Modifier.padding(horizontal = 4.dp).clickable(enabled = uiScale != 0) {
+                            ThemeSettingsRepository.setDesktopAppUiScalePercent(0)
+                        },
+                    )
+                    ActionPill("A+", enabled = uiScale < 50, onClick = { ThemeSettingsRepository.stepDesktopAppUiScalePercent(10) })
+                    Box(Modifier.width(12.dp))
+                }
                 ActionPill("Shelf", selected = view == LibraryView.Shelf, onClick = { view = LibraryView.Shelf }) // fork:music
                 ActionPill("Constellation", selected = view == LibraryView.Constellation, onClick = { view = LibraryView.Constellation }) // fork:music
                 ActionPill("Eras", selected = view == LibraryView.Eras, onClick = { view = LibraryView.Eras }) // fork:music

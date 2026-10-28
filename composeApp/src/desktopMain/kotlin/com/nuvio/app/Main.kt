@@ -287,6 +287,9 @@ private class MouseFiveShiftEventQueue : EventQueue() {
     }
 }
 
+/** Percent added or removed per Ctrl+plus / Ctrl+minus press; a multiple of the settings slider's step (5). */
+private const val UI_SCALE_KEY_STEP_PERCENT = 10
+
 private const val SwallowedClickReplayDelayMs = 32
 private const val SwallowedClickReplayGuardMs = 400L
 // Long enough for the closed menu's popup to leave the composition before the click is re-sent.
@@ -1000,6 +1003,30 @@ fun main(args: Array<String>) {
                                 com.nuvio.app.core.ui.FrameClockProbes.toggle()
                                     ?: return@onKeyEvent false
                                 return@onKeyEvent true
+                            }
+                            // Ctrl+plus / Ctrl+minus / Ctrl+0 resize the whole UI, as in a browser.
+                            // Works on every screen, including the music Library and Stage view, and
+                            // changes the same setting as Settings > Appearance > App UI scale.
+                            // Shift is allowed because "+" is Shift+= on most layouts.
+                            if (event.isCtrlPressed) {
+                                when (event.key) {
+                                    Key.Equals, Key.Plus, Key.NumPadAdd -> {
+                                        com.nuvio.app.features.settings.ThemeSettingsRepository
+                                            .stepDesktopAppUiScalePercent(UI_SCALE_KEY_STEP_PERCENT)
+                                        return@onKeyEvent true
+                                    }
+                                    Key.Minus, Key.NumPadSubtract -> {
+                                        com.nuvio.app.features.settings.ThemeSettingsRepository
+                                            .stepDesktopAppUiScalePercent(-UI_SCALE_KEY_STEP_PERCENT)
+                                        return@onKeyEvent true
+                                    }
+                                    Key.Zero, Key.NumPad0 -> {
+                                        com.nuvio.app.features.settings.ThemeSettingsRepository
+                                            .setDesktopAppUiScalePercent(0)
+                                        return@onKeyEvent true
+                                    }
+                                    else -> Unit
+                                }
                             }
                             if (event.isCtrlPressed) return@onKeyEvent false
                             // Compose text fields may leave ordinary key-down events unconsumed.
