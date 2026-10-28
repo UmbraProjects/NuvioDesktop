@@ -119,17 +119,24 @@ private fun slugify(text: String): String =
  */
 internal fun findBbfcReleasePath(searchHtml: String, title: String, year: String?): String? {
     val wanted = slugify(title).takeIf { it.isNotEmpty() } ?: return null
-    val candidates = RELEASE_LINK.findAll(searchHtml)
-        .map { it.groupValues[1] to it.range.last }
+    val links = RELEASE_LINK.findAll(searchHtml).toList()
+    val candidates = links.mapIndexed { i, m ->
+        // The window for a link ends where the next link begins, so a neighbour's year never counts.
+        val windowEnd = minOf(
+            searchHtml.length,
+            m.range.last + 600,
+            links.getOrNull(i + 1)?.range?.first ?: searchHtml.length,
+        )
+        Triple(m.groupValues[1], m.range.last, windowEnd)
+    }
         .distinctBy { it.first }
-        .filter { (path, _) ->
+        .filter { (path, _, _) ->
             val slug = path.removePrefix("/release/").substringBefore('/')
             slug == wanted || slug.startsWith("$wanted-")
         }
-        .toList()
     if (year == null) return candidates.firstOrNull()?.first
-    return candidates.firstOrNull { (_, end) ->
-        searchHtml.substring(end, minOf(searchHtml.length, end + 600)).contains(year)
+    return candidates.firstOrNull { (_, end, windowEnd) ->
+        searchHtml.substring(end, windowEnd).contains(year)
     }?.first
 }
 
