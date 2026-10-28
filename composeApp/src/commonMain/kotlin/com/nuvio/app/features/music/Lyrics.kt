@@ -13,13 +13,20 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 /** One timed line of a synced lyric. A blank [text] is an instrumental gap. */
 data class LyricLine(val timeMs: Long, val text: String)
 
 sealed interface Lyrics {
-    /** Line-by-line timing (LRC): the line for the current position can be highlighted. */
-    data class Synced(val lines: List<LyricLine>) : Lyrics
+    /**
+     * Line-by-line timing (LRC): the line for the current position can be highlighted. [durationSeconds] is the
+     * length of the recording the timing was made on (LRCLIB's `duration`), 0 when not known. It is what the
+     * played stream is compared with to tell whether these lines already fit it.
+     */
+    data class Synced(val lines: List<LyricLine>, val durationSeconds: Double = 0.0) : Lyrics {
+        val durationMs: Long get() = (durationSeconds * 1_000.0).roundToLong()
+    }
 
     /** Words only, no timing. */
     data class Plain(val lines: List<String>) : Lyrics
@@ -115,7 +122,7 @@ internal fun lrcLibRecord(element: JsonElement?): LrcLibRecord? {
 internal fun lyricsOf(record: LrcLibRecord): Lyrics? {
     record.syncedLyrics?.let { raw ->
         val lines = parseLrc(raw)
-        if (lines.any { it.text.isNotBlank() }) return Lyrics.Synced(lines)
+        if (lines.any { it.text.isNotBlank() }) return Lyrics.Synced(lines, record.durationSeconds)
     }
     record.plainLyrics?.let { raw ->
         val lines = raw.lines().map { it.trim() }
@@ -132,11 +139,10 @@ private const val DURATION_TOLERANCE_SECONDS = 4.0
  * timing), and it names [artist]. Synced beats plain; the closest length breaks ties.
  */
 internal fun pickLrcLibRecord(records: List<LrcLibRecord>, artist: String, durationSeconds: Int): LrcLibRecord? {
-    val artistKey = artist.lowercase().filter { it.isLetterOrDigit() }
     return records
         .filter { it.syncedLyrics != null || it.plainLyrics != null || it.instrumental }
         .filter { durationSeconds <= 0 || abs(it.durationSeconds - durationSeconds) <= DURATION_TOLERANCE_SECONDS }
-        .filter { artistKey.isEmpty() || artistKey in it.artistName.lowercase().filter { c -> c.isLetterOrDigit() } }
+        .filter { namesArtist(it, artist) }
         .sortedWith(
             compareByDescending<LrcLibRecord> { it.syncedLyrics != null }
                 .thenBy { if (durationSeconds > 0) abs(it.durationSeconds - durationSeconds) else 0.0 },
@@ -177,6 +183,23 @@ object LrcLibClient {
         return if (answered) LyricsLookup.Missing else LyricsLookup.Unreachable
     }
 
+    /**
+     * The other timed versions of the song (see [syncedAlternatives]), or null when LRCLIB could not be
+     * reached (so the caller asks again later rather than remembering "none").
+     */
+    suspend fun alternatives(title: String, artist: String): List<Lyrics.Synced>? {
+        if (title.isBlank() || artist.isBlank()) return emptyList()
+        var answered = false
+        for (name in listOf(title, coreTrackTitle(title)).filter { it.isNotBlank() }.distinct()) {
+            val searchUrl = "$BASE/search?track_name=${name.encodeURLParameter()}&artist_name=${artist.encodeURLParameter()}"
+            val results = fetchJson(searchUrl) as? JsonArray ?: continue
+            answered = true
+            val found = syncedAlternatives(results.mapNotNull { lrcLibRecord(it) }, artist)
+            if (found.isNotEmpty()) return found
+        }
+        return if (answered) emptyList() else null
+    }
+
     private suspend fun fetchJson(url: String): JsonElement? =
         try {
             Json.parseToJsonElement(httpGetTextWithHeaders(url, HEADERS))
@@ -189,15 +212,77 @@ object LrcLibClient {
         }
 }
 
+private fun namesArtist(record: LrcLibRecord, artist: String): Boolean {
+    val artistKey = artist.lowercase().filter { it.isLetterOrDigit() }
+    return artistKey.isEmpty() || artistKey in record.artistName.lowercase().filter { c -> c.isLetterOrDigit() }
+}
+
+/**
+ * Every timed version of the song LRCLIB holds for [artist], one per distinct length (an album cut, a single, a
+ * video, a live take each have their own timing and their own length). Records with no length are left out: with
+ * no length there is no telling which recording they belong to.
+ */
+internal fun syncedAlternatives(records: List<LrcLibRecord>, artist: String): List<Lyrics.Synced> =
+    records
+        .filter { it.syncedLyrics != null && it.durationSeconds > 0.0 && namesArtist(it, artist) }
+        .mapNotNull { lyricsOf(it) as? Lyrics.Synced }
+        .distinctBy { it.durationMs / 1_000L }
+
+/**
+ * The version of [primary] to show on a stream that plays for [playedDurationMs]: another LRCLIB version
+ * whose length matches the stream (within [LYRIC_SAME_CUT_MS]) when [primary] does not, the closest such one;
+ * null when [primary] already fits, has no known length, or nothing else fits (the audio analysis then finds
+ * the offset). Only a version the stream is the same cut of is ever swapped in, so a live take or a remix
+ * that merely has a nearby length is not.
+ */
+internal fun pickLyricsForStream(
+    primary: Lyrics.Synced,
+    alternatives: List<Lyrics.Synced>,
+    playedDurationMs: Long,
+): Lyrics.Synced? {
+    if (playedDurationMs <= 0L || primary.durationMs <= 0L) return null
+    if (abs(primary.durationMs - playedDurationMs) <= LYRIC_SAME_CUT_MS) return null
+    return alternatives
+        .filter { abs(it.durationMs - playedDurationMs) <= LYRIC_SAME_CUT_MS }
+        .minByOrNull { abs(it.durationMs - playedDurationMs) }
+}
+
 /** Lyrics per track, for the session. Misses are remembered; network failures are not. */
 object LyricsRepository {
     private val lock = Mutex()
     private val cache = HashMap<String, Lyrics?>()
 
+    private val alternativesCache = HashMap<String, List<Lyrics.Synced>>()
+
+    private fun artistOf(track: MusicTrack, album: MusicAlbum?): String =
+        (track.artists.firstOrNull() ?: album?.artists?.firstOrNull())?.name.orEmpty()
+
+    /**
+     * The timed lyrics to show on a stream that plays for [playedDurationMs]: [primary] (what [forTrack] found,
+     * timed to the album cut) unless it is another length than the stream and LRCLIB holds a version that is
+     * the stream's own length (see [pickLyricsForStream]). LRCLIB is asked for the other versions only then, once
+     * per track. Null means keep [primary].
+     */
+    suspend fun forStream(
+        track: MusicTrack,
+        album: MusicAlbum?,
+        primary: Lyrics.Synced,
+        playedDurationMs: Long,
+    ): Lyrics.Synced? {
+        if (playedDurationMs <= 0L || primary.durationMs <= 0L) return null
+        if (abs(primary.durationMs - playedDurationMs) <= LYRIC_SAME_CUT_MS) return null
+        val key = track.videoId
+        val known = lock.withLock { alternativesCache[key] }
+        val alternatives = known ?: LrcLibClient.alternatives(track.title, artistOf(track, album))
+            ?.also { found -> lock.withLock { alternativesCache[key] = found } }
+            ?: return null
+        return pickLyricsForStream(primary, alternatives, playedDurationMs)
+    }
+
     suspend fun forTrack(track: MusicTrack, album: MusicAlbum?): Lyrics? {
         val key = track.videoId
         lock.withLock { if (cache.containsKey(key)) return cache[key] }
-        val artist = (track.artists.firstOrNull() ?: album?.artists?.firstOrNull())?.name.orEmpty()
+        val artist = artistOf(track, album)
         val result = LrcLibClient.find(track.title, artist, album?.title.orEmpty(), track.durationSeconds)
         return when (result) {
             is LyricsLookup.Found -> result.lyrics.also { lock.withLock { cache[key] = it } }

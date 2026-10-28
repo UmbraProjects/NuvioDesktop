@@ -1,5 +1,9 @@
 package com.nuvio.app.features.music
 
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
@@ -132,3 +136,80 @@ internal fun formatLyricOffset(offsetMs: Long): String {
     val sign = if (offsetMs < 0L) "-" else "+"
     return "$sign${tenths / 10}.${tenths % 10}s"
 }
+
+// region Tap to sync
+
+/**
+ * How long after a line starts the person's tap is taken to land: they hear it, find it on screen and press.
+ * The line is placed that much before the tap, not at the tap.
+ */
+internal const val TAP_SYNC_REACTION_MS = 350L
+
+/**
+ * The offset that makes the line the person tapped start where they heard it. [shownLineTimeMs] is that line's
+ * time as shown now (already moved by [currentOffsetMs]), [positionMs] the playback position at the tap. Works
+ * from whatever offset is showing, so tapping again refines the last tap.
+ */
+internal fun tapSyncOffsetMs(currentOffsetMs: Long, shownLineTimeMs: Long, positionMs: Long): Long =
+    currentOffsetMs + (positionMs - TAP_SYNC_REACTION_MS - shownLineTimeMs)
+
+// endregion
+
+// region Saved offsets
+
+/** What the person set for one stream, and the length of the lyrics it was set against. */
+@Serializable
+internal data class SavedLyricOffset(val offsetMs: Long, val lyricsDurationMs: Long = 0L)
+
+/** Most streams remembered; the longest unused are dropped first. */
+internal const val SAVED_OFFSETS_MAX = 2_000
+
+/** A saved offset set against lyrics this much longer or shorter than today's is for another recording. */
+private const val SAVED_DURATION_SLACK_MS = 1_500L
+
+private val savedOffsetsSerializer = MapSerializer(String.serializer(), SavedLyricOffset.serializer())
+private val savedOffsetsJson = Json { ignoreUnknownKeys = true }
+
+/** The saved offsets in [payload]; nothing, not a crash, for a missing or damaged one. */
+internal fun decodeSavedOffsets(payload: String?): Map<String, SavedLyricOffset> {
+    if (payload.isNullOrBlank()) return emptyMap()
+    return try {
+        savedOffsetsJson.decodeFromString(savedOffsetsSerializer, payload)
+    } catch (_: Exception) {
+        emptyMap()
+    }
+}
+
+internal fun encodeSavedOffsets(saved: Map<String, SavedLyricOffset>): String =
+    savedOffsetsJson.encodeToString(savedOffsetsSerializer, saved)
+
+/**
+ * The offset to use for [key], or null when none is saved or it was set against a recording of another length
+ * than [lyricsDurationMs] (then the stream is analysed as if it were new). A length of 0 on either side is
+ * unknown and is not held against the offset.
+ */
+internal fun savedOffsetFor(saved: Map<String, SavedLyricOffset>, key: String, lyricsDurationMs: Long): Long? {
+    val entry = saved[key] ?: return null
+    if (entry.lyricsDurationMs > 0L && lyricsDurationMs > 0L &&
+        abs(entry.lyricsDurationMs - lyricsDurationMs) > SAVED_DURATION_SLACK_MS
+    ) {
+        return null
+    }
+    return entry.offsetMs
+}
+
+/** [saved] with [key] set (it becomes the most recent), the oldest dropped past [SAVED_OFFSETS_MAX]. */
+internal fun withSavedOffset(
+    saved: Map<String, SavedLyricOffset>,
+    key: String,
+    offsetMs: Long,
+    lyricsDurationMs: Long,
+): Map<String, SavedLyricOffset> {
+    val next = LinkedHashMap(saved)
+    next.remove(key)
+    next[key] = SavedLyricOffset(offsetMs, lyricsDurationMs)
+    while (next.size > SAVED_OFFSETS_MAX) next.remove(next.keys.first())
+    return next
+}
+
+// endregion

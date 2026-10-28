@@ -7,6 +7,7 @@ import com.nuvio.app.features.player.audiosync.SubtitleSpeechTrack
 import kotlinx.coroutines.runBlocking
 import kotlin.random.Random
 import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -31,9 +32,23 @@ class MusicLyricSyncTest {
         }
     }
 
+    /** What the disk would hold: the tests never touch the real saved offsets. */
+    private var disk: String? = null
+
+    @BeforeTest
+    fun installMemoryStorage() {
+        disk = null
+        MusicLyricSync.loadSavedPayload = { disk }
+        MusicLyricSync.saveSavedPayload = { disk = it }
+        MusicLyricSync.restartSession()
+    }
+
     @AfterTest
     fun uninstall() {
         MusicLyricSync.audioEstimator = null
+        MusicLyricSync.loadSavedPayload = LyricSyncStorage::load
+        MusicLyricSync.saveSavedPayload = LyricSyncStorage::save
+        MusicLyricSync.restartSession()
     }
 
     private fun alignment(shiftMs: Double, peak: Double = 0.7, prominence: Double = 0.4) =
@@ -113,6 +128,52 @@ class MusicLyricSyncTest {
     fun aNudgeWithNothingFoundStartsFromZero() {
         MusicLyricSync.nudge("manual:audio", -500L)
         assertEquals(-500L, MusicLyricSync.stateOf("manual:audio").offsetMs())
+    }
+
+    @Test
+    fun aNudgeIsStillThereNextTimeTheSongPlays() {
+        sync("saved:video", 200_000L, 200_000L) // the same cut, so settled without audio
+        MusicLyricSync.nudge("saved:video", 1_500L)
+        MusicLyricSync.restartSession()
+        assertEquals(LyricSyncState.Idle, MusicLyricSync.stateOf("saved:video"))
+        var asked = false
+        MusicLyricSync.audioEstimator = { asked = true; null }
+        sync("saved:video", 200_000L, 212_000L) // a stream of another length would normally be analysed
+        assertTrue(!asked)
+        val state = assertIs<LyricSyncState.Offset>(MusicLyricSync.stateOf("saved:video"))
+        assertEquals(1_500L, state.offsetMs)
+        assertTrue(!state.auto)
+    }
+
+    @Test
+    fun aTapIsKeptToo() {
+        sync("tap:video", 200_000L, 200_000L)
+        MusicLyricSync.tapSync("tap:video", shownLineTimeMs = 14_300L, positionMs = 26_650L)
+        assertEquals(12_000L, MusicLyricSync.stateOf("tap:video").offsetMs())
+        MusicLyricSync.restartSession()
+        sync("tap:video", 200_000L, 212_000L)
+        assertEquals(12_000L, MusicLyricSync.stateOf("tap:video").offsetMs())
+    }
+
+    @Test
+    fun aSavedOffsetForOtherLyricsIsNotUsed() {
+        sync("other:video", 200_000L, 200_000L)
+        MusicLyricSync.nudge("other:video", 2_000L)
+        MusicLyricSync.restartSession()
+        MusicLyricSync.audioEstimator = { alignment(12_300.0) }
+        sync("other:video", 214_000L, 226_300L) // lyrics of another length now: the person's old fix does not apply
+        assertEquals(LyricSyncState.Offset(12_300L, auto = true), MusicLyricSync.stateOf("other:video"))
+    }
+
+    @Test
+    fun resettingForgetsTheSavedOffsetToo() {
+        sync("forget:video", 200_000L, 200_000L)
+        MusicLyricSync.nudge("forget:video", 1_000L)
+        MusicLyricSync.reset("forget:video")
+        MusicLyricSync.restartSession()
+        MusicLyricSync.audioEstimator = { alignment(12_000.0) }
+        sync("forget:video", 200_000L, 212_000L)
+        assertEquals(LyricSyncState.Offset(12_000L, auto = true), MusicLyricSync.stateOf("forget:video"))
     }
 
     @Test

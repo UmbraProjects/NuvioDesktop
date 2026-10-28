@@ -165,7 +165,7 @@ private fun MusicNowPlayingScreen(
         .joinToString(", ") { it.name }
     val primaryArtist = (track?.artists?.firstOrNull() ?: album?.artists?.firstOrNull())?.name.orEmpty()
 
-    val lyrics by produceState<LyricsUi>(LyricsUi.Loading, track?.videoId) {
+    val baseLyrics by produceState<LyricsUi>(LyricsUi.Loading, track?.videoId) {
         value = LyricsUi.Loading
         val found = track?.let { LyricsRepository.forTrack(it, album) }
         value = if (found != null) LyricsUi.Ready(found) else LyricsUi.Missing
@@ -212,11 +212,17 @@ private fun MusicNowPlayingScreen(
     val syncKey = track?.let { lyricSyncKey(it, realVideo) }
     val syncStates by MusicLyricSync.states.collectAsStateWithLifecycle()
     val syncState = syncKey?.let { syncStates[it] } ?: LyricSyncState.Idle
-    val syncLines = ((lyrics as? LyricsUi.Ready)?.lyrics as? Lyrics.Synced)?.lines
     val streamKnown = state.durationMs > 0L && !state.isLoading
-    val trackDurationMs = (track?.durationSeconds ?: 0) * 1_000L
-    LaunchedEffect(syncKey, syncLines, state.loadId, streamKnown) {
-        if (syncKey == null || syncLines == null || !streamKnown) return@LaunchedEffect
+    // LRCLIB often holds a version timed to this very stream (the video's cut): use it when there is one.
+    val baseSynced = (baseLyrics as? LyricsUi.Ready)?.lyrics as? Lyrics.Synced
+    val streamLyrics = rememberStreamLyrics(track, album, baseSynced, state.loadId, state.durationMs, streamKnown)
+    val streamSynced = streamLyrics.lyrics
+    val lyrics: LyricsUi = if (baseSynced != null && streamSynced != null) LyricsUi.Ready(streamSynced) else baseLyrics
+    val syncLines = streamSynced?.lines
+    // The length of the recording the lines were timed to: the lyrics' own when LRCLIB gives it, else the album track's.
+    val trackDurationMs = streamSynced?.durationMs?.takeIf { it > 0L } ?: ((track?.durationSeconds ?: 0) * 1_000L)
+    LaunchedEffect(syncKey, syncLines, state.loadId, streamKnown, streamLyrics.resolved) {
+        if (syncKey == null || syncLines == null || !streamKnown || !streamLyrics.resolved) return@LaunchedEffect
         repeat(LYRIC_SYNC_ATTEMPTS) {
             MusicLyricSync.sync(syncKey, syncLines, trackDurationMs, state.durationMs, state.loadId)
             if (MusicLyricSync.stateOf(syncKey) !is LyricSyncState.Idle) return@LaunchedEffect
@@ -317,6 +323,7 @@ private fun MusicNowPlayingScreen(
                         syncState = syncState,
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
+                        onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
                     )
                 }
             } else {
@@ -334,6 +341,7 @@ private fun MusicNowPlayingScreen(
                         syncState = syncState,
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
+                        onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
                     )
                 }
             }
@@ -630,7 +638,10 @@ private fun LyricsPane(
     syncState: LyricSyncState = LyricSyncState.Idle,
     onNudge: (Long) -> Unit = {},
     onResetSync: () -> Unit = {},
+    onTapSync: (shownLineTimeMs: Long, positionMs: Long) -> Unit = { _, _ -> },
 ) {
+    // Tap to sync: the next line tapped is the one being heard, not a seek.
+    var tapping by remember { mutableStateOf(false) }
     Box(modifier, contentAlignment = Alignment.Center) {
         when (ui) {
             LyricsUi.Loading -> Unit
@@ -639,8 +650,18 @@ private fun LyricsPane(
                 Lyrics.Instrumental -> Message("Instrumental")
                 is Lyrics.Plain -> PlainLyrics(lyrics.lines)
                 is Lyrics.Synced -> {
-                    SyncedLyrics(lyrics.lines, positionMs, onSeek, reduced)
-                    LyricSyncStrip(syncState, onNudge, onResetSync, Modifier.align(Alignment.BottomEnd))
+                    SyncedLyrics(
+                        lyrics.lines, positionMs, onSeek, reduced,
+                        tapping = tapping,
+                        onTapLine = { lineTimeMs, tappedAtMs ->
+                            onTapSync(lineTimeMs, tappedAtMs)
+                            tapping = false
+                        },
+                    )
+                    LyricSyncStrip(
+                        syncState, tapping, { tapping = !tapping }, onNudge, onResetSync,
+                        Modifier.align(Alignment.BottomEnd),
+                    )
                 }
             }
         }
@@ -651,21 +672,26 @@ private fun LyricsPane(
 @Composable
 private fun LyricSyncStrip(
     state: LyricSyncState,
+    tapping: Boolean,
+    onToggleTap: () -> Unit,
     onNudge: (Long) -> Unit,
     onReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val offset = state.offsetMs()
     val label = when {
+        tapping -> "Tap the line you hear now"
         state is LyricSyncState.Checking -> "Syncing lyrics…"
         state is LyricSyncState.Offset && !state.auto -> "Lyrics ${formatLyricOffset(offset)}"
         state is LyricSyncState.Offset && offset != 0L -> "Auto-synced ${formatLyricOffset(offset)}"
+        state is LyricSyncState.Unsure -> "Couldn't auto-sync"
         else -> null
     }
     Row(modifier.padding(end = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         if (label != null) {
-            Text(label, color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp, maxLines = 1)
+            Text(label, color = Color.White.copy(alpha = if (tapping) 0.9f else 0.5f), fontSize = 13.sp, maxLines = 1)
         }
+        MusicTextChip(if (tapping) "Cancel" else "Tap to sync", onToggleTap)
         MusicTextChip("-0.5s") { onNudge(-LYRIC_NUDGE_MS) }
         MusicTextChip("+0.5s") { onNudge(LYRIC_NUDGE_MS) }
         if (offset != 0L) MusicTextChip("Reset", onReset)
@@ -693,7 +719,14 @@ private fun PlainLyrics(lines: List<String>) {
 }
 
 @Composable
-private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long, onSeek: (Long) -> Unit, reduced: Boolean) {
+private fun SyncedLyrics(
+    lines: List<LyricLine>,
+    positionMs: Long,
+    onSeek: (Long) -> Unit,
+    reduced: Boolean,
+    tapping: Boolean = false,
+    onTapLine: (lineTimeMs: Long, positionMs: Long) -> Unit = { _, _ -> },
+) {
     val accent = MaterialTheme.nuvio.colors.accent
     val active = activeLyricIndex(lines, positionMs + NOW_PLAYING_LYRIC_LEAD_MS)
     val listState = rememberLazyListState()
@@ -729,7 +762,7 @@ private fun SyncedLyrics(lines: List<LyricLine>, positionMs: Long, onSeek: (Long
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { onSeek(line.timeMs) }
+                    .clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) }
                     .padding(horizontal = 12.dp, vertical = 10.dp)
                     .graphicsLayer {
                         scaleX = scale

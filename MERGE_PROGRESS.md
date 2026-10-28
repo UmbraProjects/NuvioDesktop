@@ -43,3 +43,9 @@ Music ladder phase 8 (hook finder) checked: `HookFinder.kt` + `HookFinderTest.kt
 
 ## Update (phase 9, 2026-10-27)
 Music ladder phase 9 (audition) written: `LadderAudition.kt`, `LadderRoom.kt`, edits to `MusicLadderScreen.kt`, `LadderPlay.kt` (`resolveRungAlbum`) and `MusicPlayer.play` (`startPositionMs`). Pure logic and the player are covered by tests run with a standalone Kotlin compiler (20 new audition tests, 3 new player tests, existing player and `LadderPlayTest` still pass). Still uncompiled through Gradle: `LadderRoom.kt`, the key handling and row changes in `MusicLadderScreen.kt`, plus everything listed above. Build locally and run `Ladder*Test`, `HookFinderTest` and `MusicPlayerTest` before phase 10.
+
+## Update (lyric sync, 2026-10-28)
+Three lyric sync changes. Pure logic and `MusicLyricSync` are covered by tests run with a standalone Kotlin compiler (45 pass, incl. the existing `LyricSyncTest` and `MusicLyricSyncTest` non-audio tests); the two JSON codec tests, the Compose changes and the LRCLIB client are not compiled through Gradle.
+- **Version by stream length:** `Lyrics.Synced` now carries LRCLIB's `duration`. `LyricsRepository.forStream` asks LRCLIB for the other timed versions only when the stream's length differs from the lyrics' (cached per track), and swaps one in only when it is the stream's own cut (within 2.5 s). The sync reference length is now the lyrics' own, not the YouTube track's. `LyricVersion.kt` (`rememberStreamLyrics`) is used by the Stage view and the corner card.
+- **Saved offsets:** the person's nudges and taps are stored per `videoId:audio|video` (`LyricSyncStorage`, store `nuvio_music_lyric_sync`) with the lyrics' length; ignored if the lyrics are now a different length. Reset forgets it. Auto-found offsets are not saved.
+- **Tap to sync:** "Tap to sync" chip, then tap the line you hear; `tapSyncOffsetMs` (350 ms reaction allowance).

@@ -314,9 +314,15 @@ private fun rememberLiveLyricLine(state: MusicPlayerState): String? {
         value = null
         value = track?.let { LyricsRepository.forTrack(it, album) }
     }
+    // The version of the lyrics that fits this stream, as the lyric view picks it, so the offset below is for them.
+    val streamLyrics = rememberStreamLyrics(
+        track, album, lyrics as? Lyrics.Synced, state.loadId, state.durationMs, state.durationMs > 0L && !state.isLoading,
+    )
     val syncStates by MusicLyricSync.states.collectAsStateWithLifecycle()
-    val offset = track?.let { syncStates[lyricSyncKey(it, realVideo = false)] }?.offsetMs() ?: 0L
-    val lines = remember(lyrics, offset) { (lyrics as? Lyrics.Synced)?.lines?.shiftedBy(offset) }
+    val key = track?.let { lyricSyncKey(it, realVideo = false) }
+    // Before the lyric view has looked at this stream, what the person saved for it still applies.
+    val offset = key?.let { syncStates[it]?.offsetMs() ?: MusicLyricSync.savedOffsetOf(it) } ?: 0L
+    val lines = remember(streamLyrics.lyrics, offset) { streamLyrics.lyrics?.lines?.shiftedBy(offset) }
     if (lines == null) return null
     val index = activeLyricIndex(lines, state.positionMs)
     return lines.getOrNull(index)?.text?.trim()?.takeIf { isSungLyric(it) }
