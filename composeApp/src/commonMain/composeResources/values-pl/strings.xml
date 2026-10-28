@@ -504,7 +504,7 @@
     <string name="settings_discover_ai_preset_comfort">Filmy na poprawę nastroju</string>
     <string name="settings_discover_ai_preset_acclaimed">Uznane, a pominięte</string>
     <string name="settings_discover_ai_preset_custom">Mój własny prompt</string>
-    <string name="settings_discover_ai_preset_just_watched">Dopiero obejrzane</string>
+    <string name="settings_discover_ai_preset_just_watched">Właśnie obejrzane</string>
     <string name="settings_discover_ai_preset_clustered">Ulubione, pogrupowane</string>
     <string name="discover_row_ai_just_watched">Bo właśnie obejrzano</string>
     <string name="discover_row_ai_clustered">Co łączy Twoje ulubione</string>
@@ -518,7 +518,7 @@
     <string name="settings_discover_ai_prompt">Twój prompt</string>
     <string name="settings_discover_ai_prompt_placeholder">np. francuskie filmy kryminalne z lat 70.</string>
     <string name="settings_discover_ai_generate">Generuj teraz</string>
-    <string name="settings_discover_ai_generating">Pytanie modelu…</string>
+    <string name="settings_discover_ai_generating">Wysyłanie zapytania do modelu…</string>
     <string name="settings_discover_ai_generated_ok">Wygenerowano tytuły: %1$d.</string>
     <string name="settings_discover_ai_error_not_configured">Ustaw powyżej dostawcę, klucz i model oraz włącz wiersze AI.</string>
     <string name="settings_discover_ai_error_unauthorized">Dostawca odrzucił ten klucz API.</string>
@@ -617,7 +617,7 @@
     <string name="compose_player_no_streams_found">Nie znaleziono strumieni</string>
     <string name="compose_player_none">Brak</string>
     <string name="compose_player_outline">Obrys</string>
-    <string name="compose_player_outline_width">Grubość konturu</string>
+    <string name="compose_player_outline_width">Grubość obrysu</string>
     <string name="compose_player_shadow">Cień</string>
     <string name="compose_player_shadow_offset">Przesunięcie cienia</string>
     <string name="compose_player_shadow_color">Kolor cienia</string>
@@ -796,7 +796,7 @@
     <string name="settings_simkl_section_auth">Uwierzytelnianie</string>
     <string name="settings_simkl_credentials_title">Klucz API SIMKL</string>
     <string name="settings_simkl_credentials_description">Zarejestruj aplikację na simkl.com/settings/developer/ (Mobile, desktop &amp; browser apps) i wklej jej Client ID. Jako Redirect URI użyj http://127.0.0.1/auth/simkl; sekret nie jest potrzebny.</string>
-    <string name="settings_simkl_client_id">Client ID</string>
+    <string name="settings_simkl_client_id">Identyfikator klienta</string>
     <string name="settings_simkl_credentials_save">Zapisz</string>
     <string name="settings_simkl_credentials_clear">Wyczyść</string>
     <string name="settings_simkl_connect">Połącz z SIMKL</string>
@@ -885,7 +885,7 @@
     <string name="settings_advanced_memory_use_description">Oszczędne szybciej zwalnia pamięć w bezczynności. Hojne trzyma gotowych więcej teł, dzięki czemu ponowne odwiedzanie tytułów jest natychmiastowe, zużywając do ~130 MB więcej. Stosowane natychmiast.</string>
     <string name="settings_advanced_memory_use_lean">Oszczędne</string>
     <string name="settings_advanced_memory_use_balanced">Zrównoważone</string>
-    <string name="settings_advanced_memory_use_generous">Hojne</string>
+    <string name="settings_advanced_memory_use_generous">Wysokie</string>
     <string name="settings_advanced_metadata_cache_off">Wył.</string>
     <string name="settings_advanced_metadata_cache_hours">%1$d godz.</string>
     <string name="settings_advanced_metadata_cache_days">%1$d dni</string>
@@ -1071,8 +1071,8 @@
     <string name="settings_appearance_app_language">Język aplikacji</string>
     <string name="settings_appearance_app_language_sheet_title">Wybierz język</string>
     <string name="settings_appearance_continue_watching_description">Pokaż, ukryj i stylizuj półkę Kontynuuj oglądanie.</string>
-    <string name="settings_appearance_desktop_navigation">Nawigacja na pulpicie</string>
-    <string name="settings_appearance_desktop_navigation_sheet_title">Wybierz nawigację na pulpicie</string>
+    <string name="settings_appearance_desktop_navigation">Nawigacja na komputerze</string>
+    <string name="settings_appearance_desktop_navigation_sheet_title">Wybierz nawigację na komputerze</string>
     <string name="settings_appearance_desktop_navigation_sidebar">Panel boczny</string>
     <string name="settings_appearance_desktop_navigation_top_bar">Górny pasek</string>
     <string name="settings_appearance_desktop_top_bar_always_visible">Zawsze pokazuj górny pasek</string>
@@ -1429,7 +1429,7 @@
     <string name="settings_lights_govee_api_key_placeholder">Klucz API</string>
     <string name="settings_lights_govee_load_devices">Wczytaj urządzenia</string>
     <string name="settings_lights_govee_devices_idle">Wczytaj światła z konta Govee, a następnie wybierz te, którymi chcesz sterować</string>
-    <string name="settings_lights_govee_devices_loading">Pytanie Govee…</string>
+    <string name="settings_lights_govee_devices_loading">Odpytywanie Govee…</string>
     <string name="settings_lights_govee_devices_loaded">Znalezione światła: %1$d</string>
     <string name="settings_lights_govee_devices_none">Nie znaleziono świateł na tym koncie</string>
     <string name="settings_lights_govee_devices_failed">Nie udało się wczytać urządzeń: %1$s</string>
@@ -1723,7 +1723,7 @@
     <string name="settings_playback_hud_layout">Układ elementów sterowania odtwarzacza</string>
     <string name="settings_playback_hud_layout_standard">Standardowy</string>
     <string name="settings_playback_hud_layout_standard_description">Wyśrodkowane elementy sterowania odtwarzaniem, głośność po lewej i ikony narzędzi po prawej.</string>
-    <string name="settings_playback_hud_layout_legacy">Dawny</string>
+    <string name="settings_playback_hud_layout_legacy">Klasyczny</string>
     <string name="settings_playback_hud_layout_legacy_description">Użyj dawnych elementów sterowania odtwarzaniem w stylu mobilnym, zachowując obecne panele pulpitu.</string>
     <string name="settings_playback_hud_layout_minimal">Minimalny</string>
     <string name="settings_playback_hud_layout_pills">Pigułki minimalnych elementów sterowania</string>
@@ -1757,7 +1757,7 @@
     <string name="settings_playback_hud_button_video_settings">Ustawienia wideo</string>
     <string name="settings_playback_hud_vignette_description">Przyciemnij górną i dolną krawędź obrazu, gdy widoczne są elementy sterowania odtwarzacza. Wyłączone nie zmienia obrazu.</string>
     <string name="settings_playback_hud_layout_minimal_description">Jeden wąski wiersz: odtwarzanie, głośność i czas po lewej, narzędzia po prawej, pod paskiem przewijania na całą szerokość.</string>
-    <string name="settings_playback_hud_layout_ultra">Ultra minimalny</string>
+    <string name="settings_playback_hud_layout_ultra">Ultraminimalny</string>
     <string name="settings_playback_hud_layout_ultra_description">Tylko pasek przewijania, przełącznik pełnego ekranu i koło zębate otwierające okno opcji z efektem mrożonego szkła. Kliknij obraz, aby odtworzyć lub wstrzymać.</string>
     <string name="settings_playback_hud_layout_official">Oficjalny Nuvio</string>
     <string name="settings_playback_hud_layout_official_description">Dolny pasek z oficjalnego odtwarzacza Nuvio Desktop: przycisk odtwarzania w kolorze wiodącym i okrągłe ikony narzędzi po lewej, głośność i czas po prawej, pod wyraźnym paskiem przewijania.</string>
@@ -1963,7 +1963,7 @@
     <string name="settings_playback_subtitle_outline">Obrys</string>
     <string name="settings_playback_subtitle_outline_color">Kolor obrysu</string>
     <string name="settings_playback_subtitle_outline_description">Rysuj obramowanie wokół tekstu napisów.</string>
-    <string name="settings_playback_subtitle_outline_width">Szerokość obrysu</string>
+    <string name="settings_playback_subtitle_outline_width">Grubość obrysu</string>
     <string name="settings_playback_subtitle_shadow">Cień</string>
     <string name="settings_playback_subtitle_shadow_color">Kolor cienia</string>
     <string name="settings_playback_subtitle_shadow_description">Rzuca miękki cień pod tekstem napisów.</string>
@@ -2093,7 +2093,7 @@
     <string name="settings_stream_scoring_group_size">Rozmiar</string>
     <string name="settings_stream_scoring_trait_src_hdtv">HDTV</string>
     <string name="settings_stream_scoring_trait_src_junk">Śmieciowy rip</string>
-    <string name="settings_stream_scoring_trait_src_junk_caption">Rypy CAM, TS, TC i screener.</string>
+    <string name="settings_stream_scoring_trait_src_junk_caption">Ripy CAM, TS, TC i screener.</string>
     <string name="settings_stream_scoring_trait_hdr_dolby_vision">Dolby Vision</string>
     <string name="settings_stream_scoring_trait_hdr_dolby_vision_caption">Formaty HDR się nie sumują, punkty dostaje najwyższy.</string>
     <string name="settings_stream_scoring_trait_hdr_10_plus">HDR10+</string>
@@ -2304,14 +2304,14 @@
     <string name="trakt_watch_progress_source_nuvio">Nuvio Sync</string>
     <string name="trakt_watch_progress_trakt_selected">Źródło postępu ustawione na Trakt</string>
     <string name="trakt_watch_progress_nuvio_selected">Źródło postępu ustawione na Nuvio Sync</string>
-    <string name="trakt_more_like_this_source_title">Źródło sekcji Więcej takich</string>
+    <string name="trakt_more_like_this_source_title">Źródło sekcji Podobne</string>
     <string name="trakt_more_like_this_source_subtitle">Wybierz, skąd pochodzą rekomendacje na stronach szczegółów</string>
-    <string name="trakt_more_like_this_source_dialog_title">Źródło sekcji Więcej takich</string>
+    <string name="trakt_more_like_this_source_dialog_title">Źródło sekcji Podobne</string>
     <string name="trakt_more_like_this_source_dialog_subtitle">Wybierz źródło rekomendacji wyświetlanych na stronach szczegółów.</string>
     <string name="trakt_more_like_this_source_trakt">Trakt</string>
     <string name="trakt_more_like_this_source_tmdb">TMDB</string>
     <string name="trakt_more_like_this_source_simkl">SIMKL</string>
-    <string name="settings_more_like_this_section">Więcej takich</string>
+    <string name="settings_more_like_this_section">Podobne</string>
     <string name="settings_more_like_this_off">Wyłączone</string>
     <string name="settings_more_like_this_not_connected">Nie połączono - Więcej takich korzysta z TMDB do czasu zalogowania.</string>
     <string name="trakt_continue_watching_window">Okno Kontynuuj oglądanie</string>
@@ -2850,7 +2850,7 @@
     <string name="downloads_enqueue_replaced">Zastąpiono poprzednie pobieranie</string>
     <string name="downloads_enqueue_started">Pobieranie rozpoczęte</string>
     <string name="downloads_enqueue_unsupported_format">Nieobsługiwany format strumienia do pobrania</string>
-    <string name="library_downloads_title">Pobierane z biblioteki</string>
+    <string name="library_downloads_title">Pobieranie do biblioteki</string>
     <string name="library_downloads_subtitle">Automatycznie pobieraj nowe odcinki i filmy dla monitorowanych tytułów</string>
     <string name="library_downloads_section_settings">Ustawienia</string>
     <string name="library_downloads_section_monitored">Monitorowane tytuły</string>
@@ -3445,8 +3445,8 @@
     <string name="settings_qualicache_server_address">Adres serwera</string>
     <string name="settings_qualicache_server_address_description">QC nie jest jeszcze możliwy do samodzielnego hostowania, na razie użyj mojej publicznej instancji pod adresem https://quality.myaio.xyz.</string>
     <string name="settings_qualicache_server_url">URL serwera</string>
-    <string name="settings_qualicache_show_badges">Pokaż znaczki jakości</string>
-    <string name="settings_qualicache_show_badges_description">Dodaje znaczki jakości na ekranie głównym.</string>
+    <string name="settings_qualicache_show_badges">Pokaż plakietki jakości</string>
+    <string name="settings_qualicache_show_badges_description">Dodaje plakietki jakości na ekranie głównym.</string>
     <string name="settings_qualicache_title">QualiCache</string>
     <string name="settings_qualicache_trust_high">Wysokie</string>
     <string name="settings_qualicache_trust_low">Niskie</string>
@@ -3483,7 +3483,7 @@
     <string name="settings_meta_hero_trailer_manual">Ręcznie</string>
     <string name="settings_poster_action_preview">Podgląd akcji plakatu</string>
     <string name="settings_poster_action_preview_description">Pokazuje powiększoną grafikę po otwarciu menu akcji plakatu.</string>
-    <string name="settings_poster_watchlist_badge">Znaczek listy do obejrzenia</string>
+    <string name="settings_poster_watchlist_badge">Plakietka listy do obejrzenia</string>
     <string name="settings_poster_watchlist_badge_description">Oznacza zakładką plakaty tytułów zapisanych w bibliotece. Nie jest widoczny przy tytule, który ma już znacznik obejrzenia.</string>
     <string name="poster_cd_in_watchlist">Na liście do obejrzenia</string>
     <string name="settings_poster_card_depth">Głębia kart</string>
@@ -3601,16 +3601,16 @@
     <string name="settings_home_display_mode_basic_description">Statyczne tło hero bez dodatkowych efektów.</string>
     <string name="settings_home_display_mode_tv">Tryb TV</string>
     <string name="settings_home_display_mode_tv_description">Piękny, immersyjny układ wiersz po wierszu z Nuvio HTPC.</string>
-    <string name="settings_home_hero_badge_count">Liczba znaczków hero</string>
+    <string name="settings_home_hero_badge_count">Liczba plakietek hero</string>
     <string name="settings_home_hero_badge_count_hidden">Ukryte</string>
-    <string name="settings_home_hero_badge_count_many">Znaczków: %1$d</string>
-    <string name="settings_home_hero_badge_count_one">1 znaczek</string>
-    <string name="settings_home_hero_badge_position">Pozycja znaczków hero</string>
+    <string name="settings_home_hero_badge_count_many">Plakietek: %1$d</string>
+    <string name="settings_home_hero_badge_count_one">1 plakietka</string>
+    <string name="settings_home_hero_badge_position">Pozycja plakietek hero</string>
     <string name="settings_home_hero_badge_position_bottom">Na dole tła</string>
     <string name="settings_home_hero_badge_position_top_horizontal">Prawy górny róg, poziomo</string>
     <string name="settings_home_hero_badge_position_top_vertical">Prawy górny róg, pionowo</string>
-    <string name="settings_home_hero_badge_size">Rozmiar znaczków hero</string>
-    <string name="settings_home_hero_badge_size_description">Zmień rozmiary znaczków.</string>
+    <string name="settings_home_hero_badge_size">Rozmiar plakietek hero</string>
+    <string name="settings_home_hero_badge_size_description">Zmień rozmiary plakietek.</string>
     <string name="settings_home_hero_height">Wysokość hero</string>
     <string name="settings_home_hero_height_description">Ustaw, ile miejsca w oknie zajmuje adaptacyjne hero.</string>
     <string name="settings_home_number_catalog_rows">Numeruj wiersze katalogów</string>
@@ -3654,7 +3654,7 @@
     <string name="library_sort">Sortuj bibliotekę</string>
     <string name="library_menu_local_library">Biblioteka lokalna</string>
     <string name="library_menu_local_library_settings">Ustawienia biblioteki lokalnej</string>
-    <string name="meta_starring">Występują</string>
+    <string name="meta_starring">Obsada</string>
     <string name="player_subtitle_ass_mode">Stylizacja ASS/SSA</string>
     <string name="player_subtitle_ass_mode_original">Oryginalna</string>
     <string name="player_subtitle_ass_mode_resize">Zmiana rozmiaru</string>
@@ -3948,7 +3948,7 @@
     <string name="iptv_tab_retry">Spróbuj ponownie</string>
     <string name="iptv_tab_open_settings">Ustawienia telewizji na żywo</string>
     <string name="iptv_tab_refresh">Odśwież kanały i przewodnik</string>
-    <string name="iptv_tab_next">Dalej %1$s  %2$s</string>
+    <string name="iptv_tab_next">Następnie %1$s  %2$s</string>
     <string name="iptv_tab_favourite_add">Dodaj do ulubionych</string>
     <string name="iptv_tab_favourite_remove">Usuń z ulubionych</string>
     <string name="iptv_tab_empty_favourites">Brak ulubionych. Użyj gwiazdki przy kanale, aby dodać go tutaj.</string>
@@ -3975,7 +3975,7 @@
     <string name="iptv_hud_search_results">Pasujących kanałów: %1$d</string>
     <string name="player_hdr_mode_auto_label">Auto</string>
     <string name="player_hdr_mode_auto_desc">Pozwól systemowi zdecydować między passthrough a tone mappingiem, zależnie od wyświetlacza.</string>
-    <string name="player_hdr_mode_always_tonemap_label">Zawsze tone mapping</string>
+    <string name="player_hdr_mode_always_tonemap_label">Zawsze mapowanie tonów</string>
     <string name="player_hdr_mode_always_tonemap_desc">Wymuś konwersję treści HDR do SDR przez tone mapping, nawet na wyświetlaczach HDR.</string>
     <string name="player_hdr_mode_always_passthrough_label">Zawsze passthrough</string>
     <string name="player_hdr_mode_always_passthrough_desc">Zawsze próbuj przekazywać HDR bez zmian (passthrough), nawet na wyświetlaczach SDR.</string>
@@ -4378,7 +4378,7 @@
     <string name="settings_search_badges">PLAKIETKI</string>
     <string name="discord_presence_viewing_details">Przegląda szczegóły</string>
     <string name="discord_presence_details">Szczegóły</string>
-    <string name="discord_presence_viewing_a_person">Przegląda osobę</string>
+    <string name="discord_presence_viewing_a_person">Przegląda profil osoby</string>
     <string name="discord_presence_person">Osoba</string>
     <string name="discord_presence_browsing_titles">Przegląda tytuły</string>
     <string name="discord_presence_discovery">Odkrywanie</string>
@@ -4387,7 +4387,7 @@
     <string name="discord_presence_editing_collections">Edytuje kolekcje</string>
     <string name="discord_presence_viewing_a_collection">Przegląda kolekcję</string>
     <string name="discord_presence_home_screen">Ekran główny</string>
-    <string name="discord_presence_meta_screen">Ekran metadanych</string>
+    <string name="discord_presence_meta_screen">Ekran szczegółów</string>
     <string name="discord_presence_continue_watching">Kontynuuj oglądanie</string>
     <string name="discord_presence_addons">Dodatki</string>
     <string name="discord_presence_plugins">Wtyczki</string>
@@ -4415,7 +4415,7 @@
     <string name="player_hud_hdr_mode">Tryb HDR</string>
     <string name="player_hud_color_profile">Profil kolorów</string>
     <string name="player_hud_anime">Anime</string>
-    <string name="player_hud_debanding">Debanding</string>
+    <string name="player_hud_debanding">Usuwanie bandingu</string>
     <string name="player_hud_deinterlace">Usuwanie przeplotu</string>
     <string name="player_hud_sharpen">Wyostrzanie</string>
     <string name="player_hud_low">Niski</string>
@@ -4514,7 +4514,7 @@
     <string name="player_hud_submit_timestamps">Prześlij znaczniki czasu</string>
     <string name="player_hud_custom_subtitle_color">Własny kolor napisów</string>
     <string name="player_hud_search_channels">Szukaj kanałów</string>
-    <string name="player_hud_p2p_streaming_consent">Zgoda na streaming P2P</string>
+    <string name="player_hud_p2p_streaming_consent">Zgoda na strumieniowanie P2P</string>
     <string name="player_hud_pause">Pauza</string>
     <string name="player_hud_exit_picture_in_picture">Zamknij obraz w obrazie</string>
     <string name="player_hud_contrast">Kontrast</string>
@@ -4576,7 +4576,7 @@
     <string name="player_hud_hex_color">KOLOR HEX</string>
     <string name="player_hud_rrggbb_or_aarrggbb_to_set_opacity">#RRGGBB lub #AARRGGBB, aby ustawić też przezroczystość.</string>
     <string name="player_hud_apply">Zastosuj</string>
-    <string name="player_hud_p2p_streaming">Streaming P2P</string>
+    <string name="player_hud_p2p_streaming">Strumieniowanie P2P</string>
     <string name="player_hud_enable_p2p">Włącz P2P</string>
     <string name="player_hud_click_to_show_total_duration">Kliknij, aby pokazać całkowity czas</string>
     <string name="player_hud_options">Opcje</string>
@@ -4676,7 +4676,7 @@
     <string name="poster_actions_add_to_playlist">Dodaj do playlisty</string>
     <string name="poster_actions_not_interested">Nie interesuje mnie</string>
     <string name="calendar_connect_your_simkl_account_to_see">Połącz konto SIMKL, aby zobaczyć swój kalendarz.</string>
-    <string name="calendar_nothing_airing">Nic się nie emituje.</string>
+    <string name="calendar_nothing_airing">Brak emisji.</string>
     <string name="calendar_film_release">Premiera filmu</string>
     <string name="calendar_series_premiere">Premiera serialu</string>
     <string name="calendar_season_premiere">Premiera sezonu</string>
@@ -4803,8 +4803,8 @@
     <string name="simkl_rewatch_enable_track_simkl_rewatches_in_settings">Najpierw włącz Śledzenie ponownych seansów SIMKL w Ustawieniach.</string>
     <string name="simkl_rewatch_the_title_could_not_be_resolved">Nie udało się rozpoznać tytułu dla SIMKL.</string>
     <string name="simkl_rewatch_no_simkl_compatible_id_could_be">Nie znaleziono ID zgodnego z SIMKL dla tego tytułu.</string>
-    <string name="stream_badges_enter_a_badge_json_url">Wpisz URL JSON odznak.</string>
-    <string name="stream_badges_badge_import_failed">Import odznak nie powiódł się.</string>
+    <string name="stream_badges_enter_a_badge_json_url">Wpisz URL JSON plakietek.</string>
+    <string name="stream_badges_badge_import_failed">Import plakietek nie powiódł się.</string>
     <string name="streams_sort_default_order">Domyślna kolejność</string>
     <string name="streams_sort_largest_first">Najpierw największe</string>
     <string name="streams_sort_smallest_first">Najpierw najmniejsze</string>
@@ -4861,7 +4861,7 @@
     <string name="simkl_this_title">Ten tytuł</string>
     <string name="settings_calendar_source_nuvio">Nuvio (Twoja biblioteka i historia oglądania)</string>
     <string name="settings_discover_top_picks">Najlepsze propozycje dla Ciebie</string>
-    <string name="settings_discover_people_rows">Więcej od / Więcej z</string>
+    <string name="settings_discover_people_rows">Więcej od / Więcej z udziałem</string>
     <string name="settings_discover_top_picks_description">Tytuły, które są stale polecane razem z Twoją historią oglądania, ważone tym, jak niedawno i jak dużo obejrzałeś każdy tytuł. Porzucony serial przemawia przeciwko temu, co poleca.</string>
     <string name="settings_discover_people_rows_description">Reżyserzy i aktorzy filmowi, którzy występują w co najmniej trzech obejrzanych przez Ciebie produkcjach, oraz ich pozostałe prace. Maksymalnie dwóch reżyserów i trzech aktorów.</string>
     <string name="discord_presence_starting_stream">Uruchamianie źródła</string>
@@ -4880,7 +4880,7 @@
     <string name="settings_favorites_navigation">Nawigacja</string>
     <string name="settings_simkl_reconnect">Połącz ponownie</string>
     <string name="settings_trakt_reconnect">Połącz ponownie</string>
-    <string name="tracking_library_simkl_plan_to_watch">SIMKL Plan oglądania</string>
+    <string name="tracking_library_simkl_plan_to_watch">SIMKL: Do obejrzenia</string>
     <string name="games_editor_logo">LOGO</string>
     <string name="discord_presence_choosing_stream">Wybieranie źródła dla %1$s</string>
     <string name="calendar_day_today">Dzisiaj · %1$s</string>
@@ -4891,7 +4891,7 @@
     <string name="browse_filter_rated">Ocena: %1$s</string>
     <string name="browse_filter_us_film_rating">Amerykańska klasyfikacja wiekowa filmów</string>
     <string name="discover_row_more_from">Więcej od: %1$s</string>
-    <string name="discover_row_more_with">Więcej z: %1$s</string>
+    <string name="discover_row_more_with">Więcej z udziałem: %1$s</string>
     <string name="hero_badge_label_directed_by">Reżyseria: %1$s</string>
     <string name="discord_presence_episode">Odcinek %1$d</string>
     <string name="playlist_player_up_next_header">Następne · %1$s (%2$d/%3$d)</string>
@@ -4909,7 +4909,7 @@
     <string name="playlist_player_ready_downloaded">Gotowe · pobrano</string>
     <string name="settings_code_expires_in">Kod wygasa za %1$s:%2$s</string>
     <string name="settings_trakt_enter_code_at">Wpisz ten kod na %1$s i zatwierdź Nuvio.</string>
-    <string name="stream_badges_import_limit">Możesz zaimportować maksymalnie %1$d URL-i odznak.</string>
+    <string name="stream_badges_import_limit">Możesz zaimportować maksymalnie %1$d URL-i plakietek.</string>
     <string name="trakt_auth_refused">Trakt odrzucił żądanie logowania (%1$s). Spróbuj ponownie za chwilę.</string>
     <string name="poster_template_http_status">Usługa odpowiedziała HTTP %1$s%2$s</string>
     <string name="local_library_folder_not_found">Nie znaleziono folderu: %1$s</string>

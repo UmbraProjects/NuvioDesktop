@@ -334,7 +334,7 @@
     <string name="compose_settings_page_homescreen">Pantalla de inicio</string>
     <string name="compose_settings_page_integrations">Integraciones</string>
     <string name="compose_settings_page_mdblist_ratings">Calificaciones de MDBList</string>
-    <string name="compose_settings_page_meta_screen">Pantalla meta</string>
+    <string name="compose_settings_page_meta_screen">Pantalla de detalles</string>
     <string name="compose_settings_page_notifications">Notificaciones</string>
     <string name="compose_settings_page_playback">Reproducción</string>
     <string name="compose_settings_page_plugins">Plugins</string>
@@ -461,7 +461,7 @@
     <string name="settings_poster_radius_classic">Clásico</string>
     <string name="settings_poster_radius_pill">Píldora</string>
     <string name="settings_poster_radius_rounded">Redondeado</string>
-    <string name="settings_poster_radius_sharp">Marcado</string>
+    <string name="settings_poster_radius_sharp">Recto</string>
     <string name="settings_poster_radius_subtle">Sutil</string>
     <string name="settings_poster_width_balanced">Equilibrado</string>
     <string name="settings_poster_width_comfort">Cómodo</string>
@@ -2058,9 +2058,9 @@
     <string name="settings_discord_section_presence">Presencia</string>
     <string name="settings_discord_section_activity">Actividad</string>
     <string name="compose_settings_page_seekr">Seekr</string>
-    <string name="settings_integrations_seekr_description">Miniaturas de la barra de búsqueda para streams de debrid y torrent</string>
+    <string name="settings_integrations_seekr_description">Miniaturas de la barra de progreso para streams de debrid y torrent</string>
     <string name="settings_seekr_section_title">Seekr</string>
-    <string name="settings_seekr_intro">Miniaturas de la barra de búsqueda ya preparadas, para que pasar el cursor por la línea de tiempo de debrid o torrent nunca consulte al host del stream. Obtén una clave gratis en seekr.tv, pégala abajo y elige Local + Seekr para las miniaturas.</string>
+    <string name="settings_seekr_intro">Miniaturas de la barra de progreso ya preparadas, para que pasar el cursor por la línea de tiempo de debrid o torrent nunca consulte al host del stream. Obtén una clave gratis en seekr.tv, pégala abajo y elige Local + Seekr para las miniaturas.</string>
     <string name="settings_seekr_api_key">Clave de API de Seekr</string>
     <string name="settings_seekr_api_key_description">Tu propia clave: los términos de Seekr no permiten compartirla. Cubre 20 películas y 70 episodios al día y se queda en este PC.</string>
     <string name="settings_seekr_api_key_placeholder">sk_live_…</string>
@@ -2298,8 +2298,8 @@
     <string name="settings_playback_hud_layout_minimal">Mínimo</string>
     <string name="settings_playback_hud_layout_pills">Píldoras de controles mínimos</string>
     <string name="settings_playback_hud_layout_pills_description">Coloca cada grupo de controles en su propia píldora translúcida en lugar de directamente sobre la imagen.</string>
-    <string name="settings_playback_seek_handle">Control deslizante de la barra de búsqueda</string>
-    <string name="settings_playback_seek_handle_description">Dibuja el control redondo en la barra de búsqueda. Desactivado deja solo la barra de progreso de color.</string>
+    <string name="settings_playback_seek_handle">Control deslizante de la barra de progreso</string>
+    <string name="settings_playback_seek_handle_description">Dibuja el control redondo en la barra de progreso. Desactivado deja solo la barra de progreso de color.</string>
     <string name="settings_playback_hud_vignette">Viñeta de los controles</string>
     <string name="settings_playback_hidden_hud_buttons">Botones del reproductor ocultos</string>
     <string name="settings_playback_hidden_hud_buttons_description">Quita del reproductor los controles que nunca usas. Sus atajos de teclado siguen funcionando.</string>
@@ -2326,11 +2326,11 @@
     <string name="settings_playback_hud_button_lock">Bloquear controles</string>
     <string name="settings_playback_hud_button_video_settings">Ajustes de video</string>
     <string name="settings_playback_hud_vignette_description">Oscurece los bordes superior e inferior de la imagen mientras se muestran los controles del reproductor. Desactivado deja la imagen intacta.</string>
-    <string name="settings_playback_hud_layout_minimal_description">Una sola fila delgada: reproducción, volumen y tiempo a la izquierda, herramientas a la derecha, bajo una barra de búsqueda de borde a borde.</string>
+    <string name="settings_playback_hud_layout_minimal_description">Una sola fila delgada: reproducción, volumen y tiempo a la izquierda, herramientas a la derecha, bajo una barra de progreso de borde a borde.</string>
     <string name="settings_playback_hud_layout_ultra">Ultra mínimo</string>
-    <string name="settings_playback_hud_layout_ultra_description">Solo la barra de búsqueda, un interruptor de pantalla completa y un engranaje que abre un menú de opciones de cristal esmerilado. Haz clic en la imagen para reproducir o pausar.</string>
+    <string name="settings_playback_hud_layout_ultra_description">Solo la barra de progreso, un interruptor de pantalla completa y un engranaje que abre un menú de opciones de cristal esmerilado. Haz clic en la imagen para reproducir o pausar.</string>
     <string name="settings_playback_hud_layout_official">Nuvio oficial</string>
-    <string name="settings_playback_hud_layout_official_description">La barra inferior del reproductor oficial de Nuvio Desktop: un botón de reproducción con color de acento e iconos de herramientas redondos a la izquierda, volumen y tiempo a la derecha, bajo una barra de búsqueda gruesa.</string>
+    <string name="settings_playback_hud_layout_official_description">La barra inferior del reproductor oficial de Nuvio Desktop: un botón de reproducción con color de acento e iconos de herramientas redondos a la izquierda, volumen y tiempo a la derecha, bajo una barra de progreso gruesa.</string>
     <string name="settings_playback_always_show_clock">Mostrar siempre el reloj de reproducción</string>
     <string name="settings_playback_always_show_clock_description">Mantiene el reloj visible en la esquina superior derecha cuando los controles del reproductor se desvanecen.</string>
     <string name="settings_playback_info_panel">Panel de información de reproducción</string>
@@ -2341,11 +2341,11 @@
     <string name="settings_playback_speed_toggle_description">Pulsa R para alternar entre estas velocidades.</string>
     <string name="settings_playback_desktop_verbose_mpv_logging">Registro detallado de MPV</string>
     <string name="settings_playback_desktop_verbose_mpv_logging_desc">Escribe logs/mpv-verbose.log para solucionar problemas.</string>
-    <string name="settings_playback_seek_step">Salto de búsqueda</string>
-    <string name="settings_playback_seek_step_description">Cuánto saltan los botones de búsqueda, las teclas de flecha y el gesto de doble toque.</string>
+    <string name="settings_playback_seek_step">Intervalo de salto</string>
+    <string name="settings_playback_seek_step_description">Cuánto saltan los botones de salto, las teclas de flecha y el gesto de doble toque.</string>
     <string name="settings_playback_ui_scale">Escala de la interfaz del reproductor</string>
     <string name="settings_playback_control_icon_scale">Escala de iconos de la fila inferior</string>
-    <string name="settings_playback_control_icon_scale_description">Cambia el tamaño solo de los botones de reproducción, búsqueda y acción de la fila inferior, además de la Escala de la interfaz del reproductor.</string>
+    <string name="settings_playback_control_icon_scale_description">Cambia el tamaño solo de los botones de reproducción, salto y acción de la fila inferior, además de la Escala de la interfaz del reproductor.</string>
     <string name="settings_appearance_app_ui_scale">Escala de la interfaz de la app</string>
     <string name="settings_appearance_app_ui_scale_details">Aplicar también a la pantalla de detalles</string>
     <string name="settings_appearance_app_ui_scale_details_description">Escala los detalles del contenido junto con el resto de la app. </string>
@@ -2388,7 +2388,7 @@
     <string name="settings_playback_desktop_custom_shader_paths_desc">Agrega un archivo o carpeta de shaders por línea. Las carpetas exponen sus archivos .glsl y .hook directos en Mejoras para anime.</string>
     <string name="settings_playback_desktop_custom_shader_paths_hint">p. ej.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
     <string name="settings_playback_desktop_custom_shader_paths_warning">Los shaders personalizados se ejecutan dentro del renderizador de mpv y pueden reducir el rendimiento o romper la reproducción. Elige Desactivado en Mejoras para anime si un shader causa problemas.</string>
-    <string name="settings_playback_desktop_seek_thumbnails">Miniaturas de la barra de búsqueda</string>
+    <string name="settings_playback_desktop_seek_thumbnails">Miniaturas de la barra de progreso</string>
     <string name="settings_playback_desktop_seek_thumbnails_desc">Vista previa de fotogramas al pasar el cursor por la línea de tiempo. Solo local previsualiza únicamente archivos de este PC o de tu red, evitando los límites de debrid; Local + Seekr agrega las miniaturas de Seekr. Desactivado en el preajuste Con límite de datos.</string>
     <string name="settings_playback_desktop_rate_limit_recovery">Recuperación por límite de solicitudes</string>
     <string name="settings_playback_desktop_rate_limit_recovery_search">Reconectar o cambiar de fuente cuando un host de debrid limita (HTTP 429) un stream que se estaba reproduciendo</string>
@@ -2414,7 +2414,7 @@
     <string name="settings_playback_hero_tv_trailer_fullscreen">Reproducción en pantalla completa</string>
     <string name="settings_playback_hero_tv_trailer_fullscreen_description">Reproduce el tráiler en pantalla completa en lugar de dentro del destacado. Pulsa T, Escape o mueve el foco para salir.</string>
     <string name="settings_playback_touch_gestures">Gestos táctiles</string>
-    <string name="settings_playback_touch_gestures_description">Permite deslizar y tocar dos veces sobre el reproductor para buscar, ajustar el brillo o ajustar el volumen.</string>
+    <string name="settings_playback_touch_gestures_description">Permite deslizar y tocar dos veces sobre el reproductor para avanzar o retroceder, ajustar el brillo o ajustar el volumen.</string>
     <string name="settings_playback_option_original">Original (TMDB)</string>
     <string name="settings_playback_addon_subtitle_startup_all">Todos los subtítulos</string>
     <string name="settings_playback_addon_subtitle_startup_all_description">Obtiene y muestra todos los subtítulos de complementos del video.</string>
@@ -4255,7 +4255,7 @@
     <string name="cast_searching">Buscando TV y reproductores en tu red…</string>
     <string name="cast_no_devices">No se encontraron dispositivos. La TV o el reproductor deben estar encendidos, en la misma red y con DLNA (uso compartido de medios / UPnP) activado. Windows también puede pedir permitir a Nuvio a través del firewall.</string>
     <string name="cast_dolby_vision">Dolby Vision (beta)</string>
-    <string name="cast_dolby_vision_description">Reempaqueta el stream como MP4 para que las TV que ignoran Dolby Vision en MKV puedan usarlo. Buscar es más lento y está menos probado. Kodi siempre recibe el stream original.</string>
+    <string name="cast_dolby_vision_description">Reempaqueta el stream como MP4 para que las TV que ignoran Dolby Vision en MKV puedan usarlo. Saltar es más lento y está menos probado. Kodi siempre recibe el stream original.</string>
     <string name="cast_dolby_vision_needs_ffmpeg">Requiere ffmpeg instalado en este PC (por ejemplo: winget install Gyan.FFmpeg).</string>
     <string name="cast_play_here">Reproducir aquí</string>
     <string name="cast_error_failed">No se pudo reproducir en %1$s: %2$s</string>
@@ -4474,7 +4474,7 @@
     <string name="player_hud_playback_error">Error de reproducción</string>
     <string name="player_hud_skip">Saltar</string>
     <string name="player_hud_playback_progress">Progreso de reproducción</string>
-    <string name="player_hud_seek">Buscar</string>
+    <string name="player_hud_seek">Barra de progreso</string>
     <string name="player_hud_click_to_show_time_remaining">Haz clic para mostrar el tiempo restante</string>
     <string name="player_hud_mute">Silenciar</string>
     <string name="player_hud_player_volume">Volumen del reproductor</string>

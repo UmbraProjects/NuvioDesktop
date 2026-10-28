@@ -367,7 +367,7 @@
     <string name="compose_settings_page_homescreen">Startbildschirm</string>
     <string name="compose_settings_page_integrations">Integrationen</string>
     <string name="compose_settings_page_mdblist_ratings">MDBList-Bewertungen</string>
-    <string name="compose_settings_page_meta_screen">Meta-Bildschirm</string>
+    <string name="compose_settings_page_meta_screen">Detailseite</string>
     <string name="compose_settings_page_notifications">Benachrichtigungen</string>
     <string name="compose_settings_page_playback">Wiedergabe</string>
     <string name="compose_settings_page_plugins">Plugins</string>
@@ -415,7 +415,7 @@
     <string name="downloads_section_active">Aktiv</string>
     <string name="downloads_section_movies">Filme</string>
     <string name="downloads_section_shows">Serien</string>
-    <string name="downloads_show_downloads">Downloads anzeigen</string>
+    <string name="downloads_show_downloads">Serien-Downloads</string>
     <string name="downloads_status_completed">Abgeschlossen • %1$s</string>
     <string name="downloads_status_downloading">Wird heruntergeladen • %1$s</string>
     <string name="downloads_status_failed">Fehlgeschlagen</string>
@@ -2297,8 +2297,8 @@
     <string name="settings_playback_hud_layout_minimal">Minimal</string>
     <string name="settings_playback_hud_layout_pills">Minimale Steuerung als Pills</string>
     <string name="settings_playback_hud_layout_pills_description">Jede Steuerungsgruppe auf eine eigene transluzente Pill setzen, statt direkt auf das Bild.</string>
-    <string name="settings_playback_seek_handle">Griff der Suchleiste</string>
-    <string name="settings_playback_seek_handle_description">Den runden Griff auf der Suchleiste zeichnen. Aus lässt nur den farbigen Fortschrittsbalken.</string>
+    <string name="settings_playback_seek_handle">Griff der Zeitleiste</string>
+    <string name="settings_playback_seek_handle_description">Den runden Griff auf der Zeitleiste zeichnen. Aus lässt nur den farbigen Fortschrittsbalken.</string>
     <string name="settings_playback_hud_vignette">Vignette der Steuerung</string>
     <string name="settings_playback_hidden_hud_buttons">Ausgeblendete Player-Buttons</string>
     <string name="settings_playback_hidden_hud_buttons_description">Steuerelemente, die du nie nutzt, aus dem Player entfernen. Ihre Tastenkürzel funktionieren weiterhin.</string>
@@ -2325,11 +2325,11 @@
     <string name="settings_playback_hud_button_lock">Steuerung sperren</string>
     <string name="settings_playback_hud_button_video_settings">Videoeinstellungen</string>
     <string name="settings_playback_hud_vignette_description">Den oberen und unteren Bildrand abdunkeln, solange die Player-Steuerung sichtbar ist. Aus lässt das Bild unverändert.</string>
-    <string name="settings_playback_hud_layout_minimal_description">Eine schmale Zeile: Wiedergabe, Lautstärke und Zeit links, Werkzeuge rechts, unter einer randlosen Suchleiste.</string>
+    <string name="settings_playback_hud_layout_minimal_description">Eine schmale Zeile: Wiedergabe, Lautstärke und Zeit links, Werkzeuge rechts, unter einer randlosen Zeitleiste.</string>
     <string name="settings_playback_hud_layout_ultra">Ultra Minimal</string>
-    <string name="settings_playback_hud_layout_ultra_description">Nur die Suchleiste, ein Vollbild-Schalter und ein Zahnrad, das ein Optionen-Popover in Milchglasoptik öffnet. Klicke aufs Bild, um abzuspielen oder zu pausieren.</string>
+    <string name="settings_playback_hud_layout_ultra_description">Nur die Zeitleiste, ein Vollbild-Schalter und ein Zahnrad, das ein Optionen-Popover in Milchglasoptik öffnet. Klicke aufs Bild, um abzuspielen oder zu pausieren.</string>
     <string name="settings_playback_hud_layout_official">Offizielles Nuvio</string>
-    <string name="settings_playback_hud_layout_official_description">Die untere Leiste des offiziellen Nuvio-Desktop-Players: ein Play-Button in Akzentfarbe und runde Werkzeug-Icons links, Lautstärke und Zeit rechts, unter einer kräftigen Suchleiste.</string>
+    <string name="settings_playback_hud_layout_official_description">Die untere Leiste des offiziellen Nuvio-Desktop-Players: ein Play-Button in Akzentfarbe und runde Werkzeug-Icons links, Lautstärke und Zeit rechts, unter einer kräftigen Zeitleiste.</string>
     <string name="settings_playback_always_show_clock">Wiedergabeuhr immer anzeigen</string>
     <string name="settings_playback_always_show_clock_description">Die Uhr oben rechts sichtbar lassen, wenn die Player-Steuerung ausgeblendet wird.</string>
     <string name="settings_playback_info_panel">Wiedergabe-Infopanel</string>
@@ -2387,7 +2387,7 @@
     <string name="settings_playback_desktop_custom_shader_paths_desc">Eine Shader-Datei oder einen Ordner pro Zeile hinzufügen. Ordner stellen ihre direkten .glsl- und .hook-Dateien in den Anime-Verbesserungen bereit.</string>
     <string name="settings_playback_desktop_custom_shader_paths_hint">z. B.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
     <string name="settings_playback_desktop_custom_shader_paths_warning">Eigene Shader laufen im mpv-Renderer und können die Leistung mindern oder die Wiedergabe stören. Wähle in den Anime-Verbesserungen „Aus“, wenn ein Shader Probleme macht.</string>
-    <string name="settings_playback_desktop_seek_thumbnails">Vorschaubilder der Suchleiste</string>
+    <string name="settings_playback_desktop_seek_thumbnails">Vorschaubilder der Zeitleiste</string>
     <string name="settings_playback_desktop_seek_thumbnails_desc">Vorschau-Frames beim Überfahren der Zeitleiste. „Nur lokal“ erstellt Vorschauen nur für Dateien auf diesem PC oder in deinem Netzwerk und vermeidet Debrid-Limits; „Lokal + Seekr“ ergänzt Vorschaubilder von Seekr. Aus beim Preset „Getaktet“.</string>
     <string name="settings_playback_desktop_rate_limit_recovery">Wiederherstellung bei Ratenlimit</string>
     <string name="settings_playback_desktop_rate_limit_recovery_search">Neu verbinden oder auf eine andere Quelle wechseln, wenn ein Debrid-Host einen laufenden Stream per Ratenlimit (HTTP 429) drosselt</string>
@@ -3646,7 +3646,7 @@
     <string name="library_sort">Bibliothek sortieren</string>
     <string name="library_menu_local_library">Lokale Bibliothek</string>
     <string name="library_menu_local_library_settings">Einstellungen der lokalen Bibliothek</string>
-    <string name="meta_starring">Mit</string>
+    <string name="meta_starring">Besetzung</string>
     <string name="player_subtitle_ass_mode">ASS/SSA-Stil</string>
     <string name="player_subtitle_ass_mode_original">Original</string>
     <string name="player_subtitle_ass_mode_resize">Größe anpassen</string>
@@ -4711,7 +4711,7 @@
     <string name="browse_filter_clear_filters">Filter zurücksetzen</string>
     <string name="discover_row_top_picks_for_you">Top-Empfehlungen für dich</string>
     <string name="browse_filter_not_started">Nicht begonnen</string>
-    <string name="browse_filter_in_progress">In Bearbeitung</string>
+    <string name="browse_filter_in_progress">Angefangen</string>
     <string name="browse_filter_any_status_2">Beliebiger Status</string>
     <string name="browse_filter_still_running_2">Läuft noch</string>
     <string name="browse_filter_coming_soon_2">Demnächst</string>

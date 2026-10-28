@@ -361,7 +361,7 @@
     <string name="compose_player_volume_level">Volume %1$s</string>
     <string name="compose_player_muted">Muet</string>
     <string name="compose_player_downloaded">Téléchargé</string>
-    <string name="compose_player_airs_prefix">Diffusé</string>
+    <string name="compose_player_airs_prefix">Diffusion</string>
     <string name="compose_player_tba">À confirmer</string>
     <string name="compose_player_tap_to_unlock">Appuie pour déverrouiller</string>
     <string name="compose_player_track_number">Piste %1$d</string>
@@ -393,7 +393,7 @@
     <string name="compose_settings_page_integrations">Intégrations</string>
     <string name="compose_settings_page_licenses_attributions">Licences et attributions</string>
     <string name="compose_settings_page_mdblist_ratings">Notes MDBList</string>
-    <string name="compose_settings_page_meta_screen">Écran méta</string>
+    <string name="compose_settings_page_meta_screen">Page de détails</string>
     <string name="compose_settings_page_notifications">Notifications</string>
     <string name="compose_settings_page_playback">Lecture</string>
     <string name="compose_settings_page_plugins">Plugins</string>
@@ -423,7 +423,7 @@
     <string name="settings_licenses_attributions_section_app">LICENCE DE L’APP</string>
     <string name="settings_licenses_attributions_section_data">DONNÉES ET SERVICES</string>
     <string name="settings_licenses_attributions_section_playback">LICENCE DE LECTURE</string>
-    <string name="settings_licenses_attributions_nuvio_title">Nuvio Mobile</string>
+    <string name="settings_licenses_attributions_nuvio_title">Nuvio Desktop</string>
     <string name="settings_licenses_attributions_nuvio_body">Le code source et les termes de la licence sont disponibles dans le dépôt du projet.</string>
     <string name="settings_licenses_attributions_nuvio_license">Distribué sous la licence GNU General Public License v3.0.</string>
     <string name="settings_licenses_attributions_tmdb_title">The Movie Database (TMDB)</string>
@@ -558,7 +558,7 @@
     <string name="settings_poster_radius_classic">Classique</string>
     <string name="settings_poster_radius_pill">Pilule</string>
     <string name="settings_poster_radius_rounded">Arrondi</string>
-    <string name="settings_poster_radius_sharp">Marqué</string>
+    <string name="settings_poster_radius_sharp">Anguleux</string>
     <string name="settings_poster_radius_subtle">Subtil</string>
     <string name="settings_poster_width_balanced">Équilibré</string>
     <string name="settings_poster_width_comfort">Confortable</string>
@@ -3650,7 +3650,7 @@
     <string name="library_sort">Trier la bibliothèque</string>
     <string name="library_menu_local_library">Bibliothèque locale</string>
     <string name="library_menu_local_library_settings">Paramètres de la bibliothèque locale</string>
-    <string name="meta_starring">Avec</string>
+    <string name="meta_starring">Distribution</string>
     <string name="player_subtitle_ass_mode">Style ASS/SSA</string>
     <string name="player_subtitle_ass_mode_original">Original</string>
     <string name="player_subtitle_ass_mode_resize">Redimensionner</string>
@@ -4255,7 +4255,7 @@
     <string name="cast_searching">Recherche de téléviseurs et de lecteurs sur ton réseau…</string>
     <string name="cast_no_devices">Aucun appareil trouvé. Le téléviseur ou le lecteur doit être allumé, sur le même réseau, et avoir DLNA (partage de médias / UPnP) activé. Windows peut aussi demander d’autoriser Nuvio dans son pare-feu.</string>
     <string name="cast_dolby_vision">Dolby Vision (bêta)</string>
-    <string name="cast_dolby_vision_description">Reconditionne le stream en MP4 pour que les téléviseurs qui ignorent le Dolby Vision dans les MKV puissent l’utiliser. La recherche dans la vidéo est plus lente et moins testée. Kodi reçoit toujours le stream d’origine.</string>
+    <string name="cast_dolby_vision_description">Reconditionne le stream en MP4 pour que les téléviseurs qui ignorent le Dolby Vision dans les MKV puissent l’utiliser. Le déplacement dans la vidéo est plus lent et moins testé. Kodi reçoit toujours le stream d’origine.</string>
     <string name="cast_dolby_vision_needs_ffmpeg">Nécessite ffmpeg installé sur ce PC (par exemple : winget install Gyan.FFmpeg).</string>
     <string name="cast_play_here">Lire ici</string>
     <string name="cast_error_failed">Impossible de lire sur %1$s : %2$s</string>
