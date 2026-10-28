@@ -12,8 +12,10 @@ import com.nuvio.app.features.music.identity.MotionProfile
 import com.nuvio.app.features.music.identity.motionProfile
 
 /**
- * Ladder phase 9: audition. Arrowing over a rung plays the artist from the hook ([findHook], phase 8) and the room
- * takes on the artist's palette and [MotionProfile]. This file is the logic; [MusicLadderScreen] and [LadderRoom] draw it.
+ * Ladder phase 9: audition. Pressing Enter, A or clicking a rung plays the artist from the hook ([findHook], phase 8); a
+ * second press on the rung that is playing stops it, and a press on another rung moves on to that one. Arrowing over
+ * rungs is silent: it only moves the cursor, and the room takes on the artist's palette and [MotionProfile]. This file is
+ * the logic; [MusicLadderScreen] and [LadderRoom] draw it.
  *
  * What plays: the artist's album as phase 6 picks it ([resolveRungAlbum]), and on it the first real song ([pickAuditionTrack]:
  * an intro, interlude or skit is passed over, because a hook found in a 40-second intro is not the sound of the artist).
@@ -22,8 +24,15 @@ import com.nuvio.app.features.music.identity.motionProfile
  * listener never hears the intro first. After the hook the song simply carries on.
  */
 
-/** The pause on a rung before it plays, so holding an arrow key does not open a song on every rung it passes. */
-internal const val AUDITION_SETTLE_MS = 450L
+/** What a press on a rung does. */
+internal enum class AuditionPress { Play, Stop }
+
+/**
+ * The first press on a rung plays its hook. A press on the rung that is playing right now ([playingId], null when
+ * nothing from the ladder is playing) stops it; a press on any other rung plays that one instead.
+ */
+internal fun auditionPress(playingId: String?, pressedId: String): AuditionPress =
+    if (playingId != null && playingId == pressedId) AuditionPress.Stop else AuditionPress.Play
 
 /** A track shorter than this is taken for an intro or skit even when its title does not say so. */
 internal const val AUDITION_MIN_TRACK_SECONDS = 90

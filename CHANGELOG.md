@@ -4,14 +4,18 @@
 
 ### Added
 
-- **Ladder Result As Large Cards** - the ladder screen now shows five large cards in a strip, with a path rail from where you start to the target genre, a detail panel for the focused rung (the reason, a two-ended closeness bar, a familiarity dial) and large buttons. Left and Right browse, Up goes further out, Down comes closer, A or L loves, X or S skips, Enter plays the hook. The last rung offers Save all and Climb higher. Text is sized for a TV (28sp body) with 5% margins.
-- **Ladder Playlist And Countdown** - the end-of-ladder summary can play the whole ladder as a playlist, one album per rung in order, and a card shows a ring filling around its number while its hook waits to start.
+- **Ladder Result As Large Cards** - the ladder screen now shows five large cards in a strip, with a path rail from where you start to the target genre, a detail panel for the focused rung (the reason, a two-ended closeness bar, a familiarity dial) and large buttons. Left and Right browse, Up goes further out, Down comes closer, L loves, S skips, and Enter, A or a click plays the hook (again to stop). The last rung offers Save all and Climb higher. Text is sized for a TV (28sp body) with 5% margins.
+- **Ladder Playlist** - the end-of-ladder summary can play the whole ladder as a playlist, one album per rung in order.
 - **Where Next? On The Artist Page** - a strip of five rungs leading out from the artist, built automatically and kept for the session. Direction chips rebuild it, a "Similar in your library" row jumps to artists you already have, and selecting a rung plays its hook with Save and Close.
 - **Library Shelf Card Row** - the "A year ago this week" banner is now a row of cards: a year ago this week, a starred artist, added recently, and continue your ladder. The cards can be reached with the d-pad.
 - **Now Playing Widgets** - under the title on the Stage view: track position in the album, the next three tracks, and, when there are no lyrics, three artists to try next. They fade out a few seconds after the last input.
 - **Artist Page Widgets** - fans, releases, playable and rating as large tiles; the artist's top albums as cards; a short bio that opens on focus; and a "Found through" line.
 
 - **Constellation For The TV** - the side panel is wider with larger text and now shows the artist's top albums and three buttons: Ladder from here, Climb into, and Open artist room. A "Thin spots" row offers a ladder into the genres you tag but barely own. The key is a corner chip that opens on demand instead of covering the left cluster, genre chips are larger, and artists not placed yet are cards with a Fetch tags button.
+
+### Changed
+
+- **Ladder Audition On A Button Press** - a rung's hook no longer starts by itself when you arrow onto it. Enter, A or a click plays it, pressing the same rung again stops it, and pressing another rung moves on. Arrowing stays silent, and the room still follows the cursor. The countdown ring is gone; the rung's number shows a stop mark while its hook plays.
 
 ### Fixed
 

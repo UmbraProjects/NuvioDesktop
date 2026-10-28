@@ -125,6 +125,17 @@ class LadderAuditionTest {
         ),
     )
 
+    @Test
+    fun aPressPlaysTheRungAndASecondPressOnItStopsIt() {
+        assertEquals(AuditionPress.Play, auditionPress(playingId = null, pressedId = "r1"))
+        assertEquals(AuditionPress.Stop, auditionPress(playingId = "r1", pressedId = "r1"))
+    }
+
+    @Test
+    fun aPressOnAnotherRungMovesOnToIt() {
+        assertEquals(AuditionPress.Play, auditionPress(playingId = "r1", pressedId = "r2"))
+    }
+
     private class Played(var album: MusicAlbum? = null, var index: Int = -1, var startMs: Long = -1L)
 
     @Test

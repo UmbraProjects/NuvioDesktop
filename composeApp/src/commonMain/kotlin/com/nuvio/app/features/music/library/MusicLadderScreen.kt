@@ -1,13 +1,6 @@
 package com.nuvio.app.features.music.library
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.widthIn
@@ -69,8 +62,8 @@ import coil3.compose.LocalPlatformContext
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicCover
+import com.nuvio.app.features.music.MusicPlayback
 import com.nuvio.app.features.music.defaultMusicCatalog
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.nuvio.app.features.music.MusicMessage
 import kotlin.math.roundToInt
@@ -83,12 +76,14 @@ import kotlin.math.roundToInt
  *
  * Phase 10: the same screen shows a ladder from a record ([LadderRequest.Album]); the chips lead out into another genre.
  *
- * Phase 9, audition: Left and Right move over the rung cards; after a short pause ([AUDITION_SETTLE_MS]) the rung under
- * the cursor plays from its hook ([auditionRung]), and the room takes on their palette and motion ([LadderRoom]). Enter, or
- * a click on the card, auditions at once. "Play album" is the phase 6 play from the first track.
+ * Phase 9, audition: Left and Right move over the rung cards and are silent; the room (palette, glow) follows the cursor
+ * ([LadderRoom]). Enter, A or a click on the card plays the rung from its hook ([auditionRung]); pressing the rung that is
+ * playing stops it, and pressing another rung moves on to that one. Nothing ever plays by itself. "Play album" is the
+ * phase 6 play from the first track.
  *
  * HTPC layout: five large cards in a strip, a path rail, and a detail panel with a closeness bar and the familiarity dial.
- * Up turns the dial further out ("too close"), Down brings it closer ("too far"), A or L loves, X or S skips; the same
+ * Up turns the dial further out ("too close"), Down brings it closer ("too far"), L loves, S skips (a pad's A is Enter, so it
+ * plays; the Love and Skip buttons on screen take a click); the same
  * four [RungFeedback] values go through [applyFeedback], so the model is unchanged. Text is sized for a TV (28sp body).
  *
  * [onRequest] swaps the request in place (out-from mode's other destination genres).
@@ -121,28 +116,41 @@ internal fun MusicLadderScreen(
     var notes by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     fun note(id: String, text: String) { notes = notes + (id to text) }
 
-    // Phase 9: the rung under the cursor (by id, so a re-rank cannot move the cursor onto another artist), and the audition
-    // that is waiting to start or running. A new AuditionTarget cancels the one before it, so a held arrow key plays only
-    // the rung it comes to rest on.
+    // Phase 9: the rung under the cursor (by id, so a re-rank cannot move the cursor onto another artist), the audition
+    // being opened, and the rung whose hook is playing. Arrowing never starts one: only a press does. A new AuditionTarget
+    // cancels one still opening, so pressing quickly on two rungs plays the second.
     val shown = state
     val rungs = (shown as? LadderState.Ready)?.view?.ladder?.rungs.orEmpty()
     var focusedId by remember(request) { mutableStateOf<String?>(null) }
     var auditionTarget by remember(request) { mutableStateOf<AuditionTarget?>(null) }
     val focusedIndex = rungs.indexOfFirst { it.candidate.id == focusedId }
     val focusedRung = rungs.getOrNull(focusedIndex)
-    fun focusRung(rung: LadderRung, immediate: Boolean) {
-        focusedId = rung.candidate.id
-        auditionTarget = AuditionTarget(rung.candidate.id, rung.candidate.name, immediate)
+    // Silent: the cursor moves and the room follows, nothing plays.
+    fun focusRung(rung: LadderRung) { focusedId = rung.candidate.id }
+    // The rung whose hook the last press opened. It still counts as playing only while the player has a track.
+    var playingId by remember(request) { mutableStateOf<String?>(null) }
+    // A button press (Enter, A, click): plays the rung's hook, or stops it when that rung is the one playing.
+    fun pressRung(rung: LadderRung) {
+        focusRung(rung)
+        val stillPlaying = if (MusicPlayback.player.state.value.isActive) playingId else null
+        when (auditionPress(stillPlaying, rung.candidate.id)) {
+            AuditionPress.Stop -> {
+                MusicPlayback.player.stop()
+                playingId = null
+                auditionTarget = null
+                note(rung.candidate.id, "Stopped")
+            }
+            AuditionPress.Play -> {
+                playingId = rung.candidate.id
+                auditionTarget = AuditionTarget(rung.candidate.id, rung.candidate.name)
+            }
+        }
     }
-    // The rung whose hook is waiting to start: its card draws a countdown ring for the settle pause.
-    var settlingId by remember(request) { mutableStateOf<String?>(null) }
     LaunchedEffect(auditionTarget) {
         val target = auditionTarget ?: return@LaunchedEffect
-        settlingId = if (target.immediate) null else target.id
-        if (!target.immediate) delay(AUDITION_SETTLE_MS)
-        settlingId = null
         note(target.id, "Opening…")
         val result = auditionRung(catalog, target.name, MusicLibraryRepository.state.value.artists)
+        if (result == RungAudition.NotPlayable && playingId == target.id) playingId = null
         note(target.id, auditionNote(result))
     }
     val context = LocalPlatformContext.current
@@ -200,18 +208,19 @@ internal fun MusicLadderScreen(
                     // The rungs are a horizontal strip now: Left and Right browse them.
                     Key.DirectionRight, Key.DirectionLeft -> {
                         val next = moveFocus(focusedIndex, if (event.key == Key.DirectionRight) 1 else -1, rungs.size)
-                        rungs.getOrNull(next)?.let { focusRung(it, immediate = false) }
+                        rungs.getOrNull(next)?.let { focusRung(it) }
                         true
                     }
                     // The closeness dial: Up leads further out, Down comes back toward the listener's taste.
                     Key.DirectionUp -> current?.let { mark(it, RungFeedback.TooClose) }.let { current != null }
                     Key.DirectionDown -> current?.let { mark(it, RungFeedback.TooFar) }.let { current != null }
-                    Key.Enter, Key.NumPadEnter -> {
-                        current?.let { focusRung(it, immediate = true) }
+                    // Enter, a pad's A (it injects Enter) and a click play the hook; a second press stops it.
+                    Key.Enter, Key.NumPadEnter, Key.ButtonA -> {
+                        current?.let { pressRung(it) }
                         current != null
                     }
-                    Key.ButtonA, Key.L -> current?.let { mark(it, RungFeedback.Love) }.let { current != null }
-                    Key.ButtonX, Key.S -> current?.let { mark(it, RungFeedback.Skip) }.let { current != null }
+                    Key.L -> current?.let { mark(it, RungFeedback.Love) }.let { current != null }
+                    Key.S -> current?.let { mark(it, RungFeedback.Skip) }.let { current != null }
                     else -> false
                 }
             },
@@ -299,8 +308,8 @@ internal fun MusicLadderScreen(
                                     rung = rung,
                                     width = cardWidth,
                                     focused = rung.candidate.id == activeRung?.candidate?.id,
-                                    settling = rung.candidate.id == settlingId,
-                                    onClick = { focusRung(rung, immediate = true) },
+                                    playing = rung.candidate.id == playingId,
+                                    onClick = { pressRung(rung) },
                                 )
                             }
                         }
@@ -391,7 +400,7 @@ private fun PathRail(start: String, target: String, rungs: List<LadderRung>, foc
 
 /** One rung as a large card: the picture fills it, the focused card grows and the others dim. */
 @Composable
-private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, settling: Boolean, onClick: () -> Unit) {
+private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, playing: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
     val scale by animateFloatAsState(if (focused) FOCUS_SCALE else 1f)
@@ -410,37 +419,16 @@ private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, settli
     ) {
         MusicCover(picture, rung.candidate.name, size = width - 24.dp)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // The ring fills over the settle pause, then the hook starts.
-            val ring = remember { Animatable(0f) }
-            LaunchedEffect(settling) {
-                if (settling) {
-                    ring.snapTo(0f)
-                    ring.animateTo(1f, tween(AUDITION_SETTLE_MS.toInt(), easing = LinearEasing))
-                } else {
-                    ring.snapTo(0f)
-                }
-            }
-            val ringColor = colors.textPrimary
             Box(
-                Modifier.size(48.dp).drawBehind {
-                    if (ring.value > 0f) {
-                        val w = 4.dp.toPx()
-                        drawArc(
-                            color = ringColor,
-                            startAngle = -90f,
-                            sweepAngle = 360f * ring.value,
-                            useCenter = false,
-                            topLeft = Offset(w / 2, w / 2),
-                            size = Size(size.width - w, size.height - w),
-                            style = Stroke(w),
-                        )
-                    }
-                },
+                Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(colors.accent)
+                    .then(if (playing) Modifier.border(4.dp, colors.textPrimary, CircleShape) else Modifier),
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(40.dp).clip(CircleShape).background(colors.accent), contentAlignment = Alignment.Center) {
-                    Text("${rung.step}", style = ladderText(LadderType.Body), color = colors.onAccent)
-                }
+                // The number becomes a play mark while this rung's hook is on, so the card says what a second press does.
+                Text(if (playing) "■" else "${rung.step}", style = ladderText(LadderType.Body), color = colors.onAccent)
             }
             rung.mark?.let { Text(feedbackLabel(it), style = ladderText(LadderType.Legend), color = colors.textSecondary) }
         }
@@ -550,7 +538,7 @@ private fun LadderSummary(rungs: List<LadderRung>, onSaveAll: () -> Unit, onPlay
 @Composable
 private fun LadderLegend() {
     Text(
-        text = "◀ ▶ browse     ▲ further out     ▼ closer to my taste     A or L love     X or S skip     Enter play the hook",
+        text = "◀ ▶ browse     ▲ further out     ▼ closer to my taste     Enter or A play the hook, again to stop     L love     S skip",
         style = ladderText(LadderType.Legend),
         color = MaterialTheme.nuvio.colors.textMuted,
     )
@@ -572,8 +560,8 @@ private fun BigPill(text: String, onClick: () -> Unit, selected: Boolean = false
     )
 }
 
-/** One audition: which rung and whether to start at once (a click or Enter) or after the settle pause (an arrow key). A class, not a data class, so asking again for the same rung starts it again. */
-private class AuditionTarget(val id: String, val name: String, val immediate: Boolean)
+/** One audition being opened: which rung. A class, not a data class, so asking again for the same rung starts it again. */
+private class AuditionTarget(val id: String, val name: String)
 
 /** Scrolls so the rung at [index] is fully on screen, only when it is not already. */
 private suspend fun LazyListState.ensureVisible(key: Any?, index: Int) {

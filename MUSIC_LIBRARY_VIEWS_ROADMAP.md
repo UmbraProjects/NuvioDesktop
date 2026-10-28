@@ -195,4 +195,4 @@ Built in C3 and C4 as described above, still on the roadmap's assumptions until 
 - **Constellation:** wider side panel with top albums, Ladder from here and Climb into; a "Thin spots" row of ladder chips; the key as a corner chip; larger chips with a focus ring; Not-placed cards with Fetch tags. Not built: ghost halos on the map, leader lines for overlapping labels, chips beside the map.
 - **Artist page and Stage view:** see `Docs/HTPC_MUSIC_BLANK_SPACE.md`.
 
-The views build in Gradle but have not been checked on a display. The audited list of what is not built is meant to live in `Docs/HTPC_MUSIC_BLANK_SPACE.md`. (This file is not in the repository snapshot reviewed on 2026-10-28; restore it or remove the references.)
+The views build in Gradle but have not been checked on a display. The audited list of what is not built lives in `Docs/HTPC_MUSIC_BLANK_SPACE.md`.
