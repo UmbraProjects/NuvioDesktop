@@ -487,7 +487,7 @@
     <string name="settings_account_email">E-posta</string>
     <string name="settings_account_not_signed_in">Giriş yapılmadı</string>
     <string name="settings_account_sign_out">Çıkış yap</string>
-    <string name="settings_account_sign_out_confirm_message">Ayarların, tekrar giriş yaptığında kullanılmak üzere bu PC\'de kalır ve burada oturum açan diğer kişilerden ayrı tutulur. Paylaşılan veya herkese açık bir bilgisayarda ayarlarını, girişlerini ve anahtarlarını bu PC\'den de kaldırmak için Çıkış Yap ve Sil\'i seç. Nuvio her iki durumda da yeniden başlar.</string>
+    <string name="settings_account_sign_out_confirm_message">Ayarların, tekrar giriş yaptığında kullanılmak üzere bu PC'de kalır ve burada oturum açan diğer kişilerden ayrı tutulur. Paylaşılan veya herkese açık bir bilgisayarda ayarlarını, girişlerini ve anahtarlarını bu PC'den de kaldırmak için Çıkış Yap ve Sil'i seç. Nuvio her iki durumda da yeniden başlar.</string>
     <string name="settings_account_sign_out_confirm_title">Çıkış yapılsın mı?</string>
     <string name="settings_account_status">Durum</string>
     <string name="settings_account_status_anonymous">Anonim</string>
@@ -628,7 +628,7 @@
     <string name="settings_debrid_prepare_instant_playback">Bağlantıları hazırla</string>
     <string name="settings_debrid_prepare_instant_playback_description">Oynatma başlamadan önce oynatılabilir bağlantıları çöz.</string>
     <string name="settings_debrid_prepare_stream_count">Hazırlanacak bağlantı sayısı</string>
-    <string name="settings_debrid_prepare_stream_count_warning">Düşük tut: servisler bağlantı çözümlemeyi sınırlayabilir ve bağlantılar önceden hazırlandığı için bir yapımı açmak, İzle\'ye basmasan bile sayılır.</string>
+    <string name="settings_debrid_prepare_stream_count_warning">Düşük tut: servisler bağlantı çözümlemeyi sınırlayabilir ve bağlantılar önceden hazırlandığı için bir yapımı açmak, İzle'ye basmasan bile sayılır.</string>
     <string name="settings_debrid_prepare_count_one">1 bağlantı</string>
     <string name="settings_debrid_prepare_count_many">%1$d bağlantı</string>
     <string name="settings_debrid_section_formatting">Biçimlendirme</string>
@@ -738,7 +738,7 @@
     <string name="settings_playback_anime_skip_client_id">AnimeSkip Client ID</string>
     <string name="settings_playback_anime_skip_client_id_description">AnimeSkip API client ID'ni gir. anime-skip.com üzerinden alabilirsin.</string>
     <string name="settings_playback_intro_submit_enabled">Giriş Geçme Gönderimini Aç</string>
-    <string name="settings_playback_intro_submit_enabled_description">Giriş/bitiş sürelerini SkipDB\'ye gönder. Bir bölüm atlamasından sonra göndermek için atla tuşuna tekrar bas; aksi halde bir bölümün başında, sonunda ve göndermek için bir kez daha bas.</string>
+    <string name="settings_playback_intro_submit_enabled_description">Giriş/bitiş sürelerini SkipDB'ye gönder. Bir bölüm atlamasından sonra göndermek için atla tuşuna tekrar bas; aksi halde bir bölümün başında, sonunda ve göndermek için bir kez daha bas.</string>
     <string name="settings_playback_introdb_api_key">IntroDB API Anahtarı</string>
     <string name="settings_playback_introdb_api_key_description">Zaman damgası göndermek için IntroDB API anahtarını gir. Gönderim için zorunludur.</string>
     <string name="settings_playback_anime_skip_description">Geçme zamanları için AnimeSkip'te de ara (client ID gerekir).</string>

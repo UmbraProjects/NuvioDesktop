@@ -327,7 +327,7 @@
   <string name="settings_homescreen_summary">%1$d su %2$d cataloghi visibili • %3$d sorgenti hero selezionate</string>
   <string name="settings_homescreen_summary_hint">Apri un catalogo solo quando hai bisogno di rinominarlo o riordinarlo.</string>
   <string name="settings_homescreen_visible">Visibile</string>
-  <string name="settings_playback_subtitle">Qualità dell\'immagine, HDR, upscaling e uscita audio</string>
+  <string name="settings_playback_subtitle">Qualità dell'immagine, HDR, upscaling e uscita audio</string>
   <string name="settings_poster_card_radius">Raggio angoli</string>
   <string name="settings_poster_card_style">STILE LOCANDINA</string>
   <string name="settings_poster_card_width">Larghezza locandina</string>
@@ -472,7 +472,7 @@
   <string name="settings_playback_anime_skip_client_id_description">Inserisci il tuo ID client API AnimeSkip. Ottienine uno su anime-skip.com.</string>
   <string name="settings_playback_anime_skip_description">Cerca anche su AnimeSkip i timestamp per saltare le sigle (richiede ID client).</string>
   <string name="settings_playback_auto_play_next_episode">Riproduzione automatica prossimo episodio</string>
-  <string name="settings_playback_auto_play_next_episode_description">Accetta automaticamente l\'episodio successivo e salta il conto alla rovescia.</string>
+  <string name="settings_playback_auto_play_next_episode_description">Accetta automaticamente l'episodio successivo e salta il conto alla rovescia.</string>
   <string name="settings_playback_decoder_device_only">Solo dispositivo</string>
   <string name="settings_playback_decoder_prefer_app">Preferisci App (FFmpeg)</string>
   <string name="settings_playback_decoder_prefer_device">Preferisci dispositivo</string>
@@ -1254,7 +1254,7 @@
   <string name="settings_continue_watching_section_sort_order">ORDINE DI ORDINAMENTO</string>
   <string name="settings_continue_watching_sort_mode_title">Ordine di ordinamento</string>
   <string name="settings_continue_watching_sort_mode_default">Ultimo visto</string>
-  <string name="settings_continue_watching_sort_mode_default_desc">Ordina tutto in base a quando l\'hai guardato l\'ultima volta</string>
+  <string name="settings_continue_watching_sort_mode_default_desc">Ordina tutto in base a quando l'hai guardato l'ultima volta</string>
   <string name="settings_continue_watching_sort_mode_streaming">Prima i già usciti</string>
   <string name="settings_continue_watching_sort_mode_streaming_desc">I prossimi episodi non ancora usciti vanno in fondo, i più vicini per primi</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Prediligi le miniature dell'episodio quando disponibili.</string>
@@ -1308,7 +1308,7 @@
   <string name="settings_meta_blur_unwatched_episodes">Sfoca episodi non visti</string>
   <string name="settings_meta_blur_unwatched_episodes_description">Sfoca le miniature degli episodi finché non vengono visti per evitare spoiler.</string>
   <string name="settings_playback_intro_submit_enabled">Abilita invio intro</string>
-  <string name="settings_playback_intro_submit_enabled_description">Invia i tempi di intro/outro a SkipDB. Dopo un salto di capitolo, premi di nuovo il tasto salta per inviarli; altrimenti premilo all\'inizio di un segmento, alla sua fine, poi ancora una volta per inviare.</string>
+  <string name="settings_playback_intro_submit_enabled_description">Invia i tempi di intro/outro a SkipDB. Dopo un salto di capitolo, premi di nuovo il tasto salta per inviarli; altrimenti premilo all'inizio di un segmento, alla sua fine, poi ancora una volta per inviare.</string>
   <string name="settings_playback_introdb_api_key">Chiave API IntroDB</string>
   <string name="settings_playback_introdb_api_key_description">Inserisci la tua chiave API IntroDB per inviare i timestamp. Richiesta per l'invio.</string>
   <string name="settings_playback_external_player">Lettore esterno</string>
