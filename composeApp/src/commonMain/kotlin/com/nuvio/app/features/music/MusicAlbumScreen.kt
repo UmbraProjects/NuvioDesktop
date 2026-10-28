@@ -86,7 +86,8 @@ fun MusicAlbumScreen(
     Box(modifier.fillMaxSize().background(colors.background)) {
     // The cover, blurred, as the page's atmosphere (it does not move, so reduced motion needs nothing).
     if (load is MusicLoad.Loaded) AlbumAmbientBackdrop(load.value.thumbnailUrl)
-    Column(Modifier.fillMaxSize().padding(top = 12.dp)) {
+    // The backdrop above runs to the window's bottom edge; only the content makes room for the player bar.
+    Column(Modifier.fillMaxSize().padding(top = 12.dp, bottom = LocalMusicBarInset.current)) {
         Box(Modifier.padding(horizontal = 16.dp)) { NuvioBackButton(onClick = onBack) }
         when (load) {
             MusicLoad.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

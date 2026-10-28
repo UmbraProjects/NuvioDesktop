@@ -64,6 +64,7 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.LocalMusicBarInset
 import com.nuvio.app.features.music.MusicMessage
 import com.nuvio.app.features.music.identity.HeroSource
 import com.nuvio.app.features.music.identity.ReleasePaletteResolver
@@ -129,9 +130,10 @@ internal fun ArtistRoom(
 
     BoxWithConstraints(modifier.background(colors.background)) {
         val wide = maxWidth >= 840.dp
+        val inset = LocalMusicBarInset.current // fork:music - the backdrop runs under the bar; the content clears it
         RoomBackdrop(artist, tint, wide)
         if (wide) {
-            Row(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxSize().padding(bottom = inset)) {
                 Column(
                     Modifier.width(440.dp).fillMaxHeight().verticalScroll(rememberScrollState())
                         .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 32.dp),
@@ -154,7 +156,7 @@ internal fun ArtistRoom(
             }
         } else {
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                Modifier.fillMaxSize().padding(bottom = inset).verticalScroll(rememberScrollState())
                     .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {

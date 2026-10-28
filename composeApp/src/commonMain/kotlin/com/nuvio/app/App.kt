@@ -103,6 +103,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import com.nuvio.app.features.music.MusicRootHosts
+import com.nuvio.app.features.music.isMusicFullBleedPage
 import com.nuvio.app.features.music.musicRoutes
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -2956,6 +2957,8 @@ private fun MainAppContent(
             // fork:music - a film on screen pauses the music player and takes its bar away.
             val musicPlayerHidden = currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true
             val musicBarInset = com.nuvio.app.features.music.rememberMusicBarInset(musicPlayerHidden)
+            // The album and artist pages paint under the bar themselves, so the shell must not pad them.
+            val musicPageTakesInset = currentBackStackEntry?.destination?.isMusicFullBleedPage() == true
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -2977,6 +2980,10 @@ private fun MainAppContent(
                     },
                 ) {
                 Box(modifier = Modifier.fillMaxSize()) {
+                CompositionLocalProvider(
+                    com.nuvio.app.features.music.LocalMusicBarInset provides
+                        (if (musicPageTakesInset) musicBarInset else 0.dp), // fork:music
+                ) {
                 NavHost(
                     navController = navController,
                     startDestination = TabsRoute,
@@ -2993,7 +3000,7 @@ private fun MainAppContent(
                     popExitTransition = { if (isIos) fadeOut(animationSpec = tween(700)) else ExitTransition.None },
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(bottom = musicBarInset) // fork:music
+                        .padding(bottom = if (musicPageTakesInset) 0.dp else musicBarInset) // fork:music
                         // Right-click on empty space in a pushed screen (anything with a back arrow)
                         // acts as Back — the same request the mouse Back button sends. Posters and
                         // every other right-click action consume the press first, so they win.
@@ -3558,6 +3565,7 @@ private fun MainAppContent(
                     )
                 }
                 }
+                } // fork:music - CompositionLocalProvider(LocalMusicBarInset)
                 // Home and the other tabs stay composed while a pushed screen covers them, so Back shows a
                 // frame that already exists instead of rebuilding Home (2026-10-19: every Details -> Home
                 // return hitched 80-150 ms, with the details page lingering until Home's first frame). Not

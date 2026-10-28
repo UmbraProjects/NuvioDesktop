@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,8 +15,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavDestination
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.toRoute
 import com.nuvio.app.features.music.identity.MusicAccentScope
 import com.nuvio.app.features.music.library.MusicArtistScreen
@@ -59,6 +62,18 @@ fun MusicTabHost(
         topChromePadding = topChromePadding ?: 0.dp,
     )
 }
+
+/**
+ * How much of the bottom edge the player bar covers, for pages that paint their own full-bleed background
+ * (the album and artist pages). They draw to the window's bottom edge, so the bar floats over their
+ * atmosphere instead of over a black strip, and pad only their content by this much. Zero everywhere else:
+ * for other screens the app shell still pads the whole NavHost.
+ */
+val LocalMusicBarInset = compositionLocalOf { 0.dp }
+
+/** True for the pages that take the bar inset themselves through [LocalMusicBarInset]. */
+fun NavDestination?.isMusicFullBleedPage(): Boolean =
+    this != null && (hasRoute<MusicAlbumRoute>() || hasRoute<MusicArtistRoute>())
 
 /**
  * The music player lives at the root so a track keeps playing across screens. A film on screen
