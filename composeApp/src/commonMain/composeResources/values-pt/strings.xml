@@ -4720,7 +4720,7 @@
     <string name="browse_filter_any_language_2">Qualquer idioma</string>
     <string name="browse_filter_clear_filters_2">Limpar filtros</string>
     <string name="browse_filter_looking_up_titles">A procurar títulos…</string>
-    <string name="library_local_unsorted">Local (sem categoria)</string>
+    <string name="library_local_unsorted">Local (sem catálogo)</string>
     <string name="library_sort_default_order">Ordem predefinida</string>
     <string name="library_sort_recently_added">Adicionados recentemente</string>
     <string name="library_sort_oldest_added">Adicionados há mais tempo</string>
