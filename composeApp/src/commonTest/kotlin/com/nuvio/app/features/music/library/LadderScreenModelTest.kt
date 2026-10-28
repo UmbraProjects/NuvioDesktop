@@ -55,7 +55,7 @@ class LadderScreenModelTest {
     fun genreLadderIsReady() = runBlocking<Unit> {
         val state = loadLadder(LadderRequest.Genre("shoegaze"), me, resolver(), { pool })
         val view = assertIs<LadderState.Ready>(state).view
-        assertEquals("Into shoegaze", view.title)
+        assertEquals("Into Shoegaze", view.title)
         assertTrue(view.ladder.rungs.size in 1..5)
     }
 
