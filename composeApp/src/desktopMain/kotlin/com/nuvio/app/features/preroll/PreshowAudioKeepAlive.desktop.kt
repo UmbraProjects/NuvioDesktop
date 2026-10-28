@@ -18,25 +18,34 @@ internal actual object PreshowAudioKeepAlive {
     private val lock = Any()
     private var worker: Worker? = null
 
-    /** Bumped by every start and stop request, so a delayed stop knows it has been superseded. */
+    /**
+     * Every owner that currently wants the output held, with the token of its latest request. A
+     * delayed stop only releases its owner if the token is still the one it was given, so a later
+     * [start] for that owner cancels it. The stream runs while this map is not empty, so two owners
+     * (the pre-show and the music player) cannot stop each other's hold.
+     */
+    private val holders = HashMap<String, Long>()
     private val generation = AtomicLong(0)
 
-    actual fun start() {
+    actual fun start(owner: String) {
         synchronized(lock) {
-            generation.incrementAndGet()
+            holders[owner] = generation.incrementAndGet()
             if (worker?.isAlive == true) return
             worker = Worker().also { it.start() }
         }
     }
 
-    actual fun stopAfter(delayMs: Long) {
-        val requested = generation.incrementAndGet()
+    actual fun stopAfter(delayMs: Long, owner: String) {
+        val requested = synchronized(lock) { generation.incrementAndGet().also { if (owner in holders) holders[owner] = it } }
         thread(isDaemon = true, name = "Nuvio-Preshow-AudioKeepAlive-Stop") {
             runCatching { Thread.sleep(delayMs.coerceAtLeast(0L)) }
             synchronized(lock) {
-                if (generation.get() != requested) return@thread
-                worker?.requestStop()
-                worker = null
+                if (holders[owner] != requested) return@thread
+                holders.remove(owner)
+                if (holders.isEmpty()) {
+                    worker?.requestStop()
+                    worker = null
+                }
             }
         }
     }

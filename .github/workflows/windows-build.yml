@@ -53,10 +53,13 @@ jobs:
           Expand-Archive C:\libs\webview2.zip -DestinationPath C:\libs\webview2 -Force
           if (-not (Test-Path C:\libs\webview2\build\native\include\WebView2.h)) { throw "WebView2.h missing" }
 
-      - name: Unit tests (trivia)
+      - name: Unit tests (music, pre-show)
         shell: pwsh
         run: >
-          ./gradlew.bat :composeApp:desktopTest --tests "*Trivia*"
+          ./gradlew.bat :composeApp:desktopTest
+          --tests "com.nuvio.app.features.music.*"
+          --tests "com.nuvio.app.features.preroll.*"
+          --tests "*Trivia*"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
           "-Pnuvio.windows.allowWhisperAvfilter=true"

@@ -54,19 +54,19 @@ Each phase fits one session, leaves the app working, and can be the last one you
 | 2 | **Rung selection** | `buildLadder(target, footprint, candidates, dial)`: five rungs with purity up and proximity down; template "why" line; dial; no-Library fallback. | A fake candidate set gives a sensible ladder at three dial settings. | **Done** |
 | 3 | **Genre candidates** | One MusicBrainz tag search (about 100 artists with tag counts) through the paced client, parser and cache. | A canned-JSON test parses, and one live call returns candidates. | **Done** (live call not yet tried) |
 | 4 | **Artist target** | Target vector from an artist's tags, falling back to Deezer related artists. "Into" and "out from" modes. | The same `buildLadder` runs on an artist query. | **Done** (4a into, 4b out from and Deezer fallback) |
-| 5 | **Search card and screen** | "Ladder into / out from..." button on the first result in `MusicTabScreen` (one `// fork:music` hook) and a basic five-rung screen with covers and reason lines. | You can search, open a ladder and read it. | **Done** (UI not compiled) |
-| 6 | **Play and save** | Rung plays through the existing top-album and play path. Saving records "found via ladder". | Tapping a rung plays it, and saving works. | **Done** (UI not compiled) |
-| 7 | **Feedback and progress** | Too far / too close / skip / love shift the dial and re-rank. Climbed rungs are stored. | Feedback changes remaining rungs; the ladder survives a restart. | **Done** (UI not compiled) |
+| 5 | **Search card and screen** | "Ladder into / out from..." button on the first result in `MusicTabScreen` (one `// fork:music` hook) and a basic five-rung screen with covers and reason lines. | You can search, open a ladder and read it. | **Done** (builds in Gradle; not checked on screen) |
+| 6 | **Play and save** | Rung plays through the existing top-album and play path. Saving records "found via ladder". | Tapping a rung plays it, and saving works. | **Done** (builds in Gradle; not checked on screen) |
+| 7 | **Feedback and progress** | Too far / too close / skip / love shift the dial and re-rank. Climbed rungs are stored. | Feedback changes remaining rungs; the ladder survives a restart. | **Done** (builds in Gradle; not checked on screen) |
 | 8 | **Hook finder** | Pure function: repeated synced-lyric lines give the chorus time; fixed-offset fallback. | Tests on sample LRC files find the chorus. | **Done** |
-| 9 | **Audition** | Moving over a rung seeks to the hook; palette and `MotionProfile` change the room. | Moving between rungs auditions each one. | **Done** (UI not compiled) |
-| 10 | **Album query** | Blend an album's mood, style and era into the target vector. | An album query gives a different ladder from its artist's. | **Done** (UI not compiled) |
+| 9 | **Audition** | Moving over a rung seeks to the hook; palette and `MotionProfile` change the room. | Moving between rungs auditions each one. | **Done** (builds in Gradle; not checked on screen) |
+| 10 | **Album query** | Blend an album's mood, style and era into the target vector. | An album query gives a different ladder from its artist's. | **Done** (builds in Gradle; not checked on screen) |
 
 ## Risks
 
 - **Tag noise**: phase 0 handles spelling and junk, but sparse tags on small artists remain (fallbacks above).
 - **Rate limit**: MusicBrainz allows one request per second. Compute neighbourhoods lazily, cache them, and prefer one search call over many lookups.
 - **Playability**: some rungs will have no YouTube Music release. Show them, flagged, and pick a fallback album.
-- **Compiling**: the project as a whole has still not been compiled. Phases 0 to 10 pure logic is checked with a standalone Kotlin compiler (the 166 ladder tests for phases 0 to 7 and 10 pass; phases 8 and 9 passed earlier: 21 and 20 more), but the Compose screen, `MusicTabScreen` hook, repository and storage changes, and `DeezerClient.relatedByName` have only been read through. Build locally now: nothing is left to build on, so errors can only stack up from here. Phase 9 added more Compose (`LadderRoom.kt`, the key handling and row changes in `MusicLadderScreen.kt`) that has only been read through.
+- **Compiling and testing**: the app builds through Gradle (owner-confirmed 2026-10-27, covering the Library views through C4 and the ladder code they link to). Phases 0 to 10 pure logic was also checked earlier with a standalone Kotlin compiler (166 ladder tests for phases 0 to 7 and 10, plus 21 and 20 for phases 8 and 9). What is not recorded is a Gradle run of these tests or a look at the ladder screen on a real display. CI now runs every `features.music`, `features.preroll` and `*Trivia*` test on each build (`windows-build.yml`), so a failing ladder test shows up there.
 
 ## Phase 0 notes (done)
 
@@ -161,9 +161,9 @@ Each phase fits one session, leaves the app working, and can be the last one you
 - Lyrics over 600 lines are read only up to 600 (keeps the search cheap; a 3000-line test still finds a repeat).
 - Phase 9 reads `Hook.startMs` to seek; nothing calls `findHook` yet.
 
-## Phase 9 notes (done; UI not compiled)
+## Phase 9 notes (done; builds in Gradle; not checked on screen)
 
-`LadderAudition.kt` (pure logic, 20 tests in `LadderAuditionTest.kt`), `LadderRoom.kt` and `MusicLadderScreen.kt` (Compose, uncompiled), `LadderPlay.kt` (`resolveRungAlbum` shared with `playRung`), and `MusicPlayer.play(..., startPositionMs)` (3 new tests in `MusicPlayerTest`; all 19 player tests and the 7 `LadderPlayTest` tests pass with the standalone compiler).
+`LadderAudition.kt` (pure logic, 20 tests in `LadderAuditionTest.kt`), `LadderRoom.kt` and `MusicLadderScreen.kt` (Compose), `LadderPlay.kt` (`resolveRungAlbum` shared with `playRung`), and `MusicPlayer.play(..., startPositionMs)` (3 new tests in `MusicPlayerTest`; all 19 player tests and the 7 `LadderPlayTest` tests pass with the standalone compiler).
 
 - **Keys:** *(superseded by the HTPC layout: Left and Right move over the rung cards, Up and Down turn the familiarity dial, A or L loves, X or S skips; see `Docs/HTPC_MUSIC_BLANK_SPACE.md`.)* Originally Up and Down moved over the rungs (no wrap). After `AUDITION_SETTLE_MS` (450 ms) the rung under the cursor plays, so a held key plays only where it rests. Enter or a click on the row auditions at once. The cursor is kept by candidate id, so a re-rank never moves it onto another artist. The list scrolls to keep it in view.
 - **What plays:** the artist's album as phase 6 picks it, and on it the first real song (`pickAuditionTrack`: skips unavailable tracks, intros, interludes, skits and tracks under 90 s). The lyric comes from LRCLIB through `LyricsRepository`; `hookFor` gives the start. The song opens at the hook (the player's start position), so no intro is heard first, and it carries on afterwards. A start position is dropped when a different track plays instead of the requested one.
@@ -172,7 +172,7 @@ Each phase fits one session, leaves the app working, and can be the last one you
 - The room follows the cursor at once; audio follows after the pause.
 - Known limits: audition uses audio mode and the lyric time is for the studio cut, so a video upload with a different intro can land off the chorus (the lyric auto-sync work would help). It does not stop at the end of the hook. `LadderRoomPalettes` has no size cap (one entry per rung looked at).
 
-## Phase 10 notes (done; UI not compiled)
+## Phase 10 notes (done; builds in Gradle; not checked on screen)
 
 `music/library/LadderAlbumTarget.kt` (pure logic, plus the live TheAudioDB source) and `LadderAlbumTargetTest.kt` (36 tests). Touches: `LadderBuilder.kt` (flavour), `LadderScreenModel.kt` (`LadderRequest.Album`, offers, loader), `LadderProgress.kt` (`progressKey`), `MusicSourceParsers.kt` (`parseMbTagSearch` reads the begin year), `MusicLadderScreen.kt` and `MusicTabScreen.kt` (one more `// fork:music` hook).
 
@@ -186,7 +186,7 @@ Each phase fits one session, leaves the app working, and can be the last one you
 
 ## HTPC layout notes (2026-10-27)
 
-The ladder screen, the artist page's "Where next?" strip, the shelf card row and the Stage widgets were reshaped for a 10-foot display. Status, the key map, decisions and an audited list of what is not built are in `Docs/HTPC_MUSIC_BLANK_SPACE.md`. UI not compiled.
+The ladder screen, the artist page's "Where next?" strip, the shelf card row and the Stage widgets were reshaped for a 10-foot display. Status, the key map, decisions and an audited list of what is not built are in `Docs/HTPC_MUSIC_BLANK_SPACE.md`. (This file is not in the repository snapshot reviewed on 2026-10-28; restore it or remove the references.) The ladder screen builds in Gradle but has not been checked on a display.
 
 - **Ladder screen** (`MusicLadderScreen.kt`): five large cards in a strip, a path rail, a detail panel with a two-ended closeness bar and the familiarity dial, large action buttons, and an end-of-ladder summary (Save all, Climb higher). The four per-row text buttons are gone; the same four `RungFeedback` values still go through `applyFeedback`, so the model and storage are unchanged. Up is "too close" (further out), Down is "too far" (closer).
 - **Where next?** (`WhereNextStrip.kt`): `ladderOutFrom` on the artist, built when the artist page opens and cached per artist and direction for the session (`WhereNextCache`).

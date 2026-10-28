@@ -103,6 +103,7 @@ fun rememberMusicBarInset(playerHidden: Boolean): Dp {
 /** The lyric view and the mini-player bar, above the app's own content. Place in the root Box. */
 @Composable
 fun BoxScope.MusicRootHosts(hidden: Boolean) {
+    MusicAudioKeepAlive(hidden)
     MusicNowPlayingHost(
         hidden = hidden,
         modifier = Modifier.fillMaxSize().zIndex(14f),

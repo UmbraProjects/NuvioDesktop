@@ -21,6 +21,8 @@
     <string name="settings_preroll_trailers_off">Off</string>
     <string name="settings_preshow_keep_audio_alive">Keep audio output awake</string>
     <string name="settings_preshow_keep_audio_alive_description">Plays an inaudible signal during the pre-show so an HDMI receiver does not drop its input between trailers, which can cause a dip and a Dolby flash at the start of each one.</string>
+    <string name="settings_music_keep_audio_alive">Keep audio output awake for music</string>
+    <string name="settings_music_keep_audio_alive_description">Plays an inaudible signal while music plays so an HDMI receiver does not drop its input between tracks. Try it if you hear a dip or see the format indicator flash when a track changes.</string>
     <string name="compose_settings_page_preshow">Pre-show</string>
     <string name="settings_preshow_description">Trailers and trivia that play before a film starts.</string>
     <string name="settings_preshow_section_trailers">Trailers</string>

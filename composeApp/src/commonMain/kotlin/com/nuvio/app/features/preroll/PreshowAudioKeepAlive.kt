@@ -13,8 +13,14 @@ package com.nuvio.app.features.preroll
  * Failure to open the device is logged and otherwise ignored.
  */
 internal expect object PreshowAudioKeepAlive {
-    fun start()
+    /** Holds the output open on behalf of [owner]. Owners share one stream; it runs while any owner holds it. */
+    fun start(owner: String = OWNER_PRESHOW)
 
-    /** Stops [delayMs] from now, unless [start] is called again first. */
-    fun stopAfter(delayMs: Long)
+    /** Releases [owner]'s hold [delayMs] from now, unless [start] is called again for it first. */
+    fun stopAfter(delayMs: Long, owner: String = OWNER_PRESHOW)
 }
+
+internal const val OWNER_PRESHOW = "preshow"
+
+/** The music player holds the output open between tracks when the person has switched that on. */
+internal const val OWNER_MUSIC = "music"

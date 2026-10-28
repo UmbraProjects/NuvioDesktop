@@ -23,6 +23,8 @@ import nuvio.composeapp.generated.resources.settings_preroll_trailers_descriptio
 import nuvio.composeapp.generated.resources.settings_preroll_trailers_off
 import nuvio.composeapp.generated.resources.settings_preshow_keep_audio_alive
 import nuvio.composeapp.generated.resources.settings_preshow_keep_audio_alive_description
+import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive
+import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive_description
 import nuvio.composeapp.generated.resources.settings_preshow_section_trailers
 import nuvio.composeapp.generated.resources.settings_theme_song_details
 import nuvio.composeapp.generated.resources.settings_theme_song_details_description
@@ -166,6 +168,14 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
                     checked = keepAudioAlive,
                     isTablet = isTablet,
                     onCheckedChange = PreshowSettings::setKeepAudioAlive,
+                )
+                val musicKeepAudioAlive by PreshowSettings.musicKeepAudioAlive.collectAsStateWithLifecycle()
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_keep_audio_alive),
+                    description = stringResource(Res.string.settings_music_keep_audio_alive_description),
+                    checked = musicKeepAudioAlive,
+                    isTablet = isTablet,
+                    onCheckedChange = PreshowSettings::setMusicKeepAudioAlive,
                 )
             }
         }

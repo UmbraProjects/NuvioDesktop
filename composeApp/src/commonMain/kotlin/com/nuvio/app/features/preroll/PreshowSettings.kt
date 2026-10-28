@@ -67,6 +67,14 @@ object PreshowSettings {
      */
     val keepAudioAlive: StateFlow<Boolean> = _keepAudioAlive.asStateFlow()
 
+    private val _musicKeepAudioAlive = MutableStateFlow(storage.load("music_keep_audio_alive") == "true")
+    /**
+     * Holds the audio output open while music plays, so an HDMI receiver does not drop its input
+     * between tracks or when switching audio and video. Off unless switched on: it is the pre-show
+     * fix applied to music, and has not been checked on a receiver yet.
+     */
+    val musicKeepAudioAlive: StateFlow<Boolean> = _musicKeepAudioAlive.asStateFlow()
+
     private val _localFolder = MutableStateFlow(storage.load("local_folder").orEmpty())
     /** Blank means the default folder inside the app's data directory. */
     val localFolder: StateFlow<String> = _localFolder.asStateFlow()
@@ -104,6 +112,12 @@ object PreshowSettings {
         if (_keepAudioAlive.value == enabled) return
         _keepAudioAlive.value = enabled
         storage.save("keep_audio_alive", if (enabled) null else "false")
+    }
+
+    fun setMusicKeepAudioAlive(enabled: Boolean) {
+        if (_musicKeepAudioAlive.value == enabled) return
+        _musicKeepAudioAlive.value = enabled
+        storage.save("music_keep_audio_alive", if (enabled) "true" else null)
     }
 
     fun setLocalFolder(path: String) {
