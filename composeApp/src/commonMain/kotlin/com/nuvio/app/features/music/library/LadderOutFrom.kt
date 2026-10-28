@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import kotlinx.serialization.Serializable
+
 /**
  * Ladder phase 4b: out-from mode, as pure data (no Compose, no network, so it is unit-tested).
  *
@@ -13,6 +15,7 @@ package com.nuvio.app.features.music.library
  * their own ladder.
  */
 
+@Serializable
 internal enum class LadderMode { Into, OutFrom }
 
 /** How many destination genres are offered for out-from mode. */

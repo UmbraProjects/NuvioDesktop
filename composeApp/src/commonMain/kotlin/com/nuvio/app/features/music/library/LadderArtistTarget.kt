@@ -3,6 +3,7 @@ package com.nuvio.app.features.music.library
 import com.nuvio.app.features.library.LibraryClock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.Serializable
 
 /**
  * Ladder phase 4a: an artist as the target of a ladder ("Climb into My Bloody Valentine"). Into mode only.
@@ -20,6 +21,7 @@ import kotlinx.coroutines.sync.withLock
  */
 
 /** An artist resolved for a ladder: who they are, the genre to climb into, and their top genres for the screen. */
+@Serializable
 internal data class ArtistTarget(
     val artist: LadderCandidate,
     /** Readable name of the primary genre, for example "shoegaze". Always a usable genre. */
@@ -72,6 +74,7 @@ internal sealed interface ArtistLookup {
 }
 
 internal sealed interface ArtistLadderOutcome {
+    @Serializable
     data class Ready(
         val target: ArtistTarget,
         val ladder: Ladder,

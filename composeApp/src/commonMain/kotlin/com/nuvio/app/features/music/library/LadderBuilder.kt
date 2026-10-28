@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.log10
 
@@ -33,6 +34,7 @@ private const val FANS_BONUS = 0.05
 private const val FANS_FOR_FULL_BONUS = 8.0 // log10 of 100 million fans
 
 /** One artist that could stand on a rung, from a tag search. Everything but [id], [name] and [votes] is optional. */
+@Serializable
 internal data class LadderCandidate(
     val id: String,
     val name: String,
@@ -78,6 +80,7 @@ internal fun eraFit(candidateYear: Int?, recordYear: Int?): Double {
     return (1.0 - apart.toDouble() / ERA_SPAN_YEARS).coerceIn(0.0, 1.0)
 }
 
+@Serializable
 internal data class LadderRung(
     /** 1 for the bridge, up to the number of rungs for the core. */
     val step: Int,
@@ -92,6 +95,7 @@ internal data class LadderRung(
     val mark: RungFeedback? = null,
 )
 
+@Serializable
 internal data class Ladder(
     /** The target as named on screen ("drum and bass" for a typed "DnB"). */
     val target: String,

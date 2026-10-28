@@ -5,6 +5,7 @@ import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.library.LibraryClock
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -26,7 +27,8 @@ private suspend fun fetch(url: String, headers: Map<String, String> = emptyMap()
 
 /**
  * https://musicbrainz.org: free, no key. The rules ask for one request a second and an identifying
- * User-Agent; [paced] keeps every call at least 1.1 s from the one before it.
+ * User-Agent; [paced] keeps every call at least 1.1 s from the one before it, and lets background work (ladders built
+ * before anyone asked, see [BackgroundWork]) wait behind searches and Library refreshes.
  */
 internal object MusicBrainzClient {
     private const val BASE = "https://musicbrainz.org/ws/2"
@@ -34,18 +36,11 @@ internal object MusicBrainzClient {
     private const val MAX_PAGES = 6
     private const val TAG_SEARCH_LIMIT = 100
     private const val ARTIST_SEARCH_LIMIT = 5
-    private val gate = Mutex()
-    private var lastCallMs = 0L
+    private val pacer = BackgroundAwarePacer(GAP_MS)
 
-    private suspend fun paced(url: String): String? = gate.withLock {
-        val wait = lastCallMs + GAP_MS - LibraryClock.nowEpochMs()
-        if (wait > 0) delay(wait)
-        try {
-            fetch(url)
-        } finally {
-            lastCallMs = LibraryClock.nowEpochMs()
-        }
-    }
+    /** Every call goes through [pacer]; one made inside `withContext(BackgroundWork())` waits for ordinary calls first. */
+    private suspend fun paced(url: String): String? =
+        pacer.run(background = currentCoroutineContext()[BackgroundWork] != null) { fetch(url) }
 
     suspend fun searchArtist(name: String): List<MbArtistHit> {
         val query = "artist:\"${name.replace("\"", "\\\"")}\"".encodeURLParameter()

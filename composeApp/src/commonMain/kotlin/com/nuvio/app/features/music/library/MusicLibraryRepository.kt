@@ -31,6 +31,8 @@ data class MusicLibrarySettings(
     val reducedMotion: Boolean = false,
     /** The player as a bottom bar or as a corner card. */
     val barStyle: com.nuvio.app.features.music.MusicBarStyle = com.nuvio.app.features.music.MusicBarStyle.Bar,
+    /** The artist page's "Where next?" ladder builds by itself (lazily, behind other MusicBrainz calls). Off for a slow connection: it then waits for a button. */
+    val autoWhereNext: Boolean = true,
 )
 
 /** What is happening to one artist while it is added or refreshed. */

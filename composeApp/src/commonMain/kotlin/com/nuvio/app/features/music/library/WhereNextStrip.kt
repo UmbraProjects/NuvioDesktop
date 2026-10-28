@@ -35,19 +35,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicCover
 import com.nuvio.app.features.music.defaultMusicCatalog
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * HTPC phase 3: "Where next from X?" on the artist page, under the release eras. Builds by itself when the page opens
- * (the artist's own other genres decide the direction; [ladderOutFrom] does the work) and is cached per artist and
- * direction for the session, so coming back to the page is instant.
+ * HTPC phase 3: "Where next from X?" on the artist page, under the release eras. It builds by itself, but lazily (the
+ * artist's own other genres decide the direction; [ladderOutFrom] does the work): about [WHERE_NEXT_START_DELAY_MS]
+ * after the page opens, or as soon as focus reaches the strip's heading, and only if the person is still on the page.
+ * The build queues behind other MusicBrainz calls ([BackgroundWork]). A built ladder is kept per artist and direction in
+ * memory and on disk for a week ([WhereNextLadders]), so coming back to the page is instant and costs no call. Refresh
+ * rebuilds it; a setting (Music settings) turns automatic building off, and then the strip waits for "Show where next".
  *
  *  - Five rung cards (empty shapes while loading, so the layout does not jump).
  *  - Direction chips, from the ladder's own destination and its alternatives; focusing or clicking one rebuilds the strip.
@@ -58,10 +64,13 @@ import kotlinx.coroutines.launch
 /** Session cache of out-from ladders, by artist and direction. Only successful builds are kept, so a failure can be retried. */
 internal object WhereNextCache {
     private val ladders = HashMap<String, ArtistLadderOutcome.Ready>()
-    private fun key(artistId: String, destination: String?) = "$artistId|${destination?.let(::genreKey).orEmpty()}"
+    internal fun key(artistId: String, destination: String?) = "$artistId|${destination?.let(::genreKey).orEmpty()}"
     fun get(artistId: String, destination: String?): ArtistLadderOutcome.Ready? = ladders[key(artistId, destination)]
     fun put(artistId: String, destination: String?, outcome: ArtistLadderOutcome.Ready) {
         ladders[key(artistId, destination)] = outcome
+    }
+    fun remove(artistId: String, destination: String?) {
+        ladders.remove(key(artistId, destination))
     }
 }
 
@@ -73,28 +82,57 @@ internal fun similarInLibrary(artist: LibraryArtist, all: List<LibraryArtist>, l
 
 private const val PLACEHOLDER_CARDS = LADDER_RUNGS
 
+/** How long the artist page stays open before its ladder is built, when focus has not reached the strip sooner. */
+internal const val WHERE_NEXT_START_DELAY_MS = 1_500L
+
+/** Whether "Where next?" ladders build without being asked (the Music settings switch; on by default). */
+@Composable
+internal fun rememberAutoWhereNext(): Boolean {
+    LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
+    val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    return state.settings.autoWhereNext
+}
+
 @Composable
 internal fun WhereNextStrip(artist: LibraryArtist, onOpenArtist: (String) -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
     val scope = rememberCoroutineScope()
     val catalog = remember { defaultMusicCatalog() }
+    val auto = rememberAutoWhereNext()
     var expanded by rememberSaveable(artist.id) { mutableStateOf(true) }
     var destination by rememberSaveable(artist.id) { mutableStateOf<String?>(null) }
     var attempt by remember(artist.id) { mutableIntStateOf(0) }
     var selectedId by remember(artist.id, destination) { mutableStateOf<String?>(null) }
     var note by remember(artist.id) { mutableStateOf<String?>(null) }
 
-    val outcome by produceState<ArtistLadderOutcome?>(WhereNextCache.get(artist.id, destination), artist.id, destination, attempt) {
-        val cached = WhereNextCache.get(artist.id, destination)
+    // Lazy build: nothing is asked of MusicBrainz until the page has been open a moment or focus reaches this strip
+    // ([wanted]). Leaving the page cancels the wait and any build under way. A ladder kept in memory or on disk shows at
+    // once, wanted or not, because it costs nothing.
+    var wanted by remember(artist.id) { mutableStateOf(false) }
+    // The person did something that asks for a ladder (a direction, Refresh, Try again, Show where next): that build
+    // does not queue behind other MusicBrainz calls.
+    var asked by remember(artist.id) { mutableStateOf(false) }
+    // Whether memory and disk have been looked at, so the "not built" prompt does not flash before a kept ladder shows.
+    var looked by remember(artist.id, destination) { mutableStateOf(WhereNextLadders.peek(artist.id, destination) != null) }
+    LaunchedEffect(artist.id, auto) {
+        if (auto) {
+            delay(WHERE_NEXT_START_DELAY_MS)
+            wanted = true
+        }
+    }
+
+    val outcome by produceState<ArtistLadderOutcome?>(
+        WhereNextLadders.peek(artist.id, destination), artist.id, destination, attempt, wanted, asked,
+    ) {
+        val cached = WhereNextLadders.cached(artist.id, destination)
+        looked = true
         if (cached != null) {
             value = cached
             return@produceState
         }
         value = null
-        MusicLibraryRepository.ensureLoaded()
-        val result = LadderArtistTargets.ladderOutFrom(artist.name, MusicLibraryRepository.state.value.artists, destination)
-        if (result is ArtistLadderOutcome.Ready) WhereNextCache.put(artist.id, destination, result)
-        value = result
+        if (!wanted) return@produceState
+        value = WhereNextLadders.build(artist, destination, background = !asked)
     }
     val ready = outcome as? ArtistLadderOutcome.Ready
 
@@ -117,20 +155,44 @@ internal fun WhereNextStrip(artist: LibraryArtist, onOpenArtist: (String) -> Uni
     }
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = (if (expanded) "▾ " else "▸ ") + "Where next from ${artist.name}?",
-            fontSize = 28.sp,
-            color = colors.textPrimary,
-            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { expanded = !expanded }.padding(vertical = 6.dp),
-        )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(
+                text = (if (expanded) "▾ " else "▸ ") + "Where next from ${artist.name}?",
+                fontSize = 28.sp,
+                color = colors.textPrimary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    // Focus arriving at the heading means the person is heading for the strip: start building.
+                    .onFocusChanged { if (it.isFocused && auto) wanted = true }
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 6.dp),
+            )
+            if (expanded && ready != null) {
+                FocusPill("Refresh", selected = false, onActivate = {
+                    scope.launch {
+                        WhereNextLadders.forget(artist.id, destination)
+                        asked = true
+                        wanted = true
+                        attempt++
+                    }
+                })
+            }
+        }
         if (!expanded) return@Column
 
         if (chips.size > 1) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(chips, key = { it }) { chip ->
                     val current = ready?.destination?.let { genreKey(it) == genreKey(chip) } == true
-                    FocusPill(chip, selected = current, onActivate = { destination = chip })
+                    FocusPill(chip, selected = current, onActivate = { asked = true; wanted = true; destination = chip })
                 }
+            }
+        }
+
+        if (!auto && !wanted && looked && outcome == null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Not built, to save network calls", fontSize = 24.sp, color = colors.textMuted)
+                FocusPill("Show where next", selected = false, onActivate = { asked = true; wanted = true })
             }
         }
 
@@ -141,7 +203,7 @@ internal fun WhereNextStrip(artist: LibraryArtist, onOpenArtist: (String) -> Uni
                     fontSize = 24.sp,
                     color = colors.textMuted,
                 )
-                FocusPill("Try again", selected = false, onActivate = { attempt++ })
+                FocusPill("Try again", selected = false, onActivate = { asked = true; wanted = true; attempt++ })
             }
             else -> LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),

@@ -159,7 +159,7 @@ internal fun MusicLibraryShelf(
                 LibraryIconAction(Icons.Rounded.Refresh, "Refresh all artists", enabled = state.artists.isNotEmpty()) {
                     MusicLibraryRepository.refreshAll()
                 }
-                LibraryIconAction(Icons.Rounded.Settings, "Artwork sources") { showSources = true }
+                LibraryIconAction(Icons.Rounded.Settings, "Music settings") { showSources = true }
             }
             state.errorMessage?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = colors.warning, modifier = Modifier.padding(horizontal = 16.dp))

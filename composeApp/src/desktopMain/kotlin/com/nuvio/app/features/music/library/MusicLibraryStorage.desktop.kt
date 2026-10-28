@@ -22,4 +22,10 @@ internal actual object MusicLibraryStorage {
     actual fun saveLadders(profileId: Int, payload: String) {
         store.putString("ladders_$profileId", payload)
     }
+
+    actual fun loadWhereNext(profileId: Int): String? = store.getString("wherenext_$profileId")
+
+    actual fun saveWhereNext(profileId: Int, payload: String) {
+        store.putString("wherenext_$profileId", payload)
+    }
 }

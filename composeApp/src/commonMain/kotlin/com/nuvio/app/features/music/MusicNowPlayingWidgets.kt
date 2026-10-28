@@ -27,10 +27,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.features.music.library.ArtistLadderOutcome
-import com.nuvio.app.features.music.library.LadderArtistTargets
 import com.nuvio.app.features.music.library.LibraryArtist
-import com.nuvio.app.features.music.library.MusicLibraryRepository
-import com.nuvio.app.features.music.library.WhereNextCache
+import com.nuvio.app.features.music.library.WhereNextLadders
+import com.nuvio.app.features.music.library.rememberAutoWhereNext
 
 /**
  * HTPC phase 7: widgets for the empty lower-left of the Stage view, under the title. All of them sit off the lyric
@@ -84,12 +83,12 @@ internal fun NowPlayingWidgets(
 
 @Composable
 private fun MiniLadder(artist: LibraryArtist) {
-    val outcome by produceState<ArtistLadderOutcome.Ready?>(WhereNextCache.get(artist.id, null), artist.id) {
-        value = WhereNextCache.get(artist.id, null) ?: run {
-            MusicLibraryRepository.ensureLoaded()
-            (LadderArtistTargets.ladderOutFrom(artist.name, MusicLibraryRepository.state.value.artists) as? ArtistLadderOutcome.Ready)
-                ?.also { WhereNextCache.put(artist.id, null, it) }
-        }
+    val auto = rememberAutoWhereNext()
+    // A ladder kept in memory or on disk shows at once. Otherwise it is built behind other MusicBrainz calls, and only
+    // when "Build Where next automatically" is on, so the Stage view never spends calls the person turned off.
+    val outcome by produceState<ArtistLadderOutcome.Ready?>(WhereNextLadders.peek(artist.id, null), artist.id, auto) {
+        value = WhereNextLadders.cached(artist.id, null)
+            ?: if (auto) WhereNextLadders.build(artist, null, background = true) as? ArtistLadderOutcome.Ready else null
     }
     val rungs = outcome?.ladder?.rungs.orEmpty().take(3)
     if (rungs.isEmpty()) return

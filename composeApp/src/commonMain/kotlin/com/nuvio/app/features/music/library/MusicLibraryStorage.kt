@@ -10,4 +10,8 @@ internal expect object MusicLibraryStorage {
     /** Phase 7: the ladders the person has climbed, one JSON payload per profile. */
     fun loadLadders(profileId: Int): String?
     fun saveLadders(profileId: Int, payload: String)
+
+    /** The artist page's "Where next?" ladders, kept for a week, one JSON payload per profile. */
+    fun loadWhereNext(profileId: Int): String?
+    fun saveWhereNext(profileId: Int, payload: String)
 }

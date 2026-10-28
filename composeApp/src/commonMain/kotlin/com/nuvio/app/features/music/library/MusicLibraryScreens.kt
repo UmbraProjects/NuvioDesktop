@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -112,7 +113,7 @@ fun MusicLibraryGrid(
             LibraryIconAction(Icons.Rounded.Refresh, "Refresh all artists", enabled = state.artists.isNotEmpty()) {
                 MusicLibraryRepository.refreshAll()
             }
-            LibraryIconAction(Icons.Rounded.Settings, "Artwork sources") { showSources = true }
+            LibraryIconAction(Icons.Rounded.Settings, "Music settings") { showSources = true }
         }
         state.errorMessage?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = colors.warning, modifier = Modifier.padding(horizontal = 16.dp))
@@ -215,9 +216,10 @@ internal fun ArtworkSourcesDialog(
     val colors = MaterialTheme.nuvio.colors
     var fanart by remember { mutableStateOf(settings.fanartApiKey) }
     var audioDb by remember { mutableStateOf(settings.audioDbKey) }
+    var autoNext by remember { mutableStateOf(settings.autoWhereNext) }
     NuvioAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Artwork sources") },
+        title = { Text("Music settings") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -241,9 +243,20 @@ internal fun ArtworkSourcesDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Build \"Where next?\" automatically", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
+                        Text(
+                            "On an artist page, finds where to go next without being asked. Turn off on a slow connection; the page then waits for a button.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textMuted,
+                        )
+                    }
+                    Switch(checked = autoNext, onCheckedChange = { autoNext = it })
+                }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(settings.copy(fanartApiKey = fanart, audioDbKey = audioDb)) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(settings.copy(fanartApiKey = fanart, audioDbKey = audioDb, autoWhereNext = autoNext)) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
