@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -174,12 +175,13 @@ internal fun ArtistRoom(
 
     BoxWithConstraints(modifier.background(colors.background)) {
         val wide = maxWidth >= ROOM_WIDE_FROM
-        val backdropHeight = maxHeight.coerceAtLeast(640.dp)
+        val viewport = maxHeight
         val inset = LocalMusicBarInset.current // fork:music - the page runs under the bar; its foot clears it
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = inset + 48.dp)) {
-            // The hero and what follows it on the picture; the backdrop scrolls away with them.
+            // The hero and what follows it on the picture; the backdrop scrolls away with them. It is as tall as they are
+            // (at most a window), so the releases start right under Similar Taste instead of below a window of picture.
             Box(Modifier.fillMaxWidth()) {
-                RoomBackdrop(artist, Modifier.fillMaxWidth().height(backdropHeight))
+                RoomBackdrop(artist, Modifier.matchParentSize().wrapContentHeight(Alignment.Top).fillMaxWidth().heightIn(max = viewport).fillMaxHeight())
                 Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
                     Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
                     RoomLane(

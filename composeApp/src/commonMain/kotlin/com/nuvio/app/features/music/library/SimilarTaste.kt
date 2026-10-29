@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -40,7 +43,6 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioGlass
-import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicCover
 import com.nuvio.app.features.music.defaultMusicCatalog
@@ -100,28 +102,35 @@ internal object SimilarTaste {
     private val lock = Mutex()
     private val lists = HashMap<String, List<SimilarArtist>>()
 
-    /** Who listeners of [name] also play, closest first; null when neither source could be reached. */
+    private val withGenres = HashMap<String, List<SimilarArtist>>()
+
+    /** Who listeners of [name] also play, closest first, without genres yet; null when neither source could be reached. */
     suspend fun forArtist(name: String): List<SimilarArtist>? {
         val key = genreKey(name)
-        lock.withLock { lists[key] }?.let { return it }
+        lock.withLock { withGenres[key] ?: lists[key] }?.let { return it }
         val found = if (LastFmClient.isConfigured) {
             LastFmClient.similarArtists(name, SIMILAR_LIMIT)?.takeIf { it.isNotEmpty() }
         } else {
             null
         } ?: DeezerClient.relatedByName(name)?.map { SimilarArtist(it.name, 0.0) }
         val list = found?.filter { !sameArtistName(it.name, name) }?.take(SIMILAR_LIMIT) ?: return null
-        // Their genres, for the chips: Last.fm tags, cut down to genres. Without a key the strip has no genre chips.
-        val withGenres = if (LastFmClient.isConfigured) {
-            coroutineScope {
-                list.map { artist ->
-                    async { artist.copy(genres = LastFmClient.artistTags(artist.name)?.tags?.keys.orEmpty()) }
-                }.awaitAll()
-            }
-        } else {
-            list
+        lock.withLock { lists[key] = list }
+        return list
+    }
+
+    /**
+     * [list] (the answer of [forArtist] for [name]) with each artist's genres, for the chips: Last.fm tags cut down to
+     * genres, one paced call each, so this comes a few seconds after the portraits. Without a key it is [list] as it is.
+     */
+    suspend fun withGenres(name: String, list: List<SimilarArtist>): List<SimilarArtist> {
+        if (!LastFmClient.isConfigured || list.isEmpty()) return list
+        val key = genreKey(name)
+        lock.withLock { withGenres[key] }?.let { return it }
+        val filled = coroutineScope {
+            list.map { artist -> async { artist.copy(genres = LastFmClient.artistTags(artist.name)?.tags?.keys.orEmpty()) } }.awaitAll()
         }
-        lock.withLock { lists[key] = withGenres }
-        return withGenres
+        lock.withLock { withGenres[key] = filled }
+        return filled
     }
 }
 
@@ -130,7 +139,12 @@ internal fun SimilarTasteStrip(artist: LibraryArtist, onOpenArtist: (String) -> 
     val colors = MaterialTheme.nuvio.colors
     val scope = rememberCoroutineScope()
     val catalog = remember { defaultMusicCatalog() }
-    val similar by produceState<List<SimilarArtist>?>(null, artist.name) { value = SimilarTaste.forArtist(artist.name) ?: emptyList() }
+    // The portraits as soon as the names are in; the genre chips once their tags follow.
+    val similar by produceState<List<SimilarArtist>?>(null, artist.name) {
+        val names = SimilarTaste.forArtist(artist.name) ?: emptyList()
+        value = names
+        value = SimilarTaste.withGenres(artist.name, names)
+    }
     val libraryState by MusicLibraryRepository.state.collectAsStateWithLifecycle()
     val library = remember(artist.id, libraryState.artists.size) { similarInLibrary(artist, libraryState.artists) }
     val genres = remember(similar, artist.genres) { similarTasteGenres(passportChips(artist).second, similar.orEmpty()) }
@@ -192,24 +206,28 @@ private const val CHIP_ALL = "All"
 private const val CHIP_LIBRARY = "Library"
 private const val PLACEHOLDERS = 8
 private val PORTRAIT = 120.dp
+private val PORTRAIT_WIDTH = 140.dp
 
 private fun String.titleCase(): String = split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
 
-/** A round portrait with the name on hover; a spinner over it while its page is being found. */
+/** A round portrait with the name under it; a spinner over it while its page is being found. */
 @Composable
 private fun TastePortrait(name: String, picture: String?, busy: Boolean, onOpen: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val focused by source.collectIsFocusedAsState()
-    NuvioPosterHoverTooltip(title = name) {
+    Column(
+        Modifier
+            .width(PORTRAIT_WIDTH)
+            .hoverable(source)
+            .focusable(interactionSource = source)
+            .clickable(interactionSource = source, indication = null, onClick = onOpen),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         Box(
-            Modifier
-                .border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape)
-                .padding(3.dp)
-                .hoverable(source)
-                .focusable(interactionSource = source)
-                .clickable(interactionSource = source, indication = null, onClick = onOpen),
+            Modifier.border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp),
             contentAlignment = Alignment.Center,
         ) {
             MusicCover(picture, name, size = PORTRAIT, circle = true)
@@ -219,10 +237,21 @@ private fun TastePortrait(name: String, picture: String?, busy: Boolean, onOpen:
                 }
             }
         }
+        Text(
+            name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (hovered || focused) colors.textPrimary else colors.textSecondary,
+            textAlign = TextAlign.Center,
+            minLines = 2,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
 @Composable
 private fun TastePortraitPlaceholder() {
-    Box(Modifier.padding(3.dp).size(PORTRAIT).clip(CircleShape).musicGlass(CircleShape))
+    Box(Modifier.width(PORTRAIT_WIDTH), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.padding(3.dp).size(PORTRAIT).clip(CircleShape).musicGlass(CircleShape))
+    }
 }

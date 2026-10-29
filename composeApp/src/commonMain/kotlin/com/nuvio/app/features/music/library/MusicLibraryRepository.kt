@@ -439,7 +439,12 @@ object MusicLibraryRepository {
             }
 
             val enricher = MusicLibraryEnricher(_state.value.settings)
-            val built = enricher.build(page, releases, addedAt, now) { setProgress(artistId, it) }
+            val built = enricher.build(
+                page, releases, addedAt, now,
+                onStatus = { setProgress(artistId, it) },
+                // The quick sources' artist, put up while MusicBrainz and the collaboration search finish.
+                onPartial = { partial -> put(if (existing == null) partial else keepWhereEmpty(partial, existing), onlyIfPresent = true) },
+            )
             // A namesake verdict replaces what an earlier run merged in; only a source outage keeps old data.
             val full = if (existing == null || built.channelMismatch) built else keepWhereEmpty(built, existing)
             put(full, onlyIfPresent = true)

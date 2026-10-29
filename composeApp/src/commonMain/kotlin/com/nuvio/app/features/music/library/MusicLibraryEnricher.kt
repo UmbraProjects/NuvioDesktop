@@ -23,15 +23,30 @@ internal class MusicLibraryEnricher(
     private val audioDb = AudioDbClient(settings.audioDbKey)
     private val fanart = FanartTvClient(settings.fanartApiKey)
 
-    /** The artist with all its metadata and artwork. Per-release details (labels, track counts) come from [addReleaseDetails]. */
+    /**
+     * The artist with all its metadata and artwork. Per-release details (labels, track counts) come from [addReleaseDetails].
+     * [onPartial] gets the artist early, as far as the quick sources go: once with Deezer's releases and AudioDB's artwork
+     * (found by name) while MusicBrainz, which paces at a second a call and often answers 503, is still working, and once
+     * more before the collaboration search. The returned artist replaces both.
+     */
     suspend fun build(
         artist: MusicArtist,
         releases: List<MusicAlbumSummary>,
         addedAtEpochMs: Long,
         nowEpochMs: Long,
         onStatus: (String) -> Unit = {},
+        onPartial: (LibraryArtist) -> Unit = {},
     ): LibraryArtist = coroutineScope {
         val name = artist.name
+        fun assemble(sources: ArtistSources, merged: List<LibraryRelease>) = assembleArtist(
+            id = artist.browseId,
+            name = name,
+            youTubeThumbnail = artist.thumbnailUrl,
+            sources = sources,
+            releases = merged,
+            addedAtEpochMs = addedAtEpochMs,
+            nowEpochMs = nowEpochMs,
+        )
 
         // Deezer is a different host with its own pacing, so it runs while MusicBrainz is being polite.
         val deezerJob = async {
@@ -46,15 +61,28 @@ internal class MusicLibraryEnricher(
             }
         }
 
-        onStatus("Finding $name on MusicBrainz")
-        val mbHit = pickMbArtist(MusicBrainzClient.searchArtist(name), name)
-        val mbArtist = mbHit?.let { MusicBrainzClient.artist(it.id) }
-        val groups = if (mbArtist != null) {
-            onStatus("Reading the discography")
-            MusicBrainzClient.releaseGroups(mbArtist.id)
-        } else {
-            emptyList()
+        val mbJob = async {
+            val mbHit = pickMbArtist(MusicBrainzClient.searchArtist(name), name)
+            val found = mbHit?.let { MusicBrainzClient.artist(it.id) }
+            found to if (found != null) MusicBrainzClient.releaseGroups(found.id) else emptyList()
         }
+        // AudioDB by name and fanart.tv by the MusicBrainz id AudioDB carries: the backdrop, without waiting for MusicBrainz.
+        onStatus("Fetching artwork")
+        val audioByName = audioDb.artistByName(name)
+        val quickFanartJob = async { audioByName?.musicBrainzId?.let { fanart.artist(it) } }
+        val (deezerHit, deezerAlbums) = deezerJob.await()
+        val quickFanart = quickFanartJob.await()
+        if (!mbJob.isCompleted) {
+            onPartial(
+                assemble(
+                    ArtistSources(deezer = deezerHit, audioDb = audioByName, fanart = quickFanart),
+                    mergeReleases(ReleaseSources(youTubeMusic = releases, deezer = deezerAlbums, fanart = quickFanart)),
+                ),
+            )
+        }
+
+        onStatus("Finding $name on MusicBrainz")
+        val (mbArtist, groups) = mbJob.await()
 
         // Name search can land on a namesake. Compare the channel with MusicBrainz before trusting its facts.
         val verdict = if (mbArtist == null) {
@@ -76,17 +104,18 @@ internal class MusicLibraryEnricher(
             ).copy(channelMismatch = true, suggestedChannelId = verdict.betterChannelId?.takeIf { it != artist.browseId })
         }
 
-        onStatus("Fetching artwork")
-        val audioArtist = mbArtist?.let { audioDb.artistByMusicBrainzId(it.id) } ?: audioDb.artistByName(name)
+        val audioArtist = mbArtist?.let { mb ->
+            if (audioByName?.musicBrainzId == mb.id) audioByName else audioDb.artistByMusicBrainzId(mb.id)
+        } ?: audioByName
         val mbid = mbArtist?.id ?: audioArtist?.musicBrainzId
-        val fanartJob = async { mbid?.let { fanart.artist(it) } }
+        val fanartJob = async { if (mbid == audioByName?.musicBrainzId) quickFanart else mbid?.let { fanart.artist(it) } }
         val audioAlbumsJob = async { audioArtist?.let { audioDb.albums(it.id) }.orEmpty() }
         val wikiJob = async {
             if (audioArtist?.biography != null) null else mbArtist?.wikipediaTitle?.let { WikipediaClient.summary(it) }
         }
 
-        val (deezerHit, deezerAlbums) = deezerJob.await()
         val fanartArtist = fanartJob.await()
+        val sources = ArtistSources(mbArtist, deezerHit, audioArtist, fanartArtist, wikiJob.await())
         val merged = mergeReleases(
             ReleaseSources(
                 youTubeMusic = releases,
@@ -95,20 +124,11 @@ internal class MusicLibraryEnricher(
                 audioDb = audioAlbumsJob.await(),
                 fanart = fanartArtist,
             ),
-        ).let { list ->
-            // fork:music - a collaboration on the other artist's channel is still this artist's release.
-            onStatus("Looking for collaborations")
-            withCollabReleases(list, name, artist.browseId, searchReleases)
-        }
-        val assembled = assembleArtist(
-            id = artist.browseId,
-            name = name,
-            youTubeThumbnail = artist.thumbnailUrl,
-            sources = ArtistSources(mbArtist, deezerHit, audioArtist, fanartArtist, wikiJob.await()),
-            releases = merged,
-            addedAtEpochMs = addedAtEpochMs,
-            nowEpochMs = nowEpochMs,
         )
+        onPartial(assemble(sources, merged))
+        // fork:music - a collaboration on the other artist's channel is still this artist's release.
+        onStatus("Looking for collaborations")
+        val assembled = assemble(sources, withCollabReleases(merged, name, artist.browseId, searchReleases))
         // fork:music - with a Last.fm key its tags lead (MusicBrainz's stay behind them), so an artist still gets a
         // place on the Constellation and in ladders when MusicBrainz is unreachable.
         withLastFmTags(assembled, name)
