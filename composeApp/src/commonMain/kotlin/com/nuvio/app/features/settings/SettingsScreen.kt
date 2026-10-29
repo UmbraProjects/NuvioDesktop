@@ -2253,6 +2253,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Screensaver,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_preshow),
+        icon = Icons.Rounded.Theaters,
+        page = SettingsPage.Preshow,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.random_play_title),
         icon = Icons.Rounded.Casino,
         page = SettingsPage.RandomPlay,
