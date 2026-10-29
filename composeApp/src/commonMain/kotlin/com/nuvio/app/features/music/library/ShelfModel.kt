@@ -19,7 +19,7 @@ internal data class ShelfTile(
 
 internal data class ShelfRow(
     val artist: LibraryArtist,
-    /** The quick-play albums: bigger tiles at the start of the rail. */
+    /** The quick-play albums, first on the rail with a line after them. */
     val top: List<ShelfTile>,
     val rest: List<ShelfTile>,
     /** "Top 5", or "Latest 5" when nothing is ranked or starred. */
@@ -119,6 +119,8 @@ internal data class ShelfCard(
     val artist: LibraryArtist? = null,
     val release: LibraryRelease? = null,
     val ladder: LadderRequest? = null,
+    /** The artist whose picture stands in for a cover on a card with no release (the ladder's own artist). */
+    val pictureOf: String? = null,
 )
 
 private fun LibraryArtist.cardRelease(): LibraryRelease? {
@@ -159,7 +161,12 @@ internal fun shelfCards(
         add(ShelfCard(ShelfCardKind.Added, "Added recently", a.name, a.foundVia ?: "New in your Library", a, a.cardRelease()))
     }
     continueCards(resumable, limit = 1).firstOrNull()?.let { c ->
-        add(ShelfCard(ShelfCardKind.Ladder, "Continue your ladder", c.title, c.detail, ladder = c.request))
+        val subject = when (val r = c.request) {
+            is LadderRequest.Artist -> r.name
+            is LadderRequest.Album -> r.artist
+            is LadderRequest.Genre -> c.names.firstOrNull() // a genre has no artist of its own: the first rung climbed
+        }
+        add(ShelfCard(ShelfCardKind.Ladder, "Continue your ladder", c.title, c.detail, ladder = c.request, pictureOf = subject))
     }
 }
 

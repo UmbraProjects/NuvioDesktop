@@ -47,7 +47,6 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.nuvio
 
 // Shared by the Shelf and Eras views: the shelf's former private cover tile.
-internal val FEATURED_SIZE = 148.dp
 internal val TILE_SIZE = 112.dp
 internal val GOLD = Color(0xFFE8B84A)
 internal val ON_GOLD = Color(0xFF1A1307)
@@ -67,7 +66,7 @@ internal fun CoverTile(
     dimmed: Boolean = false,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val size = if (tile.featured) FEATURED_SIZE else TILE_SIZE
+    val size = TILE_SIZE
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val peek by animateDpAsState(if (hovered) size * 0.16f else 0.dp, tween(220))

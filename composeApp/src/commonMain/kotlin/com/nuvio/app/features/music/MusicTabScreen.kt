@@ -150,7 +150,8 @@ fun MusicTopBarContent(onLeave: () -> Unit, modifier: Modifier = Modifier) {
         onDispose { MusicTabState.barHosted = false }
     }
     Row(
-        modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp),
+        // The swap button sits centred in its segment (6 dp either side); the field's end padding does the same for its last button.
+        modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -551,7 +552,7 @@ private fun MusicGlassField(
         cursorBrush = SolidColor(tokens.colors.accent),
         decorationBox = { innerTextField ->
             Row(
-                modifier = Modifier.fillMaxWidth().height(44.dp).padding(start = if (chromeless) 4.dp else 18.dp, end = if (chromeless) 0.dp else 8.dp),
+                modifier = Modifier.fillMaxWidth().height(44.dp).padding(start = if (chromeless) 4.dp else 18.dp, end = if (chromeless) 4.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {

@@ -682,7 +682,6 @@ internal fun rootTabHistoryAfterNavigation(
 // the five nav quadrants keep the 80.dp rhythm they had when there were four. Quadrants divide the
 // bar by weight, so hiding Discover subtracts one quadrant instead of stretching the other four.
 private val FloatingTopBarQuadrantWidth = 64.dp
-private val MusicTopBarWidth = 520.dp // fork:music-navbar - the Music search on the bar
 private val FloatingTopBarWidth = 384.dp // fork:music (320.dp + one quadrant for Music)
 
 // The sidebar's nav glyphs sit alone in a wide rail rather than in a dense pill, so they carry
@@ -6305,11 +6304,6 @@ private fun TabletFloatingTopBar(
         (if (discoverTabVisible) 0.dp else FloatingTopBarQuadrantWidth) +
         (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp) -
         (if (musicTabVisible) 0.dp else FloatingTopBarQuadrantWidth) // fork:music
-    // fork:music-navbar - the Music search wants more room than the tab icons; only the pill itself widens.
-    val pillWidth by animateDpAsState(
-        targetValue = if (musicBarActive) maxOf(topBarWidth, MusicTopBarWidth) else topBarWidth,
-        animationSpec = tween(durationMillis = 200),
-    )
     // Right-clicking the Library quadrant hangs its quick-access menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
     var libraryMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
@@ -6437,7 +6431,7 @@ private fun TabletFloatingTopBar(
             border = BorderStroke(1.dp, dividerColor),
             modifier = Modifier
                 .height(NavBarHeight)
-                .width(pillWidth) // fork:music-navbar
+                .width(topBarWidth)
                 .onPointerEvent(PointerEventType.Enter) {
                     activationZoneHovered = true
                 }

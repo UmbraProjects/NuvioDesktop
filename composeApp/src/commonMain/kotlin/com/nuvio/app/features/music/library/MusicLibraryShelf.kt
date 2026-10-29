@@ -3,8 +3,7 @@ package com.nuvio.app.features.music.library
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.unit.Dp
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.ui.text.style.TextAlign
@@ -27,6 +26,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -51,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -82,9 +83,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Phase 4: the Library home as a shelf. One row per artist: the artist and its quick-play chips on the
- * left, then a rail of release covers. Only releases that can be played are shown; the artist's top
- * five come first as larger tiles (numbered when they are really ranked or starred), then everything
- * else oldest to newest. Hovering a cover slides its disc out and shows a star that pins the album to
+ * left (a fixed column, set off from the covers by a divider), then a rail of release covers. Only releases
+ * that can be played are shown; the artist's top five come first (numbered when they are really ranked or
+ * starred), then a thin line and everything else oldest to newest, all at one size. Hovering a cover slides its disc out and shows a star that pins the album to
  * the top five. A star by the artist's name floats it to the top of the shelf. Clicking a cover opens
  * the album; the avatar, name or "All" open the room.
  * Above the rows sit up to four cards (a year ago this week, a starred artist, added recently, continue your ladder).
@@ -120,8 +121,6 @@ internal fun MusicLibraryShelf(
     val shown = remember(state.artists, filterQuery) { state.artists.filter { it.matchesLibraryFilter(filterQuery) } }
     // Starred artists first; the sort is stable, so each group stays alphabetical.
     val ordered = remember(shown) { shown.sortedByDescending { it.favourite } }
-    // The width of the "N artists · N releases" line, as laid out; each artist's column takes it so the two share a centre.
-    var countWidth by remember { mutableStateOf<Dp?>(null) }
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -153,30 +152,34 @@ internal fun MusicLibraryShelf(
                 LazyColumn(
                     Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 8.dp, bottom = 24.dp), // 5% safe area for the TV
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    // No gaps between the items under the cards: each draws its own stretch of the column divider.
                     if (cards.isNotEmpty()) {
                         item(key = "shelf-cards") {
                             ShelfCardRow(
                                 cards = cards,
-                                artistCount = state.artists.size,
-                                releaseCount = totalReleases,
-                                onCountWidth = { countWidth = it },
+                                libraryPictures = remember(state.artists) { state.artists.associate { it.name.lowercase() to it.art.thumb } },
                                 onOpenArtist = onArtistClick,
                                 onOpenLadder = onOpenLadder,
                             )
                         }
                     }
+                    item(key = "shelf-count") {
+                        ShelfColumnLayout(Modifier.padding(top = 4.dp, bottom = 12.dp), left = {
+                            Text("${state.artists.size} artists · $totalReleases releases", fontSize = 22.sp, color = colors.textMuted, maxLines = 1)
+                        }) {}
+                    }
                     val pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }
                     items(pending.entries.toList(), key = { "pending:${it.key}" }) { (_, progress) ->
-                        Text("Adding… ${progress.status}", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, modifier = Modifier.padding(vertical = 12.dp))
+                        ShelfColumnLayout(Modifier.padding(vertical = 12.dp), left = {}) {
+                            Text("Adding… ${progress.status}", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                        }
                     }
                     items(ordered, key = { it.id }) { artist ->
                         ShelfArtistRow(
                             artist = artist,
                             status = state.working[artist.id]?.status,
                             reducedMotion = state.settings.reducedMotion,
-                            headerWidth = countWidth?.coerceIn(SHELF_HEADER_MIN_WIDTH, SHELF_HEADER_MAX_WIDTH) ?: SHELF_HEADER_WIDTH,
                             onOpenArtist = { onArtistClick(artist.id) },
                             onOpenRelease = { release ->
                                 val id = release.ytBrowseId
@@ -253,18 +256,16 @@ private fun YearAgoStrip(pick: YearAgoPick, artistCount: Int, releaseCount: Int)
 @Composable
 private fun ShelfCardRow(
     cards: List<ShelfCard>,
-    artistCount: Int,
-    releaseCount: Int,
-    onCountWidth: (Dp) -> Unit,
+    /** Saved artists' pictures by lower-cased name, for the ladder card. */
+    libraryPictures: Map<String, String?>,
     onOpenArtist: (String) -> Unit,
     onOpenLadder: (LadderRequest) -> Unit,
 ) {
-    val density = LocalDensity.current
     val colors = MaterialTheme.nuvio.colors
     val scope = rememberCoroutineScope()
     val catalog = remember { defaultMusicCatalog() }
     // Air between the cards and the count under them, so the line reads as the shelf's heading, not a card caption.
-    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 22.dp)) {
         // One height for every card: each fills the row, which is as tall as the tallest.
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             cards.forEach { card ->
@@ -296,10 +297,17 @@ private fun ShelfCardRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    // A card with no release (the ladder) gets a tile of the cover's size, so its text lines up with the others.
+                    // A card with no release (the ladder) shows its artist's picture at the cover's size, so its text lines up
+                    // with the others: the Library's own picture when the artist is saved, else one looked up by name.
                     val release = card.release
+                    val pictureOf = card.pictureOf
+                    val picture by produceState(libraryPictures[pictureOf?.lowercase()], pictureOf) {
+                        if (value == null && pictureOf != null) value = LadderArtwork.picture(pictureOf)
+                    }
                     if (release != null) {
                         ReleaseCover(release, Modifier.size(96.dp))
+                    } else if (picture != null) {
+                        MusicCover(picture, pictureOf, size = 96.dp)
                     } else {
                         Box(Modifier.size(96.dp).musicGlass(RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.Explore, contentDescription = null, tint = colors.accent, modifier = Modifier.size(40.dp))
@@ -313,12 +321,6 @@ private fun ShelfCardRow(
                 }
             }
         }
-        Text(
-            "$artistCount artists · $releaseCount releases",
-            fontSize = 22.sp,
-            color = colors.textMuted,
-            modifier = Modifier.onSizeChanged { onCountWidth(with(density) { it.width.toDp() }) },
-        )
     }
 }
 
@@ -326,17 +328,43 @@ private fun ShelfCardRow(
 
 // region shelf
 
-// The artist's column when there is no count line to match (no cards over the shelf), and the range a matched one keeps to.
-private val SHELF_HEADER_WIDTH = 238.dp
-private val SHELF_HEADER_MIN_WIDTH = 200.dp
-private val SHELF_HEADER_MAX_WIDTH = 300.dp
+// The artist's column: one fixed width, so every artist (and the count over them) shares a centre line,
+// with a divider between it and the covers that runs unbroken down the shelf.
+private val SHELF_COLUMN_WIDTH = 260.dp
+private val SHELF_COLUMN_GAP = 28.dp
+private val SHELF_DIVIDER = Color.White.copy(alpha = 0.10f)
+
+/**
+ * One stretch of the shelf: [left] centred in the artist column, the divider, then [content]. The divider is
+ * drawn behind rather than laid out, because the covers' LazyRow can't be measured for an intrinsic height.
+ */
+@Composable
+private fun ShelfColumnLayout(
+    modifier: Modifier = Modifier,
+    left: @Composable () -> Unit,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                val x = (SHELF_COLUMN_WIDTH + SHELF_COLUMN_GAP / 2).toPx()
+                drawLine(SHELF_DIVIDER, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+            }
+            .then(modifier),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(SHELF_COLUMN_GAP),
+    ) {
+        Box(Modifier.width(SHELF_COLUMN_WIDTH), contentAlignment = Alignment.Center) { left() }
+        content()
+    }
+}
 
 @Composable
 private fun ShelfArtistRow(
     artist: LibraryArtist,
     status: String?,
     reducedMotion: Boolean,
-    headerWidth: Dp,
     onOpenArtist: () -> Unit,
     onOpenRelease: (LibraryRelease) -> Unit,
 ) {
@@ -363,71 +391,72 @@ private fun ShelfArtistRow(
         scope.launch { playTopAlbums(catalog, row.top.map { it.release }, shuffled) }
     }
 
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(wash).hoverable(source).padding(vertical = 10.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        // The artist on top, their name and count under it, then three round buttons: their hits (the top five),
-        // a shuffle of them, and the favourite star, which floats the artist to the top of the shelf.
-        Column(
-            Modifier.width(headerWidth).padding(top = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(Modifier.clip(CircleShape).clickable(onClick = onOpenArtist)) {
-                Box(Modifier.border(2.dp, if (hovered) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
-                    MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true)
-                }
-            }
-            Text(
-                artist.name,
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenArtist),
-            )
-            val subtitle = when {
-                status != null -> status
-                row.playableReleases == row.totalReleases -> "${row.totalReleases} release${if (row.totalReleases == 1) "" else "s"}"
-                else -> "${row.playableReleases} playable of ${row.totalReleases}"
-            }
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (status != null) colors.accent else colors.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(
-                Modifier.padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ShelfColumnLayout(
+        Modifier.hoverable(source).padding(vertical = 18.dp),
+        left = {
+            // The artist on top, their name and count under it, then three round buttons: their hits (the top five),
+            // a shuffle of them, and the favourite star, which floats the artist to the top of the shelf.
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                if (row.top.isNotEmpty()) {
-                    ShelfRoundButton(Icons.Rounded.LocalFireDepartment, row.topLabel ?: "Play their hits") { playTop(shuffled = false) }
-                    ShelfRoundButton(Icons.Rounded.Shuffle, "Shuffle their hits") { playTop(shuffled = true) }
+                Box(Modifier.clip(CircleShape).clickable(onClick = onOpenArtist)) {
+                    Box(Modifier.border(2.dp, if (hovered) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
+                        MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true)
+                    }
                 }
-                ShelfRoundButton(
-                    icon = Icons.Rounded.Star,
-                    description = if (artist.favourite) "Remove from favourites" else "Add to favourites",
-                    tint = if (artist.favourite) GOLD else null,
-                ) { MusicLibraryRepository.setFavourite(artist.id, !artist.favourite) }
+                Text(
+                    artist.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenArtist),
+                )
+                val subtitle = when {
+                    status != null -> status
+                    row.playableReleases == row.totalReleases -> "${row.totalReleases} release${if (row.totalReleases == 1) "" else "s"}"
+                    else -> "${row.playableReleases} playable of ${row.totalReleases}"
+                }
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (status != null) colors.accent else colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                Row(
+                    Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (row.top.isNotEmpty()) {
+                        ShelfRoundButton(Icons.Rounded.LocalFireDepartment, row.topLabel) { playTop(shuffled = false) }
+                        ShelfRoundButton(Icons.Rounded.Shuffle, "Shuffle their hits") { playTop(shuffled = true) }
+                    }
+                    ShelfRoundButton(
+                        icon = Icons.Rounded.Star,
+                        description = if (artist.favourite) "Remove from favourites" else "Add to favourites",
+                        tint = if (artist.favourite) GOLD else null,
+                    ) { MusicLibraryRepository.setFavourite(artist.id, !artist.favourite) }
+                }
             }
-        }
+        },
+    ) {
         if (row.tiles.isEmpty()) {
             Text(
                 if (status != null) "Reading releases…" else "Nothing here is on YouTube Music yet. Open the room to see every release.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.textMuted,
-                modifier = Modifier.weight(1f).padding(top = 24.dp).clickable(onClick = onOpenArtist),
+                modifier = Modifier.weight(1f).clickable(onClick = onOpenArtist),
             )
         } else {
+            // Every cover is one size: the top albums lead, then a thin line, then every other release.
             LazyRow(
-                Modifier.weight(1f),
-                contentPadding = PaddingValues(end = 16.dp),
+                Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(wash),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(row.top, key = { it.release.key }) { tile ->
@@ -440,7 +469,7 @@ private fun ShelfArtistRow(
                 }
                 if (row.top.isNotEmpty() && row.rest.isNotEmpty()) {
                     item(key = "divider") {
-                        Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(FEATURED_SIZE).background(Color.White.copy(alpha = 0.14f)))
+                        Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(TILE_SIZE).background(Color.White.copy(alpha = 0.14f)))
                     }
                 }
                 items(row.rest, key = { it.release.key }) { tile ->
