@@ -27,6 +27,7 @@ import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
+import com.nuvio.app.features.player.desktop.TRAILER_AUDIO_NORMALIZATION_FILTER
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import kotlinx.coroutines.delay
 
@@ -136,7 +137,11 @@ actual fun MusicPlayerSurface(
                 latestOnError.value(loadId)
             },
             controlsPageUrlSuffix = "?heroTrailer=1&chromeless=1",
-            initMpvOptions = listOf("volume=${volume.coerceIn(0, 100)}"),
+            // fork:alternate-upload — an upload standing in for album audio is quieter; even its level out.
+            initMpvOptions = buildList {
+                add("volume=${volume.coerceIn(0, 100)}")
+                if (source.evenOutLoudness) add("af=$TRAILER_AUDIO_NORMALIZATION_FILTER")
+            },
         )
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")
     }
