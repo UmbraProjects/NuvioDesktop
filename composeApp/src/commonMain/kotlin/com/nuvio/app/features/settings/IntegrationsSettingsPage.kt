@@ -5,6 +5,7 @@ import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.Composable
@@ -50,6 +51,7 @@ internal fun LazyListScope.integrationsContent(
     onTraktClick: () -> Unit,
     onSimklClick: () -> Unit,
     onYamtrackClick: () -> Unit,
+    onYouTubeAccountClick: () -> Unit,
     onSeekrClick: () -> Unit,
     onLightsClick: () -> Unit,
     onDiscordClick: () -> Unit,
@@ -159,6 +161,16 @@ internal fun LazyListScope.integrationsContent(
                     isTablet = isTablet,
                     onClick = onYamtrackClick,
                 )
+                if (isDesktop) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.compose_settings_page_youtube),
+                        description = stringResource(Res.string.settings_youtube_description),
+                        icon = Icons.Rounded.Link,
+                        isTablet = isTablet,
+                        onClick = onYouTubeAccountClick,
+                    )
+                }
                 if (isDesktop) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsNavigationRow(

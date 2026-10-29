@@ -45,6 +45,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichmen
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
 import nuvio.composeapp.generated.resources.compose_settings_page_yamtrack
+import nuvio.composeapp.generated.resources.compose_settings_page_youtube
 import nuvio.composeapp.generated.resources.compose_settings_page_lights
 import nuvio.composeapp.generated.resources.compose_settings_page_seekr
 import nuvio.composeapp.generated.resources.compose_settings_page_discord_presence
@@ -250,6 +251,11 @@ internal enum class SettingsPage(
     ),
     YamtrackAuthentication(
         titleRes = Res.string.compose_settings_page_yamtrack,
+        category = SettingsCategory.General,
+        parentPage = Integrations,
+    ),
+    YouTubeAccount(
+        titleRes = Res.string.compose_settings_page_youtube,
         category = SettingsCategory.General,
         parentPage = Integrations,
     ),

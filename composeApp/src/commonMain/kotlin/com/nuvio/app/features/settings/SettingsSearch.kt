@@ -201,6 +201,7 @@ private fun settingsSearchEntries(
     val posterServicePage = resolve(Res.string.compose_settings_page_poster_service)
     val simklPage = resolve(Res.string.compose_settings_page_simkl)
     val yamtrackPage = resolve(Res.string.compose_settings_page_yamtrack)
+    val youTubePage = resolve(Res.string.compose_settings_page_youtube)
     val lightsPage = resolve(Res.string.compose_settings_page_lights)
     val seekrPage = resolve(Res.string.compose_settings_page_seekr)
     val screensaverPage = resolve(Res.string.compose_settings_page_screensaver)
@@ -2245,6 +2246,29 @@ private fun settingsSearchEntries(
         )
     }
 
+    // fork:ytmusic-login — desktop only (the login window is a desktop browser).
+    if (isDesktop) {
+        addPage(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-account",
+            title = youTubePage,
+            description = resolve(Res.string.settings_youtube_description),
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-sign-in",
+            title = resolve(Res.string.settings_youtube_sign_in),
+            description = resolve(Res.string.settings_youtube_explainer),
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-account"),
+        )
+    }
+
     if (isDesktop) {
         val screensaverSection = resolve(Res.string.settings_screensaver_section_title)
         val shutdownSection = resolve(Res.string.settings_screensaver_section_shutdown)
@@ -2377,6 +2401,7 @@ private fun settingsSearchEntries(
             add(SettingsPage.Seekr)
             add(SettingsPage.Lights)
             add(SettingsPage.DiscordPresence)
+            add(SettingsPage.YouTubeAccount)
         }
     }
     val indexedPages = entries.mapNotNull { (it.target as? SettingsSearchTarget.Page)?.page }.toSet()

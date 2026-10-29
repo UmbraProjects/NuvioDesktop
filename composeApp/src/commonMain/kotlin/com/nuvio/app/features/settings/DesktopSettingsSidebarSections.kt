@@ -118,6 +118,7 @@ internal fun desktopSettingsSidebarSubItems(
             subPage(SettingsPage.TraktAuthentication),
             subPage(SettingsPage.SimklAuthentication),
             subPage(SettingsPage.YamtrackAuthentication),
+            if (isDesktop) subPage(SettingsPage.YouTubeAccount) else null,
             if (isDesktop) subPage(SettingsPage.Seekr) else null,
             if (isDesktop) subPage(SettingsPage.Lights) else null,
             if (isDesktop) subPage(SettingsPage.DiscordPresence) else null,

@@ -2,6 +2,7 @@ package com.nuvio.app.features.trailer
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -17,6 +18,7 @@ internal const val TRAILER_EXTRACTOR_TAG = "InAppYouTubeExtractor"
 internal const val TRAILER_REQUEST_TIMEOUT_MS = 20_000L
 
 private const val EXTRACTOR_TIMEOUT_MS = 30_000L
+private const val YOUTUBE_ORIGIN = "https://www.youtube.com"
 
 /**
  * How long a cached watch config is trusted. `visitorData` is a session token that YouTube
@@ -168,7 +170,17 @@ class InAppYouTubeExtractor internal constructor(
     private val performRequest: TrailerRequester,
     private val nowMs: () -> Long,
 ) {
-    constructor() : this(TrailerExtractionPlatform::performRequest, LibraryClock::nowEpochMs)
+    constructor() : this(TrailerExtractionPlatform::performRequest, LibraryClock::nowEpochMs) {
+        accountHeaders = YouTubeMusicAuth::authHeaders
+    }
+
+    /**
+     * fork:ytmusic-login — headers that make a request to the given origin act as the signed-in
+     * Google account, or empty when nobody is signed in. A property rather than a constructor
+     * parameter so the existing `InAppYouTubeExtractor(::request) { nowMs }` call shape keeps
+     * working; tests leave the default (no account) so they never touch the stored session.
+     */
+    internal var accountHeaders: (origin: String) -> Map<String, String> = { emptyMap() }
 
     private val log = Logger.withTag(TRAILER_EXTRACTOR_TAG)
 
@@ -206,17 +218,34 @@ class InAppYouTubeExtractor internal constructor(
         // freshly fetched watch config before believing the verdict. Skipped when this attempt
         // already fetched a config, and when YouTube gave a definitive reason a new session
         // cannot change, so the common failure paths still cost a single pass.
-        if (first is TrailerResolution.Available || !hadCachedConfig || !first.warrantsFreshConfig()) {
-            return@withContext first
+        val anonymous =
+            if (first is TrailerResolution.Available || !hadCachedConfig || !first.warrantsFreshConfig()) {
+                first
+            } else {
+                log.i { "Retrying extraction with a fresh watch config" }
+                attemptExtraction(youtubeUrl, forceRefreshConfig = true)
+            }
+
+        // fork:ytmusic-login — a video YouTube gates behind a sign-in (age restriction, "confirm
+        // you're not a bot") is retried once as the signed-in Google account. Anonymous stays the
+        // default so the account's cookies only ever leave the machine for videos that need them.
+        val needsAccount = anonymous is TrailerResolution.Unavailable &&
+            anonymous.reason == TrailerUnavailableReason.AGE_RESTRICTED
+        if (needsAccount && accountHeaders(YOUTUBE_ORIGIN).isNotEmpty()) {
+            log.i { "Retrying login-gated video as the signed-in account" }
+            return@withContext attemptExtraction(youtubeUrl, forceRefreshConfig = false, useAccount = true)
         }
-        log.i { "Retrying extraction with a fresh watch config" }
-        attemptExtraction(youtubeUrl, forceRefreshConfig = true)
+        anonymous
     }
 
-    private suspend fun attemptExtraction(youtubeUrl: String, forceRefreshConfig: Boolean): TrailerResolution =
+    private suspend fun attemptExtraction(
+        youtubeUrl: String,
+        forceRefreshConfig: Boolean,
+        useAccount: Boolean = false,
+    ): TrailerResolution =
         runCatching {
             withTimeout(EXTRACTOR_TIMEOUT_MS) {
-                extractPlaybackSourceInternal(youtubeUrl, forceRefreshConfig)
+                extractPlaybackSourceInternal(youtubeUrl, forceRefreshConfig, useAccount)
             }
         }.onFailure {
             log.w { "Trailer extractor failed for $youtubeUrl: ${it.message}" }
@@ -319,6 +348,7 @@ class InAppYouTubeExtractor internal constructor(
     private suspend fun extractPlaybackSourceInternal(
         youtubeUrl: String,
         forceRefreshConfig: Boolean,
+        useAccount: Boolean = false,
     ): TrailerResolution {
         val videoId = extractVideoId(youtubeUrl)
             ?: return TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
@@ -342,6 +372,7 @@ class InAppYouTubeExtractor internal constructor(
                     videoId = videoId,
                     client = client,
                     visitorData = watchConfig.visitorData,
+                    useAccount = useAccount,
                 )
 
                 val streamingData = playerResponse.objectValue("streamingData")
@@ -523,18 +554,23 @@ class InAppYouTubeExtractor internal constructor(
         videoId: String,
         client: YouTubeClient,
         visitorData: String?,
+        useAccount: Boolean = false,
     ): JsonObject {
         val endpoint = "https://www.youtube.com/youtubei/v1/player" +
             apiKey?.let { "?key=${encodeUrlComponent(it)}" }.orEmpty()
 
+        val accountHeadersForRequest = if (useAccount) accountHeaders(YOUTUBE_ORIGIN) else emptyMap()
         val headers = buildMap {
             putAll(TrailerExtractionPlatform.defaultHeaders)
             put("content-type", "application/json")
-            put("origin", "https://www.youtube.com")
+            put("origin", YOUTUBE_ORIGIN)
             put("x-youtube-client-name", client.id)
             put("x-youtube-client-version", client.version)
             put("user-agent", client.userAgent)
             if (!visitorData.isNullOrBlank()) put("x-goog-visitor-id", visitorData)
+            // fork:ytmusic-login — cookie + SAPISIDHASH for the signed-in account (see the
+            // retry in extractPlaybackSource). Empty when nobody is signed in.
+            putAll(accountHeadersForRequest)
         }
 
         val payload = jsonObjectOf(
@@ -548,6 +584,12 @@ class InAppYouTubeExtractor internal constructor(
         )
 
         val response = performRequest(endpoint, "POST", headers, payload.toString(), TRAILER_REQUEST_TIMEOUT_MS)
+
+        if (accountHeadersForRequest.isNotEmpty()) {
+            // The saved session is kept either way; the settings page just shows a "sign in again" hint.
+            if (response.status == 401 || response.status == 403) YouTubeMusicAuth.onSessionRejected()
+            else if (response.ok) YouTubeMusicAuth.onSessionAccepted()
+        }
 
         if (!response.ok) {
             val preview = response.body.take(200)
