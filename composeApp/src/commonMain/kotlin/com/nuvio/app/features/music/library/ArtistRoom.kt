@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.text.style.TextAlign
@@ -100,13 +103,16 @@ import com.nuvio.app.features.music.identity.ReleasePaletteResolver
 import com.nuvio.app.features.music.identity.identity
 
 /**
- * The artist room, laid out like the TV-show details page: the artist's backdrop fills the window
- * under a scrim from the left and a fade at the foot, and a lane down the left holds the logo (or
- * name), the facts line, the stats, the overview (tagline or biography), the genres and the details
- * page's own action row. Under the lane come the top albums, Where next and every release. Down the
- * right runs a slim glass timeline of the discography, newest first: a dot per release with its
- * title and the year under it; clicking one opens it. On a narrow window the timeline moves under
- * the lane.
+ * The artist room, laid out like the TV-show details page. One scroll, top to bottom:
+ *
+ *  - The hero: the artist's backdrop, bright at the top and fading into the page, under the details
+ *    page's scrim from the left. Over it, a lane holds the logo (or name), the facts line, the stats as
+ *    icons, the genres as text and the details page's own action row; then the top albums and Where
+ *    next, still over the fading picture. The backdrop scrolls away with them.
+ *  - Below, on the page's own dark ground: every release as a grid, and beside it down the right a
+ *    thin timeline of the discography, newest first: a dot per release on a spine, its title and year
+ *    beside it, alternating sides. Clicking an entry opens it. On a narrow window the timeline sits
+ *    above the grid.
  *
  * Every picture has a fallback, so a bare artist (no art, no dates) still draws a readable page. All
  * play / dialog / Add logic stays in [MusicArtistScreen]; this only draws and reports taps.
@@ -161,43 +167,47 @@ internal fun ArtistRoom(
 
     BoxWithConstraints(modifier.background(colors.background)) {
         val wide = maxWidth >= ROOM_WIDE_FROM
-        val inset = LocalMusicBarInset.current // fork:music - the backdrop runs under the bar; the content clears it
-        RoomBackdrop(artist)
-        Row(Modifier.fillMaxSize().padding(bottom = inset)) {
-            Column(
-                Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(bottom = 48.dp),
-                verticalArrangement = Arrangement.spacedBy(28.dp),
-            ) {
-                Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
-                RoomLane(
-                    artist = artist,
-                    discography = discography,
-                    playTarget = playTarget,
-                    canShuffle = canShuffle,
-                    notice = notice,
-                    saved = saved,
-                    refreshing = refreshing,
-                    filtersOpen = showFilters,
-                    filtered = !playableOnly || filter != ReleaseFilter.All,
-                    topLabel = topLabel,
-                    onAbout = onAbout,
-                    onPlay = onPlay,
-                    onShuffle = onShuffle,
-                    onPlayTop = onPlayTop,
-                    onRemove = onRemove,
-                    onLinks = onLinks,
-                    onRefresh = onRefresh,
-                    onOpenArtist = onOpenArtist,
-                    onToggleFilters = { showFilters = !showFilters },
-                )
-                if (!wide && dated.isNotEmpty()) {
-                    TimelinePanel(dated, onOpen, Modifier.padding(horizontal = ROOM_LANE_START).fillMaxWidth().height(360.dp))
+        val backdropHeight = maxHeight.coerceAtLeast(640.dp)
+        val inset = LocalMusicBarInset.current // fork:music - the page runs under the bar; its foot clears it
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = inset + 48.dp)) {
+            // The hero and what follows it on the picture; the backdrop scrolls away with them.
+            Box(Modifier.fillMaxWidth()) {
+                RoomBackdrop(artist, Modifier.fillMaxWidth().height(backdropHeight))
+                Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
+                    Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
+                    RoomLane(
+                        artist = artist,
+                        discography = discography,
+                        playTarget = playTarget,
+                        canShuffle = canShuffle,
+                        notice = notice,
+                        saved = saved,
+                        refreshing = refreshing,
+                        filtersOpen = showFilters,
+                        filtered = !playableOnly || filter != ReleaseFilter.All,
+                        topLabel = topLabel,
+                        onPlay = onPlay,
+                        onShuffle = onShuffle,
+                        onPlayTop = onPlayTop,
+                        onRemove = onRemove,
+                        onLinks = onLinks,
+                        onRefresh = onRefresh,
+                        onOpenArtist = onOpenArtist,
+                        onToggleFilters = { showFilters = !showFilters },
+                    )
+                    ArtistWidgets(artist, onOpen, Modifier.padding(horizontal = ROOM_LANE_START), showBio = false) // fork:music - HTPC phase 8
+                    WhereNextStrip(artist, onOpenArtist, Modifier.padding(horizontal = ROOM_LANE_START)) // fork:music - HTPC phase 3
                 }
-                // The top albums (the details page's cast row), then where to go next.
-                ArtistWidgets(artist, onOpen, Modifier.padding(horizontal = ROOM_LANE_START), showBio = false) // fork:music - HTPC phase 8
-                WhereNextStrip(artist, onOpenArtist, Modifier.padding(horizontal = ROOM_LANE_START)) // fork:music - HTPC phase 3
+            }
 
-                Column(Modifier.padding(horizontal = ROOM_LANE_START), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (!wide && dated.isNotEmpty()) {
+                ReleaseTimeline(dated, onOpen, Modifier.padding(top = 24.dp).fillMaxWidth())
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 28.dp)) {
+                Column(
+                    Modifier.weight(1f).padding(start = ROOM_LANE_START, end = if (wide) 16.dp else ROOM_LANE_START),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
                     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Releases", fontSize = 28.sp, color = colors.textPrimary)
                         Text(
@@ -229,27 +239,22 @@ internal fun ArtistRoom(
                         DemosArchive(discography.demos, open = demosOpen, onToggle = onToggleDemos, onOpen = onOpen)
                     }
                 }
-            }
-            if (wide && dated.isNotEmpty()) {
-                TimelinePanel(
-                    dated,
-                    onOpen,
-                    // As tall as its entries, up to the window's height; then it scrolls on its own.
-                    Modifier.width(TIMELINE_PANEL_WIDTH).padding(top = 24.dp, end = 24.dp, bottom = 24.dp).wrapContentHeight(Alignment.Top),
-                )
+                if (wide && dated.isNotEmpty()) {
+                    ReleaseTimeline(dated, onOpen, Modifier.width(TIMELINE_WIDTH).padding(end = 24.dp))
+                }
             }
         }
     }
 }
 
-/** From this width the timeline stands on the right; below it, it runs under the lane. */
+/** From this width the timeline stands beside the releases; below it, it runs above them. */
 private val ROOM_WIDE_FROM = 1100.dp
 
 /** The details page's lane: 64dp in from the left, at most 620dp wide for its heading block. */
 private val ROOM_LANE_START = 64.dp
 private val ROOM_LANE_WIDTH = 620.dp
 
-private val TIMELINE_PANEL_WIDTH = 320.dp
+private val TIMELINE_WIDTH = 340.dp
 
 /** How many of the newest releases get a palette worked out as the page opens. */
 private const val TIMELINE_PALETTE_LIMIT = 40
@@ -260,25 +265,25 @@ private fun ReleaseGroup.passes(playableOnly: Boolean, filter: ReleaseFilter): B
 // region backdrop and lane
 
 /**
- * The backdrop as the details page draws it: the hero picture across the window, a scrim from the
- * left that is opaque under the lane and clear by the right edge, and a fade at the foot into the
- * page. With no picture at all it is the page's own night.
+ * The backdrop as the details page draws it: the hero picture at full strength, the details page's
+ * scrim from the left (opaque under the lane, clear by the right edge) and a fade at the foot into the
+ * page's ground. With no picture at all it is a dark wash of the page's own colour.
  */
 @Composable
-private fun RoomBackdrop(artist: LibraryArtist) {
+private fun RoomBackdrop(artist: LibraryArtist, modifier: Modifier) {
     val colors = MaterialTheme.nuvio.colors
     val identity = remember(artist) { artist.identity() }
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val fade by animateFloatAsState(if (shown) 1f else 0f, tween(600))
     val dark = colors.background
-    Box(Modifier.fillMaxSize().background(NuvioGlass.night(dark, colors.accent))) {
+    Box(modifier.background(Brush.verticalGradient(0f to NuvioGlass.night(dark, colors.accent), 1f to dark))) {
         identity.hero?.let { hero ->
             val blurred = hero.source == HeroSource.BlurredCover
             NuvioAsyncImage(
                 model = hero.url,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize().alpha(fade * if (blurred) 0.5f else 0.85f).let { if (blurred) it.blur(40.dp) else it },
+                modifier = Modifier.fillMaxSize().alpha(fade * if (blurred) 0.55f else 1f).let { if (blurred) it.blur(40.dp) else it },
                 contentScale = ContentScale.Crop,
                 alignment = Alignment.TopCenter,
             )
@@ -292,14 +297,13 @@ private fun RoomBackdrop(artist: LibraryArtist) {
         )
         Box(
             Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0f to Color.Transparent, 0.38f to Color.Transparent, 0.68f to dark.copy(alpha = 0.72f), 1f to dark),
+                Brush.verticalGradient(0f to Color.Transparent, 0.42f to Color.Transparent, 0.72f to dark.copy(alpha = 0.72f), 1f to dark),
             ),
         )
     }
 }
 
-/** The heading block, centred in the lane like the details page's: logo, facts, stats, overview, genres, actions. */
-@OptIn(ExperimentalLayoutApi::class)
+/** The heading block, centred in the lane like the details page's: logo, facts, stat icons, genres, actions. */
 @Composable
 private fun RoomLane(
     artist: LibraryArtist,
@@ -312,7 +316,6 @@ private fun RoomLane(
     filtersOpen: Boolean,
     filtered: Boolean,
     topLabel: String?,
-    onAbout: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     onPlayTop: () -> Unit,
@@ -358,29 +361,10 @@ private fun RoomLane(
 
         HeroStats(artist, discography)
 
-        // The overview: the tagline, else the opening of the biography. Click for the whole story.
-        val overview = artistTagline(artist) ?: artist.biography?.trim()?.takeIf { it.isNotEmpty() }
-        if (overview != null) {
-            Text(
-                overview,
-                style = MaterialTheme.typography.bodyLarge,
-                color = colors.textPrimary.copy(alpha = 0.9f),
-                textAlign = TextAlign.Center,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAbout).padding(4.dp),
-            )
-        }
-
         val (mood, genres) = passportChips(artist)
-        if (mood != null || genres.isNotEmpty()) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                mood?.let { InfoChip(it) }
-                genres.forEach { InfoChip(it) }
-            }
+        val genreLine = (listOfNotNull(mood) + genres).joinToString("  ·  ")
+        if (genreLine.isNotEmpty()) {
+            Text(genreLine, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, textAlign = TextAlign.Center)
         }
 
         if (artist.channelMismatch) NamesakeNotice(artist, onOpenArtist)
@@ -407,11 +391,10 @@ private fun RoomLane(
                 if (saved) DetailSecondaryAction(refreshing ?: "Refresh", Icons.Rounded.Refresh, onClick = { if (refreshing == null) onRefresh() }) else null,
             ),
         )
-        val playing = notice ?: playTarget?.let { "Plays ${it.title}${it.year?.let { y -> " (${y})" } ?: ""}" }
-            ?: refreshing
-        if (playing != null) {
+        // Only what needs saying: a play that failed, or a refresh under way.
+        (notice ?: refreshing)?.let { line ->
             Text(
-                playing,
+                line,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (notice != null) colors.warning else colors.textMuted,
                 textAlign = TextAlign.Center,
@@ -419,34 +402,23 @@ private fun RoomLane(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (artist.sources.isNotEmpty()) {
-            Text("Metadata from ${artist.sources.joinToString(", ")}", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-        }
     }
 }
 
-/** Fans, rating and playable as small glass tiles, centred under the facts line. */
-@OptIn(ExperimentalLayoutApi::class)
+/** Fans, rating and playable releases as icons with their numbers, centred under the facts line. */
 @Composable
 private fun HeroStats(artist: LibraryArtist, discography: ArtistDiscography) {
     val colors = MaterialTheme.nuvio.colors
-    val tiles = buildList {
-        artist.fans?.let { add(formatCount(it) to "fans") }
-        ratingText(artist.rating)?.let { add("★ $it" to "rating") }
-        add("${discography.playableCount}" to "playable")
+    val stats = buildList {
+        artist.fans?.let { add(Triple(Icons.Rounded.Groups, formatCount(it), "fans")) }
+        ratingText(artist.rating)?.let { add(Triple(Icons.Rounded.Star, it, "rating")) }
+        add(Triple(Icons.Rounded.PlayCircle, "${discography.playableCount}", "playable"))
     }
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        tiles.forEach { (value, label) ->
-            Row(
-                Modifier.musicGlass(RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+    Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
+        stats.forEach { (icon, value, label) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(icon, contentDescription = label, tint = colors.textSecondary, modifier = Modifier.size(18.dp))
                 Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
-                Text(label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, modifier = Modifier.padding(bottom = 1.dp))
             }
         }
     }
@@ -456,70 +428,72 @@ private fun HeroStats(artist: LibraryArtist, discography: ArtistDiscography) {
 
 // region timeline
 
+private val TIMELINE_ROW = 44.dp
+
 /**
- * The discography as a slim vertical timeline in a glass panel: a spine with a dot per release (lit
- * when it plays here), the title beside it and the year under the title, newest first. Scrolls on
- * its own; clicking an entry opens it.
+ * The discography as a thin vertical timeline: a glass spine with a dot per release (filled in the
+ * accent when it plays here, hollow when not), its title and year beside the dot, alternating sides
+ * so neighbours never collide. No panel behind it: it sits straight on the page.
  */
 @Composable
-private fun TimelinePanel(releases: List<ReleaseGroup>, onOpen: (LibraryRelease) -> Unit, modifier: Modifier) {
-    val colors = MaterialTheme.nuvio.colors
-    Column(
-        modifier
-            .background(NuvioGlass.night(colors.background, colors.accent).copy(alpha = 0.6f), RoundedCornerShape(18.dp))
-            .musicGlass(RoundedCornerShape(18.dp))
-            .padding(top = 16.dp, bottom = 8.dp),
-    ) {
-        Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Timeline", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
-            Text("${releases.size}", style = MaterialTheme.typography.labelMedium, color = colors.textMuted, modifier = Modifier.padding(bottom = 2.dp))
-        }
-        Spacer(Modifier.height(10.dp))
-        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().testTag("artistTimeline")) {
-            itemsIndexed(releases, key = { _, group -> "t:${group.primary.key}" }) { index, group ->
-                TimelineRow(group, first = index == 0, last = index == releases.lastIndex, onOpen = { onOpen(group.primary) })
-            }
+private fun ReleaseTimeline(releases: List<ReleaseGroup>, onOpen: (LibraryRelease) -> Unit, modifier: Modifier) {
+    Column(modifier.testTag("artistTimeline")) {
+        releases.forEachIndexed { index, group ->
+            TimelineRow(group, leftSide = index % 2 == 0, first = index == 0, last = index == releases.lastIndex, onOpen = { onOpen(group.primary) })
         }
     }
 }
 
 @Composable
-private fun TimelineRow(group: ReleaseGroup, first: Boolean, last: Boolean, onOpen: () -> Unit) {
+private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, last: Boolean, onOpen: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
-    val release = group.primary
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val focused by source.collectIsFocusedAsState()
+    val lit = hovered || focused
+    val label: @Composable (Alignment.Horizontal) -> Unit = { align ->
+        val release = group.primary
+        Column(
+            Modifier.alpha(if (group.isPlayable) 1f else 0.55f).padding(horizontal = 12.dp),
+            horizontalAlignment = align,
+        ) {
+            Text(
+                release.title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (lit) colors.accent else colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = if (align == Alignment.End) TextAlign.End else TextAlign.Start,
+            )
+            val under = listOfNotNull(release.year ?: release.releaseDate?.take(4), release.kind.label.takeIf { it != "Album" }).joinToString(" · ")
+            if (under.isNotEmpty()) Text(under, style = MaterialTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1)
+        }
+    }
     Row(
         Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .background(if (hovered || focused) MusicGlassRaised else Color.Transparent)
+            .height(TIMELINE_ROW)
             .hoverable(source)
-            .clickable(interactionSource = source, indication = null, onClick = onOpen)
-            .padding(horizontal = 14.dp),
+            .clickable(interactionSource = source, indication = null, onClick = onOpen),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { if (leftSide) label(Alignment.End) }
         // The spine's piece for this row, cut short at the first and last so it starts and ends at a dot.
-        Box(Modifier.width(22.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+        Box(Modifier.width(16.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
             Column(Modifier.fillMaxHeight().width(2.dp)) {
                 Box(Modifier.weight(1f).fillMaxWidth().background(if (first) Color.Transparent else NuvioGlass.EdgeColor))
                 Box(Modifier.weight(1f).fillMaxWidth().background(if (last) Color.Transparent else NuvioGlass.EdgeColor))
             }
             Box(
                 Modifier
-                    .size(10.dp)
+                    .size(if (lit) 12.dp else 9.dp)
                     .clip(CircleShape)
-                    .background(if (group.isPlayable) colors.accent else NuvioGlass.night(colors.background, colors.accent))
+                    .background(if (group.isPlayable) colors.accent else colors.background)
                     .border(1.5.dp, if (group.isPlayable) colors.accent else NuvioGlass.EdgeColor, CircleShape),
             )
         }
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f).padding(vertical = 7.dp).alpha(if (group.isPlayable) 1f else 0.55f)) {
-            Text(release.title, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val under = listOfNotNull(release.year ?: release.releaseDate?.take(4), release.kind.label.takeIf { it != "Album" }).joinToString(" · ")
-            if (under.isNotEmpty()) Text(under, style = MaterialTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1)
-        }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { if (!leftSide) label(Alignment.Start) }
     }
 }
 

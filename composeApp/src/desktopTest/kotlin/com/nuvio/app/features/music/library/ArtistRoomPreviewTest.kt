@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.runDesktopComposeUiTest
@@ -47,6 +48,7 @@ class ArtistRoomPreviewTest {
             releases = releases,
             sources = listOf("YouTube Music", "MusicBrainz", "Deezer"),
             biography = "Against the Current is an American pop rock band from Poughkeepsie, New York.",
+            topAlbumKeys = listOf("r0", "r3", "r6"),
         )
         val discography = buildDiscography(releases, playableOnly = false, filter = ReleaseFilter.All)
         setContent {
@@ -65,6 +67,10 @@ class ArtistRoomPreviewTest {
         waitForIdle()
         val out = File("build/artist-room-preview.png").absoluteFile
         ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", out)
+        // And further down: the releases with the timeline beside them.
+        onNodeWithTag("artistTimeline").performScrollTo()
+        waitForIdle()
+        ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/artist-room-releases.png").absoluteFile)
         println("PREVIEW ${out.path}")
     }
 }

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.hoverable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -130,15 +132,13 @@ private fun TopAlbumCard(release: LibraryRelease, onOpen: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
-    val scale by animateFloatAsState(if (focused) 1.08f else 1f)
+    val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(14.dp)
     Column(
         Modifier
             .width(170.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(shape)
-            .background(if (focused) colors.surfaceElevated else colors.surfaceCard)
-            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+            .musicGlass(shape, raised = hovered, keyFocused = focused)
+            .hoverable(source)
             .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onOpen)
             .padding(10.dp),

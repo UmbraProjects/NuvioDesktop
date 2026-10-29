@@ -1,5 +1,10 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.NuvioGlass
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.hoverable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -223,7 +228,7 @@ internal fun WhereNextStrip(artist: LibraryArtist, onOpenArtist: (String) -> Uni
 
         selected?.let { rung ->
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surfaceCard).padding(20.dp),
+                Modifier.fillMaxWidth().musicGlass(RoundedCornerShape(16.dp)).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(rung.candidate.name, fontSize = 32.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -250,38 +255,64 @@ internal fun WhereNextStrip(artist: LibraryArtist, onOpenArtist: (String) -> Uni
 
         if (library.isNotEmpty()) {
             Text("Similar in your library", fontSize = 24.sp, color = colors.textSecondary)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(library, key = { it.id }) { other ->
-                    FocusPill(other.name, selected = false, onActivate = { onOpenArtist(other.id) })
-                }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                items(library, key = { it.id }) { other -> SimilarPortrait(other, onOpen = { onOpenArtist(other.id) }) }
             }
         }
         Spacer(Modifier.height(8.dp))
     }
 }
 
-/** A pill the d-pad can reach: focus ring and a small grow, Enter or click to activate. */
+/** An artist from the Library as a round portrait with the name under it; a ring on hover or focus. */
+@Composable
+private fun SimilarPortrait(artist: LibraryArtist, onOpen: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    val hovered by source.collectIsHoveredAsState()
+    Column(
+        Modifier
+            .width(104.dp)
+            .hoverable(source)
+            .focusable(interactionSource = source)
+            .clickable(interactionSource = source, indication = null, onClick = onOpen),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
+            MusicCover(artist.art.thumb, artist.name, size = 84.dp, circle = true)
+        }
+        Text(
+            artist.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** A pill the d-pad can reach: the glass, a ring on focus, Enter or click to activate. */
 @Composable
 private fun FocusPill(text: String, selected: Boolean, onActivate: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
-    val scale by animateFloatAsState(if (focused) 1.08f else 1f)
+    val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(24.dp)
     Text(
         text = text,
-        fontSize = 24.sp,
+        fontSize = 22.sp,
         color = if (selected) colors.onAccent else colors.textPrimary,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(shape)
-            .background(if (selected) colors.accent else colors.surfaceElevated)
-            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+            .musicGlass(shape, raised = hovered, selected = selected, keyFocused = focused)
+            .hoverable(source)
             .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onActivate)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = 18.dp, vertical = 8.dp),
     )
 }
 
@@ -293,15 +324,13 @@ private fun WhereNextCard(rung: LadderRung, chosen: Boolean, onActivate: () -> U
     val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
-    val scale by animateFloatAsState(if (focused) 1.08f else 1f)
+    val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(14.dp)
     Column(
         modifier = Modifier
             .width(CARD_WIDTH)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(shape)
-            .background(if (chosen || focused) colors.surfaceElevated else colors.surfaceCard)
-            .then(if (focused || chosen) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+            .musicGlass(shape, raised = hovered || chosen, keyFocused = focused || chosen)
+            .hoverable(source)
             .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onActivate)
             .padding(10.dp),
@@ -317,5 +346,5 @@ private fun WhereNextCard(rung: LadderRung, chosen: Boolean, onActivate: () -> U
 @Composable
 private fun PlaceholderCard() {
     val colors = MaterialTheme.nuvio.colors
-    Box(Modifier.width(CARD_WIDTH).height(CARD_WIDTH + 100.dp).clip(RoundedCornerShape(14.dp)).background(colors.surfaceCard))
+    Box(Modifier.width(CARD_WIDTH).height(CARD_WIDTH + 100.dp).musicGlass(RoundedCornerShape(14.dp)))
 }
