@@ -149,9 +149,10 @@ fun MusicTabScreen(
     }
     var results by remember { mutableStateOf<MusicSearchResults>(MusicSearchResults.Idle) }
     var ladder by remember { mutableStateOf<LadderRequest?>(null) } // fork:music - the open ladder, if any
-    // The Library's view, and the Constellation's name / genre filter (the right half of the search bar there).
+    // The Library's view, and its name / genre filter: the one search box types into it while filter mode is on.
     var libraryView by rememberSaveable { mutableStateOf(LibraryView.Shelf) }
     var libraryFilter by rememberSaveable { mutableStateOf("") }
+    var filtering by rememberSaveable { mutableStateOf(false) }
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
     LaunchedEffect(query, kind) {
@@ -194,29 +195,34 @@ fun MusicTabScreen(
             .padding(top = topChromePadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // On the Constellation the bar splits in two: the search on the left, the map's filter on the right.
-        val split = section == MusicSection.Library && libraryView == LibraryView.Constellation
+        // In the Library the filter icon turns the box into the Library's filter, the same box on every view.
+        val filterMode = section == MusicSection.Library && filtering
         Column(
             modifier = Modifier
-                .widthIn(max = if (split) MUSIC_SPLIT_HEADER_MAX_WIDTH else MUSIC_HEADER_MAX_WIDTH)
+                .widthIn(max = MUSIC_HEADER_MAX_WIDTH)
                 .fillMaxWidth()
                 // Snug under the top bar, so the page below gets the height.
                 .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // A name goes in here, not an address: about the view pills' width with a fifth more on each side.
+            Box(Modifier.widthIn(max = MUSIC_SEARCH_WIDTH).fillMaxWidth()) {
                 MusicGlassField(
-                    value = query,
+                    value = if (filterMode) libraryFilter else query,
                     onValueChange = {
-                        query = it
-                        // Typing from the Library goes back to Search: the box always searches.
-                        if (it.isNotBlank()) section = MusicSection.Search
+                        if (filterMode) {
+                            libraryFilter = it
+                        } else {
+                            query = it
+                            // Typing from the Library goes back to Search: outside filter mode the box searches.
+                            if (it.isNotBlank()) section = MusicSection.Search
+                        }
                     },
-                    placeholder = "Search albums and artists",
-                    leadingIcon = Icons.Rounded.Search,
-                    modifier = Modifier.weight(1f),
-                    suggestions = MusicSearchHistory.recent.collectAsState().value.take(MUSIC_RECENT_SHOWN),
+                    placeholder = if (filterMode) "Filter by name or genre" else "Search albums and artists",
+                    leadingIcon = if (filterMode) Icons.Rounded.FilterList else Icons.Rounded.Search,
+                    modifier = Modifier.fillMaxWidth(),
+                    suggestions = if (filterMode) emptyList() else MusicSearchHistory.recent.collectAsState().value.take(MUSIC_RECENT_SHOWN),
                     onSuggestion = {
                         query = it
                         section = MusicSection.Search
@@ -226,6 +232,15 @@ fun MusicTabScreen(
                     MusicFieldDivider()
                     if (library) {
                         val libraryState by MusicLibraryRepository.state.collectAsState()
+                        MusicFieldIconButton(
+                            icon = Icons.Rounded.FilterList,
+                            description = if (filtering) "Back to search" else "Filter your library",
+                            active = filtering,
+                            onClick = {
+                                filtering = !filtering
+                                if (!filtering) libraryFilter = ""
+                            },
+                        )
                         MusicFieldIconButton(
                             icon = Icons.Rounded.Refresh,
                             description = "Refresh all artists",
@@ -239,15 +254,6 @@ fun MusicTabScreen(
                         description = if (library) "Back to search" else "Your library",
                         active = library,
                         onClick = { section = if (library) MusicSection.Search else MusicSection.Library },
-                    )
-                }
-                if (split) {
-                    MusicGlassField(
-                        value = libraryFilter,
-                        onValueChange = { libraryFilter = it },
-                        placeholder = "Filter by name or genre",
-                        leadingIcon = Icons.Rounded.FilterList,
-                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -313,7 +319,7 @@ fun MusicTabScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 onOpenLadder = { ladder = it }, // fork:music
                 view = libraryView,
-                filterQuery = libraryFilter,
+                filterQuery = if (filtering) libraryFilter else "",
             )
             return@Column
         }
@@ -364,7 +370,8 @@ private const val MUSIC_RECENT_SHOWN = 6
 private val MUSIC_HEADER_MAX_WIDTH = 720.dp
 
 /** With the Constellation's filter beside the search, the bar gets this much room for the two halves. */
-private val MUSIC_SPLIT_HEADER_MAX_WIDTH = 1040.dp
+/** The search box: the Library's view pills (about 260 dp) and a fifth of that again on each side. */
+private val MUSIC_SEARCH_WIDTH = 380.dp
 
 /** Results are centred in a column this wide at most, so a wide window doesn't stretch one row across it. */
 private val MUSIC_GRID_MAX_WIDTH = 1480.dp

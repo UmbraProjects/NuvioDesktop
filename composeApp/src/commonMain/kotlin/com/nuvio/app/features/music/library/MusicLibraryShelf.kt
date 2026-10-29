@@ -113,8 +113,10 @@ internal fun MusicLibraryShelf(
         shelfCards(state.artists, yearAgo, LadderProgressStore.resumable(), daySeed = y * 372 + m * 31 + d)
     }
     val totalReleases = remember(state.artists) { state.artists.sumOf { countReleaseCards(it.releases) } }
+    // The header's filter narrows the Shelf and Eras here; the Constellation dims what doesn't match instead.
+    val shown = remember(state.artists, filterQuery) { state.artists.filter { it.matchesLibraryFilter(filterQuery) } }
     // Starred artists first; the sort is stable, so each group stays alphabetical.
-    val ordered = remember(state.artists) { state.artists.sortedByDescending { it.favourite } }
+    val ordered = remember(shown) { shown.sortedByDescending { it.favourite } }
     // The width of the "N artists · N releases" line, as laid out; each artist's column takes it so the two share a centre.
     var countWidth by remember { mutableStateOf<Dp?>(null) }
 
@@ -136,7 +138,7 @@ internal fun MusicLibraryShelf(
                 )
             } else if (view == LibraryView.Eras) { // fork:music
                 LibraryErasView(
-                    artists = state.artists,
+                    artists = shown,
                     pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }.values.map { it.status },
                     reducedMotion = state.settings.reducedMotion,
                     onArtistClick = onArtistClick,
@@ -183,6 +185,13 @@ internal fun MusicLibraryShelf(
             }
         }
     }
+}
+
+/** True when [query] is blank or appears in the artist's name, genres or tags (ignoring case). */
+internal fun LibraryArtist.matchesLibraryFilter(query: String): Boolean {
+    val q = query.trim()
+    if (q.isEmpty()) return true
+    return name.contains(q, ignoreCase = true) || (genres + tags).any { it.contains(q, ignoreCase = true) }
 }
 
 // region year ago
