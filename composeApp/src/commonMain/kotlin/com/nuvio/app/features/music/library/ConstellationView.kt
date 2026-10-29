@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Popup
 import com.nuvio.app.core.ui.NuvioGlass
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.CircularProgressIndicator
@@ -724,10 +726,23 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
                 val hovered by source.collectIsHoveredAsState()
                 val focused by source.collectIsFocusedAsState()
                 val working = state.working[artist.id] != null
+                // Where the pointer is over the portrait, so the name can follow it instead of covering the ring.
+                var pointer by remember { mutableStateOf<Offset?>(null) }
                 Box(contentAlignment = Alignment.Center) {
                     Box(
                         Modifier
                             .size(64.dp)
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        pointer = when (event.type) {
+                                            PointerEventType.Exit -> null
+                                            else -> event.changes.firstOrNull()?.position ?: pointer
+                                        }
+                                    }
+                                }
+                            }
                             .clip(CircleShape)
                             .border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape)
                             .hoverable(source)
@@ -742,17 +757,25 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
                         }
                     }
                     if (hovered || focused) {
-                        Text(
-                            artist.name,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            maxLines = 1,
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .offset(y = 14.dp)
-                                .musicGlass(RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
+                        val density = LocalDensity.current
+                        // Just below and right of the pointer; with keyboard focus (no pointer), under the portrait.
+                        val at = pointer?.takeIf { hovered }
+                        val offset = with(density) {
+                            if (at != null) IntOffset(at.x.roundToInt() + 14.dp.roundToPx(), at.y.roundToInt() + 18.dp.roundToPx())
+                            else IntOffset(0, 70.dp.roundToPx())
+                        }
+                        Popup(offset = offset, properties = PopupProperties(focusable = false)) {
+                            Text(
+                                artist.name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = colors.textPrimary,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .background(NuvioGlass.night(colors.background, colors.accent), RoundedCornerShape(8.dp))
+                                    .musicGlass(RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
                     }
                 }
             }

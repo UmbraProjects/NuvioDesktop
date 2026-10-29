@@ -21,6 +21,18 @@ class LastFmTest {
     }
 
     @Test
+    fun opinionAndTriviaTagsAreDroppedAndGenresKept() {
+        val tags = lastFmGenreTags(
+            mapOf(
+                "easy listening" to 100, "cute" to 80, "nice" to 70, "disney" to 60, "teen pop" to 55,
+                "Hip Hop" to 40, "hip-hop" to 50, "beautiful" to 30, "indie folk" to 20,
+            ),
+        )
+        assertEquals(listOf("easy listening", "teen pop", "hip-hop", "indie folk"), tags.keys.toList())
+        assertEquals(50, tags["hip-hop"])
+    }
+
+    @Test
     fun aSingleTagArrivesAsAnObjectAndStillParses() {
         val body = """{"toptags":{"tag":{"count":"40","name":"Folk"},"@attr":{"artist":"Someone"}}}"""
         assertEquals(mapOf("folk" to 40), parseLastFmTopTags(body)!!.tags)

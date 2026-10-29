@@ -50,6 +50,35 @@ private fun JsonElement?.items(): List<JsonObject> = when (this) {
     else -> emptyList()
 }
 
+/**
+ * Word stems that make an unknown tag read as a genre ("teen pop", "indie folk", "bedroom pop", "metalcore",
+ * "chillwave"). Last.fm's tags are free text, so next to the genres sit opinions ("cute", "nice", "beautiful") and
+ * trivia ("disney", "actress"); a tag the vocabulary in LadderTags.kt does not name has to carry one of these to stay.
+ */
+private val GENRE_STEMS = listOf(
+    "rock", "pop", "metal", "punk", "core", "wave", "jazz", "folk", "hop", "house", "step", "soul", "blues",
+    "country", "electro", "techno", "trance", "ambient", "indie", "emo", "funk", "disco", "rap", "trap", "gaze",
+    "garage", "grunge", "dub", "reggae", "ska", "gospel", "classical", "opera", "synth", "noise", "drone",
+    "grind", "doom", "sludge", "bossa", "samba", "latin", "dance", "beat", "bass", "drill", "r&b", "rnb",
+    "orchestral", "symphonic", "acoustic", "lo-fi", "lofi", "edm", "idm", "goth", "industrial", "psych",
+)
+
+/**
+ * Last.fm tags cut down to genres, under their canonical names: a tag stays when it is a genre the app knows
+ * ([isKnownGenre]) or, failing that, a tag that passes [canonicalGenre] and is built on a [GENRE_STEMS] word.
+ * Spellings of one genre ("Hip Hop", "hip-hop") merge, keeping the stronger weight. Order is strongest first.
+ */
+internal fun lastFmGenreTags(tags: Map<String, Int>): Map<String, Int> {
+    val out = LinkedHashMap<String, Int>()
+    for ((raw, count) in tags.entries.sortedByDescending { it.value }) {
+        val name = canonicalGenre(raw) ?: continue
+        val genreLike = isKnownGenre(raw) || GENRE_STEMS.any { stem -> stem in name }
+        if (!genreLike) continue
+        out[name] = maxOf(out[name] ?: 0, count)
+    }
+    return out
+}
+
 /** An artist's tags from `artist.getTopTags`: the artist's name as Last.fm corrected it, and tag to weight (0 to 100). */
 internal data class LastFmTags(val artist: String, val tags: Map<String, Int>)
 
@@ -59,13 +88,12 @@ internal fun parseLastFmTopTags(body: String): LastFmTags? {
     if (root["error"] != null) return null
     val top = root["toptags"].obj() ?: return null
     val artist = top["@attr"].obj()?.get("artist").str() ?: return null
-    val tags = top["tag"].items()
+    val raw = top["tag"].items()
         .mapNotNull { tag -> tag["name"].str()?.lowercase()?.let { name -> name to (tag["count"].int() ?: 0) } }
         .filter { (_, count) -> count >= MIN_TAG_COUNT }
         .distinctBy { it.first }
-        .take(MAX_TAGS)
         .toMap()
-    return LastFmTags(artist, tags)
+    return LastFmTags(artist, lastFmGenreTags(raw).entries.take(MAX_TAGS).associate { it.key to it.value })
 }
 
 /** The artists most tagged [tag], best first, from `tag.getTopArtists`. Empty for an error answer. */
