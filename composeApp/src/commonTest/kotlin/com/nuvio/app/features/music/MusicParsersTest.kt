@@ -233,4 +233,27 @@ class ArtistShelfParsersTest {
         assertEquals("GRID2", parseGridContinuation(middle))
         assertNull(parseGridContinuation("""{"continuationContents":{"gridContinuation":{"items":[]}}}"""))
     }
+
+    @Test
+    fun trackLengthIsReadFromTheTvLayoutsLastFlexColumn() {
+        // The layout YouTube Music sends to the app's Android TV user agent (In Our Bones, 2026-10-29): no fixedColumns,
+        // the length is the last flex column, after the play count.
+        val body = """
+        {"contents":{"twoColumnBrowseResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[
+          {"musicResponsiveHeaderRenderer":{"title":{"runs":[{"text":"In Our Bones"}]},"subtitle":{"runs":[{"text":"Album"},{"text":" • "},{"text":"2016"}]}}},
+          {"musicShelfRenderer":{"contents":[
+            {"musicResponsiveListItemRenderer":{
+              "playlistItemData":{"videoId":"abcdefghijk"},
+              "flexColumns":[
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Running with the Wild Things"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{}}},
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"6.6M plays"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"3:43"}]}}}
+              ]}}
+          ]}}
+        ]}}}}]}}}
+        """
+        val album = parseAlbum(body, "MPREb_x")
+        assertEquals(223, album?.tracks?.single()?.durationSeconds)
+    }
 }

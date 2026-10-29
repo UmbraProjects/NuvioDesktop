@@ -2,6 +2,7 @@ package com.nuvio.app.features.music.library
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.music.MusicAlbumSummary
+import com.nuvio.app.features.music.defaultMusicCatalog
 import com.nuvio.app.features.music.MusicArtist
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -14,7 +15,11 @@ private val log = Logger.withTag("MusicLibraryEnricher")
  * one that is down, or has no such artist, only leaves its fields empty. Nothing here throws except
  * cancellation.
  */
-internal class MusicLibraryEnricher(private val settings: MusicLibrarySettings) {
+internal class MusicLibraryEnricher(
+    private val settings: MusicLibrarySettings,
+    /** A plain album search, used to find collaborations filed under the other artist ([withCollabReleases]). */
+    private val searchReleases: suspend (String) -> List<MusicAlbumSummary> = { defaultMusicCatalog().searchReleases(it) },
+) {
     private val audioDb = AudioDbClient(settings.audioDbKey)
     private val fanart = FanartTvClient(settings.fanartApiKey)
 
@@ -90,7 +95,11 @@ internal class MusicLibraryEnricher(private val settings: MusicLibrarySettings) 
                 audioDb = audioAlbumsJob.await(),
                 fanart = fanartArtist,
             ),
-        )
+        ).let { list ->
+            // fork:music - a collaboration on the other artist's channel is still this artist's release.
+            onStatus("Looking for collaborations")
+            withCollabReleases(list, name, artist.browseId, searchReleases)
+        }
         val assembled = assembleArtist(
             id = artist.browseId,
             name = name,

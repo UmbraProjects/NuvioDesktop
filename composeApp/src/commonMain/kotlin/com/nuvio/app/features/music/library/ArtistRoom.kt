@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
+import com.nuvio.app.features.details.components.DetailIconAction
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -250,7 +252,7 @@ internal fun ArtistRoom(
                     }
                 }
                 if (wide && dated.isNotEmpty()) {
-                    ReleaseTimeline(dated, onOpen, Modifier.width(TIMELINE_WIDTH).padding(end = 24.dp))
+                    ReleaseTimeline(dated, onOpen, Modifier.width(TIMELINE_WIDTH).padding(end = ROOM_LANE_START))
                 }
             }
         }
@@ -366,13 +368,13 @@ private fun RoomLane(
         val facts = listOfNotNull(
             passportLine(artist).takeIf { it.isNotEmpty() },
             "${discography.totalCount} release${if (discography.totalCount == 1) "" else "s"}",
-        ).joinToString("  •  ")
+        ).joinToString("  •  ") { it.titleCased() }
         Text(facts, style = MaterialTheme.typography.bodyLarge, color = colors.textSecondary, textAlign = TextAlign.Center)
 
         HeroStats(artist, discography)
 
         val (mood, genres) = passportChips(artist)
-        val genreLine = (listOfNotNull(mood) + genres).joinToString("  ·  ")
+        val genreLine = (listOfNotNull(mood) + genres).joinToString("  ·  ") { it.titleCased() }
         if (genreLine.isNotEmpty()) {
             Text(genreLine, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, textAlign = TextAlign.Center)
         }
@@ -382,12 +384,8 @@ private fun RoomLane(
         // The details page's own row: Play, then round buttons with their labels on hover.
         val inLibrary = MusicLibraryRepository.state.collectAsState().value.contains(artist.id)
         val linkCount = groupLinks(artist.links).values.sumOf { it.size }
-        DetailActionButtons(
-            modifier = Modifier.fillMaxWidth(),
-            playLabel = "Play",
-            isTablet = true,
-            onPlayClick = { if (playTarget != null) onPlay() },
-            secondaryActions = listOfNotNull(
+        val actions = listOfNotNull(
+                DetailSecondaryAction("Play", Icons.Rounded.PlayArrow, onClick = { if (playTarget != null) onPlay() }),
                 DetailSecondaryAction("Shuffle", Icons.Rounded.Shuffle, onClick = { if (canShuffle) onShuffle() }),
                 topLabel?.let { DetailSecondaryAction("Play $it", Icons.Rounded.LocalFireDepartment, onClick = onPlayTop) },
                 DetailSecondaryAction(
@@ -399,8 +397,15 @@ private fun RoomLane(
                 linkCount.takeIf { it > 0 }?.let { DetailSecondaryAction("Links ($it)", Icons.Rounded.Link, onClick = onLinks) },
                 DetailSecondaryAction("Filter releases", Icons.Rounded.FilterList, isActive = filtersOpen || filtered, onClick = onToggleFilters),
                 if (saved) DetailSecondaryAction(refreshing ?: "Refresh", Icons.Rounded.Refresh, onClick = { if (refreshing == null) onRefresh() }) else null,
-            ),
         )
+        // The details page's round buttons, Play among them, each with its label on hover.
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally), modifier = Modifier.fillMaxWidth()) {
+            actions.forEach { action ->
+                NuvioPosterHoverTooltip(title = action.label) {
+                    DetailIconAction(label = action.label, icon = action.icon, active = action.isActive, size = 56.dp, onClick = action.onClick)
+                }
+            }
+        }
         // Only what needs saying: a play that failed, or a refresh under way.
         (notice ?: refreshing)?.let { line ->
             Text(
@@ -414,6 +419,10 @@ private fun RoomLane(
         }
     }
 }
+
+/** "alternative rock" as "Alternative Rock"; a word already in capitals ("EDM", "K-Pop") is left as it is. */
+private fun String.titleCased(): String =
+    split(' ').joinToString(" ") { word -> word.replaceFirstChar { it.uppercaseChar() } }
 
 /** Fans, rating and playable releases as icons with their numbers, centred under the facts line. */
 @Composable

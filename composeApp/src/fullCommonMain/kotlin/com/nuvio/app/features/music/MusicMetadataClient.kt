@@ -84,6 +84,9 @@ object MusicMetadataClient {
         rankArtistResults(found, top, extra)
     }
 
+    /** The album filter's results as YouTube Music orders them: one request, no ranking. */
+    suspend fun searchReleases(query: String): List<MusicAlbumSummary> = filteredAlbums(query.trim().ifEmpty { return emptyList() })
+
     private suspend fun filteredAlbums(q: String): List<MusicAlbumSummary> =
         cached("albums:${q.lowercase()}") {
             TrailerPlaybackResolver.musicRequest("search", mapOf("query" to q, "params" to FILTER_ALBUMS))

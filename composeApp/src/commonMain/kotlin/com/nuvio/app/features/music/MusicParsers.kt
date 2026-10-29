@@ -20,6 +20,9 @@ private const val ALBUM_PREFIX = "MPREb_"
 private const val ARTIST_PREFIX = "UC"
 private const val SEPARATOR = "•"
 
+/** A track length as YouTube Music writes it: "3:43", "12:05", "1:02:09". */
+private val TRACK_LENGTH = Regex("""^\d{1,2}(:\d{2}){1,2}$""")
+
 private fun parseRoot(body: String): JsonElement? = runCatching { MUSIC_JSON.parseToJsonElement(body) }.getOrNull()
 
 private fun JsonElement?.obj(): JsonObject? = this as? JsonObject
@@ -218,9 +221,15 @@ internal fun parseAlbum(body: String, browseId: String): MusicAlbum? {
     findAll(root, "musicResponsiveListItemRenderer").forEach { item ->
         val videoId = item.trackVideoId() ?: return@forEach
         val name = textOf(item.flexText(0)).trim().ifEmpty { return@forEach }
-        val duration = parseDurationSeconds(
-            textOf(item["fixedColumns"].arr()?.getOrNull(0).at("musicResponsiveListItemFixedColumnRenderer", "text")).trim(),
-        )
+        // The web layout puts the length in a fixed column; the layout sent to the app's TV user agent has no fixed
+        // columns and gives it as the last flex column instead ("6.6M plays", "3:43"). Either way it reads "m:ss".
+        val fixed = textOf(item["fixedColumns"].arr()?.getOrNull(0).at("musicResponsiveListItemFixedColumnRenderer", "text")).trim()
+        val lengthText = fixed.takeIf { TRACK_LENGTH.matches(it) }
+            ?: item["flexColumns"].arr().orEmpty().indices.reversed()
+                .map { textOf(item.flexText(it)).trim() }
+                .firstOrNull { TRACK_LENGTH.matches(it) }
+            ?: fixed
+        val duration = parseDurationSeconds(lengthText)
         val number = textOf(item["index"]).trim().toIntOrNull() ?: (tracks.size + 1)
         val trackArtists = artistsFrom(runsOf(item.flexText(1))).ifEmpty { artists }
         val greyedOut = item["musicItemRendererDisplayPolicy"].str()?.contains("GREY_OUT") == true

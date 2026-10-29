@@ -18,6 +18,12 @@ interface MusicCatalog {
      * failure. The default is empty so test fakes need not implement it.
      */
     suspend fun artistReleases(browseId: String): List<MusicAlbumSummary> = emptyList()
+
+    /**
+     * A plain album search as YouTube Music orders it, without the popularity ranking [searchAlbums] adds
+     * (one request, for background look-ups). Empty on failure; the default is empty for test fakes.
+     */
+    suspend fun searchReleases(query: String): List<MusicAlbumSummary> = emptyList()
 }
 
 /** The catalog the app uses: [MusicMetadataClient] on desktop. */

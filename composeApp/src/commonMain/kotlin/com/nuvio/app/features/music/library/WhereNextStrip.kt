@@ -272,7 +272,7 @@ private fun SimilarPortrait(artist: LibraryArtist, onOpen: () -> Unit) {
     val hovered by source.collectIsHoveredAsState()
     Column(
         Modifier
-            .width(104.dp)
+            .width(140.dp)
             .hoverable(source)
             .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onOpen),
@@ -280,7 +280,7 @@ private fun SimilarPortrait(artist: LibraryArtist, onOpen: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
-            MusicCover(artist.art.thumb, artist.name, size = 84.dp, circle = true)
+            MusicCover(artist.art.thumb, artist.name, size = 120.dp, circle = true)
         }
         Text(
             artist.name,
@@ -337,8 +337,9 @@ private fun WhereNextCard(rung: LadderRung, chosen: Boolean, onActivate: () -> U
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         MusicCover(picture, rung.candidate.name, size = CARD_WIDTH - 20.dp)
-        Text("${rung.step}  ${rung.candidate.name}", fontSize = 24.sp, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(rung.why, fontSize = 20.sp, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        // One line for the name and two for the reason on every card, so the row is one height.
+        Text(rung.candidate.name, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(rung.why, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -346,5 +347,5 @@ private fun WhereNextCard(rung: LadderRung, chosen: Boolean, onActivate: () -> U
 @Composable
 private fun PlaceholderCard() {
     val colors = MaterialTheme.nuvio.colors
-    Box(Modifier.width(CARD_WIDTH).height(CARD_WIDTH + 100.dp).musicGlass(RoundedCornerShape(14.dp)))
+    Box(Modifier.width(CARD_WIDTH).height(CARD_WIDTH + 64.dp).musicGlass(RoundedCornerShape(14.dp)))
 }

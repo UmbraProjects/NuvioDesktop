@@ -145,7 +145,8 @@ private fun TopAlbumCard(release: LibraryRelease, onOpen: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         ReleaseCover(release, Modifier.size(150.dp))
-        Text(release.title, fontSize = 22.sp, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        release.year?.let { Text(it, fontSize = 20.sp, color = colors.textSecondary) }
+        // Two lines kept for every title, so a short one and a long one make cards of one size.
+        Text(release.title, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(release.year.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1)
     }
 }
