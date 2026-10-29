@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.ui.text.style.TextAlign
 import com.nuvio.app.core.ui.NuvioGlass
@@ -112,6 +115,8 @@ internal fun MusicLibraryShelf(
     val totalReleases = remember(state.artists) { state.artists.sumOf { countReleaseCards(it.releases) } }
     // Starred artists first; the sort is stable, so each group stays alphabetical.
     val ordered = remember(state.artists) { state.artists.sortedByDescending { it.favourite } }
+    // The width of the "N artists · N releases" line, as laid out; each artist's column takes it so the two share a centre.
+    var countWidth by remember { mutableStateOf<Dp?>(null) }
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -151,6 +156,7 @@ internal fun MusicLibraryShelf(
                                 cards = cards,
                                 artistCount = state.artists.size,
                                 releaseCount = totalReleases,
+                                onCountWidth = { countWidth = it },
                                 onOpenArtist = onArtistClick,
                                 onOpenLadder = onOpenLadder,
                             )
@@ -165,6 +171,7 @@ internal fun MusicLibraryShelf(
                             artist = artist,
                             status = state.working[artist.id]?.status,
                             reducedMotion = state.settings.reducedMotion,
+                            headerWidth = countWidth?.coerceIn(SHELF_HEADER_MIN_WIDTH, SHELF_HEADER_MAX_WIDTH) ?: SHELF_HEADER_WIDTH,
                             onOpenArtist = { onArtistClick(artist.id) },
                             onOpenRelease = { release ->
                                 val id = release.ytBrowseId
@@ -236,9 +243,11 @@ private fun ShelfCardRow(
     cards: List<ShelfCard>,
     artistCount: Int,
     releaseCount: Int,
+    onCountWidth: (Dp) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenLadder: (LadderRequest) -> Unit,
 ) {
+    val density = LocalDensity.current
     val colors = MaterialTheme.nuvio.colors
     val scope = rememberCoroutineScope()
     val catalog = remember { defaultMusicCatalog() }
@@ -282,7 +291,12 @@ private fun ShelfCardRow(
                 }
             }
         }
-        Text("$artistCount artists · $releaseCount releases", fontSize = 22.sp, color = colors.textMuted)
+        Text(
+            "$artistCount artists · $releaseCount releases",
+            fontSize = 22.sp,
+            color = colors.textMuted,
+            modifier = Modifier.onSizeChanged { onCountWidth(with(density) { it.width.toDp() }) },
+        )
     }
 }
 
@@ -290,14 +304,17 @@ private fun ShelfCardRow(
 
 // region shelf
 
-// About as wide as the "N artists · N releases" line over the shelf, and flush with it, so each artist sits centred under it.
+// The artist's column when there is no count line to match (no cards over the shelf), and the range a matched one keeps to.
 private val SHELF_HEADER_WIDTH = 238.dp
+private val SHELF_HEADER_MIN_WIDTH = 200.dp
+private val SHELF_HEADER_MAX_WIDTH = 300.dp
 
 @Composable
 private fun ShelfArtistRow(
     artist: LibraryArtist,
     status: String?,
     reducedMotion: Boolean,
+    headerWidth: Dp,
     onOpenArtist: () -> Unit,
     onOpenRelease: (LibraryRelease) -> Unit,
 ) {
@@ -332,7 +349,7 @@ private fun ShelfArtistRow(
         // The artist on top, their name and count under it, then three round buttons: their hits (the top five),
         // a shuffle of them, and the favourite star, which floats the artist to the top of the shelf.
         Column(
-            Modifier.width(SHELF_HEADER_WIDTH).padding(top = 4.dp),
+            Modifier.width(headerWidth).padding(top = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
