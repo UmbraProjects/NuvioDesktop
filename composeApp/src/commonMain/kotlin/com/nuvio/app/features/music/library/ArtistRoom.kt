@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Groups
@@ -164,6 +166,9 @@ internal fun ArtistRoom(
     LaunchedEffect(artist.id, missing) { ReleasePaletteResolver.ensure(context, artist, keys = wantedKeys) }
 
     var showFilters by rememberSaveable { mutableStateOf(false) }
+    // The filter panel opens above the release grid, well down the page; opening it brings that into view.
+    val releasesInView = remember { BringIntoViewRequester() }
+    LaunchedEffect(showFilters) { if (showFilters) releasesInView.bringIntoView() }
 
     BoxWithConstraints(modifier.background(colors.background)) {
         val wide = maxWidth >= ROOM_WIDE_FROM
@@ -205,10 +210,15 @@ internal fun ArtistRoom(
             }
             Row(Modifier.fillMaxWidth().padding(top = 28.dp)) {
                 Column(
-                    Modifier.weight(1f).padding(start = ROOM_LANE_START, end = if (wide) 16.dp else ROOM_LANE_START),
+                    // The whole section, so opening the filter scrolls its top (header and panel) to the top of the window.
+                    Modifier.weight(1f).bringIntoViewRequester(releasesInView).padding(start = ROOM_LANE_START, end = if (wide) 16.dp else ROOM_LANE_START),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        Modifier.testTag("artistReleases"),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
                         Text("Releases", fontSize = 28.sp, color = colors.textPrimary)
                         Text(
                             "${shown.size + undated.size} of ${discography.totalCount}",

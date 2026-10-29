@@ -7,6 +7,10 @@ import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToIndex
@@ -72,5 +76,28 @@ class ArtistRoomPreviewTest {
         waitForIdle()
         ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/artist-room-releases.png").absoluteFile)
         println("PREVIEW ${out.path}")
+    }
+
+    @Test
+    fun theFilterButtonBringsItsPanelIntoView() = runDesktopComposeUiTest(width = 1600, height = 900) {
+        val releases = (0 until 30).map { i -> LibraryRelease(key = "r$i", title = "Release $i", kind = ReleaseKind.Single, year = "${1990 + i}", ytBrowseId = "MPREb_$i") }
+        val artist = LibraryArtist(id = "UCx", name = "Someone", releases = releases)
+        val discography = buildDiscography(releases, playableOnly = true, filter = ReleaseFilter.All)
+        setContent {
+            NuvioTheme {
+                ArtistRoom(
+                    artist = artist, discography = discography, latest = releases.last(), playTarget = releases.last(),
+                    canShuffle = true, notice = null, saved = true, refreshing = null, working = false,
+                    filter = ReleaseFilter.All, playableOnly = true, demosOpen = false,
+                    onBack = {}, onPlay = {}, onShuffle = {}, onPlayTop = {}, topLabel = null, onAbout = {}, onLinks = {},
+                    onOpenArtist = {}, onRefresh = {}, onRemove = {}, onOpen = {}, onPlayableOnly = {}, onFilter = {}, onToggleDemos = {},
+                )
+            }
+        }
+        waitForIdle()
+        onNodeWithContentDescription("Filter releases").performClick()
+        waitForIdle()
+        // The panel's playable / all switch is on screen, not below the fold.
+        onNodeWithText("Playable 30", substring = true).assertIsDisplayed()
     }
 }
