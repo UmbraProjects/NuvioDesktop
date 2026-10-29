@@ -1,0 +1,228 @@
+package com.nuvio.app.features.music.library
+
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.MusicCover
+import com.nuvio.app.features.music.defaultMusicCatalog
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+/*
+ * fork:music
+ *
+ * "Similar Taste" on the artist page: who people who listen to this artist also listen to. From
+ * Last.fm's similar-artists chart when a Last.fm key is set (built from real listening, so a young
+ * singer-songwriter gets her peers, not the genre's founders), else from Deezer's related artists,
+ * which needs no key. One request either way, so it shows in a moment instead of waiting behind
+ * MusicBrainz. Shown as round portraits under chips: All, the artist's own genres that the similar
+ * artists share (from their Last.fm tags), and Library (similar artists already saved).
+ */
+
+/** One artist people also listen to: the name, how close Last.fm rates it (0..1, 0 from Deezer), and its genres. */
+internal data class SimilarArtist(val name: String, val match: Double, val genres: Set<String> = emptySet())
+
+/** How many similar artists the strip shows. */
+private const val SIMILAR_LIMIT = 16
+
+/** Similar artists from `artist.getSimilar`, closest first. Empty for an error answer. */
+internal fun parseLastFmSimilar(body: String): List<SimilarArtist> {
+    val root = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(body) }.getOrNull() as? kotlinx.serialization.json.JsonObject
+        ?: return emptyList()
+    if (root["error"] != null) return emptyList()
+    val list = (root["similarartists"] as? kotlinx.serialization.json.JsonObject)?.get("artist")
+    val items = when (list) {
+        is kotlinx.serialization.json.JsonArray -> list.mapNotNull { it as? kotlinx.serialization.json.JsonObject }
+        is kotlinx.serialization.json.JsonObject -> listOf(list)
+        else -> emptyList()
+    }
+    return items.mapNotNull { item ->
+        val name = (item["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+        val match = (item["match"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0
+        SimilarArtist(name, match)
+    }.distinctBy { genreKey(it.name) }
+}
+
+/**
+ * The chips over the strip: the artist's own genres, title-cased, that at least one similar artist
+ * also carries, most shared first. "All" and "Library" are added by the strip.
+ */
+internal fun similarTasteGenres(ownGenres: List<String>, similar: List<SimilarArtist>, limit: Int = 5): List<String> =
+    ownGenres.map { genre ->
+        genre to similar.count { other -> other.genres.any { sameGenre(it, genre) || genreKey(it) == genreKey(genre) } }
+    }.filter { it.second > 0 }.sortedByDescending { it.second }.map { it.first }.distinctBy { genreKey(it) }.take(limit)
+
+/** The session's similar-artist lists, by artist name, with their genres filled in as they arrive. */
+internal object SimilarTaste {
+    private val lock = Mutex()
+    private val lists = HashMap<String, List<SimilarArtist>>()
+
+    /** Who listeners of [name] also play, closest first; null when neither source could be reached. */
+    suspend fun forArtist(name: String): List<SimilarArtist>? {
+        val key = genreKey(name)
+        lock.withLock { lists[key] }?.let { return it }
+        val found = if (LastFmClient.isConfigured) {
+            LastFmClient.similarArtists(name, SIMILAR_LIMIT)?.takeIf { it.isNotEmpty() }
+        } else {
+            null
+        } ?: DeezerClient.relatedByName(name)?.map { SimilarArtist(it.name, 0.0) }
+        val list = found?.filter { !sameArtistName(it.name, name) }?.take(SIMILAR_LIMIT) ?: return null
+        // Their genres, for the chips: Last.fm tags, cut down to genres. Without a key the strip has no genre chips.
+        val withGenres = if (LastFmClient.isConfigured) {
+            coroutineScope {
+                list.map { artist ->
+                    async { artist.copy(genres = LastFmClient.artistTags(artist.name)?.tags?.keys.orEmpty()) }
+                }.awaitAll()
+            }
+        } else {
+            list
+        }
+        lock.withLock { lists[key] = withGenres }
+        return withGenres
+    }
+}
+
+@Composable
+internal fun SimilarTasteStrip(artist: LibraryArtist, onOpenArtist: (String) -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.nuvio.colors
+    val scope = rememberCoroutineScope()
+    val catalog = remember { defaultMusicCatalog() }
+    val similar by produceState<List<SimilarArtist>?>(null, artist.name) { value = SimilarTaste.forArtist(artist.name) ?: emptyList() }
+    val libraryState by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    val library = remember(artist.id, libraryState.artists.size) { similarInLibrary(artist, libraryState.artists) }
+    val genres = remember(similar, artist.genres) { similarTasteGenres(passportChips(artist).second, similar.orEmpty()) }
+    var chip by rememberSaveable(artist.id) { mutableStateOf(CHIP_ALL) }
+    // Names being looked up on YouTube Music after a click, and the ones that turned out not to be there.
+    val opening = remember(artist.id) { mutableStateMapOf<String, Boolean>() }
+    var note by remember(artist.id) { mutableStateOf<String?>(null) }
+
+    if (similar?.isEmpty() == true && library.isEmpty()) return
+
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text("Similar Taste", style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val chips = listOf(CHIP_ALL) + genres + if (library.isNotEmpty()) listOf(CHIP_LIBRARY) else emptyList()
+            items(chips, key = { it }) { label ->
+                ActionPill(label.titleCase(), selected = chip == label, onClick = { chip = label })
+            }
+        }
+        val shownLibrary = chip == CHIP_LIBRARY
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(vertical = 6.dp, horizontal = 4.dp)) {
+            if (shownLibrary) {
+                items(library, key = { "lib:${it.id}" }) { other ->
+                    TastePortrait(name = other.name, picture = other.art.thumb, busy = false) { onOpenArtist(other.id) }
+                }
+            } else {
+                val list = similar
+                if (list == null) {
+                    items(PLACEHOLDERS) { TastePortraitPlaceholder() }
+                } else {
+                    val filtered = if (chip == CHIP_ALL) list else list.filter { other ->
+                        other.genres.any { sameGenre(it, chip) || genreKey(it) == genreKey(chip) }
+                    }
+                    items(filtered, key = { "sim:${it.name}" }) { other ->
+                        val picture by produceState<String?>(null, other.name) { value = LadderArtwork.picture(other.name) }
+                        TastePortrait(name = other.name, picture = picture, busy = opening[other.name] == true) {
+                            if (opening[other.name] == true) return@TastePortrait
+                            opening[other.name] = true
+                            scope.launch {
+                                val found = rungArtist(catalog, other.name)
+                                opening.remove(other.name)
+                                if (found != null) onOpenArtist(found.browseId) else note = "${other.name} isn't on YouTube Music"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        note?.let {
+            LaunchedEffect(it) {
+                kotlinx.coroutines.delay(3_000)
+                note = null
+            }
+            Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        }
+    }
+}
+
+private const val CHIP_ALL = "All"
+private const val CHIP_LIBRARY = "Library"
+private const val PLACEHOLDERS = 8
+private val PORTRAIT = 120.dp
+
+private fun String.titleCase(): String = split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
+
+/** A round portrait with the name on hover; a spinner over it while its page is being found. */
+@Composable
+private fun TastePortrait(name: String, picture: String?, busy: Boolean, onOpen: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val focused by source.collectIsFocusedAsState()
+    NuvioPosterHoverTooltip(title = name) {
+        Box(
+            Modifier
+                .border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape)
+                .padding(3.dp)
+                .hoverable(source)
+                .focusable(interactionSource = source)
+                .clickable(interactionSource = source, indication = null, onClick = onOpen),
+            contentAlignment = Alignment.Center,
+        ) {
+            MusicCover(picture, name, size = PORTRAIT, circle = true)
+            if (busy) {
+                Box(Modifier.matchParentSize().clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(28.dp), color = colors.accent, strokeWidth = 2.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TastePortraitPlaceholder() {
+    Box(Modifier.padding(3.dp).size(PORTRAIT).clip(CircleShape).musicGlass(CircleShape))
+}

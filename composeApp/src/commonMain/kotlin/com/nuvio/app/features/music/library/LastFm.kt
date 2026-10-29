@@ -204,6 +204,10 @@ internal object LastFmClient {
             .map { LadderCandidate(id = lastFmId(it.artist), name = it.artist, votes = it.tags) }
     }
 
+    /** Who listeners of [name] also play (`artist.getSimilar`), closest first; null when Last.fm could not be reached. */
+    suspend fun similarArtists(name: String, limit: Int): List<SimilarArtist>? =
+        call("artist.getsimilar", mapOf("artist" to name, "autocorrect" to "1", "limit" to "$limit"))?.let(::parseLastFmSimilar)
+
     /** A stable id for an artist Last.fm names (it has no ids of its own for most artists). */
     private fun lastFmId(name: String): String = "lastfm:" + name.trim().lowercase()
 }

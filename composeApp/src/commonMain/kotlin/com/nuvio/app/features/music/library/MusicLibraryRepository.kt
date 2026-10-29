@@ -488,7 +488,26 @@ object MusicLibraryRepository {
             wideThumb = fresh.art.wideThumb ?: old.art.wideThumb,
             backgrounds = fresh.art.backgrounds.ifEmpty { old.art.backgrounds },
         ),
-        releases = if (fresh.releases.size >= old.releases.size) fresh.releases else old.releases,
+        releases = refreshedReleases(fresh, old),
         sources = (fresh.sources + old.sources).distinct(),
     )
+}
+
+/** The sources that contribute releases; losing one of them on a refresh means its releases would vanish. */
+private val RELEASE_SOURCES = listOf("MusicBrainz", "Deezer")
+
+/**
+ * The releases a refresh keeps. The fresh list wins, even when it is shorter: better matching merges
+ * duplicates and makes the list shorter, and keeping the old one (as this used to whenever the new one
+ * was shorter) threw every matching fix away. Only when this run lost a release source the last one had
+ * (MusicBrainz or Deezer unreachable) are the old releases it no longer has added back, so an outage
+ * does not drop them, without undoing what this run matched.
+ */
+internal fun refreshedReleases(fresh: LibraryArtist, old: LibraryArtist): List<LibraryRelease> = when {
+    fresh.releases.isEmpty() -> old.releases
+    RELEASE_SOURCES.any { it in old.sources && it !in fresh.sources } -> {
+        val have = fresh.releases.map { baseTitleKey(it.title) }.toSet()
+        fresh.releases + old.releases.filter { baseTitleKey(it.title) !in have }
+    }
+    else -> fresh.releases
 }

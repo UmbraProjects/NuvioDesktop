@@ -203,7 +203,7 @@ internal fun ArtistRoom(
                         onToggleFilters = { showFilters = !showFilters },
                     )
                     ArtistWidgets(artist, onOpen, Modifier.padding(horizontal = ROOM_LANE_START), showBio = false) // fork:music - HTPC phase 8
-                    WhereNextStrip(artist, onOpenArtist, Modifier.padding(horizontal = ROOM_LANE_START)) // fork:music - HTPC phase 3
+                    SimilarTasteStrip(artist, onOpenArtist, Modifier.padding(horizontal = ROOM_LANE_START)) // fork:music
                 }
             }
 
@@ -242,9 +242,21 @@ internal fun ArtistRoom(
                             color = colors.textMuted,
                         )
                     }
-                    if (shown.isNotEmpty() || undated.isNotEmpty()) {
+                    // Split by kind, albums first, so a long discography is browsable: the singles no longer bury them.
+                    val all = shown + undated
+                    RELEASE_SECTIONS.forEach { (title, kinds) ->
+                        val section = all.filter { it.kind in kinds }
+                        if (section.isEmpty()) return@forEach
+                        Row(
+                            Modifier.padding(top = 10.dp),
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(title, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
+                            Text("${section.size}", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(bottom = 2.dp))
+                        }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            (shown + undated).forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }) }
+                            section.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }) }
                         }
                     }
                     if (discography.demos.isNotEmpty()) {
@@ -258,6 +270,14 @@ internal fun ArtistRoom(
         }
     }
 }
+
+/** The release grid's sections, in order, and the kinds each holds. */
+private val RELEASE_SECTIONS = listOf(
+    "Albums" to setOf(ReleaseKind.Album),
+    "Singles & EPs" to setOf(ReleaseKind.Single, ReleaseKind.EP),
+    "Live & Compilations" to setOf(ReleaseKind.Live, ReleaseKind.Compilation),
+    "Other" to setOf(ReleaseKind.Other),
+)
 
 /** From this width the timeline stands beside the releases; below it, it runs above them. */
 private val ROOM_WIDE_FROM = 1100.dp
