@@ -109,6 +109,22 @@ class MusicParsersTest {
     }
 
     @Test
+    fun albumPageListsItsOtherVersions() {
+        val shelf = """{"musicCarouselShelfRenderer":{
+          "header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Other versions"}]}}},
+          "contents":[
+            {"musicTwoRowItemRenderer":{"title":{"runs":[{"text":"Random Access Memories","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_long"}}}]}}},
+            {"musicTwoRowItemRenderer":{"title":{"runs":[{"text":"Itself","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_abc123"}}}]}}}
+          ]}}"""
+        val unrelated = """{"musicCarouselShelfRenderer":{
+          "header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"You might also like"}]}}},
+          "contents":[{"musicTwoRowItemRenderer":{"title":{"runs":[{"text":"Other","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_other"}}}]}}}]}}"""
+        val body = albumPage.replace("\"x\":", "\"shelves\":[$shelf,$unrelated],\"x\":")
+        val album = assertNotNull(parseAlbum(body, "MPREb_abc123"))
+        assertEquals(listOf("MPREb_long"), album.otherVersionIds)
+    }
+
+    @Test
     fun albumWithoutTitleOrTracksIsNull() {
         assertNull(parseAlbum("{}", "MPREb_x"))
         assertNull(parseAlbum("nope", "MPREb_x"))

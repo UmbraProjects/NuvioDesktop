@@ -81,7 +81,7 @@ fun MusicAlbumScreen(
 ) {
     val colors = MaterialTheme.nuvio.colors
     var attempt by remember { mutableStateOf(0) }
-    val load = rememberMusicLoad(browseId, attempt) { catalog.album(browseId) }
+    val load = rememberMusicLoad(browseId, attempt) { catalog.album(browseId)?.let { libraryEdition(catalog, it) } }
 
     Box(modifier.fillMaxSize().background(colors.background)) {
     // The cover, blurred, as the page's atmosphere (it does not move, so reduced motion needs nothing).
