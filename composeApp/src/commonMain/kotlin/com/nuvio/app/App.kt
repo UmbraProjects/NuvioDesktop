@@ -682,6 +682,7 @@ internal fun rootTabHistoryAfterNavigation(
 // the five nav quadrants keep the 80.dp rhythm they had when there were four. Quadrants divide the
 // bar by weight, so hiding Discover subtracts one quadrant instead of stretching the other four.
 private val FloatingTopBarQuadrantWidth = 64.dp
+private val MusicTopBarWidth = 520.dp // fork:music-navbar - the Music search on the bar
 private val FloatingTopBarWidth = 384.dp // fork:music (320.dp + one quadrant for Music)
 
 // The sidebar's nav glyphs sit alone in a wide rail rather than in a dense pill, so they carry
@@ -1428,6 +1429,9 @@ private fun MainAppContent(
         val hapticFeedback = LocalHapticFeedback.current
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
+        // fork:music-navbar - where the Music bar's swap button returns to.
+        var lastTabBeforeMusic by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
+        LaunchedEffect(selectedTab) { if (selectedTab != AppScreenTab.Music) lastTabBeforeMusic = selectedTab }
         var rootTabBackStack by remember { mutableStateOf<List<AppScreenTab>>(emptyList()) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
         var navigateToContentCount by remember { mutableStateOf(0) }
@@ -3948,6 +3952,7 @@ private fun MainAppContent(
                                         TabletFloatingTopBar(
                                             selectedTab = selectedTab,
                                             onTabSelected = ::handleRootTabClick,
+                                            onLeaveMusic = { handleRootTabClick(lastTabBeforeMusic) }, // fork:music-navbar
                                             onProfileSelected = onProfileSelected,
                                             onAddProfileRequested = onSwitchProfile,
                                             // TV mode docks the source picker into the home hero, right where
@@ -6282,12 +6287,15 @@ private fun TabletFloatingTopBar(
     searchFocusRequestCount: Int = 0,
     onSearchSubmit: (String) -> Unit = {},
     onNavigateToContent: () -> Unit = {},
+    onLeaveMusic: () -> Unit = {}, // fork:music-navbar
 ) {
     val tokens = MaterialTheme.nuvio
     val focusManager = LocalFocusManager.current
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var activationZoneHovered by remember { mutableStateOf(false) }
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
+    // fork:music-navbar - on the Music tab the bar holds the Music search instead of the tabs.
+    val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsStateWithLifecycle()
@@ -6297,6 +6305,11 @@ private fun TabletFloatingTopBar(
         (if (discoverTabVisible) 0.dp else FloatingTopBarQuadrantWidth) +
         (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp) -
         (if (musicTabVisible) 0.dp else FloatingTopBarQuadrantWidth) // fork:music
+    // fork:music-navbar - the Music search wants more room than the tab icons; only the pill itself widens.
+    val pillWidth by animateDpAsState(
+        targetValue = if (musicBarActive) maxOf(topBarWidth, MusicTopBarWidth) else topBarWidth,
+        animationSpec = tween(durationMillis = 200),
+    )
     // Right-clicking the Library quadrant hangs its quick-access menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
     var libraryMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
@@ -6305,7 +6318,7 @@ private fun TabletFloatingTopBar(
         // it and the menu is left floating over nothing.
         targetValue = when {
             hidden -> 0f
-            dimUntilHovered && !isSearchActive && !activationZoneHovered && !libraryMenuVisible -> 0f
+            dimUntilHovered && !isSearchActive && !musicBarActive && !activationZoneHovered && !libraryMenuVisible -> 0f // fork:music-navbar
             else -> 1f
         },
         animationSpec = tween(durationMillis = 200),
@@ -6424,7 +6437,7 @@ private fun TabletFloatingTopBar(
             border = BorderStroke(1.dp, dividerColor),
             modifier = Modifier
                 .height(NavBarHeight)
-                .width(topBarWidth)
+                .width(pillWidth) // fork:music-navbar
                 .onPointerEvent(PointerEventType.Enter) {
                     activationZoneHovered = true
                 }
@@ -6578,6 +6591,8 @@ private fun TabletFloatingTopBar(
                             )
                         }
                     }
+                } else if (musicBarActive) { // fork:music-navbar
+                    com.nuvio.app.features.music.MusicTopBarContent(onLeave = onLeaveMusic, modifier = Modifier.fillMaxSize())
                 } else {
                     Row(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),

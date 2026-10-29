@@ -79,7 +79,7 @@ class ArtistRoomPreviewTest {
     }
 
     @Test
-    fun theFilterButtonBringsItsPanelIntoView() = runDesktopComposeUiTest(width = 1600, height = 900) {
+    fun theFilterIsAlwaysShownWithoutAButton() = runDesktopComposeUiTest(width = 1600, height = 900) {
         val releases = (0 until 30).map { i -> LibraryRelease(key = "r$i", title = "Release $i", kind = ReleaseKind.Single, year = "${1990 + i}", ytBrowseId = "MPREb_$i") }
         val artist = LibraryArtist(id = "UCx", name = "Someone", releases = releases)
         val discography = buildDiscography(releases, playableOnly = true, filter = ReleaseFilter.All)
@@ -95,9 +95,8 @@ class ArtistRoomPreviewTest {
             }
         }
         waitForIdle()
-        onNodeWithContentDescription("Filter releases").performClick()
-        waitForIdle()
-        // The panel's playable / all switch is on screen, not below the fold.
-        onNodeWithText("Playable 30", substring = true).assertIsDisplayed()
+        // The filter has no button of its own any more: its playable / all switch is simply there.
+        onNodeWithContentDescription("Filter releases").assertDoesNotExist()
+        onNodeWithText("Playable 30", substring = true).assertExists()
     }
 }

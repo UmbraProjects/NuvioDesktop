@@ -166,11 +166,11 @@ fun BrowseFilterCaption(text: String) {
     )
 }
 
-/** An icon that acts straight away ("Clear filters"), named by its tooltip. */
+/** An icon that acts straight away ("Clear filters"), named by its tooltip; [on] lights it as the current choice. */
 @Composable
-fun BrowseFilterIconAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun BrowseFilterIconAction(icon: ImageVector, label: String, on: Boolean = false, onClick: () -> Unit) {
     NuvioPosterHoverTooltip(title = label) {
-        BrowseFilterIconButton(icon = icon, label = label, on = false, open = false, onPress = { onClick() })
+        BrowseFilterIconButton(icon = icon, label = label, on = on, open = false, onPress = { onClick() })
     }
 }
 

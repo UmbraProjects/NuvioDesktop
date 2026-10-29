@@ -20,6 +20,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -155,16 +162,28 @@ internal fun SimilarTasteStrip(artist: LibraryArtist, onOpenArtist: (String) -> 
 
     if (similar?.isEmpty() == true && library.isEmpty()) return
 
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    // Five portraits wide; the rest are a scroll (or an arrow press) away.
+    val rowState = rememberLazyListState()
+    LaunchedEffect(chip) { rowState.scrollToItem(0) }
+    Column(modifier.width(STRIP_WIDTH + STRIP_ARROW * 2), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Similar Taste", style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyRow(Modifier.width(STRIP_WIDTH + STRIP_ARROW * 2), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val chips = listOf(CHIP_ALL) + genres + if (library.isNotEmpty()) listOf(CHIP_LIBRARY) else emptyList()
             items(chips, key = { it }) { label ->
                 ActionPill(label.titleCase(), selected = chip == label, onClick = { chip = label })
             }
         }
         val shownLibrary = chip == CHIP_LIBRARY
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp), contentPadding = PaddingValues(vertical = 6.dp, horizontal = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+        StripArrow(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Previous", enabled = rowState.canScrollBackward) {
+            scope.launch { rowState.animateScrollToItem((rowState.firstVisibleItemIndex - STRIP_ITEMS).coerceAtLeast(0)) }
+        }
+        LazyRow(
+            Modifier.width(STRIP_WIDTH),
+            state = rowState,
+            horizontalArrangement = Arrangement.spacedBy(STRIP_GAP),
+            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 4.dp),
+        ) {
             if (shownLibrary) {
                 items(library, key = { "lib:${it.id}" }) { other ->
                     TastePortrait(name = other.name, picture = other.art.thumb, busy = false) { onOpenArtist(other.id) }
@@ -192,6 +211,10 @@ internal fun SimilarTasteStrip(artist: LibraryArtist, onOpenArtist: (String) -> 
                 }
             }
         }
+        StripArrow(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Next", enabled = rowState.canScrollForward) {
+            scope.launch { rowState.animateScrollToItem(rowState.firstVisibleItemIndex + STRIP_ITEMS) }
+        }
+        }
         note?.let {
             LaunchedEffect(it) {
                 kotlinx.coroutines.delay(3_000)
@@ -207,6 +230,28 @@ private const val CHIP_LIBRARY = "Library"
 private const val PLACEHOLDERS = 8
 private val PORTRAIT = 120.dp
 private val PORTRAIT_WIDTH = 140.dp
+
+/** The portrait row shows this many at a time. */
+private const val STRIP_ITEMS = 5
+private val STRIP_GAP = 18.dp
+private val STRIP_WIDTH = PORTRAIT_WIDTH * STRIP_ITEMS + STRIP_GAP * (STRIP_ITEMS - 1) + 8.dp
+private val STRIP_ARROW = 40.dp
+
+/** A round arrow beside the portrait row; it fades out at the end it points to. */
+@Composable
+private fun StripArrow(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    Box(
+        Modifier
+            .size(STRIP_ARROW)
+            .alpha(if (enabled) 1f else 0.25f)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = description, tint = colors.textSecondary, modifier = Modifier.size(28.dp))
+    }
+}
 
 private fun String.titleCase(): String = split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
 

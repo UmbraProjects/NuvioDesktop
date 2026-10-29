@@ -97,6 +97,12 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.features.music.library.enlargeYtThumbnail
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.Timeline
+import androidx.compose.material.icons.rounded.ViewModule
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
+import com.nuvio.app.features.discover.BrowseFilterIconAction
 import androidx.compose.ui.layout.ContentScale
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.ui.trackTextInputFocus
@@ -106,6 +112,111 @@ import kotlinx.coroutines.delay
 private enum class MusicSearchKind { Albums, Artists }
 
 private enum class MusicSection { Search, Library }
+
+/**
+ * fork:music-navbar - the Music tab's search box. One object rather than the tab's own state, because
+ * on the floating top bar the box lives in the bar itself (see [MusicTopBarContent]) and the tab only
+ * shows what it finds; without the floating bar the tab draws the box as before.
+ */
+private object MusicTabState {
+    var query by mutableStateOf("")
+
+    // Opens on the shelf when the person has saved artists, and on Search when there is nothing to show
+    // yet. Loading is synchronous and cheap, so the first frame is already the right one.
+    var section by mutableStateOf(
+        MusicLibraryRepository.ensureLoaded().let {
+            if (MusicLibraryRepository.state.value.artists.isEmpty()) MusicSection.Search else MusicSection.Library
+        },
+    )
+
+    /** The Library's name / genre filter: the one search box types into it while [filtering] is on. */
+    var libraryFilter by mutableStateOf("")
+    var filtering by mutableStateOf(false)
+
+    /** True while the top bar holds the box, so the tab leaves its own out. */
+    var barHosted by mutableStateOf(false)
+}
+
+/**
+ * fork:music-navbar - what the app's floating top bar shows while the Music tab is open: a button back
+ * to the regular bar (it returns to the last tab, through [onLeave]) and the Music search box, so the
+ * tab's own header no longer takes the space under the bar.
+ */
+@Composable
+fun MusicTopBarContent(onLeave: () -> Unit, modifier: Modifier = Modifier) {
+    DisposableEffect(Unit) {
+        MusicTabState.barHosted = true
+        onDispose { MusicTabState.barHosted = false }
+    }
+    Row(
+        modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        NuvioPosterHoverTooltip(title = "Back to the main bar") {
+            MusicFieldIconButton(icon = Icons.Rounded.SwapHoriz, description = "Back to the main bar", active = false, onClick = onLeave)
+        }
+        MusicFieldDivider()
+        MusicSearchBox(chromeless = true, modifier = Modifier.weight(1f))
+    }
+}
+
+/** The search box with its Library buttons (filter, refresh, the Library toggle), on the bar or in the tab. */
+@Composable
+private fun MusicSearchBox(chromeless: Boolean, modifier: Modifier = Modifier) {
+    val state = MusicTabState
+    val library = state.section == MusicSection.Library
+    // In the Library the filter icon turns the box into the Library's filter, the same box on every view.
+    val filterMode = library && state.filtering
+    MusicGlassField(
+        value = if (filterMode) state.libraryFilter else state.query,
+        onValueChange = {
+            if (filterMode) {
+                state.libraryFilter = it
+            } else {
+                state.query = it
+                // Typing from the Library goes back to Search: outside filter mode the box searches.
+                if (it.isNotBlank()) state.section = MusicSection.Search
+            }
+        },
+        placeholder = if (filterMode) "Filter by name or genre" else "Search albums and artists",
+        leadingIcon = if (filterMode) Icons.Rounded.FilterList else Icons.Rounded.Search,
+        modifier = modifier,
+        chromeless = chromeless,
+        suggestions = if (filterMode) emptyList() else MusicSearchHistory.recent.collectAsState().value.take(MUSIC_RECENT_SHOWN),
+        onSuggestion = {
+            state.query = it
+            state.section = MusicSection.Search
+        },
+    ) {
+        MusicFieldDivider()
+        if (library) {
+            val libraryState by MusicLibraryRepository.state.collectAsState()
+            MusicFieldIconButton(
+                icon = Icons.Rounded.FilterList,
+                description = if (state.filtering) "Back to search" else "Filter your library",
+                active = state.filtering,
+                onClick = {
+                    state.filtering = !state.filtering
+                    if (!state.filtering) state.libraryFilter = ""
+                },
+            )
+            MusicFieldIconButton(
+                icon = Icons.Rounded.Refresh,
+                description = "Refresh all artists",
+                active = false,
+                enabled = libraryState.artists.isNotEmpty() && libraryState.working.isEmpty(),
+                onClick = { MusicLibraryRepository.refreshAll() },
+            )
+        }
+        MusicFieldIconButton(
+            icon = Icons.Rounded.LibraryMusic,
+            description = if (library) "Back to search" else "Your library",
+            active = library,
+            onClick = { state.section = if (library) MusicSection.Search else MusicSection.Library },
+        )
+    }
+}
 
 private sealed interface MusicSearchResults {
     data object Idle : MusicSearchResults
@@ -136,23 +247,17 @@ fun MusicTabScreen(
     catalog: MusicCatalog = remember { defaultMusicCatalog() },
 ) {
     val colors = MaterialTheme.nuvio.colors
-    var query by rememberSaveable { mutableStateOf("") }
+    // The box's state is shared with the top bar (MusicTabState); coming back to the tab lands where the person left it.
+    var query by MusicTabState::query
+    var section by MusicTabState::section
+    val libraryFilter = MusicTabState.libraryFilter
+    val filtering = MusicTabState.filtering
     var kind by rememberSaveable { mutableStateOf(MusicSearchKind.Albums) }
-    // Opens on the shelf when the person has saved artists, and on Search when there is nothing to show
-    // yet. Loading is synchronous and cheap, so the first frame is already the right one. A choice made
-    // here is remembered, so coming back to the tab lands where the person left it.
-    var section by rememberSaveable {
-        MusicLibraryRepository.ensureLoaded()
-        mutableStateOf(
-            if (MusicLibraryRepository.state.value.artists.isEmpty()) MusicSection.Search else MusicSection.Library,
-        )
-    }
     var results by remember { mutableStateOf<MusicSearchResults>(MusicSearchResults.Idle) }
     var ladder by remember { mutableStateOf<LadderRequest?>(null) } // fork:music - the open ladder, if any
-    // The Library's view, and its name / genre filter: the one search box types into it while filter mode is on.
     var libraryView by rememberSaveable { mutableStateOf(LibraryView.Shelf) }
-    var libraryFilter by rememberSaveable { mutableStateOf("") }
-    var filtering by rememberSaveable { mutableStateOf(false) }
+    // A search typed into the top bar while a ladder is open is meant to be seen.
+    LaunchedEffect(query) { if (query.isNotBlank()) ladder = null }
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
     LaunchedEffect(query, kind) {
@@ -192,11 +297,10 @@ fun MusicTabScreen(
             .fillMaxSize()
             // The settings sky, so the glass header and the cover grid sit on the same night wash.
             .settingsSkyBackground(tokens.colors.background, tokens.colors.accent)
-            .padding(top = topChromePadding),
+            // fork:music-navbar - with the box on the bar, what is under it starts right below the bar.
+            .padding(top = if (MusicTabState.barHosted) (topChromePadding - BAR_HOSTED_TRIM).coerceAtLeast(0.dp) else topChromePadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // In the Library the filter icon turns the box into the Library's filter, the same box on every view.
-        val filterMode = section == MusicSection.Library && filtering
         Column(
             modifier = Modifier
                 .widthIn(max = MUSIC_HEADER_MAX_WIDTH)
@@ -206,66 +310,21 @@ fun MusicTabScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // A name goes in here, not an address: about the view pills' width with a fifth more on each side.
-            Box(Modifier.widthIn(max = MUSIC_SEARCH_WIDTH).fillMaxWidth()) {
-                MusicGlassField(
-                    value = if (filterMode) libraryFilter else query,
-                    onValueChange = {
-                        if (filterMode) {
-                            libraryFilter = it
-                        } else {
-                            query = it
-                            // Typing from the Library goes back to Search: outside filter mode the box searches.
-                            if (it.isNotBlank()) section = MusicSection.Search
-                        }
-                    },
-                    placeholder = if (filterMode) "Filter by name or genre" else "Search albums and artists",
-                    leadingIcon = if (filterMode) Icons.Rounded.FilterList else Icons.Rounded.Search,
-                    modifier = Modifier.fillMaxWidth(),
-                    suggestions = if (filterMode) emptyList() else MusicSearchHistory.recent.collectAsState().value.take(MUSIC_RECENT_SHOWN),
-                    onSuggestion = {
-                        query = it
-                        section = MusicSection.Search
-                    },
-                ) {
-                    val library = section == MusicSection.Library
-                    MusicFieldDivider()
-                    if (library) {
-                        val libraryState by MusicLibraryRepository.state.collectAsState()
-                        MusicFieldIconButton(
-                            icon = Icons.Rounded.FilterList,
-                            description = if (filtering) "Back to search" else "Filter your library",
-                            active = filtering,
-                            onClick = {
-                                filtering = !filtering
-                                if (!filtering) libraryFilter = ""
-                            },
-                        )
-                        MusicFieldIconButton(
-                            icon = Icons.Rounded.Refresh,
-                            description = "Refresh all artists",
-                            active = false,
-                            enabled = libraryState.artists.isNotEmpty() && libraryState.working.isEmpty(),
-                            onClick = { MusicLibraryRepository.refreshAll() },
-                        )
-                    }
-                    MusicFieldIconButton(
-                        icon = Icons.Rounded.LibraryMusic,
-                        description = if (library) "Back to search" else "Your library",
-                        active = library,
-                        onClick = { section = if (library) MusicSection.Search else MusicSection.Library },
-                    )
-                }
+            // fork:music-navbar - on the floating top bar the box is in the bar itself.
+            if (!MusicTabState.barHosted) {
+                // A name goes in here, not an address: about the view icons' width with a fifth more on each side.
+                MusicSearchBox(chromeless = false, modifier = Modifier.widthIn(max = MUSIC_SEARCH_WIDTH).fillMaxWidth())
             }
             if (section == MusicSection.Library) {
                 val libraryState by MusicLibraryRepository.state.collectAsState()
+                // The views as icons, the way Discover's row header shows its filters; the one in use is lit.
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    MusicGlassPill("Shelf", selected = libraryView == LibraryView.Shelf) { libraryView = LibraryView.Shelf }
-                    MusicGlassPill("Constellation", selected = libraryView == LibraryView.Constellation) { libraryView = LibraryView.Constellation }
-                    MusicGlassPill("Eras", selected = libraryView == LibraryView.Eras) { libraryView = LibraryView.Eras }
+                    LIBRARY_VIEW_ICONS.forEach { (view, icon, label) ->
+                        BrowseFilterIconAction(icon, label, on = libraryView == view) { libraryView = view }
+                    }
                 }
                 // fork:music - the Constellation's thin spots: genres you tag but barely own, each a ladder into it.
                 if (libraryView == LibraryView.Constellation) {
@@ -366,6 +425,16 @@ fun MusicTabScreen(
 /** How many recent searches the search box offers. */
 private const val MUSIC_RECENT_SHOWN = 6
 
+/** The tabs' top padding leaves room under the bar for a header; with the box on the bar most of it is spare. */
+private val BAR_HOSTED_TRIM = 36.dp
+
+/** The Library's views, as the icons under the bar. */
+private val LIBRARY_VIEW_ICONS = listOf(
+    Triple(LibraryView.Shelf, Icons.Rounded.ViewModule, "Shelf"),
+    Triple(LibraryView.Constellation, Icons.Rounded.Hub, "Constellation"),
+    Triple(LibraryView.Eras, Icons.Rounded.Timeline, "Eras"),
+)
+
 /** The search header is a centred column this wide at most; the grid below gets the room. */
 private val MUSIC_HEADER_MAX_WIDTH = 720.dp
 
@@ -386,6 +455,8 @@ private fun MusicGlassField(
     placeholder: String,
     leadingIcon: ImageVector,
     modifier: Modifier = Modifier,
+    /** Drawn without its own glass, for a box that sits inside the top bar's. */
+    chromeless: Boolean = false,
     /** Recent searches, offered in a panel under the empty box while it has focus (like the top bar's search). */
     suggestions: List<String> = emptyList(),
     onSuggestion: (String) -> Unit = {},
@@ -409,11 +480,18 @@ private fun MusicGlassField(
             .fillMaxWidth()
             .onSizeChanged { fieldWidthPx = it.width }
             .height(44.dp)
-            .ditheredBackground(NuvioGlass.Fill, shape)
-            .border(
-                width = tokens.borders.thin,
-                brush = if (focused) SolidColor(tokens.colors.borderFocus) else NuvioGlass.Edge,
-                shape = shape,
+            .then(
+                if (chromeless) {
+                    Modifier
+                } else {
+                    Modifier
+                        .ditheredBackground(NuvioGlass.Fill, shape)
+                        .border(
+                            width = tokens.borders.thin,
+                            brush = if (focused) SolidColor(tokens.colors.borderFocus) else NuvioGlass.Edge,
+                            shape = shape,
+                        )
+                },
             )
             .trackTextInputFocus()
             .onFocusChanged { focused = it.isFocused }
@@ -450,7 +528,7 @@ private fun MusicGlassField(
         cursorBrush = SolidColor(tokens.colors.accent),
         decorationBox = { innerTextField ->
             Row(
-                modifier = Modifier.fillMaxWidth().height(44.dp).padding(start = 18.dp, end = 8.dp),
+                modifier = Modifier.fillMaxWidth().height(44.dp).padding(start = if (chromeless) 4.dp else 18.dp, end = if (chromeless) 0.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {

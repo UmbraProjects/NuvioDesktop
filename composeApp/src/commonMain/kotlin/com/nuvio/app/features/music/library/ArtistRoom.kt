@@ -82,6 +82,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -112,13 +115,14 @@ import com.nuvio.app.features.music.identity.identity
  * The artist room, laid out like the TV-show details page. One scroll, top to bottom:
  *
  *  - The hero: the artist's backdrop, bright at the top and fading into the page, under the details
- *    page's scrim from the left. Over it, a lane holds the logo (or name), the facts line, the stats as
- *    icons, the genres as text and the details page's own action row; then the top albums and Where
- *    next, still over the fading picture. The backdrop scrolls away with them.
- *  - Below, on the page's own dark ground: every release as a grid, and beside it down the right a
- *    thin timeline of the discography, newest first: a dot per release on a spine, its title and year
- *    beside it, alternating sides. Clicking an entry opens it. On a narrow window the timeline sits
- *    above the grid.
+ *    page's scrim from the left. With no wide picture, a large round portrait stands on the right
+ *    instead. Over it, a lane holds the logo (or name), the facts line, the stats as icons, the genres
+ *    as text and the details page's own action row; then the top albums and Similar Taste, still over
+ *    the fading picture. The backdrop scrolls away with them.
+ *  - From Similar Taste down: Similar Taste, the always-open filter and every release as a grid on the
+ *    left, and beside them down the right, starting level with Similar Taste, a thin timeline of the
+ *    discography, newest first: a dot per release on a spine, its title and year beside it,
+ *    alternating sides. Clicking an entry opens it. On a narrow window the timeline sits above the grid.
  *
  * Every picture has a fallback, so a bare artist (no art, no dates) still draws a readable page. All
  * play / dialog / Add logic stays in [MusicArtistScreen]; this only draws and reports taps.
@@ -171,21 +175,22 @@ internal fun ArtistRoom(
     val missing = artist.releases.count { it.key in wantedKeys && it.needsPalette }
     LaunchedEffect(artist.id, missing) { ReleasePaletteResolver.ensure(context, artist, keys = wantedKeys) }
 
-    var showFilters by rememberSaveable { mutableStateOf(false) }
-    // The filter panel opens above the release grid, well down the page; opening it brings that into view.
-    val releasesInView = remember { BringIntoViewRequester() }
-    LaunchedEffect(showFilters) { if (showFilters) releasesInView.bringIntoView() }
-
     BoxWithConstraints(modifier.background(colors.background)) {
         val wide = maxWidth >= ROOM_WIDE_FROM
         val viewport = maxHeight
+        // The timeline takes a share of the window, so wide windows give long titles the room they need.
+        val timelineWidth = (maxWidth * TIMELINE_SHARE).coerceIn(TIMELINE_MIN_WIDTH, TIMELINE_MAX_WIDTH)
         val inset = LocalMusicBarInset.current // fork:music - the page runs under the bar; its foot clears it
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = inset + 48.dp)) {
-            // The hero and what follows it on the picture; the backdrop scrolls away with them. It is as tall as they are
-            // (at most a window), so the releases start right under Similar Taste instead of below a window of picture.
-            Box(Modifier.fillMaxWidth()) {
-                RoomBackdrop(artist, Modifier.matchParentSize().wrapContentHeight(Alignment.Top).fillMaxWidth().heightIn(max = viewport).fillMaxHeight())
-                Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
+        val density = LocalDensity.current
+        // The backdrop runs behind the hero and Similar Taste (at most a window), so the releases start on the page's own ground.
+        var heroHeightPx by remember { mutableStateOf(0) }
+        var pageTopY by remember { mutableStateOf(0f) }
+        var similarBottomY by remember { mutableStateOf(0f) }
+        val backdropHeight = with(density) { maxOf(heroHeightPx.toFloat(), similarBottomY - pageTopY).toDp() }.coerceAtMost(viewport)
+        Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            RoomBackdrop(artist, Modifier.fillMaxWidth().height(backdropHeight))
+            Column(Modifier.fillMaxWidth().onGloballyPositioned { pageTopY = it.positionInRoot().y }.padding(bottom = inset + 48.dp)) {
+                Column(Modifier.onSizeChanged { heroHeightPx = it.height }, verticalArrangement = Arrangement.spacedBy(28.dp)) {
                     Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
                     RoomLane(
                         artist = artist,
@@ -195,8 +200,6 @@ internal fun ArtistRoom(
                         notice = notice,
                         saved = saved,
                         refreshing = refreshing,
-                        filtersOpen = showFilters,
-                        filtered = !playableOnly || filter != ReleaseFilter.All,
                         topLabel = topLabel,
                         onPlay = onPlay,
                         onShuffle = onShuffle,
@@ -205,22 +208,24 @@ internal fun ArtistRoom(
                         onLinks = onLinks,
                         onRefresh = onRefresh,
                         onOpenArtist = onOpenArtist,
-                        onToggleFilters = { showFilters = !showFilters },
                     )
                     ArtistWidgets(artist, onOpen, Modifier.padding(horizontal = ROOM_LANE_START), showBio = false) // fork:music - HTPC phase 8
-                    SimilarTasteStrip(artist, onOpenArtist, Modifier.padding(horizontal = ROOM_LANE_START)) // fork:music
                 }
-            }
 
-            if (!wide && dated.isNotEmpty()) {
-                ReleaseTimeline(dated, onOpen, onInfo, Modifier.padding(top = 24.dp).fillMaxWidth())
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 28.dp)) {
+                // From Similar Taste down: the releases on the left and, on a wide window, the timeline beside them from the top.
+                Row(Modifier.fillMaxWidth().padding(top = 28.dp)) {
                 Column(
-                    // The whole section, so opening the filter scrolls its top (header and panel) to the top of the window.
-                    Modifier.weight(1f).bringIntoViewRequester(releasesInView).padding(start = ROOM_LANE_START, end = if (wide) 16.dp else ROOM_LANE_START),
+                    Modifier.weight(1f).padding(start = ROOM_LANE_START, end = if (wide) 16.dp else ROOM_LANE_START),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
+                    SimilarTasteStrip( // fork:music
+                        artist,
+                        onOpenArtist,
+                        Modifier.onGloballyPositioned { similarBottomY = it.positionInRoot().y + it.size.height }.padding(bottom = 14.dp),
+                    )
+                    if (!wide && dated.isNotEmpty()) {
+                        ReleaseTimeline(dated, onOpen, onInfo, Modifier.padding(bottom = 14.dp).fillMaxWidth())
+                    }
                     Row(
                         Modifier.testTag("artistReleases"),
                         verticalAlignment = Alignment.Bottom,
@@ -234,7 +239,7 @@ internal fun ArtistRoom(
                             modifier = Modifier.padding(bottom = 4.dp),
                         )
                     }
-                    if (showFilters) FilterPanel(discography, filter, playableOnly, onPlayableOnly, onFilter)
+                    FilterPanel(discography, filter, playableOnly, onPlayableOnly, onFilter)
                     if (shown.isEmpty() && undated.isEmpty() && filter != ReleaseFilter.Demos) {
                         Text(
                             when {
@@ -269,7 +274,8 @@ internal fun ArtistRoom(
                     }
                 }
                 if (wide && dated.isNotEmpty()) {
-                    ReleaseTimeline(dated, onOpen, onInfo, Modifier.width(TIMELINE_WIDTH).padding(end = ROOM_LANE_START))
+                    ReleaseTimeline(dated, onOpen, onInfo, Modifier.width(timelineWidth).padding(end = TIMELINE_END_GAP))
+                }
                 }
             }
         }
@@ -291,7 +297,11 @@ private val ROOM_WIDE_FROM = 1100.dp
 private val ROOM_LANE_START = 64.dp
 private val ROOM_LANE_WIDTH = 620.dp
 
-private val TIMELINE_WIDTH = 340.dp
+/** The timeline column: this share of the window, within these bounds, and this close to the right edge. */
+private const val TIMELINE_SHARE = 0.32f
+private val TIMELINE_MIN_WIDTH = 400.dp
+private val TIMELINE_MAX_WIDTH = 600.dp
+private val TIMELINE_END_GAP = 24.dp
 
 /** How many of the newest releases get a palette worked out as the page opens. */
 private const val TIMELINE_PALETTE_LIMIT = 40
@@ -337,8 +347,36 @@ private fun RoomBackdrop(artist: LibraryArtist, modifier: Modifier) {
                 Brush.verticalGradient(0f to Color.Transparent, 0.42f to Color.Transparent, 0.72f to dark.copy(alpha = 0.72f), 1f to dark),
             ),
         )
+        // No wide picture: the portrait, large and round, centred where the picture would show through on the right.
+        val portrait = artist.art.thumb
+        if (portrait != null && (identity.hero == null || identity.hero.source == HeroSource.BlurredCover)) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                // Never drawn bigger than the picture is, so it stays sharp.
+                val sourceLimit = with(LocalDensity.current) { PORTRAIT_SOURCE_PX.toDp() }
+                val size = minOf(maxHeight * 0.55f, PORTRAIT_MAX, sourceLimit)
+                Row(Modifier.fillMaxSize()) {
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                        NuvioAsyncImage(
+                            model = enlargeYtThumbnail(portrait, PORTRAIT_SOURCE_PX) ?: portrait,
+                            contentDescription = artist.name,
+                            modifier = Modifier
+                                .size(size)
+                                .alpha(fade)
+                                .clip(CircleShape)
+                                .border(2.dp, NuvioGlass.EdgeColor, CircleShape),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
+
+/** The portrait fallback's largest size, and the pixel size asked of a resizable source. */
+private val PORTRAIT_MAX = 340.dp
+private const val PORTRAIT_SOURCE_PX = 800
 
 /** The heading block, centred in the lane like the details page's: logo, facts, stat icons, genres, actions. */
 @Composable
@@ -350,8 +388,6 @@ private fun RoomLane(
     notice: String?,
     saved: Boolean,
     refreshing: String?,
-    filtersOpen: Boolean,
-    filtered: Boolean,
     topLabel: String?,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
@@ -360,7 +396,6 @@ private fun RoomLane(
     onLinks: () -> Unit,
     onRefresh: () -> Unit,
     onOpenArtist: (String) -> Unit,
-    onToggleFilters: () -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Column(
@@ -420,7 +455,6 @@ private fun RoomLane(
                     onClick = { if (inLibrary) onRemove() else MusicLibraryRepository.add(artist.id) },
                 ),
                 linkCount.takeIf { it > 0 }?.let { DetailSecondaryAction("Links ($it)", Icons.Rounded.Link, onClick = onLinks) },
-                DetailSecondaryAction("Filter releases", Icons.Rounded.FilterList, isActive = filtersOpen || filtered, onClick = onToggleFilters),
                 if (saved) DetailSecondaryAction(refreshing ?: "Refresh", Icons.Rounded.Refresh, onClick = { if (refreshing == null) onRefresh() }) else null,
         )
         // The details page's round buttons, Play among them, each with its label on hover.
@@ -547,7 +581,7 @@ private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, 
 
 // endregion
 
-/** The one filter system: playable-only, plus the kind chips. Shown on demand so the room stays clean. */
+/** The one filter system: playable-only, plus the kind chips. Always shown, above the release grid. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterPanel(
