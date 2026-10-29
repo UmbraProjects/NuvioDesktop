@@ -5,6 +5,7 @@ import com.nuvio.app.features.music.Lyrics
 import com.nuvio.app.features.music.MusicAlbum
 import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.MusicArtist
+import com.nuvio.app.features.music.MusicTopSong
 import com.nuvio.app.features.music.MusicArtistSummary
 import com.nuvio.app.features.music.MusicCatalog
 import com.nuvio.app.features.music.MusicTrack
