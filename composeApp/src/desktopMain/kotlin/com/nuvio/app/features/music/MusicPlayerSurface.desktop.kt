@@ -125,7 +125,7 @@ actual fun MusicPlayerSurface(
         controller.attach(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl,
-            sourceHeaders = emptyMap(),
+            sourceHeaders = source.headers,
             playWhenReady = playWhenReady,
             initialPositionMs = startPositionMs,
             nvidiaRtxSuperResolutionEnabled = false,

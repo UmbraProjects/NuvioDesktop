@@ -290,6 +290,8 @@ val releaseAppVersionName = desktopReleaseVersionName
 val releaseAppVersionCode = desktopReleaseVersionCode
 val desktopReleasePackageVersion = jpackageCompatibleVersion(desktopReleaseVersionName)
 val fullCommonSourceDir = project.file("src/fullCommonMain/kotlin")
+// fork:innertubex — see settings.gradle.kts. Off by default: the resolver library comes from JitPack.
+val innerTubeXEnabled = providers.gradleProperty("nuvio.innertubex").map { it.equals("true", ignoreCase = true) }.getOrElse(false)
 val fullPluginSourceDir = fullCommonSourceDir.resolve("com/nuvio/app/features/plugins")
 val generatedRuntimeConfigDir = layout.buildDirectory.dir("generated/runtime-config/kotlin")
 val requestedGradleTasks = gradle.startParameter.taskNames.map { taskName ->
@@ -1701,7 +1703,18 @@ kotlin {
             // The album player resolves tracks through YouTube Music (MusicResolver, MusicMetadataClient),
             // which reaches into the trailer extractor above.
             kotlin.srcDir(fullCommonSourceDir.resolve("com/nuvio/app/features/music"))
+            if (innerTubeXEnabled) {
+                // The second-chance stream lookup for age-gated tracks (InnerTubeXFallback.kt). Found at
+                // runtime by name, so the app builds and runs the same without it.
+                kotlin.srcDir(project.file("src/desktopMain/innertubex/kotlin"))
+            }
             dependencies {
+                if (innerTubeXEnabled) {
+                    implementation("com.github.MetrolistGroup.innertubex:innertubex:v0.7.0")
+                    implementation("io.ktor:ktor-client-okhttp:${libs.versions.ktor.get()}")
+                    implementation("io.ktor:ktor-client-content-negotiation:${libs.versions.ktor.get()}")
+                    implementation("io.ktor:ktor-serialization-kotlinx-json:${libs.versions.ktor.get()}")
+                }
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.cio)

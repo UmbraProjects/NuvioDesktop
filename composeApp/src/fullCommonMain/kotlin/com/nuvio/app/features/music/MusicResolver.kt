@@ -73,7 +73,7 @@ object MusicResolver {
      */
     private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
         repeat(OPEN_ATTEMPTS) { attempt ->
-            val resolved = resolveSource(videoId) ?: return null
+            val resolved = resolveSource(videoId) ?: return fallbackSource(videoId, needsVideo)
             verifiedSource(resolved, needsVideo)?.let { return it }
             if (attempt < OPEN_ATTEMPTS - 1) {
                 log.w { "every stream for $videoId was refused; retrying with a fresh session" }
@@ -86,7 +86,26 @@ object MusicResolver {
                 }
             }
         }
-        return null
+        return fallbackSource(videoId, needsVideo)
+    }
+
+    /**
+     * fork:innertubex — the second chance, for a track the in-app extractor could not open (an age
+     * gate it cannot get past, typically). Audio only: the fallback resolver finds one audio stream,
+     * and a video-mode album already degrades to its audio with a lyric picture when no video opens.
+     * Null when the build has no fallback resolver (see [MusicStreamFallbacks]).
+     */
+    private suspend fun fallbackSource(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
+        if (needsVideo) return null
+        val fallback = MusicStreamFallbacks.active ?: return null
+        return try {
+            fallback.resolve(videoId)?.also { log.i { "$videoId opened through ${fallback.name}" } }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            log.w { "${fallback.name} could not open $videoId: ${error.message}" }
+            null
+        }
     }
 
     private const val OPEN_ATTEMPTS = 2
