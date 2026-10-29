@@ -2,7 +2,7 @@ package com.nuvio.app.features.youtubemusic
 
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -29,18 +29,26 @@ import kotlin.coroutines.coroutineContext
 /*
  * fork:ytmusic-login
  *
- * Signs in to YouTube Music by opening Google's real login page in a throwaway Edge / Chrome / Brave /
- * Chromium window and reading that window's cookies over the browser's DevTools port once it lands
- * on music.youtube.com signed in.
+ * Signs in to YouTube Music in two steps, so that Google never sees an automated browser:
+ *
+ *  1. Google's real login page opens in a throwaway Edge / Chrome / Brave / Chromium window with a
+ *     temporary profile and NO debugging port or automation flag. The user signs in (passkeys,
+ *     security keys and 2-step prompts all work) and closes the window.
+ *  2. The same profile is reopened headless with a debugging port, only to read its cookies, which
+ *     the browser decrypts itself, and is then deleted.
+ *
+ * Why two steps: a browser started with `--remote-debugging-port` is treated by Google as automated
+ * and the sign-in is refused with "This browser or app may not be secure". Keeping the port out of
+ * the visible window avoids that, and the cookies are persistent (SAPISID lasts a year or more) so
+ * they are still in the profile once the window is closed.
  *
  * Why not an embedded web view: Nuvio has no general web view component (Windows uses a private
  * WebView2 bridge for the player controls, macOS a WKWebView), and an embedded Chromium would add a
- * large dependency. A real browser is also what Google trusts most: passkeys, security keys and 2-step
- * prompts all work, and there is no "this browser may not be secure" block.
+ * large dependency.
  *
  * Why a temporary profile: the window starts with no cookies so the user picks the account, none of
  * their everyday browsing data is touched, and Chrome 136+ refuses a debugging port on the default
- * profile anyway. The profile is deleted when the window closes.
+ * profile anyway. The profile is deleted when the process ends.
  */
 internal object YouTubeMusicBrowserLogin {
     private val log = Logger.withTag("YouTubeMusicLogin")
@@ -49,75 +57,88 @@ internal object YouTubeMusicBrowserLogin {
     private const val LOGIN_URL =
         "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&prompt=select_account" +
             "&continue=https%3A%2F%2Fmusic.youtube.com%2F"
-    private const val MUSIC_ORIGIN = "https://music.youtube.com"
     private const val LOGIN_TIMEOUT_MS = 10 * 60_000L
     private const val DEVTOOLS_PORT_TIMEOUT_MS = 20_000L
     private const val POLL_MS = 1_000L
 
-    /** Lets the page finish setting its cookies after the SAPISID cookie first appears. */
-    private const val SETTLE_MS = 1_500L
+    /** How long the closed window's helper processes get to finish before the profile is reopened. */
+    private const val DESCENDANTS_EXIT_MS = 5_000L
 
     suspend fun run(): YouTubeMusicLoginOutcome {
         val browser = findBrowser() ?: return YouTubeMusicLoginOutcome.Failed(
             "No Edge, Chrome, Brave or Chromium was found. Install one to sign in to YouTube Music.",
         )
         val profileDir = Files.createTempDirectory("nuvio-ytmusic-login")
-        var process: Process? = null
-        var cdp: CdpConnection? = null
+        var window: Process? = null
         try {
-            process = ProcessBuilder(browserCommand(browser, profileDir))
+            // Step 1: the visible sign-in window, with nothing that marks it as automated.
+            window = ProcessBuilder(signInCommand(browser, profileDir))
                 .redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .start()
-
-            val endpoint = awaitDevToolsEndpoint(profileDir, process)
-                ?: return if (process.isAlive) {
-                    YouTubeMusicLoginOutcome.Failed("The browser did not open its control port.")
-                } else {
-                    YouTubeMusicLoginOutcome.Cancelled
-                }
-            cdp = CdpConnection.open(endpoint)
-
-            val deadline = System.currentTimeMillis() + LOGIN_TIMEOUT_MS
-            while (coroutineContext.isActive && System.currentTimeMillis() < deadline) {
-                if (!process.isAlive) return YouTubeMusicLoginOutcome.Cancelled
-                val header = runCatching { signedInCookieHeader(cdp) }.getOrNull()
-                if (header != null) {
-                    delay(SETTLE_MS)
-                    val settled = runCatching { signedInCookieHeader(cdp) }.getOrNull() ?: header
-                    return YouTubeMusicLoginOutcome.Success(settled)
-                }
-                delay(POLL_MS)
+            if (!awaitExit(window, LOGIN_TIMEOUT_MS)) {
+                return YouTubeMusicLoginOutcome.Failed("Sign-in timed out.")
             }
-            return YouTubeMusicLoginOutcome.Failed("Sign-in timed out.")
+            // Let the browser's helper processes finish writing the profile before it is reopened.
+            awaitDescendantsExit(window)
+
+            // Step 2: read what the window left in the profile.
+            return readSession(browser, profileDir)
         } finally {
-            runCatching { cdp?.call("Browser.close") }
-            cdp?.close()
-            process?.let { p ->
-                if (!p.waitFor(3, TimeUnit.SECONDS)) {
-                    p.descendants().forEach { it.destroyForcibly() }
-                    p.destroyForcibly()
-                }
-            }
+            window?.let { stop(it) }
             deleteRecursivelyQuietly(profileDir)
         }
     }
 
-    /**
-     * The cookie header once a tab is on music.youtube.com and the browser holds a SAPISID cookie
-     * (which only exists when signed in); null otherwise.
-     */
-    private fun signedInCookieHeader(cdp: CdpConnection): String? {
-        val targets = cdp.call("Target.getTargets")["targetInfos"]?.jsonArray ?: return null
-        val onMusic = targets.any { target ->
-            val info = target.jsonObject
-            info["type"]?.jsonPrimitive?.contentOrNull == "page" &&
-                info["url"]?.jsonPrimitive?.contentOrNull.orEmpty().startsWith(MUSIC_ORIGIN)
+    /** Reopens [profileDir] headless, only to read its YouTube cookies. */
+    private suspend fun readSession(browser: String, profileDir: Path): YouTubeMusicLoginOutcome {
+        var reader: Process? = null
+        var cdp: CdpConnection? = null
+        try {
+            reader = ProcessBuilder(cookieReadCommand(browser, profileDir))
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .start()
+            val endpoint = awaitDevToolsEndpoint(profileDir, reader)
+                ?: return YouTubeMusicLoginOutcome.Failed("The browser could not be reopened to read the session.")
+            cdp = CdpConnection.open(endpoint)
+            val cookies = cdp.call("Storage.getCookies")["cookies"]?.jsonArray
+            val header = cookies?.let(::buildCookieHeader)?.takeIf { sapisidFrom(it) != null }
+                ?: return YouTubeMusicLoginOutcome.Failed(
+                    "No signed-in YouTube session was found. Sign in, wait for YouTube Music to load, then close the window.",
+                )
+            return YouTubeMusicLoginOutcome.Success(header)
+        } finally {
+            runCatching { cdp?.call("Browser.close") }
+            cdp?.close()
+            reader?.let { stop(it) }
         }
-        if (!onMusic) return null
-        val cookies = cdp.call("Storage.getCookies")["cookies"]?.jsonArray ?: return null
-        val header = buildCookieHeader(cookies)
-        return header.takeIf { sapisidFrom(it) != null }
+    }
+
+    /** True once [process] has exited; false on timeout. Cancelling the caller throws. */
+    private suspend fun awaitExit(process: Process, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            coroutineContext.ensureActive()
+            if (!process.isAlive) return true
+            delay(POLL_MS)
+        }
+        coroutineContext.ensureActive()
+        return false
+    }
+
+    private suspend fun awaitDescendantsExit(process: Process) {
+        val deadline = System.currentTimeMillis() + DESCENDANTS_EXIT_MS
+        while (System.currentTimeMillis() < deadline && process.descendants().anyMatch { it.isAlive }) {
+            delay(200)
+        }
+    }
+
+    private fun stop(process: Process) {
+        if (!process.waitFor(3, TimeUnit.SECONDS)) {
+            process.descendants().forEach { it.destroyForcibly() }
+            process.destroyForcibly()
+        }
     }
 
     private fun awaitDevToolsEndpoint(profileDir: Path, process: Process): String? {
@@ -133,16 +154,28 @@ internal object YouTubeMusicBrowserLogin {
         return null
     }
 
-    internal fun browserCommand(browser: String, profileDir: Path): List<String> = listOf(
+    /** The visible window: no debugging port, no automation flag. */
+    internal fun signInCommand(browser: String, profileDir: Path): List<String> = listOf(
         browser,
         "--user-data-dir=$profileDir",
-        // Port 0 = pick a free one; it is written to <profile>/DevToolsActivePort.
-        "--remote-debugging-port=0",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-sync",
         "--window-size=520,780",
         "--app=$LOGIN_URL",
+    )
+
+    /** The same profile, headless, with a debugging port, used only to read cookies. */
+    internal fun cookieReadCommand(browser: String, profileDir: Path): List<String> = listOf(
+        browser,
+        "--user-data-dir=$profileDir",
+        // Port 0 = pick a free one; it is written to <profile>/DevToolsActivePort.
+        "--remote-debugging-port=0",
+        "--headless=new",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "about:blank",
     )
 
     // ---- Browser discovery ---------------------------------------------------------------------
