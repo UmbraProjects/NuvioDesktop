@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -262,7 +265,8 @@ private fun ShelfCardRow(
     val catalog = remember { defaultMusicCatalog() }
     // Air between the cards and the count under them, so the line reads as the shelf's heading, not a card caption.
     Column(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        // One height for every card: each fills the row, which is as tall as the tallest.
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             cards.forEach { card ->
                 val source = remember { MutableInteractionSource() }
                 val focused by source.collectIsFocusedAsState()
@@ -271,6 +275,7 @@ private fun ShelfCardRow(
                 Row(
                     Modifier
                         .weight(1f)
+                        .fillMaxHeight()
                         .musicGlass(shape, raised = hovered || focused, keyFocused = focused)
                         .hoverable(source)
                         .focusable(interactionSource = source)
@@ -291,7 +296,15 @@ private fun ShelfCardRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    card.release?.let { ReleaseCover(it, Modifier.size(96.dp)) }
+                    // A card with no release (the ladder) gets a tile of the cover's size, so its text lines up with the others.
+                    val release = card.release
+                    if (release != null) {
+                        ReleaseCover(release, Modifier.size(96.dp))
+                    } else {
+                        Box(Modifier.size(96.dp).musicGlass(RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.Explore, contentDescription = null, tint = colors.accent, modifier = Modifier.size(40.dp))
+                        }
+                    }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(card.label.uppercase(), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(card.title, fontSize = 28.sp, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
