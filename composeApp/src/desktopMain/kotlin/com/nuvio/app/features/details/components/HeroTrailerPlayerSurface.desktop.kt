@@ -8,6 +8,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -20,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
+import com.nuvio.app.features.home.components.forbiddenStreamRetryDelayMs
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerHeroTrailerState
@@ -28,6 +30,7 @@ import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import com.nuvio.app.features.player.desktop.TRAILER_AUDIO_NORMALIZATION_FILTER
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val detailHeroTrailerSurfaceLog = Logger.withTag("DetailHeroTrailerSurface")
 
@@ -155,7 +158,11 @@ actual fun HeroTrailerPlayerSurface(
         }
     }
 
-    LaunchedEffect(controller, sourceUrl) {
+    // Re-opens of this URL after a googlevideo 403 (see forbiddenStreamRetryDelayMs).
+    var forbiddenRetries by remember(sourceUrl) { mutableIntStateOf(0) }
+
+    LaunchedEffect(controller, sourceUrl, forbiddenRetries) {
+        val attachScope = this
         playbackRevealReady = false
         controller.updateControls(
             PlayerControlsState(
@@ -184,13 +191,22 @@ actual fun HeroTrailerPlayerSurface(
             animeSvpEnabled = false,
             onError = { message ->
                 detailHeroTrailerSurfaceLog.w { "playback error: $message" }
-                latestOnError.value()
+                val retryInMs = forbiddenStreamRetryDelayMs(message, forbiddenRetries)
+                if (retryInMs != null) {
+                    detailHeroTrailerSurfaceLog.i { "re-opening in ${retryInMs}ms (retry ${forbiddenRetries + 1})" }
+                    attachScope.launch {
+                        delay(retryInMs)
+                        forbiddenRetries++
+                    }
+                } else {
+                    latestOnError.value()
+                }
             },
             controlsPageUrlSuffix = "?heroTrailer=1",
         )
     }
 
-    LaunchedEffect(controller, sourceUrl, muted, effectiveVolume) {
+    LaunchedEffect(controller, sourceUrl, forbiddenRetries, muted, effectiveVolume) {
         controller.updateControls(
             PlayerControlsState(
                 isLoading = true,
@@ -208,7 +224,7 @@ actual fun HeroTrailerPlayerSurface(
         controller.setHeroTrailerVolume(effectiveVolume)
     }
 
-    LaunchedEffect(controller, sourceUrl) {
+    LaunchedEffect(controller, sourceUrl, forbiddenRetries) {
         // Fill the hero and trim bars baked into the video, as on Home (HomeHeroTrailerSurface).
         controller.setResizeMode(com.nuvio.app.features.player.PlayerResizeMode.AutoCrop, quickAutoCrop = true)
         // Trailer loudness is wildly inconsistent between uploads; smooth it out in real time.

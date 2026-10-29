@@ -28,6 +28,18 @@ internal const val TRAILER_STALL_MS = 10_000L
 internal const val TRAILER_START_STALL_MS = 20_000L
 
 /**
+ * fork:trailer-403 - since 2026-10-28 googlevideo answers 403 to some freshly issued stream URLs
+ * that open fine a little later: a music track's direct URL played on its retry after the 20 s
+ * HLS detour, while detail trailers re-extracted half a second apart got 403 both times. So a 403
+ * re-opens the same URL after a pause, before the caller's own fallback runs.
+ */
+private val FORBIDDEN_STREAM_RETRY_DELAYS_MS = longArrayOf(1_500L, 4_000L)
+
+/** The wait before re-opening after [message], or null when it is not a 403 or the retries are spent. */
+internal fun forbiddenStreamRetryDelayMs(message: String?, retriesSoFar: Int): Long? =
+    if (message?.contains("403") == true) FORBIDDEN_STREAM_RETRY_DELAYS_MS.getOrNull(retriesSoFar) else null
+
+/**
  * mpv init options for a hero trailer / pre-show item. Volume, mute and the loudness filter go in
  * as init options so the very first audio frame already has them. As runtime properties they
  * replay after create(), which rebuilds the audio chain once playback has begun (an audible dip

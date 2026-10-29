@@ -8,6 +8,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.home.components.TrailerStallWatchdog
+import com.nuvio.app.features.home.components.forbiddenStreamRetryDelayMs
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerHeroTrailerState
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
@@ -30,6 +32,7 @@ import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val log = Logger.withTag("MusicPlayerSurface")
 
@@ -109,7 +112,11 @@ actual fun MusicPlayerSurface(
         onDispose { DesktopLyricSync.detach(loadId) }
     }
 
-    LaunchedEffect(controller, loadId) {
+    // Re-opens of this load's URL after a googlevideo 403 (see forbiddenStreamRetryDelayMs).
+    var forbiddenRetries by remember(loadId) { mutableIntStateOf(0) }
+
+    LaunchedEffect(controller, loadId, forbiddenRetries) {
+        val attachScope = this
         revealed = false
         controller.updateControls(
             PlayerControlsState(
@@ -134,7 +141,16 @@ actual fun MusicPlayerSurface(
             animeSvpEnabled = false,
             onError = { message ->
                 log.w { "playback error on load $loadId: $message" }
-                latestOnError.value(loadId)
+                val retryInMs = forbiddenStreamRetryDelayMs(message, forbiddenRetries)
+                if (retryInMs != null) {
+                    log.i { "load $loadId: re-opening in ${retryInMs}ms (retry ${forbiddenRetries + 1})" }
+                    attachScope.launch {
+                        delay(retryInMs)
+                        forbiddenRetries++
+                    }
+                } else {
+                    latestOnError.value(loadId)
+                }
             },
             controlsPageUrlSuffix = "?heroTrailer=1&chromeless=1",
             initMpvOptions = listOf("volume=${volume.coerceIn(0, 100)}"),
@@ -147,7 +163,7 @@ actual fun MusicPlayerSurface(
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")
     }
 
-    LaunchedEffect(controller, loadId, volume) {
+    LaunchedEffect(controller, loadId, forbiddenRetries, volume) {
         controller.setMpvProperty("volume", volume.coerceIn(0, 100).toString())
         controller.setHeroTrailerVolume(volume.coerceIn(0, 100))
     }
@@ -167,7 +183,7 @@ actual fun MusicPlayerSurface(
 
     // playWhenReady is read through this so a pause does not restart the poll (and the watchdog).
     val latestPlayWhenReady = rememberUpdatedState(playWhenReady)
-    LaunchedEffect(controller, loadId) {
+    LaunchedEffect(controller, loadId, forbiddenRetries) {
         var endedReported = false
         var readyReported = false
         // A googlevideo stream can hang "reconnecting" with no error and no end of file, which held

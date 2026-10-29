@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -28,6 +29,7 @@ import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val trailerSurfaceLog = Logger.withTag("HomeHeroTrailerSurface")
 
@@ -179,7 +181,10 @@ actual fun HomeHeroTrailerSurface(
         )
     }
 
-    LaunchedEffect(controller, sourceUrl, backgroundHex, normalizeAudio) { // fork:preshow
+    var forbiddenRetries by remember(sourceUrl) { mutableIntStateOf(0) } // fork:trailer-403
+
+    LaunchedEffect(controller, sourceUrl, forbiddenRetries, backgroundHex, normalizeAudio) { // fork:preshow fork:trailer-403
+        val attachScope = this // fork:trailer-403
         playbackRevealReady = false
         // Push hero-trailer overlay state first so attach() forwards it to the controls page.
         controller.updateControls(
@@ -214,7 +219,17 @@ actual fun HomeHeroTrailerSurface(
             animeSvpEnabled = false,
             onError = { message ->
                 trailerSurfaceLog.w { "playback error: $message" }
-                latestOnError.value()
+                // fork:trailer-403 - a googlevideo 403 re-opens the same URL after a pause first.
+                val retryInMs = forbiddenStreamRetryDelayMs(message, forbiddenRetries)
+                if (retryInMs != null) {
+                    trailerSurfaceLog.i { "re-opening in ${retryInMs}ms (retry ${forbiddenRetries + 1})" }
+                    attachScope.launch {
+                        delay(retryInMs)
+                        forbiddenRetries++
+                    }
+                } else {
+                    latestOnError.value()
+                }
             },
             // Tells the controls page it is a passive hero surface from the very first script
             // run, so it never grabs keyboard focus (which would break TV navigation).
@@ -224,7 +239,7 @@ actual fun HomeHeroTrailerSurface(
     }
 
     // mpv "mute"/"volume" properties queue until the handle exists, so they survive the async attach.
-    LaunchedEffect(controller, sourceUrl, effectiveMuted, effectiveVolume) {
+    LaunchedEffect(controller, sourceUrl, forbiddenRetries, effectiveMuted, effectiveVolume) { // fork:trailer-403
         // fork:preshow - the pre-show level never changes after attach, and the init options set it.
         if (preshow) return@LaunchedEffect
         controller.updateControls(
@@ -257,7 +272,7 @@ actual fun HomeHeroTrailerSurface(
     // player's own bar detector, on upstream's quick cadence (a frame every 400 ms, settled after
     // four agreeing ones) rather than the film's five seconds of learning. The mode is re-applied
     // when the handle attaches.
-    LaunchedEffect(controller, sourceUrl) {
+    LaunchedEffect(controller, sourceUrl, forbiddenRetries) { // fork:trailer-403
         controller.setResizeMode(com.nuvio.app.features.player.PlayerResizeMode.AutoCrop, quickAutoCrop = true)
         // fork:preshow - the loudness filter is an init option on attach (heroTrailerAudioInitOptions),
         // not set here: changing `af` on a live stream rebuilds the audio chain.
@@ -267,7 +282,7 @@ actual fun HomeHeroTrailerSurface(
         if (playWhenReady) controller.play() else controller.pause()
     }
 
-    LaunchedEffect(controller, sourceUrl, playWhenReady) {
+    LaunchedEffect(controller, sourceUrl, forbiddenRetries, playWhenReady) { // fork:trailer-403
         var endedReported = false
         var readyReported = false
         val stallWatchdog = TrailerStallWatchdog() // fork:preshow
