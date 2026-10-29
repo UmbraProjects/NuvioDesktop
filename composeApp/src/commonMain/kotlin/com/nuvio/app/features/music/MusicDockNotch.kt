@@ -90,7 +90,7 @@ internal fun MusicDockNotch(
             open = false
         }
     }
-    val shape = RoundedCornerShape(if (open) 22.dp else 18.dp) // the folded notch is 36dp tall: a full pill
+    val shape = RoundedCornerShape(if (open) 22.dp else 20.dp) // the folded notch is 40dp tall: a full pill
     val colors = MaterialTheme.nuvio.colors
     Box(
         modifier
@@ -117,14 +117,15 @@ private fun Notch(state: MusicPlayerState, onRestore: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     Row(
         Modifier
-            .height(36.dp)
+            .height(40.dp)
             .widthIn(min = 180.dp, max = 320.dp)
             .clickable(onClick = onRestore)
-            .padding(start = 6.dp, end = 12.dp),
+            // The round cover sits inside the pill's curve with the same gap all round, clear of the edge.
+            .padding(start = 7.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Cover(state.album?.thumbnailUrl, size = 24)
+        Cover(state.album?.thumbnailUrl, size = 26, round = true)
         Text(
             state.track?.title.orEmpty().ifBlank { "Now playing" },
             style = MaterialTheme.typography.labelLarge,
@@ -142,12 +143,43 @@ private fun Notch(state: MusicPlayerState, onRestore: () -> Unit) {
     }
 }
 
-/** Open: the track, the time, the controls and what is coming up. */
+/**
+ * Open: what is coming up on top (the panel grows upwards from the notch, so the list sits above
+ * it), then the track, the time and the controls at the bottom, where the notch was.
+ */
 @Composable
 private fun DockPanel(state: MusicPlayerState, player: MusicPlayer, onRestore: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val upNext = remember(state.track, state.trackIndex, state.shuffled) { player.upNext(UP_NEXT_COUNT) }
     Column(Modifier.width(440.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Up next", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+        if (upNext.isEmpty()) {
+            Text(
+                if (state.hasNext) "The next album starts after this one" else "Nothing after this track",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+            )
+        }
+        upNext.forEach { track ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    formatMusicTime(track.durationSeconds * 1000L),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
+            }
+        }
+        Box(Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(NuvioGlass.EdgeColor))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Cover(state.album?.thumbnailUrl, size = 56)
             Column(Modifier.weight(1f)) {
@@ -186,36 +218,14 @@ private fun DockPanel(state: MusicPlayerState, player: MusicPlayer, onRestore: (
         Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.14f))) {
             Box(Modifier.fillMaxWidth(fraction).height(3.dp).background(colors.accent))
         }
-        if (upNext.isNotEmpty()) {
-            Text("Up next", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
-            upNext.forEach { track ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        track.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        formatMusicTime(track.durationSeconds * 1000L),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.textMuted,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
     }
 }
 
 @Composable
-private fun Cover(url: String?, size: Int) {
+private fun Cover(url: String?, size: Int, round: Boolean = false) {
     val colors = MaterialTheme.nuvio.colors
     Box(
-        Modifier.size(size.dp).clip(RoundedCornerShape((size / 5).dp)).background(colors.surfaceElevated),
+        Modifier.size(size.dp).clip(if (round) CircleShape else RoundedCornerShape((size / 5).dp)).background(colors.surfaceElevated),
         contentAlignment = Alignment.Center,
     ) {
         if (url != null) {

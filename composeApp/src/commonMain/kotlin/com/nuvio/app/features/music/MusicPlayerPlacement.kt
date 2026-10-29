@@ -1,5 +1,16 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.streams.streamPickerResizeCursor
+import com.nuvio.app.features.streams.StreamPickerResizeEdge
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -13,7 +24,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.nuvio.app.features.music.library.musicGlass
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 
@@ -114,10 +124,14 @@ internal fun Modifier.musicPlayerDrag(
         }
 }
 
+/** Which side of a player a [MusicResizeGrip] sits on. */
+internal enum class MusicGripEdge { Left, Right }
+
 /**
- * The grip on a player's right edge: dragging it sideways makes the player wider or narrower. With
- * [centred] (the bar, which sits centred) the left edge is held still by shifting the offset by
- * half the change, so the grip stays under the pointer.
+ * A grip on a player's left or right edge: a full-height strip that shows the sideways resize cursor,
+ * with a visible handle in the middle that brightens on hover. Dragging it makes the player wider
+ * or narrower while the opposite edge stays where it is. [centred] says the player sits centred
+ * (the bar), so a width change has to be offset by half of it to hold that edge still.
  */
 @Composable
 internal fun MusicResizeGrip(
@@ -127,28 +141,55 @@ internal fun MusicResizeGrip(
     maxWidth: Dp,
     centred: Boolean,
     modifier: Modifier = Modifier,
+    edge: MusicGripEdge = MusicGripEdge.Right,
 ) {
     val density = LocalDensity.current
     val current = androidx.compose.runtime.rememberUpdatedState(currentWidth)
     val bounds = androidx.compose.runtime.rememberUpdatedState(minWidth to maxWidth)
+    val source = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    var dragging by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Box(
         modifier
-            .padding(end = 4.dp)
-            .width(6.dp)
-            .height(40.dp)
-            .musicGlass(RoundedCornerShape(3.dp))
-            .pointerInput(placement, centred) {
-                detectDragGestures { change, drag ->
+            .width(18.dp)
+            .fillMaxHeight()
+            .hoverable(source)
+            .pointerHoverIcon(streamPickerResizeCursor(StreamPickerResizeEdge.Right))
+            .pointerInput(placement, centred, edge) {
+                detectDragGestures(
+                    onDragStart = { dragging = true },
+                    onDragEnd = { dragging = false },
+                    onDragCancel = { dragging = false },
+                ) { change, drag ->
                     change.consume()
                     val d = with(density) { drag.x.toDp() }
                     val (least, most) = bounds.value
                     placement.update { p ->
                         val before = p.width ?: current.value
-                        val width = (before + d).coerceIn(least, maxOf(least, most))
+                        val grow = if (edge == MusicGripEdge.Right) d else -d
+                        val width = (before + grow).coerceIn(least, maxOf(least, most))
                         val applied = width - before
-                        p.copy(width = width, dx = if (centred) p.dx + applied / 2 else p.dx)
+                        // Hold the opposite edge still.
+                        val shift = when {
+                            edge == MusicGripEdge.Right && centred -> applied / 2
+                            edge == MusicGripEdge.Right -> 0.dp
+                            centred -> -applied / 2
+                            else -> -applied
+                        }
+                        p.copy(width = width, dx = p.dx + shift)
                     }
                 }
             },
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .width(4.dp)
+                .height(36.dp)
+                .background(
+                    Color.White.copy(alpha = if (hovered || dragging) 0.55f else 0.22f),
+                    RoundedCornerShape(2.dp),
+                ),
+        )
+    }
 }

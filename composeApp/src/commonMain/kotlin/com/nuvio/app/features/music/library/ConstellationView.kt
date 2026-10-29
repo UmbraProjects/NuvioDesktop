@@ -1,5 +1,10 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.NuvioGlass
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.Canvas
@@ -694,39 +699,61 @@ private fun LegendMark(glyph: LegendGlyph) {
     }
 }
 
-/** Artists with no genres or tags yet: they have no place on the map until the enricher fills those in. */
+/**
+ * Artists with no genres or tags yet: they have no place on the map until those arrive. Just their
+ * portraits, wrapping so a long list still fits; clicking one fetches its tags again (a spinner
+ * shows while it works) and the name shows on hover.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) -> Unit, onFetchTags: (String) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
-    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    Column(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         Text(
-            "NOT PLACED YET · ${artists.size}",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.accent,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        Text(
-            "No genres or tags yet. They join the map once their tags arrive.",
+            "Click an artist's portrait to add them to the map",
             style = MaterialTheme.typography.bodySmall,
-            color = colors.textMuted,
-            modifier = Modifier.padding(horizontal = 16.dp),
+            color = colors.textSecondary,
         )
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(artists, key = { it.id }) { artist ->
-                Column(
-                    Modifier.width(240.dp).musicGlass(RoundedCornerShape(14.dp)).padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        artist.name,
-                        fontSize = 24.sp,
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onArtistClick(artist.id) },
-                    )
-                    BigChip("Fetch tags", selected = false, onClick = { onFetchTags(artist.id) })
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            artists.forEach { artist ->
+                val source = remember { MutableInteractionSource() }
+                val hovered by source.collectIsHoveredAsState()
+                val focused by source.collectIsFocusedAsState()
+                val working = state.working[artist.id] != null
+                Box(contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape)
+                            .hoverable(source)
+                            .focusable(interactionSource = source)
+                            .clickable(enabled = !working, interactionSource = source, indication = null) { onFetchTags(artist.id) },
+                    ) {
+                        MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true)
+                        if (working) {
+                            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(Modifier.size(24.dp), color = colors.accent, strokeWidth = 2.dp)
+                            }
+                        }
+                    }
+                    if (hovered || focused) {
+                        Text(
+                            artist.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .offset(y = 14.dp)
+                                .musicGlass(RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
                 }
             }
         }

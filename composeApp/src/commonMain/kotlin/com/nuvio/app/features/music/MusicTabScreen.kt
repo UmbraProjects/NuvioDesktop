@@ -1,5 +1,14 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.shadow
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Refresh
@@ -46,7 +55,6 @@ import com.nuvio.app.features.music.library.LadderProgressStore // fork:music
 import com.nuvio.app.features.music.library.continueCards // fork:music
 import com.nuvio.app.features.music.library.genreTiles // fork:music
 import com.nuvio.app.features.music.library.ladderStarters // fork:music
-import com.nuvio.app.features.music.library.recentChips // fork:music
 import com.nuvio.app.features.music.library.startIsEmpty // fork:music
 import com.nuvio.app.features.music.library.startArt // fork:music
 import com.nuvio.app.features.music.library.MusicSearchHistory
@@ -208,6 +216,11 @@ fun MusicTabScreen(
                     placeholder = "Search albums and artists",
                     leadingIcon = Icons.Rounded.Search,
                     modifier = Modifier.weight(1f),
+                    suggestions = MusicSearchHistory.recent.collectAsState().value.take(MUSIC_RECENT_SHOWN),
+                    onSuggestion = {
+                        query = it
+                        section = MusicSection.Search
+                    },
                 ) {
                     val library = section == MusicSection.Library
                     MusicFieldDivider()
@@ -308,7 +321,8 @@ fun MusicTabScreen(
         // fork:music - before anything is typed, the start screen fills the blank space (it scrolls itself)
         if (results is MusicSearchResults.Idle) {
             val libraryArtists = MusicLibraryRepository.state.collectAsState().value.artists
-            val recent = recentChips(MusicSearchHistory.recent.collectAsState().value)
+            // Recent searches live in the search box's own panel now, not as chips on this page.
+            val recent = emptyList<String>()
             val starters = remember(libraryArtists) { ladderStarters(libraryArtists) }
             val tiles = remember(libraryArtists) { genreTiles(libraryArtists) }
             val continues = remember(libraryArtists) { continueCards(LadderProgressStore.resumable()) }
@@ -343,6 +357,9 @@ fun MusicTabScreen(
     }
 }
 
+/** How many recent searches the search box offers. */
+private const val MUSIC_RECENT_SHOWN = 6
+
 /** The search header is a centred column this wide at most; the grid below gets the room. */
 private val MUSIC_HEADER_MAX_WIDTH = 720.dp
 
@@ -362,6 +379,9 @@ private fun MusicGlassField(
     placeholder: String,
     leadingIcon: ImageVector,
     modifier: Modifier = Modifier,
+    /** Recent searches, offered in a panel under the empty box while it has focus (like the top bar's search). */
+    suggestions: List<String> = emptyList(),
+    onSuggestion: (String) -> Unit = {},
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val query = value
@@ -370,11 +390,16 @@ private fun MusicGlassField(
     var focused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val shape = NuvioGlass.Shape
+    var fieldWidthPx by remember { mutableIntStateOf(0) }
+    var picked by remember(suggestions) { mutableIntStateOf(-1) }
+    val showSuggestions = focused && query.isEmpty() && suggestions.isNotEmpty()
+    Box(modifier) {
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
+            .onSizeChanged { fieldWidthPx = it.width }
             .height(44.dp)
             .ditheredBackground(NuvioGlass.Fill, shape)
             .border(
@@ -387,6 +412,24 @@ private fun MusicGlassField(
             // Escape clears the query and lets go of the field; both halves of the key are eaten so
             // the screen's own Escape (back) doesn't fire on the same press.
             .onPreviewKeyEvent { event ->
+                // Up and Down walk the recent searches, Enter picks the highlighted one.
+                if (showSuggestions && event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.DirectionDown -> {
+                            picked = (picked + 1).coerceAtMost(suggestions.lastIndex)
+                            return@onPreviewKeyEvent true
+                        }
+                        Key.DirectionUp -> {
+                            picked = (picked - 1).coerceAtLeast(-1)
+                            return@onPreviewKeyEvent true
+                        }
+                        Key.Enter, Key.NumPadEnter -> if (picked >= 0) {
+                            onSuggestion(suggestions[picked])
+                            return@onPreviewKeyEvent true
+                        }
+                        else -> Unit
+                    }
+                }
                 if (event.key != Key.Escape) return@onPreviewKeyEvent false
                 if (event.type == KeyEventType.KeyUp) {
                     onQueryChange("")
@@ -428,6 +471,58 @@ private fun MusicGlassField(
             }
         },
     )
+    if (showSuggestions) {
+        val density = LocalDensity.current
+        Popup(
+            alignment = Alignment.TopStart,
+            offset = IntOffset(0, with(density) { (44.dp + 6.dp).roundToPx() }),
+            // The box keeps focus (and the typing) while the panel is open.
+            properties = PopupProperties(focusable = false),
+        ) {
+            MusicRecentPanel(
+                items = suggestions,
+                picked = picked,
+                onPick = onSuggestion,
+                modifier = Modifier.width(with(density) { fieldWidthPx.toDp() }),
+            )
+        }
+    }
+    }
+}
+
+/** The recent searches under the search box: the settings glass, one row each with a clock. */
+@Composable
+private fun MusicRecentPanel(items: List<String>, picked: Int, onPick: (String) -> Unit, modifier: Modifier = Modifier) {
+    val tokens = MaterialTheme.nuvio
+    val shape = NuvioGlass.Shape
+    Column(
+        modifier
+            .shadow(12.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f))
+            .clip(shape)
+            .background(NuvioGlass.night(tokens.colors.background, tokens.colors.accent))
+            .musicGlass(shape)
+            .padding(6.dp),
+    ) {
+        items.forEachIndexed { index, text ->
+            val source = remember { MutableInteractionSource() }
+            val hovered by source.collectIsHoveredAsState()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (hovered || index == picked) Color.White.copy(alpha = 0.07f) else Color.Transparent)
+                    .hoverable(source)
+                    .clickable(interactionSource = source, indication = null) { onPick(text) }
+                    .padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(Icons.Rounded.History, contentDescription = null, tint = tokens.colors.textMuted, modifier = Modifier.size(18.dp))
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = tokens.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
 }
 
 @Composable

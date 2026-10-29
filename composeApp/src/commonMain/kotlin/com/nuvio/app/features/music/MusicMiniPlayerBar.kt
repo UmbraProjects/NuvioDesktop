@@ -341,6 +341,15 @@ fun MusicMiniPlayerBar(
                     centred = true,
                     modifier = Modifier.align(Alignment.CenterEnd),
                 )
+                MusicResizeGrip(
+                    placement = MusicPlayback.barPlacement,
+                    currentWidth = frame.width,
+                    minWidth = MusicBarMinWidth,
+                    maxWidth = (areaWidth - musicBarSideMargin(areaWidth) * 2).coerceAtLeast(MusicBarMinWidth),
+                    centred = true,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    edge = MusicGripEdge.Left,
+                )
             }
         }
     }

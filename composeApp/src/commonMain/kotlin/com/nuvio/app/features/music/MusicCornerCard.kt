@@ -295,6 +295,15 @@ internal fun MusicCornerCard(
                     centred = false,
                     modifier = Modifier.align(Alignment.CenterEnd),
                 )
+                MusicResizeGrip(
+                    placement = MusicPlayback.cardPlacement,
+                    currentWidth = frame.width,
+                    minWidth = MusicCornerMinWidth,
+                    maxWidth = minOf(MusicCornerMaxWidth, areaWidth),
+                    centred = false,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    edge = MusicGripEdge.Left,
+                )
             }
         }
     }
