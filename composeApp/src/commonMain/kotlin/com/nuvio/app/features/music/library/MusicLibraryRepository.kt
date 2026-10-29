@@ -35,6 +35,8 @@ data class MusicLibrarySettings(
     val autoWhereNext: Boolean = true,
     /** The Music tab in the navigation bar. Off hides it everywhere; the library and these settings are kept. */
     val tabEnabled: Boolean = true,
+    /** A free Last.fm API key. Set, Last.fm supplies artist tags and ladder candidates, ahead of MusicBrainz. */
+    val lastFmApiKey: String = "",
 )
 
 /** What is happening to one artist while it is added or refreshed. */

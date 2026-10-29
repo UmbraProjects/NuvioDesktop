@@ -13,6 +13,8 @@ import nuvio.composeapp.generated.resources.settings_music_audiodb_key_descripti
 import nuvio.composeapp.generated.resources.settings_music_fanart_key
 import nuvio.composeapp.generated.resources.settings_music_fanart_key_description
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive
+import nuvio.composeapp.generated.resources.settings_music_lastfm_key
+import nuvio.composeapp.generated.resources.settings_music_lastfm_key_description
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
@@ -93,6 +95,17 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     secret = true,
                     summarizeAsConfigured = true,
                     onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(audioDbKey = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsTextInputRow(
+                    title = stringResource(Res.string.settings_music_lastfm_key),
+                    description = stringResource(Res.string.settings_music_lastfm_key_description),
+                    value = settings.lastFmApiKey,
+                    placeholder = "Optional",
+                    isTablet = isTablet,
+                    secret = true,
+                    summarizeAsConfigured = true,
+                    onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(lastFmApiKey = it)) },
                 )
                 SettingsGroupDivider(isTablet)
                 SettingsSwitchRow(

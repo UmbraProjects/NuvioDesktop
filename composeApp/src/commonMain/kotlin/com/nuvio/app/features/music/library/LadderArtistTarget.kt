@@ -161,10 +161,10 @@ internal object LadderArtistTargets {
             relatedArtistTags(
                 artist,
                 related = { name -> DeezerClient.relatedByName(name)?.map { it.name } },
-                tagged = { name -> MusicBrainzClient.searchArtistWithTags(name) },
+                tagged = { name -> MusicTagSource.searchArtistWithTags(name) },
             )
         },
-        fetch = { name -> MusicBrainzClient.searchArtistWithTags(name) },
+        fetch = { name -> MusicTagSource.searchArtistWithTags(name) },
     )
 
     /** Resolves [query] to an artist, fetches the genre's candidates (cached) and builds the ladder into the artist. */

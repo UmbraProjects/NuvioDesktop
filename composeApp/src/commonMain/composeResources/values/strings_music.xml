@@ -9,6 +9,8 @@
     <string name="settings_music_show_tab_description">The Music tab in the navigation bar. Turning it off hides the tab and stops the player; your library and settings are kept.</string>
     <string name="settings_music_fanart_key">Fanart.tv API key</string>
     <string name="settings_music_fanart_key_description">Adds HD logos, banners, backgrounds and CD art. A free personal key from fanart.tv (Account, Your API keys). Applies the next time an artist is added or refreshed.</string>
+    <string name="settings_music_lastfm_key">Last.fm API key</string>
+    <string name="settings_music_lastfm_key_description">Artist tags and ladder suggestions from Last.fm instead of MusicBrainz, which is often slow or unreachable. A free key from last.fm/api/account/create. MusicBrainz is still used when Last.fm has no answer.</string>
     <string name="settings_music_audiodb_key">TheAudioDB API key</string>
     <string name="settings_music_audiodb_key_description">Biographies, logos and backgrounds. Without a key the shared test key is used, which is rate limited. Applies the next time an artist is added or refreshed.</string>
     <string name="settings_music_where_next">Build "Where next?" automatically</string>

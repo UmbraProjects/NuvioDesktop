@@ -91,7 +91,7 @@ internal class MusicLibraryEnricher(private val settings: MusicLibrarySettings) 
                 fanart = fanartArtist,
             ),
         )
-        assembleArtist(
+        val assembled = assembleArtist(
             id = artist.browseId,
             name = name,
             youTubeThumbnail = artist.thumbnailUrl,
@@ -100,6 +100,18 @@ internal class MusicLibraryEnricher(private val settings: MusicLibrarySettings) 
             addedAtEpochMs = addedAtEpochMs,
             nowEpochMs = nowEpochMs,
         )
+        // fork:music - with a Last.fm key its tags lead (MusicBrainz's stay behind them), so an artist still gets a
+        // place on the Constellation and in ladders when MusicBrainz is unreachable.
+        withLastFmTags(assembled, name)
+    }
+
+    private suspend fun withLastFmTags(artist: LibraryArtist, name: String): LibraryArtist {
+        if (!LastFmClient.isConfigured) return artist
+        val tags = LastFmClient.artistTags(name)?.tags?.keys?.toList().orEmpty()
+        if (tags.isEmpty()) return artist
+        val merged = (tags + artist.tags).distinctBy { it.lowercase() }
+            .filter { tag -> artist.genres.none { it.equals(tag, ignoreCase = true) } }
+        return artist.copy(tags = merged)
     }
 
     /**

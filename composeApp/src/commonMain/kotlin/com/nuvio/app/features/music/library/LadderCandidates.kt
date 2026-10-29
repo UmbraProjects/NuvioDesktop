@@ -62,9 +62,9 @@ internal class LadderCandidateCache(
     }
 }
 
-/** The session's cache, backed by the live MusicBrainz tag search. */
+/** The session's cache, backed by the live tag search (Last.fm when set up, else MusicBrainz; see [MusicTagSource]). */
 internal object LadderCandidates {
-    private val cache = LadderCandidateCache { genre -> MusicBrainzClient.searchByTag(genre) }
+    private val cache = LadderCandidateCache { genre -> MusicTagSource.searchByTag(genre) }
 
     /** See [LadderCandidateCache.candidates]. */
     suspend fun forGenre(rawGenre: String): List<LadderCandidate>? = cache.candidates(rawGenre)
