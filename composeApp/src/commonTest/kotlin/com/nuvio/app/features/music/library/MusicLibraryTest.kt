@@ -184,6 +184,61 @@ class MusicLibraryMergeTest {
         assertEquals("g1", release.key)
     }
 
+    // Cases from Against The Current's library (2026-10-29), where YouTube Music had the release but it was not matched.
+    @Test
+    fun coversNamedWithTheOriginalArtistJoinTheirMusicBrainzEntry() {
+        val merged = mergeReleases(
+            ReleaseSources(
+                musicBrainz = listOf(
+                    MbReleaseGroup("g1", "All Too Well", "Single", emptyList(), "2014"),
+                    MbReleaseGroup("g2", "Ain’t It Fun", "Single", emptyList(), "2014"),
+                    MbReleaseGroup("g3", "See You Again", "Single", emptyList(), "2015"),
+                    MbReleaseGroup("g4", "Barely Breathing", "Single", emptyList(), "2024"),
+                    MbReleaseGroup("g5", "Gravity (The Acoustic Sessions, Vol. II)", "EP", emptyList(), "2015"),
+                ),
+                youTubeMusic = listOf(
+                    yt("MPREb_1", "All Too Well (Taylor Swift)", "Single", "2014"),
+                    yt("MPREb_2", "Ain't It Fun (Cover)", "Single", "2014"),
+                    yt("MPREb_3", "See You Again (Wiz Khalifa, Charlie Puth)", "Single", "2015"),
+                    yt("MPREb_4", "Barely Breathing (feat. Against The Current)", "Single", "2024"),
+                    yt("MPREb_5", "Gravity (The Acoustic Sessions Volume II)", "EP", "2015"),
+                ),
+            ),
+        )
+        // One entry each, every one both playable and carrying its MusicBrainz group.
+        assertEquals(5, merged.size)
+        merged.forEach { release ->
+            assertNotNull(release.ytBrowseId, "${release.title} should be matched to YouTube Music")
+            assertNotNull(release.musicBrainzId, "${release.title} should keep its MusicBrainz group")
+        }
+    }
+
+    @Test
+    fun anAcousticTakeOrARemixKeepsItsOwnSlot() {
+        val merged = mergeReleases(
+            ReleaseSources(
+                musicBrainz = listOf(
+                    MbReleaseGroup("g1", "Infinity", "Single", emptyList(), "2014"),
+                    MbReleaseGroup("g2", "Legends Never Die", "Single", emptyList(), "2017"),
+                ),
+                youTubeMusic = listOf(
+                    yt("MPREb_a", "Infinity (Acoustic)", "Single", "2014"),
+                    yt("MPREb_r", "Legends Never Die (Alan Walker Remix)", "Single", "2017"),
+                ),
+            ),
+        )
+        assertEquals(4, merged.size)
+        assertNull(merged.first { it.musicBrainzId == "g1" }.ytBrowseId)
+        assertNull(merged.first { it.musicBrainzId == "g2" }.ytBrowseId)
+    }
+
+    @Test
+    fun baseKeysLeaveRealTitlesAlone() {
+        assertEquals(baseTitleKey("Dancing with Myself"), strictTitleKey("Dancing with Myself"))
+        assertEquals(baseTitleKey("Blue Monday"), baseTitleKey("Blue Monday (Taylor Swift)"))
+        assertEquals(looseTitleKey("Pt. 2"), looseTitleKey("Part 2"))
+    }
+
     @Test
     fun aDeluxeEditionStaysItsOwnReleaseWhenTheAlbumTookTheSlot() {
         val merged = mergeReleases(

@@ -15,6 +15,9 @@ private const val FILTER_ALBUMS = "EgWKAQIYAWoMEA4QChADEAQQCRAF"
 private const val FILTER_ARTISTS = "EgWKAQIgAWoMEA4QChADEAQQCRAF"
 
 private const val FOUND_TTL_MS = 30 * 60_000L
+
+/** Pages of one "more" grid read at most (100 releases each). */
+private const val MAX_GRID_PAGES = 15
 private const val MISSING_TTL_MS = 3 * 60_000L
 
 /**
@@ -136,8 +139,16 @@ object MusicMetadataClient {
                     put("browseId", moreId)
                     shelf.moreParams?.let { put("params", it) }
                 }
-                TrailerPlaybackResolver.musicRequest("browse", params)
-                    ?.let { found += parseAlbumGrid(it, self, shelf.title) }
+                // The grid comes 100 releases at a time; follow it to the end (bounded, in case a token loops).
+                var page = TrailerPlaybackResolver.musicRequest("browse", params)
+                var pages = 0
+                while (page != null && pages < MAX_GRID_PAGES) {
+                    found += parseAlbumGrid(page, self, shelf.title)
+                    pages++
+                    val next = parseGridContinuation(page) ?: break
+                    page = TrailerPlaybackResolver.musicRequest("browse", mapOf("continuation" to next))
+                }
+                if (pages > 1) log.i { "${artist.name}: ${shelf.title} ran to $pages pages" }
             }
             // A page with no shelves still has whatever tiles parseArtist finds.
             if (found.isEmpty()) found += artist.albums

@@ -285,6 +285,19 @@ internal fun parseArtistShelves(body: String, self: MusicArtistRef): List<Artist
 }
 
 /** The full list behind a carousel's "more" button: a grid of album tiles. */
+/**
+ * The token for the next page of an artist's "more" grid, or null on the last page. YouTube Music
+ * sends a grid 100 releases at a time (a prolific artist's singles run to several pages); the token
+ * sits in the grid's own `continuations`, first in `gridRenderer`, then in each `gridContinuation`.
+ */
+internal fun parseGridContinuation(body: String): String? {
+    val root = parseRoot(body) ?: return null
+    val grids = findAll(root, "gridRenderer") + findAll(root, "gridContinuation")
+    return grids.firstNotNullOfOrNull { grid ->
+        grid["continuations"].arr()?.firstNotNullOfOrNull { it.at("nextContinuationData", "continuation").str() }
+    }
+}
+
 internal fun parseAlbumGrid(body: String, self: MusicArtistRef, shelfTitle: String): List<MusicAlbumSummary> {
     val root = parseRoot(body) ?: return emptyList()
     val fallback = kindOfShelf(shelfTitle)

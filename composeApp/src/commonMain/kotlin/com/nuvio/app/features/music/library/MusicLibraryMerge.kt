@@ -19,14 +19,58 @@ private val BRACKETS = Regex("[(\\[][^)\\]]*[)\\]]")
 internal fun strictTitleKey(title: String): String =
     title.lowercase().map(::foldAccent).filter { it.isLetterOrDigit() }.joinToString("")
 
+/**
+ * Abbreviations the sources disagree on, spelled out: "Vol. II" and "Volume II", "Pt. 2" and "Part 2",
+ * "&" and "and" are the same title.
+ */
+private val SPELLED_OUT = listOf(
+    Regex("""\bvol\b\.?""") to "volume",
+    Regex("""\bpt\b\.?""") to "part",
+    Regex("&") to " and ",
+)
+
+private fun spelledOut(title: String): String =
+    SPELLED_OUT.fold(title.lowercase()) { text, (pattern, word) -> text.replace(pattern, word) }
+
 /** [strictTitleKey] after dropping bracketed edition notes and edition words, so a deluxe edition meets its album. */
 internal fun looseTitleKey(title: String): String {
-    val withoutBrackets = title.lowercase().replace(BRACKETS) { m ->
+    val withoutBrackets = spelledOut(title).replace(BRACKETS) { m ->
         if (EDITION_WORDS.containsMatchIn(m.value)) " " else m.value
     }
     val withoutWords = withoutBrackets.replace(EDITION_WORDS, " ")
     val key = strictTitleKey(withoutWords)
     return key.ifEmpty { strictTitleKey(title) }
+}
+
+/**
+ * Bracket notes that make a different recording, which must never be joined to the original:
+ * "Infinity (Acoustic)" is not "Infinity", "Legends Never Die (Alan Walker Remix)" is not the song.
+ */
+private val VERSION_WORDS = Regex(
+    """\b(acoustic|remix(es)?|mix|live|stripped|demo|instrumental|reimagined|unplugged|sessions?|karaoke|""" +
+        """a ?cappella|piano|orchestral|sped|slowed|rework|re-?recorded|taylor'?s version|edit|dub|vip|cover version|""" +
+        // A cover band's restyles ("Die With a Smile (Metal / Rockified)") are their own recordings too.
+        """metal|rockified|punk|pop ?punk|emo|lo-?fi|jazz|swing|8-?bit|cinematic|epic)\b""",
+)
+
+/**
+ * A credit written after the title rather than in brackets: "Song feat. Someone", "Song - Single". Not a
+ * bare "with", which is part of real titles ("Dancing with Myself"); in brackets it is a credit.
+ */
+private val TRAILING_CREDIT = Regex("""\s+(feat\.?|ft\.?|featuring)\s+.*$|\s+-\s+(single|ep)$""")
+
+/**
+ * [looseTitleKey] with the credit notes taken off too: YouTube Music titles a cover with the original
+ * artist ("All Too Well (Taylor Swift)", "Ain't It Fun (Cover)") and a collaboration with its guests
+ * ("Barely Breathing (feat. Against The Current)") where MusicBrainz has the plain title. Brackets that
+ * name a different recording ([VERSION_WORDS]) stay, so an acoustic take or a remix keeps its own slot.
+ * Only used once the exact and edition-blind keys have found nothing.
+ */
+internal fun baseTitleKey(title: String): String {
+    val withoutCredits = spelledOut(title).replace(BRACKETS) { m ->
+        if (VERSION_WORDS.containsMatchIn(m.value)) m.value else " "
+    }.replace(TRAILING_CREDIT, "")
+    return looseTitleKey(withoutCredits).ifEmpty { looseTitleKey(title) }
 }
 
 private fun foldAccent(c: Char): Char = when (c) {
@@ -142,10 +186,14 @@ internal fun mergeReleases(sources: ReleaseSources): List<LibraryRelease> {
         fun ok(d: Draft) = free(d) && (!sameKindOnly || wanted == null || d.kind == wanted)
         val strict = strictTitleKey(title)
         val loose = looseTitleKey(title)
+        val base = baseTitleKey(title)
         return drafts.firstOrNull { ok(it) && strictTitleKey(it.title) == strict && (wanted == null || it.kind == wanted) }
             ?: drafts.firstOrNull { ok(it) && strictTitleKey(it.title) == strict }
             ?: drafts.firstOrNull { ok(it) && looseTitleKey(it.title) == loose && (wanted == null || it.kind == wanted) }
             ?: drafts.firstOrNull { ok(it) && looseTitleKey(it.title) == loose }
+            // Last: the same title once credits are set aside (a cover named with its original artist).
+            ?: drafts.firstOrNull { ok(it) && baseTitleKey(it.title) == base && (wanted == null || it.kind == wanted) }
+            ?: drafts.firstOrNull { ok(it) && baseTitleKey(it.title) == base }
     }
 
     /**

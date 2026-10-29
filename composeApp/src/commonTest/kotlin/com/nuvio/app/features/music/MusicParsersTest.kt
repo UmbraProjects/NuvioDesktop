@@ -219,4 +219,18 @@ class ArtistShelfParsersTest {
         assertEquals(listOf("MPREb_1", "MPREb_2"), albums.map { it.browseId })
         assertEquals("Daft Punk", albums.first().artists.single().name)
     }
+
+    @Test
+    fun gridContinuationIsReadFromTheGridNotTheSectionList() {
+        // First page: the token sits in gridRenderer.continuations (shape from First to Eleven, 2026-10-29).
+        val first = """
+        {"contents":{"singleColumnBrowseResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{
+          "contents":[{"gridRenderer":{"items":[],"continuations":[{"nextContinuationData":{"continuation":"GRID1"}}]}}]}}}}]}}}
+        """
+        assertEquals("GRID1", parseGridContinuation(first))
+        // Later pages answer with gridContinuation, carrying the next token the same way; the last has none.
+        val middle = """{"continuationContents":{"gridContinuation":{"items":[],"continuations":[{"nextContinuationData":{"continuation":"GRID2"}}]}}}"""
+        assertEquals("GRID2", parseGridContinuation(middle))
+        assertNull(parseGridContinuation("""{"continuationContents":{"gridContinuation":{"items":[]}}}"""))
+    }
 }
