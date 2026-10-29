@@ -31,6 +31,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,6 +56,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -62,6 +66,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -79,11 +84,14 @@ import coil3.compose.LocalPlatformContext
 import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.defaultMusicCatalog
 import com.nuvio.app.features.music.MusicCover
 import com.nuvio.app.features.music.MusicMessage
 import com.nuvio.app.features.music.identity.MusicPaletteResolver
 import com.nuvio.app.features.music.identity.identity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -147,6 +155,35 @@ internal fun ConstellationView(
     var legendOpen by rememberSaveable { mutableStateOf(false) } // HTPC phase 5: the key is a corner chip, not a block over the left cluster
     var camera by remember { mutableStateOf(Camera()) }
     val mapFocus = remember { FocusRequester() }
+    // C5: the star menu (right-click, or M or the menu key on the selected star), by artist id.
+    var menuId by remember { mutableStateOf<String?>(null) }
+    // C5: stars saved from a ladder get a dashed ring, and a dashed line to the artist the ladder led out from.
+    val ladderFound = remember(artists) { ladderFoundIds(artists) }
+    val ladderLinks = remember(artists) { foundViaLinks(artists) }
+    // C6: Play on a star and Play cluster. The notice says what is happening or why nothing played, then clears itself.
+    val scope = rememberCoroutineScope()
+    val catalog = remember { defaultMusicCatalog() }
+    var playNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(playNotice) {
+        if (playNotice != null && playNotice != PLAY_OPENING) {
+            delay(PLAY_NOTICE_MS)
+            playNotice = null
+        }
+    }
+    fun playReleases(releases: List<LibraryRelease>, shuffled: Boolean) {
+        if (releases.isEmpty()) {
+            playNotice = PLAY_NOTHING
+            return
+        }
+        playNotice = PLAY_OPENING
+        scope.launch { playNotice = if (playTopAlbums(catalog, releases, shuffled)) null else PLAY_FAILED }
+    }
+    fun playStar(id: String) {
+        byId[id]?.let { playReleases(starPlayReleases(it), shuffled = false) }
+    }
+    fun playClusterOf(memberIds: List<String>) {
+        playReleases(clusterPlayReleases(memberIds.mapNotNull { byId[it] }), shuffled = true)
+    }
 
     // The screen glow follows the star under the pointer, else the selected one.
     LaunchedEffect(hoverId, selectedId) { onFocusArtist(hoverId ?: selectedId) }
@@ -158,6 +195,18 @@ internal fun ConstellationView(
     val activeChip = if (m != null) chipKey?.takeIf { key -> m.clusters.clusters.any { it.key == key } } else null
     val focus = if (m != null) focusIds(m, byId, query, activeChip) else null
     val selected = if (m != null) selectedId?.takeIf { id -> m.layout.point(id) != null && byId.containsKey(id) } else null
+    // Choosing another star (or none) closes a menu that was open on the old one.
+    LaunchedEffect(selected) { if (menuId != selected) menuId = null }
+
+    fun runStarAction(action: StarAction, id: String) {
+        val artist = byId[id] ?: return
+        when (action) {
+            StarAction.OpenRoom -> onArtistClick(id)
+            StarAction.Play -> playStar(id)
+            StarAction.PlayCluster -> m?.clusters?.clusterOf(id)?.let { playClusterOf(it.memberIds) }
+            else -> starActionRequest(action, artist.name, m?.clusters?.clusterOf(id)?.label)?.let(onOpenLadder)
+        }
+    }
 
     Column(modifier.fillMaxWidth()) {
         pending.forEach { status ->
@@ -177,6 +226,8 @@ internal fun ConstellationView(
                 onChip = { key -> chipKey = if (activeChip == key) null else key },
                 litCount = focus?.size,
                 onLeaveField = { runCatching { mapFocus.requestFocus() } },
+                onLadderInto = { label -> onOpenLadder(clusterLadderRequest(label)) },
+                onPlayCluster = { cluster -> playClusterOf(cluster.memberIds) },
             )
             // HTPC phase 5: the genres you tag but barely own, as places to grow (they would be the ghost halos on the map).
             val gaps = remember(artists) { ladderStarters(artists, limit = 4).filter { it.artists in 1..GAP_MAX_ARTISTS } }
@@ -210,6 +261,12 @@ internal fun ConstellationView(
                             onSelect = { selectedId = it },
                             onHover = { hoverId = it },
                             onOpen = onArtistClick,
+                            ladderFound = ladderFound,
+                            ladderLinks = ladderLinks,
+                            menuId = menuId,
+                            onMenu = { menuId = it },
+                            clusterLabelOf = { id -> m.clusters.clusterOf(id)?.label },
+                            onStarAction = ::runStarAction,
                             modifier = Modifier.fillMaxSize(),
                         )
                         Column(
@@ -218,6 +275,19 @@ internal fun ConstellationView(
                         ) {
                             if (legendOpen) ConstellationLegend()
                             BigChip(if (legendOpen) "Hide key" else "Key", selected = legendOpen, onClick = { legendOpen = !legendOpen })
+                        }
+                        playNotice?.let { notice ->
+                            Text(
+                                notice,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 12.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xE60E0E12))
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                            )
                         }
                     }
                 }
@@ -230,8 +300,12 @@ internal fun ConstellationView(
                     neighbours = m.graph.neighbours(panelArtist.id).mapNotNull { (id, similarity) -> byId[id]?.let { it to similarity } },
                     onSelect = { selectedId = it },
                     onOpen = { onArtistClick(panelArtist.id) },
+                    onPlay = { playStar(panelArtist.id) },
+                    onPlayCluster = m.clusters.clusterOf(panelArtist.id)?.let { cluster -> { playClusterOf(cluster.memberIds) } },
                     onLadderFrom = { onOpenLadder(LadderRequest.Artist(panelArtist.name, LadderMode.OutFrom)) },
                     onLadderInto = { onOpenLadder(LadderRequest.Artist(panelArtist.name, LadderMode.Into)) },
+                    onLadderCluster = m.clusters.clusterOf(panelArtist.id)?.label?.takeIf { canLadderInto(it) }
+                        ?.let { label -> { onOpenLadder(clusterLadderRequest(label)) } },
                     onClose = { selectedId = null },
                     modifier = Modifier.width(PANEL_WIDTH).fillMaxHeight(),
                 )
@@ -243,6 +317,9 @@ internal fun ConstellationView(
 }
 
 private val PANEL_WIDTH = 380.dp
+
+/** How long a play notice ("Nothing here is on YouTube Music yet.") stays on the map. */
+private const val PLAY_NOTICE_MS = 4_000L
 
 /** A genre held by this many artists or fewer counts as a gap worth a ladder. */
 private const val GAP_MAX_ARTISTS = 8
@@ -259,6 +336,8 @@ private fun ConstellationControls(
     onChip: (String) -> Unit,
     litCount: Int?,
     onLeaveField: () -> Unit,
+    onLadderInto: (genre: String) -> Unit,
+    onPlayCluster: (StarCluster) -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Row(
@@ -291,6 +370,12 @@ private fun ConstellationControls(
                 BigChip("${cluster.label}  ${cluster.size}", selected = activeChip == cluster.key, onClick = { onChip(cluster.key) })
             }
         }
+        // C5: with a genre chip chosen, a ladder into that genre is one press away.
+        val chosenCluster = model.clusters.clusters.firstOrNull { it.key == activeChip }
+        // C6: and the group can be played, mixed.
+        if (chosenCluster != null) BigChip("Play all ${chosenCluster.label}", selected = false, onClick = { onPlayCluster(chosenCluster) })
+        val chosen = chosenCluster?.label?.takeIf { canLadderInto(it) }
+        if (chosen != null) BigChip("Ladder into $chosen", selected = false, onClick = { onLadderInto(chosen) })
     }
 }
 
@@ -313,6 +398,12 @@ private fun ConstellationMap(
     onSelect: (String?) -> Unit,
     onHover: (String?) -> Unit,
     onOpen: (String) -> Unit,
+    ladderFound: Set<String>,
+    ladderLinks: List<FoundViaLink>,
+    menuId: String?,
+    onMenu: (String?) -> Unit,
+    clusterLabelOf: (String) -> String?,
+    onStarAction: (StarAction, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -337,6 +428,8 @@ private fun ConstellationMap(
     val onSelectNow by rememberUpdatedState(onSelect)
     val onHoverNow by rememberUpdatedState(onHover)
     val onOpenNow by rememberUpdatedState(onOpen)
+    val onMenuNow by rememberUpdatedState(onMenu)
+    val onStarActionNow by rememberUpdatedState(onStarAction)
 
     LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
 
@@ -392,6 +485,11 @@ private fun ConstellationMap(
                         if (id != null) onOpenNow(id)
                         id != null
                     }
+                    event.key == Key.M || event.key == Key.Menu -> {
+                        val id = selectedNow
+                        if (id != null) onMenuNow(id)
+                        id != null
+                    }
                     event.key == Key.Plus || event.key == Key.Equals || event.key == Key.NumPadAdd -> {
                         onCameraNow(cameraNow.zoomedAt(w / 2, h / 2, ZOOM_PER_NOTCH, w, h))
                         true
@@ -434,6 +532,13 @@ private fun ConstellationMap(
                             PointerEventType.Move, PointerEventType.Enter ->
                                 onHoverNow(hitStar(pointsNow, screenNow, change.position.x, change.position.y))
                             PointerEventType.Exit -> onHoverNow(null)
+                            // C5: a right-click on a star selects it and opens its menu.
+                            PointerEventType.Press -> if (event.buttons.isSecondaryPressed) {
+                                hitStar(pointsNow, screenNow, change.position.x, change.position.y)?.let { id ->
+                                    onSelectNow(id)
+                                    onMenuNow(id)
+                                }
+                            }
                             PointerEventType.Scroll -> {
                                 val notches = change.scrollDelta.y
                                 if (notches != 0f) {
@@ -464,6 +569,21 @@ private fun ConstellationMap(
                 val topLeft = Offset(screen.x(cluster.x) - rx, screen.y(cluster.y) - ry)
                 drawOval(c.copy(alpha = 0.06f * k), topLeft, Size(2 * rx, 2 * ry))
                 drawOval(c.copy(alpha = 0.14f * k), topLeft, Size(2 * rx, 2 * ry), style = Stroke(1.dp.toPx()))
+            }
+
+            // 1b. C5: a dashed line from a star found through a ladder to the artist the ladder led out from.
+            for (link in ladderLinks) {
+                val a = pointById[link.foundId] ?: continue
+                val b = pointById[link.sourceId] ?: continue
+                val alpha = if (lit(a.id) && lit(b.id)) 0.7f else 0.15f
+                drawLine(
+                    color = LADDER_RING.copy(alpha = alpha),
+                    start = Offset(screen.x(a.x), screen.y(a.y)),
+                    end = Offset(screen.x(b.x), screen.y(b.y)),
+                    strokeWidth = 1.5.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(7.dp.toPx(), 5.dp.toPx())),
+                )
             }
 
             // 2. Lines: a gradient between the two stars' colours, firmer for closer matches. Lines on the selected star glow.
@@ -502,6 +622,15 @@ private fun ConstellationMap(
                 drawCircle(Color.Black.copy(alpha = if (on) 0.25f else 0.1f), r, center, style = Stroke(1.dp.toPx()))
                 val favourite = byId[p.id]?.favourite == true
                 if (favourite) drawCircle(GOLD.copy(alpha = if (on) 1f else 0.25f), r + 3.dp.toPx(), center, style = Stroke(2.dp.toPx()))
+                // C5: a dashed ring for an artist saved from a ladder (outside the gold one when it is also a favourite).
+                if (p.id in ladderFound) {
+                    drawCircle(
+                        LADDER_RING.copy(alpha = if (on) 0.95f else 0.25f),
+                        r + (if (favourite) 6 else 3).dp.toPx(),
+                        center,
+                        style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 3.dp.toPx()))),
+                    )
+                }
                 if (p.id == selectedId) {
                     drawCircle(Color.White, r + (if (favourite) 8 else 5).dp.toPx(), center, style = Stroke(2.dp.toPx()))
                 } else if (p.id == hoverId) {
@@ -551,8 +680,31 @@ private fun ConstellationMap(
                 }
             }
         }
+
+        // C5: the star menu, anchored on the star. Escape or a click elsewhere closes it.
+        val menuPoint = menuId?.let { pointById[it] }
+        val menuArtist = menuId?.let { byId[it] }
+        if (menuPoint != null && menuArtist != null) {
+            val clusterLabel = clusterLabelOf(menuArtist.id)
+            Box(Modifier.offset { IntOffset(screen.x(menuPoint.x).roundToInt(), screen.y(menuPoint.y).roundToInt()) }) {
+                DropdownMenu(expanded = true, onDismissRequest = { onMenuNow(null) }) {
+                    for (action in starActions(clusterLabel)) {
+                        DropdownMenuItem(
+                            text = { Text(starActionLabel(action, menuArtist.name, clusterLabel)) },
+                            onClick = {
+                                onMenuNow(null)
+                                onStarActionNow(action, menuArtist.id)
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
+
+/** The dashed ring and line of an artist found through a ladder. */
+private val LADDER_RING = Color(0xFF8FD3FF)
 
 /** Air between the farthest star and its halo, in unit-box units. */
 private const val HALO_PAD = 0.01
@@ -569,8 +721,11 @@ private fun ConstellationPanel(
     neighbours: List<Pair<LibraryArtist, Double>>,
     onSelect: (String) -> Unit,
     onOpen: () -> Unit,
+    onPlay: () -> Unit,
+    onPlayCluster: (() -> Unit)?,
     onLadderFrom: () -> Unit,
     onLadderInto: () -> Unit,
+    onLadderCluster: (() -> Unit)?,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -629,7 +784,11 @@ private fun ConstellationPanel(
             }
         }
         artist.foundVia?.let {
-            Text("Found via ladder: $it", fontSize = 20.sp, color = colors.textMuted)
+            Text(
+                if (foundViaLadder(it)) "Found via ladder: ${foundViaText(it)}" else "Found via ${foundViaText(it)}",
+                fontSize = 20.sp,
+                color = colors.textMuted,
+            )
         }
         if (neighbours.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -646,8 +805,15 @@ private fun ConstellationPanel(
                 }
             }
         }
+        NuvioPrimaryButton(text = "Play", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onPlay)
+        if (onPlayCluster != null && clusterLabel != null) {
+            NuvioPrimaryButton(text = "Play all $clusterLabel", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onPlayCluster)
+        }
         NuvioPrimaryButton(text = "Ladder from here", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onLadderFrom)
         NuvioPrimaryButton(text = "Climb into ${artist.name}", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onLadderInto)
+        if (onLadderCluster != null && clusterLabel != null) {
+            NuvioPrimaryButton(text = "Ladder into $clusterLabel", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onLadderCluster)
+        }
         NuvioPrimaryButton(text = "Open artist room", modifier = Modifier.fillMaxWidth(), height = 52.dp, onClick = onOpen)
     }
 }
@@ -656,9 +822,9 @@ private fun ConstellationPanel(
 
 // region legend and tray
 
-private enum class LegendGlyph { Size, Favourite, Line, Halo, Dim }
+private enum class LegendGlyph { Size, Favourite, Line, Halo, Ladder, Dim }
 
-/** What the picture encodes. Only what is drawn so far; C5 adds the found-via-ladder ring. */
+/** What the picture encodes. */
 @Composable
 private fun ConstellationLegend(modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
@@ -671,6 +837,7 @@ private fun ConstellationLegend(modifier: Modifier = Modifier) {
             LegendGlyph.Favourite to "Gold ring, a favourite",
             LegendGlyph.Line to "Line, sounds alike",
             LegendGlyph.Halo to "Halo, a genre group",
+            LegendGlyph.Ladder to "Dashed ring and line, found through a ladder",
             LegendGlyph.Dim to "Dimmed, not matching the filter",
         )) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -703,6 +870,17 @@ private fun LegendMark(glyph: LegendGlyph) {
             LegendGlyph.Halo -> {
                 drawOval(accent.copy(alpha = 0.08f), Offset(0f, 0f), size)
                 drawOval(accent.copy(alpha = 0.3f), Offset(0f, 0f), size, style = Stroke(1.dp.toPx()))
+            }
+            LegendGlyph.Ladder -> {
+                drawCircle(accent, 3.dp.toPx(), Offset(size.width * 0.3f, mid.y))
+                drawCircle(
+                    LADDER_RING, 6.dp.toPx(), Offset(size.width * 0.3f, mid.y),
+                    style = Stroke(1.4.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))),
+                )
+                drawLine(
+                    LADDER_RING, Offset(size.width * 0.3f + 7.dp.toPx(), mid.y), Offset(size.width * 0.9f, mid.y),
+                    strokeWidth = 1.4.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())),
+                )
             }
             LegendGlyph.Dim -> drawCircle(accent.copy(alpha = 0.16f), 5.dp.toPx(), mid)
         }

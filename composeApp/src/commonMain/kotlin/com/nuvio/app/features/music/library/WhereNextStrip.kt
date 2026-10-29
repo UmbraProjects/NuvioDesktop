@@ -239,7 +239,7 @@ internal fun WhereNextStrip(artist: LibraryArtist, onOpenArtist: (String) -> Uni
                     FocusPill("Save", selected = false, onActivate = {
                         scope.launch {
                             note = "Saving…"
-                            val saved = saveRung(catalog, rung.candidate.name, "Where next from ${artist.name}")
+                            val saved = saveRung(catalog, rung.candidate.name, foundViaLabel("Where next from ${artist.name}"))
                             note = if (saved != null) "Saved to your Library" else "Not found on YouTube Music"
                         }
                     })
