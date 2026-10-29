@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.offset
 import com.nuvio.app.core.ui.ditheredBackground
@@ -195,6 +196,9 @@ fun MusicMiniPlayerBar(
             val frame = musicBarFrame(areaWidth, areaHeight, MusicBarCardHeight, placement)
             Box(
                 Modifier
+                    // The slide-in wrapper fills the width, which would force the bar to full width too; let it
+                    // be narrower than that, placed from the left edge (the offset then puts it where it belongs).
+                    .wrapContentWidth(Alignment.Start, unbounded = true)
                     .padding(bottom = MusicBarBottomMargin)
                     .offset(x = frame.left, y = frame.dy)
                     .width(frame.width)
