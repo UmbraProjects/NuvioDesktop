@@ -19,15 +19,48 @@ private val log = Logger.withTag("MusicResolver")
 object MusicResolver {
     suspend fun resolve(track: MusicTrack, album: MusicAlbum, mode: MusicPlayMode): MusicResolution =
         when (mode) {
-            MusicPlayMode.Audio -> audio(track)
+            MusicPlayMode.Audio -> audio(track, album)
             MusicPlayMode.Video -> video(track, album)
         }
 
-    private suspend fun audio(track: MusicTrack): MusicResolution {
+    private suspend fun audio(track: MusicTrack, album: MusicAlbum): MusicResolution {
         val audioId = albumAudioId(track)
-        val source = openAudio(track, audioId)
-            ?: return MusicResolution.Failed(track, "the audio track would not open")
-        return MusicResolution.Playable(track, MusicPlayMode.Audio, audioId, source, viaCounterpart = false)
+        openAudio(track, audioId)?.let {
+            return MusicResolution.Playable(track, MusicPlayMode.Audio, audioId, it, viaCounterpart = false)
+        }
+        alternateUpload(track, album, tried = setOf(audioId, track.videoId))?.let { (id, source) ->
+            return MusicResolution.Playable(track, MusicPlayMode.Audio, id, source, viaCounterpart = false)
+        }
+        return MusicResolution.Failed(track, "the audio track would not open")
+    }
+
+    /**
+     * fork:alternate-upload — last resort for a track whose own audio will not open (an age gate or a
+     * stream format the player cannot read): search YouTube for the same song, keep the hits whose
+     * title, artist and length match, and play the first one that opens.
+     */
+    private suspend fun alternateUpload(
+        track: MusicTrack,
+        album: MusicAlbum,
+        tried: Set<String>,
+    ): Pair<String, TrailerPlaybackSource>? {
+        val artist = (track.artists.firstOrNull() ?: album.artists.firstOrNull())?.name.orEmpty()
+        val hits = try {
+            TrailerPlaybackResolver.searchYouTube("$artist ${coreTrackTitle(track.title)}")
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            log.w { "alternate-upload search failed for \"${track.title}\": ${error.message}" }
+            return null
+        }
+        for (hit in rankMusicVideoHits(hits, track.title, artist, track.durationSeconds, limit = 4)) {
+            if (hit.videoId in tried) continue
+            open(hit.videoId, needsVideo = false)?.let {
+                log.i { "\"${track.title}\" would not open; playing the upload ${hit.videoId} (${hit.title})" }
+                return hit.videoId to it
+            }
+        }
+        return null
     }
 
     /**
