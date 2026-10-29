@@ -27,13 +27,19 @@ import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
-import com.nuvio.app.features.player.desktop.TRAILER_AUDIO_NORMALIZATION_FILTER
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import kotlinx.coroutines.delay
 
 private val log = Logger.withTag("MusicPlayerSurface")
 
 private const val POLL_MS = 250L
+
+/**
+ * fork:alternate-upload — brings a quiet upload up to the level album audio plays at. `loudnorm` aims at a fixed
+ * target (-14 LUFS, about where streamed albums sit) however quiet the source is, where trailers' `dynaudnorm`
+ * only smooths swings. The true-peak limit keeps the boost from clipping.
+ */
+private const val ALTERNATE_UPLOAD_LOUDNESS_FILTER = "loudnorm=I=-14:LRA=11:TP=-1.5"
 
 @Composable
 actual fun MusicPlayerSurface(
@@ -140,7 +146,7 @@ actual fun MusicPlayerSurface(
             // fork:alternate-upload — an upload standing in for album audio is quieter; even its level out.
             initMpvOptions = buildList {
                 add("volume=${volume.coerceIn(0, 100)}")
-                if (source.evenOutLoudness) add("af=$TRAILER_AUDIO_NORMALIZATION_FILTER")
+                if (source.evenOutLoudness) add("af=$ALTERNATE_UPLOAD_LOUDNESS_FILTER")
             },
         )
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")
