@@ -76,3 +76,10 @@ fun initialPreShowStage(slideCount: Int, questionCount: Int): PreShowStage = whe
 /** Records an answer. A second tap on the same question does not change it. */
 fun PreShowStage.answer(option: Int): PreShowStage =
     if (this is PreShowStage.Question && picked == null) copy(picked = option) else this
+
+/**
+ * Moves the highlighted answer by [delta] (-1 up, +1 down), stopping at the first and last option
+ * rather than wrapping, so a held d-pad key does not loop past the answer the viewer wanted.
+ */
+fun moveAnswerCursor(current: Int, delta: Int, optionCount: Int): Int =
+    if (optionCount <= 0) 0 else (current + delta).coerceIn(0, optionCount - 1)

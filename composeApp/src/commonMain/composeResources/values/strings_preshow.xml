@@ -3,7 +3,10 @@
     <string name="settings_discover_ai_provider_groq">Groq</string>
     <string name="settings_ai_trivia_enabled">Pre-show Trivia</string>
     <string name="settings_ai_trivia_enabled_description">Show trivia slides before a film starts. With an AI provider set up above, it writes the slides and a short quiz (one request per film when you press play; each result is kept so replaying it is free). Without one, or if it is unavailable, slides come from the film's Wikipedia article.</string>
+    <string name="preshow_starting">Starting your pre-show…</string>
+    <string name="preshow_starting_hint">Esc to skip</string>
     <string name="trivia_skip">Skip</string>
+    <string name="trivia_hint_question">Up / Down to choose · Enter to answer · Esc to skip the pre-show</string>
     <string name="trivia_not_right">Not right?</string>
     <string name="trivia_origin_ai">Written by AI</string>
     <string name="trivia_origin_wikipedia">From Wikipedia</string>

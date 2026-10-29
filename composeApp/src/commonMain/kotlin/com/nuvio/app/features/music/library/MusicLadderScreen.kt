@@ -19,6 +19,8 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -79,7 +81,7 @@ import kotlin.math.roundToInt
  * Phase 10: the same screen shows a ladder from a record ([LadderRequest.Album]); the chips lead out into another genre.
  *
  * Phase 9, audition: Left and Right move over the rung cards and are silent; the room (palette, glow) follows the cursor
- * ([LadderRoom]). Enter, A or a click on the card plays the rung from its hook ([auditionRung]); pressing the rung that is
+ * ([LadderRoom]). Enter, A, the Preview button or a click on the card plays the rung from its hook ([auditionRung]); pressing the rung that is
  * playing stops it, and pressing another rung moves on to that one. Nothing ever plays by itself. "Play album" is the
  * phase 6 play from the first track.
  *
@@ -231,8 +233,9 @@ internal fun MusicLadderScreen(
                         current?.let { pressRung(it) }
                         current != null
                     }
-                    Key.L -> current?.let { mark(it, RungFeedback.Love) }.let { current != null }
-                    Key.S -> current?.let { mark(it, RungFeedback.Skip) }.let { current != null }
+                    // L and S on a keyboard; X and Y on a pad, which has no letter keys.
+                    Key.L, Key.ButtonX -> current?.let { mark(it, RungFeedback.Love) }.let { current != null }
+                    Key.S, Key.ButtonY -> current?.let { mark(it, RungFeedback.Skip) }.let { current != null }
                     else -> false
                 }
             },
@@ -333,6 +336,8 @@ internal fun MusicLadderScreen(
                             target = shown.view.ladder.target,
                             dial = progress.dial,
                             note = notes[rung.candidate.id],
+                            previewing = playingId == rung.candidate.id && MusicPlayback.player.state.value.isActive,
+                            onPreview = { pressRung(rung) },
                             onFeedback = { mark(rung, it) },
                             onPlayAlbum = { playAlbum(rung) },
                             onSave = { save(rung, shown.view.title) },
@@ -456,12 +461,15 @@ private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, playin
 }
 
 /** Detail for the rung under the cursor: the reason, how near it is, the dial, and the actions. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LadderDetailPanel(
     rung: LadderRung,
     target: String,
     dial: Double,
     note: String?,
+    previewing: Boolean,
+    onPreview: () -> Unit,
     onFeedback: (RungFeedback) -> Unit,
     onPlayAlbum: () -> Unit,
     onSave: () -> Unit,
@@ -512,12 +520,18 @@ private fun LadderDetailPanel(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // A flow, not a row: with Preview there are seven pills, too many for one line at TV text size.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            // The same action as Enter or A on the card, made visible: a taste of this artist before committing.
+            BigPill(if (previewing) "Stop preview" else "Preview", onPreview, selected = previewing)
             BigPill("Closer", { onFeedback(RungFeedback.TooFar) }, selected = rung.mark == RungFeedback.TooFar)
             BigPill("Further out", { onFeedback(RungFeedback.TooClose) }, selected = rung.mark == RungFeedback.TooClose)
             BigPill("Skip", { onFeedback(RungFeedback.Skip) })
             BigPill("Love", { onFeedback(RungFeedback.Love) }, selected = rung.mark == RungFeedback.Love)
-            Spacer(Modifier.width(16.dp))
             BigPill("Save", onSave)
             BigPill("Play album", onPlayAlbum)
         }
@@ -547,14 +561,22 @@ private fun LadderSummary(rungs: List<LadderRung>, onSaveAll: () -> Unit, onPlay
     }
 }
 
-/** The controls, shown once at the bottom instead of on every row. */
+/** The controls, shown once at the bottom instead of on every row. Keyboard and pad keys side by side. */
 @Composable
 private fun LadderLegend() {
-    Text(
-        text = "◀ ▶ browse     ▲ further out     ▼ closer to my taste     Enter or A play the hook, again to stop     L love     S skip",
-        style = ladderText(LadderType.Legend),
-        color = MaterialTheme.nuvio.colors.textMuted,
-    )
+    val colors = MaterialTheme.nuvio.colors
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "◀ ▶ browse     ▲ further out     ▼ closer to my taste",
+            style = ladderText(LadderType.Legend),
+            color = colors.textMuted,
+        )
+        Text(
+            text = "Enter / A preview, again to stop     L / X love     S / Y skip",
+            style = ladderText(LadderType.Legend),
+            color = colors.textMuted,
+        )
+    }
 }
 
 @Composable
@@ -609,8 +631,9 @@ internal fun LadderOfferRow(offers: List<LadderOffer>, onPick: (LadderRequest) -
 }
 
 private fun feedbackLabel(feedback: RungFeedback): String = when (feedback) {
-    RungFeedback.TooFar -> "Too far"
-    RungFeedback.TooClose -> "Too close"
+    // The words of the buttons and the legend (Closer / Further out), so a mark reads as what was asked for.
+    RungFeedback.TooFar -> "Closer next"
+    RungFeedback.TooClose -> "Further out next"
     RungFeedback.Skip -> "Skip"
     RungFeedback.Love -> "Love"
 }

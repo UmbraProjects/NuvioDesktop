@@ -2,8 +2,13 @@ package com.nuvio.app.features.preroll
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -11,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -21,6 +27,11 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.preshow_starting
+import nuvio.composeapp.generated.resources.preshow_starting_hint
+import org.jetbrains.compose.resources.stringResource
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioToastController
@@ -64,6 +75,9 @@ private const val TRIVIA_ARTWORK_WAIT_MS = 2_500L
 /** How long the theme song may take to be found, and how long the first trivia card waits for it. */
 private const val THEME_SONG_RESOLVE_WAIT_MS = 30_000L
 private const val THEME_SONG_START_WAIT_MS = 1_500L
+
+/** How long nothing may be on screen before the "Starting your pre-show" state appears, so quick hand-offs do not flash it. */
+private const val WAITING_INDICATOR_DELAY_MS = 800L
 
 /** How long the silent stream outlives the pre-show, to bridge the film's own player opening its output. */
 private const val KEEP_AUDIO_ALIVE_TAIL_MS = 6_000L
@@ -352,6 +366,18 @@ fun PrerollGate(
 
     val activeTrailer = shown
     val activePack = triviaPack
+    // Between items (resolving a trailer, waiting on the trivia pack, finding a clip) nothing is on
+    // screen. Past a short grace period that reads as a hang, so say what is happening.
+    val nothingShowing = activeTrailer == null && activePack == null && drawnCard == null
+    var showWaiting by remember(launchKey) { mutableStateOf(false) }
+    LaunchedEffect(nothingShowing) {
+        if (nothingShowing) {
+            delay(WAITING_INDICATOR_DELAY_MS)
+            showWaiting = true
+        } else {
+            showWaiting = false
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -361,8 +387,8 @@ fun PrerollGate(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown || activePack != null) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.Escape -> { control.skipEverything(); true }
-                    Key.DirectionRight, Key.Enter, Key.NumPadEnter -> { control.finishCurrent(); true }
+                    Key.Escape, Key.ButtonB, Key.Back -> { control.skipEverything(); true }
+                    Key.DirectionRight, Key.Enter, Key.NumPadEnter, Key.ButtonA -> { control.finishCurrent(); true }
                     else -> false
                 }
             },
@@ -426,6 +452,25 @@ fun PrerollGate(
                 preshow = true,
             )
         }
+        if (showWaiting && nothingShowing) {
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CircularProgressIndicator(color = Color.White.copy(alpha = 0.8f))
+                Text(
+                    text = stringResource(Res.string.preshow_starting),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White.copy(alpha = 0.85f),
+                )
+                Text(
+                    text = stringResource(Res.string.preshow_starting_hint),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.55f),
+                )
+            }
+        }
         ThemeSongPlayer(
             source = themeSource,
             volume = if (themeDucked) (themeVolume / 3).coerceAtLeast(5) else themeVolume,
@@ -441,6 +486,7 @@ fun PrerollGate(
                 modifier = Modifier.fillMaxSize(),
                 artwork = triviaArtwork,
                 onQuestionActive = { themeDucked = it },
+                onSkipAll = { control.skipEverything() },
                 onNotRight = {
                     MetaDetailsRepository.peekAny(metaType, metaId)?.let { TriviaRepository.discard(it, activePack.origin) }
                     NuvioToastController.show(

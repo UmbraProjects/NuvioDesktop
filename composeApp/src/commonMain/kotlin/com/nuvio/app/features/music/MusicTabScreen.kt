@@ -56,6 +56,7 @@ import com.nuvio.app.features.music.library.startIsEmpty // fork:music
 import com.nuvio.app.features.music.library.startArt // fork:music
 import com.nuvio.app.features.search.SearchHistoryRepository // fork:music
 import androidx.compose.runtime.collectAsState // fork:music
+import kotlinx.coroutines.CancellationException // fork:music
 import kotlinx.coroutines.async // fork:music
 import kotlinx.coroutines.coroutineScope // fork:music
 import kotlinx.coroutines.delay
@@ -82,9 +83,18 @@ private sealed interface MusicSearchResults {
     data object Idle : MusicSearchResults
     data object Loading : MusicSearchResults
     data object Empty : MusicSearchResults
+    data object Failed : MusicSearchResults // the search itself could not run (offline, YouTube Music unreachable), as opposed to Empty
     data class Albums(val items: List<MusicAlbumSummary>) : MusicSearchResults
     data class Artists(val items: List<MusicArtistSummary>) : MusicSearchResults
     data class Grouped(val artists: List<MusicArtistSummary>, val albums: List<MusicAlbumSummary>) : MusicSearchResults // fork:music
+}
+
+/** Whether these results answer a search of [kind], so they can stay on screen while the next one loads. */
+private fun MusicSearchResults.answers(kind: MusicSearchKind): Boolean = when (this) {
+    is MusicSearchResults.Grouped -> kind == MusicSearchKind.All
+    is MusicSearchResults.Albums -> kind == MusicSearchKind.Albums
+    is MusicSearchResults.Artists -> kind == MusicSearchKind.Artists
+    else -> false
 }
 
 private const val MIN_QUERY_LENGTH = 2
@@ -119,33 +129,48 @@ fun MusicTabScreen(
         )
     }
     var results by remember { mutableStateOf<MusicSearchResults>(MusicSearchResults.Idle) }
+    var attempt by remember { mutableStateOf(0) } // bumped by "Try again" to rerun the same search
     var ladder by remember { mutableStateOf<LadderRequest?>(null) } // fork:music - the open ladder, if any
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
-    LaunchedEffect(query, kind) {
+    LaunchedEffect(query, kind, attempt) {
         val q = query.trim()
         if (q.length < MIN_QUERY_LENGTH) {
             results = MusicSearchResults.Idle
             return@LaunchedEffect
         }
-        results = MusicSearchResults.Loading
         delay(TYPING_PAUSE_MS)
-        results = when (kind) {
-            MusicSearchKind.All -> coroutineScope { // fork:music - both kinds at once, shown as sections
-                val artists = async { runCatching { catalog.searchArtists(q) }.getOrDefault(emptyList()) }
-                val albums = async { runCatching { catalog.searchAlbums(q) }.getOrDefault(emptyList()) }
-                val a = artists.await()
-                val b = albums.await()
-                if (a.isEmpty() && b.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Grouped(a, b)
+        // Results of the same kind stay up while the next ones load, so typing does not blank the
+        // list on every keystroke; anything else (first search, a kind change, an error) shows the spinner.
+        if (!results.answers(kind)) results = MusicSearchResults.Loading
+        results = try {
+            when (kind) {
+                MusicSearchKind.All -> coroutineScope { // fork:music - both kinds at once, shown as sections
+                    val artists = async { runCatching { catalog.searchArtists(q) } }
+                    val albums = async { runCatching { catalog.searchAlbums(q) } }
+                    val a = artists.await()
+                    val b = albums.await()
+                    when {
+                        // One side failing still shows the other; only both failing is an error.
+                        a.isFailure && b.isFailure -> MusicSearchResults.Failed
+                        a.getOrDefault(emptyList()).isEmpty() && b.getOrDefault(emptyList()).isEmpty() ->
+                            if (a.isFailure || b.isFailure) MusicSearchResults.Failed else MusicSearchResults.Empty
+                        else -> MusicSearchResults.Grouped(a.getOrDefault(emptyList()), b.getOrDefault(emptyList()))
+                    }
+                }
+                MusicSearchKind.Albums -> catalog.searchAlbums(q).let {
+                    if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Albums(it)
+                }
+                MusicSearchKind.Artists -> catalog.searchArtists(q).let {
+                    if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Artists(it)
+                }
             }
-            MusicSearchKind.Albums -> catalog.searchAlbums(q).let {
-                if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Albums(it)
-            }
-            MusicSearchKind.Artists -> catalog.searchArtists(q).let {
-                if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Artists(it)
-            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            MusicSearchResults.Failed
         }
-        if (results !is MusicSearchResults.Empty) SearchHistoryRepository.recordSearch(q) // fork:music - feeds Recent searches
+        if (results !is MusicSearchResults.Empty && results !is MusicSearchResults.Failed) SearchHistoryRepository.recordSearch(q) // fork:music - feeds Recent searches
     }
 
     // fork:music - a ladder replaces the tab body while it is open
@@ -281,8 +306,15 @@ fun MusicTabScreen(
                         CircularProgressIndicator(color = colors.accent)
                     }
                 }
+                MusicSearchResults.Failed -> item {
+                    MusicMessage(
+                        "Couldn't reach YouTube Music. Check your connection.",
+                        actionLabel = "Try again",
+                        onAction = { attempt++ },
+                    )
+                }
                 MusicSearchResults.Empty -> item {
-                    MusicMessage("Nothing found. Check the spelling, or YouTube Music may be unreachable.")
+                    MusicMessage("Nothing found. Check the spelling.")
                 }
                 is MusicSearchResults.Grouped -> { // fork:music - item order must match sectionSlots
                     if (groupedOffers.isNotEmpty()) {
