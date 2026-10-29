@@ -21,10 +21,11 @@ class LadderDebugTest {
 
     @Test
     fun moreTagVotesWinATieOnPurityWhenThereAreNoFans() {
-        // Both are 100% shoegaze, so they score the same. The id order would pick "a-thin"; the evidence picks the other.
+        // Since purity counts the evidence (PURITY_PRIOR_VOTES), 1 of 1 and 80 of 80 no longer tie. These two do:
+        // 1 / (4 + 3) and 2 / (11 + 3) are both 1/7. The id order would pick "a-thin"; the evidence picks the other.
         val twins = listOf(
-            cand("a-thin", mapOf("shoegaze" to 1)),
-            cand("z-solid", mapOf("shoegaze" to 80)),
+            cand("a-thin", mapOf("shoegaze" to 1, "dream pop" to 3)),
+            cand("z-solid", mapOf("shoegaze" to 2, "dream pop" to 9)),
         )
         val ladder = buildLadder("shoegaze", emptyList(), twins, rungs = 1)
         assertEquals("z-solid", ladder.rungs.single().candidate.id)
