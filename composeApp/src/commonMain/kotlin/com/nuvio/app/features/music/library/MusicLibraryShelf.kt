@@ -290,7 +290,8 @@ private fun ShelfCardRow(
 
 // region shelf
 
-private val SHELF_HEADER_WIDTH = 250.dp
+// About as wide as the "N artists · N releases" line over the shelf, and flush with it, so each artist sits centred under it.
+private val SHELF_HEADER_WIDTH = 238.dp
 
 @Composable
 private fun ShelfArtistRow(
@@ -331,7 +332,7 @@ private fun ShelfArtistRow(
         // The artist on top, their name and count under it, then three round buttons: their hits (the top five),
         // a shuffle of them, and the favourite star, which floats the artist to the top of the shelf.
         Column(
-            Modifier.width(SHELF_HEADER_WIDTH).padding(start = 8.dp, top = 4.dp),
+            Modifier.width(SHELF_HEADER_WIDTH).padding(top = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
