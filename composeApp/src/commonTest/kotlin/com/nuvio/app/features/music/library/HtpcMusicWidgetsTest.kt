@@ -44,6 +44,12 @@ class HtpcMusicWidgetsTest {
         assertTrue(artistTopReleases(LibraryArtist(id = "a", name = "a", releases = listOf(release("r1")))).isEmpty())
     }
 
+    @Test
+    fun topAlbumPlayLabelSaysPlayOrWhyNot() {
+        assertEquals("Play", topAlbumPlayLabel(release("r1")))
+        assertEquals("Not on YouTube Music", topAlbumPlayLabel(release("r1").copy(ytBrowseId = null)))
+    }
+
     // endregion
 
     // region WhereNextStrip

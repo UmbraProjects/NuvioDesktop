@@ -448,6 +448,7 @@ fun MusicArtistScreen(
                 if (!playTopAlbums(catalog, top.releases, shuffled = false)) playNotice = "Nothing here is on YouTube Music yet."
             }
         },
+        onPlayRelease = { startPlayback(it, shuffled = false) },
         topLabel = topLabel,
         onAbout = { showAbout = true },
         onLinks = { showLinks = true },

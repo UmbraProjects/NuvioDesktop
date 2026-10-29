@@ -44,7 +44,7 @@ import com.nuvio.app.core.ui.nuvio
 internal fun artistTopReleases(artist: LibraryArtist, limit: Int = 5): List<LibraryRelease> =
     artist.topAlbumKeys.mapNotNull { key -> artist.releases.firstOrNull { it.key == key } }.distinctBy { it.key }.take(limit)
 
-/** "8.3 / 10" style rating text, or null with no rating. */
+/** One-decimal rating text ("4.2"; [LibraryArtist.rating] runs 0 to 5, the tile labels the scale), or null with no rating. */
 internal fun ratingText(rating: Double?): String? =
     rating?.takeIf { it > 0.0 }?.let { "${(kotlin.math.round(it * 10) / 10.0)}" }
 
@@ -55,7 +55,7 @@ internal fun ArtistStatTiles(artist: LibraryArtist, totalCount: Int, playableCou
         artist.fans?.let { add(formatCount(it) to "fans") }
         add("$totalCount" to "releases")
         add("$playableCount" to "playable")
-        ratingText(artist.rating)?.let { add("★ $it" to "rating") }
+        ratingText(artist.rating)?.let { add("★ $it" to "of 5") }
     }
     androidx.compose.foundation.layout.FlowRow(
         modifier.fillMaxWidth(),
@@ -76,7 +76,13 @@ internal fun ArtistStatTiles(artist: LibraryArtist, totalCount: Int, playableCou
 }
 
 @Composable
-internal fun ArtistWidgets(artist: LibraryArtist, onOpen: (LibraryRelease) -> Unit, modifier: Modifier = Modifier) {
+internal fun ArtistWidgets(
+    artist: LibraryArtist,
+    onOpen: (LibraryRelease) -> Unit,
+    onPlay: (LibraryRelease) -> Unit,
+    notice: String?,
+    modifier: Modifier = Modifier,
+) {
     val colors = MaterialTheme.nuvio.colors
     val top = remember(artist.topAlbumKeys, artist.releases) { artistTopReleases(artist) }
     val bio = artist.biography?.trim().orEmpty()
@@ -86,8 +92,9 @@ internal fun ArtistWidgets(artist: LibraryArtist, onOpen: (LibraryRelease) -> Un
         if (top.isNotEmpty()) {
             Text("Top albums", fontSize = 28.sp, color = colors.textPrimary)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp, horizontal = 6.dp)) {
-                items(top, key = { it.key }) { release -> TopAlbumCard(release, onOpen = { onOpen(release) }) }
+                items(top, key = { it.key }) { release -> TopAlbumCard(release, onOpen = { onOpen(release) }, onPlay = { onPlay(release) }) }
             }
+            notice?.let { Text(it, fontSize = 22.sp, color = colors.textMuted) }
         }
         if (bio.isNotEmpty()) {
             val source = remember { MutableInteractionSource() }
@@ -120,7 +127,7 @@ internal fun ArtistWidgets(artist: LibraryArtist, onOpen: (LibraryRelease) -> Un
 }
 
 @Composable
-private fun TopAlbumCard(release: LibraryRelease, onOpen: () -> Unit) {
+private fun TopAlbumCard(release: LibraryRelease, onOpen: () -> Unit, onPlay: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
@@ -141,5 +148,32 @@ private fun TopAlbumCard(release: LibraryRelease, onOpen: () -> Unit) {
         ReleaseCover(release, Modifier.size(150.dp))
         Text(release.title, fontSize = 22.sp, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         release.year?.let { Text(it, fontSize = 20.sp, color = colors.textSecondary) }
+        TopAlbumPlayButton(topAlbumPlayLabel(release), enabled = release.isPlayable, onPlay = onPlay)
     }
+}
+
+/** The label under a top album: "Play", or why it will not play. */
+internal fun topAlbumPlayLabel(release: LibraryRelease): String = if (release.isPlayable) "Play" else "Not on YouTube Music"
+
+@Composable
+private fun TopAlbumPlayButton(label: String, enabled: Boolean, onPlay: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(10.dp)
+    Text(
+        label,
+        fontSize = 22.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        color = if (enabled) colors.onAccent else colors.textMuted,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (enabled) colors.accent else colors.surfaceElevated)
+            .then(if (focused) Modifier.border(3.dp, colors.textPrimary, shape) else Modifier)
+            .focusable(enabled = enabled, interactionSource = source)
+            .clickable(enabled = enabled, interactionSource = source, indication = null, onClick = onPlay)
+            .padding(vertical = 8.dp, horizontal = 12.dp),
+    )
 }

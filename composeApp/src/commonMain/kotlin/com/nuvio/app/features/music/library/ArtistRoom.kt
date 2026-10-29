@@ -98,6 +98,7 @@ internal fun ArtistRoom(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     onPlayTop: () -> Unit,
+    onPlayRelease: (LibraryRelease) -> Unit,
     topLabel: String?,
     onAbout: () -> Unit,
     onLinks: () -> Unit,
@@ -150,7 +151,7 @@ internal fun ArtistRoom(
                         artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
                         filter, playableOnly, demosOpen, onPlay, onShuffle, onPlayTop, topLabel, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
                     )
-                    ArtistWidgets(artist, onOpen) // fork:music - HTPC phase 8
+                    ArtistWidgets(artist, onOpen, onPlayRelease, notice) // fork:music - HTPC phase 8
                     WhereNextStrip(artist, onOpenArtist) // fork:music - HTPC phase 3
                 }
             }
@@ -167,7 +168,7 @@ internal fun ArtistRoom(
                     artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
                     filter, playableOnly, demosOpen, onPlay, onShuffle, onPlayTop, topLabel, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
                 )
-                ArtistWidgets(artist, onOpen) // fork:music - HTPC phase 8
+                ArtistWidgets(artist, onOpen, onPlayRelease, notice) // fork:music - HTPC phase 8
                 WhereNextStrip(artist, onOpenArtist) // fork:music - HTPC phase 3
             }
         }
