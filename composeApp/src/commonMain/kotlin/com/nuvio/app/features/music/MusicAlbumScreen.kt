@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.torbox.TorboxMusicSource
+import com.nuvio.app.features.music.torbox.TorboxSourceRow
+import com.nuvio.app.features.music.torbox.rememberTorboxAlbumController
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -130,6 +133,17 @@ private fun AlbumContent(
     val info = rememberLibraryAlbumInfo(album.browseId)
 
     val loaded = state.holds(album)
+    // fork:torbox - null unless a TorBox key is set; then the album can be played from a TorBox copy.
+    var torboxRetry by remember(album.browseId) { mutableStateOf(0) }
+    val torbox = rememberTorboxAlbumController(album, player, torboxRetry)
+    val playingTorbox = state.track?.let(TorboxMusicSource::owns) == true
+    val wantTorbox = torbox?.active == true
+    // The source the person picked is not the one this album is playing from: Play starts it over in the chosen one.
+    val startsFresh = !loaded || playingTorbox != wantTorbox
+    fun startAlbum(trackIndex: Int, mode: MusicPlayMode, shuffled: Boolean) {
+        if (wantTorbox) torbox?.play(trackIndex, mode, shuffled)
+        else player.play(album, trackIndex = trackIndex, mode = mode, shuffled = shuffled)
+    }
     // While this album plays, the player's mode is the truth: a failed switch to video leaves it on audio.
     val mode = if (loaded) state.mode else chosenMode
 
@@ -176,7 +190,7 @@ private fun AlbumContent(
             ) {
                 NuvioPrimaryButton(
                     text = when {
-                        !loaded -> "Play"
+                        startsFresh -> "Play"
                         state.playWhenReady -> "Pause"
                         else -> "Resume"
                     },
@@ -184,16 +198,16 @@ private fun AlbumContent(
                     height = 44.dp,
                     enabled = album.tracks.any { it.isAvailable },
                     onClick = {
-                        if (loaded) player.togglePlayback()
-                        else player.play(album, trackIndex = 0, mode = mode, shuffled = false)
+                        if (!startsFresh) player.togglePlayback()
+                        else startAlbum(0, mode, shuffled = false)
                     },
                 )
                 ShuffleButton(
-                    on = loaded && state.shuffled,
+                    on = !startsFresh && state.shuffled,
                     enabled = album.tracks.any { it.isAvailable },
                     onClick = {
-                        if (loaded) player.setShuffled(!state.shuffled)
-                        else player.play(album, trackIndex = randomPlayableIndex(album), mode = mode, shuffled = true)
+                        if (!startsFresh) player.setShuffled(!state.shuffled)
+                        else startAlbum(randomPlayableIndex(album), mode, shuffled = true)
                     },
                 )
                 MusicSegmented(
@@ -205,6 +219,7 @@ private fun AlbumContent(
                     },
                 )
             }
+            torbox?.let { TorboxSourceRow(it, onRetry = { torboxRetry++ }) } // fork:torbox
             val note = when {
                 loaded && state.notice != null -> state.notice
                 mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
@@ -235,10 +250,12 @@ private fun AlbumContent(
                 track = track,
                 current = loaded && state.trackIndex == index,
                 onClick = {
-                    when (val tap = musicTrackTap(state, album, index, chosenMode)) {
+                    if (loaded && startsFresh) {
+                        // fork:torbox - the album is playing from the other source: start it over in the chosen one.
+                        startAlbum(index, chosenMode, shuffled = false)
+                    } else when (val tap = musicTrackTap(state, album, index, chosenMode)) {
                         is MusicTrackTap.JumpInQueue -> player.jumpTo(tap.trackIndex)
-                        is MusicTrackTap.StartAlbum ->
-                            player.play(album, trackIndex = tap.trackIndex, mode = tap.mode, shuffled = false)
+                        is MusicTrackTap.StartAlbum -> startAlbum(tap.trackIndex, tap.mode, shuffled = false)
                     }
                 },
             )

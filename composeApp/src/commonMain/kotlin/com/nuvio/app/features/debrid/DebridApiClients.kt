@@ -7,6 +7,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 
 internal data class DebridApiResponse<T>(
     val status: Int,
@@ -120,6 +121,20 @@ internal object TorboxApiClient {
             contentType = "multipart/form-data; boundary=$boundary",
         )
     }
+
+    /**
+     * TorBox's torrent search, with each result's cache state. A different host from the rest of the
+     * API, and a paid-plan feature; the caller reads [DebridApiResponse.rawBody] because the result
+     * shape is not one of the envelopes above.
+     */
+    suspend fun searchTorrents(apiKey: String, query: String): DebridApiResponse<JsonElement> =
+        request(
+            method = "GET",
+            url = "https://search-api.torbox.app/torrents/search/${encodePathSegment(query)}?${
+                queryString("check_cache" to "true", "metadata" to "false")
+            }",
+            apiKey = apiKey,
+        )
 
     suspend fun getTorrent(apiKey: String, id: Int): DebridApiResponse<TorboxEnvelopeDto<TorboxTorrentDataDto>> =
         request(
