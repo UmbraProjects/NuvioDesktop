@@ -248,8 +248,23 @@ internal fun parseAlbum(body: String, browseId: String): MusicAlbum? {
         thumbnailUrl = thumbnailOf(header?.get("thumbnail")),
         tracks = tracks.distinctBy { it.videoId },
         audioPlaylistId = audioPlaylistId,
+        otherVersionIds = otherVersionIds(root, browseId),
     )
 }
+
+/** The albums under an album page's "Other versions" shelf, other than the page itself. */
+private fun otherVersionIds(root: JsonElement, selfId: String): List<String> =
+    findAll(root, "musicCarouselShelfRenderer")
+        .filter { shelf ->
+            textOf(shelf.at("header", "musicCarouselShelfBasicHeaderRenderer", "title")).trim()
+                .equals("Other versions", ignoreCase = true)
+        }
+        .flatMap { shelf -> findAll(shelf, "musicTwoRowItemRenderer") }
+        .mapNotNull { item ->
+            (item.runBrowseId() ?: runsOf(item["title"]).firstNotNullOfOrNull { it.runBrowseId() })
+                ?.takeIf { it.startsWith(ALBUM_PREFIX) && it != selfId }
+        }
+        .distinct()
 
 /** An album, single or EP tile of an artist page or of its "more" grid; null for playlists, videos and artists. */
 private fun JsonObject.toTwoRowAlbum(self: MusicArtistRef, fallbackKind: String?): MusicAlbumSummary? {

@@ -1190,6 +1190,7 @@ private fun MobileSettingsScreen(
                     onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                     onSimklClick = { onPageChange(SettingsPage.SimklAuthentication) },
                     onYamtrackClick = { onPageChange(SettingsPage.YamtrackAuthentication) },
+                    onYouTubeAccountClick = { onPageChange(SettingsPage.YouTubeAccount) },
                     onSeekrClick = { onPageChange(SettingsPage.Seekr) },
                     onLightsClick = { onPageChange(SettingsPage.Lights) },
                     onDiscordClick = { onPageChange(SettingsPage.DiscordPresence) },
@@ -1234,6 +1235,7 @@ private fun MobileSettingsScreen(
                 )
                 SettingsPage.SimklAuthentication -> simklSettingsContent(isTablet = false, uiState = simklAuthUiState, settingsUiState = simklSettingsUiState)
                 SettingsPage.YamtrackAuthentication -> yamtrackSettingsContent(isTablet = false, settings = yamtrackSettingsUiState)
+                SettingsPage.YouTubeAccount -> youTubeAccountSettingsContent(isTablet = false)
                 SettingsPage.Seekr -> seekrSettingsContent(isTablet = false)
                 SettingsPage.Lights -> lightsSettingsContent(isTablet = false, settings = lightsSettingsUiState)
                 SettingsPage.DiscordPresence -> discordPresenceSettingsContent(
@@ -2069,6 +2071,7 @@ private fun TabletSettingsScreen(
                         onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                         onSimklClick = { onPageChange(SettingsPage.SimklAuthentication) },
                         onYamtrackClick = { onPageChange(SettingsPage.YamtrackAuthentication) },
+                        onYouTubeAccountClick = { onPageChange(SettingsPage.YouTubeAccount) },
                         onSeekrClick = { onPageChange(SettingsPage.Seekr) },
                         onLightsClick = { onPageChange(SettingsPage.Lights) },
                         onDiscordClick = { onPageChange(SettingsPage.DiscordPresence) },
@@ -2113,6 +2116,7 @@ private fun TabletSettingsScreen(
                     )
                     SettingsPage.SimklAuthentication -> simklSettingsContent(isTablet = true, uiState = simklAuthUiState, settingsUiState = simklSettingsUiState)
                     SettingsPage.YamtrackAuthentication -> yamtrackSettingsContent(isTablet = true, settings = yamtrackSettingsUiState)
+                    SettingsPage.YouTubeAccount -> youTubeAccountSettingsContent(isTablet = true)
                     SettingsPage.Seekr -> seekrSettingsContent(isTablet = true)
                     SettingsPage.Lights -> lightsSettingsContent(isTablet = true, settings = lightsSettingsUiState)
                     SettingsPage.DiscordPresence -> discordPresenceSettingsContent(
@@ -2330,6 +2334,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.TraktAuthentication,
     SettingsPage.SimklAuthentication -> SettingsPage.Integrations
     SettingsPage.YamtrackAuthentication,
+    SettingsPage.YouTubeAccount,
     SettingsPage.Seekr,
     SettingsPage.Lights,
     SettingsPage.DiscordPresence -> SettingsPage.Integrations
@@ -2354,6 +2359,7 @@ private fun SettingsPage.desktopBackPage(): SettingsPage? = when (this) {
     SettingsPage.TraktAuthentication,
     SettingsPage.SimklAuthentication,
     SettingsPage.YamtrackAuthentication,
+    SettingsPage.YouTubeAccount,
     SettingsPage.Seekr,
     SettingsPage.Lights,
     SettingsPage.DiscordPresence -> SettingsPage.Integrations

@@ -55,6 +55,8 @@ data class MusicAlbum(
     val tracks: List<MusicTrack>,
     /** The album's audio playlist (`OLAK5uy_...`) when the page names it. */
     val audioPlaylistId: String?,
+    /** Browse ids of the page's "Other versions" (a deluxe or expanded edition, say), when it lists any. */
+    val otherVersionIds: List<String> = emptyList(),
 )
 
 data class MusicArtist(

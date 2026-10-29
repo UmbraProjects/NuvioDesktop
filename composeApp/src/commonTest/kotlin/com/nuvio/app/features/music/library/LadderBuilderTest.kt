@@ -230,4 +230,42 @@ class LadderBuilderTest {
         assertTrue(ladder.rungs.all { it.why.isNotBlank() })
         assertTrue(ladder.rungs.all { it.anchorName == null })
     }
+
+    @Test
+    fun aSingleTagVoteDoesNotTakeTheTopRung() {
+        // From the "Into boogie" debug log: a 1-vote artist read as 100% pure and beat the real core acts for rung 5.
+        val thin = cand("OneVote", mapOf("shoegaze" to 1))
+        val real = pool + thin
+        val ladder = buildLadder("shoegaze", me, real)
+        assertFalse(ladder.rungs.last().candidate.id == "OneVote")
+        assertEquals(ladder.rungs.map { it.purity }.sorted(), ladder.rungs.map { it.purity })
+    }
+
+    @Test
+    fun evidenceAdjustedPurityIsBelowThePlainShareAndRecordsIt() {
+        val ladder = buildLadder("shoegaze", me, pool)
+        ladder.rungs.forEach { rung ->
+            val pick = rung.pick!!
+            assertTrue(rung.purity < pick.rawPurity, "${rung.candidate.id}: ${rung.purity} vs ${pick.rawPurity}")
+        }
+    }
+
+    @Test
+    fun aThinTaggedArtistIsLeftOutWhileEnoughSturdyOnesRemain() {
+        // From the "Out from Ed Sheeran" log: 2 votes, all for the genre, still won the top rung.
+        val ladder = buildLadder("shoegaze", me, pool + cand("Thin", mapOf("shoegaze" to 2)))
+        assertFalse(ladder.rungs.any { it.candidate.id == "Thin" })
+        assertEquals(buildLadder("shoegaze", me, pool).rungs.map { it.candidate.id }, ladder.rungs.map { it.candidate.id })
+    }
+
+    @Test
+    fun thinTaggedArtistsFillTheRungsWhenTooFewSturdyOnesExist() {
+        val sparse = listOf(
+            cand("Solid", mapOf("shoegaze" to 6, "dream pop" to 4)),
+            cand("T1", mapOf("shoegaze" to 2)),
+            cand("T2", mapOf("shoegaze" to 1)),
+        )
+        val ladder = buildLadder("shoegaze", me, sparse, rungs = 3)
+        assertEquals(3, ladder.rungs.size)
+    }
 }

@@ -145,6 +145,27 @@ object MusicLibraryRepository {
         runCatching { MusicLibraryStorage.saveSettings(json.encodeToString(settings)) }
     }
 
+    /**
+     * fork:album-editions — points every release linked to the YouTube Music album [from] at [to]
+     * instead: the edition the library's own track count describes. Saved artists are written to
+     * disk; previewed ones stay in memory.
+     */
+    fun relinkRelease(from: String, to: String) {
+        if (from == to) return
+        ensureLoaded()
+        fun LibraryArtist.relinked() =
+            copy(releases = releases.map { if (it.ytBrowseId == from) it.copy(ytBrowseId = to) else it })
+        var savedChanged = false
+        _state.update { s ->
+            savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == from } }
+            s.copy(
+                artists = s.artists.map { a -> if (a.releases.any { it.ytBrowseId == from }) a.relinked() else a },
+                preview = s.preview.mapValues { (_, a) -> if (a.releases.any { it.ytBrowseId == from }) a.relinked() else a },
+            )
+        }
+        if (savedChanged) persist()
+    }
+
     /** Stores [artist]. With [onlyIfPresent] a late result for an artist the person has since removed is dropped. */
     private fun replace(artist: LibraryArtist, onlyIfPresent: Boolean = false) {
         if (onlyIfPresent && !_state.value.contains(artist.id)) return

@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.background
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.LocalPlatformContext
 import com.nuvio.app.core.ui.PlatformBackHandler
+import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicCover
 import com.nuvio.app.features.music.MusicPlayback
@@ -120,6 +122,11 @@ internal fun MusicLadderScreen(
     // being opened, and the rung whose hook is playing. Arrowing never starts one: only a press does. A new AuditionTarget
     // cancels one still opening, so pressing quickly on two rungs plays the second.
     val shown = state
+    // Item 5: F3 shows how each rung was picked; the same text goes to the log every time a ladder is built.
+    var debug by remember { mutableStateOf(false) }
+    LaunchedEffect(shown) {
+        (shown as? LadderState.Ready)?.let { Logger.withTag("LadderDebug").i { ladderDebugLines(it.view.ladder, it.view.title).joinToString("\n") } }
+    }
     val rungs = (shown as? LadderState.Ready)?.view?.ladder?.rungs.orEmpty()
     var focusedId by remember(request) { mutableStateOf<String?>(null) }
     var auditionTarget by remember(request) { mutableStateOf<AuditionTarget?>(null) }
@@ -202,7 +209,12 @@ internal fun MusicLadderScreen(
             .focusRequester(focusRequester)
             .focusable()
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown || rungs.isEmpty()) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.key == Key.F3) {
+                    debug = !debug
+                    return@onPreviewKeyEvent true
+                }
+                if (rungs.isEmpty()) return@onPreviewKeyEvent false
                 val current = activeRung
                 when (event.key) {
                     // The rungs are a horizontal strip now: Left and Right browse them.
@@ -341,6 +353,7 @@ internal fun MusicLadderScreen(
                             )
                         }
                     }
+                    if (debug) LadderDebugPanel(ladderDebugLines(shown.view.ladder, shown.view.title))
                     LadderLegend()
                     Spacer(Modifier.height(24.dp))
                 }
@@ -600,4 +613,17 @@ private fun feedbackLabel(feedback: RungFeedback): String = when (feedback) {
     RungFeedback.TooClose -> "Too close"
     RungFeedback.Skip -> "Skip"
     RungFeedback.Love -> "Love"
+}
+
+/** Item 5: the build details of the ladder as small monospaced text, for tuning. Hidden until F3. */
+@Composable
+private fun LadderDebugPanel(lines: List<String>) {
+    val colors = MaterialTheme.nuvio.colors
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surfaceCard).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text("Debug (F3 hides)", style = ladderText(LadderType.Legend), color = colors.textMuted)
+        lines.forEach { Text(it, fontFamily = FontFamily.Monospace, fontSize = 16.sp, color = colors.textSecondary) }
+    }
 }

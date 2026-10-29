@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.Dispatchers
@@ -91,6 +92,7 @@ internal object WhereNextLadders {
             LadderArtistTargets.ladderOutFrom(artist.name, MusicLibraryRepository.state.value.artists, destination)
         }
         if (result is ArtistLadderOutcome.Ready) {
+            Logger.withTag("LadderDebug").i { ladderDebugLines(result.ladder, "Where next from ${artist.name}").joinToString("\n") }
             WhereNextCache.put(artist.id, destination, result)
             withContext(Dispatchers.Default) {
                 runCatching { book().put(WhereNextCache.key(artist.id, destination), result) }

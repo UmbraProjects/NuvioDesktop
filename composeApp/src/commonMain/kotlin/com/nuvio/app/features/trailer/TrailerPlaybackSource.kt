@@ -29,4 +29,10 @@ data class TrailerPlaybackSource(
      * looping player tell a stream that was cut off early from one that played to its real end.
      */
     val durationMs: Long = 0L,
+    /**
+     * fork:innertubex — request headers the media fetch must carry, for a stream whose resolver
+     * says it is only served to a particular client identity. Empty for everything the in-app
+     * extractor finds.
+     */
+    val headers: Map<String, String> = emptyMap(),
 )

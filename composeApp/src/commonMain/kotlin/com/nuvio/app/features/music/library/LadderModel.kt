@@ -138,10 +138,17 @@ internal fun proximity(candidate: TagProfile, footprint: TagProfile, excluded: S
  * How central the artist behind [votes] is to the genre [targetKey], 0.0 to 1.0: the target's share of
  * all its genre votes once variants are merged and junk dropped. An artist with no usable votes gives 0.0.
  */
-internal fun purity(votes: Map<String, Int>, targetKey: String): Double {
+internal fun purity(votes: Map<String, Int>, targetKey: String): Double = shrunkPurity(votes, targetKey, 0.0)
+
+/**
+ * [purity] with the evidence counted: the target's votes over all genre votes plus [priorVotes] imaginary votes for
+ * something else. One vote for the genre out of one is 1/(1+k), not 100%; forty out of forty is still close to 1.
+ * With [priorVotes] 0.0 this is exactly [purity].
+ */
+internal fun shrunkPurity(votes: Map<String, Int>, targetKey: String, priorVotes: Double): Double {
     val merged = normalizeWeightedGenres(votes)
     val total = merged.values.sum()
     if (total <= 0) return 0.0
     val target = merged.entries.filter { genreKey(it.key) == targetKey }.sumOf { it.value }
-    return target.toDouble() / total
+    return target.toDouble() / (total + priorVotes.coerceAtLeast(0.0))
 }

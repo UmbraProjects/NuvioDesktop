@@ -71,6 +71,7 @@ jobs:
         shell: pwsh
         run: >
           ./gradlew.bat :composeApp:createReleaseDistributable
+          "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
           "-Pnuvio.windows.allowWhisperAvfilter=true"
@@ -113,6 +114,7 @@ jobs:
             if ($wix) { $env:PATH = "$($wix.FullName);$env:PATH" }
           }
           ./gradlew.bat :composeApp:packageReleaseMsi --rerun-tasks `
+            "-Pnuvio.innertubex=true" `
             "-Pnuvio.webview2.dir=C:/libs/webview2" `
             "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin" `
             "-Pnuvio.windows.allowWhisperAvfilter=true" `
