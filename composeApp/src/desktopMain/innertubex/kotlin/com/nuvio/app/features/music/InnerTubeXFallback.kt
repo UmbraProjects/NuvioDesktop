@@ -70,11 +70,10 @@ internal object InnerTubeXFallback : MusicStreamFallback {
     }
 
     private val logger = InnerTubeLogger { event ->
-        if (event.level == InnerTubeLogLevel.DEBUG) return@InnerTubeLogger
         val details = if (event.details.isEmpty()) "" else
             event.details.entries.joinToString(prefix = " [", postfix = "]") { "${it.key}=${it.value}" }
         val line = "${event.tag}: ${event.message}$details"
-        if (event.level == InnerTubeLogLevel.INFO) log.i { line } else log.w { line }
+        if (event.level == InnerTubeLogLevel.INFO || event.level == InnerTubeLogLevel.DEBUG) log.i { line } else log.w { line }
     }
 
     private const val PLAYER_CONFIG_URL =
