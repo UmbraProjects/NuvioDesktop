@@ -161,6 +161,39 @@ private val CLIENTS = listOf(
     ),
 )
 
+// fork:ytmusic-login — clients for the signed-in retry. The mobile clients above are built for
+// anonymous use and reject a request carrying account cookies, so a signed-in pass needs the
+// TV clients, which accept them and are the ones that serve age-gated videos.
+private val ACCOUNT_CLIENTS = listOf(
+    YouTubeClient(
+        key = "tv",
+        id = "7",
+        version = "7.20250219.14.00",
+        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+        context = jsonObjectOf(
+            "clientName" to "TVHTML5",
+            "clientVersion" to "7.20250219.14.00",
+            "hl" to "en",
+            "gl" to "US",
+        ),
+        priority = 0,
+    ),
+    YouTubeClient(
+        key = "tv_embedded",
+        id = "85",
+        version = "2.0",
+        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+        context = jsonObjectOf(
+            "clientName" to "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+            "clientVersion" to "2.0",
+            "clientScreen" to "EMBED",
+            "hl" to "en",
+            "gl" to "US",
+        ),
+        priority = 1,
+    ),
+)
+
 internal typealias TrailerRequester = suspend (
     url: String,
     method: String,
@@ -378,7 +411,7 @@ class InAppYouTubeExtractor internal constructor(
         // whichever client responded last.
         var lastPlayabilityStatus: JsonObject? = null
 
-        for (client in CLIENTS) {
+        for (client in if (useAccount) ACCOUNT_CLIENTS else CLIENTS) {
             runCatching {
                 val playerResponse = fetchPlayerResponse(
                     apiKey = apiKey,
@@ -474,6 +507,9 @@ class InAppYouTubeExtractor internal constructor(
                         )
                     }
                 }
+            }.onFailure { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                log.i { "Player client ${client.key} failed for $videoId (account=$useAccount): ${error.message}" }
             }
         }
 
