@@ -104,11 +104,12 @@ class LadderAuditionTest {
         val artists: List<MusicArtistSummary> = emptyList(),
         val releases: List<MusicAlbumSummary> = emptyList(),
         val albums: Map<String, MusicAlbum> = emptyMap(),
+        val page: MusicArtist? = null,
     ) : MusicCatalog {
         override suspend fun searchAlbums(query: String) = emptyList<MusicAlbumSummary>()
         override suspend fun searchArtists(query: String) = artists
         override suspend fun album(browseId: String): MusicAlbum? = albums[browseId]
-        override suspend fun artist(browseId: String): MusicArtist? = null
+        override suspend fun artist(browseId: String): MusicArtist? = page
         override suspend fun artistReleases(browseId: String) = releases
     }
 
@@ -158,6 +159,37 @@ class LadderAuditionTest {
         assertEquals("Alison", playing.trackTitle)
         assertEquals("Souvlaki", playing.albumTitle)
         assertEquals("UC1", playing.artistId)
+    }
+
+    @Test
+    fun theAuditionPlaysTheArtistsMostPlayedSongNotTheFirstTrack() = runBlocking<Unit> {
+        val page = MusicArtist("UC1", "Slowdive", null, emptyList(), listOf(MusicTopSong("hit", "Alison", "a2")))
+        val tracks = listOf(track("1", "Slomo", 200), track("2", "Alison", 220))
+        val cat = Fake(listOf(slowdive), listOf(summary("a2")), mapOf("a2" to album(tracks)), page)
+        val played = Played()
+        val out = auditionRung(cat, "Slowdive", emptyList(), lyricsFor = { _, _ -> null }, play = { _, i, _ -> played.index = i })
+        // The song is found by title when the list names it under another id.
+        assertEquals("Alison", assertIs<RungAudition.Playing>(out).trackTitle)
+        assertEquals(1, played.index)
+    }
+
+    @Test
+    fun aMostPlayedSongThatWillNotOpenFallsToTheNextOne() = runBlocking<Unit> {
+        val page = MusicArtist(
+            "UC1", "Slowdive", null, emptyList(),
+            listOf(MusicTopSong("x", "Gone", "missing"), MusicTopSong("2", "Alison", "a2")),
+        )
+        val cat = Fake(listOf(slowdive), listOf(summary("a2")), mapOf("a2" to album(listOf(track("1", "Slomo", 200), track("2", "Alison", 220)))), page)
+        val out = auditionRung(cat, "Slowdive", emptyList(), lyricsFor = { _, _ -> null }, play = { _, _, _ -> })
+        assertEquals("Alison", assertIs<RungAudition.Playing>(out).trackTitle)
+    }
+
+    @Test
+    fun noMostPlayedListKeepsTheFirstRealSong() = runBlocking<Unit> {
+        val page = MusicArtist("UC1", "Slowdive", null, emptyList(), emptyList())
+        val cat = Fake(listOf(slowdive), listOf(summary("a2")), mapOf("a2" to album(listOf(track("1", "Slomo", 200), track("2", "Alison", 220)))), page)
+        val out = auditionRung(cat, "Slowdive", emptyList(), lyricsFor = { _, _ -> null }, play = { _, _, _ -> })
+        assertEquals("Slomo", assertIs<RungAudition.Playing>(out).trackTitle)
     }
 
     @Test

@@ -97,15 +97,40 @@ internal suspend fun auditionRung(
         MusicPlayback.player.play(album, trackIndex = index, startPositionMs = startMs)
     },
 ): RungAudition {
-    val resolved = resolveRungAlbum(catalog, name, libraryArtists, topAlbumId) ?: return RungAudition.NotPlayable
+    // fork:top-song — the artist's most-played song when YouTube Music lists one we can open; else the old pick.
+    val popular = popularRungSong(catalog, name)
+    val resolved = popular?.first ?: resolveRungAlbum(catalog, name, libraryArtists, topAlbumId) ?: return RungAudition.NotPlayable
     val album = resolved.album
-    val index = pickAuditionTrack(album.tracks)
+    val index = popular?.second ?: pickAuditionTrack(album.tracks)
     if (index < 0) return RungAudition.NotPlayable
     val track = album.tracks[index]
     val lyrics = runCatching { lyricsFor(track, album) }.getOrNull()
     val hook = hookFor(lyrics, track.durationSeconds * 1000L)
     play(album, index, hook.startMs)
     return RungAudition.Playing(album.title, track.title, resolved.artist.browseId, hook)
+}
+
+/** How many of an artist's most-played songs are tried before giving up on the popular pick. */
+private const val POPULAR_SONG_TRIES = 5
+
+/**
+ * fork:top-song — the rung's most-played song: the first of the artist page's "Songs" list that sits on an album we can
+ * open and is available there. Returns that album (as a [ResolvedRung]) and the song's index on it. The list names
+ * the song by the id YouTube Music plays it under, which can be its video; the album's own track is found by id, else
+ * by title. Null when the page has no such list or none of its songs opens, so the audition falls back to the first song.
+ */
+internal suspend fun popularRungSong(catalog: MusicCatalog, name: String): Pair<ResolvedRung, Int>? {
+    val summary = rungArtist(catalog, name) ?: return null
+    val page = runCatching { catalog.artist(summary.browseId) }.getOrNull() ?: return null
+    for (song in page.topSongs.filter { it.albumBrowseId != null }.take(POPULAR_SONG_TRIES)) {
+        val album = runCatching { catalog.album(song.albumBrowseId!!) }.getOrNull() ?: continue
+        val wanted = looseTitleKey(song.title)
+        val index = album.tracks.indexOfFirst { it.isAvailable && it.videoId == song.videoId }
+            .takeIf { it >= 0 }
+            ?: album.tracks.indexOfFirst { it.isAvailable && looseTitleKey(it.title) == wanted }
+        if (index >= 0) return ResolvedRung(summary, album) to index
+    }
+    return null
 }
 
 /** The line under a rung while it plays or when it could not: what song, from when, and whether a chorus was found. */

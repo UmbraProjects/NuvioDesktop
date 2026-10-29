@@ -64,6 +64,15 @@ data class MusicArtist(
     val name: String,
     val thumbnailUrl: String?,
     val albums: List<MusicAlbumSummary>,
+    /** The page's "Songs" shelf: YouTube Music's own most-played list for the artist, most popular first. */
+    val topSongs: List<MusicTopSong> = emptyList(),
+)
+
+/** One entry of an artist's most-played list. [albumBrowseId] is the album it is listed under, when the page names one. */
+data class MusicTopSong(
+    val videoId: String,
+    val title: String,
+    val albumBrowseId: String? = null,
 )
 
 /** A track as the watch-next queue lists it, with the counterpart YouTube Music links to it. */

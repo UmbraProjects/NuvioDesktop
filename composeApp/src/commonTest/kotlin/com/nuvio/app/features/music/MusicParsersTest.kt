@@ -133,6 +133,23 @@ class MusicParsersTest {
     }
 
     @Test
+    fun artistPageListsItsMostPlayedSongsInOrder() {
+        fun song(id: String, title: String, album: String) = """
+            {"musicResponsiveListItemRenderer":{"playlistItemData":{"videoId":"$id"},
+              "flexColumns":[
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"$title"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Daft Punk"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Album","navigationEndpoint":{"browseEndpoint":{"browseId":"$album"}}}]}}}]}}"""
+        val body = """
+        {"header":{"musicImmersiveHeaderRenderer":{"title":{"runs":[{"text":"Daft Punk"}]}}},
+         "contents":[{"musicShelfRenderer":{"contents":[${song("v1", "One More Time", "MPREb_disc")},${song("v2", "Get Lucky", "MPREb_ram")}]}}]}"""
+        val artist = assertNotNull(parseArtist(body, "UC123"))
+        assertEquals(listOf("One More Time", "Get Lucky"), artist.topSongs.map { it.title })
+        assertEquals(listOf("v1", "v2"), artist.topSongs.map { it.videoId })
+        assertEquals(listOf("MPREb_disc", "MPREb_ram"), artist.topSongs.map { it.albumBrowseId })
+    }
+
+    @Test
     fun artistPageListsAlbumsOnly() {
         val body = """
         {"header":{"musicImmersiveHeaderRenderer":{"title":{"runs":[{"text":"Daft Punk"}]}}},
