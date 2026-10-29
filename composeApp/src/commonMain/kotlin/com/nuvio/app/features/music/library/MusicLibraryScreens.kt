@@ -217,6 +217,7 @@ internal fun ArtworkSourcesDialog(
     var fanart by remember { mutableStateOf(settings.fanartApiKey) }
     var audioDb by remember { mutableStateOf(settings.audioDbKey) }
     var autoNext by remember { mutableStateOf(settings.autoWhereNext) }
+    var nebula by remember { mutableStateOf(settings.nebulaSecretLink) }
     NuvioAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Music settings") },
@@ -238,6 +239,19 @@ internal fun ArtworkSourcesDialog(
                     placeholder = "Optional (the shared test key is used when empty)",
                     secret = true,
                 )
+                Text("Music addon link (Nebula)", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
+                NuvioTextField(
+                    value = nebula,
+                    onValueChange = { nebula = it.trim() },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Optional: paste your addon's manifest link",
+                    secret = true,
+                )
+                Text(
+                    "With a link, an album page can play a lossless copy from your addon instead of YouTube Music. The link is private to you and is not included in settings backups.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
                 Text(
                     "Keys apply the next time an artist is added or refreshed.",
                     style = MaterialTheme.typography.bodySmall,
@@ -256,7 +270,7 @@ internal fun ArtworkSourcesDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(settings.copy(fanartApiKey = fanart, audioDbKey = audioDb, autoWhereNext = autoNext)) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(settings.copy(fanartApiKey = fanart, audioDbKey = audioDb, autoWhereNext = autoNext, nebulaSecretLink = nebula)) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

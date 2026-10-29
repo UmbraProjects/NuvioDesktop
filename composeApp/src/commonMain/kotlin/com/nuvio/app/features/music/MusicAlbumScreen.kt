@@ -1,8 +1,8 @@
 package com.nuvio.app.features.music
 
-import com.nuvio.app.features.music.torbox.TorboxMusicSource
-import com.nuvio.app.features.music.torbox.TorboxSourceRow
-import com.nuvio.app.features.music.torbox.rememberTorboxAlbumController
+import com.nuvio.app.features.music.nebula.NebulaMusicSource
+import com.nuvio.app.features.music.nebula.NebulaSourceRow
+import com.nuvio.app.features.music.nebula.rememberNebulaAlbumController
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -133,15 +133,15 @@ private fun AlbumContent(
     val info = rememberLibraryAlbumInfo(album.browseId)
 
     val loaded = state.holds(album)
-    // fork:torbox - null unless a TorBox key is set; then the album can be played from a TorBox copy.
-    var torboxRetry by remember(album.browseId) { mutableStateOf(0) }
-    val torbox = rememberTorboxAlbumController(album, player, torboxRetry)
-    val playingTorbox = state.track?.let(TorboxMusicSource::owns) == true
-    val wantTorbox = torbox?.active == true
+    // fork:nebula - null unless a music addon link is set; then the album can be played from the addon.
+    var nebulaRetry by remember(album.browseId) { mutableStateOf(0) }
+    val nebula = rememberNebulaAlbumController(album, player, nebulaRetry)
+    val playingNebula = state.track?.let(NebulaMusicSource::owns) == true
+    val wantNebula = nebula?.active == true
     // The source the person picked is not the one this album is playing from: Play starts it over in the chosen one.
-    val startsFresh = !loaded || playingTorbox != wantTorbox
+    val startsFresh = !loaded || playingNebula != wantNebula
     fun startAlbum(trackIndex: Int, mode: MusicPlayMode, shuffled: Boolean) {
-        if (wantTorbox) torbox?.play(trackIndex, mode, shuffled)
+        if (wantNebula) nebula?.play(trackIndex, mode, shuffled)
         else player.play(album, trackIndex = trackIndex, mode = mode, shuffled = shuffled)
     }
     // While this album plays, the player's mode is the truth: a failed switch to video leaves it on audio.
@@ -219,7 +219,7 @@ private fun AlbumContent(
                     },
                 )
             }
-            torbox?.let { TorboxSourceRow(it, onRetry = { torboxRetry++ }) } // fork:torbox
+            nebula?.let { NebulaSourceRow(it, onRetry = { nebulaRetry++ }) } // fork:nebula
             val note = when {
                 loaded && state.notice != null -> state.notice
                 mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
@@ -251,7 +251,7 @@ private fun AlbumContent(
                 current = loaded && state.trackIndex == index,
                 onClick = {
                     if (loaded && startsFresh) {
-                        // fork:torbox - the album is playing from the other source: start it over in the chosen one.
+                        // fork:nebula - the album is playing from the other source: start it over in the chosen one.
                         startAlbum(index, chosenMode, shuffled = false)
                     } else when (val tap = musicTrackTap(state, album, index, chosenMode)) {
                         is MusicTrackTap.JumpInQueue -> player.jumpTo(tap.trackIndex)

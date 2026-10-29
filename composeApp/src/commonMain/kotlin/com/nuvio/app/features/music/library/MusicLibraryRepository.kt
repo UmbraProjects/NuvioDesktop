@@ -33,6 +33,8 @@ data class MusicLibrarySettings(
     val barStyle: com.nuvio.app.features.music.MusicBarStyle = com.nuvio.app.features.music.MusicBarStyle.Bar,
     /** The artist page's "Where next?" ladder builds by itself (lazily, behind other MusicBrainz calls). Off for a slow connection: it then waits for a button. */
     val autoWhereNext: Boolean = true,
+    /** The person's own music addon link (Nebula / Eclipse Music). Named "secret" so credential-free backups drop it, as they do the API keys. Empty hides the album source toggle. */
+    val nebulaSecretLink: String = "",
 )
 
 /** What is happening to one artist while it is added or refreshed. */

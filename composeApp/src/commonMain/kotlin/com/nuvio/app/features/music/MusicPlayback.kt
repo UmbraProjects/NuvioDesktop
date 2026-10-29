@@ -1,6 +1,6 @@
 package com.nuvio.app.features.music
 
-import com.nuvio.app.features.music.torbox.TorboxMusicSource
+import com.nuvio.app.features.music.nebula.NebulaMusicSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,9 +54,9 @@ object MusicPlayback {
     val player: MusicPlayer by lazy {
         MusicPlayer(
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
-            // TorBox tracks (ids like "torbox:<torrent>:<file>") get a direct link; everything else is YouTube Music.
+            // Music addon tracks (ids like "nebula:<trackId>") get a direct link; everything else is YouTube Music.
             resolver = { track, album, mode ->
-                if (TorboxMusicSource.owns(track)) TorboxMusicSource.resolve(track, album, mode)
+                if (NebulaMusicSource.owns(track)) NebulaMusicSource.resolve(track, album, mode)
                 else resolveMusicTrack(track, album, mode)
             },
         )
