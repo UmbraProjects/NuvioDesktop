@@ -3,7 +3,7 @@ package com.nuvio.app.features.music.library
 /**
  * Docx item 1, "Using the blank space": what the Music search screen shows before a letter is typed, as pure data
  * (no Compose, so it is unit-tested). Three rows: ladder starters, continue-a-ladder cards and genre tiles. Recent
- * searches come straight from SearchHistoryRepository and need no model.
+ * searches come straight from MusicSearchHistory and need no model.
  */
 
 /** A genre the library holds, with how many distinct artists carry it and who they are (first seen first). */

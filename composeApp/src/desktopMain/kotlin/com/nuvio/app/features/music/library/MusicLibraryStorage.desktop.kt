@@ -28,4 +28,10 @@ internal actual object MusicLibraryStorage {
     actual fun saveWhereNext(profileId: Int, payload: String) {
         store.putString("wherenext_$profileId", payload)
     }
+
+    actual fun loadSearchHistory(profileId: Int): String? = store.getString("search_history_$profileId")
+
+    actual fun saveSearchHistory(profileId: Int, payload: String) {
+        store.putString("search_history_$profileId", payload)
+    }
 }

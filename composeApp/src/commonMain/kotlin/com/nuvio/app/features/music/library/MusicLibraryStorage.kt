@@ -14,4 +14,8 @@ internal expect object MusicLibraryStorage {
     /** The artist page's "Where next?" ladders, kept for a week, one JSON payload per profile. */
     fun loadWhereNext(profileId: Int): String?
     fun saveWhereNext(profileId: Int, payload: String)
+
+    /** Recent music searches, apart from the film and show search history, one per profile. */
+    fun loadSearchHistory(profileId: Int): String?
+    fun saveSearchHistory(profileId: Int, payload: String)
 }

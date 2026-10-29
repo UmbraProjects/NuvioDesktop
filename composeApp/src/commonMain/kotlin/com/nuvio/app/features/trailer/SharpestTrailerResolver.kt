@@ -35,7 +35,7 @@ internal object SharpestTrailerResolver {
 
     suspend fun resolve(title: String?, releaseInfo: String?, listedKeys: List<String>): TrailerPlaybackSource? {
         val first = listedKeys.firstOrNull()?.let { resolveKey(it) }
-        if (first != null && first.reliable && first.heightPx >= GOOD_ENOUGH_TRAILER_HEIGHT) return first
+        if (first != null && first.reliable && !first.portrait && first.heightPx >= GOOD_ENOUGH_TRAILER_HEIGHT) return first
         if (title.isNullOrBlank() && listedKeys.size < 2) return first
 
         val tried = listedKeys.take(1).toMutableSet()
@@ -69,7 +69,7 @@ internal object SharpestTrailerResolver {
         val all = listOfNotNull(firstOption) + better
         val best = pickBestTrailer(all)
         log.i {
-            "sharpest of ${all.size}: " + all.joinToString { "${it.key}=${it.source.heightPx}p" } +
+            "sharpest of ${all.size}: " + all.joinToString { "${it.key}=${it.source.heightPx}p${if (it.source.portrait) " portrait" else ""}" } +
                 " -> ${best?.key}"
         }
         return best?.source ?: first

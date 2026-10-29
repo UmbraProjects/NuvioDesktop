@@ -2873,6 +2873,10 @@ fun MetaDetailsScreen(
                             leavingDetails = isLeavingDetails,
                             heroTrailerAudible = heroTrailerSourceUrl != null && heroTrailerPlayWhenReady && !heroTrailerMuted,
                             modalVisible = heroTrailerModalVisible,
+                            // An auto-playing trailer with sound is resolving or counting down.
+                            heroTrailerPending = heroTrailerPlaybackEnabled && heroTrailerCandidate != null &&
+                                !heroTrailerManualOnly && !heroTrailerFinished && !heroTrailerDismissed &&
+                                !heroTrailerMuted,
                         )
 
                         if (inAppTrailerPlaybackEnabled) {

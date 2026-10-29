@@ -41,6 +41,16 @@ class TrailerQualityTest {
     }
 
     @Test
+    fun aPortraitUploadLosesToAnyLandscapeOne() {
+        // A vertical Short cropped to fill the wide hero shows only a soft middle slice.
+        val short = TrailerOption("short", TrailerPlaybackSource(videoUrl = "u", heightPx = 1080, portrait = true), 100)
+        val landscape = option("listed", 720, 0)
+        assertEquals("listed", pickBestTrailer(listOf(short, landscape))?.key)
+        // With nothing else it is still better than no trailer at all.
+        assertEquals("short", pickBestTrailer(listOf(short))?.key)
+    }
+
+    @Test
     fun unknownHeightRanksLast() {
         assertEquals("known", pickBestTrailer(listOf(option("unknown", 0, 0), option("known", 360, 1)))?.key)
     }

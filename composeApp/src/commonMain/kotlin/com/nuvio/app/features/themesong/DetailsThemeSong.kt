@@ -18,8 +18,10 @@ private const val THEME_SONG_DETAILS_DELAY_MS = 1_500L
  *
  * The theme song behind the details screen, as one composable so MetaDetailsScreen carries a single
  * hook line. It yields to anything else that makes sound: a hero trailer with its sound on
- * ([heroTrailerAudible]), and the modals that park the trailer ([modalVisible]). It is looked up
- * after a short pause so flicking through titles does not search for every one.
+ * ([heroTrailerAudible]), and the modals that park the trailer ([modalVisible]). While a hero
+ * trailer with sound is still due to autoplay ([heroTrailerPending]) it is not even looked up:
+ * the trailer would cut it off after a few seconds. It is looked up after a short pause so
+ * flicking through titles does not search for every one.
  */
 @Composable
 fun DetailsThemeSong(
@@ -31,13 +33,14 @@ fun DetailsThemeSong(
     leavingDetails: Boolean,
     heroTrailerAudible: Boolean,
     modalVisible: Boolean,
+    heroTrailerPending: Boolean = false,
 ) {
     val enabled by ThemeSongSettings.detailsEnabled.collectAsStateWithLifecycle()
     val volume by ThemeSongSettings.volume.collectAsStateWithLifecycle()
     var source by remember(metaId) { mutableStateOf<TrailerPlaybackSource?>(null) }
-    LaunchedEffect(metaId, enabled, deferredWorkAllowed) {
+    LaunchedEffect(metaId, enabled, deferredWorkAllowed, heroTrailerPending) {
         source = null
-        if (!enabled || !deferredWorkAllowed) return@LaunchedEffect
+        if (!enabled || !deferredWorkAllowed || heroTrailerPending) return@LaunchedEffect
         delay(THEME_SONG_DETAILS_DELAY_MS)
         source = runCatching {
             ThemeSongRepository.resolve(metaType, metaName, releaseInfo, metaId)

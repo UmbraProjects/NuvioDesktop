@@ -9,10 +9,13 @@ data class TrailerPlaybackSource(
      */
     val fallback: TrailerPlaybackSource? = null,
     /**
-     * Tallest rendition this trailer offers (0 when unknown), used to compare uploads of the same
-     * trailer. It is the best the upload has, not necessarily the one chosen for playback.
+     * Sharpest rendition this trailer offers, measured on its short side (0 when unknown), used to
+     * compare uploads of the same trailer. It is the best the upload has, not necessarily the one
+     * chosen for playback.
      */
     val heightPx: Int = 0,
+    /** Taller than it is wide (a Short or a phone upload); never picked over a landscape upload. */
+    val portrait: Boolean = false,
     /**
      * False when the streams came from a client whose media URLs are cut off (HTTP 403 on the
      * open-ended range request, or nothing past about a minute) rather than the unrestricted one.

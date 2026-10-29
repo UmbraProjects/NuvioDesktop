@@ -51,13 +51,15 @@ internal fun trailerQualityClass(heightPx: Int): Int = when {
 }
 
 /**
- * The sharpest upload that will actually play; among equals the most preferred one. An upload
- * that can only be reached through a restricted client ([TrailerPlaybackSource.reliable]) ranks
- * below any that can, whatever height it claims. Null for an empty list.
+ * The sharpest upload that will actually play; among equals the most preferred one. A portrait
+ * upload ranks below every landscape one, and one that can only be reached through a restricted
+ * client ([TrailerPlaybackSource.reliable]) below any that can, whatever height it claims. Null
+ * for an empty list.
  */
 internal fun pickBestTrailer(options: List<TrailerOption>): TrailerOption? =
     options.sortedWith(
-        compareByDescending<TrailerOption> { it.source.reliable }
+        compareBy<TrailerOption> { it.source.portrait }
+            .thenByDescending { it.source.reliable }
             .thenByDescending { trailerQualityClass(it.source.heightPx) }
             .thenBy { it.order },
     ).firstOrNull()

@@ -64,6 +64,8 @@ internal data class StreamCandidate(
     val fps: Int,
     val bitrate: Double,
     val ext: String,
+    /** 0 when YouTube sent no width (audio, or an old format entry). */
+    val width: Int = 0,
     /**
      * Audio only: whether this is the video's original language track. Null when YouTube sent no
      * `audioTrack` (a single-language video, where every audio format is the original).
@@ -85,6 +87,7 @@ internal data class ManifestCandidate(
     val selectedVariantUrl: String,
     val height: Int,
     val bandwidth: Long,
+    val width: Int = 0,
 )
 
 internal data class TrailerRequestResponse(
@@ -400,6 +403,7 @@ class InAppYouTubeExtractor internal constructor(
                         fps = fps,
                         bitrate = bitrate,
                         ext = if (mimeType.contains("webm")) "webm" else "mp4",
+                        width = (format.numberValue("width") ?: 0.0).toInt(),
                     )
                 }
 
@@ -430,6 +434,7 @@ class InAppYouTubeExtractor internal constructor(
                             fps = fps,
                             bitrate = bitrate,
                             ext = if (mimeType.contains("webm")) "webm" else "mp4",
+                            width = (format.numberValue("width") ?: 0.0).toInt(),
                         )
                     } else if (hasAudio) {
                         val bitrate = format.numberValue("bitrate")
@@ -471,6 +476,7 @@ class InAppYouTubeExtractor internal constructor(
                     selectedVariantUrl = variant.url,
                     height = variant.height,
                     bandwidth = variant.bandwidth,
+                    width = variant.width,
                 )
                 if (
                     bestManifest == null ||
@@ -519,9 +525,17 @@ class InAppYouTubeExtractor internal constructor(
         // fork:trailer-quality - the upload's real ceiling (the HLS ladder often tops out above the
         // adaptive rendition picked for playback), and whether the streams came from the client whose
         // URLs are not cut off, so uploads of the same trailer can be compared.
-        val tallest = maxOf(bestManifest?.height ?: 0, bestVideo?.height ?: 0, bestProgressive?.height ?: 0)
+        // Measured on the short side, so a vertical 1080x1920 upload counts as 1080p, not 1920p, and
+        // it is flagged: cropped to fill a wide hero it shows only a soft middle slice.
+        val dimensions = listOfNotNull(
+            bestManifest?.let { it.width to it.height },
+            bestVideo?.let { it.width to it.height },
+            bestProgressive?.let { it.width to it.height },
+        )
+        val sharpest = dimensions.maxOfOrNull { (w, h) -> if (w > 0) minOf(w, h) else h } ?: 0
+        val portrait = dimensions.any { (w, h) -> w in 1 until h }
         val reliable = bestVideo?.client == PREFERRED_SEPARATE_CLIENT || bestManifest?.client == PREFERRED_SEPARATE_CLIENT
-        return source?.let { TrailerResolution.Available(it.copy(heightPx = tallest, reliable = reliable)) }
+        return source?.let { TrailerResolution.Available(it.copy(heightPx = sharpest, reliable = reliable, portrait = portrait)) }
             ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
     }
 

@@ -209,7 +209,7 @@ fun PrerollGate(
                         if (index < candidates.size) {
                             val candidate = candidates[index++]
                             val source = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
-                                HeroTrailerMetadataService.resolve(candidate.type, candidate.id)
+                                HeroTrailerMetadataService.resolve(candidate.type, candidate.id, sharpest = true)
                             }
                             if (source == null) {
                                 log.i { "no trailer for ${candidate.type}:${candidate.id}, trying the next" }
@@ -229,7 +229,7 @@ fun PrerollGate(
                         }
                         // Warm the one after this so there is no dead air between trailers.
                         candidates.getOrNull(index)?.let { next ->
-                            launch { runCatching { HeroTrailerMetadataService.resolve(next.type, next.id) } }
+                            launch { runCatching { HeroTrailerMetadataService.resolve(next.type, next.id, sharpest = true) } }
                         }
                         val done = CompletableDeferred<Unit>()
                         control.current = done
