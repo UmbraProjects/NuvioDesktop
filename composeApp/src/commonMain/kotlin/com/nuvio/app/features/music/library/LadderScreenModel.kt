@@ -63,9 +63,9 @@ private fun String.capitalised(): String = replaceFirstChar { it.uppercase() }
 
 /**
  * The buttons for the first result row. A query that is a known genre gives one ("Ladder into Shoegaze"). Otherwise,
- * when the first artist result is known, two ("Climb into X", "Climb out from X"). Nothing for a short or blank query.
- * Phase 10: on the Albums tab, [firstAlbum] (the first result) gives two for that record ("Climb into the sound of X",
- * "Climb out from X").
+ * when the first artist result is known, two: "Similar" (climb into X) and "Opposite" (climb out from X). The pills sit
+ * beside the search box over the first result, so they name the direction only. Nothing for a short or blank query.
+ * Phase 10: on the Albums tab, [firstAlbum] (the first result) gives the same two for that record.
  */
 internal fun ladderOffers(query: String, firstArtistName: String?, firstAlbum: LadderAlbumRef? = null): List<LadderOffer> {
     val text = query.trim()
@@ -79,15 +79,15 @@ internal fun ladderOffers(query: String, firstArtistName: String?, firstAlbum: L
         val title = record.title.trim()
         val by = record.artist.trim()
         return listOf(
-            LadderOffer("Climb into the sound of $title", LadderRequest.Album(title, by, record.year, LadderMode.Into)),
-            LadderOffer("Climb out from $title", LadderRequest.Album(title, by, record.year, LadderMode.OutFrom)),
+            LadderOffer("Similar", LadderRequest.Album(title, by, record.year, LadderMode.Into)),
+            LadderOffer("Opposite", LadderRequest.Album(title, by, record.year, LadderMode.OutFrom)),
         )
     }
     val artist = firstArtistName?.trim().orEmpty()
     if (artist.isEmpty()) return emptyList()
     return listOf(
-        LadderOffer("Climb into $artist", LadderRequest.Artist(artist, LadderMode.Into)),
-        LadderOffer("Climb out from $artist", LadderRequest.Artist(artist, LadderMode.OutFrom)),
+        LadderOffer("Similar", LadderRequest.Artist(artist, LadderMode.Into)),
+        LadderOffer("Opposite", LadderRequest.Artist(artist, LadderMode.OutFrom)),
     )
 }
 

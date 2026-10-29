@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
+import com.nuvio.app.features.home.components.TrailerStallWatchdog
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerHeroTrailerState
 import com.nuvio.app.features.player.PlayerPlaybackSnapshot
@@ -164,11 +165,25 @@ actual fun MusicPlayerSurface(
         }
     }
 
+    // playWhenReady is read through this so a pause does not restart the poll (and the watchdog).
+    val latestPlayWhenReady = rememberUpdatedState(playWhenReady)
     LaunchedEffect(controller, loadId) {
         var endedReported = false
+        var readyReported = false
+        // A googlevideo stream can hang "reconnecting" with no error and no end of file, which held
+        // the player on a frozen frame (or a spinner) for good. No progress for a while is treated as
+        // a failed open, so the player tries the stream's fallback or moves on to the next track.
+        val stallWatchdog = TrailerStallWatchdog()
         while (true) {
             val snapshot = controller.snapshotOffUiThread()
-            if (snapshot.isPlaying && snapshot.positionMs >= 150L) revealed = true
+            if (snapshot.isPlaying && snapshot.positionMs >= 150L) {
+                revealed = true
+                readyReported = true
+            }
+            stallWatchdog.poll(snapshot.positionMs, latestPlayWhenReady.value, readyReported, endedReported)?.let { stuckMs ->
+                log.w { "load $loadId stalled for ${stuckMs}ms at ${snapshot.positionMs}ms" }
+                latestOnError.value(loadId)
+            }
             latestOnSnapshot.value(loadId, snapshot)
             if (snapshot.isEnded && !endedReported) {
                 endedReported = true

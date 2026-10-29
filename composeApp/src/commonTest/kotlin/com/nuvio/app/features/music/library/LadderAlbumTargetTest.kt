@@ -322,7 +322,7 @@ class LadderAlbumTargetTest {
     @Test
     fun theAlbumsTabOffersTheRecordItself() {
         val offers = ladderOffers("souvlaki", null, LadderAlbumRef("Souvlaki", "Slowdive", "1993"))
-        assertEquals(listOf("Climb into the sound of Souvlaki", "Climb out from Souvlaki"), offers.map { it.label })
+        assertEquals(listOf("Similar", "Opposite"), offers.map { it.label })
         assertEquals(LadderRequest.Album("Souvlaki", "Slowdive", "1993", LadderMode.Into), offers[0].request)
         assertEquals(LadderRequest.Album("Souvlaki", "Slowdive", "1993", LadderMode.OutFrom), offers[1].request)
     }

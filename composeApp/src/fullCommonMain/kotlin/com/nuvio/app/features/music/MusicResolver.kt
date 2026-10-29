@@ -5,8 +5,15 @@ import com.nuvio.app.features.trailer.TrailerPlaybackResolver
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import com.nuvio.app.features.trailer.sourceOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 private val log = Logger.withTag("MusicResolver")
+
+/**
+ * The hunt for a video (linked video, search, then each search hit in turn) is bounded, so a slow
+ * or throttled YouTube leaves the player on the lyric video rather than loading for good.
+ */
+private const val VIDEO_LOOKUP_TIMEOUT_MS = 15_000L
 
 /**
  * Turns an album track into something the player can open.
@@ -30,6 +37,17 @@ object MusicResolver {
     }
 
     private suspend fun video(track: MusicTrack, album: MusicAlbum): MusicResolution {
+        withTimeoutOrNull(VIDEO_LOOKUP_TIMEOUT_MS) { findVideo(track, album) }?.let { return it }
+        log.i { "no official video for \"${track.title}\"; playing it as a lyric video" }
+        val source = open(track.videoId)
+            ?: return MusicResolution.Failed(track, "the audio track would not open")
+        return MusicResolution.Playable(
+            track, MusicPlayMode.Video, track.videoId, source, viaCounterpart = false, lyricVideo = true,
+        )
+    }
+
+    /** The track's linked video or the best official video that opens, else null. */
+    private suspend fun findVideo(track: MusicTrack, album: MusicAlbum): MusicResolution? {
         val linked = MusicMetadataClient.counterpartOf(track.videoId)
         if (linked != null) {
             open(linked.videoId)?.let {
@@ -52,12 +70,7 @@ object MusicResolver {
                 return MusicResolution.Playable(track, MusicPlayMode.Video, hit.videoId, it, viaCounterpart = false)
             }
         }
-        log.i { "no official video for \"${track.title}\"; playing it as a lyric video" }
-        val source = open(track.videoId)
-            ?: return MusicResolution.Failed(track, "the audio track would not open")
-        return MusicResolution.Playable(
-            track, MusicPlayMode.Video, track.videoId, source, viaCounterpart = false, lyricVideo = true,
-        )
+        return null
     }
 
     /** A stream for [videoId], or null. A source that stops serving after about a minute is not accepted. */

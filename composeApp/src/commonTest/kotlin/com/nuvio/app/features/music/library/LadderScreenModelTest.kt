@@ -38,7 +38,7 @@ class LadderScreenModelTest {
     @Test
     fun anArtistQueryGivesIntoAndOutFromForTheFirstResult() {
         val offers = ladderOffers("my bloody val", "My Bloody Valentine")
-        assertEquals(listOf("Climb into My Bloody Valentine", "Climb out from My Bloody Valentine"), offers.map { it.label })
+        assertEquals(listOf("Similar", "Opposite"), offers.map { it.label })
         assertEquals(LadderRequest.Artist("My Bloody Valentine", LadderMode.Into), offers[0].request)
         assertEquals(LadderRequest.Artist("My Bloody Valentine", LadderMode.OutFrom), offers[1].request)
     }
