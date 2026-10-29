@@ -76,7 +76,7 @@ internal class NebulaAlbumController(
         offer = when (val found = NebulaMusicSource.find(album)) {
             is NebulaAlbumLookup.Found -> NebulaOffer.Available(found.match).also {
                 // An album YouTube Music has no playable track for is only playable from the addon: start there.
-                if (album.tracks.none { t -> t.isAvailable }) chosen = MusicSource.Addon
+                if (album.tracks.none { t -> t.isAvailable } || MusicLibraryRepository.state.value.settings.preferAddon) chosen = MusicSource.Addon
             }
             NebulaAlbumLookup.NotFound -> NebulaOffer.NotFound.also { chosen = MusicSource.YouTube }
             is NebulaAlbumLookup.Failed -> NebulaOffer.LookupFailed(found.reason).also { chosen = MusicSource.YouTube }

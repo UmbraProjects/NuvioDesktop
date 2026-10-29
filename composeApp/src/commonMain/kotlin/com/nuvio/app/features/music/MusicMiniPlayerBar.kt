@@ -406,7 +406,8 @@ private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, play
 internal fun subtitle(state: MusicPlayerState): String {
     val artist = (state.track?.artists?.takeIf { it.isNotEmpty() } ?: state.album?.artists.orEmpty())
         .joinToString(", ") { it.name }
-    return listOf(artist, state.album?.title.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
+    val quality = state.track?.videoId?.let(com.nuvio.app.features.music.nebula.NebulaMusicSource::qualityOf)
+    return listOf(artist, state.album?.title.orEmpty(), quality.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
 /** The three controls that stay on the bar: previous, play or pause, next. */

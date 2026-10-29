@@ -11,10 +11,12 @@ import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.MusicLibraryStorage
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
+import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 
 /** What the music addon has for an album. */
 internal sealed interface NebulaAlbumLookup {
@@ -59,6 +61,11 @@ internal object NebulaMusicSource {
     private var bookProfile: Int? = null
 
     fun owns(track: MusicTrack): Boolean = track.videoId.startsWith(ID_PREFIX)
+
+    /** The format and quality each track last streamed at, by track id. Snapshot state, so the player bar updates when it arrives. */
+    private val qualities = mutableStateMapOf<String, String>()
+
+    fun qualityOf(videoId: String): String? = if (videoId.startsWith(ID_PREFIX)) qualities[videoId] else null
 
     /** The addon's base URL, or null when no link is set. */
     fun baseUrl(): String? {
@@ -163,6 +170,56 @@ internal object NebulaMusicSource {
         return NebulaAlbumLookup.NotFound
     }
 
+    // region lazy "is it on the addon" check for album lists
+
+    private val listChecks = HashMap<String, Boolean>()
+    private val listGate = kotlinx.coroutines.sync.Semaphore(2)
+    private var listFailures = 0
+    private var listPausedUntil = 0L
+
+    /**
+     * True when the addon probably has this album, for a badge on a list row. A search and a ranking only
+     * (no album fetch, so no track check): cheap, at most two requests, two at a time, remembered for the
+     * session. A full lookup already kept for the album answers it for free. Null when it could not be
+     * asked (no link, offline, or paused after repeated failures), so the row shows nothing.
+     */
+    suspend fun probablyHas(album: com.nuvio.app.features.music.MusicAlbumSummary): Boolean? {
+        val base = baseUrl() ?: return null
+        lock.withLock {
+            loadBook()
+            listChecks[album.browseId]?.let { return it }
+            book.lookups[album.browseId]?.takeIf { it.isFresh(LibraryClock.nowEpochMs()) }?.let { return it.albumId != null }
+        }
+        if (LibraryClock.nowEpochMs() < listPausedUntil) return null
+        return listGate.withPermit {
+            try {
+                val artist = album.artists.firstOrNull()?.name.orEmpty()
+                var found = false
+                for (query in nebulaSearchQueries(album.title, artist)) {
+                    val body = get(base, "/search?q=${urlEncodeQuery(query)}").requireOk()
+                    if (rankNebulaAlbums(parseNebulaSearchAlbums(body), album.title, artist, album.year, 0).isNotEmpty()) {
+                        found = true
+                        break
+                    }
+                }
+                listFailures = 0
+                lock.withLock { listChecks[album.browseId] = found }
+                found
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A broken addon would otherwise be asked about every row on screen: stop for a minute after three in a row.
+                if (++listFailures >= 3) {
+                    listPausedUntil = LibraryClock.nowEpochMs() + 60_000L
+                    listFailures = 0
+                }
+                null
+            }
+        }
+    }
+
+    // endregion
+
     /** [album] with its tracks pointed at the addon; tracks with no counterpart are marked unavailable. */
     fun prepare(album: MusicAlbum, match: StoredLookup): MusicAlbum = album.copy(
         tracks = album.tracks.mapIndexed { i, track ->
@@ -185,6 +242,7 @@ internal object NebulaMusicSource {
                 forget(album)
                 return MusicResolution.Failed(track, "The music addon has no link for this track")
             }
+            nebulaQualityLabel(stream.format, stream.quality)?.let { qualities[track.videoId] = it }
             MusicResolution.Playable(
                 track = track,
                 mode = mode,

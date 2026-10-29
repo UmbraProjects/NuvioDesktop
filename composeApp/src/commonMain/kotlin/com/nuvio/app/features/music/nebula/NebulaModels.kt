@@ -89,6 +89,14 @@ internal fun parseNebulaStream(raw: String): NebulaStream? {
     return NebulaStream(url, root.string("format"), root.string("quality"))
 }
 
+/** "FLAC · 16-bit" from what the stream call reports; null when it reports neither. */
+internal fun nebulaQualityLabel(format: String?, quality: String?): String? {
+    val f = format?.trim()?.takeIf { it.isNotEmpty() }?.uppercase()
+    val q = quality?.trim()?.takeIf { it.isNotEmpty() }
+    val parts = listOfNotNull(f, q?.takeUnless { f != null && it.equals(f, ignoreCase = true) })
+    return parts.joinToString(" · ").ifEmpty { null }
+}
+
 /** The `detail` of an error response ({"detail":"Not Found"}), when there is one. */
 internal fun parseNebulaDetail(raw: String): String? = parseObject(raw)?.string("detail")
 

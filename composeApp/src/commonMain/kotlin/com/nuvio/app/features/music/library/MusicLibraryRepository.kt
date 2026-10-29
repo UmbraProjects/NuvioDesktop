@@ -35,6 +35,8 @@ data class MusicLibrarySettings(
     val autoWhereNext: Boolean = true,
     /** The person's own music addon link (Nebula / Eclipse Music). Named "secret" so credential-free backups drop it, as they do the API keys. Empty hides the album source toggle. */
     val nebulaSecretLink: String = "",
+    /** An album the addon has opens on the addon (lossless) rather than YouTube Music. The album page's switch still overrides it. */
+    val preferAddon: Boolean = false,
 )
 
 /** What is happening to one artist while it is added or refreshed. */

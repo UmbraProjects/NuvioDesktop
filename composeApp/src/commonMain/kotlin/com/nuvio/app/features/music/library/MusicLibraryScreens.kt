@@ -218,6 +218,7 @@ internal fun ArtworkSourcesDialog(
     var audioDb by remember { mutableStateOf(settings.audioDbKey) }
     var autoNext by remember { mutableStateOf(settings.autoWhereNext) }
     var nebula by remember { mutableStateOf(settings.nebulaSecretLink) }
+    var preferAddon by remember { mutableStateOf(settings.preferAddon) }
     NuvioAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Music settings") },
@@ -252,6 +253,17 @@ internal fun ArtworkSourcesDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textMuted,
                 )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prefer the addon when it has the album", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
+                        Text(
+                            "Albums open on the addon's lossless copy when it has one; the switch on the album page still lets you pick YouTube Music.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textMuted,
+                        )
+                    }
+                    Switch(checked = preferAddon, onCheckedChange = { preferAddon = it })
+                }
                 Text(
                     "Keys apply the next time an artist is added or refreshed.",
                     style = MaterialTheme.typography.bodySmall,
@@ -270,7 +282,7 @@ internal fun ArtworkSourcesDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(settings.copy(fanartApiKey = fanart, audioDbKey = audioDb, autoWhereNext = autoNext, nebulaSecretLink = nebula)) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(settings.copy(fanartApiKey = fanart, audioDbKey = audioDb, autoWhereNext = autoNext, nebulaSecretLink = nebula, preferAddon = preferAddon)) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
