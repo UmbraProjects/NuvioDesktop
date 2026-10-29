@@ -9,7 +9,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToIndex
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioTheme
 import java.io.File
@@ -24,7 +24,7 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class ArtistRoomPreviewTest {
     @Test
-    fun drawsTheRoom() = runComposeUiTest {
+    fun drawsTheRoom() = runDesktopComposeUiTest(width = 1600, height = 900) {
         val releases = (0 until 9).map { i ->
             LibraryRelease(
                 key = "r$i",
@@ -51,7 +51,7 @@ class ArtistRoomPreviewTest {
         val discography = buildDiscography(releases, playableOnly = false, filter = ReleaseFilter.All)
         setContent {
             NuvioTheme {
-                Box(Modifier.size(1000.dp, 700.dp)) {
+                Box(Modifier.size(1600.dp, 900.dp)) {
                     ArtistRoom(
                         artist = artist, discography = discography, latest = releases.last(), playTarget = releases.last(),
                         canShuffle = true, notice = null, saved = true, refreshing = null, working = false,
@@ -65,10 +65,6 @@ class ArtistRoomPreviewTest {
         waitForIdle()
         val out = File("build/artist-room-preview.png").absoluteFile
         ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", out)
-        // And the timeline, scrolled into view.
-        onNodeWithTag("artistRoomList").performScrollToIndex(3)
-        waitForIdle()
-        ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/artist-room-timeline.png").absoluteFile)
         println("PREVIEW ${out.path}")
     }
 }

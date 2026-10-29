@@ -76,10 +76,16 @@ internal fun ArtistStatTiles(artist: LibraryArtist, totalCount: Int, playableCou
 }
 
 @Composable
-internal fun ArtistWidgets(artist: LibraryArtist, onOpen: (LibraryRelease) -> Unit, modifier: Modifier = Modifier) {
+internal fun ArtistWidgets(
+    artist: LibraryArtist,
+    onOpen: (LibraryRelease) -> Unit,
+    modifier: Modifier = Modifier,
+    /** False where the page shows the biography itself (the artist room's lane). */
+    showBio: Boolean = true,
+) {
     val colors = MaterialTheme.nuvio.colors
     val top = remember(artist.topAlbumKeys, artist.releases) { artistTopReleases(artist) }
-    val bio = artist.biography?.trim().orEmpty()
+    val bio = if (showBio) artist.biography?.trim().orEmpty() else ""
     var bioOpen by rememberSaveable(artist.id) { mutableStateOf(false) }
     if (top.isEmpty() && bio.isEmpty() && artist.foundVia == null) return
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
