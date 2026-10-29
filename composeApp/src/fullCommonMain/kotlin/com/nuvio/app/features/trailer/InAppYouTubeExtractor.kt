@@ -168,25 +168,26 @@ private val ACCOUNT_CLIENTS = listOf(
     YouTubeClient(
         key = "tv",
         id = "7",
-        version = "7.20250219.14.00",
+        version = "7.20250923.13.00",
         userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
         context = jsonObjectOf(
             "clientName" to "TVHTML5",
-            "clientVersion" to "7.20250219.14.00",
+            "clientVersion" to "7.20250923.13.00",
             "hl" to "en",
             "gl" to "US",
         ),
         priority = 0,
     ),
+    // TVHTML5_SIMPLY_EMBEDDED_PLAYER is retired ("no longer supported in this application or
+    // device"); TVHTML5_SIMPLY is the client that replaced it.
     YouTubeClient(
-        key = "tv_embedded",
-        id = "85",
-        version = "2.0",
+        key = "tv_simply",
+        id = "75",
+        version = "1.0",
         userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
         context = jsonObjectOf(
-            "clientName" to "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-            "clientVersion" to "2.0",
-            "clientScreen" to "EMBED",
+            "clientName" to "TVHTML5_SIMPLY",
+            "clientVersion" to "1.0",
             "hl" to "en",
             "gl" to "US",
         ),
@@ -423,6 +424,13 @@ class InAppYouTubeExtractor internal constructor(
 
                 val streamingData = playerResponse.objectValue("streamingData")
                 if (streamingData == null) {
+                    if (useAccount) {
+                        val status = playerResponse.objectValue("playabilityStatus")
+                        log.i {
+                            "Signed-in ${client.key} for $videoId: ${status?.stringValue("status")} " +
+                                "${status?.stringValue("reason")}"
+                        }
+                    }
                     lastPlayabilityStatus = playerResponse.objectValue("playabilityStatus")
                         ?: lastPlayabilityStatus
                     return@runCatching
