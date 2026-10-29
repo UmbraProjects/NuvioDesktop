@@ -106,7 +106,7 @@ class NebulaQualityTest {
     @Test fun labels() {
         assertEquals("FLAC · 16-bit", nebulaQualityLabel("flac", "16-bit"))
         assertEquals("FLAC", nebulaQualityLabel("flac", "FLAC"))
-        assertEquals("LOSSLESS", nebulaQualityLabel(null, "lossless"))
+        assertEquals("lossless", nebulaQualityLabel(null, "lossless"))
         assertNull(nebulaQualityLabel(" ", null))
     }
 }
