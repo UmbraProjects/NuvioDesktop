@@ -24,10 +24,35 @@ object MusicResolver {
         }
 
     private suspend fun audio(track: MusicTrack): MusicResolution {
-        val source = open(track.videoId, needsVideo = false)
+        val audioId = albumAudioId(track)
+        val source = openAudio(track, audioId)
             ?: return MusicResolution.Failed(track, "the audio track would not open")
-        return MusicResolution.Playable(track, MusicPlayMode.Audio, track.videoId, source, viaCounterpart = false)
+        return MusicResolution.Playable(track, MusicPlayMode.Audio, audioId, source, viaCounterpart = false)
     }
+
+    /**
+     * fork:album-audio — the id of the album's own audio for [track]. YouTube Music sometimes lists a
+     * track under its official video's id, and playing that id gives the video's soundtrack (its own
+     * edit, an intro, ...) rather than the album version. When YouTube Music links an art track to
+     * that video, the art track is the one to play in audio mode. Any failure keeps the listed id.
+     */
+    private suspend fun albumAudioId(track: MusicTrack): String =
+        try {
+            MusicMetadataClient.counterpartOf(track.videoId)
+                ?.takeIf { it.videoType == MusicVideoType.ArtTrack && it.videoId != track.videoId && it.videoId.length == 11 }
+                ?.videoId
+                ?.also { log.i { "\"${track.title}\" is listed as a video (${track.videoId}); playing its album audio $it" } }
+                ?: track.videoId
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            track.videoId
+        }
+
+    /** The album audio, or the listed id when the album audio would not open. */
+    private suspend fun openAudio(track: MusicTrack, audioId: String): TrailerPlaybackSource? =
+        open(audioId, needsVideo = false)
+            ?: if (audioId != track.videoId) open(track.videoId, needsVideo = false) else null
 
     private suspend fun video(track: MusicTrack, album: MusicAlbum): MusicResolution {
         val linked = MusicMetadataClient.counterpartOf(track.videoId)
@@ -53,10 +78,11 @@ object MusicResolver {
             }
         }
         log.i { "no official video for \"${track.title}\"; playing it as a lyric video" }
-        val source = open(track.videoId, needsVideo = false)
+        val audioId = albumAudioId(track)
+        val source = openAudio(track, audioId)
             ?: return MusicResolution.Failed(track, "the audio track would not open")
         return MusicResolution.Playable(
-            track, MusicPlayMode.Video, track.videoId, source, viaCounterpart = false, lyricVideo = true,
+            track, MusicPlayMode.Video, audioId, source, viaCounterpart = false, lyricVideo = true,
         )
     }
 

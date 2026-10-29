@@ -162,6 +162,15 @@ class MusicParsersTest {
     }
 
     @Test
+    fun anOfficialVideoLinkedToAnArtTrackGivesTheArtTrack() {
+        val linked = ""","counterpart":[{"counterpartRenderer":${panel("AAAAAAAAAAA", "MUSIC_VIDEO_TYPE_ATV", "Still D.R.E.", "4:30")}}]"""
+        val body = """{"contents":[${panel("VVVVVVVVVVV", "MUSIC_VIDEO_TYPE_OMV", "Still D.R.E.", "4:33", linked)}]}"""
+        val c = assertNotNull(parseCounterpart(body, "VVVVVVVVVVV"))
+        assertEquals("AAAAAAAAAAA", c.videoId)
+        assertEquals(MusicVideoType.ArtTrack, c.videoType)
+    }
+
+    @Test
     fun anOfficialVideoIsItsOwnCounterpart() {
         val body = """{"contents":[${panel("VVVVVVVVVVV", "MUSIC_VIDEO_TYPE_OMV", "Video", "4:00")}]}"""
         val c = assertNotNull(parseCounterpart(body, "VVVVVVVVVVV"))
