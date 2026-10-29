@@ -10,11 +10,12 @@
 - **Library Shelf Card Row** - the "A year ago this week" banner is now a row of cards: a year ago this week, a starred artist, added recently, and continue your ladder. The cards can be reached with the d-pad.
 - **Now Playing Widgets** - under the title on the Stage view: track position in the album, the next three tracks, and, when there are no lyrics, three artists to try next. They fade out a few seconds after the last input.
 - **Artist Page Widgets** - fans, releases, playable and rating as large tiles; the artist's top albums as cards; a short bio that opens on focus; and a "Found through" line.
-
+- **Ladder Debug View** - F3 on the ladder screen shows how each rung was picked: the candidate pool, purity and proximity, the score split, how many genre votes stand behind it, and who it beat. The same text is written to the log as `LadderDebug` whenever a ladder is built.
 - **Constellation For The TV** - the side panel is wider with larger text and now shows the artist's top albums and three buttons: Ladder from here, Climb into, and Open artist room. A "Thin spots" row offers a ladder into the genres you tag but barely own. The key is a corner chip that opens on demand instead of covering the left cluster, genre chips are larger, and artists not placed yet are cards with a Fetch tags button.
 
 ### Changed
 
+- **Ladder Ties Go To Tag Votes** - when two artists score exactly the same and neither has a fan count (every MusicBrainz candidate), the one with more genre votes now takes the rung instead of the one with the lower id.
 - **Where Next Builds Lazily And Is Kept** - the artist page's "Where next?" ladder now starts about a second and a half after the page opens, or as soon as focus reaches its heading, and not at all if you leave first. It waits behind searches and Library refreshes, and a finished ladder is kept on disk for a week, so coming back is instant and costs no MusicBrainz call. There is a Refresh button on the strip, and a "Build Where next automatically" switch in Music settings (formerly Artwork sources) for slow connections; off, the strip offers "Show where next". The Stage view's mini ladder follows the same rules.
 - **Ladder Audition On A Button Press** - a rung's hook no longer starts by itself when you arrow onto it. Enter, A or a click plays it, pressing the same rung again stops it, and pressing another rung moves on. Arrowing stays silent, and the room still follows the cursor. The countdown ring is gone; the rung's number shows a stop mark while its hook plays.
 
