@@ -23,6 +23,10 @@ import nuvio.composeapp.generated.resources.settings_music_fanart_key_descriptio
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive
 import nuvio.composeapp.generated.resources.settings_music_lastfm_key
 import nuvio.composeapp.generated.resources.settings_music_mb_offline
+import nuvio.composeapp.generated.resources.settings_music_nebula_link
+import nuvio.composeapp.generated.resources.settings_music_nebula_link_description
+import nuvio.composeapp.generated.resources.settings_music_prefer_addon
+import nuvio.composeapp.generated.resources.settings_music_prefer_addon_description
 import nuvio.composeapp.generated.resources.settings_music_mb_offline_absent
 import nuvio.composeapp.generated.resources.settings_music_mb_offline_building
 import nuvio.composeapp.generated.resources.settings_music_mb_offline_cancel
@@ -127,6 +131,27 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     summarizeAsConfigured = true,
                     onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(lastFmApiKey = it)) },
                 )
+                SettingsGroupDivider(isTablet)
+                SettingsTextInputRow(
+                    title = stringResource(Res.string.settings_music_nebula_link),
+                    description = stringResource(Res.string.settings_music_nebula_link_description),
+                    value = settings.nebulaSecretLink,
+                    placeholder = "Optional",
+                    isTablet = isTablet,
+                    secret = true,
+                    summarizeAsConfigured = true,
+                    onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(nebulaSecretLink = it.trim())) },
+                )
+                if (settings.nebulaSecretLink.isNotBlank()) {
+                    SettingsGroupDivider(isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_music_prefer_addon),
+                        description = stringResource(Res.string.settings_music_prefer_addon_description),
+                        checked = settings.preferAddon,
+                        isTablet = isTablet,
+                        onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(preferAddon = it)) },
+                    )
+                }
                 SettingsGroupDivider(isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_music_where_next),

@@ -357,6 +357,50 @@ class MusicLibraryMergeTest {
     }
 
     @Test
+    fun aRemasterNeverMovesAReleaseLater() {
+        assertEquals("1970", earlierReleaseDate("1970", "2005-06-01"))
+        assertEquals("1970", earlierReleaseDate("2005", "1970"))
+        assertEquals("1970-03-12", earlierReleaseDate("1970", "1970-03-12"))
+        assertEquals("1970-03-12", earlierReleaseDate("1970-03-12", "1970"))
+        assertEquals("1970", earlierReleaseDate(null, "1970"))
+        assertEquals("1970", earlierReleaseDate("0000-00-00", "1970"))
+        assertNull(earlierReleaseDate("0", null))
+    }
+
+    @Test
+    fun theOriginalDateSurvivesARemasterListedByTheOtherSources() {
+        val merged = mergeReleases(
+            ReleaseSources(
+                musicBrainz = listOf(MbReleaseGroup("g1", "Abbey Road", "Album", emptyList(), "1969-09-26")),
+                youTubeMusic = listOf(yt("MPREb_ar", "Abbey Road (Remastered)", "Album", "2019")),
+                deezer = listOf(DeezerAlbum(1L, "Abbey Road", null, "album", "2009-09-09", null)),
+            ),
+        )
+        val release = merged.single()
+        assertEquals("1969", release.year)
+        assertEquals("1969-09-26", release.releaseDate)
+    }
+
+    @Test
+    fun withoutMusicBrainzTheEarliestSourceDatesTheRelease() {
+        val merged = mergeReleases(
+            ReleaseSources(
+                youTubeMusic = listOf(yt("MPREb_x", "Some Album", "Album", "2005")),
+                deezer = listOf(DeezerAlbum(2L, "Some Album", null, "album", "1970-01-01", null)),
+            ),
+        )
+        assertEquals("1970", merged.single().year)
+    }
+
+    @Test
+    fun deezerDetailNeverPushesAReleaseLater() {
+        val base = LibraryRelease(key = "k", title = "T", kind = ReleaseKind.Album, year = "1970", releaseDate = "1970")
+        val filled = base.withDeezerDetail(DeezerAlbumDetail(null, 10, 2000, emptyList(), null, "2005-03-01"))
+        assertEquals("1970", filled.releaseDate)
+        assertEquals("1970", filled.year)
+    }
+
+    @Test
     fun deezerDetailFillsGapsButKeepsWhatIsKnown() {
         val base = LibraryRelease(key = "k", title = "T", kind = ReleaseKind.Album, label = "Mine", releaseDate = "1997")
         val filled = base.withDeezerDetail(DeezerAlbumDetail("Theirs", 12, 2800, listOf("Rock"), "999", "1997-05-21"))

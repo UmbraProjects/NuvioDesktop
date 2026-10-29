@@ -4,6 +4,18 @@ on:
   workflow_dispatch:
   push:
     branches: [Spyder]
+    # A changelog or docs edit changes no code, so it needs no 20-minute build.
+    paths-ignore:
+      - '**.md'
+
+# A newer push makes an older run's result irrelevant: stop it instead of queueing two 20-minute builds.
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+# Publishing the rolling Nightly release below needs to write to the repository's releases.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -53,6 +65,8 @@ jobs:
           Expand-Archive C:\libs\webview2.zip -DestinationPath C:\libs\webview2 -Force
           if (-not (Test-Path C:\libs\webview2\build\native\include\WebView2.h)) { throw "WebView2.h missing" }
 
+      # innertubex=true here too, the same as the distributable below: a different value changes the
+      # compiled sources, so the two steps would each compile the whole app instead of sharing one compile.
       - name: Unit tests (music, pre-show)
         shell: pwsh
         run: >
@@ -60,6 +74,7 @@ jobs:
           --tests "com.nuvio.app.features.music.*"
           --tests "com.nuvio.app.features.preroll.*"
           --tests "*Trivia*"
+          "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
           "-Pnuvio.windows.allowWhisperAvfilter=true"
@@ -103,8 +118,27 @@ jobs:
           name: NuvioHTPC-portable
           path: NuvioHTPC-portable.zip
 
-      # MSI needs WiX 3.x. Allowed to fail so the portable build still publishes.
+      # The in-app updater (AppUpdater.kt) follows this fork's rolling "Nightly" prerelease cut from Spyder, so
+      # every green build replaces it with the new portable zip. Deleting and recreating keeps one release
+      # whose asset checksum changes with each build, which is how installed copies tell it is newer.
+      - name: Publish Nightly release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          gh release delete Nightly --cleanup-tag --yes 2>$null
+          gh release create Nightly NuvioHTPC-portable.zip `
+            --prerelease `
+            --target Spyder `
+            --title "Nightly (Spyder $sha)" `
+            --notes "Portable build of Spyder at $sha. Installed copies on the Nightly channel update to this automatically."
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish the Nightly release" }
+
+      # MSI needs WiX 3.x and a full rebuild (--rerun-tasks), about 5 minutes, so it only runs when the
+      # workflow is started by hand. Allowed to fail so the portable build still publishes.
       - name: Build MSI
+        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         shell: pwsh
         run: |
@@ -122,7 +156,7 @@ jobs:
             "-Pnuvio.engine.optional=true"
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch'
         with:
           name: NuvioHTPC-msi
           path: composeApp/build/compose/binaries/**/*.msi

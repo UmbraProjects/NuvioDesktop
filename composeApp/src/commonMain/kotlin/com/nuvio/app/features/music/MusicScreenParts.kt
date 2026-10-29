@@ -184,6 +184,7 @@ internal fun MusicAlbumRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            com.nuvio.app.features.music.nebula.AddonBadge(album) // fork:nebula
         }
     }
 }

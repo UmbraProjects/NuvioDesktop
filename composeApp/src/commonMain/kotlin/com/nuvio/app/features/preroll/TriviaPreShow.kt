@@ -58,6 +58,7 @@ import nuvio.composeapp.generated.resources.trivia_category_legacy
 import nuvio.composeapp.generated.resources.trivia_category_production
 import nuvio.composeapp.generated.resources.trivia_category_trivia
 import nuvio.composeapp.generated.resources.trivia_correct
+import nuvio.composeapp.generated.resources.trivia_hint_question
 import nuvio.composeapp.generated.resources.trivia_incorrect
 import nuvio.composeapp.generated.resources.trivia_not_right
 import nuvio.composeapp.generated.resources.trivia_origin_ai
@@ -79,7 +80,9 @@ const val TRIVIA_SLIDE_DURATION_MS = 7_000L
  * the caller's job, so this can be dropped into the player's opening overlay without knowing
  * anything about playback.
  *
- * Keys: Enter / Space / Right advance, 1-4 answer, Escape skips.
+ * Keys: Enter / Space / Right / pad A advance a slide, or pick the highlighted answer on a question
+ * (Up / Down move the highlight, 1-4 answer directly), and Enter / Space / Right / pad A go to the next
+ * question once answered. Escape or pad B / Back skips the whole pre-show, like it does on a trailer.
  */
 @Composable
 fun TriviaPreShow(
@@ -96,6 +99,11 @@ fun TriviaPreShow(
     onNotRight: (() -> Unit)? = null,
     /** True while a quiz question is on screen, false on the slides; lets a caller lower background music. */
     onQuestionActive: (Boolean) -> Unit = {},
+    /**
+     * Escape and pad B / Back. The pre-show gate passes "skip everything" here so the keys mean the
+     * same thing as they do over a trailer; null falls back to ending just the trivia.
+     */
+    onSkipAll: (() -> Unit)? = null,
 ) {
     val questions = remember(pack) { pack.askableQuestions() }
     val slides = pack.slides
@@ -103,6 +111,9 @@ fun TriviaPreShow(
         mutableStateOf(initialPreShowStage(slides.size, questions.size))
     }
     val finish by rememberUpdatedState(onFinished)
+    val skipAll by rememberUpdatedState(onSkipAll ?: onFinished)
+    // The answer under the d-pad cursor; starts at the top for each question.
+    var cursor by remember(stage) { mutableStateOf(0) }
     val reportQuestionActive by rememberUpdatedState(onQuestionActive)
     val focus = remember { FocusRequester() }
     val palette = remember(pack) { pack.theme.toPalette() }
@@ -133,9 +144,17 @@ fun TriviaPreShow(
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val current = stage
+                val optionCount = (current as? PreShowStage.Question)
+                    ?.let { questions.getOrNull(it.index)?.options?.size } ?: 0
+                val unanswered = current is PreShowStage.Question && current.picked == null
                 when (event.key) {
-                    Key.Escape -> { finish(); true }
-                    Key.Enter, Key.NumPadEnter, Key.Spacebar, Key.DirectionRight -> { next(); true }
+                    Key.Escape, Key.ButtonB, Key.Back -> { skipAll(); true }
+                    Key.DirectionUp -> if (unanswered) { cursor = moveAnswerCursor(cursor, -1, optionCount); true } else false
+                    Key.DirectionDown -> if (unanswered) { cursor = moveAnswerCursor(cursor, 1, optionCount); true } else false
+                    Key.Enter, Key.NumPadEnter, Key.Spacebar, Key.ButtonA ->
+                        { if (unanswered) stage = stage.answer(cursor) else next(); true }
+                    Key.DirectionRight -> { next(); true }
                     Key.One, Key.NumPad1 -> { stage = stage.answer(0); true }
                     Key.Two, Key.NumPad2 -> { stage = stage.answer(1); true }
                     Key.Three, Key.NumPad3 -> { stage = stage.answer(2); true }
@@ -195,6 +214,7 @@ fun TriviaPreShow(
                             number = shown.index + 1,
                             total = questions.size,
                             picked = shown.picked,
+                            cursor = cursor,
                             palette = palette,
                             onPick = { option -> stage = stage.answer(option) },
                             onNext = ::next,
@@ -280,6 +300,7 @@ private fun QuestionBody(
     number: Int,
     total: Int,
     picked: Int?,
+    cursor: Int,
     palette: TriviaPalette,
     onPick: (Int) -> Unit,
     onNext: () -> Unit,
@@ -307,12 +328,14 @@ private fun QuestionBody(
             val borderColor = when {
                 answered && isCorrect -> colors.success
                 answered && isPicked -> colors.danger
+                !answered && index == cursor -> palette.accent
                 else -> Color.White.copy(alpha = 0.28f)
             }
+            val fill = if (!answered && index == cursor) 0.75f else 0.55f
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = fill), RoundedCornerShape(12.dp))
                     .border(BorderStroke(1.5.dp, borderColor), RoundedCornerShape(12.dp))
                     .clickable(enabled = !answered) { onPick(index) }
                     .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -332,6 +355,13 @@ private fun QuestionBody(
                 )
             }
         }
+    }
+    if (picked == null) {
+        Text(
+            text = stringResource(Res.string.trivia_hint_question),
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White.copy(alpha = 0.6f),
+        )
     }
     if (picked != null) {
         val right = picked == question.correctIndex

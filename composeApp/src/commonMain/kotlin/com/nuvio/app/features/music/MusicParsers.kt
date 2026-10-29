@@ -338,7 +338,22 @@ internal fun parseArtist(body: String, browseId: String): MusicArtist? {
     val self = MusicArtistRef(name, browseId)
     val albums = findAll(root, "musicTwoRowItemRenderer").mapNotNull { it.toTwoRowAlbum(self, fallbackKind = null) }
         .distinctBy { it.browseId }
-    return MusicArtist(browseId, name, thumbnailOf(header?.get("thumbnail")), albums)
+    return MusicArtist(browseId, name, thumbnailOf(header?.get("thumbnail")), albums, topSongsOf(root))
+}
+
+/**
+ * fork:top-songs — the artist page's first list shelf ("Songs"), in the order YouTube Music gives: its most-played
+ * tracks. Each row names the track and, in one of its columns, the album it belongs to.
+ */
+private fun topSongsOf(root: JsonElement): List<MusicTopSong> {
+    val shelf = findAll(root, "musicShelfRenderer").firstOrNull() ?: return emptyList()
+    return findAll(shelf, "musicResponsiveListItemRenderer").mapNotNull { item ->
+        val videoId = item.trackVideoId() ?: return@mapNotNull null
+        val title = textOf(item.flexText(0)).trim().ifEmpty { return@mapNotNull null }
+        val album = (0..3).flatMap { runsOf(item.flexText(it)) }
+            .firstNotNullOfOrNull { run -> run.runBrowseId()?.takeIf { it.startsWith(ALBUM_PREFIX) } }
+        MusicTopSong(videoId, title, album)
+    }
 }
 
 private fun videoTypeOf(raw: String?): MusicVideoType = when (raw) {

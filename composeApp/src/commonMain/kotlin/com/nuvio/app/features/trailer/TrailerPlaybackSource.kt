@@ -35,4 +35,9 @@ data class TrailerPlaybackSource(
      * extractor finds.
      */
     val headers: Map<String, String> = emptyMap(),
+    /**
+     * fork:alternate-upload — true for an ordinary upload standing in for a track's album audio. Uploads are
+     * not mastered to the album's level and play noticeably quieter, so the player evens the level out.
+     */
+    val evenOutLoudness: Boolean = false,
 )

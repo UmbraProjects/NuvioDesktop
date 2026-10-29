@@ -64,7 +64,7 @@ object MusicResolver {
             if (hit.videoId in tried) continue
             open(hit.videoId, needsVideo = false)?.let {
                 log.i { "\"${track.title}\" would not open; playing the upload ${hit.videoId} (${hit.title})" }
-                return hit.videoId to it
+                return hit.videoId to it.copy(evenOutLoudness = true)
             }
         }
         return null

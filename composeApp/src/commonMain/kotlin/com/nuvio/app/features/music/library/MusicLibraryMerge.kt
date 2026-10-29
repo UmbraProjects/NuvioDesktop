@@ -103,6 +103,27 @@ internal fun releaseYearOrNull(raw: String?): Int? =
 /** [raw] unchanged when it starts with a real year ("2014", "2014-05", "2014-05-20"), else null ("0000-00-00" from Deezer, "0"). */
 internal fun sanePartialDate(raw: String?): String? = raw?.trim()?.takeIf { releaseYearOrNull(it) != null }
 
+/**
+ * fork:original-date — the date a release is placed by is its ORIGINAL one. Streaming catalogues list a
+ * remaster or reissue under the reissue's date (a 1970 album as 2005), so when two sources disagree the
+ * earlier year wins; when they agree on the year, the fuller date ("1970-03-12" over "1970") wins.
+ * [current] and [candidate] may be null or placeholders; the result is a sane date or null.
+ */
+internal fun earlierReleaseDate(current: String?, candidate: String?): String? {
+    val a = sanePartialDate(current)
+    val b = sanePartialDate(candidate)
+    if (a == null) return b
+    if (b == null) return a
+    val ya = releaseYearOrNull(a)!!
+    val yb = releaseYearOrNull(b)!!
+    return when {
+        yb < ya -> b
+        yb > ya -> a
+        b.length > a.length && b.startsWith(a) -> b
+        else -> a
+    }
+}
+
 // region kinds
 
 internal fun kindFromMusicBrainz(primary: String?, secondary: List<String>): ReleaseKind {
@@ -164,8 +185,8 @@ internal data class ReleaseSources(
 
 private class Draft(var title: String, var kind: ReleaseKind) {
     var secondary: List<String> = emptyList()
+    /** The best (earliest) date any source gave; the year is its first four digits. */
     var date: String? = null
-    var year: String? = null
     var mbid: String? = null
     var yt: MusicAlbumSummary? = null
     var deezer: DeezerAlbum? = null
@@ -225,8 +246,7 @@ internal fun mergeReleases(sources: ReleaseSources): List<LibraryRelease> {
     for (group in sources.musicBrainz) {
         drafts += Draft(group.title, kindFromMusicBrainz(group.primaryType, group.secondaryTypes)).apply {
             secondary = group.secondaryTypes
-            date = group.firstReleaseDate
-            year = group.firstReleaseDate?.take(4)
+            date = sanePartialDate(group.firstReleaseDate)
             mbid = group.id
             kindFromMb = true
         }
@@ -240,7 +260,7 @@ internal fun mergeReleases(sources: ReleaseSources): List<LibraryRelease> {
         create = { Draft(it.title, kindFromLabel(it.kind) ?: ReleaseKind.Album) },
         bind = { draft, album ->
             draft.yt = album
-            if (draft.year == null) draft.year = album.year
+            draft.date = earlierReleaseDate(draft.date, album.year)
             // MusicBrainz's kind is the authority; without it, YouTube Music's shelf is the next best.
             val kind = kindFromLabel(album.kind)
             if (!draft.kindFromMb && kind != null) draft.kind = kind
@@ -255,8 +275,7 @@ internal fun mergeReleases(sources: ReleaseSources): List<LibraryRelease> {
         create = { Draft(it.title, kindFromLabel(it.recordType) ?: ReleaseKind.Album) },
         bind = { draft, album ->
             draft.deezer = album
-            if (draft.date == null) draft.date = album.releaseDate
-            if (draft.year == null) draft.year = album.releaseDate?.take(4)
+            draft.date = earlierReleaseDate(draft.date, album.releaseDate)
             val kind = kindFromLabel(album.recordType)
             if (!draft.kindFromMb && kind != null) {
                 draft.kind = kind
@@ -269,7 +288,7 @@ internal fun mergeReleases(sources: ReleaseSources): List<LibraryRelease> {
     val audioLeft = ArrayList<AudioDbAlbum>()
     for (album in sources.audioDb) {
         val byId = album.musicBrainzId?.let { id -> drafts.firstOrNull { it.mbid == id && it.audioDb == null } }
-        if (byId != null) byId.audioDb = album.also { if (byId.year == null) byId.year = it.year } else audioLeft += album
+        if (byId != null) byId.audioDb = album.also { byId.date = earlierReleaseDate(byId.date, it.year) } else audioLeft += album
     }
     attach(
         items = audioLeft,
@@ -279,7 +298,7 @@ internal fun mergeReleases(sources: ReleaseSources): List<LibraryRelease> {
         create = { Draft(it.title, kindFromLabel(it.format) ?: ReleaseKind.Album) },
         bind = { draft, album ->
             draft.audioDb = album
-            if (draft.year == null) draft.year = album.year
+            draft.date = earlierReleaseDate(draft.date, album.year)
             if (draft.mbid == null) draft.mbid = album.musicBrainzId
             val kind = kindFromLabel(album.format)
             if (!draft.kindFromMb && !draft.kindFromDeezer && kind != null) draft.kind = kind
@@ -310,8 +329,8 @@ private fun Draft.toRelease(fanart: FanartArtist?): LibraryRelease {
         title = yt?.title ?: title,
         kind = kind,
         secondaryTypes = secondary,
-        year = sanePartialDate(year)?.take(4),
-        releaseDate = sanePartialDate(date) ?: sanePartialDate(year)?.take(4),
+        year = sanePartialDate(date)?.take(4),
+        releaseDate = sanePartialDate(date),
         ytBrowseId = yt?.browseId,
         musicBrainzId = mbid,
         deezerId = deezer?.id,
@@ -333,14 +352,19 @@ private fun Draft.toRelease(fanart: FanartArtist?): LibraryRelease {
 }
 
 /** Fills the per-album details Deezer only gives on the album's own page. */
-internal fun LibraryRelease.withDeezerDetail(detail: DeezerAlbumDetail): LibraryRelease = copy(
-    trackCount = detail.trackCount ?: trackCount,
-    durationSeconds = detail.durationSeconds ?: durationSeconds,
-    label = label ?: detail.label,
-    genres = (genres + detail.genres).distinct(),
-    upc = detail.upc ?: upc,
-    releaseDate = if (releaseDate == null || releaseDate.length < 10) sanePartialDate(detail.releaseDate) ?: releaseDate else releaseDate,
-)
+internal fun LibraryRelease.withDeezerDetail(detail: DeezerAlbumDetail): LibraryRelease {
+    val date = earlierReleaseDate(releaseDate ?: year, detail.releaseDate)
+    return copy(
+        trackCount = detail.trackCount ?: trackCount,
+        durationSeconds = detail.durationSeconds ?: durationSeconds,
+        label = label ?: detail.label,
+        genres = (genres + detail.genres).distinct(),
+        upc = detail.upc ?: upc,
+        // fork:original-date — Deezer's page dates the edition it lists, which can be a reissue; never move a release later.
+        releaseDate = date,
+        year = date?.take(4) ?: year,
+    )
+}
 
 /** A YouTube Music album page knows its tracks; use that count and length when Deezer does not. */
 internal fun LibraryRelease.withTrackFacts(trackCount: Int, durationSeconds: Int): LibraryRelease = copy(

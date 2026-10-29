@@ -38,6 +38,13 @@ private val log = Logger.withTag("MusicPlayerSurface")
 
 private const val POLL_MS = 250L
 
+/**
+ * fork:alternate-upload — brings a quiet upload up to the level album audio plays at. `loudnorm` first aims at a
+ * fixed target (-14 LUFS) however quiet the source is; album masters sit well above that, so a further 6 dB follows,
+ * and `alimiter` holds the peaks under full scale so the extra gain cannot clip.
+ */
+private const val ALTERNATE_UPLOAD_LOUDNESS_FILTER = "lavfi=[loudnorm=I=-14:LRA=11:TP=-1.5,volume=6dB,alimiter=limit=0.97]"
+
 @Composable
 actual fun MusicPlayerSurface(
     source: TrailerPlaybackSource,
@@ -153,7 +160,11 @@ actual fun MusicPlayerSurface(
                 }
             },
             controlsPageUrlSuffix = "?heroTrailer=1&chromeless=1",
-            initMpvOptions = listOf("volume=${volume.coerceIn(0, 100)}"),
+            // fork:alternate-upload — an upload standing in for album audio is quieter; even its level out.
+            initMpvOptions = buildList {
+                add("volume=${volume.coerceIn(0, 100)}")
+                if (source.evenOutLoudness) add("af=$ALTERNATE_UPLOAD_LOUDNESS_FILTER")
+            },
         )
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")
     }

@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.nebula.NebulaMusicSource
+import com.nuvio.app.features.music.nebula.NebulaSourceRow
+import com.nuvio.app.features.music.nebula.rememberNebulaAlbumController
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -130,6 +133,19 @@ private fun AlbumContent(
     val info = rememberLibraryAlbumInfo(album.browseId)
 
     val loaded = state.holds(album)
+    // fork:nebula - null unless a music addon link is set; then the album can be played from the addon.
+    var nebulaRetry by remember(album.browseId) { mutableStateOf(0) }
+    val nebula = rememberNebulaAlbumController(album, player, nebulaRetry)
+    val playingNebula = state.track?.let(NebulaMusicSource::owns) == true
+    val wantNebula = nebula?.active == true
+    // The source the person picked is not the one this album is playing from: Play starts it over in the chosen one.
+    val startsFresh = !loaded || playingNebula != wantNebula
+    // Which tracks can play depends on the source: a track YouTube Music greys out may exist on the addon, and the reverse.
+    val view = if (wantNebula) nebula?.preparedAlbum ?: album else album
+    fun startAlbum(trackIndex: Int, mode: MusicPlayMode, shuffled: Boolean) {
+        if (wantNebula) nebula?.play(trackIndex, mode, shuffled)
+        else player.play(album, trackIndex = trackIndex, mode = mode, shuffled = shuffled)
+    }
     // While this album plays, the player's mode is the truth: a failed switch to video leaves it on audio.
     val mode = if (loaded) state.mode else chosenMode
 
@@ -176,24 +192,24 @@ private fun AlbumContent(
             ) {
                 NuvioPrimaryButton(
                     text = when {
-                        !loaded -> "Play"
+                        startsFresh -> "Play"
                         state.playWhenReady -> "Pause"
                         else -> "Resume"
                     },
                     modifier = Modifier.width(140.dp),
                     height = 44.dp,
-                    enabled = album.tracks.any { it.isAvailable },
+                    enabled = view.tracks.any { it.isAvailable },
                     onClick = {
-                        if (loaded) player.togglePlayback()
-                        else player.play(album, trackIndex = 0, mode = mode, shuffled = false)
+                        if (!startsFresh) player.togglePlayback()
+                        else startAlbum(0, mode, shuffled = false)
                     },
                 )
                 ShuffleButton(
-                    on = loaded && state.shuffled,
-                    enabled = album.tracks.any { it.isAvailable },
+                    on = !startsFresh && state.shuffled,
+                    enabled = view.tracks.any { it.isAvailable },
                     onClick = {
-                        if (loaded) player.setShuffled(!state.shuffled)
-                        else player.play(album, trackIndex = randomPlayableIndex(album), mode = mode, shuffled = true)
+                        if (!startsFresh) player.setShuffled(!state.shuffled)
+                        else startAlbum(randomPlayableIndex(view), mode, shuffled = true)
                     },
                 )
                 MusicSegmented(
@@ -205,6 +221,7 @@ private fun AlbumContent(
                     },
                 )
             }
+            nebula?.let { NebulaSourceRow(it, onRetry = { nebulaRetry++ }) } // fork:nebula
             val note = when {
                 loaded && state.notice != null -> state.notice
                 mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
@@ -218,10 +235,10 @@ private fun AlbumContent(
                 )
             }
         }
-        val unavailable = album.tracks.count { !it.isAvailable }
+        val unavailable = view.tracks.count { !it.isAvailable }
         if (unavailable > 0) {
             Text(
-                "$unavailable track${if (unavailable == 1) "" else "s"} unavailable here.",
+                "$unavailable track${if (unavailable == 1) "" else "s"} unavailable${if (wantNebula) " on your addon" else " on YouTube Music"}.",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.textMuted,
             )
@@ -229,16 +246,18 @@ private fun AlbumContent(
     }
 
     val pane: LazyListScope.() -> Unit = {
-        itemsIndexed(album.tracks) { index, track ->
+        itemsIndexed(view.tracks) { index, track ->
             TrackRow(
                 album = album,
                 track = track,
                 current = loaded && state.trackIndex == index,
                 onClick = {
-                    when (val tap = musicTrackTap(state, album, index, chosenMode)) {
+                    if (loaded && startsFresh) {
+                        // fork:nebula - the album is playing from the other source: start it over in the chosen one.
+                        startAlbum(index, chosenMode, shuffled = false)
+                    } else when (val tap = musicTrackTap(state, view, index, chosenMode)) {
                         is MusicTrackTap.JumpInQueue -> player.jumpTo(tap.trackIndex)
-                        is MusicTrackTap.StartAlbum ->
-                            player.play(album, trackIndex = tap.trackIndex, mode = tap.mode, shuffled = false)
+                        is MusicTrackTap.StartAlbum -> startAlbum(tap.trackIndex, tap.mode, shuffled = false)
                     }
                 },
             )

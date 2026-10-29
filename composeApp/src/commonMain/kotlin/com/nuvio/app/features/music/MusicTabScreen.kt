@@ -107,6 +107,7 @@ import androidx.compose.ui.layout.ContentScale
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.settings.settingsSkyBackground
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 private enum class MusicSearchKind { Albums, Artists }
@@ -218,10 +219,18 @@ private fun MusicSearchBox(chromeless: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
+/** Whether these results answer a search of [kind], so they can stay on screen while the next one loads. */
+private fun MusicSearchResults.answers(kind: MusicSearchKind): Boolean = when (this) {
+    is MusicSearchResults.Albums -> kind == MusicSearchKind.Albums
+    is MusicSearchResults.Artists -> kind == MusicSearchKind.Artists
+    else -> false
+}
+
 private sealed interface MusicSearchResults {
     data object Idle : MusicSearchResults
     data object Loading : MusicSearchResults
     data object Empty : MusicSearchResults
+    data object Failed : MusicSearchResults // the search itself could not run (offline, YouTube Music unreachable), as opposed to Empty
     data class Albums(val items: List<MusicAlbumSummary>) : MusicSearchResults
     data class Artists(val items: List<MusicArtistSummary>) : MusicSearchResults
 }
@@ -254,29 +263,38 @@ fun MusicTabScreen(
     val filtering = MusicTabState.filtering
     var kind by rememberSaveable { mutableStateOf(MusicSearchKind.Albums) }
     var results by remember { mutableStateOf<MusicSearchResults>(MusicSearchResults.Idle) }
+    var attempt by remember { mutableStateOf(0) } // bumped by "Try again" to rerun the same search
     var ladder by remember { mutableStateOf<LadderRequest?>(null) } // fork:music - the open ladder, if any
     var libraryView by rememberSaveable { mutableStateOf(LibraryView.Shelf) }
     // A search typed into the top bar while a ladder is open is meant to be seen.
     LaunchedEffect(query) { if (query.isNotBlank()) ladder = null }
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
-    LaunchedEffect(query, kind) {
+    LaunchedEffect(query, kind, attempt) {
         val q = query.trim()
         if (q.length < MIN_QUERY_LENGTH) {
             results = MusicSearchResults.Idle
             return@LaunchedEffect
         }
-        results = MusicSearchResults.Loading
         delay(TYPING_PAUSE_MS)
-        results = when (kind) {
-            MusicSearchKind.Albums -> catalog.searchAlbums(q).let {
-                if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Albums(it)
+        // Results of the same kind stay up while the next ones load, so typing does not blank the
+        // grid on every keystroke; anything else (first search, a kind change, an error) shows the spinner.
+        if (!results.answers(kind)) results = MusicSearchResults.Loading
+        results = try {
+            when (kind) {
+                MusicSearchKind.Albums -> catalog.searchAlbums(q).let {
+                    if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Albums(it)
+                }
+                MusicSearchKind.Artists -> catalog.searchArtists(q).let {
+                    if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Artists(it)
+                }
             }
-            MusicSearchKind.Artists -> catalog.searchArtists(q).let {
-                if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Artists(it)
-            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            MusicSearchResults.Failed
         }
-        if (results !is MusicSearchResults.Empty) MusicSearchHistory.record(q) // feeds Recent searches
+        if (results !is MusicSearchResults.Empty && results !is MusicSearchResults.Failed) MusicSearchHistory.record(q) // feeds Recent searches
     }
 
     // fork:music - a ladder replaces the tab body while it is open
@@ -407,7 +425,12 @@ fun MusicTabScreen(
             MusicSearchResults.Loading -> Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.accent)
             }
-            MusicSearchResults.Empty -> MusicMessage("Nothing found. Check the spelling, or YouTube Music may be unreachable.")
+            MusicSearchResults.Failed -> MusicMessage(
+                "Couldn't reach YouTube Music. Check your connection.",
+                actionLabel = "Try again",
+                onAction = { attempt++ },
+            )
+            MusicSearchResults.Empty -> MusicMessage("Nothing found. Check the spelling.")
             is MusicSearchResults.Albums -> MusicResultGrid(Modifier.weight(1f)) {
                 items(shown.items, key = { it.browseId }) { album ->
                     MusicAlbumTile(album, onClick = { onAlbumClick(album.browseId) })

@@ -22,4 +22,7 @@ internal expect object MusicLibraryStorage {
     /** The music player's volume (0 to 100) the last session ended on; null before the first change. */
     fun loadPlayerVolume(): Int?
     fun savePlayerVolume(volume: Int)
+    /** What the music addon had for each album when last asked, one JSON payload per profile (see NebulaLookupCache). */
+    fun loadNebulaLookups(profileId: Int): String?
+    fun saveNebulaLookups(profileId: Int, payload: String)
 }

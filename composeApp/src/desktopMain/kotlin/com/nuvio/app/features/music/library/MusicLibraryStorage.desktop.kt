@@ -40,4 +40,10 @@ internal actual object MusicLibraryStorage {
     actual fun savePlayerVolume(volume: Int) {
         store.putString("player_volume", volume.coerceIn(0, 100).toString())
     }
+
+    actual fun loadNebulaLookups(profileId: Int): String? = store.getString("nebula_lookups_$profileId")
+
+    actual fun saveNebulaLookups(profileId: Int, payload: String) {
+        store.putString("nebula_lookups_$profileId", payload)
+    }
 }

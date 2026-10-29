@@ -68,3 +68,18 @@ class TriviaPreShowModelTest {
         assertTrue(PreShowStage.Finished.advance(1, 1) == PreShowStage.Finished)
     }
 }
+
+class AnswerCursorTest {
+    @Test
+    fun cursorStopsAtTheEndsInsteadOfWrapping() {
+        assertEquals(0, moveAnswerCursor(0, -1, 4))
+        assertEquals(1, moveAnswerCursor(0, 1, 4))
+        assertEquals(3, moveAnswerCursor(3, 1, 4))
+        assertEquals(2, moveAnswerCursor(3, -1, 4))
+    }
+
+    @Test
+    fun cursorIsSafeWithNoOptions() {
+        assertEquals(0, moveAnswerCursor(0, 1, 0))
+    }
+}
