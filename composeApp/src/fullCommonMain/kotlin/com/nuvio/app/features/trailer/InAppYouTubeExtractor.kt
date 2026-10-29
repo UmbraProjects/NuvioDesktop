@@ -20,6 +20,9 @@ internal const val TRAILER_REQUEST_TIMEOUT_MS = 20_000L
 private const val EXTRACTOR_TIMEOUT_MS = 30_000L
 private const val YOUTUBE_ORIGIN = "https://www.youtube.com"
 
+/** Lower-case fragments of the messages YouTube shows for an age-gated video. */
+private val AGE_GATE_PHRASES = listOf("your age", "age-restricted", "age restricted", "inappropriate for some users")
+
 /**
  * How long a cached watch config is trusted. `visitorData` is a session token that YouTube
  * eventually retires; when it does, every client answers LOGIN_REQUIRED. Three hours keeps
@@ -540,7 +543,14 @@ class InAppYouTubeExtractor internal constructor(
             playabilityText.contains("country") || playabilityText.contains("region") ->
                 TrailerUnavailableReason.REGION_BLOCKED
             status?.stringValue("status").equals("LOGIN_REQUIRED", ignoreCase = true) ||
-                playabilityText.contains("sign in to confirm") ->
+                playabilityText.contains("sign in to confirm") ||
+                // fork:ytmusic-login — the other ways YouTube words an age gate; all of them are
+                // cleared by a signed-in account, so they take the same retry.
+                status?.stringValue("status").let {
+                    it.equals("AGE_CHECK_REQUIRED", ignoreCase = true) ||
+                        it.equals("AGE_VERIFICATION_REQUIRED", ignoreCase = true)
+                } ||
+                AGE_GATE_PHRASES.any { playabilityText.contains(it) } ->
                 TrailerUnavailableReason.AGE_RESTRICTED
             playabilityText.contains("removed") || playabilityText.contains("private") ||
                 playabilityText.contains("no longer available") ->

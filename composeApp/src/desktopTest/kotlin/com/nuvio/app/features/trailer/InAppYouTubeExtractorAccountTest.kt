@@ -99,6 +99,38 @@ class InAppYouTubeExtractorAccountTest {
         sent.forEach { assertNull(it["cookie"], "account sent for a video that did not need it") }
     }
 
+    @Test
+    fun otherAgeGateWordingsAreAlsoRetriedAsTheAccount(): Unit = runBlocking {
+        val gates = listOf(
+            """{"playabilityStatus":{"status":"AGE_CHECK_REQUIRED"}}""",
+            """{"playabilityStatus":{"status":"UNPLAYABLE","reason":"This video may be inappropriate for some users."}}""",
+        )
+        for (gate in gates) {
+            var accountRequests = 0
+            val extractor = InAppYouTubeExtractor(
+                performRequest = { url, _, headers, _, _ ->
+                    val isPlayer = "youtubei/v1/player" in url
+                    if (isPlayer && "cookie" in headers) accountRequests++
+                    TrailerRequestResponse(
+                        ok = true,
+                        status = 200,
+                        statusText = "HTTP 200",
+                        url = url,
+                        body = when {
+                            !isPlayer -> WATCH_PAGE
+                            "cookie" in headers -> PLAYABLE
+                            else -> gate
+                        },
+                    )
+                },
+                nowMs = { 1_000_000L },
+            ).apply { accountHeaders = { mapOf("cookie" to "SAPISID=abc") } }
+
+            assertIs<TrailerResolution.Available>(extractor.extractPlaybackSource(TRAILER_URL), gate)
+            assertTrue(accountRequests > 0, "no account retry for: $gate")
+        }
+    }
+
     private companion object {
         const val TRAILER_URL = "https://www.youtube.com/watch?v=GXEocd6WZog"
 
