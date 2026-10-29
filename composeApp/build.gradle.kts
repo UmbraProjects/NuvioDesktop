@@ -1741,6 +1741,8 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.cio)
                 implementation("com.squareup.okhttp3:okhttp:4.12.0")
+                // fork:music - reads MusicBrainz's .tar.xz data dumps for the offline copy (pure Java, public domain).
+                implementation("org.tukaani:xz:1.10")
                 implementation(libs.quickjs.kt)
                 implementation(libs.ksoup)
                 // Automatic hero backdrop framing (U2-Netp saliency + YuNet faces). The packaged jar

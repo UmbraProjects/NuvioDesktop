@@ -1,6 +1,14 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.unit.dp
+import com.nuvio.app.features.music.library.MusicBrainzOfflineState
+import com.nuvio.app.features.music.library.musicBrainzOfflineCopy
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -14,6 +22,18 @@ import nuvio.composeapp.generated.resources.settings_music_fanart_key
 import nuvio.composeapp.generated.resources.settings_music_fanart_key_description
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive
 import nuvio.composeapp.generated.resources.settings_music_lastfm_key
+import nuvio.composeapp.generated.resources.settings_music_mb_offline
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_absent
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_building
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_cancel
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_delete
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_download
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_downloading
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_failed
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_newer
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_ready
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_retry
+import nuvio.composeapp.generated.resources.settings_music_mb_offline_update
 import nuvio.composeapp.generated.resources.settings_music_lastfm_key_description
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
@@ -115,6 +135,8 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     isTablet = isTablet,
                     onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(autoWhereNext = it)) },
                 )
+                SettingsGroupDivider(isTablet)
+                MusicBrainzOfflineRow(isTablet)
             }
         }
     }
@@ -137,3 +159,62 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
         }
     }
 }
+
+/** The offline MusicBrainz copy: what it is, how far a download or build has got, and its buttons. */
+@Composable
+private fun MusicBrainzOfflineRow(isTablet: Boolean) {
+    val copy = remember { musicBrainzOfflineCopy() }
+    val state by copy.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { copy.checkForUpdate() }
+    if (state is MusicBrainzOfflineState.Unsupported) return
+    val description = when (val s = state) {
+        MusicBrainzOfflineState.Unsupported, MusicBrainzOfflineState.Absent -> stringResource(Res.string.settings_music_mb_offline_absent)
+        is MusicBrainzOfflineState.Downloading ->
+            stringResource(Res.string.settings_music_mb_offline_downloading, gigabytes(s.doneBytes), gigabytes(s.totalBytes))
+        is MusicBrainzOfflineState.Building -> stringResource(Res.string.settings_music_mb_offline_building, (s.fraction * 100).toInt())
+        is MusicBrainzOfflineState.Ready -> {
+            val line = stringResource(
+                Res.string.settings_music_mb_offline_ready,
+                dumpDate(s.dump), grouped(s.artists), grouped(s.releaseGroups), gigabytes(s.sizeBytes),
+            )
+            s.newer?.let { "$line ${stringResource(Res.string.settings_music_mb_offline_newer, dumpDate(it))}" } ?: line
+        }
+        is MusicBrainzOfflineState.Failed -> stringResource(Res.string.settings_music_mb_offline_failed, s.message)
+    }
+    SettingsActionRow(
+        title = stringResource(Res.string.settings_music_mb_offline),
+        description = description,
+        descriptionColor = if (state is MusicBrainzOfflineState.Failed) MaterialTheme.colorScheme.error else null,
+        isTablet = isTablet,
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (val s = state) {
+                MusicBrainzOfflineState.Unsupported -> Unit
+                MusicBrainzOfflineState.Absent ->
+                    SettingsGlassButton(text = stringResource(Res.string.settings_music_mb_offline_download), onClick = copy::download, accent = true)
+                is MusicBrainzOfflineState.Downloading, is MusicBrainzOfflineState.Building ->
+                    SettingsGlassButton(text = stringResource(Res.string.settings_music_mb_offline_cancel), onClick = copy::cancel)
+                is MusicBrainzOfflineState.Ready -> {
+                    if (s.newer != null) {
+                        SettingsGlassButton(text = stringResource(Res.string.settings_music_mb_offline_update), onClick = copy::download, accent = true)
+                    }
+                    SettingsGlassButton(text = stringResource(Res.string.settings_music_mb_offline_delete), onClick = copy::delete)
+                }
+                is MusicBrainzOfflineState.Failed ->
+                    SettingsGlassButton(text = stringResource(Res.string.settings_music_mb_offline_retry), onClick = copy::download, accent = true)
+            }
+        }
+    }
+}
+
+/** "20261028-001001" as "2026-10-28". */
+private fun dumpDate(stamp: String): String =
+    if (stamp.length >= 8) "${stamp.substring(0, 4)}-${stamp.substring(4, 6)}-${stamp.substring(6, 8)}" else stamp
+
+private fun gigabytes(bytes: Long): String {
+    val tenths = (bytes + 50_000_000L) / 100_000_000L
+    return "${tenths / 10}.${tenths % 10} GB"
+}
+
+/** 2712345 as "2,712,345". */
+private fun grouped(n: Int): String = n.toString().reversed().chunked(3).joinToString(",").reversed()

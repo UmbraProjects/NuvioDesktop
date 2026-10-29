@@ -5,7 +5,10 @@ import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.library.LibraryClock
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,6 +42,22 @@ internal object MusicBrainzClient {
     private const val TAG_SEARCH_LIMIT = 100
     private const val ARTIST_SEARCH_LIMIT = 5
     private val pacer = BackgroundAwarePacer(GAP_MS)
+
+    /**
+     * fork:music - the offline copy's answer, when one is installed: a disk read, so it runs on the IO pool. Null when
+     * there is no copy, or it has no answer (an artist newer than the dump), and the caller then asks the web service.
+     */
+    private suspend fun <T : Any> offline(read: (MusicBrainzOfflineIndex) -> T?): T? {
+        val index = musicBrainzOfflineCopy().index ?: return null
+        return withContext(Dispatchers.IO) {
+            try {
+                read(index)
+            } catch (error: Exception) {
+                log.w { "MusicBrainz offline copy failed: ${error.message}" }
+                null
+            }
+        }
+    }
 
     /**
      * Every call goes through [pacer]; one made inside `withContext(BackgroundWork())` waits for ordinary calls first.
@@ -82,6 +101,7 @@ internal object MusicBrainzClient {
         }
 
     suspend fun searchArtist(name: String): List<MbArtistHit> {
+        offline { it.searchArtist(name, limit = 6) }?.let { return parseMbArtistSearch(it) }
         val query = "artist:\"${name.replace("\"", "\\\"")}\"".encodeURLParameter()
         return paced("$BASE/artist?query=$query&limit=6&fmt=json")?.let(::parseMbArtistSearch).orEmpty()
     }
@@ -91,6 +111,7 @@ internal object MusicBrainzClient {
      * call, no per-artist look-ups. Null when MusicBrainz could not be reached; empty when nobody carries the tag.
      */
     suspend fun searchByTag(tag: String): List<LadderCandidate>? {
+        offline { it.searchByTag(tag, TAG_SEARCH_LIMIT) }?.let { return parseMbTagSearch(it) }
         val query = "tag:\"${tag.replace("\"", "\\\"")}\"".encodeURLParameter()
         return paced("$BASE/artist?query=$query&limit=$TAG_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
     }
@@ -100,15 +121,18 @@ internal object MusicBrainzClient {
      * [searchByTag], so [parseMbTagSearch] reads it. A single paced call. Null when MusicBrainz could not be reached.
      */
     suspend fun searchArtistWithTags(name: String): List<LadderCandidate>? {
+        offline { it.searchArtist(name, ARTIST_SEARCH_LIMIT) }?.let { return parseMbTagSearch(it) }
         val query = "artist:\"${name.replace("\"", "\\\"")}\"".encodeURLParameter()
         return paced("$BASE/artist?query=$query&limit=$ARTIST_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
     }
 
     suspend fun artist(mbid: String): MbArtist? =
-        paced("$BASE/artist/$mbid?inc=url-rels+tags+genres+ratings&fmt=json")?.let(::parseMbArtist)
+        offline { it.artist(mbid) }?.let(::parseMbArtist)
+            ?: paced("$BASE/artist/$mbid?inc=url-rels+tags+genres+ratings&fmt=json")?.let(::parseMbArtist)
 
     /** Every release group of the artist, paged 100 at a time. */
     suspend fun releaseGroups(mbid: String): List<MbReleaseGroup> {
+        offline { it.releaseGroups(mbid) }?.let { return parseMbReleaseGroups(it).first }
         val all = ArrayList<MbReleaseGroup>()
         var offset = 0
         repeat(MAX_PAGES) {
