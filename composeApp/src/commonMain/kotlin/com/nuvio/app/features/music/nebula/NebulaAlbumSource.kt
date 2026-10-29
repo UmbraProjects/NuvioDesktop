@@ -59,6 +59,10 @@ internal class NebulaAlbumController(
 
     private var job: Job? = null
 
+    /** The album with its tracks pointed at the addon, once the addon has it. Its availability is the addon's. */
+    val preparedAlbum: MusicAlbum?
+        get() = (offer as? NebulaOffer.Available)?.let { NebulaMusicSource.prepare(album, it.match) }
+
     /** True when Play, Shuffle and track taps should use the addon. */
     val active: Boolean get() = chosen == MusicSource.Addon && offer is NebulaOffer.Available
 
@@ -70,7 +74,10 @@ internal class NebulaAlbumController(
     suspend fun check() {
         offer = NebulaOffer.Checking
         offer = when (val found = NebulaMusicSource.find(album)) {
-            is NebulaAlbumLookup.Found -> NebulaOffer.Available(found.match)
+            is NebulaAlbumLookup.Found -> NebulaOffer.Available(found.match).also {
+                // An album YouTube Music has no playable track for is only playable from the addon: start there.
+                if (album.tracks.none { t -> t.isAvailable }) chosen = MusicSource.Addon
+            }
             NebulaAlbumLookup.NotFound -> NebulaOffer.NotFound.also { chosen = MusicSource.YouTube }
             is NebulaAlbumLookup.Failed -> NebulaOffer.LookupFailed(found.reason).also { chosen = MusicSource.YouTube }
         }
