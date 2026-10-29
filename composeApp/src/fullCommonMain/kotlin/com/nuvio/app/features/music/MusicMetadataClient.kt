@@ -3,6 +3,8 @@ package com.nuvio.app.features.music
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.features.trailer.TrailerPlaybackResolver
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -39,21 +41,63 @@ object MusicMetadataClient {
         return value
     }
 
-    suspend fun searchAlbums(query: String): List<MusicAlbumSummary> {
-        val q = query.trim().ifEmpty { return emptyList() }
-        return cached("albums:${q.lowercase()}") {
+    /**
+     * Albums for [query], ranked: the albums filter matches on title only, so the unfiltered
+     * search's top result (which weighs popularity) decides whose releases come first. When the
+     * filtered list has nothing by that artist, one more album search names them.
+     */
+    suspend fun searchAlbums(query: String): List<MusicAlbumSummary> = coroutineScope {
+        val q = query.trim().ifEmpty { return@coroutineScope emptyList() }
+        val topJob = async { topResult(q) }
+        val found = filteredAlbums(q)
+        val top = topJob.await()
+        // A song or video as the top result: the album it is on is what the person is after.
+        val topAlbum = top?.takeIf { it.albumBrowseId == null }?.videoId?.let { trackAlbum(it) }
+        val topArtists = top?.artists.orEmpty()
+        val artist = topArtists.firstOrNull()
+        val more = if (topAlbum == null && artist != null && found.none { it.isBy(topArtists) }) {
+            filteredAlbums("$q ${artist.name}")
+        } else {
+            emptyList()
+        }
+        rankAlbumResults(found, top, topAlbum, more)
+    }
+
+    /** The album the track [videoId] is on, from its watch-next byline; null when it is on none. */
+    private suspend fun trackAlbum(videoId: String): MusicAlbumSummary? =
+        cached("trackAlbum:$videoId") {
+            TrailerPlaybackResolver.musicRequest("next", mapOf("videoId" to videoId, "isAudioOnly" to true))
+                ?.let { parseTrackAlbum(it, videoId) }
+        }
+
+    /** Artists for [query], with the top result's artist first (looked up by name when the filter missed them). */
+    suspend fun searchArtists(query: String): List<MusicArtistSummary> = coroutineScope {
+        val q = query.trim().ifEmpty { return@coroutineScope emptyList() }
+        val topJob = async { topResult(q) }
+        val found = filteredArtists(q)
+        val top = topJob.await()
+        val missing = top?.artists.orEmpty().filter { ref -> ref.browseId != null && found.none { it.browseId == ref.browseId } }
+        val extra = missing.take(2).flatMap { filteredArtists(it.name) }
+        rankArtistResults(found, top, extra)
+    }
+
+    private suspend fun filteredAlbums(q: String): List<MusicAlbumSummary> =
+        cached("albums:${q.lowercase()}") {
             TrailerPlaybackResolver.musicRequest("search", mapOf("query" to q, "params" to FILTER_ALBUMS))
                 ?.let(::parseAlbumSearch)?.takeIf { it.isNotEmpty() }
         }.orEmpty()
-    }
 
-    suspend fun searchArtists(query: String): List<MusicArtistSummary> {
-        val q = query.trim().ifEmpty { return emptyList() }
-        return cached("artists:${q.lowercase()}") {
+    private suspend fun filteredArtists(q: String): List<MusicArtistSummary> =
+        cached("artists:${q.lowercase()}") {
             TrailerPlaybackResolver.musicRequest("search", mapOf("query" to q, "params" to FILTER_ARTISTS))
                 ?.let(::parseArtistSearch)?.takeIf { it.isNotEmpty() }
         }.orEmpty()
-    }
+
+    /** The unfiltered search's "Top result" for [q], or null. Shared by the album and artist searches. */
+    private suspend fun topResult(q: String): MusicTopResult? =
+        cached("top:${q.lowercase()}") {
+            TrailerPlaybackResolver.musicRequest("search", mapOf("query" to q))?.let(::parseTopResult)
+        }
 
     suspend fun album(browseId: String): MusicAlbum? {
         if (!browseId.startsWith("MPREb_")) return null

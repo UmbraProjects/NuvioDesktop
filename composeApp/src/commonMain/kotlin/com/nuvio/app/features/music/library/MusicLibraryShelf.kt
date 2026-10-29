@@ -240,7 +240,8 @@ private fun ShelfCardRow(
     val colors = MaterialTheme.nuvio.colors
     val scope = rememberCoroutineScope()
     val catalog = remember { defaultMusicCatalog() }
-    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Air between the cards and the count under them, so the line reads as the shelf's heading, not a card caption.
+    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             cards.forEach { card ->
                 val source = remember { MutableInteractionSource() }

@@ -159,11 +159,6 @@ internal fun ConstellationView(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             )
         }
-        if (m != null && canDraw) {
-            // HTPC phase 5: the genres you tag but barely own, as places to grow (they would be the ghost halos on the map).
-            val gaps = remember(artists) { ladderStarters(artists, limit = 4).filter { it.artists in 1..GAP_MAX_ARTISTS } }
-            if (gaps.isNotEmpty()) GapRow(gaps, onOpenLadder)
-        }
         Row(Modifier.weight(1f).fillMaxWidth()) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when {
@@ -235,6 +230,14 @@ private val PANEL_WIDTH = 380.dp
 
 /** A genre held by this many artists or fewer counts as a gap worth a ladder. */
 private const val GAP_MAX_ARTISTS = 8
+
+/**
+ * HTPC phase 5: the genres you tag but barely own, as places to grow (they would be the ghost halos
+ * on the map). The Music tab lists them under its search bars while this view is up; each opens a
+ * ladder into that genre.
+ */
+internal fun constellationGaps(artists: List<LibraryArtist>): List<LadderStarter> =
+    ladderStarters(artists, limit = 4).filter { it.artists in 1..GAP_MAX_ARTISTS }
 
 // region controls
 
@@ -755,28 +758,6 @@ private fun BigChip(text: String, selected: Boolean, onClick: () -> Unit) {
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp),
     )
-}
-
-/** Genres you tag but barely own: each card opens a ladder into it. */
-@Composable
-private fun GapRow(gaps: List<LadderStarter>, onOpenLadder: (LadderRequest) -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("Thin spots", style = MaterialTheme.typography.titleSmall, color = colors.textMuted)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(gaps, key = { it.genre }) { gap ->
-                BigChip(
-                    "Ladder into ${gap.genre} · ${gap.artists}",
-                    selected = false,
-                    onClick = { onOpenLadder(LadderRequest.Genre(gap.genre)) },
-                )
-            }
-        }
-    }
 }
 
 // endregion

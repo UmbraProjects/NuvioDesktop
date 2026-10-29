@@ -5,6 +5,7 @@ import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.nuvio.app.features.music.library.LibraryView
+import com.nuvio.app.features.music.library.constellationGaps
 import com.nuvio.app.features.music.library.musicGlass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -228,6 +229,7 @@ fun MusicTabScreen(
                 }
             }
             if (section == MusicSection.Library) {
+                val libraryState by MusicLibraryRepository.state.collectAsState()
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
@@ -235,7 +237,6 @@ fun MusicTabScreen(
                     MusicGlassPill("Shelf", selected = libraryView == LibraryView.Shelf) { libraryView = LibraryView.Shelf }
                     MusicGlassPill("Constellation", selected = libraryView == LibraryView.Constellation) { libraryView = LibraryView.Constellation }
                     MusicGlassPill("Eras", selected = libraryView == LibraryView.Eras) { libraryView = LibraryView.Eras }
-                    val libraryState by MusicLibraryRepository.state.collectAsState()
                     Box(Modifier.padding(horizontal = 4.dp).size(width = 1.dp, height = 20.dp).background(NuvioGlass.EdgeColor))
                     MusicGlassIconPill(
                         icon = Icons.Rounded.Refresh,
@@ -243,6 +244,23 @@ fun MusicTabScreen(
                         enabled = libraryState.artists.isNotEmpty() && libraryState.working.isEmpty(),
                         onClick = { MusicLibraryRepository.refreshAll() },
                     )
+                }
+                // fork:music - the Constellation's thin spots: genres you tag but barely own, each a ladder into it.
+                if (libraryView == LibraryView.Constellation) {
+                    val gaps = remember(libraryState.artists) { constellationGaps(libraryState.artists) }
+                    if (gaps.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Thin spots", style = MaterialTheme.typography.labelLarge, color = tokens.colors.textMuted)
+                            gaps.forEach { gap ->
+                                MusicGlassPill(gap.genre.replaceFirstChar { it.uppercase() }, selected = false, accent = true) {
+                                    ladder = LadderRequest.Genre(gap.genre)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (section == MusicSection.Search) {

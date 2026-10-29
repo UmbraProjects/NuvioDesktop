@@ -133,6 +133,60 @@ internal fun parseAlbumSearch(body: String): List<MusicAlbumSummary> {
     return findAll(root, "musicResponsiveListItemRenderer").mapNotNull { it.toAlbumSummary() }.distinctBy { it.browseId }
 }
 
+/**
+ * The "Top result" card of an unfiltered search: YouTube Music's own pick, which weighs popularity
+ * (the filtered album and artist searches match titles only, so covers outrank the original).
+ * [kind] is the card's first subtitle segment ("Song", "Album", "Artist", "Video"...). [artists]
+ * are the linked artists of a song, video or album, or the artist itself. [albumBrowseId] is set
+ * when the card is an album, [videoId] when it is a song or video (its album is then found with
+ * [parseTrackAlbum]). Null when the response has no such card.
+ */
+internal data class MusicTopResult(
+    val title: String,
+    val kind: String?,
+    val artists: List<MusicArtistRef>,
+    val albumBrowseId: String?,
+    val thumbnailUrl: String?,
+    val videoId: String? = null,
+)
+
+internal fun parseTopResult(body: String): MusicTopResult? {
+    val root = parseRoot(body) ?: return null
+    val card = findAll(root, "musicCardShelfRenderer").firstOrNull() ?: return null
+    val titleRuns = runsOf(card["title"])
+    val title = titleRuns.joinToString("") { it["text"].str().orEmpty() }.trim().ifEmpty { return null }
+    val titleBrowseId = titleRuns.firstNotNullOfOrNull { it.runBrowseId() }
+    val subtitleRuns = runsOf(card["subtitle"])
+    val kind = segments(subtitleRuns).firstOrNull()?.let(::segmentText)?.takeIf { it.isNotEmpty() }
+    val artists = when {
+        titleBrowseId != null && titleBrowseId.startsWith(ARTIST_PREFIX) -> listOf(MusicArtistRef(title, titleBrowseId))
+        else -> artistsFrom(subtitleRuns)
+    }
+    return MusicTopResult(
+        title = title,
+        kind = kind,
+        artists = artists,
+        albumBrowseId = titleBrowseId?.takeIf { it.startsWith(ALBUM_PREFIX) },
+        thumbnailUrl = thumbnailOf(card["thumbnail"]),
+        videoId = titleRuns.firstNotNullOfOrNull { it.at("navigationEndpoint", "watchEndpoint", "videoId").str() },
+    )
+}
+
+/**
+ * The album the track [videoId] is on, from a watch-next ("next") response: the track's byline
+ * reads "Artist • Album • Year" with the album linked. Null when the byline links no album (a
+ * video that is not on one).
+ */
+internal fun parseTrackAlbum(body: String, videoId: String): MusicAlbumSummary? {
+    val root = parseRoot(body) ?: return null
+    val track = findAll(root, "playlistPanelVideoRenderer").firstOrNull { it["videoId"].str() == videoId } ?: return null
+    val runs = runsOf(track["longBylineText"])
+    val albumRun = runs.firstOrNull { it.runBrowseId()?.startsWith(ALBUM_PREFIX) == true } ?: return null
+    val title = albumRun["text"].str()?.trim()?.ifEmpty { null } ?: return null
+    val year = segments(runs).map(::segmentText).firstOrNull(::isYear)
+    return MusicAlbumSummary(albumRun.runBrowseId()!!, title, artistsFrom(runs), year, kind = null, thumbnailOf(track["thumbnail"]))
+}
+
 /** Artists in a search response made with the artists filter. */
 internal fun parseArtistSearch(body: String): List<MusicArtistSummary> {
     val root = parseRoot(body) ?: return emptyList()
