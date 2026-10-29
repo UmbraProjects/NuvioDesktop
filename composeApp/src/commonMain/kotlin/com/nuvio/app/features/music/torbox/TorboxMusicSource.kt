@@ -10,6 +10,7 @@ import com.nuvio.app.features.music.MusicTrack
 import com.nuvio.app.features.music.library.MusicLibraryStorage
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
+import co.touchlab.kermit.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -28,7 +29,7 @@ internal sealed interface TorboxAlbumLookup {
     data object NotFound : TorboxAlbumLookup
 
     /** The search could not run (offline, no paid search plan, TorBox down). Not remembered, so a retry asks again. */
-    data object Failed : TorboxAlbumLookup
+    data class Failed(val reason: String) : TorboxAlbumLookup
 }
 
 internal sealed interface TorboxPrepared {
@@ -39,6 +40,8 @@ internal sealed interface TorboxPrepared {
 }
 
 private const val MAX_CANDIDATES = 3
+
+private val log = Logger.withTag("TorboxMusic")
 
 /** A short pause before the one plain retry of a link TorBox would not give: it is usually a blip. */
 private const val LINK_RETRY_DELAY_MS = 700L
@@ -122,7 +125,8 @@ internal object TorboxMusicSource {
         val answer = try {
             val response = TorboxApiClient.searchTorrents(apiKey = key, query = query)
             if (!response.isSuccessful) {
-                TorboxAlbumLookup.Failed
+                log.w { "TorBox search for \"$query\" failed: HTTP ${response.status} ${response.rawBody.take(300)}" }
+                TorboxAlbumLookup.Failed(torboxSearchFailureReason(response.status))
             } else {
                 val ranked = rankTorboxAlbumHits(parseTorboxSearchHits(response.rawBody), album.title, artist, album.year)
                     .take(MAX_CANDIDATES)
@@ -131,7 +135,8 @@ internal object TorboxMusicSource {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            TorboxAlbumLookup.Failed
+            log.w(e) { "TorBox search for \"$query\" failed" }
+            TorboxAlbumLookup.Failed(torboxSearchFailureReason(status = null, error = e.message))
         }
         if (answer !is TorboxAlbumLookup.Failed) {
             lock.withLock {
@@ -284,7 +289,10 @@ internal object TorboxMusicSource {
                 url = repaired?.let { (newTid, newFid) -> linkFor(key, newTid, newFid) }
                 if (repaired == null) forget(album)
             }
-            if (url == null) return MusicResolution.Failed(track, "TorBox no longer has this file")
+            if (url == null) {
+                log.w { "TorBox gave no link for torrent $torrentId file $fileId, even after a retry and a reopen" }
+                return MusicResolution.Failed(track, "TorBox no longer has this file")
+            }
             MusicResolution.Playable(
                 track = track,
                 mode = mode,

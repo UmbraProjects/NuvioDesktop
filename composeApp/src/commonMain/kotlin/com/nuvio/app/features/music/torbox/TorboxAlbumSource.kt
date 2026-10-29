@@ -37,7 +37,7 @@ internal sealed interface TorboxOffer {
         val label: String get() = torboxQualityLabel(hit.title).ifEmpty { "Cached" }
     }
     data object NotCached : TorboxOffer
-    data object LookupFailed : TorboxOffer
+    data class LookupFailed(val reason: String) : TorboxOffer
 }
 
 /**
@@ -82,7 +82,7 @@ internal class TorboxAlbumController(
         offer = when (found) {
             is TorboxAlbumLookup.Found -> TorboxOffer.Available(found.hits.first())
             TorboxAlbumLookup.NotFound -> TorboxOffer.NotCached.also { chosen = MusicSource.YouTube }
-            TorboxAlbumLookup.Failed -> TorboxOffer.LookupFailed.also { chosen = MusicSource.YouTube }
+            is TorboxAlbumLookup.Failed -> TorboxOffer.LookupFailed(found.reason).also { chosen = MusicSource.YouTube }
         }
     }
 
@@ -130,8 +130,8 @@ internal fun TorboxSourceRow(controller: TorboxAlbumController, onRetry: () -> U
         when (val offer = controller.offer) {
             TorboxOffer.Checking -> Text("Checking TorBox…", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
             TorboxOffer.NotCached -> Text("Not cached on TorBox.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-            TorboxOffer.LookupFailed -> Text(
-                "Couldn't check TorBox. Try again.",
+            is TorboxOffer.LookupFailed -> Text(
+                "Couldn't check TorBox: ${offer.reason} Tap to try again.",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.warning,
                 modifier = Modifier.clickable(onClick = onRetry),

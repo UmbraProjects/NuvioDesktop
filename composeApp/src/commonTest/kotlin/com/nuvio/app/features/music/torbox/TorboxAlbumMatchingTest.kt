@@ -103,4 +103,15 @@ class TorboxAlbumMatchingTest {
         val files = listOf(TorboxFile(1, "CD1/1-01 Airbag.flac"), TorboxFile(2, "CD1/1-02 Paranoid Android.flac"), TorboxFile(3, "CD1/1-03 Subterranean Homesick Alien.flac"))
         assertEquals(3, assertNotNull(mapTorboxFilesToTracks(files, tracks)).size)
     }
+
+    @Test
+    fun failureReasonsNameTheStatus() {
+        assertTrue("403" in torboxSearchFailureReason(403))
+        assertTrue("paid plan" in torboxSearchFailureReason(403))
+        assertTrue("key" in torboxSearchFailureReason(401))
+        assertTrue("429" in torboxSearchFailureReason(429))
+        assertTrue("503" in torboxSearchFailureReason(503))
+        assertTrue("timed out" in torboxSearchFailureReason(null, "timed out"))
+        assertEquals("Couldn't reach TorBox's search.", torboxSearchFailureReason(null))
+    }
 }

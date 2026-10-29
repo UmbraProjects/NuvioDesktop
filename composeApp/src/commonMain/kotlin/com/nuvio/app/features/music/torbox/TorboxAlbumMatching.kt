@@ -238,3 +238,22 @@ internal fun mapTorboxFilesToTracks(files: List<TorboxFile>, tracks: List<Torbox
 }
 
 // endregion
+
+// region failure reasons
+
+/**
+ * A short, plain reason a TorBox search failed, for the album page and the log. [status] is the HTTP
+ * status when TorBox answered; [error] is the exception message when it could not be reached.
+ */
+internal fun torboxSearchFailureReason(status: Int?, error: String? = null): String = when {
+    status == 401 -> "TorBox didn't accept your API key (HTTP 401)."
+    status == 403 -> "TorBox refused the search (HTTP 403). Search needs a paid plan."
+    status == 404 -> "TorBox's search address wasn't found (HTTP 404)."
+    status == 429 -> "TorBox is limiting searches right now (HTTP 429). Wait a minute."
+    status != null && status >= 500 -> "TorBox's search is down (HTTP $status)."
+    status != null -> "TorBox's search answered HTTP $status."
+    !error.isNullOrBlank() -> "Couldn't reach TorBox's search ($error)."
+    else -> "Couldn't reach TorBox's search."
+}
+
+// endregion
