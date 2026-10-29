@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -196,15 +198,15 @@ private fun RecentChip(text: String, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
+    val hovered by source.collectIsHoveredAsState()
     val scale by animateFloatAsState(if (focused) 1.06f else 1f)
     val shape = RoundedCornerShape(50)
     Row(
         modifier = Modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .height(56.dp)
-            .clip(shape)
-            .background(colors.surfaceElevated)
-            .border(if (focused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), shape)
+            .musicGlass(shape, raised = hovered, keyFocused = focused)
+            .hoverable(source)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 22.dp),
         verticalAlignment = Alignment.CenterVertically,

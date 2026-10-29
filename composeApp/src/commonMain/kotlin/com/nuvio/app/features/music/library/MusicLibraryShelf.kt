@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.NuvioGlass
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.focusable
@@ -76,10 +77,12 @@ import kotlinx.coroutines.launch
  * left, then a rail of release covers. Only releases that can be played are shown; the artist's top
  * five come first as larger tiles (numbered when they are really ranked or starred), then everything
  * else oldest to newest. Hovering a cover slides its disc out and shows a star that pins the album to
- * the top five. A star by the artist's name floats it to the top of the shelf. Hovering a row tints
- * the glow with that artist's accent. Clicking a cover opens the album; the avatar, name or "All" open the room.
+ * the top five. A star by the artist's name floats it to the top of the shelf. Clicking a cover opens
+ * the album; the avatar, name or "All" open the room.
  * Above the rows sit up to four cards (a year ago this week, a starred artist, added recently, continue your ladder).
- * The header switches views: Shelf (this file), Constellation ([ConstellationView]) and Eras ([LibraryErasView]).
+ * [view] picks Shelf (this file), Constellation ([ConstellationView]) or Eras ([LibraryErasView]); the Music tab's
+ * header holds the switch, and on Constellation its filter box feeds [filterQuery]. The page sits on the tab's
+ * sky and the app accent: the artists' own colours are kept for their own pages.
  */
 @Composable
 internal fun MusicLibraryShelf(
@@ -88,18 +91,13 @@ internal fun MusicLibraryShelf(
     modifier: Modifier = Modifier,
     /** HTPC phase 4: the "Continue your ladder" card reopens a ladder; the host swaps its body for the ladder screen. */
     onOpenLadder: (LadderRequest) -> Unit = {},
+    view: LibraryView = LibraryView.Shelf,
+    filterQuery: String = "",
 ) {
     val colors = MaterialTheme.nuvio.colors
     LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
-    var showSources by remember { mutableStateOf(false) }
-    var focusedId by remember { mutableStateOf<String?>(null) }
-    var view by rememberSaveable { mutableStateOf(LibraryView.Shelf) } // fork:music - which of the Library's views is showing
 
-    val focusAccent by animateColorAsState(
-        state.artists.firstOrNull { it.id == focusedId }?.palette?.let { Color(it.accent) } ?: colors.accent,
-        tween(400),
-    )
     val yearAgo = remember(state.artists) {
         val (y, m, d) = civilDate(LibraryClock.nowEpochMs())
         pickYearAgo(state.artists, y, m, d)
@@ -114,53 +112,7 @@ internal fun MusicLibraryShelf(
     val ordered = remember(state.artists) { state.artists.sortedByDescending { it.favourite } }
 
     Box(modifier.fillMaxSize()) {
-        Box(
-            Modifier.fillMaxWidth().height(340.dp).background(
-                Brush.radialGradient(
-                    listOf(focusAccent.copy(alpha = 0.2f), Color.Transparent),
-                    center = Offset(300f, 0f),
-                    radius = 900f,
-                ),
-            ),
-        )
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    when (val n = state.artists.size) {
-                        0 -> "No artists yet"
-                        1 -> "1 artist"
-                        else -> "$n artists"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.textSecondary,
-                    modifier = Modifier.weight(1f),
-                )
-                if (isDesktop) { // fork:music - quick UI size, same setting as Settings > Appearance > App UI scale
-                    val uiScale by remember { ThemeSettingsRepository.desktopAppUiScalePercent }.collectAsStateWithLifecycle()
-                    ActionPill("A−", enabled = uiScale > -50, onClick = { ThemeSettingsRepository.stepDesktopAppUiScalePercent(-10) })
-                    Text(
-                        "${if (uiScale > 0) "+" else ""}$uiScale%",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.textSecondary,
-                        modifier = Modifier.padding(horizontal = 4.dp).clickable(enabled = uiScale != 0) {
-                            ThemeSettingsRepository.setDesktopAppUiScalePercent(0)
-                        },
-                    )
-                    ActionPill("A+", enabled = uiScale < 50, onClick = { ThemeSettingsRepository.stepDesktopAppUiScalePercent(10) })
-                    Box(Modifier.width(12.dp))
-                }
-                ActionPill("Shelf", selected = view == LibraryView.Shelf, onClick = { view = LibraryView.Shelf }) // fork:music
-                ActionPill("Constellation", selected = view == LibraryView.Constellation, onClick = { view = LibraryView.Constellation }) // fork:music
-                ActionPill("Eras", selected = view == LibraryView.Eras, onClick = { view = LibraryView.Eras }) // fork:music
-                LibraryIconAction(Icons.Rounded.Refresh, "Refresh all artists", enabled = state.artists.isNotEmpty()) {
-                    MusicLibraryRepository.refreshAll()
-                }
-                LibraryIconAction(Icons.Rounded.Settings, "Music settings") { showSources = true }
-            }
             state.errorMessage?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = colors.warning, modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -171,7 +123,7 @@ internal fun MusicLibraryShelf(
                     artists = state.artists,
                     pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }.values.map { it.status },
                     onArtistClick = onArtistClick,
-                    onFocusArtist = { focusedId = it },
+                    query = filterQuery,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     onOpenLadder = onOpenLadder, // HTPC phase 5
                 )
@@ -211,7 +163,6 @@ internal fun MusicLibraryShelf(
                             artist = artist,
                             status = state.working[artist.id]?.status,
                             reducedMotion = state.settings.reducedMotion,
-                            onFocus = { focusedId = artist.id },
                             onOpenArtist = { onArtistClick(artist.id) },
                             onOpenRelease = { release ->
                                 val id = release.ytBrowseId
@@ -222,17 +173,6 @@ internal fun MusicLibraryShelf(
                 }
             }
         }
-    }
-
-    if (showSources) {
-        ArtworkSourcesDialog(
-            settings = state.settings,
-            onSave = {
-                MusicLibraryRepository.updateSettings(it)
-                showSources = false
-            },
-            onDismiss = { showSources = false },
-        )
     }
 }
 
@@ -246,7 +186,7 @@ private fun YearAgoStrip(pick: YearAgoPick, artistCount: Int, releaseCount: Int)
     val catalog = remember { defaultMusicCatalog() }
     val release = pick.release
     Row(
-        Modifier.fillMaxWidth().padding(bottom = 14.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.05f)).padding(12.dp),
+        Modifier.fillMaxWidth().padding(bottom = 14.dp).musicGlass(RoundedCornerShape(16.dp)).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -305,15 +245,15 @@ private fun ShelfCardRow(
             cards.forEach { card ->
                 val source = remember { MutableInteractionSource() }
                 val focused by source.collectIsFocusedAsState()
+                val hovered by source.collectIsHoveredAsState()
                 val scale by animateFloatAsState(if (focused) 1.05f else 1f)
                 val shape = RoundedCornerShape(16.dp)
                 Row(
                     Modifier
                         .weight(1f)
                         .graphicsLayer { scaleX = scale; scaleY = scale }
-                        .clip(shape)
-                        .background(Color.White.copy(alpha = if (focused) 0.10f else 0.05f))
-                        .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+                        .musicGlass(shape, raised = hovered || focused, keyFocused = focused)
+                        .hoverable(source)
                         .focusable(interactionSource = source)
                         .clickable(interactionSource = source, indication = null) {
                             val ladder = card.ladder
@@ -356,7 +296,6 @@ private fun ShelfArtistRow(
     artist: LibraryArtist,
     status: String?,
     reducedMotion: Boolean,
-    onFocus: () -> Unit,
     onOpenArtist: () -> Unit,
     onOpenRelease: (LibraryRelease) -> Unit,
 ) {
@@ -366,13 +305,7 @@ private fun ShelfArtistRow(
     val catalog = remember { defaultMusicCatalog() }
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
-    LaunchedEffect(hovered) { if (hovered) onFocus() }
-
-    // Colours are derived in the background and cached; until then the app accent stands in.
-    val identity = remember(artist) { artist.identity() }
-    LaunchedEffect(identity.artistId, identity.needsPalette) { MusicPaletteResolver.ensure(context, identity) }
-    val accent = artist.palette?.let { Color(it.accent) } ?: colors.accent
-    val wash by animateColorAsState(if (hovered) accent.copy(alpha = 0.07f) else Color.Transparent, tween(200))
+    val wash by animateColorAsState(if (hovered) MusicGlassRaised else Color.Transparent, tween(200))
 
     // Artists added before Top 5 existed get their ranking filled in once, quietly.
     LaunchedEffect(artist.id, artist.topAlbumKeys.isEmpty(), status == null) {
@@ -397,7 +330,7 @@ private fun ShelfArtistRow(
         Column(Modifier.width(SHELF_HEADER_WIDTH).padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Box(Modifier.clip(CircleShape).clickable(onClick = onOpenArtist)) {
-                    Box(Modifier.border(3.dp, accent, CircleShape).padding(3.dp)) {
+                    Box(Modifier.border(2.dp, if (hovered) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
                         MusicCover(artist.art.thumb, artist.name, size = 58.dp, circle = true)
                     }
                 }
@@ -504,7 +437,7 @@ private fun QuickPlayChip(icon: androidx.compose.ui.graphics.vector.ImageVector,
         Modifier
             .height(36.dp)
             .clip(shape)
-            .background(if (filled) colors.accent else Color.White.copy(alpha = 0.1f))
+            .then(if (filled) Modifier.background(colors.accent) else Modifier.musicGlass(shape))
             .clickable(onClick = onClick)
             .padding(horizontal = if (label != null) 14.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,

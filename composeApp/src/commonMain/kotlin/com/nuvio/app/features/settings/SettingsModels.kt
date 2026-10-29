@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import nuvio.composeapp.generated.resources.compose_settings_page_music
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Info
@@ -167,6 +168,11 @@ internal enum class SettingsPage(
     ),
     Preshow(
         titleRes = Res.string.compose_settings_page_preshow,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    Music( // fork:music
+        titleRes = Res.string.compose_settings_page_music,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

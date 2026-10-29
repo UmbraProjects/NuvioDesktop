@@ -115,8 +115,9 @@ internal fun LibraryErasView(
                     else -> false
                 }
             },
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        // The shelf's TV-safe side margins, and room between the ruler, the era and each artist.
+        contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 8.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         if (yearAgo != null) item(key = "year-ago") { yearAgo() }
         pending.forEachIndexed { i, status ->
@@ -125,7 +126,7 @@ internal fun LibraryErasView(
             }
         }
         item(key = "axis") {
-            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionPill("Released", selected = axis == ErasAxis.Released, onClick = { axis = ErasAxis.Released; chosen = null })
                 ActionPill("Added", selected = axis == ErasAxis.Added, onClick = { axis = ErasAxis.Added; chosen = null })
             }
@@ -146,8 +147,12 @@ internal fun LibraryErasView(
         } else {
             item(key = "ruler") {
                 Row(
-                    Modifier.fillMaxWidth().height(RULER_HEIGHT),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .musicGlass(RoundedCornerShape(16.dp))
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .height(RULER_HEIGHT),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.Bottom,
                 ) {
                     eras.eras.forEach { e ->
@@ -165,11 +170,11 @@ internal fun LibraryErasView(
             }
             if (era != null) {
                 item(key = "header") {
-                    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
                                 eraHeader(era),
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.textPrimary,
                             )
@@ -215,14 +220,14 @@ internal fun LibraryErasView(
                 }
                 eraNeighbour(eras, era)?.let { near ->
                     item(key = "also") {
-                        Column(Modifier.fillMaxWidth().padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(
                                 "Also from ${near.era.years}",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.textSecondary,
                             )
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 items(near.entries, key = { "also:${it.artist.id}:${it.release.key}" }) { entry ->
                                     CoverTile(
                                         tile = ShelfTile(entry.release, rank = null, featured = false, pinned = entry.release.key in entry.artist.pinnedTopKeys),
@@ -256,7 +261,7 @@ internal fun LibraryErasView(
     }
 }
 
-private val RULER_HEIGHT = 112.dp
+private val RULER_HEIGHT = 128.dp
 
 /** The era as a banner: a mosaic of its covers, its top genres and the artists with the most releases in it. */
 @Composable
@@ -266,14 +271,14 @@ private fun EraSummary(era: LibraryEra) {
     val genres = eraTopGenres(era)
     val artists = eraTopArtists(era)
     Row(
-        Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.05f)).padding(14.dp),
+        Modifier.fillMaxWidth().musicGlass(RoundedCornerShape(16.dp)).padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             mosaic.forEach { ReleaseCover(it.release, Modifier.size(96.dp)) }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (genres.isNotEmpty()) {
                 Text(
                     genres.joinToString(" · ") { g -> g.replaceFirstChar { it.uppercase() } },
@@ -307,24 +312,24 @@ private fun EraBar(
     modifier: Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val tint = era.lead?.release?.palette?.let { Color(it.accent) } ?: colors.accent
+    val tint = colors.accent
     val glow by animateFloatAsState(if (selected) 1f else 0.45f, if (reducedMotion) snap() else tween(200), label = "eraBar")
     val fraction = if (maxCount == 0) 0f else era.releaseCount / maxCount.toFloat()
-    val barHeight = if (era.isEmpty) 2.dp else (8f + 56f * fraction).dp
+    val barHeight = if (era.isEmpty) 2.dp else (8f + 64f * fraction).dp
     Column(
         modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick).padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom),
+        verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.Bottom),
     ) {
         if (!era.isEmpty) {
-            Text("${era.releaseCount}", fontSize = 10.sp, color = if (selected) colors.textPrimary else colors.textMuted, maxLines = 1)
+            Text("${era.releaseCount}", fontSize = 11.sp, color = if (selected) colors.textPrimary else colors.textMuted, maxLines = 1)
         }
         Column(
             Modifier.fillMaxWidth().height(barHeight).clip(RoundedCornerShape(4.dp)).background(tint.copy(alpha = glow)),
         ) {}
         Text(
             "${era.fromYear}",
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) colors.textPrimary else colors.textMuted,
             maxLines = 1,
@@ -343,23 +348,23 @@ private fun EraArtistRow(
 ) {
     val colors = MaterialTheme.nuvio.colors
     val artist = group.artist
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             Modifier.clip(RoundedCornerShape(8.dp)).clickable { onArtistClick(artist.id) }.padding(end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            MusicCover(artist.art.thumb, artist.name, size = 32.dp, circle = true)
+            MusicCover(artist.art.thumb, artist.name, size = 36.dp, circle = true)
             Text(
                 artist.name,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = colors.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(group.entries, key = { it.release.key }) { entry ->
                 CoverTile(
                     tile = ShelfTile(entry.release, rank = null, featured = false, pinned = entry.release.key in artist.pinnedTopKeys),

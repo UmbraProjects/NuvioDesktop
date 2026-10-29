@@ -5843,11 +5843,16 @@ private fun AppTabHost(
         }
 
         if (musicSelected) { // fork:music
-            tabStateHolder.SaveableStateProvider(AppScreenTab.Music.name) {
-                com.nuvio.app.features.music.MusicTabHost(
-                    navigate = onMusicNavigate,
-                    topChromePadding = topChromePadding,
-                )
+            if (com.nuvio.app.features.music.rememberMusicTabVisible()) {
+                tabStateHolder.SaveableStateProvider(AppScreenTab.Music.name) {
+                    com.nuvio.app.features.music.MusicTabHost(
+                        navigate = onMusicNavigate,
+                        topChromePadding = topChromePadding,
+                    )
+                }
+            } else {
+                // Switched off in Settings while it was the open tab: nothing to show here any more.
+                LaunchedEffect(Unit) { onNavigateToHome?.invoke() }
             }
         }
 
@@ -6098,7 +6103,7 @@ private fun DesktopHoverSidebar(
                         )
                     }
                 }
-                DesktopSidebarItem( // fork:music
+                if (com.nuvio.app.features.music.rememberMusicTabVisible()) DesktopSidebarItem( // fork:music
                     label = "Music",
                     selected = selectedTab == AppScreenTab.Music,
                     expanded = false,
@@ -6287,9 +6292,11 @@ private fun TabletFloatingTopBar(
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsStateWithLifecycle()
     val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
+    val musicTabVisible = com.nuvio.app.features.music.rememberMusicTabVisible() // fork:music
     val topBarWidth = FloatingTopBarWidth -
         (if (discoverTabVisible) 0.dp else FloatingTopBarQuadrantWidth) +
-        (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp)
+        (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp) -
+        (if (musicTabVisible) 0.dp else FloatingTopBarQuadrantWidth) // fork:music
     // Right-clicking the Library quadrant hangs its quick-access menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
     var libraryMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
@@ -6637,7 +6644,7 @@ private fun TabletFloatingTopBar(
                                 tint = iconTint,
                             )
                         }
-                        NavQuadrant( // fork:music
+                        if (musicTabVisible) NavQuadrant( // fork:music
                             selected = selectedTab == AppScreenTab.Music,
                             onClick = { onTabSelected(AppScreenTab.Music) },
                         ) { iconModifier, iconTint ->

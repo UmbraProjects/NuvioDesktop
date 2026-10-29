@@ -1,5 +1,11 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.nuvio.app.features.music.library.LibraryView
+import com.nuvio.app.features.music.library.musicGlass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -134,6 +140,9 @@ fun MusicTabScreen(
     }
     var results by remember { mutableStateOf<MusicSearchResults>(MusicSearchResults.Idle) }
     var ladder by remember { mutableStateOf<LadderRequest?>(null) } // fork:music - the open ladder, if any
+    // The Library's view, and the Constellation's name / genre filter (the right half of the search bar there).
+    var libraryView by rememberSaveable { mutableStateOf(LibraryView.Shelf) }
+    var libraryFilter by rememberSaveable { mutableStateOf("") }
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
     LaunchedEffect(query, kind) {
@@ -176,26 +185,66 @@ fun MusicTabScreen(
             .padding(top = topChromePadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // On the Constellation the bar splits in two: the search on the left, the map's filter on the right.
+        val split = section == MusicSection.Library && libraryView == LibraryView.Constellation
         Column(
             modifier = Modifier
-                .widthIn(max = MUSIC_HEADER_MAX_WIDTH)
+                .widthIn(max = if (split) MUSIC_SPLIT_HEADER_MAX_WIDTH else MUSIC_HEADER_MAX_WIDTH)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                // Snug under the top bar, so the page below gets the height.
+                .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            MusicSearchBar(
-                query = query,
-                onQueryChange = {
-                    query = it
-                    // Typing from the Library goes back to Search: the box always searches.
-                    if (it.isNotBlank()) section = MusicSection.Search
-                },
-                section = section,
-                onToggleSection = {
-                    section = if (section == MusicSection.Search) MusicSection.Library else MusicSection.Search
-                },
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MusicGlassField(
+                    value = query,
+                    onValueChange = {
+                        query = it
+                        // Typing from the Library goes back to Search: the box always searches.
+                        if (it.isNotBlank()) section = MusicSection.Search
+                    },
+                    placeholder = "Search albums and artists",
+                    leadingIcon = Icons.Rounded.Search,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    val library = section == MusicSection.Library
+                    MusicFieldDivider()
+                    MusicFieldIconButton(
+                        icon = Icons.Rounded.LibraryMusic,
+                        description = if (library) "Back to search" else "Your library",
+                        active = library,
+                        onClick = { section = if (library) MusicSection.Search else MusicSection.Library },
+                    )
+                }
+                if (split) {
+                    MusicGlassField(
+                        value = libraryFilter,
+                        onValueChange = { libraryFilter = it },
+                        placeholder = "Filter by name or genre",
+                        leadingIcon = Icons.Rounded.FilterList,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            if (section == MusicSection.Library) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MusicGlassPill("Shelf", selected = libraryView == LibraryView.Shelf) { libraryView = LibraryView.Shelf }
+                    MusicGlassPill("Constellation", selected = libraryView == LibraryView.Constellation) { libraryView = LibraryView.Constellation }
+                    MusicGlassPill("Eras", selected = libraryView == LibraryView.Eras) { libraryView = LibraryView.Eras }
+                    val libraryState by MusicLibraryRepository.state.collectAsState()
+                    Box(Modifier.padding(horizontal = 4.dp).size(width = 1.dp, height = 20.dp).background(NuvioGlass.EdgeColor))
+                    MusicGlassIconPill(
+                        icon = Icons.Rounded.Refresh,
+                        description = "Refresh all artists",
+                        enabled = libraryState.artists.isNotEmpty() && libraryState.working.isEmpty(),
+                        onClick = { MusicLibraryRepository.refreshAll() },
+                    )
+                }
+            }
             if (section == MusicSection.Search) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -229,6 +278,8 @@ fun MusicTabScreen(
                 onAlbumClick = onAlbumClick,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 onOpenLadder = { ladder = it }, // fork:music
+                view = libraryView,
+                filterQuery = libraryFilter,
             )
             return@Column
         }
@@ -274,19 +325,26 @@ fun MusicTabScreen(
 /** The search header is a centred column this wide at most; the grid below gets the room. */
 private val MUSIC_HEADER_MAX_WIDTH = 720.dp
 
+/** With the Constellation's filter beside the search, the bar gets this much room for the two halves. */
+private val MUSIC_SPLIT_HEADER_MAX_WIDTH = 1040.dp
+
 /** Results are centred in a column this wide at most, so a wide window doesn't stretch one row across it. */
 private val MUSIC_GRID_MAX_WIDTH = 1480.dp
 
 private val MUSIC_TILE_MIN_WIDTH = 168.dp
 
-/** The search box: the settings glass, with the Search / Library toggle at its right end. */
+/** A text box in the settings glass: [leadingIcon], the text, a clear button, then [trailing] (the Library toggle). */
 @Composable
-private fun MusicSearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    section: MusicSection,
-    onToggleSection: () -> Unit,
+private fun MusicGlassField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    leadingIcon: ImageVector,
+    modifier: Modifier = Modifier,
+    trailing: @Composable RowScope.() -> Unit = {},
 ) {
+    val query = value
+    val onQueryChange = onValueChange
     val tokens = MaterialTheme.nuvio
     var focused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -294,7 +352,7 @@ private fun MusicSearchBar(
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(44.dp)
             .ditheredBackground(NuvioGlass.Fill, shape)
@@ -324,11 +382,11 @@ private fun MusicSearchBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(Icons.Rounded.Search, contentDescription = null, tint = tokens.colors.textMuted, modifier = Modifier.size(20.dp))
+                Icon(leadingIcon, contentDescription = null, tint = tokens.colors.textMuted, modifier = Modifier.size(20.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                     if (query.isEmpty()) {
                         Text(
-                            text = "Search albums and artists",
+                            text = placeholder,
                             color = tokens.colors.textMuted,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
@@ -345,26 +403,60 @@ private fun MusicSearchBar(
                         modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onQueryChange("") },
                     )
                 }
-                Box(Modifier.size(width = 1.dp, height = 22.dp).background(NuvioGlass.EdgeColor))
-                val library = section == MusicSection.Library
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (library) tokens.colors.accent.copy(alpha = 0.22f) else Color.Transparent)
-                        .clickable(onClick = onToggleSection),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.LibraryMusic,
-                        contentDescription = if (library) "Back to search" else "Your library",
-                        tint = if (library) tokens.colors.accent else tokens.colors.textSecondary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
+                trailing()
             }
         },
     )
+}
+
+@Composable
+private fun MusicFieldDivider() {
+    Box(Modifier.size(width = 1.dp, height = 22.dp).background(NuvioGlass.EdgeColor))
+}
+
+/** A square icon button inside a [MusicGlassField]; tinted with the accent while [active]. */
+@Composable
+private fun MusicFieldIconButton(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
+    val tokens = MaterialTheme.nuvio
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (active) tokens.colors.accent.copy(alpha = 0.22f) else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = if (active) tokens.colors.accent else tokens.colors.textSecondary,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/** A round glass button the size of a [MusicGlassPill], for an action beside the pills (Refresh). */
+@Composable
+private fun MusicGlassIconPill(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    val tokens = MaterialTheme.nuvio
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val keyFocused by interaction.collectIsFocusedAsState()
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .musicGlass(CircleShape, raised = hovered && enabled, keyFocused = keyFocused)
+            .hoverable(interaction)
+            .clickable(enabled = enabled, interactionSource = interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = if (enabled) tokens.colors.textSecondary else tokens.colors.textDisabled,
+            modifier = Modifier.size(18.dp),
+        )
+    }
 }
 
 /** A small glass pill: the search kind, or a ladder offer ([accent]) beside it. */
@@ -385,13 +477,7 @@ private fun MusicGlassPill(label: String, selected: Boolean, accent: Boolean = f
         },
         maxLines = 1,
         modifier = Modifier
-            .clip(shape)
-            .then(
-                if (selected) Modifier.background(tokens.colors.accent, shape)
-                else Modifier.ditheredBackground(NuvioGlass.Fill, shape),
-            )
-            .background(if (hovered && !selected) Color.White.copy(alpha = 0.06f) else Color.Transparent, shape)
-            .border(1.dp, if (keyFocused) SolidColor(tokens.colors.borderFocus) else NuvioGlass.Edge, shape)
+            .musicGlass(shape, raised = hovered, selected = selected, keyFocused = keyFocused)
             .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.material.icons.rounded.MusicNote
 import com.nuvio.app.core.ui.LocalOpenMetaDetails
 import nuvio.composeapp.generated.resources.settings_desktop_recent_searches
 import androidx.compose.material.icons.rounded.History
@@ -1219,6 +1220,7 @@ private fun MobileSettingsScreen(
                     settings = screensaverSettings,
                 )
                 SettingsPage.Preshow -> preshowSettingsContent(isTablet = false)
+                SettingsPage.Music -> musicSettingsContent(isTablet = false) // fork:music
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
                     settings = debridSettings,
@@ -2097,6 +2099,7 @@ private fun TabletSettingsScreen(
                         settings = screensaverSettings,
                     )
                     SettingsPage.Preshow -> preshowSettingsContent(isTablet = true)
+                    SettingsPage.Music -> musicSettingsContent(isTablet = true) // fork:music
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
                         settings = debridSettings,
@@ -2257,6 +2260,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         icon = Icons.Rounded.Theaters,
         page = SettingsPage.Preshow,
     ),
+    DesktopSettingsSidebarItem( // fork:music
+        label = stringResource(Res.string.compose_settings_page_music),
+        icon = Icons.Rounded.MusicNote,
+        page = SettingsPage.Music,
+    ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.random_play_title),
         icon = Icons.Rounded.Casino,
@@ -2305,6 +2313,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Appearance -> SettingsPage.Appearance
     SettingsPage.Screensaver -> SettingsPage.Screensaver
     SettingsPage.Preshow -> SettingsPage.Preshow
+    SettingsPage.Music -> SettingsPage.Music // fork:music
     SettingsPage.Homescreen -> SettingsPage.Homescreen
     SettingsPage.Plugins -> SettingsPage.Addons
     SettingsPage.Streams -> SettingsPage.Streams

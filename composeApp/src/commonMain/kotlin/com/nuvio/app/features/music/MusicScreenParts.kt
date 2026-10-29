@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.musicGlass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -94,7 +95,7 @@ internal fun <T> MusicSegmented(
 ) {
     val colors = MaterialTheme.nuvio.colors
     val pill = RoundedCornerShape(20.dp)
-    Row(modifier = modifier.clip(pill).background(colors.surfaceCard)) {
+    Row(modifier = modifier.musicGlass(pill)) {
         options.forEach { (value, label) ->
             val on = value == selected
             Box(

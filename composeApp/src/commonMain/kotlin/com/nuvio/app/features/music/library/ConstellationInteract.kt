@@ -21,8 +21,12 @@ import kotlin.math.sqrt
  *  - [topGenres]: the genres named on hover and in the side panel.
  */
 
-internal const val MIN_ZOOM = 1f
+/** Below 1 the whole map shrinks into the middle of the canvas, so a big library fits with room to spare. */
+internal const val MIN_ZOOM = 0.4f
 internal const val MAX_ZOOM = 8f
+
+/** However far it is dragged, the map keeps at least this share of the canvas, so it can always be found again. */
+internal const val MIN_VISIBLE_SHARE = 0.25f
 
 /** Zoom factor of one scroll notch. */
 internal const val ZOOM_PER_NOTCH = 1.18f
@@ -37,13 +41,16 @@ internal data class Camera(val zoom: Float = 1f, val panX: Float = 0f, val panY:
     fun x(base: Float): Float = base * zoom + panX
     fun y(base: Float): Float = base * zoom + panY
 
-    /** This camera with zoom in range and the pan kept so the zoomed map still covers a [width] by [height] canvas. */
+    /**
+     * This camera with zoom in range and the pan free to roam, as long as the zoomed map still
+     * overlaps a [MIN_VISIBLE_SHARE] of the [width] by [height] canvas on each axis.
+     */
     fun clamped(width: Float, height: Float): Camera {
         val z = zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
         return Camera(
             z,
-            panX.coerceIn(min(0f, width * (1 - z)), 0f),
-            panY.coerceIn(min(0f, height * (1 - z)), 0f),
+            panX.coerceIn(width * MIN_VISIBLE_SHARE - width * z, width * (1 - MIN_VISIBLE_SHARE)),
+            panY.coerceIn(height * MIN_VISIBLE_SHARE - height * z, height * (1 - MIN_VISIBLE_SHARE)),
         )
     }
 

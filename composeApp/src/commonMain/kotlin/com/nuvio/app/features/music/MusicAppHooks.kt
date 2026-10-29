@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.runtime.remember
+import com.nuvio.app.features.music.library.MusicLibraryRepository
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.animation.core.animateDpAsState
@@ -61,6 +63,14 @@ fun MusicTabHost(
         modifier = modifier.fillMaxSize(),
         topChromePadding = topChromePadding ?: 0.dp,
     )
+}
+
+/** Whether the Music tab is in the navigation bar (Settings > Music > Show Music). */
+@Composable
+fun rememberMusicTabVisible(): Boolean {
+    remember { MusicLibraryRepository.ensureLoaded() }
+    val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    return state.settings.tabEnabled
 }
 
 /**

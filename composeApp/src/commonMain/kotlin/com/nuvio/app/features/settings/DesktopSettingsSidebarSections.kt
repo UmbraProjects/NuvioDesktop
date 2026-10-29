@@ -153,6 +153,11 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.Screensaver, Res.string.settings_screensaver_section_title),
             section(SettingsPage.Screensaver, Res.string.settings_screensaver_section_shutdown),
         )
+        SettingsPage.Music -> listOf( // fork:music
+            section(SettingsPage.Music, Res.string.settings_music_section_general),
+            section(SettingsPage.Music, Res.string.settings_music_section_sources),
+            section(SettingsPage.Music, Res.string.settings_music_section_playback),
+        )
         SettingsPage.Preshow -> listOf(
             section(SettingsPage.Preshow, Res.string.settings_preshow_section_trailers),
             section(SettingsPage.Preshow, Res.string.settings_preshow_section_trivia),

@@ -33,6 +33,8 @@ data class MusicLibrarySettings(
     val barStyle: com.nuvio.app.features.music.MusicBarStyle = com.nuvio.app.features.music.MusicBarStyle.Bar,
     /** The artist page's "Where next?" ladder builds by itself (lazily, behind other MusicBrainz calls). Off for a slow connection: it then waits for a button. */
     val autoWhereNext: Boolean = true,
+    /** The Music tab in the navigation bar. Off hides it everywhere; the library and these settings are kept. */
+    val tabEnabled: Boolean = true,
 )
 
 /** What is happening to one artist while it is added or refreshed. */

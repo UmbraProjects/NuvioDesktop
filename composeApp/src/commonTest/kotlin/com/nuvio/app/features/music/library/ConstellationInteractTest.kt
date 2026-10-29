@@ -17,8 +17,8 @@ class ConstellationInteractTest {
     // region camera
 
     @Test
-    fun homeCameraCannotPan() {
-        assertEquals(Camera(), Camera().panned(50f, -30f, 400f, 300f))
+    fun homeCameraPans() {
+        assertEquals(Camera(panX = 50f, panY = -30f), Camera().panned(50f, -30f, 400f, 300f))
     }
 
     @Test
@@ -40,18 +40,16 @@ class ConstellationInteractTest {
         assertEquals(MAX_ZOOM, c.zoom)
         repeat(40) { c = c.zoomedAt(200f, 150f, 0.5f, 400f, 300f) }
         assertEquals(MIN_ZOOM, c.zoom)
-        assertEquals(0f, c.panX, 0.001f)
-        assertEquals(0f, c.panY, 0.001f)
     }
 
     @Test
-    fun panIsKeptSoTheMapStillCoversTheCanvas() {
+    fun panIsKeptSoAQuarterOfTheCanvasStillShowsTheMap() {
         val zoomed = Camera(zoom = 2f).panned(500f, 500f, 400f, 300f)
-        assertEquals(0f, zoomed.panX)
-        assertEquals(0f, zoomed.panY)
+        assertEquals(300f, zoomed.panX) // the map's left edge stops three quarters across
+        assertEquals(225f, zoomed.panY)
         val far = Camera(zoom = 2f).panned(-5000f, -5000f, 400f, 300f)
-        assertEquals(-400f, far.panX)
-        assertEquals(-300f, far.panY)
+        assertEquals(-700f, far.panX) // 400 * 0.25 - 400 * 2: its right edge a quarter in
+        assertEquals(-525f, far.panY)
     }
 
     @Test

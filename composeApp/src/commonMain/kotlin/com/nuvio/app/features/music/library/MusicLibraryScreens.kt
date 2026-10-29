@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -92,7 +95,6 @@ fun MusicLibraryGrid(
     val colors = MaterialTheme.nuvio.colors
     LaunchedEffect(Unit) { MusicLibraryRepository.ensureLoaded() }
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
-    var showSources by remember { mutableStateOf(false) }
 
     Column(modifier.fillMaxSize()) {
         Row(
@@ -113,7 +115,6 @@ fun MusicLibraryGrid(
             LibraryIconAction(Icons.Rounded.Refresh, "Refresh all artists", enabled = state.artists.isNotEmpty()) {
                 MusicLibraryRepository.refreshAll()
             }
-            LibraryIconAction(Icons.Rounded.Settings, "Music settings") { showSources = true }
         }
         state.errorMessage?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = colors.warning, modifier = Modifier.padding(horizontal = 16.dp))
@@ -161,17 +162,6 @@ fun MusicLibraryGrid(
             }
         }
     }
-
-    if (showSources) {
-        ArtworkSourcesDialog(
-            settings = state.settings,
-            onSave = {
-                MusicLibraryRepository.updateSettings(it)
-                showSources = false
-            },
-            onDismiss = { showSources = false },
-        )
-    }
 }
 
 @Composable
@@ -205,60 +195,6 @@ internal fun LibraryIconAction(
     ) {
         Icon(icon, contentDescription = description, tint = if (enabled) colors.textSecondary else colors.textDisabled, modifier = Modifier.size(22.dp))
     }
-}
-
-@Composable
-internal fun ArtworkSourcesDialog(
-    settings: MusicLibrarySettings,
-    onSave: (MusicLibrarySettings) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    var fanart by remember { mutableStateOf(settings.fanartApiKey) }
-    var audioDb by remember { mutableStateOf(settings.audioDbKey) }
-    var autoNext by remember { mutableStateOf(settings.autoWhereNext) }
-    NuvioAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Music settings") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "Details and covers come from YouTube Music, MusicBrainz, Deezer, TheAudioDB and the Cover Art Archive with no setup. " +
-                        "Fanart.tv adds HD logos, banners, backgrounds and CD art, and needs a free personal key from fanart.tv (Account, Your API keys).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-                Text("Fanart.tv API key", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
-                NuvioTextField(value = fanart, onValueChange = { fanart = it.trim() }, modifier = Modifier.fillMaxWidth(), placeholder = "Optional", secret = true)
-                Text("TheAudioDB API key", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
-                NuvioTextField(
-                    value = audioDb,
-                    onValueChange = { audioDb = it.trim() },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = "Optional (the shared test key is used when empty)",
-                    secret = true,
-                )
-                Text(
-                    "Keys apply the next time an artist is added or refreshed.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textMuted,
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Build \"Where next?\" automatically", style = MaterialTheme.typography.titleSmall, color = colors.textPrimary)
-                        Text(
-                            "On an artist page, finds where to go next without being asked. Turn off on a slow connection; the page then waits for a button.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textMuted,
-                        )
-                    }
-                    Switch(checked = autoNext, onCheckedChange = { autoNext = it })
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSave(settings.copy(fanartApiKey = fanart, audioDbKey = audioDb, autoWhereNext = autoNext)) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
 }
 
 // endregion
@@ -753,6 +689,9 @@ internal fun formatCount(n: Long): String = when {
 internal fun ActionPill(text: String, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(20.dp)
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val keyFocused by source.collectIsFocusedAsState()
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
@@ -762,9 +701,9 @@ internal fun ActionPill(text: String, selected: Boolean = false, enabled: Boolea
             else -> colors.textPrimary
         },
         modifier = Modifier
-            .clip(shape)
-            .background(if (selected) colors.accent else colors.surfaceCard)
-            .clickable(enabled = enabled, onClick = onClick)
+            .musicGlass(shape, raised = hovered && enabled, selected = selected, keyFocused = keyFocused)
+            .hoverable(source)
+            .clickable(enabled = enabled, interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     )
 }

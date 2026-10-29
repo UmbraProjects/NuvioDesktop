@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -115,20 +117,14 @@ internal fun ConstellationView(
     artists: List<LibraryArtist>,
     pending: List<String>,
     onArtistClick: (artistId: String) -> Unit,
-    onFocusArtist: (artistId: String?) -> Unit,
+    /** The Music tab's filter box (the right half of its search bar while this view is up): dims what does not match. */
+    query: String,
     modifier: Modifier = Modifier,
     /** HTPC phase 5: "Ladder from here" and the gap cards open a ladder; the host swaps its body for the ladder screen. */
     onOpenLadder: (LadderRequest) -> Unit = {},
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val context = LocalPlatformContext.current
     val byId = remember(artists) { artists.associateBy { it.id } }
-
-    // Star colours come from the artist palettes the shelf already caches; derive any that are missing, quietly.
-    val missingPalettes = remember(artists) { artists.count { it.identity().needsPalette } }
-    LaunchedEffect(missingPalettes, artists.size) {
-        artists.forEach { MusicPaletteResolver.ensure(context, it.identity()) }
-    }
 
     var model by remember { mutableStateOf<ConstellationModel?>(null) }
     LaunchedEffect(artists) {
@@ -140,17 +136,12 @@ internal fun ConstellationView(
         if (next != null) model = next
     }
 
-    var query by rememberSaveable { mutableStateOf("") }
     var chipKey by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by remember { mutableStateOf<String?>(null) }
     var hoverId by remember { mutableStateOf<String?>(null) }
     var legendOpen by rememberSaveable { mutableStateOf(false) } // HTPC phase 5: the key is a corner chip, not a block over the left cluster
     var camera by remember { mutableStateOf(Camera()) }
     val mapFocus = remember { FocusRequester() }
-
-    // The screen glow follows the star under the pointer, else the selected one.
-    LaunchedEffect(hoverId, selectedId) { onFocusArtist(hoverId ?: selectedId) }
-    DisposableEffect(Unit) { onDispose { onFocusArtist(null) } }
 
     val m = model
     val canDraw = m != null && m.graph.canDraw
@@ -169,15 +160,6 @@ internal fun ConstellationView(
             )
         }
         if (m != null && canDraw) {
-            ConstellationControls(
-                model = m,
-                query = query,
-                onQuery = { query = it },
-                activeChip = activeChip,
-                onChip = { key -> chipKey = if (activeChip == key) null else key },
-                litCount = focus?.size,
-                onLeaveField = { runCatching { mapFocus.requestFocus() } },
-            )
             // HTPC phase 5: the genres you tag but barely own, as places to grow (they would be the ghost halos on the map).
             val gaps = remember(artists) { ladderStarters(artists, limit = 4).filter { it.artists in 1..GAP_MAX_ARTISTS } }
             if (gaps.isNotEmpty()) GapRow(gaps, onOpenLadder)
@@ -213,11 +195,18 @@ internal fun ConstellationView(
                             modifier = Modifier.fillMaxSize(),
                         )
                         Column(
-                            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 8.dp),
+                            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             if (legendOpen) ConstellationLegend()
-                            BigChip(if (legendOpen) "Hide key" else "Key", selected = legendOpen, onClick = { legendOpen = !legendOpen })
+                            ConstellationControls(
+                                model = m,
+                                activeChip = activeChip,
+                                onChip = { key -> chipKey = if (activeChip == key) null else key },
+                                litCount = focus?.size,
+                                legendOpen = legendOpen,
+                                onLegend = { legendOpen = !legendOpen },
+                            )
                         }
                     }
                 }
@@ -249,42 +238,34 @@ private const val GAP_MAX_ARTISTS = 8
 
 // region controls
 
-/** The search box and the genre chips along the top: both dim what does not match. */
+/**
+ * The strip along the bottom of the map: the key, how many stars the filter leaves lit, and the genre
+ * chips. A chip, like the filter box in the tab's header, dims what does not match.
+ */
 @Composable
 private fun ConstellationControls(
     model: ConstellationModel,
-    query: String,
-    onQuery: (String) -> Unit,
     activeChip: String?,
     onChip: (String) -> Unit,
     litCount: Int?,
-    onLeaveField: () -> Unit,
+    legendOpen: Boolean,
+    onLegend: () -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        NuvioTextField(
-            value = query,
-            onValueChange = onQuery,
-            modifier = Modifier.width(240.dp).onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    onQuery("")
-                    onLeaveField()
-                    true
-                } else {
-                    false
-                }
-            },
-            placeholder = "Filter by name or genre",
-            imeAction = ImeAction.Done,
-            onImeAction = onLeaveField,
-            leadingContent = { Icon(Icons.Rounded.Search, contentDescription = null, tint = colors.textMuted) },
-        )
+        BigChip(if (legendOpen) "Hide key" else "Key", selected = legendOpen, onClick = onLegend)
         if (litCount != null) {
-            Text("$litCount of ${model.graph.placedCount}", style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1)
+            Text(
+                "$litCount of ${model.graph.placedCount}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textSecondary,
+                maxLines = 1,
+                modifier = Modifier.musicGlass(RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 7.dp),
+            )
         }
         LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(end = 8.dp)) {
             items(model.clusters.chips, key = { it.key }) { cluster ->
@@ -358,7 +339,9 @@ private fun ConstellationMap(
     }
     val pointById = remember(model) { points.associateBy { it.id } }
 
-    fun colourOf(id: String): Color = byId[id]?.palette?.let { Color(it.accent) } ?: fallback
+    // One colour for every star: the app accent. Size, rings and dimming carry the meaning.
+    @Suppress("UNUSED_PARAMETER")
+    fun colourOf(id: String): Color = fallback
     fun lit(id: String): Boolean = focus == null || id in focus
 
     Box(
@@ -576,14 +559,13 @@ private fun ConstellationPanel(
 ) {
     val colors = MaterialTheme.nuvio.colors
     val topAlbums = remember(artist.topAlbumKeys, artist.releases) { artistTopReleases(artist, 5) }
-    val accent = artist.palette?.let { Color(it.accent) } ?: colors.accent
+    val accent = colors.accent
     val releases = remember(artist.releases) { countReleaseCards(artist.releases) }
     val genres = remember(artist.genres, artist.tags) { topGenres(artist, 5) }
     Column(
         modifier
             .padding(start = 8.dp, end = 12.dp, bottom = 8.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.surfaceCard)
+            .musicGlass(RoundedCornerShape(16.dp))
             .pointerInput(Unit) { detectTapGestures { } } // a click on the panel is not a click on the map behind it
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
@@ -663,7 +645,7 @@ private enum class LegendGlyph { Size, Favourite, Line, Halo, Dim }
 private fun ConstellationLegend(modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
     Column(
-        modifier.clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.32f)).padding(horizontal = 12.dp, vertical = 10.dp),
+        modifier.musicGlass(RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         for ((glyph, text) in listOf(
@@ -730,7 +712,7 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(artists, key = { it.id }) { artist ->
                 Column(
-                    Modifier.width(240.dp).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.06f)).padding(14.dp),
+                    Modifier.width(240.dp).musicGlass(RoundedCornerShape(14.dp)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
@@ -758,20 +740,20 @@ private fun BigChip(text: String, selected: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(22.dp)
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(20.dp)
     Text(
         text = text,
-        fontSize = 22.sp,
+        style = MaterialTheme.typography.bodyMedium,
         color = if (selected) colors.onAccent else colors.textPrimary,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
-            .clip(shape)
-            .background(if (selected) colors.accent else Color.White.copy(alpha = 0.08f))
-            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+            .musicGlass(shape, raised = hovered, selected = selected, keyFocused = focused)
+            .hoverable(source)
             .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 7.dp),
     )
 }
 
@@ -784,7 +766,7 @@ private fun GapRow(gaps: List<LadderStarter>, onOpenLadder: (LadderRequest) -> U
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Thin spots", fontSize = 22.sp, color = colors.textMuted)
+        Text("Thin spots", style = MaterialTheme.typography.titleSmall, color = colors.textMuted)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(gaps, key = { it.genre }) { gap ->
                 BigChip(
