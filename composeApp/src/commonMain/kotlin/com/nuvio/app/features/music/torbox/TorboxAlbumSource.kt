@@ -75,8 +75,12 @@ internal class TorboxAlbumController(
 
     suspend fun check() {
         offer = TorboxOffer.Checking
-        offer = when (val found = TorboxMusicSource.find(album)) {
-            is TorboxAlbumLookup.Found -> TorboxOffer.Available(found.hit)
+        refreshOffer(TorboxMusicSource.find(album))
+    }
+
+    private fun refreshOffer(found: TorboxAlbumLookup) {
+        offer = when (found) {
+            is TorboxAlbumLookup.Found -> TorboxOffer.Available(found.hits.first())
             TorboxAlbumLookup.NotFound -> TorboxOffer.NotCached.also { chosen = MusicSource.YouTube }
             TorboxAlbumLookup.Failed -> TorboxOffer.LookupFailed.also { chosen = MusicSource.YouTube }
         }
@@ -84,16 +88,19 @@ internal class TorboxAlbumController(
 
     /** Opens the torrent on first use, then starts the album at [trackIndex]. */
     fun play(trackIndex: Int, mode: MusicPlayMode, shuffled: Boolean) {
-        val available = offer as? TorboxOffer.Available ?: return
+        if (offer !is TorboxOffer.Available) return
         job?.cancel()
         job = scope.launch {
             opening = true
             error = null
-            val ready = prepared ?: when (val result = TorboxMusicSource.prepare(album, available.hit)) {
+            // open() retries on its own: a kept answer that no longer opens is searched for again.
+            val ready = prepared ?: when (val result = TorboxMusicSource.open(album)) {
                 is TorboxPrepared.Ready -> result.album.also { prepared = it; matched = result.matched }
                 TorboxPrepared.NoMatch -> { error = "This torrent doesn't line up with the album's tracks."; null }
                 TorboxPrepared.Failed -> { error = "Couldn't open this on TorBox."; null }
             }
+            // The answer may have changed while opening (a stale one was replaced, or none is left).
+            if (ready == null) refreshOffer(TorboxMusicSource.find(album))
             opening = false
             if (ready != null) player.play(ready, trackIndex = trackIndex, mode = mode, shuffled = shuffled)
         }

@@ -56,7 +56,7 @@ object MusicPlayback {
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
             // TorBox tracks (ids like "torbox:<torrent>:<file>") get a direct link; everything else is YouTube Music.
             resolver = { track, album, mode ->
-                if (TorboxMusicSource.owns(track)) TorboxMusicSource.resolve(track, mode)
+                if (TorboxMusicSource.owns(track)) TorboxMusicSource.resolve(track, album, mode)
                 else resolveMusicTrack(track, album, mode)
             },
         )

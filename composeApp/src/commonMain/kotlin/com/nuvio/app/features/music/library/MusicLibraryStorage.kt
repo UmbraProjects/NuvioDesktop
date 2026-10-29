@@ -14,4 +14,8 @@ internal expect object MusicLibraryStorage {
     /** The artist page's "Where next?" ladders, kept for a week, one JSON payload per profile. */
     fun loadWhereNext(profileId: Int): String?
     fun saveWhereNext(profileId: Int, payload: String)
+
+    /** What TorBox had for each album when last asked, one JSON payload per profile (see TorboxLookupCache). */
+    fun loadTorboxLookups(profileId: Int): String?
+    fun saveTorboxLookups(profileId: Int, payload: String)
 }

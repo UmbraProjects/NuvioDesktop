@@ -28,4 +28,10 @@ internal actual object MusicLibraryStorage {
     actual fun saveWhereNext(profileId: Int, payload: String) {
         store.putString("wherenext_$profileId", payload)
     }
+
+    actual fun loadTorboxLookups(profileId: Int): String? = store.getString("torbox_lookups_$profileId")
+
+    actual fun saveTorboxLookups(profileId: Int, payload: String) {
+        store.putString("torbox_lookups_$profileId", payload)
+    }
 }
