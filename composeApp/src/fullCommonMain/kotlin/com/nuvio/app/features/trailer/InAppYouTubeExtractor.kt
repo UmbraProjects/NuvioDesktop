@@ -241,6 +241,16 @@ class InAppYouTubeExtractor internal constructor(
         anonymous
     }
 
+    /**
+     * fork:music-resolver — drops the cached watch config so the next extraction fetches a fresh
+     * session. For a caller that has just proved the URLs it was given are dead: YouTube issues
+     * URLs that serve nothing to a session it has reservations about, and a stale `visitorData`
+     * is one way to be that session.
+     */
+    suspend fun forgetSession() {
+        configMutex.withLock { cachedConfig = null }
+    }
+
     private suspend fun attemptExtraction(
         youtubeUrl: String,
         forceRefreshConfig: Boolean,

@@ -24,7 +24,7 @@ object MusicResolver {
         }
 
     private suspend fun audio(track: MusicTrack): MusicResolution {
-        val source = open(track.videoId)
+        val source = open(track.videoId, needsVideo = false)
             ?: return MusicResolution.Failed(track, "the audio track would not open")
         return MusicResolution.Playable(track, MusicPlayMode.Audio, track.videoId, source, viaCounterpart = false)
     }
@@ -32,7 +32,7 @@ object MusicResolver {
     private suspend fun video(track: MusicTrack, album: MusicAlbum): MusicResolution {
         val linked = MusicMetadataClient.counterpartOf(track.videoId)
         if (linked != null) {
-            open(linked.videoId)?.let {
+            open(linked.videoId, needsVideo = true)?.let {
                 return MusicResolution.Playable(track, MusicPlayMode.Video, linked.videoId, it, viaCounterpart = true)
             }
             log.w { "linked video ${linked.videoId} for \"${track.title}\" would not open; searching" }
@@ -48,23 +48,52 @@ object MusicResolver {
         }
         for (hit in rankMusicVideoHits(hits, track.title, artist, track.durationSeconds)) {
             if (hit.videoId == linked?.videoId) continue
-            open(hit.videoId)?.let {
+            open(hit.videoId, needsVideo = true)?.let {
                 return MusicResolution.Playable(track, MusicPlayMode.Video, hit.videoId, it, viaCounterpart = false)
             }
         }
         log.i { "no official video for \"${track.title}\"; playing it as a lyric video" }
-        val source = open(track.videoId)
+        val source = open(track.videoId, needsVideo = false)
             ?: return MusicResolution.Failed(track, "the audio track would not open")
         return MusicResolution.Playable(
             track, MusicPlayMode.Video, track.videoId, source, viaCounterpart = false, lyricVideo = true,
         )
     }
 
-    /** A stream for [videoId], or null. A source that stops serving after about a minute is not accepted. */
-    private suspend fun open(videoId: String): TrailerPlaybackSource? =
+    /**
+     * A stream for [videoId] that has been checked to serve bytes, or null.
+     *
+     * fork:music-resolver — ported from BitChord's resolver. The extractor's answer is probed (see
+     * [verifiedSource]) before the player is handed it: a refused URL moves on to the HLS /
+     * progressive fallbacks, and a source from a client that can be cut off is accepted when the
+     * probe shows it plays, instead of being dropped by name. When every link is refused the cached
+     * session is forgotten and the lookup tried once more, since a stale session is a common cause
+     * of URLs that look fine and serve nothing. [needsVideo] is whether the picture will be shown;
+     * the audio-only surface only reads the audio URL, so only that one has to be good.
+     */
+    private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
+        repeat(OPEN_ATTEMPTS) { attempt ->
+            val resolved = resolveSource(videoId) ?: return null
+            verifiedSource(resolved, needsVideo)?.let { return it }
+            if (attempt < OPEN_ATTEMPTS - 1) {
+                log.w { "every stream for $videoId was refused; retrying with a fresh session" }
+                try {
+                    TrailerPlaybackResolver.forgetSession()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    log.w { "could not reset the YouTube session: ${error.message}" }
+                }
+            }
+        }
+        return null
+    }
+
+    private const val OPEN_ATTEMPTS = 2
+
+    private suspend fun resolveSource(videoId: String): TrailerPlaybackSource? =
         try {
-            TrailerPlaybackResolver.resolveFromYouTubeUrl("https://www.youtube.com/watch?v=$videoId")
-                .sourceOrNull()?.takeIf { it.reliable }
+            TrailerPlaybackResolver.resolveFromYouTubeUrl("https://www.youtube.com/watch?v=$videoId").sourceOrNull()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
