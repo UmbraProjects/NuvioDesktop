@@ -928,6 +928,34 @@ object TmdbService {
         return numbers
     }
 
+    /**
+     * fork:preshow - every textless backdrop TMDB holds for a title, best-rated first: the "extra
+     * fanart". Response shapes are in TmdbBackdrops.kt.
+     *
+     * Textless (`include_image_language=null`) on purpose: language-tagged backdrops usually have
+     * the title baked in, which would fight the pre-show's own text. Falls back to all languages
+     * only when a title has no textless art at all.
+     */
+    suspend fun fetchBackdropUrls(
+        tmdbId: Int,
+        mediaType: String,
+        size: String = "w1280",
+        limit: Int = 12,
+    ): List<String> {
+        val apiKey = currentApiKey() ?: return emptyList()
+        if (tmdbId <= 0) return emptyList()
+        val endpoint = (if (normalizeMediaType(mediaType) == "tv") "tv/$tmdbId" else "movie/$tmdbId") + "/images"
+        suspend fun load(query: Map<String, String>): List<String> =
+            fetch<TmdbBackdropListResponse>(endpoint = endpoint, apiKey = apiKey, query = query)
+                ?.backdrops.orEmpty()
+                // Landscape art only; a stray portrait would crop to a sliver of the frame.
+                .filter { it.aspectRatio >= 1.5 }
+                .sortedByDescending { it.voteAverage }
+                .mapNotNull { tmdbImageUrl(it.filePath, size) }
+        val textless = load(mapOf("include_image_language" to "null"))
+        return (textless.ifEmpty { load(emptyMap()) }).take(limit)
+    }
+
     private fun currentApiKey(): String? =
         TmdbSettingsRepository.snapshot().apiKey.trim().takeIf(String::isNotBlank)
 

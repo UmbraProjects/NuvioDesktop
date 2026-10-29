@@ -2,8 +2,7 @@ package com.nuvio.app.features.trailer
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetailsRepository
-import com.nuvio.app.features.details.selectHeroTrailer
-import com.nuvio.app.features.details.youtubePlaybackUrl
+import com.nuvio.app.features.details.rankHeroTrailers
 import com.nuvio.app.features.library.LibraryClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -75,13 +74,15 @@ object HeroTrailerMetadataService {
             // a major spoiler risk to surface unprompted on the hero.
             val spoilerSafeTrailers = meta?.trailers
                 ?.filter { it.seasonNumber == null || it.seasonNumber == 1 }
-            val candidate = spoilerSafeTrailers?.let(::selectHeroTrailer)
+            val ranked = spoilerSafeTrailers?.let(::rankHeroTrailers).orEmpty() // fork:trailer-quality
+            val candidate = ranked.firstOrNull()
             log.i {
                 "resolve $type/$id metaFound=${meta != null} trailers=${meta?.trailers?.size ?: 0} " +
                     "candidate=${candidate?.key} (${candidate?.site})"
             }
-            candidate?.let { TrailerPlaybackResolver.resolveFromYouTubeUrl(it.youtubePlaybackUrl()).sourceOrNull() }
-                .also { log.i { "resolve $type/$id playbackSource=${it != null}" } }
+            // fork:trailer-quality - plays the sharpest upload, not just the listed one.
+            SharpestTrailerResolver.resolve(meta?.name, meta?.releaseInfo, ranked.map { it.key })
+                .also { log.i { "resolve $type/$id playbackSource=${it != null} height=${it?.heightPx}" } }
         } catch (error: CancellationException) {
             cacheMutex.withLock {
                 inFlightRequests.remove(cacheKey)?.completeExceptionally(error)

@@ -206,6 +206,10 @@ class InAppYouTubeExtractor internal constructor(
     suspend fun extractSingleUrl(youtubeUrl: String): String? =
         (extract(youtubeUrl, singleUrl = true) as? TrailerResolution.Available)?.source?.videoUrl
 
+    /** fork:innertube - the shared session for the search / YouTube Music requests in YouTubeInnerTube.kt. */
+    internal suspend fun innerTubeSession(): InnerTubeSession =
+        ensureWatchConfig(INNERTUBE_SEED_VIDEO_ID, forceRefresh = false).let { InnerTubeSession(it.apiKey, it.visitorData) }
+
     private suspend fun extract(youtubeUrl: String, singleUrl: Boolean): TrailerResolution = withContext(Dispatchers.Default) {
         if (youtubeUrl.isBlank()) return@withContext TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
 
@@ -512,7 +516,12 @@ class InAppYouTubeExtractor internal constructor(
             bestVideo = bestVideo,
             bestAudio = bestAudio,
         )
-        return source?.let { TrailerResolution.Available(it) }
+        // fork:trailer-quality - the upload's real ceiling (the HLS ladder often tops out above the
+        // adaptive rendition picked for playback), and whether the streams came from the client whose
+        // URLs are not cut off, so uploads of the same trailer can be compared.
+        val tallest = maxOf(bestManifest?.height ?: 0, bestVideo?.height ?: 0, bestProgressive?.height ?: 0)
+        val reliable = bestVideo?.client == PREFERRED_SEPARATE_CLIENT || bestManifest?.client == PREFERRED_SEPARATE_CLIENT
+        return source?.let { TrailerResolution.Available(it.copy(heightPx = tallest, reliable = reliable)) }
             ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
     }
 

@@ -12,4 +12,10 @@ actual object TrailerPlaybackResolver {
         if (youtubeUrl.isBlank()) return null
         return extractor.extractSingleUrl(youtubeUrl)
     }
+    actual suspend fun searchYouTube(query: String): List<YouTubeSearchHit> =
+        extractor.searchVideos(query)
+
+    /** YouTube Music's InnerTube, for the music feature. Not part of the shared `expect` surface. */
+    internal suspend fun musicRequest(endpoint: String, params: Map<String, Any?>): String? =
+        extractor.musicRequest(endpoint, params)
 }

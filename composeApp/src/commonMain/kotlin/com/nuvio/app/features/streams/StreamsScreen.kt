@@ -411,6 +411,12 @@ fun StreamsScreen(
             manualSelection = manualSelection,
             preferLocalStreams = preferLocalStreams,
         )
+        // The viewer has committed to playing this title: warm the pre-show trivia now so it is
+        // cached by the time playback opens. No-op unless the feature is enabled and configured.
+        com.nuvio.app.features.preroll.TriviaRepository.prefetchFor(
+            type = type,
+            metaId = parentMetaId ?: videoId,
+        )
     }
 
     LaunchedEffect(uiState.groups, storedProgress?.providerAddonId, preferredFilterApplied) {

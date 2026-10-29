@@ -7696,3 +7696,25 @@ svg {
 }
 .chapter-markers,
 .player.official-hud .chapter-markers { display: none; }
+/* fork:preshow */
+/* Pre-show pipeline: a Skip pill only. The volume slider and mute button are hidden; the rules use
+   the chrome's id so they win over the scaled sizes defined for the shared trailer buttons. */
+#heroTrailerChrome.preshow [data-command="heroTrailerMute"],
+#heroTrailerChrome.preshow .hero-trailer-volume {
+  display: none;
+}
+#heroTrailerChrome.preshow {
+  padding: calc(var(--user-scale, 1) * 4px);
+}
+#heroTrailerChrome.preshow .hero-trailer-button {
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--user-scale, 1) * 6px);
+  padding: 0 calc(var(--user-scale, 1) * 14px) 0 calc(var(--user-scale, 1) * 18px);
+}
+#heroTrailerChrome.preshow .hero-trailer-skip-label {
+  font-size: calc(var(--user-scale, 1) * 15px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}

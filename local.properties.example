@@ -1,0 +1,4 @@
+# OPTIONAL. With no local.properties the build uses the official backend (https://api.nuvio.tv).
+# Copy to local.properties (next to settings.gradle.kts) only to point at a different Supabase project.
+#SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+#SUPABASE_ANON_KEY=YOUR_ANON_KEY

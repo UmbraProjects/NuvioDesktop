@@ -1,0 +1,134 @@
+diff -ruN a/.github/workflows/windows-build.yml b/.github/workflows/windows-build.yml
+--- a/.github/workflows/windows-build.yml	2026-10-26 18:49:19.452308652 +0000
++++ b/.github/workflows/windows-build.yml	2026-10-26 18:49:19.456550970 +0000
+@@ -26,7 +26,7 @@
+         run: |
+           C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm"
+           # gcc compiles the patched libquickjs.dll (buildWindowsQuickJs); mpv does not pull it in.
+-          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-gcc"
++          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils"
+           if (-not (Test-Path C:\msys64\ucrt64\bin\libmpv-2.dll)) { throw "libmpv-2.dll missing after install" }
+           if (-not (Test-Path C:\msys64\ucrt64\bin\gcc.exe)) { throw "gcc.exe missing after install" }
+ 
+@@ -46,6 +46,7 @@
+           "-Pnuvio.webview2.dir=C:/libs/webview2"
+           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
+           "-Pnuvio.windows.allowWhisperAvfilter=true"
++          "-Pnuvio.windows.bundleFullRuntime=true"
+           "-Pnuvio.engine.optional=true"
+ 
+       # Portable app folder: no WiX needed.
+@@ -56,8 +57,21 @@
+           "-Pnuvio.webview2.dir=C:/libs/webview2"
+           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
+           "-Pnuvio.windows.allowWhisperAvfilter=true"
++          "-Pnuvio.windows.bundleFullRuntime=true"
+           "-Pnuvio.engine.optional=true"
+ 
++      # Fails the job if libmpv-2.dll (or anything it pulls in) imports a DLL that is not bundled,
++      # instead of shipping a build that dies with "Unable to load libmpv-2.dll" on user machines.
++      - name: Verify player runtime is complete
++        shell: pwsh
++        run: |
++          $dll = Get-ChildItem composeApp\build\compose\binaries -Recurse -Filter player_bridge.dll |
++                 Where-Object { $_.Directory.Parent.Name -eq 'app' -or $_.Directory.Name -eq 'app' } |
++                 Select-Object -First 1
++          if (-not $dll) { $dll = Get-ChildItem composeApp\build\compose\binaries -Recurse -Filter player_bridge.dll | Select-Object -First 1 }
++          if (-not $dll) { throw "player_bridge.dll not found in distributable" }
++          ./scripts/verify-windows-runtime.ps1 -AppDir $dll.Directory.FullName
++
+       - name: Zip portable build
+         shell: pwsh
+         run: |
+@@ -85,6 +99,7 @@
+             "-Pnuvio.webview2.dir=C:/libs/webview2" `
+             "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin" `
+             "-Pnuvio.windows.allowWhisperAvfilter=true" `
++            "-Pnuvio.windows.bundleFullRuntime=true" `
+             "-Pnuvio.engine.optional=true"
+ 
+       - uses: actions/upload-artifact@v4
+diff -ruN a/composeApp/build.gradle.kts b/composeApp/build.gradle.kts
+--- a/composeApp/build.gradle.kts	2026-10-26 18:49:19.454417972 +0000
++++ b/composeApp/build.gradle.kts	2026-10-26 18:49:19.458669290 +0000
+@@ -980,8 +980,18 @@
+     "libvorbisfile-3.dll", "libwebpdecoder-3.dll", "libwebpdemux-2.dll", "tcl86.dll", "tk86.dll",
+ )
+ 
++// CI escape hatch #2: the exclusion list above was traced against Nuvio's own FFmpeg/mpv build.
++// A stock MSYS2 mpv/ffmpeg links a different set of optional libraries (libmysofa, libtheora,
++// libFLAC, libvorbisfile, libsndfile, ...), and dropping any DLL that avcodec/avfilter/libmpv
++// import makes LoadLibrary fail for libmpv-2.dll with a generic "Unable to load libmpv-2.dll".
++// -Pnuvio.windows.bundleFullRuntime=true ships every DLL from the runtime dir instead.
++val windowsBundleFullRuntime =
++    providers.gradleProperty("nuvio.windows.bundleFullRuntime").orNull?.toBoolean() == true
++
+ val windowsUnusedLibmpvRuntimeDlls =
+-    if (windowsAllowWhisperAvfilter) {
++    if (windowsBundleFullRuntime) {
++        emptyList()
++    } else if (windowsAllowWhisperAvfilter) {
+         windowsUnusedLibmpvRuntimeDllsAll.filterNot {
+             it.startsWith("ggml", ignoreCase = true) || it.equals("libwhisper-1.dll", ignoreCase = true)
+         }
+diff -ruN a/scripts/verify-windows-runtime.ps1 b/scripts/verify-windows-runtime.ps1
+--- a/scripts/verify-windows-runtime.ps1	1970-01-01 01:00:00.000000000 +0100
++++ b/scripts/verify-windows-runtime.ps1	2026-10-26 18:49:19.460946707 +0000
+@@ -0,0 +1,57 @@
++# Fails the build if libmpv-2.dll (or any bundled DLL) imports a DLL that is neither shipped
++# next to Nuvio.exe nor provided by Windows. This is exactly what produces the runtime error
++# "Unable to load libmpv-2.dll" on a machine that never had MSYS2 installed.
++#
++# Usage: verify-windows-runtime.ps1 -AppDir <folder containing player_bridge.dll> [-Objdump <path>]
++param(
++    [Parameter(Mandatory = $true)][string]$AppDir,
++    [string]$Objdump = 'C:\msys64\ucrt64\bin\objdump.exe'
++)
++$ErrorActionPreference = 'Stop'
++
++if (-not (Test-Path $Objdump)) { throw "objdump not found at $Objdump (install mingw-w64-ucrt-x86_64-binutils)" }
++foreach ($required in 'player_bridge.dll', 'libmpv-2.dll') {
++    if (-not (Test-Path (Join-Path $AppDir $required))) { throw "$required missing from $AppDir" }
++}
++
++# Files that ship in the app dir, case-insensitive.
++$shipped = @{}
++Get-ChildItem $AppDir -Filter *.dll -File | ForEach-Object { $shipped[$_.Name.ToLowerInvariant()] = $_.FullName }
++
++$system32 = Join-Path $env:WINDIR 'System32'
++function Test-SystemDll([string]$name) {
++    $n = $name.ToLowerInvariant()
++    if ($n -like 'api-ms-win-*' -or $n -like 'ext-ms-win-*') { return $true }
++    return (Test-Path (Join-Path $system32 $name))
++}
++
++$missing = @{}   # missing dll -> list of importers
++$seen = @{}
++$queue = [System.Collections.Generic.Queue[string]]::new()
++foreach ($root in 'player_bridge.dll', 'libmpv-2.dll') { $queue.Enqueue($root.ToLowerInvariant()) }
++
++while ($queue.Count -gt 0) {
++    $name = $queue.Dequeue()
++    if ($seen.ContainsKey($name)) { continue }
++    $seen[$name] = $true
++    $path = $shipped[$name]
++    $imports = & $Objdump -p $path 2>$null |
++        Select-String -Pattern '^\s*DLL Name:\s*(.+)$' |
++        ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }
++    foreach ($dep in $imports) {
++        $key = $dep.ToLowerInvariant()
++        if ($shipped.ContainsKey($key)) { $queue.Enqueue($key); continue }
++        if (Test-SystemDll $dep) { continue }
++        if (-not $missing.ContainsKey($dep)) { $missing[$dep] = @() }
++        $missing[$dep] += $name
++    }
++}
++
++Write-Host "Checked $($seen.Count) DLLs reachable from libmpv-2.dll / player_bridge.dll."
++if ($missing.Count -gt 0) {
++    $missing.GetEnumerator() | Sort-Object Name | ForEach-Object {
++        Write-Host "MISSING: $($_.Key)  (imported by: $(($_.Value | Select-Object -Unique) -join ', '))"
++    }
++    throw "$($missing.Count) DLL(s) required by the player runtime are not bundled in $AppDir"
++}
++Write-Host 'Player runtime import closure is complete.'

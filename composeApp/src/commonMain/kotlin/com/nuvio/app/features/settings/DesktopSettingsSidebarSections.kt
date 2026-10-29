@@ -153,6 +153,10 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.Screensaver, Res.string.settings_screensaver_section_title),
             section(SettingsPage.Screensaver, Res.string.settings_screensaver_section_shutdown),
         )
+        SettingsPage.Preshow -> listOf(
+            section(SettingsPage.Preshow, Res.string.settings_preshow_section_trailers),
+            section(SettingsPage.Preshow, Res.string.settings_preshow_section_trivia),
+        )
         SettingsPage.Games -> listOf(
             section(SettingsPage.Games, Res.string.settings_games_title),
             section(SettingsPage.Games, Res.string.settings_games_section_metadata),

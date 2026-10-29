@@ -38,6 +38,8 @@ object DiscoverAiSettingsRepository {
         if (trimmed.isBlank()) {
             DiscoverAiSettingsStorage.saveEnabled(false)
             DiscoverAiSettingsStorage.saveRecapEnabled(false)
+            // Trivia is left as the user set it: with no key it falls back to Wikipedia, so it is
+            // not a feature that can never run without one.
             it.copy(apiKey = "", enabled = false, recapEnabled = false)
         } else {
             it.copy(apiKey = trimmed)
@@ -86,6 +88,16 @@ object DiscoverAiSettingsRepository {
         it.copy(recapEnabled = value)
     }
 
+    /**
+     * No key or consent backstop, unlike the switches above: trivia also runs from Wikipedia, which
+     * needs neither. Consent only gates sending anything to the AI provider, and
+     * [DiscoverAiSettings.isTriviaReady] already requires it before the provider is asked.
+     */
+    fun setTriviaEnabled(value: Boolean) = update {
+        DiscoverAiSettingsStorage.saveTriviaEnabled(value)
+        it.copy(triviaEnabled = value)
+    }
+
     fun setRecapUseModelKnowledge(value: Boolean) = update {
         DiscoverAiSettingsStorage.saveRecapUseModelKnowledge(value)
         it.copy(recapUseModelKnowledge = value)
@@ -114,6 +126,7 @@ object DiscoverAiSettingsRepository {
             recapEnabled = DiscoverAiSettingsStorage.loadRecapEnabled() ?: false,
             recapUseModelKnowledge =
                 DiscoverAiSettingsStorage.loadRecapUseModelKnowledge() ?: false,
+            triviaEnabled = DiscoverAiSettingsStorage.loadTriviaEnabled() ?: false,
         )
     }
 

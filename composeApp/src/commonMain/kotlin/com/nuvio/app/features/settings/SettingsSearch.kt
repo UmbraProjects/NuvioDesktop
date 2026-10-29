@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Link
@@ -2438,6 +2439,31 @@ private fun settingsSearchEntries(
             )
         }
 
+        val preshowPage = resolve(Res.string.compose_settings_page_preshow)
+        addPage(
+            page = SettingsPage.Preshow,
+            key = "preshow",
+            title = preshowPage,
+            description = resolve(Res.string.settings_preshow_description),
+            category = generalCategory,
+            icon = Icons.Rounded.Theaters,
+        )
+        listOf(
+            PlaybackSearchRow("preshow-trailers", resolve(Res.string.settings_preroll_trailers), resolve(Res.string.settings_preroll_trailers_description), resolve(Res.string.settings_preshow_section_trailers)),
+            PlaybackSearchRow("ai-trivia-enabled", resolve(Res.string.settings_ai_trivia_enabled), resolve(Res.string.settings_ai_trivia_enabled_description), resolve(Res.string.settings_preshow_section_trivia)),
+        ).forEach { row ->
+            addRow(
+                page = SettingsPage.Preshow,
+                key = row.key,
+                title = row.title,
+                description = row.description,
+                pageLabel = preshowPage,
+                section = row.sectionOverride ?: preshowPage,
+                category = generalCategory,
+                icon = Icons.Rounded.Theaters,
+            )
+        }
+
         addPage(
             page = SettingsPage.Seekr,
             key = "seekr",
@@ -2508,6 +2534,7 @@ private fun settingsSearchEntries(
         if (!isDesktop) {
             add(SettingsPage.KeyboardShortcuts)
             add(SettingsPage.Screensaver)
+            add(SettingsPage.Preshow)
             add(SettingsPage.Seekr)
             add(SettingsPage.Lights)
             add(SettingsPage.DiscordPresence)

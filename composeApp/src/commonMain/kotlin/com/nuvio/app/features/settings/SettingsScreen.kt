@@ -69,6 +69,8 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.LiveTv
@@ -1216,6 +1218,7 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     settings = screensaverSettings,
                 )
+                SettingsPage.Preshow -> preshowSettingsContent(isTablet = false)
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
                     settings = debridSettings,
@@ -2093,6 +2096,7 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         settings = screensaverSettings,
                     )
+                    SettingsPage.Preshow -> preshowSettingsContent(isTablet = true)
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
                         settings = debridSettings,
@@ -2295,6 +2299,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Discover -> SettingsPage.Discover
     SettingsPage.Appearance -> SettingsPage.Appearance
     SettingsPage.Screensaver -> SettingsPage.Screensaver
+    SettingsPage.Preshow -> SettingsPage.Preshow
     SettingsPage.Homescreen -> SettingsPage.Homescreen
     SettingsPage.Plugins -> SettingsPage.Addons
     SettingsPage.Streams -> SettingsPage.Streams

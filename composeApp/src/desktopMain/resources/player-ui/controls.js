@@ -8,6 +8,26 @@ const isHeroTrailerSurface = (() => {
   }
 })();
 
+// The pre-show pipeline plays each clip and trailer as a plain video: a Skip button and nothing else
+// (no mute, no volume slider). Known from the page URL, like the hero-trailer flag above.
+const isPreshowSurface = (() => {
+  try {
+    return new URLSearchParams(location.search).get("preshow") === "1";
+  } catch (_err) {
+    return false;
+  }
+})();
+
+// fork:music - The music player draws its own controls and wants the bare picture: no stop button, volume pill or
+// fade scrim from the hero-trailer chrome (they showed up shrunk inside the mini-player thumbnail).
+const isChromelessSurface = (() => {
+  try {
+    return new URLSearchParams(location.search).get("chromeless") === "1";
+  } catch (_err) {
+    return false;
+  }
+})();
+
 const root = document.getElementById("playerRoot");
 const contextMenu = document.getElementById("contextMenu");
 const seek = document.getElementById("seek");
@@ -6080,6 +6100,23 @@ heroTrailerChrome.innerHTML =
   '</button>' +
   '<input id="heroTrailerVolumeSlider" class="hero-trailer-volume" type="range" min="0" max="100" step="1" value="0" aria-label="Trailer volume">';
 heroTrailerChrome.style.display = "none";
+if (isPreshowSurface) {
+  // Mute and the slider stay in the DOM (the code below updates them) but are hidden by CSS; the
+  // stop button becomes a labelled Skip, which sends the same Back action Kotlin already handles.
+  heroTrailerChrome.classList.add("preshow");
+  // Hidden here as well as in CSS, so the pre-show never shows a sound control even if a stale
+  // stylesheet is in play. They stay in the DOM because the code below updates them.
+  heroTrailerChrome
+    .querySelectorAll('[data-command="heroTrailerMute"], .hero-trailer-volume')
+    .forEach(el => el.style.setProperty("display", "none", "important"));
+  const skipButton = heroTrailerChrome.querySelector('[data-command="back"]');
+  if (skipButton) {
+    skipButton.setAttribute("aria-label", "Skip");
+    skipButton.innerHTML =
+      '<span class="hero-trailer-skip-label">Skip</span>' +
+      '<svg><use href="#icon-skip-next"></use></svg>';
+  }
+}
 root.appendChild(heroTrailerChrome);
 
 const heroTrailerLogo = heroTrailerContent.querySelector("#heroTrailerLogo");
@@ -6217,6 +6254,12 @@ const applyHeroTrailer = () => {
   if (lastCursorHidden) {
     lastCursorHidden = false;
     send("cursorVisibility", 1);
+  }
+  if (isChromelessSurface) { // fork:music
+    heroTrailerFade.style.display = "none";
+    heroTrailerContent.style.display = "none";
+    heroTrailerChrome.style.display = "none";
+    return;
   }
   const { r, g, b } = parseHeroTrailerRgb(state.heroTrailerBackgroundColor);
   const opaque = `rgb(${r}, ${g}, ${b})`;

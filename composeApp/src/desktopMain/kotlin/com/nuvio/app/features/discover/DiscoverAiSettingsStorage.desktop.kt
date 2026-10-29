@@ -20,6 +20,7 @@ internal actual object DiscoverAiSettingsStorage {
     private const val dailyRefreshKey = "discover_ai_daily_refresh"
     private const val recapEnabledKey = "discover_ai_recap_enabled"
     private const val recapModelKnowledgeKey = "discover_ai_recap_model_knowledge"
+    private const val triviaEnabledKey = "discover_ai_trivia_enabled"
 
     /**
      * What a sync round trip replaces. [apiKeyKey] is **not** here and must not be added — see the
@@ -35,6 +36,7 @@ internal actual object DiscoverAiSettingsStorage {
         dailyRefreshKey,
         recapEnabledKey,
         recapModelKnowledgeKey,
+        triviaEnabledKey,
     )
     private val store = DesktopStorage.store("nuvio_discover_ai_settings")
 
@@ -57,6 +59,8 @@ internal actual object DiscoverAiSettingsStorage {
     actual fun loadRecapUseModelKnowledge(): Boolean? = loadBoolean(recapModelKnowledgeKey)
     actual fun saveRecapUseModelKnowledge(value: Boolean) =
         saveBoolean(recapModelKnowledgeKey, value)
+    actual fun loadTriviaEnabled(): Boolean? = loadBoolean(triviaEnabledKey)
+    actual fun saveTriviaEnabled(value: Boolean) = saveBoolean(triviaEnabledKey, value)
 
     private fun loadString(key: String): String? = store.getString(ProfileScopedKey.of(key))
     private fun saveString(key: String, value: String) = store.putString(ProfileScopedKey.of(key), value)
@@ -72,6 +76,7 @@ internal actual object DiscoverAiSettingsStorage {
         loadDailyRefresh()?.let { put(dailyRefreshKey, encodeSyncBoolean(it)) }
         loadRecapEnabled()?.let { put(recapEnabledKey, encodeSyncBoolean(it)) }
         loadRecapUseModelKnowledge()?.let { put(recapModelKnowledgeKey, encodeSyncBoolean(it)) }
+        loadTriviaEnabled()?.let { put(triviaEnabledKey, encodeSyncBoolean(it)) }
     }
 
     actual fun replaceFromSyncPayload(payload: JsonObject) {
@@ -84,5 +89,6 @@ internal actual object DiscoverAiSettingsStorage {
         payload.decodeSyncBoolean(dailyRefreshKey)?.let(::saveDailyRefresh)
         payload.decodeSyncBoolean(recapEnabledKey)?.let(::saveRecapEnabled)
         payload.decodeSyncBoolean(recapModelKnowledgeKey)?.let(::saveRecapUseModelKnowledge)
+        payload.decodeSyncBoolean(triviaEnabledKey)?.let(::saveTriviaEnabled)
     }
 }

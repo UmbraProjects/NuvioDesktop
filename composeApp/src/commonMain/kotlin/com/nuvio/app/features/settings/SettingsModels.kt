@@ -47,6 +47,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_lights
 import nuvio.composeapp.generated.resources.compose_settings_page_seekr
 import nuvio.composeapp.generated.resources.compose_settings_page_discord_presence
 import nuvio.composeapp.generated.resources.compose_settings_page_screensaver
+import nuvio.composeapp.generated.resources.compose_settings_page_preshow
 import nuvio.composeapp.generated.resources.settings_account
 import nuvio.composeapp.generated.resources.compose_settings_page_video_audio
 import nuvio.composeapp.generated.resources.compose_settings_page_player
@@ -161,6 +162,11 @@ internal enum class SettingsPage(
     ),
     Screensaver(
         titleRes = Res.string.compose_settings_page_screensaver,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    Preshow(
+        titleRes = Res.string.compose_settings_page_preshow,
         category = SettingsCategory.General,
         parentPage = Root,
     ),

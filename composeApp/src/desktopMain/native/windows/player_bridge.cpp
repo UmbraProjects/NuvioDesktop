@@ -6207,12 +6207,16 @@ public:
     }
 
     int decodeSpeechSpot(double startSeconds, double durationSeconds, const std::string &outputPath) {
-        if (shuttingDown.load() || thumbnailSourceUrl.empty() || !externalAudioUrl.empty()) return -1;
+        // A separate audio stream (YouTube video plus its own audio) is the audio being heard, and it
+        // is a complete file on its own, so that is what gets decoded; the video URL has no sound.
+        const bool separateAudio = !externalAudioUrl.empty();
+        const std::string spotUrl = separateAudio ? externalAudioUrl : thumbnailSourceUrl;
+        if (shuttingDown.load() || spotUrl.empty()) return -1;
         MpvApi &api = mpvApi();
         mpv_handle *probe = api.create();
         if (!probe) return -1;
         const std::string aid = mirroredString("aid", "");
-        const bool numericAid = !aid.empty() && std::all_of(aid.begin(), aid.end(), ::isdigit);
+        const bool numericAid = !separateAudio && !aid.empty() && std::all_of(aid.begin(), aid.end(), ::isdigit);
         const std::string start = std::to_string(std::max(0.0, startSeconds));
         const std::string end = std::to_string(std::max(0.0, startSeconds) + std::max(1.0, durationSeconds));
         for (const auto &[name, value] : std::initializer_list<std::pair<const char *, const char *>>{
@@ -6242,7 +6246,7 @@ public:
         }
         int result = -1;
         if (api.initialize(probe) >= 0) {
-            const char *load[] = {"loadfile", thumbnailSourceUrl.c_str(), nullptr};
+            const char *load[] = {"loadfile", spotUrl.c_str(), nullptr};
             if (api.command(probe, load) >= 0) {
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
                 while (std::chrono::steady_clock::now() < deadline && !shuttingDown.load()) {
