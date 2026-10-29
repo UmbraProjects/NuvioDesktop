@@ -317,7 +317,7 @@ class MusicLibraryMergeTest {
         val merged = mergeReleases(
             ReleaseSources(
                 musicBrainz = listOf(MbReleaseGroup("g1", "Abbey Road", "Album", emptyList(), "1969-09-26")),
-                youTubeMusic = listOf(yt("MPREb_ar", "Abbey Road (2019 Mix)", "Album", "2019")),
+                youTubeMusic = listOf(yt("MPREb_ar", "Abbey Road (Remastered)", "Album", "2019")),
                 deezer = listOf(DeezerAlbum(1L, "Abbey Road", null, "album", "2009-09-09", null)),
             ),
         )
