@@ -1,5 +1,27 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.material3.Icon
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.hoverable
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import com.nuvio.app.core.ui.NuvioGlass
+import androidx.compose.ui.unit.Dp
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -71,13 +93,18 @@ import com.nuvio.app.features.music.identity.ReleasePaletteResolver
 import com.nuvio.app.features.music.identity.identity
 
 /**
- * Phase 4: the artist room. One page for both doors (Search and Library), drawn from the artist's
- * identity: era-tinted backdrop, logo, cut-out and passport on the left; Play bar, era timeline and
- * the selected era's releases on the right. Every picture has a fallback, so a bare artist (no art,
- * no palette, no dates) still draws a readable page in the app's own colours.
+ * The artist room. One page for both doors (Search and Library), one scroll from top to bottom:
  *
- * Under ~840dp wide the two columns stack. All play / dialog / Add logic stays in [MusicArtistScreen];
- * this only draws and reports taps.
+ *  - A hero over the artist's backdrop: logo (or name), tagline, passport, genres, the stat tiles and
+ *    the actions (play, shuffle, their hits, save, links, Where next, filter, refresh), with the cut-out
+ *    standing at the right. It fades into the page at its foot.
+ *  - The discography as a vertical glass timeline, newest first: a spine down the middle with one glass
+ *    card per release (cover, title, the year under it), alternating sides; on a narrow window the spine
+ *    runs down the left with every card on its right. The filter applies to it.
+ *  - Then the top albums (and biography) and Where next.
+ *
+ * Every picture has a fallback, so a bare artist (no art, no dates) still draws a readable page. All
+ * play / dialog / Add logic stays in [MusicArtistScreen]; this only draws and reports taps.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -112,112 +139,375 @@ internal fun ArtistRoom(
 ) {
     val colors = MaterialTheme.nuvio.colors
     val context = LocalPlatformContext.current
-    // The ruler is built from every release, so filters change the cards, never the eras.
+    // Built from every release, so the filter changes what is shown, never the order.
     val timeline = remember(artist.releases) { buildEraTimeline(artist.releases) }
-    var picked by rememberSaveable(artist.id) { mutableStateOf<Int?>(null) }
-    val selected = picked?.takeIf { it in timeline.eras.indices } ?: timeline.defaultEraIndex(latest)
-    val era = timeline.eras.getOrNull(selected)
-
-    // Covers worth a palette: each era's lead (its colour) and everything in the selected era.
-    val wantedKeys = remember(timeline, selected) {
-        (timeline.eras.map { it.lead.primary.key } + era?.groups.orEmpty().map { it.primary.key }).toSet()
+    val dated = remember(timeline) {
+        timeline.eras.flatMap { it.groups }
+            .sortedWith(compareByDescending<ReleaseGroup> { releasePosition(it.primary) ?: 0.0 }.thenBy { it.primary.title })
     }
+    val shown = dated.filter { it.passes(playableOnly, filter) }.takeIf { filter != ReleaseFilter.Demos }.orEmpty()
+    val undated = if (filter == ReleaseFilter.Demos) emptyList() else timeline.undated.filter { it.passes(playableOnly, filter) }
+    // Covers on the timeline get a palette (the disc label and a missing cover use it).
+    val wantedKeys = remember(dated) { dated.take(TIMELINE_PALETTE_LIMIT).map { it.primary.key }.toSet() }
     val missing = artist.releases.count { it.key in wantedKeys && it.needsPalette }
     LaunchedEffect(artist.id, missing) { ReleasePaletteResolver.ensure(context, artist, keys = wantedKeys) }
 
-    val eraPalette = era?.palette(artist.palette)
-    val tint by animateColorAsState(eraPalette?.let { Color(it.tint) } ?: colors.surfaceElevated, tween(500))
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     BoxWithConstraints(modifier.background(colors.background)) {
         val wide = maxWidth >= 840.dp
-        val inset = LocalMusicBarInset.current // fork:music - the backdrop runs under the bar; the content clears it
-        RoomBackdrop(artist, tint, wide)
-        if (wide) {
-            Row(Modifier.fillMaxSize().padding(bottom = inset)) {
-                Column(
-                    Modifier.width(440.dp).fillMaxHeight().verticalScroll(rememberScrollState())
-                        .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 32.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    RoomIdentity(artist, discography, wide = true, saved, refreshing, onBack, onAbout, onRefresh)
-                }
-                Column(
-                    Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
-                        .padding(start = 8.dp, end = 32.dp, top = 24.dp, bottom = 40.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
-                    RoomEras(
-                        artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
-                        filter, playableOnly, demosOpen, onPlay, onShuffle, onPlayTop, topLabel, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
-                    )
-                    ArtistWidgets(artist, onOpen) // fork:music - HTPC phase 8
-                    WhereNextStrip(artist, onOpenArtist) // fork:music - HTPC phase 3
+        val heroHeight = (maxHeight * 0.86f).coerceAtLeast(560.dp)
+        val inset = LocalMusicBarInset.current // fork:music - the page runs under the bar; its foot clears it
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().testTag("artistRoomList"),
+            contentPadding = PaddingValues(bottom = inset + 48.dp),
+        ) {
+            item(key = "hero") {
+                RoomHero(
+                    artist = artist,
+                    discography = discography,
+                    wide = wide,
+                    height = heroHeight,
+                    playTarget = playTarget,
+                    canShuffle = canShuffle,
+                    notice = notice,
+                    saved = saved,
+                    refreshing = refreshing,
+                    filtersOpen = showFilters,
+                    filtered = !playableOnly || filter != ReleaseFilter.All,
+                    topLabel = topLabel,
+                    onBack = onBack,
+                    onAbout = onAbout,
+                    onPlay = onPlay,
+                    onShuffle = onShuffle,
+                    onPlayTop = onPlayTop,
+                    onRemove = onRemove,
+                    onLinks = onLinks,
+                    onRefresh = onRefresh,
+                    onOpenArtist = onOpenArtist,
+                    onToggleFilters = { showFilters = !showFilters },
+                    onWhereNext = {
+                        scope.launch {
+                            val index = listState.layoutInfo.totalItemsCount - 1
+                            if (index >= 0) listState.animateScrollToItem(index)
+                        }
+                    },
+                )
+            }
+            if (showFilters) {
+                item(key = "filters") {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = ROOM_SIDE, vertical = 8.dp)) {
+                        FilterPanel(discography, filter, playableOnly, onPlayableOnly, onFilter)
+                    }
                 }
             }
-        } else {
-            Column(
-                Modifier.fillMaxSize().padding(bottom = inset).verticalScroll(rememberScrollState())
-                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    RoomIdentity(artist, discography, wide = false, saved, refreshing, onBack, onAbout, onRefresh)
+            item(key = "timeline-heading") {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = ROOM_SIDE, end = ROOM_SIDE, top = 8.dp, bottom = 18.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Discography", style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+                    Text(
+                        "${shown.size + undated.size} of ${discography.totalCount}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textMuted,
+                        modifier = Modifier.padding(bottom = 3.dp),
+                    )
                 }
-                RoomEras(
-                    artist, discography, timeline, selected, { picked = it }, playTarget, canShuffle, notice, working,
-                    filter, playableOnly, demosOpen, onPlay, onShuffle, onPlayTop, topLabel, onLinks, onOpenArtist, onRemove, onOpen, onPlayableOnly, onFilter, onToggleDemos,
+            }
+            if (shown.isEmpty() && undated.isEmpty() && filter != ReleaseFilter.Demos) {
+                item(key = "timeline-empty") {
+                    MusicMessage(
+                        when {
+                            working -> "Looking up releases…"
+                            timeline.isEmpty -> "No releases found."
+                            playableOnly -> "Nothing here is on YouTube Music. Filter → All shows it anyway."
+                            else -> "Nothing matches the filter."
+                        },
+                    )
+                }
+            }
+            itemsIndexed(shown, key = { _, group -> "release:${group.primary.key}" }) { index, group ->
+                TimelineEntry(
+                    group = group,
+                    leftSide = wide && index % 2 == 0,
+                    wide = wide,
+                    first = index == 0,
+                    last = index == shown.lastIndex,
+                    onOpen = { onOpen(group.primary) },
                 )
-                ArtistWidgets(artist, onOpen) // fork:music - HTPC phase 8
-                WhereNextStrip(artist, onOpenArtist) // fork:music - HTPC phase 3
+            }
+            if (undated.isNotEmpty()) {
+                item(key = "undated") {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = ROOM_SIDE, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Undated", style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            undated.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }) }
+                        }
+                    }
+                }
+            }
+            if (discography.demos.isNotEmpty()) {
+                item(key = "demos") {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = ROOM_SIDE, vertical = 12.dp)) {
+                        DemosArchive(discography.demos, open = demosOpen, onToggle = onToggleDemos, onOpen = onOpen)
+                    }
+                }
+            }
+            item(key = "widgets") {
+                ArtistWidgets(artist, onOpen, Modifier.padding(start = ROOM_SIDE, end = ROOM_SIDE, top = 32.dp)) // fork:music - HTPC phase 8
+            }
+            // Last, so the hero's Where next button scrolls to the end of the list.
+            item(key = "where-next") {
+                WhereNextStrip(artist, onOpenArtist, Modifier.padding(start = ROOM_SIDE, end = ROOM_SIDE, top = 28.dp)) // fork:music - HTPC phase 3
             }
         }
     }
 }
 
-// region backdrop
+/** The page's side margin: the shelf's TV-safe 48dp. */
+private val ROOM_SIDE = 48.dp
+
+/** How many of the newest releases get a palette worked out as the page opens. */
+private const val TIMELINE_PALETTE_LIMIT = 40
+
+private fun ReleaseGroup.passes(playableOnly: Boolean, filter: ReleaseFilter): Boolean =
+    (!playableOnly || isPlayable) && matches(filter)
+
+// region hero
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RoomHero(
+    artist: LibraryArtist,
+    discography: ArtistDiscography,
+    wide: Boolean,
+    height: Dp,
+    playTarget: LibraryRelease?,
+    canShuffle: Boolean,
+    notice: String?,
+    saved: Boolean,
+    refreshing: String?,
+    filtersOpen: Boolean,
+    filtered: Boolean,
+    topLabel: String?,
+    onBack: () -> Unit,
+    onAbout: () -> Unit,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    onPlayTop: () -> Unit,
+    onRemove: () -> Unit,
+    onLinks: () -> Unit,
+    onRefresh: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onToggleFilters: () -> Unit,
+    onWhereNext: () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    Box(Modifier.fillMaxWidth().height(height)) {
+        HeroBackdrop(artist, wide)
+
+        // The cut-out stands at the right, melting into the backdrop; with none, the round photo.
+        val logo = artist.art.bestLogo
+        val cutout = if (logo != null) artist.art.cutout ?: artist.art.clearArt else artist.art.bestClearArt
+        if (wide && cutout != null) {
+            NuvioAsyncImage(
+                model = cutout,
+                contentDescription = null,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = ROOM_SIDE).fillMaxWidth(0.42f).fillMaxHeight(0.78f).fadeEdges(),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.BottomEnd,
+            )
+        }
+
+        Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
+
+        Column(
+            Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = ROOM_SIDE, end = ROOM_SIDE, bottom = 40.dp)
+                .widthIn(max = if (wide) 760.dp else 2000.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (!wide || cutout == null) {
+                artist.art.thumb?.takeIf { logo == null }?.let { thumb ->
+                    NuvioAsyncImage(
+                        model = thumb,
+                        contentDescription = null,
+                        modifier = Modifier.size(120.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+            if (logo != null) {
+                NuvioAsyncImage(
+                    model = logo,
+                    contentDescription = artist.name,
+                    modifier = Modifier.fillMaxWidth(0.8f).height(if (wide) 110.dp else 80.dp),
+                    contentScale = ContentScale.Fit,
+                    alignment = Alignment.CenterStart,
+                )
+            } else {
+                Text(
+                    artist.name,
+                    style = MaterialTheme.typography.displayMedium,
+                    fontFamily = FontFamily.Serif,
+                    color = colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            artistTagline(artist)?.let { tagline ->
+                Text(
+                    tagline,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontFamily = FontFamily.Serif,
+                    color = colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAbout),
+                )
+            }
+            val line = passportLine(artist)
+            if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodyLarge, color = colors.textSecondary)
+
+            val (mood, genres) = passportChips(artist)
+            if (mood != null || genres.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    mood?.let { InfoChip(it) }
+                    genres.forEach { InfoChip(it) }
+                }
+            }
+
+            HeroStats(artist, discography)
+
+            if (artist.channelMismatch) NamesakeNotice(artist, onOpenArtist)
+
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                NuvioPrimaryButton(text = "Play", modifier = Modifier.width(128.dp), height = 44.dp, enabled = playTarget != null, onClick = onPlay)
+                OutlinedAction(Icons.Rounded.Shuffle, "Shuffle", enabled = canShuffle, onClick = onShuffle)
+                // The quick play: the artist's top five albums, one after the other.
+                if (topLabel != null) OutlinedAction(Icons.Rounded.LocalFireDepartment, topLabel, onClick = onPlayTop)
+                MusicAddToLibraryButton(artistId = artist.id, onSavedClick = onRemove)
+                val linkCount = groupLinks(artist.links).values.sumOf { it.size }
+                if (linkCount > 0) HeroAction(Icons.Rounded.Link, "Links · $linkCount", onClick = onLinks)
+                HeroAction(Icons.Rounded.Explore, "Where next", onClick = onWhereNext)
+                HeroAction(Icons.Rounded.FilterList, "Filter", selected = filtersOpen || filtered, onClick = onToggleFilters)
+                if (saved) HeroAction(Icons.Rounded.Refresh, refreshing ?: "Refresh", enabled = refreshing == null, onClick = onRefresh)
+            }
+            val playing = notice ?: playTarget?.let { "Plays ${it.title}${it.year?.let { y -> " ($y)" } ?: ""}" }
+            if (playing != null) {
+                Text(
+                    playing,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (notice != null) colors.warning else colors.textMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (!saved && refreshing != null) {
+                Text(refreshing, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+            }
+            if (artist.sources.isNotEmpty()) {
+                Text("Metadata from ${artist.sources.joinToString(", ")}", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+            }
+        }
+    }
+}
 
 /**
- * Hero picture (fallback chain from the identity), washed with the era's colour and darkened toward the
- * content. With no picture at all it is the palette's ground colour. Fades in when the room opens.
+ * The hero picture (fallback chain from the identity) under two shades: one from the left that keeps
+ * the text readable, and one at the foot that fades the picture into the page, so the timeline below
+ * reads as its continuation. With no picture at all it is the page's own night.
  */
 @Composable
-private fun RoomBackdrop(artist: LibraryArtist, tint: Color, wide: Boolean) {
+private fun HeroBackdrop(artist: LibraryArtist, wide: Boolean) {
     val colors = MaterialTheme.nuvio.colors
     val identity = remember(artist) { artist.identity() }
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
     val fade by animateFloatAsState(if (shown) 1f else 0f, tween(600))
     val dark = colors.background
-    Box(Modifier.fillMaxSize().background(identity.palette?.let { Color(it.ground) } ?: dark)) {
+    Box(Modifier.fillMaxSize().background(NuvioGlass.night(dark, colors.accent))) {
         identity.hero?.let { hero ->
             val blurred = hero.source == HeroSource.BlurredCover
             NuvioAsyncImage(
                 model = hero.url,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize().alpha(fade * if (blurred) 0.5f else 0.6f).let { if (blurred) it.blur(40.dp) else it },
+                modifier = Modifier.fillMaxSize().alpha(fade * if (blurred) 0.5f else 0.75f).let { if (blurred) it.blur(40.dp) else it },
                 contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter,
             )
         }
-        Box(Modifier.fillMaxSize().background(tint.copy(alpha = 0.35f)))
         Box(
             Modifier.fillMaxSize().background(
                 if (wide) {
-                    Brush.horizontalGradient(0f to dark.copy(alpha = 0.15f), 0.46f to dark.copy(alpha = 0.82f), 1f to dark.copy(alpha = 0.96f))
+                    Brush.horizontalGradient(0f to dark.copy(alpha = 0.88f), 0.5f to dark.copy(alpha = 0.45f), 1f to dark.copy(alpha = 0.1f))
                 } else {
-                    Brush.verticalGradient(0f to dark.copy(alpha = 0.55f), 1f to dark.copy(alpha = 0.94f))
+                    Brush.verticalGradient(0f to dark.copy(alpha = 0.4f), 1f to dark.copy(alpha = 0.85f))
                 },
             ),
         )
         Box(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(260.dp)
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.45f)
                 .background(Brush.verticalGradient(0f to Color.Transparent, 1f to dark)),
         )
     }
 }
 
-// endregion
+/** A hero button the height of [OutlinedAction], in the glass, lit in the accent while [selected]. */
+@Composable
+private fun HeroAction(icon: ImageVector, text: String, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(22.dp)
+    val tint = when {
+        !enabled -> colors.textDisabled
+        selected -> colors.onAccent
+        else -> colors.textPrimary
+    }
+    Row(
+        Modifier
+            .height(44.dp)
+            .musicGlass(shape, selected = selected)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium, color = tint, maxLines = 1)
+    }
+}
 
-// region left: logo, cut-out, passport
+/** Fans, releases, playable, rating and links as small glass tiles. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HeroStats(artist: LibraryArtist, discography: ArtistDiscography) {
+    val colors = MaterialTheme.nuvio.colors
+    val tiles = buildList {
+        artist.fans?.let { add(formatCount(it) to "fans") }
+        add("${discography.totalCount}" to "releases")
+        add("${discography.playableCount}" to "playable")
+        ratingText(artist.rating)?.let { add("★ $it" to "rating") }
+        groupLinks(artist.links).values.sumOf { it.size }.takeIf { it > 0 }?.let { add("$it" to "links") }
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        tiles.forEach { (value, label) ->
+            Row(
+                Modifier.musicGlass(RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+                Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, modifier = Modifier.padding(bottom = 2.dp))
+            }
+        }
+    }
+}
 
 /** Fades a picture out toward its edges so a cut-out melts into the backdrop. */
 private fun Modifier.fadeEdges(): Modifier = this
@@ -231,248 +521,99 @@ private fun Modifier.fadeEdges(): Modifier = this
         )
     }
 
-@OptIn(ExperimentalLayoutApi::class)
+// endregion
+
+// region timeline
+
+private val SPINE_WIDTH = 44.dp
+/** Every card the same width (or the half-width it has, if less), so the two columns line up. */
+private val TIMELINE_CARD_MAX = 420.dp
+
+/**
+ * One release on the vertical timeline: a glass card (cover, title, the year and kind under it) beside
+ * the spine, with a dot on the spine level with it. [leftSide] puts the card left of the spine (wide
+ * windows alternate); on a narrow window the spine runs down the left. The spine is drawn per entry,
+ * cut short at the [first] and [last] so it starts and ends at a dot.
+ */
 @Composable
-private fun RoomIdentity(
-    artist: LibraryArtist,
-    discography: ArtistDiscography,
+private fun TimelineEntry(
+    group: ReleaseGroup,
+    leftSide: Boolean,
     wide: Boolean,
-    saved: Boolean,
-    refreshing: String?,
-    onBack: () -> Unit,
-    onAbout: () -> Unit,
-    onRefresh: () -> Unit,
+    first: Boolean,
+    last: Boolean,
+    onOpen: () -> Unit,
 ) {
-    val colors = MaterialTheme.nuvio.colors
-    NuvioBackButton(onClick = onBack)
-
-    val logo = artist.art.bestLogo
-    if (logo != null) {
-        NuvioAsyncImage(
-            model = logo,
-            contentDescription = artist.name,
-            modifier = Modifier.fillMaxWidth().height(if (wide) 96.dp else 72.dp),
-            contentScale = ContentScale.Fit,
-            alignment = Alignment.CenterStart,
-        )
-    } else {
-        Text(
-            artist.name,
-            style = MaterialTheme.typography.displaySmall,
-            fontFamily = FontFamily.Serif,
-            color = colors.textPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-
-    // Clear art often has the band's logo printed in it; with a logo already on show, prefer the plain cut-out.
-    val cutout = if (logo != null) artist.art.cutout ?: artist.art.clearArt else artist.art.bestClearArt
-    val thumb = artist.art.thumb
-    when {
-        cutout != null -> NuvioAsyncImage(
-            model = cutout,
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth().height(if (wide) 320.dp else 220.dp).fadeEdges(),
-            contentScale = ContentScale.Fit,
-            alignment = Alignment.BottomStart,
-        )
-        thumb != null -> NuvioAsyncImage(
-            model = thumb,
-            contentDescription = null,
-            modifier = Modifier.size(if (wide) 160.dp else 120.dp).clip(CircleShape),
-            contentScale = ContentScale.Crop,
-        )
-    }
-
-    // The passport.
-    artistTagline(artist)?.let { tagline ->
-        Text(
-            tagline,
-            style = MaterialTheme.typography.headlineSmall,
-            fontFamily = FontFamily.Serif,
-            color = colors.textPrimary,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAbout),
-        )
-    }
-    val line = passportLine(artist)
-    if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-
-    val (mood, genres) = passportChips(artist)
-    if (mood != null || genres.isNotEmpty()) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            mood?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onAccent,
-                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(colors.accent).padding(horizontal = 12.dp, vertical = 5.dp),
-                )
+    val card: @Composable (Modifier) -> Unit = { m -> TimelineCard(group, onOpen, m) }
+    Row(
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(horizontal = ROOM_SIDE),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (wide) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                if (leftSide) card(Modifier.fillMaxWidth().widthIn(max = TIMELINE_CARD_MAX))
             }
-            genres.forEach { InfoChip(it) }
+        }
+        TimelineSpine(first, last, playable = group.isPlayable)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (!leftSide) card(Modifier.fillMaxWidth().widthIn(max = TIMELINE_CARD_MAX))
         }
     }
+}
 
-    val linkCount = groupLinks(artist.links).values.sumOf { it.size }
-    // HTPC phase 8: large stat tiles instead of one small row.
-    ArtistStatTiles(artist, discography.totalCount, discography.playableCount)
-    if (linkCount > 0) RoomStat("$linkCount", "links")
-
-    if (saved) {
-        TextButton(
-            onClick = onRefresh,
-            enabled = refreshing == null,
-            colors = ButtonDefaults.textButtonColors(contentColor = colors.accent, disabledContentColor = colors.textMuted),
-        ) { Text(refreshing ?: "Refresh") }
-    } else if (refreshing != null) {
-        Text(refreshing, style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
-    }
-    if (artist.sources.isNotEmpty()) {
-        Text("Metadata from ${artist.sources.joinToString(", ")}", style = MaterialTheme.typography.labelSmall, color = colors.textMuted)
+/** The spine's piece for one entry: a glass line, top to bottom, and a dot (lit in the accent when it plays here). */
+@Composable
+private fun TimelineSpine(first: Boolean, last: Boolean, playable: Boolean) {
+    val colors = MaterialTheme.nuvio.colors
+    Box(Modifier.width(SPINE_WIDTH).fillMaxHeight(), contentAlignment = Alignment.Center) {
+        Column(Modifier.fillMaxHeight().width(2.dp)) {
+            Box(Modifier.weight(1f).fillMaxWidth().background(if (first) Color.Transparent else NuvioGlass.EdgeColor))
+            Box(Modifier.weight(1f).fillMaxWidth().background(if (last) Color.Transparent else NuvioGlass.EdgeColor))
+        }
+        Box(
+            Modifier
+                .size(14.dp)
+                .clip(CircleShape)
+                .background(NuvioGlass.night(colors.background, colors.accent))
+                .border(2.dp, if (playable) colors.accent else NuvioGlass.EdgeColor, CircleShape),
+        )
     }
 }
 
 @Composable
-private fun RoomStat(value: String, label: String) {
+private fun TimelineCard(group: ReleaseGroup, onOpen: () -> Unit, modifier: Modifier) {
     val colors = MaterialTheme.nuvio.colors
-    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.Bottom) {
-        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+    val release = group.primary
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val focused by source.collectIsFocusedAsState()
+    Row(
+        modifier
+            .padding(vertical = 8.dp)
+            .musicGlass(RoundedCornerShape(14.dp), raised = hovered || focused, keyFocused = focused)
+            .hoverable(source)
+            .clickable(interactionSource = source, indication = null, onClick = onOpen)
+            .alpha(if (group.isPlayable) 1f else 0.5f)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        ReleaseCover(release, Modifier.size(72.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(release.title, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val under = listOfNotNull(
+                release.year ?: release.releaseDate?.take(4),
+                release.kind.label.takeIf { it != "Album" },
+                "${group.versions.size} versions".takeIf { group.extraVersions > 0 },
+            ).joinToString(" · ")
+            if (under.isNotEmpty()) {
+                Text(under, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }
 
 // endregion
-
-// region right: bar, timeline, era releases
-
-private fun ReleaseGroup.passes(playableOnly: Boolean, filter: ReleaseFilter): Boolean =
-    (!playableOnly || isPlayable) && matches(filter)
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun RoomEras(
-    artist: LibraryArtist,
-    discography: ArtistDiscography,
-    timeline: EraTimeline,
-    selected: Int,
-    onSelectEra: (Int) -> Unit,
-    playTarget: LibraryRelease?,
-    canShuffle: Boolean,
-    notice: String?,
-    working: Boolean,
-    filter: ReleaseFilter,
-    playableOnly: Boolean,
-    demosOpen: Boolean,
-    onPlay: () -> Unit,
-    onShuffle: () -> Unit,
-    onPlayTop: () -> Unit,
-    topLabel: String?,
-    onLinks: () -> Unit,
-    onOpenArtist: (String) -> Unit,
-    onRemove: () -> Unit,
-    onOpen: (LibraryRelease) -> Unit,
-    onPlayableOnly: (Boolean) -> Unit,
-    onFilter: (ReleaseFilter) -> Unit,
-    onToggleDemos: () -> Unit,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    var showFilters by rememberSaveable { mutableStateOf(false) }
-    val era = timeline.eras.getOrNull(selected)
-
-    if (artist.channelMismatch) NamesakeNotice(artist, onOpenArtist)
-
-    // Play bar.
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text(
-            "ERAS",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.accent,
-            modifier = Modifier.padding(end = 8.dp),
-        )
-        NuvioPrimaryButton(text = "Play", modifier = Modifier.width(128.dp), height = 44.dp, enabled = playTarget != null, onClick = onPlay)
-        OutlinedAction(Icons.Rounded.Shuffle, "Shuffle", enabled = canShuffle, onClick = onShuffle)
-        // The quick play: the artist's top five albums, one after the other.
-        if (topLabel != null) OutlinedAction(Icons.Rounded.PlayArrow, topLabel, onClick = onPlayTop)
-        MusicAddToLibraryButton(artistId = artist.id, onSavedClick = onRemove)
-        val linkCount = groupLinks(artist.links).values.sumOf { it.size }
-        if (linkCount > 0) ActionPill("Links · $linkCount", onClick = onLinks)
-        ActionPill("Filter", selected = showFilters || !playableOnly || filter != ReleaseFilter.All) { showFilters = !showFilters }
-    }
-    val playing = notice ?: playTarget?.let { "Plays ${it.title}${it.year?.let { y -> " ($y)" } ?: ""}" }
-    if (playing != null) {
-        Text(
-            playing,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (notice != null) colors.warning else colors.textMuted,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-
-    if (showFilters) {
-        FilterPanel(discography, filter, playableOnly, onPlayableOnly, onFilter)
-    }
-
-    if (timeline.eras.isNotEmpty()) {
-        EraRuler(artist, timeline, selected, onSelectEra)
-    }
-
-    if (era != null && filter != ReleaseFilter.Demos) {
-        val eraAccent = era.palette(artist.palette)?.accent?.let { Color(it) } ?: colors.accent
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(
-                era.years,
-                fontFamily = FontFamily.Serif,
-                fontSize = 44.sp,
-                color = colors.textPrimary,
-            )
-            Column(Modifier.padding(bottom = 6.dp)) {
-                Text(era.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = eraAccent, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val summary = listOfNotNull(
-                    "${era.releaseCount} release${if (era.releaseCount == 1) "" else "s"}",
-                    era.trackTotal.takeIf { it > 0 }?.let { "$it track${if (it == 1) "" else "s"}" },
-                ).joinToString(" · ")
-                Text(summary, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-            }
-        }
-        val shown = era.groups.filter { it.passes(playableOnly, filter) }
-        if (shown.isEmpty()) {
-            Text(if (playableOnly) "Nothing in this era is on YouTube Music. Filter → All shows it anyway." else "Nothing in this era matches the filter.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
-        } else {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                shown.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }) }
-            }
-        }
-    }
-
-    val undated = if (filter == ReleaseFilter.Demos) emptyList() else timeline.undated.filter { it.passes(playableOnly, filter) }
-    if (undated.isNotEmpty()) {
-        Text("Undated", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            undated.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }) }
-        }
-    }
-
-    if (discography.demos.isNotEmpty()) {
-        DemosArchive(discography.demos, open = demosOpen, onToggle = onToggleDemos, onOpen = onOpen)
-    }
-
-    if (timeline.isEmpty && discography.demos.isEmpty()) {
-        MusicMessage(
-            when {
-                working -> "Looking up releases…"
-                else -> "No releases found."
-            },
-        )
-    }
-}
 
 /** The one filter system: playable-only, plus the kind chips. Shown on demand so the room stays clean. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -506,89 +647,6 @@ private fun FilterPanel(
         Text("Dimmed releases aren't on YouTube Music.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
     }
 }
-
-/** Ruler with release dots (sized by track count) and a clickable block per era underneath. */
-@Composable
-private fun EraRuler(artist: LibraryArtist, timeline: EraTimeline, selected: Int, onSelect: (Int) -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    BoxWithConstraints(Modifier.fillMaxWidth().height(142.dp)) {
-        val w = maxWidth.value
-        val lineY = 52.dp
-        fun eraColor(i: Int): Color = timeline.eras[i].palette(artist.palette)?.accent?.let { Color(it) } ?: colors.accent
-        fun onEra(i: Int): Color = timeline.eras[i].palette(artist.palette)?.onAccent?.let { Color(it) } ?: colors.onAccent
-
-        Box(Modifier.offset(y = lineY).fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = 0.22f)))
-        rulerTicks(timeline.startYear, timeline.endYear).forEach { year ->
-            val x = rulerX(year.toDouble(), timeline.startYear, timeline.spanYears, w)
-            Box(Modifier.offset(x = x.dp, y = lineY - 6.dp).width(1.dp).height(14.dp).background(Color.White.copy(alpha = 0.35f)))
-            Text(
-                year.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.textMuted,
-                modifier = Modifier.offset(x = (x - 14f).dp, y = lineY + 12.dp),
-            )
-        }
-        // Unselected dots first so the chosen era's sit on top.
-        timeline.dots.sortedBy { it.eraIndex == selected }.forEach { dot ->
-            val size = timelineDotSize(dot.trackCount).toFloat()
-            val x = rulerX(dot.position, timeline.startYear, timeline.spanYears, w)
-            val on = dot.eraIndex == selected
-            Box(
-                Modifier
-                    .offset(x = (x - size / 2f).dp, y = lineY + 1.dp - (size / 2f).dp)
-                    .size(size.dp)
-                    .clip(CircleShape)
-                    .background(eraColor(dot.eraIndex).copy(alpha = if (on) 1f else 0.35f))
-                    .let { if (on) it.border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape) else it }
-                    .clickable { onSelect(dot.eraIndex) },
-            )
-        }
-        @Composable
-        fun EraBlock(i: Int, modifier: Modifier) {
-            val era = timeline.eras[i]
-            val on = i == selected
-            Column(
-                modifier
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (on) eraColor(i) else Color.White.copy(alpha = 0.1f))
-                    .clickable { onSelect(i) }
-                    .padding(horizontal = 10.dp),
-                verticalArrangement = Arrangement.Center,
-            ) {
-                val fg = if (on) onEra(i) else colors.textSecondary
-                Text(era.years, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = fg, maxLines = 1)
-                Text(era.name, style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        if (eraBlocksOverflow(timeline.eras.size, w, minWidth = 90f)) {
-            // Too many eras to share the width: fixed-size blocks in a strip that scrolls, kept on the chosen era.
-            val strip = rememberScrollState()
-            val density = LocalDensity.current
-            LaunchedEffect(selected, w) {
-                val target = with(density) { ((selected * (SCROLL_BLOCK_WIDTH + 4f) - w / 2f + SCROLL_BLOCK_WIDTH / 2f).coerceAtLeast(0f)).dp.roundToPx() }
-                strip.animateScrollTo(target)
-            }
-            Row(
-                Modifier.offset(y = 96.dp).fillMaxWidth().horizontalScroll(strip),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                timeline.eras.indices.forEach { i -> EraBlock(i, Modifier.width(SCROLL_BLOCK_WIDTH.dp)) }
-            }
-        } else {
-            val slots = layoutEraBlocks(timeline.eras, timeline.startYear, timeline.spanYears, w, minWidth = 90f)
-            timeline.eras.indices.forEach { i ->
-                val slot = slots[i]
-                EraBlock(i, Modifier.offset(x = slot.left.dp, y = 96.dp).width(slot.width.dp))
-            }
-        }
-    }
-}
-
-// endregion
-
-/** Width of one era block when there are too many to share the ruler's width. Wide enough for "1979 – 1980". */
-private const val SCROLL_BLOCK_WIDTH = 116f
 
 /**
  * Shown when the other sources turned out to describe a namesake, so this page carries only what YouTube

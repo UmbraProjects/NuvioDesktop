@@ -449,8 +449,7 @@ internal fun InfoChip(text: String) {
         style = MaterialTheme.typography.labelLarge,
         color = colors.textPrimary,
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, colors.borderDefault, RoundedCornerShape(16.dp))
+            .musicGlass(RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 5.dp),
     )
 }
@@ -463,8 +462,7 @@ internal fun OutlinedAction(icon: ImageVector, text: String, enabled: Boolean = 
     Row(
         modifier = Modifier
             .height(44.dp)
-            .clip(shape)
-            .border(1.dp, colors.borderDefault, shape)
+            .musicGlass(shape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
