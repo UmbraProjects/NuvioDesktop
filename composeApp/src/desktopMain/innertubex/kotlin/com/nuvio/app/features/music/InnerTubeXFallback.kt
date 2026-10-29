@@ -21,6 +21,9 @@ import com.nuvio.app.features.trailer.TrailerPlaybackResolver
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
 import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -118,9 +121,50 @@ internal object InnerTubeXFallback : MusicStreamFallback {
         logger = logger,
     )
 
+    private class AccountSession(val cookie: String, val visitorData: String?, val loggedIn: Boolean, val atMs: Long)
+
+    @Volatile
+    private var account: AccountSession? = null
+
+    /**
+     * The visitor data YouTube issues to the signed-in account. The in-app extractor's visitor data
+     * belongs to an anonymous session, and pairing it with the account's cookies is a mismatch
+     * YouTube can answer with a refusal, so for a signed-in request it is read from the account's own
+     * page. The same fetch tells the log whether the saved cookies are still a live session.
+     */
+    private suspend fun accountSession(cookie: String): AccountSession {
+        account?.takeIf { it.cookie == cookie && System.currentTimeMillis() - it.atMs < SESSION_TTL_MS }?.let { return it }
+        val names = cookie.split(';').map { it.substringBefore('=').trim() }.filter { it.isNotEmpty() }
+        val session = try {
+            val html = http.get("https://www.youtube.com/") {
+                header("cookie", cookie)
+                header("user-agent", BROWSER_UA)
+                header("accept-language", "en-US,en;q=0.9")
+            }.bodyAsText()
+            val loggedIn = Regex(""""LOGGED_IN":\s*(true|false)""").find(html)?.groupValues?.get(1) == "true"
+            val visitor = Regex(""""VISITOR_DATA":\s*"([^"]+)"""").find(html)?.groupValues?.get(1)
+            log.i { "account check: loggedIn=$loggedIn visitorData=${visitor != null} cookies=${names.sorted()}" }
+            AccountSession(cookie, visitor, loggedIn, System.currentTimeMillis())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            log.i { "account check failed: ${error.message}" }
+            AccountSession(cookie, null, false, System.currentTimeMillis())
+        }
+        account = session
+        return session
+    }
+
+    private const val SESSION_TTL_MS = 30 * 60 * 1000L
+    private const val BROWSER_UA =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+
     override suspend fun resolve(videoId: String): TrailerPlaybackSource? {
-        innerTube.cookie = YouTubeMusicAuth.authHeaders("https://www.youtube.com")["cookie"]
-        innerTube.visitorData = TrailerPlaybackResolver.visitorData().orEmpty()
+        val cookie = YouTubeMusicAuth.authHeaders("https://www.youtube.com")["cookie"]
+        innerTube.cookie = cookie
+        val signedIn = cookie?.let { accountSession(it) }
+        innerTube.visitorData = signedIn?.visitorData?.takeIf { signedIn.loggedIn }
+            ?: TrailerPlaybackResolver.visitorData().orEmpty()
         innerTube.locale = YouTubeLocale(gl = "US", hl = "en")
         val stream = try {
             extractor.extract(
