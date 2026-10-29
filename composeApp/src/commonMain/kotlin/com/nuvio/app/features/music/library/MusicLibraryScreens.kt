@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.secondaryClick
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -390,7 +391,15 @@ fun MusicArtistScreen(
         onOpenArtist = onArtistClick,
         onRefresh = { MusicLibraryRepository.refresh(artist.id) },
         onRemove = { confirmRemove = true },
-        onOpen = { selectedKey = it.key },
+        onOpen = { release ->
+            val id = release.ytBrowseId
+            when {
+                id == null -> selectedKey = release.key
+                release.playsOnClick() -> startPlayback(release, shuffled = false)
+                else -> onAlbumClick(id)
+            }
+        },
+        onInfo = { selectedKey = it.key },
         onPlayableOnly = { playableOnly = it },
         onFilter = { filterName = it.name },
         onToggleDemos = { demosOpen = !demosOpen },
@@ -408,6 +417,25 @@ fun MusicArtistScreen(
                     {
                         selectedKey = null
                         onAlbumClick(id)
+                    }
+                },
+                onPlay = release.ytBrowseId?.let {
+                    {
+                        selectedKey = null
+                        startPlayback(release, shuffled = false)
+                    }
+                },
+                onQueue = release.ytBrowseId?.let { id ->
+                    {
+                        selectedKey = null
+                        scope.launch {
+                            val album = runCatching { catalog.album(id) }.getOrNull()
+                            playNotice = when {
+                                album == null -> "Couldn't open ${release.title}."
+                                MusicPlayback.player.enqueue(album) -> "${release.title} is up next."
+                                else -> null
+                            }
+                        }
                     }
                 },
                 onDismiss = { selectedKey = null },
@@ -481,7 +509,7 @@ internal fun OutlinedAction(icon: ImageVector, text: String, enabled: Boolean = 
 
 
 @Composable
-internal fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: () -> Unit, onOpen: (LibraryRelease) -> Unit) {
+internal fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: () -> Unit, onOpen: (LibraryRelease) -> Unit, onInfo: (LibraryRelease) -> Unit = {}) {
     val colors = MaterialTheme.nuvio.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
@@ -495,21 +523,25 @@ internal fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: ()
             }
             Text(if (open) "Hide" else "Show", style = MaterialTheme.typography.bodyMedium, color = colors.accent)
         }
-        if (open) demos.forEach { group -> ReleaseRow(group, onClick = { onOpen(group.primary) }) }
+        if (open) demos.forEach { group -> ReleaseRow(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }) }
     }
 }
 
 
 
+/** A single (or any one-track release) plays on a click; anything longer opens its album page. */
+internal fun LibraryRelease.playsOnClick(): Boolean = kind == ReleaseKind.Single || trackCount == 1
+
 /** A release as a card. Releases YouTube Music does not have are dimmed instead of stamped. */
 @Composable
-internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit) {
+internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null) {
     val colors = MaterialTheme.nuvio.colors
     val release = group.primary
     Column(
         modifier = Modifier
             .width(150.dp)
             .clip(RoundedCornerShape(10.dp))
+            .secondaryClick(onSecondary)
             .clickable(onClick = onClick)
             .alpha(if (group.isPlayable) 1f else 0.5f),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -544,13 +576,14 @@ internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit) {
 
 /** A release as one line: singles, and everything in the demos archive. */
 @Composable
-internal fun ReleaseRow(group: ReleaseGroup, onClick: () -> Unit) {
+internal fun ReleaseRow(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null) {
     val colors = MaterialTheme.nuvio.colors
     val release = group.primary
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
+            .secondaryClick(onSecondary)
             .clickable(onClick = onClick)
             .alpha(if (group.isPlayable) 1f else 0.5f)
             .padding(horizontal = 4.dp, vertical = 5.dp),
@@ -754,6 +787,8 @@ private fun ReleaseDialog(
     versions: List<LibraryRelease>,
     onPickVersion: (key: String) -> Unit,
     onOpen: (() -> Unit)?,
+    onPlay: (() -> Unit)?,
+    onQueue: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
@@ -821,7 +856,12 @@ private fun ReleaseDialog(
             }
         },
         confirmButton = {
-            if (onOpen != null) TextButton(onClick = onOpen) { Text("Open album") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onQueue != null) TextButton(onClick = onQueue) { Text("Add to queue") }
+                if (onPlay != null) TextButton(onClick = onPlay) { Text("Play") }
+                // A single is its one song; only a longer release has a page worth opening.
+                if (onOpen != null && !release.playsOnClick()) TextButton(onClick = onOpen) { Text("Open album") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )

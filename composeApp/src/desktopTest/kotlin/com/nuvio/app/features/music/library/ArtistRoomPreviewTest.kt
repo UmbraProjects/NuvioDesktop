@@ -63,7 +63,7 @@ class ArtistRoomPreviewTest {
                         canShuffle = true, notice = null, saved = true, refreshing = null, working = false,
                         filter = ReleaseFilter.All, playableOnly = false, demosOpen = false,
                         onBack = {}, onPlay = {}, onShuffle = {}, onPlayTop = {}, topLabel = "Top 5", onAbout = {}, onLinks = {},
-                        onOpenArtist = {}, onRefresh = {}, onRemove = {}, onOpen = {}, onPlayableOnly = {}, onFilter = {}, onToggleDemos = {},
+                        onOpenArtist = {}, onRefresh = {}, onRemove = {}, onOpen = {}, onInfo = {}, onPlayableOnly = {}, onFilter = {}, onToggleDemos = {},
                     )
                 }
             }
@@ -90,7 +90,7 @@ class ArtistRoomPreviewTest {
                     canShuffle = true, notice = null, saved = true, refreshing = null, working = false,
                     filter = ReleaseFilter.All, playableOnly = true, demosOpen = false,
                     onBack = {}, onPlay = {}, onShuffle = {}, onPlayTop = {}, topLabel = null, onAbout = {}, onLinks = {},
-                    onOpenArtist = {}, onRefresh = {}, onRemove = {}, onOpen = {}, onPlayableOnly = {}, onFilter = {}, onToggleDemos = {},
+                    onOpenArtist = {}, onRefresh = {}, onRemove = {}, onOpen = {}, onInfo = {}, onPlayableOnly = {}, onFilter = {}, onToggleDemos = {},
                 )
             }
         }

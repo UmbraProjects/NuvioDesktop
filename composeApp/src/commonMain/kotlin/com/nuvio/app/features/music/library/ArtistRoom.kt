@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.features.details.components.DetailIconAction
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -148,6 +149,8 @@ internal fun ArtistRoom(
     onRefresh: () -> Unit,
     onRemove: () -> Unit,
     onOpen: (LibraryRelease) -> Unit,
+    /** Right click on a release: its details panel. */
+    onInfo: (LibraryRelease) -> Unit,
     onPlayableOnly: (Boolean) -> Unit,
     onFilter: (ReleaseFilter) -> Unit,
     onToggleDemos: () -> Unit,
@@ -210,7 +213,7 @@ internal fun ArtistRoom(
             }
 
             if (!wide && dated.isNotEmpty()) {
-                ReleaseTimeline(dated, onOpen, Modifier.padding(top = 24.dp).fillMaxWidth())
+                ReleaseTimeline(dated, onOpen, onInfo, Modifier.padding(top = 24.dp).fillMaxWidth())
             }
             Row(Modifier.fillMaxWidth().padding(top = 28.dp)) {
                 Column(
@@ -258,15 +261,15 @@ internal fun ArtistRoom(
                             Text("${section.size}", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(bottom = 2.dp))
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            section.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }) }
+                            section.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }) }
                         }
                     }
                     if (discography.demos.isNotEmpty()) {
-                        DemosArchive(discography.demos, open = demosOpen, onToggle = onToggleDemos, onOpen = onOpen)
+                        DemosArchive(discography.demos, open = demosOpen, onToggle = onToggleDemos, onOpen = onOpen, onInfo = onInfo)
                     }
                 }
                 if (wide && dated.isNotEmpty()) {
-                    ReleaseTimeline(dated, onOpen, Modifier.width(TIMELINE_WIDTH).padding(end = ROOM_LANE_START))
+                    ReleaseTimeline(dated, onOpen, onInfo, Modifier.width(TIMELINE_WIDTH).padding(end = ROOM_LANE_START))
                 }
             }
         }
@@ -477,16 +480,19 @@ private val TIMELINE_ROW = 44.dp
  * so neighbours never collide. No panel behind it: it sits straight on the page.
  */
 @Composable
-private fun ReleaseTimeline(releases: List<ReleaseGroup>, onOpen: (LibraryRelease) -> Unit, modifier: Modifier) {
+private fun ReleaseTimeline(releases: List<ReleaseGroup>, onOpen: (LibraryRelease) -> Unit, onInfo: (LibraryRelease) -> Unit, modifier: Modifier) {
     Column(modifier.testTag("artistTimeline")) {
         releases.forEachIndexed { index, group ->
-            TimelineRow(group, leftSide = index % 2 == 0, first = index == 0, last = index == releases.lastIndex, onOpen = { onOpen(group.primary) })
+            TimelineRow(
+                group, leftSide = index % 2 == 0, first = index == 0, last = index == releases.lastIndex,
+                onOpen = { onOpen(group.primary) }, onInfo = { onInfo(group.primary) },
+            )
         }
     }
 }
 
 @Composable
-private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, last: Boolean, onOpen: () -> Unit) {
+private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, last: Boolean, onOpen: () -> Unit, onInfo: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
@@ -516,6 +522,7 @@ private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, 
             .fillMaxWidth()
             .height(TIMELINE_ROW)
             .hoverable(source)
+            .secondaryClick(onInfo)
             .clickable(interactionSource = source, indication = null, onClick = onOpen),
         verticalAlignment = Alignment.CenterVertically,
     ) {

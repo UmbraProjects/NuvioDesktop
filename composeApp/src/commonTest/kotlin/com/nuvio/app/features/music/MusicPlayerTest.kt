@@ -278,6 +278,19 @@ class MusicPlayerTest {
     }
 
     @Test
+    fun enqueueStartsAnIdlePlayerAndOtherwisePlaysAfterwards() {
+        val p = player(Fake())
+        assertFalse(p.enqueue(albumOf("a", 1)))
+        assertEquals("a1", p.state.value.track?.videoId)
+        assertTrue(p.enqueue(albumOf("b", 1)))
+        assertTrue(p.state.value.hasNext)
+        assertEquals(listOf("b1"), p.upNext(4).map { it.videoId })
+        p.playing(positionMs = 199_000L)
+        p.onSurfaceEnded()
+        assertEquals("b1", p.state.value.track?.videoId)
+    }
+
+    @Test
     fun formatsTimes() {
         assertEquals("0:00", formatMusicTime(-5))
         assertEquals("3:07", formatMusicTime(187_000))

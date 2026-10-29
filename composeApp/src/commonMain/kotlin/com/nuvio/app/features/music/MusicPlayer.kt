@@ -278,8 +278,25 @@ class MusicPlayer(
         }
     }
 
-    /** The next [limit] tracks in the queue that can be played, for the Stage view's Up next card. */
-    fun upNext(limit: Int): List<MusicTrack> = queue?.upNext.orEmpty().filter { it.isAvailable }.take(limit)
+    /** The next [limit] tracks in the queue that can be played, then the queued albums', for the Up next cards. */
+    fun upNext(limit: Int): List<MusicTrack> =
+        (queue?.upNext.orEmpty() + following.flatMap { it.tracks }).filter { it.isAvailable }.take(limit)
+
+    /**
+     * Puts [album] after everything queued, or plays it when nothing is playing. Returns true when it was queued
+     * (false when it started, or has no tracks).
+     */
+    fun enqueue(album: MusicAlbum): Boolean {
+        if (album.tracks.isEmpty()) return false
+        val q = queue
+        if (q == null) {
+            play(album)
+            return false
+        }
+        following = following + album
+        _state.update { it.copy(hasNext = true) }
+        return true
+    }
 
     /** Stops playback and clears the queue. The mini-player goes away. */
     fun stop() {

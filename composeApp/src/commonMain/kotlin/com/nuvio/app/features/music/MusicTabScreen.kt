@@ -389,7 +389,8 @@ private fun MusicGlassField(
     val tokens = MaterialTheme.nuvio
     var focused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
-    val shape = NuvioGlass.Shape
+    // A pill, like the top bar's search.
+    val shape = RoundedCornerShape(percent = 50)
     var fieldWidthPx by remember { mutableIntStateOf(0) }
     var picked by remember(suggestions) { mutableIntStateOf(-1) }
     val showSuggestions = focused && query.isEmpty() && suggestions.isNotEmpty()
@@ -442,7 +443,7 @@ private fun MusicGlassField(
         cursorBrush = SolidColor(tokens.colors.accent),
         decorationBox = { innerTextField ->
             Row(
-                modifier = Modifier.fillMaxWidth().height(44.dp).padding(start = 14.dp, end = 6.dp),
+                modifier = Modifier.fillMaxWidth().height(44.dp).padding(start = 18.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -494,7 +495,7 @@ private fun MusicGlassField(
 @Composable
 private fun MusicRecentPanel(items: List<String>, picked: Int, onPick: (String) -> Unit, modifier: Modifier = Modifier) {
     val tokens = MaterialTheme.nuvio
-    val shape = NuvioGlass.Shape
+    val shape = RoundedCornerShape(22.dp)
     Column(
         modifier
             .shadow(12.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f))
@@ -510,7 +511,7 @@ private fun MusicRecentPanel(items: List<String>, picked: Int, onPick: (String) 
                 Modifier
                     .fillMaxWidth()
                     .height(38.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(percent = 50))
                     .background(if (hovered || index == picked) Color.White.copy(alpha = 0.07f) else Color.Transparent)
                     .hoverable(source)
                     .clickable(interactionSource = source, indication = null) { onPick(text) }
@@ -543,7 +544,7 @@ private fun MusicFieldIconButton(
     Box(
         modifier = Modifier
             .size(32.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(CircleShape)
             .background(if (active) tokens.colors.accent.copy(alpha = 0.22f) else Color.Transparent)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
