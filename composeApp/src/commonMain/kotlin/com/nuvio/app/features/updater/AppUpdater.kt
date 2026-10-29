@@ -75,10 +75,10 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-private const val gitHubOwner = "UmbraProjects"
+private const val gitHubOwner = "spydermahn1234"
 private const val gitHubRepo = "NuvioDesktop"
 private const val gitHubApiBase = "https://api.github.com"
-private const val releaseChannelBranch = "windows-tv-adaptive"
+private const val releaseChannelBranch = "Spyder"
 
 /** The rolling prerelease tag every nightly build is uploaded under. */
 private const val nightlyReleaseTag = "Nightly"

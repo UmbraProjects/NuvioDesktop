@@ -13,6 +13,10 @@ concurrency:
   group: windows-build-${{ github.ref }}
   cancel-in-progress: true
 
+# Publishing the rolling Nightly release below needs to write to the repository's releases.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -113,6 +117,23 @@ jobs:
         with:
           name: NuvioHTPC-portable
           path: NuvioHTPC-portable.zip
+
+      # The in-app updater (AppUpdater.kt) follows this fork's rolling "Nightly" prerelease cut from Spyder, so
+      # every green build replaces it with the new portable zip. Deleting and recreating keeps one release
+      # whose asset checksum changes with each build, which is how installed copies tell it is newer.
+      - name: Publish Nightly release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          gh release delete Nightly --cleanup-tag --yes 2>$null
+          gh release create Nightly NuvioHTPC-portable.zip `
+            --prerelease `
+            --target Spyder `
+            --title "Nightly (Spyder $sha)" `
+            --notes "Portable build of Spyder at $sha. Installed copies on the Nightly channel update to this automatically."
+          if ($LASTEXITCODE -ne 0) { throw "Could not publish the Nightly release" }
 
       # MSI needs WiX 3.x and a full rebuild (--rerun-tasks), about 5 minutes, so it only runs when the
       # workflow is started by hand. Allowed to fail so the portable build still publishes.
