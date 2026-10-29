@@ -78,7 +78,9 @@ internal fun AlbumObject(
 ) {
     val art = release?.art
     val cover = album.thumbnailUrl ?: art?.cover
-    val case3dUrl = art?.case3d
+    // fork:flat-cover — TheAudioDB's 3D case renders are never used: they arrive pre-tilted (some lie on their side),
+    // so the album object always shows the flat cover with the app's own tilt. The data is still saved with the release.
+    val case3dUrl: String? = null
     val backUrl = art?.back
     var case3dFailed by remember(case3dUrl) { mutableStateOf(false) }
     var backFailed by remember(backUrl) { mutableStateOf(false) }
