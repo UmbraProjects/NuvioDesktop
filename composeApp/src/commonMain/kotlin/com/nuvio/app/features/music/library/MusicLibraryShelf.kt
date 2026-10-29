@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.ui.text.style.TextAlign
 import com.nuvio.app.core.ui.NuvioGlass
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -247,12 +249,10 @@ private fun ShelfCardRow(
                 val source = remember { MutableInteractionSource() }
                 val focused by source.collectIsFocusedAsState()
                 val hovered by source.collectIsHoveredAsState()
-                val scale by animateFloatAsState(if (focused) 1.05f else 1f)
                 val shape = RoundedCornerShape(16.dp)
                 Row(
                     Modifier
                         .weight(1f)
-                        .graphicsLayer { scaleX = scale; scaleY = scale }
                         .musicGlass(shape, raised = hovered || focused, keyFocused = focused)
                         .hoverable(source)
                         .focusable(interactionSource = source)
@@ -328,52 +328,53 @@ private fun ShelfArtistRow(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Column(Modifier.width(SHELF_HEADER_WIDTH).padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.clip(CircleShape).clickable(onClick = onOpenArtist)) {
-                    Box(Modifier.border(2.dp, if (hovered) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
-                        MusicCover(artist.art.thumb, artist.name, size = 58.dp, circle = true)
-                    }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            artist.name,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenArtist),
-                        )
-                        Icon(
-                            Icons.Rounded.Star,
-                            contentDescription = if (artist.favourite) "Remove from favourites" else "Add to favourites",
-                            tint = if (artist.favourite) GOLD else Color.White.copy(alpha = if (hovered) 0.4f else 0.18f),
-                            modifier = Modifier.size(20.dp).clip(CircleShape).clickable {
-                                MusicLibraryRepository.setFavourite(artist.id, !artist.favourite)
-                            },
-                        )
-                    }
-                    val subtitle = when {
-                        status != null -> status
-                        row.playableReleases == row.totalReleases -> "${row.totalReleases} release${if (row.totalReleases == 1) "" else "s"}"
-                        else -> "${row.playableReleases} playable of ${row.totalReleases}"
-                    }
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (status != null) colors.accent else colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+        // The artist on top, their name and count under it, then three round buttons: their hits (the top five),
+        // a shuffle of them, and the favourite star, which floats the artist to the top of the shelf.
+        Column(
+            Modifier.width(SHELF_HEADER_WIDTH).padding(start = 8.dp, top = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.clip(CircleShape).clickable(onClick = onOpenArtist)) {
+                Box(Modifier.border(2.dp, if (hovered) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
+                    MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true)
                 }
             }
-            if (row.top.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QuickPlayChip(Icons.Rounded.PlayArrow, row.topLabel, filled = true) { playTop(shuffled = false) }
-                    QuickPlayChip(Icons.Rounded.Shuffle, null, filled = false) { playTop(shuffled = true) }
+            Text(
+                artist.name,
+                style = MaterialTheme.typography.titleLarge,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenArtist),
+            )
+            val subtitle = when {
+                status != null -> status
+                row.playableReleases == row.totalReleases -> "${row.totalReleases} release${if (row.totalReleases == 1) "" else "s"}"
+                else -> "${row.playableReleases} playable of ${row.totalReleases}"
+            }
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (status != null) colors.accent else colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                Modifier.padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (row.top.isNotEmpty()) {
+                    ShelfRoundButton(Icons.Rounded.LocalFireDepartment, row.topLabel ?: "Play their hits") { playTop(shuffled = false) }
+                    ShelfRoundButton(Icons.Rounded.Shuffle, "Shuffle their hits") { playTop(shuffled = true) }
                 }
+                ShelfRoundButton(
+                    icon = Icons.Rounded.Star,
+                    description = if (artist.favourite) "Remove from favourites" else "Add to favourites",
+                    tint = if (artist.favourite) GOLD else null,
+                ) { MusicLibraryRepository.setFavourite(artist.id, !artist.favourite) }
             }
         }
         if (row.tiles.isEmpty()) {
@@ -425,6 +426,30 @@ private fun ShelfArtistRow(
                 }
             }
         }
+    }
+}
+
+/** A round glass button under an artist's name. [tint] overrides the icon colour (the gold of a favourite). */
+@Composable
+private fun ShelfRoundButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    tint: Color? = null,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val focused by source.collectIsFocusedAsState()
+    Box(
+        Modifier
+            .size(40.dp)
+            .musicGlass(CircleShape, raised = hovered, keyFocused = focused)
+            .hoverable(source)
+            .clickable(interactionSource = source, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = description, tint = tint ?: colors.textPrimary, modifier = Modifier.size(20.dp))
     }
 }
 

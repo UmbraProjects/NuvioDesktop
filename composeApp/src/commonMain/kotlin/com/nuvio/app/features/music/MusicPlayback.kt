@@ -16,8 +16,12 @@ object MusicPlayback {
     /** Whether the full-window lyric view is open. [MusicNowPlayingHost] draws it. */
     val nowPlayingOpen = MutableStateFlow(false)
 
-    /** True while the person has tucked the bar away. The music keeps playing; a small chip brings the bar back. */
+    /** True while the person has tucked the bar away. The music keeps playing; the dock notch brings the bar back. */
     val barCollapsed = MutableStateFlow(false)
+
+    /** fork:music - where the bar and the corner card were dragged and how wide they were made, for this session. */
+    val barPlacement = MutableStateFlow(MusicPlayerPlacement.Default)
+    val cardPlacement = MutableStateFlow(MusicPlayerPlacement.Default)
 
     /**
      * True while a screen that needs the room (the ladder) asks for the bar to shrink to a slim pill. The bar only
@@ -54,9 +58,14 @@ object MusicPlayback {
         MusicPlayer(
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
             resolver = ::resolveMusicTrack,
+            initialVolume = com.nuvio.app.features.music.library.MusicLibraryStorage.loadPlayerVolume() ?: DEFAULT_MUSIC_VOLUME,
+            saveVolume = com.nuvio.app.features.music.library.MusicLibraryStorage::savePlayerVolume,
         )
     }
 }
+
+/** Where a first ever session starts: loud enough to hear, not the full-scale blast it used to be. */
+private const val DEFAULT_MUSIC_VOLUME = 50
 
 /** 3:07 or 1:02:09. Negative and unknown (0) lengths show as 0:00. */
 internal fun formatMusicTime(ms: Long): String {

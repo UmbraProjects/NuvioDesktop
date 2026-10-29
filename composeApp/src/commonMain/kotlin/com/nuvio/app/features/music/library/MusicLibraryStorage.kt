@@ -18,4 +18,8 @@ internal expect object MusicLibraryStorage {
     /** Recent music searches, apart from the film and show search history, one per profile. */
     fun loadSearchHistory(profileId: Int): String?
     fun saveSearchHistory(profileId: Int, payload: String)
+
+    /** The music player's volume (0 to 100) the last session ended on; null before the first change. */
+    fun loadPlayerVolume(): Int?
+    fun savePlayerVolume(volume: Int)
 }

@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -154,23 +155,23 @@ fun MusicPlayerHost(
         }
         if (gone != null && leaving) {
             BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-                MusicAccentScope {
-                    MusicMiniPlayerBar(
-                        state = gone,
-                        visible = false,
-                        player = player,
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                        slim = musicBarSlim(gone, slimRequested, nowPlayingOpen),
-                        initiallyShown = !musicBarCorner(gone, slimRequested, nowPlayingOpen, barStyle),
-                    )
-                    MusicCornerCard(
-                        state = gone,
-                        visible = false,
-                        player = player,
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                        initiallyShown = musicBarCorner(gone, slimRequested, nowPlayingOpen, barStyle),
-                    )
-                }
+                MusicMiniPlayerBar(
+                    state = gone,
+                    visible = false,
+                    player = player,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    slim = musicBarSlim(gone, slimRequested, nowPlayingOpen),
+                    initiallyShown = !musicBarCorner(gone, slimRequested, nowPlayingOpen, barStyle),
+                    areaHeight = maxHeight,
+                )
+                MusicCornerCard(
+                    state = gone,
+                    visible = false,
+                    player = player,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    initiallyShown = musicBarCorner(gone, slimRequested, nowPlayingOpen, barStyle),
+                    areaHeight = maxHeight,
+                )
             }
         }
         return
@@ -208,13 +209,18 @@ fun MusicPlayerHost(
             },
     ) {
         val windowHeight = maxHeight
+        val barPlacement by MusicPlayback.barPlacement.collectAsStateWithLifecycle()
         val surfaceModifier = when {
             !videoVisible -> Modifier.align(Alignment.BottomStart).size(1.dp)
-            view == MusicVideoView.Bar ->
+            view == MusicVideoView.Bar -> {
+                // Inset 12dp inside the bar's left end, wherever the bar was dragged to.
+                val bar = musicBarFrame(maxWidth, windowHeight, MusicBarCardHeight, barPlacement)
                 Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = musicBarSideMargin(maxWidth) + 12.dp, bottom = MusicBarBottomMargin + 12.dp)
+                    .offset(x = bar.left + 12.dp, y = bar.dy)
+                    .padding(bottom = MusicBarBottomMargin + 12.dp)
                     .size(BarThumbnailWidth, MusicBarCardHeight - 24.dp)
+            }
             view == MusicVideoView.Expanded -> {
                 // Framed 16:9 near the top with room for the title under it, so the ambient glow shows
                 // round it (mpv letterboxes any other shape inside the frame).
@@ -273,8 +279,8 @@ fun MusicPlayerHost(
                 modifier = Modifier.align(Alignment.TopStart),
             )
         }
-        // The bar wears the playing artist's accent (the app's own until that artist has a palette).
-        MusicAccentScope {
+        // The bar and the card wear the app's own glass and accent, like the rest of the app.
+        run {
             MusicMiniPlayerBar(
                 state = state,
                 visible = !hidden && !collapsed && !corner,
@@ -288,6 +294,7 @@ fun MusicPlayerHost(
                     MusicPlayback.nowPlayingOpen.value = false
                     MusicPlayback.barCollapsed.value = true
                 },
+                areaHeight = windowHeight,
             )
             MusicCornerCard(
                 state = state,
@@ -299,19 +306,19 @@ fun MusicPlayerHost(
                     MusicPlayback.nowPlayingOpen.value = false
                     MusicPlayback.barCollapsed.value = true
                 },
+                areaHeight = windowHeight,
             )
             AnimatedVisibility(
                 visible = collapsed && !hidden && !realVideo,
-                modifier = Modifier.align(Alignment.BottomEnd),
+                modifier = Modifier.align(Alignment.BottomCenter),
                 enter = if (reduced) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 2 },
                 exit = if (reduced) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 2 },
             ) {
-                CollapsedChip(
-                    title = state.track?.title.orEmpty(),
-                    coverUrl = state.album?.thumbnailUrl,
-                    playing = state.playWhenReady,
-                    onExpand = { MusicPlayback.barCollapsed.value = false },
-                    modifier = Modifier.padding(end = 28.dp, bottom = 24.dp),
+                MusicDockNotch(
+                    state = state,
+                    player = player,
+                    onRestore = { MusicPlayback.barCollapsed.value = false },
+                    modifier = Modifier.padding(bottom = 10.dp),
                 )
             }
         }
@@ -340,59 +347,5 @@ private fun ExpandedHeader(
             modifier = Modifier.weight(1f),
         )
         MusicTextChip("Fullscreen", onFullscreen)
-    }
-}
-
-/** What is left of the bar while it is tucked away: the cover and title in a small pill. Click or Enter brings the bar back. */
-@Composable
-private fun CollapsedChip(
-    title: String,
-    coverUrl: String?,
-    playing: Boolean,
-    onExpand: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(50)
-    Row(
-        modifier = modifier
-            .clip(shape)
-            .background(colors.surfaceCard.copy(alpha = 0.94f))
-            .border(
-                if (focused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-                shape,
-            )
-            .clickable(interactionSource = source, indication = null, onClick = onExpand)
-            .padding(start = 8.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(Modifier.size(48.dp).clip(CircleShape).background(colors.surfaceElevated), contentAlignment = Alignment.Center) {
-            if (coverUrl != null) {
-                NuvioAsyncImage(
-                    model = coverUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Icon(Icons.Rounded.MusicNote, null, tint = colors.textMuted)
-            }
-        }
-        Text(
-            if (title.isBlank()) "Now playing" else title,
-            color = colors.textPrimary,
-            fontSize = 18.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 260.dp),
-        )
-        Icon(
-            Icons.Rounded.KeyboardArrowUp,
-            contentDescription = if (playing) "Show player bar, playing" else "Show player bar, paused",
-            tint = colors.accent,
-        )
     }
 }

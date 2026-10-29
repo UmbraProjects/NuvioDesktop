@@ -9,6 +9,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,6 +52,9 @@ data class MusicPlayerState(
 
 private const val RESTART_THRESHOLD_MS = 3_000L
 
+/** How long the volume must stay put before it is saved. */
+private const val VOLUME_SAVE_DELAY_MS = 600L
+
 /** A stream that ended having played less than this share of the track was cut off, not finished. */
 private const val CUT_SHORT_PERCENT = 60
 
@@ -78,8 +82,13 @@ class MusicPlayer(
     private val scope: CoroutineScope,
     private val resolver: MusicTrackResolver,
     private val now: () -> Long = { LibraryClock.nowEpochMs() },
+    /** The level the last session ended on, so a restart doesn't come back at full volume. */
+    initialVolume: Int = 100,
+    /** Called (debounced) when the person changes the volume, to keep it for the next session. */
+    private val saveVolume: (Int) -> Unit = {},
 ) {
-    private val _state = MutableStateFlow(MusicPlayerState())
+    private val _state = MutableStateFlow(MusicPlayerState(volume = initialVolume.coerceIn(0, 100)))
+    private var volumeSave: Job? = null
     val state: StateFlow<MusicPlayerState> = _state.asStateFlow()
 
     private var queue: MusicQueue? = null
@@ -259,7 +268,14 @@ class MusicPlayer(
     }
 
     fun setVolume(volume: Int) {
-        _state.update { it.copy(volume = volume.coerceIn(0, 100)) }
+        val level = volume.coerceIn(0, 100)
+        _state.update { it.copy(volume = level) }
+        // A slider drag is many steps; only where it settles is written.
+        volumeSave?.cancel()
+        volumeSave = scope.launch {
+            delay(VOLUME_SAVE_DELAY_MS)
+            saveVolume(level)
+        }
     }
 
     /** The next [limit] tracks in the queue that can be played, for the Stage view's Up next card. */

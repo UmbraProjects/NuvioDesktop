@@ -34,4 +34,10 @@ internal actual object MusicLibraryStorage {
     actual fun saveSearchHistory(profileId: Int, payload: String) {
         store.putString("search_history_$profileId", payload)
     }
+
+    actual fun loadPlayerVolume(): Int? = store.getString("player_volume")?.toIntOrNull()?.coerceIn(0, 100)
+
+    actual fun savePlayerVolume(volume: Int) {
+        store.putString("player_volume", volume.coerceIn(0, 100).toString())
+    }
 }

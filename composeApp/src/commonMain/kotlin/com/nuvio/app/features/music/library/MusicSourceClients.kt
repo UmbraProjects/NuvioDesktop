@@ -33,14 +33,53 @@ private suspend fun fetch(url: String, headers: Map<String, String> = emptyMap()
 internal object MusicBrainzClient {
     private const val BASE = "https://musicbrainz.org/ws/2"
     private const val GAP_MS = 1_100L
+    private const val THROTTLE_RETRIES = 3
+    private const val THROTTLE_BACKOFF_MS = 2_000L
     private const val MAX_PAGES = 6
     private const val TAG_SEARCH_LIMIT = 100
     private const val ARTIST_SEARCH_LIMIT = 5
     private val pacer = BackgroundAwarePacer(GAP_MS)
 
-    /** Every call goes through [pacer]; one made inside `withContext(BackgroundWork())` waits for ordinary calls first. */
-    private suspend fun paced(url: String): String? =
-        pacer.run(background = currentCoroutineContext()[BackgroundWork] != null) { fetch(url) }
+    /**
+     * Every call goes through [pacer]; one made inside `withContext(BackgroundWork())` waits for ordinary calls first.
+     * MusicBrainz answers 503 when it is shedding anonymous load, even to a paced client: that is a "try again shortly",
+     * not a failure, so it is retried a few times with a growing pause (each retry still takes its turn at the pacer).
+     * Without this one refused call among the dozen a "Where next?" ladder makes was enough to fail the whole ladder.
+     */
+    private suspend fun paced(url: String): String? {
+        val background = currentCoroutineContext()[BackgroundWork] != null
+        repeat(THROTTLE_RETRIES + 1) { attempt ->
+            if (attempt > 0) delay(THROTTLE_BACKOFF_MS * attempt)
+            when (val result = pacer.run(background) { fetchMb(url) }) {
+                is MbResult.Ok -> return result.body
+                MbResult.Failed -> return null
+                MbResult.Throttled -> log.d { "MusicBrainz throttled ${url.substringBefore('?')}; retry ${attempt + 1} of $THROTTLE_RETRIES" }
+            }
+        }
+        log.w { "MusicBrainz still throttling ${url.substringBefore('?')} after $THROTTLE_RETRIES retries" }
+        return null
+    }
+
+    private sealed interface MbResult {
+        class Ok(val body: String) : MbResult
+        data object Throttled : MbResult
+        data object Failed : MbResult
+    }
+
+    private suspend fun fetchMb(url: String): MbResult =
+        try {
+            MbResult.Ok(httpGetTextWithHeaders(url, mapOf("User-Agent" to USER_AGENT)))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            val message = error.message.orEmpty()
+            if ("503" in message || "429" in message) {
+                MbResult.Throttled
+            } else {
+                log.d { "GET ${url.substringBefore('?')} failed: $message" }
+                MbResult.Failed
+            }
+        }
 
     suspend fun searchArtist(name: String): List<MbArtistHit> {
         val query = "artist:\"${name.replace("\"", "\\\"")}\"".encodeURLParameter()

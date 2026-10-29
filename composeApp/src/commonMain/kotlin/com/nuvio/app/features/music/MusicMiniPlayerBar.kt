@@ -1,5 +1,9 @@
 package com.nuvio.app.features.music
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.offset
+import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.core.ui.NuvioGlass
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -136,6 +140,8 @@ fun MusicMiniPlayerBar(
     onCollapse: (() -> Unit)? = null,
     slim: Boolean = false,
     initiallyShown: Boolean = false,
+    /** The window's height, so a dragged bar is kept inside it. */
+    areaHeight: Dp = Dp.Unspecified,
 ) {
     val colors = MaterialTheme.nuvio.colors
     // The picture only sits in the bar when there is a real video; a lyric video is audio.
@@ -183,138 +189,158 @@ fun MusicMiniPlayerBar(
             val fade = if (reduced) snap<Float>() else tween(400)
             val cardSource = remember { MutableInteractionSource() }
             val cardFocused by cardSource.collectIsFocusedAsState()
+            // fork:music - wherever the person dragged it, as wide as they made it.
+            val placement by MusicPlayback.barPlacement.collectAsStateWithLifecycle()
+            val areaWidth = maxWidth
+            val frame = musicBarFrame(areaWidth, areaHeight, MusicBarCardHeight, placement)
             Box(
-                modifier = Modifier
-                    .padding(start = side, end = side, bottom = MusicBarBottomMargin)
-                    .fillMaxWidth()
+                Modifier
+                    .padding(bottom = MusicBarBottomMargin)
+                    .offset(x = frame.left, y = frame.dy)
+                    .width(frame.width)
                     .height(MusicBarCardHeight)
-                    // A plain dark shadow: the card reads as its own object, with no accent glow washing the page behind it.
-                    .shadow(
-                        elevation = 14.dp,
-                        shape = shape,
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.55f),
-                        spotColor = Color.Black.copy(alpha = 0.55f),
-                    )
-                    .clip(shape)
-                    .background(colors.background)
-                    .background(ground)
-                    .border(
-                        if (cardFocused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-                        shape,
-                    )
-                    // The card itself can take focus; with it focused, Enter opens the full Now Playing view.
-                    // (Its buttons and bars keep their own keys: this only fires when the card is the focus.)
-                    .focusable(interactionSource = cardSource)
-                    .onKeyEvent { event ->
-                        val enterKey = event.key == Key.Enter || event.key == Key.NumPadEnter
-                        if (cardFocused && enterKey && event.type == KeyEventType.KeyDown) {
-                            onOpenNowPlaying()
-                            true
-                        } else {
-                            false
-                        }
-                    },
+                    .musicPlayerDrag(MusicPlayback.barPlacement) { clampBarPlacement(areaWidth, areaHeight, MusicBarCardHeight, it) },
             ) {
-                Row(
-                    modifier = Modifier.fillMaxSize().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // A plain dark shadow: the card reads as its own object, with no accent glow washing the page behind it.
+                        .shadow(
+                            elevation = 14.dp,
+                            shape = shape,
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = 0.55f),
+                            spotColor = Color.Black.copy(alpha = 0.55f),
+                        )
+                        .clip(shape)
+                        // The app glass over its night base (it floats over the page, so the base is solid).
+                        .background(NuvioGlass.night(colors.background, colors.accent))
+                        .ditheredBackground(NuvioGlass.Fill, shape)
+                        .border(
+                            if (cardFocused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, NuvioGlass.EdgeColor),
+                            shape,
+                        )
+                        // The card itself can take focus; with it focused, Enter opens the full Now Playing view.
+                        // (Its buttons and bars keep their own keys: this only fires when the card is the focus.)
+                        .focusable(interactionSource = cardSource)
+                        .onKeyEvent { event ->
+                            val enterKey = event.key == Key.Enter || event.key == Key.NumPadEnter
+                            if (cardFocused && enterKey && event.type == KeyEventType.KeyDown) {
+                                onOpenNowPlaying()
+                                true
+                            } else {
+                                false
+                            }
+                        },
                 ) {
-                    // Left end: the picture in video mode (drawn by the surface above), else the cover.
-                    // In a real video's thumbnail the host's native surface covers this box, so it is not a button then.
-                    Box(
-                        Modifier.width(if (video && videoView == MusicVideoView.Bar) VideoWidth else if (video) 12.dp else CoverSize)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable(enabled = !video, onClick = onOpenNowPlaying),
+                    Row(
+                        modifier = Modifier.fillMaxSize().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (!video) {
-                            Crossfade(targetState = cover, animationSpec = fade, modifier = Modifier.fillMaxSize()) { url ->
-                                if (url != null) {
-                                    NuvioAsyncImage(
-                                        model = url,
-                                        contentDescription = state.album?.title,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                } else {
-                                    Box(Modifier.fillMaxSize().background(colors.surfaceElevated), contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Rounded.MusicNote, null, tint = colors.textMuted, modifier = Modifier.size(36.dp))
+                        // Left end: the picture in video mode (drawn by the surface above), else the cover.
+                        // In a real video's thumbnail the host's native surface covers this box, so it is not a button then.
+                        Box(
+                            Modifier.width(if (video && videoView == MusicVideoView.Bar) VideoWidth else if (video) 12.dp else CoverSize)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable(enabled = !video, onClick = onOpenNowPlaying),
+                        ) {
+                            if (!video) {
+                                Crossfade(targetState = cover, animationSpec = fade, modifier = Modifier.fillMaxSize()) { url ->
+                                    if (url != null) {
+                                        NuvioAsyncImage(
+                                            model = url,
+                                            contentDescription = state.album?.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop,
+                                        )
+                                    } else {
+                                        Box(Modifier.fillMaxSize().background(colors.surfaceElevated), contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Rounded.MusicNote, null, tint = colors.textMuted, modifier = Modifier.size(36.dp))
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    Spacer(Modifier.width(18.dp))
-                    Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Center) {
-                        val notice = state.notice
-                        val line = BarLine(state.track?.title.orEmpty(), notice ?: subtitle(state), notice != null)
-                        AnimatedContent(
-                            targetState = line,
-                            modifier = Modifier.clickable(onClick = onOpenNowPlaying),
-                            transitionSpec = {
-                                if (reduced) EnterTransition.None togetherWith ExitTransition.None
-                                else fadeIn(tween(300, delayMillis = 100)) togetherWith fadeOut(tween(200))
-                            },
-                            label = "barLine",
-                        ) { shown ->
-                            Column {
-                                Text(
-                                    text = shown.title,
-                                    color = colors.textPrimary,
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = shown.subtitle,
-                                    color = if (shown.notice) colors.warning else colors.textSecondary,
-                                    fontSize = 18.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (!compact) {
-                                Text(formatMusicTime(state.positionMs), color = colors.textSecondary, fontSize = 16.sp, maxLines = 1)
-                            }
-                            SeekBar(
-                                fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
-                                onSeek = { fraction -> player.seekTo((fraction * state.durationMs).toLong()) },
-                                modifier = Modifier.weight(1f).padding(horizontal = if (compact) 0.dp else 14.dp),
-                                enabled = state.durationMs > 0L,
-                                onNudge = { direction ->
-                                    player.seekTo((state.positionMs + direction * NUDGE_MS).coerceIn(0L, state.durationMs))
+                        Spacer(Modifier.width(18.dp))
+                        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.Center) {
+                            val notice = state.notice
+                            val line = BarLine(state.track?.title.orEmpty(), notice ?: subtitle(state), notice != null)
+                            AnimatedContent(
+                                targetState = line,
+                                modifier = Modifier.clickable(onClick = onOpenNowPlaying),
+                                transitionSpec = {
+                                    if (reduced) EnterTransition.None togetherWith ExitTransition.None
+                                    else fadeIn(tween(300, delayMillis = 100)) togetherWith fadeOut(tween(200))
                                 },
-                            )
-                            if (!compact) {
-                                val left = (state.durationMs - state.positionMs).coerceAtLeast(0L)
-                                Text("-" + formatMusicTime(left), color = colors.textSecondary, fontSize = 16.sp, maxLines = 1)
+                                label = "barLine",
+                            ) { shown ->
+                                Column {
+                                    Text(
+                                        text = shown.title,
+                                        color = colors.textPrimary,
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = shown.subtitle,
+                                        color = if (shown.notice) colors.warning else colors.textSecondary,
+                                        fontSize = 18.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (!compact) {
+                                    Text(formatMusicTime(state.positionMs), color = colors.textSecondary, fontSize = 16.sp, maxLines = 1)
+                                }
+                                SeekBar(
+                                    fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
+                                    onSeek = { fraction -> player.seekTo((fraction * state.durationMs).toLong()) },
+                                    modifier = Modifier.weight(1f).padding(horizontal = if (compact) 0.dp else 14.dp),
+                                    enabled = state.durationMs > 0L,
+                                    onNudge = { direction ->
+                                        player.seekTo((state.positionMs + direction * NUDGE_MS).coerceIn(0L, state.durationMs))
+                                    },
+                                )
+                                if (!compact) {
+                                    val left = (state.durationMs - state.positionMs).coerceAtLeast(0L)
+                                    Text("-" + formatMusicTime(left), color = colors.textSecondary, fontSize = 16.sp, maxLines = 1)
+                                }
                             }
                         }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Transport(state, player)
-                    Spacer(Modifier.width(4.dp))
-                    MoreButton(
-                        open = moreOpen,
-                        onToggle = { moreOpen = !moreOpen },
-                    ) {
-                        MorePanel(
-                            state = state,
-                            player = player,
-                            videoView = videoView,
-                            // A real video's picture lives in the bar, so the bar cannot be tucked away then.
-                            onCollapse = if (!video) onCollapse else null,
-                            onOpenNowPlaying = onOpenNowPlaying,
-                            onSetVideoView = onSetVideoView,
-                            onDismiss = { moreOpen = false },
-                        )
+                        Spacer(Modifier.width(12.dp))
+                        Transport(state, player)
+                        Spacer(Modifier.width(4.dp))
+                        MoreButton(
+                            open = moreOpen,
+                            onToggle = { moreOpen = !moreOpen },
+                        ) {
+                            MorePanel(
+                                state = state,
+                                player = player,
+                                videoView = videoView,
+                                // A real video's picture lives in the bar, so the bar cannot be tucked away then.
+                                onCollapse = if (!video) onCollapse else null,
+                                onOpenNowPlaying = onOpenNowPlaying,
+                                onSetVideoView = onSetVideoView,
+                                onDismiss = { moreOpen = false },
+                            )
+                        }
                     }
                 }
+                MusicResizeGrip(
+                    placement = MusicPlayback.barPlacement,
+                    currentWidth = frame.width,
+                    minWidth = MusicBarMinWidth,
+                    maxWidth = (areaWidth - musicBarSideMargin(areaWidth) * 2).coerceAtLeast(MusicBarMinWidth),
+                    centred = true,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                )
             }
         }
     }
@@ -342,9 +368,10 @@ private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, play
             .widthIn(max = 480.dp)
             .shadow(12.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.55f), spotColor = Color.Black.copy(alpha = 0.55f))
             .clip(shape)
-            .background(lerp(colors.surfaceCard, colors.accent, 0.16f))
+            .background(NuvioGlass.night(colors.background, colors.accent))
+            .ditheredBackground(NuvioGlass.Fill, shape)
             .border(
-                if (focused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+                if (focused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, NuvioGlass.EdgeColor),
                 shape,
             )
             .clickable(interactionSource = source, indication = null, onClick = onOpenNowPlaying)
@@ -519,10 +546,11 @@ internal fun MorePanel(
         Column(
             modifier = Modifier
                 .width(380.dp)
-                .shadow(16.dp, shape, clip = false, ambientColor = colors.accent.copy(alpha = 0.35f), spotColor = colors.accent)
+                .shadow(16.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.55f), spotColor = Color.Black.copy(alpha = 0.55f))
                 .clip(shape)
-                .background(lerp(colors.surfaceCard, colors.accent, 0.10f))
-                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)), shape)
+                .background(NuvioGlass.night(colors.background, colors.accent))
+                .ditheredBackground(NuvioGlass.Fill, shape)
+                .border(BorderStroke(1.dp, NuvioGlass.EdgeColor), shape)
                 .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -561,7 +589,7 @@ internal fun MorePanel(
             }
             VolumeRow(state.volume, onChange = { player.setVolume(it.coerceIn(0, 100)) })
             if (onCollapse != null) {
-                PanelRow(Icons.Rounded.KeyboardArrowDown, "Hide player bar") { onDismiss(); onCollapse() }
+                PanelRow(Icons.Rounded.KeyboardArrowDown, "Minimise to the dock") { onDismiss(); onCollapse() }
             }
             PanelRow(Icons.Rounded.Close, "Close player") { onDismiss(); player.stop() }
         }

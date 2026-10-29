@@ -211,6 +211,16 @@ fun MusicTabScreen(
                 ) {
                     val library = section == MusicSection.Library
                     MusicFieldDivider()
+                    if (library) {
+                        val libraryState by MusicLibraryRepository.state.collectAsState()
+                        MusicFieldIconButton(
+                            icon = Icons.Rounded.Refresh,
+                            description = "Refresh all artists",
+                            active = false,
+                            enabled = libraryState.artists.isNotEmpty() && libraryState.working.isEmpty(),
+                            onClick = { MusicLibraryRepository.refreshAll() },
+                        )
+                    }
                     MusicFieldIconButton(
                         icon = Icons.Rounded.LibraryMusic,
                         description = if (library) "Back to search" else "Your library",
@@ -237,13 +247,6 @@ fun MusicTabScreen(
                     MusicGlassPill("Shelf", selected = libraryView == LibraryView.Shelf) { libraryView = LibraryView.Shelf }
                     MusicGlassPill("Constellation", selected = libraryView == LibraryView.Constellation) { libraryView = LibraryView.Constellation }
                     MusicGlassPill("Eras", selected = libraryView == LibraryView.Eras) { libraryView = LibraryView.Eras }
-                    Box(Modifier.padding(horizontal = 4.dp).size(width = 1.dp, height = 20.dp).background(NuvioGlass.EdgeColor))
-                    MusicGlassIconPill(
-                        icon = Icons.Rounded.Refresh,
-                        description = "Refresh all artists",
-                        enabled = libraryState.artists.isNotEmpty() && libraryState.working.isEmpty(),
-                        onClick = { MusicLibraryRepository.refreshAll() },
-                    )
                 }
                 // fork:music - the Constellation's thin spots: genres you tag but barely own, each a ladder into it.
                 if (libraryView == LibraryView.Constellation) {
@@ -434,45 +437,31 @@ private fun MusicFieldDivider() {
 
 /** A square icon button inside a [MusicGlassField]; tinted with the accent while [active]. */
 @Composable
-private fun MusicFieldIconButton(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
+private fun MusicFieldIconButton(
+    icon: ImageVector,
+    description: String,
+    active: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     val tokens = MaterialTheme.nuvio
     Box(
         modifier = Modifier
             .size(32.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (active) tokens.colors.accent.copy(alpha = 0.22f) else Color.Transparent)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = description,
-            tint = if (active) tokens.colors.accent else tokens.colors.textSecondary,
+            tint = when {
+                active -> tokens.colors.accent
+                enabled -> tokens.colors.textSecondary
+                else -> tokens.colors.textDisabled
+            },
             modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-/** A round glass button the size of a [MusicGlassPill], for an action beside the pills (Refresh). */
-@Composable
-private fun MusicGlassIconPill(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
-    val tokens = MaterialTheme.nuvio
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val keyFocused by interaction.collectIsFocusedAsState()
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .musicGlass(CircleShape, raised = hovered && enabled, keyFocused = keyFocused)
-            .hoverable(interaction)
-            .clickable(enabled = enabled, interactionSource = interaction, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = description,
-            tint = if (enabled) tokens.colors.textSecondary else tokens.colors.textDisabled,
-            modifier = Modifier.size(18.dp),
         )
     }
 }

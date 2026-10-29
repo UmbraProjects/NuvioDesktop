@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.foundation.layout.offset
+import com.nuvio.app.core.ui.ditheredBackground
+import com.nuvio.app.core.ui.NuvioGlass
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -103,6 +106,8 @@ internal fun MusicCornerCard(
     onOpenNowPlaying: () -> Unit = {},
     onCollapse: (() -> Unit)? = null,
     initiallyShown: Boolean = false,
+    /** The window's height, so a dragged card is kept inside it. */
+    areaHeight: Dp = Dp.Unspecified,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val reduced = rememberMusicReducedMotion()
@@ -134,140 +139,162 @@ internal fun MusicCornerCard(
             val fade = if (reduced) snap<Float>() else tween(400)
             val cardSource = remember { MutableInteractionSource() }
             val cardFocused by cardSource.collectIsFocusedAsState()
+            // fork:music - wherever the person dragged it, as wide as they made it.
+            val placement by MusicPlayback.cardPlacement.collectAsStateWithLifecycle()
+            val areaWidth = maxWidth
+            val frame = musicCornerFrame(areaWidth, areaHeight, MusicCornerCardHeight, cardWidth, placement)
             Box(
-                modifier = Modifier
-                    .padding(start = side, bottom = MusicBarBottomMargin)
-                    .width(cardWidth)
+                Modifier
+                    .padding(bottom = MusicBarBottomMargin)
+                    .offset(x = frame.left, y = frame.dy)
+                    .width(frame.width)
                     .height(MusicCornerCardHeight)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = shape,
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.55f),
-                        spotColor = Color.Black.copy(alpha = 0.55f),
-                    )
-                    .clip(shape)
-                    .background(colors.background)
-                    .background(ground)
-                    .border(
-                        if (cardFocused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-                        shape,
-                    )
-                    // With the card itself focused, Enter opens the full Now Playing view; its buttons keep their own keys.
-                    .focusable(interactionSource = cardSource)
-                    .onKeyEvent { event ->
-                        val enterKey = event.key == Key.Enter || event.key == Key.NumPadEnter
-                        if (cardFocused && enterKey && event.type == KeyEventType.KeyDown) {
-                            onOpenNowPlaying()
-                            true
-                        } else {
-                            false
-                        }
+                    .musicPlayerDrag(MusicPlayback.cardPlacement) {
+                        clampCornerPlacement(areaWidth, areaHeight, MusicCornerCardHeight, cardWidth, it)
                     },
             ) {
-                Row(Modifier.fillMaxSize().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(CornerCoverSize).clip(RoundedCornerShape(22.dp)).clickable(onClick = onOpenNowPlaying),
-                    ) {
-                        Crossfade(targetState = cover, animationSpec = fade, modifier = Modifier.fillMaxSize()) { url ->
-                            if (url != null) {
-                                NuvioAsyncImage(
-                                    model = url,
-                                    contentDescription = state.album?.title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .shadow(
+                            elevation = 16.dp,
+                            shape = shape,
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = 0.55f),
+                            spotColor = Color.Black.copy(alpha = 0.55f),
+                        )
+                        .clip(shape)
+                        // The app glass over its night base (it floats over the page, so the base is solid).
+                        .background(NuvioGlass.night(colors.background, colors.accent))
+                        .ditheredBackground(NuvioGlass.Fill, shape)
+                        .border(
+                            if (cardFocused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, NuvioGlass.EdgeColor),
+                            shape,
+                        )
+                        // With the card itself focused, Enter opens the full Now Playing view; its buttons keep their own keys.
+                        .focusable(interactionSource = cardSource)
+                        .onKeyEvent { event ->
+                            val enterKey = event.key == Key.Enter || event.key == Key.NumPadEnter
+                            if (cardFocused && enterKey && event.type == KeyEventType.KeyDown) {
+                                onOpenNowPlaying()
+                                true
                             } else {
-                                Box(Modifier.fillMaxSize().background(colors.surfaceElevated), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.MusicNote, null, tint = colors.textMuted, modifier = Modifier.size(56.dp))
+                                false
+                            }
+                        },
+                ) {
+                    Row(Modifier.fillMaxSize().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(CornerCoverSize).clip(RoundedCornerShape(22.dp)).clickable(onClick = onOpenNowPlaying),
+                        ) {
+                            Crossfade(targetState = cover, animationSpec = fade, modifier = Modifier.fillMaxSize()) { url ->
+                                if (url != null) {
+                                    NuvioAsyncImage(
+                                        model = url,
+                                        contentDescription = state.album?.title,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Box(Modifier.fillMaxSize().background(colors.surfaceElevated), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Rounded.MusicNote, null, tint = colors.textMuted, modifier = Modifier.size(56.dp))
+                                    }
                                 }
                             }
                         }
-                    }
-                    Spacer(Modifier.width(22.dp))
-                    Column(Modifier.weight(1f).fillMaxHeight()) {
-                        val notice = state.notice
-                        val line = BarLine(state.track?.title.orEmpty(), notice ?: subtitle(state), notice != null)
-                        AnimatedContent(
-                            targetState = line,
-                            modifier = Modifier.clickable(onClick = onOpenNowPlaying),
-                            transitionSpec = {
-                                if (reduced) EnterTransition.None togetherWith ExitTransition.None
-                                else fadeIn(tween(300, delayMillis = 100)) togetherWith fadeOut(tween(200))
-                            },
-                            label = "cornerLine",
-                        ) { text ->
-                            Column {
-                                Text(
-                                    text = text.title,
-                                    color = colors.textPrimary,
-                                    fontSize = 26.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = text.subtitle,
-                                    color = if (text.notice) colors.warning else colors.textSecondary,
-                                    fontSize = 20.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        // A fixed slot so the controls do not move when a track has no timed lyrics.
-                        Box(Modifier.fillMaxWidth().height(56.dp)) {
-                            val live = rememberLiveLyricLine(state)
+                        Spacer(Modifier.width(22.dp))
+                        Column(Modifier.weight(1f).fillMaxHeight()) {
+                            val notice = state.notice
+                            val line = BarLine(state.track?.title.orEmpty(), notice ?: subtitle(state), notice != null)
                             AnimatedContent(
-                                targetState = live,
+                                targetState = line,
+                                modifier = Modifier.clickable(onClick = onOpenNowPlaying),
                                 transitionSpec = {
                                     if (reduced) EnterTransition.None togetherWith ExitTransition.None
-                                    else fadeIn(tween(260)) togetherWith fadeOut(tween(160))
+                                    else fadeIn(tween(300, delayMillis = 100)) togetherWith fadeOut(tween(200))
                                 },
-                                label = "liveLyric",
+                                label = "cornerLine",
                             ) { text ->
-                                if (text != null) {
+                                Column {
                                     Text(
-                                        text = text,
-                                        color = colors.accent,
-                                        fontSize = 22.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 2,
+                                        text = text.title,
+                                        color = colors.textPrimary,
+                                        fontSize = 26.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = text.subtitle,
+                                        color = if (text.notice) colors.warning else colors.textSecondary,
+                                        fontSize = 20.sp,
+                                        maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            IconButton(onClick = { player.previous() }, modifier = Modifier.size(56.dp)) {
-                                Icon(Icons.Rounded.SkipPrevious, "Previous", tint = colors.textPrimary, modifier = Modifier.size(34.dp))
-                            }
-                            PlayRing(state, player)
-                            IconButton(onClick = { player.next() }, enabled = state.hasNext, modifier = Modifier.size(56.dp)) {
-                                Icon(
-                                    Icons.Rounded.SkipNext,
-                                    "Next",
-                                    tint = if (state.hasNext) colors.textPrimary else colors.textDisabled,
-                                    modifier = Modifier.size(34.dp),
-                                )
+                            Spacer(Modifier.height(8.dp))
+                            // A fixed slot so the controls do not move when a track has no timed lyrics.
+                            Box(Modifier.fillMaxWidth().height(56.dp)) {
+                                val live = rememberLiveLyricLine(state)
+                                AnimatedContent(
+                                    targetState = live,
+                                    transitionSpec = {
+                                        if (reduced) EnterTransition.None togetherWith ExitTransition.None
+                                        else fadeIn(tween(260)) togetherWith fadeOut(tween(160))
+                                    },
+                                    label = "liveLyric",
+                                ) { text ->
+                                    if (text != null) {
+                                        Text(
+                                            text = text,
+                                            color = colors.accent,
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
                             }
                             Spacer(Modifier.weight(1f))
-                            MoreButton(open = moreOpen, onToggle = { moreOpen = !moreOpen }) {
-                                MorePanel(
-                                    state = state,
-                                    player = player,
-                                    videoView = MusicVideoView.Bar,
-                                    onCollapse = onCollapse,
-                                    onOpenNowPlaying = onOpenNowPlaying,
-                                    onSetVideoView = {},
-                                    onDismiss = { moreOpen = false },
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(onClick = { player.previous() }, modifier = Modifier.size(56.dp)) {
+                                    Icon(Icons.Rounded.SkipPrevious, "Previous", tint = colors.textPrimary, modifier = Modifier.size(34.dp))
+                                }
+                                PlayRing(state, player)
+                                IconButton(onClick = { player.next() }, enabled = state.hasNext, modifier = Modifier.size(56.dp)) {
+                                    Icon(
+                                        Icons.Rounded.SkipNext,
+                                        "Next",
+                                        tint = if (state.hasNext) colors.textPrimary else colors.textDisabled,
+                                        modifier = Modifier.size(34.dp),
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
+                                MoreButton(open = moreOpen, onToggle = { moreOpen = !moreOpen }) {
+                                    MorePanel(
+                                        state = state,
+                                        player = player,
+                                        videoView = MusicVideoView.Bar,
+                                        onCollapse = onCollapse,
+                                        onOpenNowPlaying = onOpenNowPlaying,
+                                        onSetVideoView = {},
+                                        onDismiss = { moreOpen = false },
+                                    )
+                                }
                             }
                         }
                     }
                 }
+                MusicResizeGrip(
+                    placement = MusicPlayback.cardPlacement,
+                    currentWidth = frame.width,
+                    minWidth = MusicCornerMinWidth,
+                    maxWidth = minOf(MusicCornerMaxWidth, areaWidth),
+                    centred = false,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                )
             }
         }
     }
