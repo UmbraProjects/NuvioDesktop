@@ -31,6 +31,13 @@ internal const val MAX_DIAL_START = 0.5
 
 /** How hard a miss on the rung's purity counts against proximity. A miss of the whole pool range costs this much. */
 internal const val PURITY_FIT_PENALTY = 3.0
+/**
+ * Imaginary votes for other genres added to every candidate's tag total before purity is read, so a single tag vote
+ * for the genre no longer counts as 100% pure (from the 2026-10-29 "Into boogie" log: a 1-vote artist took the top
+ * rung and beat real boogie acts by 3 x a 0.6 purity miss). Rungs, misses and the climb order all use this adjusted
+ * purity; [LadderPoolStats] and the eligibility bar still use the plain share ([RungPick.rawPurity] keeps it).
+ */
+internal const val PURITY_PRIOR_VOTES = 3.0
 internal const val PLAYABLE_BONUS = 0.1
 internal const val FANS_BONUS = 0.05
 private const val FANS_FOR_FULL_BONUS = 8.0 // log10 of 100 million fans
@@ -128,6 +135,8 @@ internal data class RungPick(
     val flavour: Double,
     /** All the genre votes the artist has, once variants are merged: how much evidence sits behind the purity. */
     val tagVotes: Int,
+    /** The plain share of the artist's genre votes that are the target's, before [PURITY_PRIOR_VOTES] is applied. */
+    val rawPurity: Double = 0.0,
     /** The two best candidates it beat for the slot, with their scores. */
     val runnersUp: List<String>,
 )
@@ -157,6 +166,8 @@ private class Scored(
     val profile: TagProfile,
     val purity: Double,
     val proximity: Double,
+    /** The plain share, for the eligibility bar and the pool statistics. */
+    val raw: Double = purity,
     val flavourFit: Double = 0.0,
     val eraFit: Double = 0.0,
 ) {
@@ -212,16 +223,18 @@ internal fun buildLadder(
     val unowned = distinct.filter { it.id !in ownedIds && genreKey(it.name) !in ownedNames }
     val scored = unowned
         .mapNotNull { c ->
-            val p = purity(c.votes, targetKey)
-            if (p <= 0.0) return@mapNotNull null
+            val raw = purity(c.votes, targetKey)
+            if (raw <= 0.0) return@mapNotNull null
+            val p = shrunkPurity(c.votes, targetKey, PURITY_PRIOR_VOTES)
             val profile = tagProfileFromVotes(c.votes, c.mood, c.style)
             Scored(
                 c, profile, p, if (cold) 0.0 else proximity(profile, me, excluded),
+                raw = raw,
                 flavourFit = if (recordSound.isEmpty()) 0.0 else proximity(profile, recordSound, excluded),
                 eraFit = eraFit(c.beginYear, record?.year),
             )
         }
-    val eligible = scored.filter { it.purity >= MIN_PURITY }.ifEmpty { scored }
+    val eligible = scored.filter { it.raw >= MIN_PURITY }.ifEmpty { scored }
     val count = minOf(rungs.coerceAtLeast(1), eligible.size)
     val start = dial.coerceIn(0.0, 1.0) * MAX_DIAL_START
     val poolStats = LadderPoolStats(
@@ -230,9 +243,9 @@ internal fun buildLadder(
         offGenre = unowned.size - scored.size,
         scored = scored.size,
         eligible = eligible.size,
-        purityMin = two(eligible.minOfOrNull { it.purity } ?: 0.0),
-        purityMedian = two(eligible.map { it.purity }.sorted().let { if (it.isEmpty()) 0.0 else quantile(it, 0.5) }),
-        purityMax = two(eligible.maxOfOrNull { it.purity } ?: 0.0),
+        purityMin = two(eligible.minOfOrNull { it.raw } ?: 0.0),
+        purityMedian = two(eligible.map { it.raw }.sorted().let { if (it.isEmpty()) 0.0 else quantile(it, 0.5) }),
+        purityMax = two(eligible.maxOfOrNull { it.raw } ?: 0.0),
         dial = dial.coerceIn(0.0, 1.0),
         start = start,
     )
@@ -268,6 +281,7 @@ internal fun buildLadder(
             bonus = two(bonuses(best.candidate)),
             flavour = two(best.flavourScore),
             tagVotes = totalTagVotes(best.candidate.votes),
+            rawPurity = two(best.raw),
             runnersUp = remaining.filter { it !== best }
                 .sortedByDescending { fitOf(it, rungTarget) }
                 .take(2)

@@ -20,7 +20,7 @@ internal fun ladderDebugLines(ladder: Ladder, title: String? = null): List<Strin
         lines += "Purity of those: min ${pool.purityMin}, median ${pool.purityMedian}, max ${pool.purityMax} | " +
             "dial ${pool.dial}, first rung starts ${pool.start} of the way up"
     }
-    lines += "Weights: fit penalty $PURITY_FIT_PENALTY, playable bonus $PLAYABLE_BONUS, fans bonus up to $FANS_BONUS"
+    lines += "Weights: purity prior $PURITY_PRIOR_VOTES votes, fit penalty $PURITY_FIT_PENALTY, playable bonus $PLAYABLE_BONUS, fans bonus up to $FANS_BONUS"
     if (ladder.rungs.isEmpty()) lines += "No rungs."
     for (rung in ladder.rungs) {
         val pick = rung.pick
@@ -28,7 +28,7 @@ internal fun ladderDebugLines(ladder: Ladder, title: String? = null): List<Strin
         lines += "${rung.step}. ${rung.candidate.name} | purity ${two(rung.purity)} | proximity ${two(rung.proximity)}" +
             (pick?.let { " | tag votes ${it.tagVotes}" }.orEmpty()) + thin
         if (pick != null) {
-            lines += "   slot ${pick.slot} wanted purity ${pick.rungTarget}, missed by ${pick.miss} of the range | fit ${pick.fit} = " +
+            lines += "   slot ${pick.slot} wanted adjusted purity ${pick.rungTarget} (this one ${two(rung.purity)}, plain share ${pick.rawPurity}), missed by ${pick.miss} of the range | fit ${pick.fit} = " +
                 "proximity ${two(rung.proximity)} + flavour ${pick.flavour} + bonus ${pick.bonus} - $PURITY_FIT_PENALTY x miss ${pick.miss}"
             if (pick.runnersUp.isNotEmpty()) lines += "   beat: ${pick.runnersUp.joinToString(", ")}"
         } else {

@@ -219,4 +219,14 @@ class LadderModelTest {
     }
 
     // endregion
+
+    @Test
+    fun shrunkPurityCountsTheEvidence() {
+        val one = mapOf("shoegaze" to 1)
+        val forty = mapOf("shoegaze" to 40)
+        near(1.0, shrunkPurity(one, "shoegaze", 0.0))
+        near(0.25, shrunkPurity(one, "shoegaze", 3.0))
+        assertTrue(shrunkPurity(forty, "shoegaze", 3.0) > 0.9)
+        near(0.0, shrunkPurity(emptyMap(), "shoegaze", 3.0))
+    }
 }

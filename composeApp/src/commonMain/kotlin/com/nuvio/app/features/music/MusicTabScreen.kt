@@ -2,6 +2,9 @@ package com.nuvio.app.features.music
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints // fork:music
+import androidx.compose.foundation.layout.Row // fork:music
+import androidx.compose.foundation.layout.fillMaxHeight // fork:music
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +41,11 @@ import com.nuvio.app.features.music.library.MusicLadderScreen // fork:music
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.ladderOffers // fork:music
 import com.nuvio.app.features.music.library.MusicLibraryShelf
+import com.nuvio.app.features.music.library.SPLIT_RESULTS_SHARE // fork:music
+import com.nuvio.app.features.music.library.PreviewRowFrame // fork:music
+import com.nuvio.app.features.music.library.SearchPreviewPane // fork:music
+import com.nuvio.app.features.music.library.SearchPreviewTarget // fork:music
+import com.nuvio.app.features.music.library.isSplitView // fork:music
 import com.nuvio.app.features.music.library.SearchStartView // fork:music
 import com.nuvio.app.features.music.library.LadderProgressStore // fork:music
 import com.nuvio.app.features.music.library.continueCards // fork:music
@@ -195,8 +203,18 @@ fun MusicTabScreen(
             }
         }
 
+        // fork:music - search split view: the row under focus or the pointer is previewed beside the list
+        var previewId by remember(results) { mutableStateOf<String?>(null) }
+        val previewTarget: SearchPreviewTarget? = when (val r = results) {
+            is MusicSearchResults.Albums ->
+                (r.items.firstOrNull { it.browseId == previewId } ?: r.items.firstOrNull())?.let { SearchPreviewTarget.Album(it) }
+            is MusicSearchResults.Artists ->
+                (r.items.firstOrNull { it.browseId == previewId } ?: r.items.firstOrNull())?.let { SearchPreviewTarget.Artist(it) }
+            else -> null
+        }
+        val resultsList: @Composable (Modifier) -> Unit = { listModifier ->
         LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = listModifier,
             contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 24.dp),
         ) {
             when (val shown = results) {
@@ -218,15 +236,37 @@ fun MusicTabScreen(
                         LadderOfferRow(ladderOffers(query, null, ref), onPick = { ladder = it })
                     }
                     items(shown.items) { album ->
-                        MusicAlbumRow(album, showArtist = true, onClick = { onAlbumClick(album.browseId) })
+                        PreviewRowFrame(previewTarget?.id == album.browseId, { previewId = album.browseId }) { rowModifier -> // fork:music
+                            MusicAlbumRow(album, showArtist = true, onClick = { onAlbumClick(album.browseId) }, modifier = rowModifier)
+                        }
                     }
                 }
                 is MusicSearchResults.Artists -> {
                     item { LadderOfferRow(ladderOffers(query, shown.items.firstOrNull()?.name), onPick = { ladder = it }) } // fork:music
                     items(shown.items) { artist ->
-                        MusicArtistRow(artist, onClick = { onArtistClick(artist.browseId) })
+                        PreviewRowFrame(previewTarget?.id == artist.browseId, { previewId = artist.browseId }) { rowModifier -> // fork:music
+                            MusicArtistRow(artist, onClick = { onArtistClick(artist.browseId) }, modifier = rowModifier)
+                        }
                     }
                 }
+            }
+        }
+        }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) { // fork:music
+            if (previewTarget != null && isSplitView(maxWidth.value)) {
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxHeight().weight(SPLIT_RESULTS_SHARE)) { resultsList(Modifier.fillMaxSize()) }
+                    SearchPreviewPane(
+                        target = previewTarget,
+                        catalog = catalog,
+                        onOpenArtist = onArtistClick,
+                        onOpenAlbum = onAlbumClick,
+                        onLadder = { ladder = it },
+                        modifier = Modifier.fillMaxHeight().weight(1f - SPLIT_RESULTS_SHARE),
+                    )
+                }
+            } else {
+                resultsList(Modifier.fillMaxSize())
             }
         }
     }

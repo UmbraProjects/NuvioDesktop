@@ -230,4 +230,23 @@ class LadderBuilderTest {
         assertTrue(ladder.rungs.all { it.why.isNotBlank() })
         assertTrue(ladder.rungs.all { it.anchorName == null })
     }
+
+    @Test
+    fun aSingleTagVoteDoesNotTakeTheTopRung() {
+        // From the "Into boogie" debug log: a 1-vote artist read as 100% pure and beat the real core acts for rung 5.
+        val thin = cand("OneVote", mapOf("shoegaze" to 1))
+        val real = pool + thin
+        val ladder = buildLadder("shoegaze", me, real)
+        assertFalse(ladder.rungs.last().candidate.id == "OneVote")
+        assertEquals(ladder.rungs.map { it.purity }.sorted(), ladder.rungs.map { it.purity })
+    }
+
+    @Test
+    fun evidenceAdjustedPurityIsBelowThePlainShareAndRecordsIt() {
+        val ladder = buildLadder("shoegaze", me, pool)
+        ladder.rungs.forEach { rung ->
+            val pick = rung.pick!!
+            assertTrue(rung.purity < pick.rawPurity, "${rung.candidate.id}: ${rung.purity} vs ${pick.rawPurity}")
+        }
+    }
 }
