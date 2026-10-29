@@ -34,8 +34,9 @@ class LadderDebugTest {
     @Test
     fun fansStillComeBeforeTagVotes() {
         val twins = listOf(
-            cand("a-many-votes", mapOf("shoegaze" to 80), fans = 10),
-            cand("z-many-fans", mapOf("shoegaze" to 1), fans = 9_000_000),
+            // Equal adjusted purity (2 / (11 + 3) = 1 / (4 + 3)), so only the fans bonus tells them apart.
+            cand("a-many-votes", mapOf("shoegaze" to 2, "dream pop" to 9), fans = 10),
+            cand("z-many-fans", mapOf("shoegaze" to 1, "dream pop" to 3), fans = 9_000_000),
         )
         assertEquals("z-many-fans", buildLadder("shoegaze", emptyList(), twins, rungs = 1).rungs.single().candidate.id)
     }

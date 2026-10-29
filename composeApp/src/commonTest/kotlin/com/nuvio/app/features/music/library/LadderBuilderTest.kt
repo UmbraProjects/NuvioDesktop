@@ -249,4 +249,23 @@ class LadderBuilderTest {
             assertTrue(rung.purity < pick.rawPurity, "${rung.candidate.id}: ${rung.purity} vs ${pick.rawPurity}")
         }
     }
+
+    @Test
+    fun aThinTaggedArtistIsLeftOutWhileEnoughSturdyOnesRemain() {
+        // From the "Out from Ed Sheeran" log: 2 votes, all for the genre, still won the top rung.
+        val ladder = buildLadder("shoegaze", me, pool + cand("Thin", mapOf("shoegaze" to 2)))
+        assertFalse(ladder.rungs.any { it.candidate.id == "Thin" })
+        assertEquals(buildLadder("shoegaze", me, pool).rungs.map { it.candidate.id }, ladder.rungs.map { it.candidate.id })
+    }
+
+    @Test
+    fun thinTaggedArtistsFillTheRungsWhenTooFewSturdyOnesExist() {
+        val sparse = listOf(
+            cand("Solid", mapOf("shoegaze" to 6, "dream pop" to 4)),
+            cand("T1", mapOf("shoegaze" to 2)),
+            cand("T2", mapOf("shoegaze" to 1)),
+        )
+        val ladder = buildLadder("shoegaze", me, sparse, rungs = 3)
+        assertEquals(3, ladder.rungs.size)
+    }
 }

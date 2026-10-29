@@ -38,6 +38,14 @@ internal const val PURITY_FIT_PENALTY = 3.0
  * purity; [LadderPoolStats] and the eligibility bar still use the plain share ([RungPick.rawPurity] keeps it).
  */
 internal const val PURITY_PRIOR_VOTES = 3.0
+
+/**
+ * Candidates with fewer genre votes than this are left out while at least `rungs` better-evidenced ones remain (from the
+ * 2026-10-29 "Out from Ed Sheeran" log: a 2-vote artist, 100% folk pop, still took the top rung after the prior, because
+ * the top rung aims at the pool's best adjusted purity and a thin artist can hold it). When too few sturdy candidates
+ * exist the thin ones fill the gaps, so a sparse pool still gives a ladder.
+ */
+internal const val MIN_TAG_VOTES = 3
 internal const val PLAYABLE_BONUS = 0.1
 internal const val FANS_BONUS = 0.05
 private const val FANS_FOR_FULL_BONUS = 8.0 // log10 of 100 million fans
@@ -234,7 +242,9 @@ internal fun buildLadder(
                 eraFit = eraFit(c.beginYear, record?.year),
             )
         }
-    val eligible = scored.filter { it.raw >= MIN_PURITY }.ifEmpty { scored }
+    val aboveBar = scored.filter { it.raw >= MIN_PURITY }.ifEmpty { scored }
+    val sturdy = aboveBar.filter { totalTagVotes(it.candidate.votes) >= MIN_TAG_VOTES }
+    val eligible = if (sturdy.size >= rungs.coerceAtLeast(1)) sturdy else aboveBar
     val count = minOf(rungs.coerceAtLeast(1), eligible.size)
     val start = dial.coerceIn(0.0, 1.0) * MAX_DIAL_START
     val poolStats = LadderPoolStats(

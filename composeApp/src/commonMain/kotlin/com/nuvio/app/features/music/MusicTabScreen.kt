@@ -56,9 +56,25 @@ import com.nuvio.app.features.music.library.startIsEmpty // fork:music
 import com.nuvio.app.features.music.library.startArt // fork:music
 import com.nuvio.app.features.search.SearchHistoryRepository // fork:music
 import androidx.compose.runtime.collectAsState // fork:music
+import kotlinx.coroutines.async // fork:music
+import kotlinx.coroutines.coroutineScope // fork:music
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch // fork:music
+import androidx.compose.foundation.lazy.rememberLazyListState // fork:music
+import androidx.compose.runtime.rememberCoroutineScope // fork:music
+import com.nuvio.app.features.music.library.GROUPED_ALBUMS_SHOWN // fork:music
+import com.nuvio.app.features.music.library.GROUPED_ARTISTS_SHOWN // fork:music
+import com.nuvio.app.features.music.library.LadderOfferCard // fork:music
+import com.nuvio.app.features.music.library.SearchSection // fork:music
+import com.nuvio.app.features.music.library.SectionChips // fork:music
+import com.nuvio.app.features.music.library.SectionHeader // fork:music
+import com.nuvio.app.features.music.library.SeeAllRow // fork:music
+import com.nuvio.app.features.music.library.currentSection // fork:music
+import com.nuvio.app.features.music.library.groupedLadderOffers // fork:music
+import com.nuvio.app.features.music.library.sectionSlots // fork:music
+import com.nuvio.app.features.music.library.showsChips // fork:music
 
-private enum class MusicSearchKind { Albums, Artists }
+private enum class MusicSearchKind { All, Albums, Artists } // fork:music - All is the grouped view
 
 private enum class MusicSection { Search, Library }
 
@@ -68,6 +84,7 @@ private sealed interface MusicSearchResults {
     data object Empty : MusicSearchResults
     data class Albums(val items: List<MusicAlbumSummary>) : MusicSearchResults
     data class Artists(val items: List<MusicArtistSummary>) : MusicSearchResults
+    data class Grouped(val artists: List<MusicArtistSummary>, val albums: List<MusicAlbumSummary>) : MusicSearchResults // fork:music
 }
 
 private const val MIN_QUERY_LENGTH = 2
@@ -91,7 +108,7 @@ fun MusicTabScreen(
 ) {
     val colors = MaterialTheme.nuvio.colors
     var query by rememberSaveable { mutableStateOf("") }
-    var kind by rememberSaveable { mutableStateOf(MusicSearchKind.Albums) }
+    var kind by rememberSaveable { mutableStateOf(MusicSearchKind.All) }
     // Opens on the shelf when the person has saved artists, and on Search when there is nothing to show
     // yet. Loading is synchronous and cheap, so the first frame is already the right one. A choice made
     // here is remembered, so coming back to the tab lands where the person left it.
@@ -114,6 +131,13 @@ fun MusicTabScreen(
         results = MusicSearchResults.Loading
         delay(TYPING_PAUSE_MS)
         results = when (kind) {
+            MusicSearchKind.All -> coroutineScope { // fork:music - both kinds at once, shown as sections
+                val artists = async { runCatching { catalog.searchArtists(q) }.getOrDefault(emptyList()) }
+                val albums = async { runCatching { catalog.searchAlbums(q) }.getOrDefault(emptyList()) }
+                val a = artists.await()
+                val b = albums.await()
+                if (a.isEmpty() && b.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Grouped(a, b)
+            }
             MusicSearchKind.Albums -> catalog.searchAlbums(q).let {
                 if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Albums(it)
             }
@@ -167,7 +191,7 @@ fun MusicTabScreen(
                 )
                 Spacer(Modifier.height(12.dp))
                 MusicSegmented(
-                    options = listOf(MusicSearchKind.Albums to "Albums", MusicSearchKind.Artists to "Artists"),
+                    options = listOf(MusicSearchKind.All to "All", MusicSearchKind.Albums to "Albums", MusicSearchKind.Artists to "Artists"),
                     selected = kind,
                     onSelect = { kind = it },
                 )
@@ -210,11 +234,42 @@ fun MusicTabScreen(
                 (r.items.firstOrNull { it.browseId == previewId } ?: r.items.firstOrNull())?.let { SearchPreviewTarget.Album(it) }
             is MusicSearchResults.Artists ->
                 (r.items.firstOrNull { it.browseId == previewId } ?: r.items.firstOrNull())?.let { SearchPreviewTarget.Artist(it) }
+            is MusicSearchResults.Grouped ->
+                r.artists.firstOrNull { it.browseId == previewId }?.let { SearchPreviewTarget.Artist(it) }
+                    ?: r.albums.firstOrNull { it.browseId == previewId }?.let { SearchPreviewTarget.Album(it) }
+                    ?: r.artists.firstOrNull()?.let { SearchPreviewTarget.Artist(it) }
+                    ?: r.albums.firstOrNull()?.let { SearchPreviewTarget.Album(it) }
             else -> null
         }
+        // fork:music - grouped results: Ladder, Artists and Albums as sections with jump chips
+        val grouped = results as? MusicSearchResults.Grouped
+        val groupedOffers = remember(query, grouped) { grouped?.let { groupedLadderOffers(query.trim(), it.artists, it.albums) }.orEmpty() }
+        val slots = remember(groupedOffers, grouped) { grouped?.let { sectionSlots(groupedOffers.size, it.artists.size, it.albums.size) }.orEmpty() }
+        val listState = rememberLazyListState()
+        val listScope = rememberCoroutineScope()
+        LaunchedEffect(results) { listState.scrollToItem(0) }
+        val artistRow: @Composable (MusicArtistSummary) -> Unit = { artist ->
+            PreviewRowFrame(previewTarget?.id == artist.browseId, { previewId = artist.browseId }) { rowModifier ->
+                MusicArtistRow(artist, onClick = { onArtistClick(artist.browseId) }, modifier = rowModifier)
+            }
+        }
+        val albumRow: @Composable (MusicAlbumSummary) -> Unit = { album ->
+            PreviewRowFrame(previewTarget?.id == album.browseId, { previewId = album.browseId }) { rowModifier ->
+                MusicAlbumRow(album, showArtist = true, onClick = { onAlbumClick(album.browseId) }, modifier = rowModifier)
+            }
+        }
         val resultsList: @Composable (Modifier) -> Unit = { listModifier ->
+        Column(listModifier) {
+        if (showsChips(slots)) {
+            SectionChips(
+                slots = slots,
+                current = currentSection(slots, listState.firstVisibleItemIndex),
+                onJump = { slot -> listScope.launch { listState.animateScrollToItem(slot.headerIndex) } },
+            )
+        }
         LazyColumn(
-            modifier = listModifier,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            state = listState,
             contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 24.dp),
         ) {
             when (val shown = results) {
@@ -229,27 +284,40 @@ fun MusicTabScreen(
                 MusicSearchResults.Empty -> item {
                     MusicMessage("Nothing found. Check the spelling, or YouTube Music may be unreachable.")
                 }
+                is MusicSearchResults.Grouped -> { // fork:music - item order must match sectionSlots
+                    if (groupedOffers.isNotEmpty()) {
+                        item { SectionHeader(SearchSection.Ladder.label) }
+                        items(groupedOffers) { offer -> LadderOfferCard(offer, onPick = { ladder = offer.request }) }
+                    }
+                    if (shown.artists.isNotEmpty()) {
+                        item { SectionHeader(SearchSection.Artists.label) }
+                        items(shown.artists.take(GROUPED_ARTISTS_SHOWN)) { artistRow(it) }
+                        if (shown.artists.size > GROUPED_ARTISTS_SHOWN) {
+                            item { SeeAllRow("See all ${shown.artists.size} artists", onClick = { kind = MusicSearchKind.Artists }) }
+                        }
+                    }
+                    if (shown.albums.isNotEmpty()) {
+                        item { SectionHeader(SearchSection.Albums.label) }
+                        items(shown.albums.take(GROUPED_ALBUMS_SHOWN)) { albumRow(it) }
+                        if (shown.albums.size > GROUPED_ALBUMS_SHOWN) {
+                            item { SeeAllRow("See all ${shown.albums.size} albums", onClick = { kind = MusicSearchKind.Albums }) }
+                        }
+                    }
+                }
                 is MusicSearchResults.Albums -> {
                     item { // fork:music - the first record's ladder offers
                         val first = shown.items.firstOrNull()
                         val ref = first?.let { f -> f.artists.firstOrNull()?.name?.let { LadderAlbumRef(f.title, it, f.year) } }
                         LadderOfferRow(ladderOffers(query, null, ref), onPick = { ladder = it })
                     }
-                    items(shown.items) { album ->
-                        PreviewRowFrame(previewTarget?.id == album.browseId, { previewId = album.browseId }) { rowModifier -> // fork:music
-                            MusicAlbumRow(album, showArtist = true, onClick = { onAlbumClick(album.browseId) }, modifier = rowModifier)
-                        }
-                    }
+                    items(shown.items) { albumRow(it) }
                 }
                 is MusicSearchResults.Artists -> {
                     item { LadderOfferRow(ladderOffers(query, shown.items.firstOrNull()?.name), onPick = { ladder = it }) } // fork:music
-                    items(shown.items) { artist ->
-                        PreviewRowFrame(previewTarget?.id == artist.browseId, { previewId = artist.browseId }) { rowModifier -> // fork:music
-                            MusicArtistRow(artist, onClick = { onArtistClick(artist.browseId) }, modifier = rowModifier)
-                        }
-                    }
+                    items(shown.items) { artistRow(it) }
                 }
             }
+        }
         }
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) { // fork:music

@@ -16,7 +16,7 @@ internal fun ladderDebugLines(ladder: Ladder, title: String? = null): List<Strin
         lines += "No build details: this ladder was kept from an earlier build."
     } else {
         lines += "Pool: ${pool.candidates} candidates, ${pool.owned} already saved, ${pool.offGenre} not of the genre, " +
-            "${pool.scored} scored, ${pool.eligible} at purity ${MIN_PURITY} or more"
+            "${pool.scored} scored, ${pool.eligible} eligible (purity ${MIN_PURITY} or more, ${MIN_TAG_VOTES}+ tag votes while enough have them)"
         lines += "Purity of those: min ${pool.purityMin}, median ${pool.purityMedian}, max ${pool.purityMax} | " +
             "dial ${pool.dial}, first rung starts ${pool.start} of the way up"
     }

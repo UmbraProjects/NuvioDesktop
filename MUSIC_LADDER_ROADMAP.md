@@ -222,3 +222,12 @@ Read from a real "Into boogie" debug log (100 candidates, 34 scored, 21 eligible
 - **Screen:** the rung's purity meter now shows the adjusted value, a little lower than the plain share for thin artists.
 - **To check from the next log:** the top rung should be a multi-vote artist; if rungs 1 to 4 are still flat (0.17 to 0.33), that is the pool (most boogie candidates carry boogie as a minor tag), and the next lever is the quantile spread, not the prior. Tune `PURITY_PRIOR_VOTES` between 2 and 5.
 - Tests: `shrunkPurityCountsTheEvidence`, `aSingleTagVoteDoesNotTakeTheTopRung`, `evidenceAdjustedPurityIsBelowThePlainShareAndRecordsIt`.
+
+### Second log: thin tags still reach the top rung (2026-10-29; not built with Gradle yet)
+
+"Out from Ed Sheeran" (target folk pop; 87 scored, 32 eligible; plain purity median 0.33, max 1.0). The prior helped (rung 5 showed adjusted 0.4 against a plain 1.0) but rung 5 was still トワ・エ・モワ: **2 tag votes**, proximity 0.0, fit 0.1. The top rung aims at the pool's best adjusted purity, and 2 of 2 is 0.4 (2 / (2 + 3)), above what real folk pop acts reach when their votes are spread over several genres (Noah Kahan -0.03 and The Seekers -0.41 lost the slot on the miss penalty).
+
+- **Change:** `MIN_TAG_VOTES = 3` (`LadderBuilder.kt`). Candidates with fewer genre votes are not eligible while at least `rungs` candidates with 3 or more remain; with fewer sturdy ones, the thin ones fill in as before. The F3 pool line says so.
+- **Test change:** `fansStillComeBeforeTagVotes` now uses two artists with equal adjusted purity (the old pair of 80 votes against 1 vote is no longer a tie, nor eligible together). New: `aThinTaggedArtistIsLeftOutWhileEnoughSturdyOnesRemain`, `thinTaggedArtistsFillTheRungsWhenTooFewSturdyOnesExist`.
+- **Not fixed (the pool, not the scoring):** rungs 1 to 4 are 中島みゆき, 劉文正, אסתר עופרים and Jewel. MusicBrainz's "folk pop" tag is worldwide, and tag similarity to Ed Sheeran is high for all of them (proximity 0.63 to 0.95), so they are correct by the ladder's own measure. Country or language affinity would need a new signal (the artist's MusicBrainz area is already stored on `LibraryArtist.country`); that is a design choice for you, not a tuning knob.
+- **Miss penalty:** with the purity range this narrow (0.11 to 0.4) a 0.1 purity miss costs about 1.0 of fit, more than most proximity differences. If the top rung is still a poor match after this change, lower `PURITY_FIT_PENALTY` (3.0) toward 1.5.
