@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.features.preroll.PreshowSettings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -628,6 +629,7 @@ internal fun AiConsentDialog(target: AiConsentTarget?, onDismiss: () -> Unit) {
                         AiConsentTarget.Rows -> DiscoverAiSettingsRepository.setEnabled(true)
                         AiConsentTarget.Recap -> DiscoverAiSettingsRepository.setRecapEnabled(true)
                         AiConsentTarget.Trivia -> DiscoverAiSettingsRepository.setTriviaEnabled(true)
+                        AiConsentTarget.PostShow -> PreshowSettings.setPostShowEnabled(true)
                     }
                 },
             ) { Text(stringResource(Res.string.settings_discover_ai_consent_accept)) }
@@ -651,7 +653,7 @@ internal fun AiConsentDialog(target: AiConsentTarget?, onDismiss: () -> Unit) {
 }
 
 /** Which switch opened the shared consent dialog. */
-internal enum class AiConsentTarget { Rows, Recap, Trivia }
+internal enum class AiConsentTarget { Rows, Recap, Trivia, PostShow }
 
 /** Each failure says what to do about it — they need different things from the user. */
 internal suspend fun discoverAiErrorMessage(error: Throwable): String =

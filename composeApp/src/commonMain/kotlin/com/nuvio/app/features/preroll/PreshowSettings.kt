@@ -89,6 +89,13 @@ object PreshowSettings {
      */
     val musicKeepAudioAlive: StateFlow<Boolean> = _musicKeepAudioAlive.asStateFlow()
 
+    private val _postShowEnabled = MutableStateFlow(storage.load("postshow_enabled") == "true")
+    /**
+     * Cards after the film's credits start, with the video shrunk into a corner. Its own switch,
+     * off until chosen: it spends requests on the viewer's own AI key.
+     */
+    val postShowEnabled: StateFlow<Boolean> = _postShowEnabled.asStateFlow()
+
     private val _localFolder = MutableStateFlow(storage.load("local_folder").orEmpty())
     /** Blank means the default folder inside the app's data directory. */
     val localFolder: StateFlow<String> = _localFolder.asStateFlow()
@@ -133,6 +140,12 @@ object PreshowSettings {
         if (_musicKeepAudioAlive.value == enabled) return
         _musicKeepAudioAlive.value = enabled
         storage.save("music_keep_audio_alive", if (enabled) "true" else null)
+    }
+
+    fun setPostShowEnabled(enabled: Boolean) {
+        if (_postShowEnabled.value == enabled) return
+        _postShowEnabled.value = enabled
+        storage.save("postshow_enabled", if (enabled) "true" else null)
     }
 
     fun setLocalFolder(path: String) {

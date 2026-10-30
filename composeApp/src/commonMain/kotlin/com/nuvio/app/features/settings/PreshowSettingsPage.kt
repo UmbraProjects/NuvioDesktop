@@ -206,6 +206,34 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
     }
 
     item {
+        SettingsSection(title = "Post-show", isTablet = isTablet) {
+            val ai by DiscoverAiSettingsRepository.uiState.collectAsStateWithLifecycle()
+            val postShow by PreshowSettings.postShowEnabled.collectAsStateWithLifecycle()
+            var consentPromptFor by remember { mutableStateOf<AiConsentTarget?>(null) }
+            val description = "When a film's credits start, the video moves to a corner and cards look back at what you " +
+                "just watched: what the ending meant, hidden details, and a short quiz. Uses your AI key." +
+                if (ai.isConfigured) "" else "\nNeeds an AI provider and key set up under Discover AI."
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Post-show cards",
+                    description = description,
+                    checked = postShow,
+                    isTablet = isTablet,
+                    onCheckedChange = { wanted ->
+                        when {
+                            !wanted -> PreshowSettings.setPostShowEnabled(false)
+                            // Same rule as the trivia switch: consent is only asked when there is a key to send.
+                            ai.apiKey.isNotBlank() && !ai.consentGiven -> consentPromptFor = AiConsentTarget.PostShow
+                            else -> PreshowSettings.setPostShowEnabled(true)
+                        }
+                    },
+                )
+            }
+            AiConsentDialog(target = consentPromptFor, onDismiss = { consentPromptFor = null })
+        }
+    }
+
+    item {
         SettingsSection(
             title = stringResource(Res.string.settings_theme_song_section),
             isTablet = isTablet,
