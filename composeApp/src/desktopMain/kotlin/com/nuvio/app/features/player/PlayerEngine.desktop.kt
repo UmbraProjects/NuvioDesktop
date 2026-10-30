@@ -3,14 +3,19 @@ package com.nuvio.app.features.player
 import com.nuvio.app.core.i18n.localizedString
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,7 +50,10 @@ import com.nuvio.app.features.player.desktop.DesktopCustomShaders
 import com.nuvio.app.features.player.desktop.DesktopWindowGeometryDiagnostics
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
+import com.nuvio.app.features.player.desktop.DesktopPostShowSpike
+import com.nuvio.app.features.player.desktop.PostShowSpikeCard
 import com.nuvio.app.features.player.desktop.NativePlayerController
+import com.nuvio.app.features.preroll.postShowSpikeActive
 import com.nuvio.app.features.input.GamepadContext
 import com.nuvio.app.features.screensaver.DesktopScreensaver
 import com.nuvio.app.features.player.desktop.NativePlayerHost
@@ -189,6 +197,21 @@ private fun NativePlayerSurface(
     val lastKnownPositionMs = remember { mutableStateOf(0L) }
     // Its duration, so a rate-limit reopen can refuse a resume target at the very end.
     val lastKnownDurationMs = remember { mutableStateOf(0L) }
+    // P0 resize spike (see DesktopPostShowSpike): off unless its flag file exists. A derived value,
+    // so the position ticking every 500 ms does not recompose this surface; only the flip does.
+    val postShowBoxed by remember {
+        derivedStateOf {
+            DesktopPostShowSpike.enabled &&
+                !DesktopPostShowSpike.dismissed.value &&
+                postShowSpikeActive(lastKnownPositionMs.value)
+        }
+    }
+    SideEffect { DesktopPostShowSpike.noteBoxed(postShowBoxed, lastKnownPositionMs.value) }
+    // Keyed on the attempt, so an Escape on one episode does not carry into the next.
+    DisposableEffect(playbackAttemptId) {
+        DesktopPostShowSpike.reset()
+        onDispose { DesktopPostShowSpike.reset() }
+    }
     val surfaceScope = rememberCoroutineScope()
     LaunchedEffect(playbackAttemptId, sourceUrl) {
         DesktopPlayerLaunchShield.showForActiveWindow()
@@ -932,8 +955,26 @@ private fun NativePlayerSurface(
         controller.setResizeMode(resizeMode)
     }
 
-    LaunchedEffect(controller, playerControlsState) {
-        controller.updateControls(playerControlsState)
+    LaunchedEffect(controller, playerControlsState, postShowBoxed) {
+        controller.updateControls(
+            if (postShowBoxed) {
+                // The HUD lives inside the video's container, so it would be squashed into the box.
+                playerControlsState.copy(controlsVisible = false, mouseMoveRevealsControlsEnabled = false)
+            } else {
+                playerControlsState
+            },
+        )
+    }
+
+    LaunchedEffect(controller) {
+        snapshotFlow { DesktopPostShowSpike.boxed.value }.drop(1).collect {
+            // mpv repaints a wid-embedded surface oddly after a size change (see forceVideoRedraw),
+            // so nudge it once the new size has settled, and again for a swapchain that lags.
+            delay(250L)
+            controller.forceVideoRedraw()
+            delay(750L)
+            controller.forceVideoRedraw()
+        }
     }
 
     LaunchedEffect(playbackAttemptId, sourceUrl) {
@@ -1203,6 +1244,8 @@ private fun NativePlayerSurface(
             .fillMaxSize()
             .background(Color.Black),
     ) {
+        // Drawn first, so the SwingPanel's corner box sits on top of it.
+        if (postShowBoxed) PostShowSpikeCard(Modifier.fillMaxSize())
         // SwingPanel positions/sizes the native mpv surface (a real OS window) using whatever
         // LocalDensity is ambient — but that surface must match real screen pixels, not the
         // app's (possibly artificially inflated, see NuvioDesktopViewportDensityScaler) UI
@@ -1213,7 +1256,13 @@ private fun NativePlayerSurface(
                 factory = {
                     host
                 },
-                modifier = if (hostFirstPaintComplete.value) {
+                modifier = if (hostFirstPaintComplete.value && postShowBoxed) {
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 64.dp, bottom = 64.dp)
+                        .fillMaxWidth(0.3f)
+                        .aspectRatio(16f / 9f)
+                } else if (hostFirstPaintComplete.value) {
                     Modifier.fillMaxSize()
                 } else {
                     Modifier

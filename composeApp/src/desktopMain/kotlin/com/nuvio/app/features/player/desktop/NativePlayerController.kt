@@ -1310,7 +1310,10 @@ internal class NativePlayerController(
             "toggleFullscreen" -> toggleDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
             // The HUD's Escape (with nothing of its own to close). The back button still sends "back".
             "escapeBack" -> {
-                if (escapeShouldGoWindowed()) {
+                if (DesktopPostShowSpike.boxed.value) {
+                    // P0 resize spike: Escape closes the corner box instead of leaving the player.
+                    DesktopPostShowSpike.dismiss()
+                } else if (escapeShouldGoWindowed()) {
                     toggleDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
                 } else {
                     handlePlayerEvent("back", value)
