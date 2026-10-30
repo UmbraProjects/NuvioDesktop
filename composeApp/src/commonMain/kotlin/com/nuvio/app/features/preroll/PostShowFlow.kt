@@ -11,7 +11,7 @@ enum class PostShowSignal { Prefetch, Start, Stop }
  * Pure and stateful per playback: one instance is reset when a new playback attempt begins. It
  * fires [PostShowSignal.Prefetch] once past the halfway point, [PostShowSignal.Start] once when
  * playback *plays into* the credits window (a seek or a resume into it never starts the cards),
- * and [PostShowSignal.Stop] when the cards are up and the position leaves the window. After a
+ * and [PostShowSignal.Stop] when the cards are up and the position leaves the window or jumps forward. After a
  * start the post-show is spent for this playback, so seeking back into the credits does not
  * bring it round again.
  */
@@ -41,7 +41,9 @@ class PostShowTracker {
         }
         val window = postShowWindow(intervals, durationMs) ?: return out
         if (showing) {
-            if (positionMs !in window) out += PostShowSignal.Stop
+            // Leaving the window, or a forward jump inside it (skip credits, a scrub): not playback, so the cards go.
+            val jumped = previous >= 0L && positionMs - previous > MAX_PLAYING_STEP_MS
+            if (positionMs !in window || jumped) out += PostShowSignal.Stop
         } else if (!started && previous >= 0L && postShowArrivedByPlaying(previous, positionMs, window)) {
             started = true
             out += PostShowSignal.Start

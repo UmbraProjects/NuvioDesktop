@@ -50,6 +50,7 @@ import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.preroll.PostShowController
+import com.nuvio.app.features.preroll.PostShowKey
 import com.nuvio.app.features.preroll.PostShowScreen
 import com.nuvio.app.features.input.GamepadContext
 import com.nuvio.app.features.screensaver.DesktopScreensaver
@@ -379,6 +380,32 @@ private fun NativePlayerSurface(
             }
             val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
             if (focusOwner is JTextComponent) return@KeyEventDispatcher false
+            // Post-show cards are up: a pad's D-pad, A and B (replayed here as arrows, the play/pause key
+            // and Escape) and the number keys drive the cards. Anything else, including the skip key,
+            // carries on below.
+            if (PostShowController.active.value) {
+                val postShowKey = when (event.keyCode) {
+                    KeyEvent.VK_LEFT -> PostShowKey.Left
+                    KeyEvent.VK_RIGHT -> PostShowKey.Right
+                    KeyEvent.VK_UP -> PostShowKey.Up
+                    KeyEvent.VK_DOWN -> PostShowKey.Down
+                    KeyEvent.VK_1, KeyEvent.VK_NUMPAD1 -> PostShowKey.Option1
+                    KeyEvent.VK_2, KeyEvent.VK_NUMPAD2 -> PostShowKey.Option2
+                    KeyEvent.VK_3, KeyEvent.VK_NUMPAD3 -> PostShowKey.Option3
+                    KeyEvent.VK_4, KeyEvent.VK_NUMPAD4 -> PostShowKey.Option4
+                    AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) -> PostShowKey.Back
+                    AppShortcutsRepository.keyCode(AppShortcutAction.SelectFocused) -> PostShowKey.Select
+                    else -> when (PlayerShortcutsRepository.actionForKeyCode(event.keyCode)) {
+                        PlayerShortcutAction.PlayPause, PlayerShortcutAction.AlternatePlayPause -> PostShowKey.Select
+                        else -> null
+                    }
+                }
+                if (postShowKey != null) {
+                    PostShowController.press(postShowKey)
+                    event.consume()
+                    return@KeyEventDispatcher true
+                }
+            }
             // Media keys are deliberately NOT handled here. A KeyEventDispatcher only sees keys
             // routed to a focused Nuvio window, which defeats the point of a media key; they are
             // owned by the Windows media session in player_bridge.cpp and arrive as the
@@ -950,9 +977,11 @@ private fun NativePlayerSurface(
             if (postShowBoxed) {
                 // The HUD lives inside the video's container, so it would be squashed into the box.
                 // Its keyboard focus stays, though, so it forwards the D-pad to the cards.
+                // The skip prompt is drawn by the cards screen instead (skipKeyAction stays, so the key works).
                 playerControlsState.copy(
                     controlsVisible = false,
                     mouseMoveRevealsControlsEnabled = false,
+                    skipPromptVisible = false,
                     heroTrailer = playerControlsState.heroTrailer.copy(postShowInput = true),
                 )
             } else {
@@ -1241,7 +1270,19 @@ private fun NativePlayerSurface(
             .background(Color.Black),
     ) {
         // Drawn first, so the SwingPanel's corner box sits on top of it.
-        if (postShowBoxed) PostShowScreen(Modifier.fillMaxSize())
+        if (postShowBoxed) {
+            val skipOffered = playerControlsState.skipPromptVisible &&
+                !playerControlsState.skipPromptDismissed &&
+                playerControlsState.skipKeyAction.isNotEmpty()
+            PostShowScreen(
+                modifier = Modifier.fillMaxSize(),
+                skipLabel = if (skipOffered) playerControlsState.skipPromptLabel else null,
+                skipKeyLabel = playerShortcutKeyCodeLabel(
+                    PlayerShortcutsRepository.keyCode(PlayerShortcutAction.SkipInterval),
+                ),
+                onSkip = { controller.triggerSkipIntervalIfAvailable() },
+            )
+        }
         // SwingPanel positions/sizes the native mpv surface (a real OS window) using whatever
         // LocalDensity is ambient — but that surface must match real screen pixels, not the
         // app's (possibly artificially inflated, see NuvioDesktopViewportDensityScaler) UI

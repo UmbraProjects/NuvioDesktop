@@ -4,7 +4,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,7 +54,13 @@ import androidx.compose.ui.unit.sp
  * moments Compose has focus.
  */
 @Composable
-fun PostShowScreen(modifier: Modifier = Modifier) {
+fun PostShowScreen(
+    modifier: Modifier = Modifier,
+    /** The player's skip-credits prompt, drawn here because the controls page is hidden while the cards are up. Null: none. */
+    skipLabel: String? = null,
+    skipKeyLabel: String = "",
+    onSkip: () -> Unit = {},
+) {
     val pack = PostShowController.pack ?: return
     val view = PostShowController.view
     val questions = PostShowController.questions
@@ -172,6 +181,33 @@ fun PostShowScreen(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.labelMedium,
                 color = Color.White.copy(alpha = 0.6f),
             )
+        }
+
+        if (skipLabel != null) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 56.dp, bottom = 72.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                    .border(BorderStroke(1.dp, palette.accent.copy(alpha = 0.7f)), RoundedCornerShape(10.dp))
+                    .clickable(onClick = onSkip)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = skipLabel,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White,
+                )
+                if (skipKeyLabel.isNotBlank()) {
+                    Text(
+                        text = skipKeyLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.accent,
+                    )
+                }
+            }
         }
 
         ProgressBars(

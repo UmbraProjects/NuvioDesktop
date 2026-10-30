@@ -22,7 +22,7 @@ private const val MIN_WINDOW_MS = 20_000L
 private const val PREFETCH_FRACTION = 0.5
 
 /** Largest forward step between two position reports that still counts as playing, not seeking. */
-private const val MAX_PLAYING_STEP_MS = 10_000L
+internal const val MAX_PLAYING_STEP_MS = 10_000L
 
 /**
  * Where the post-show runs for a film of [durationMs], or null when it cannot be told.

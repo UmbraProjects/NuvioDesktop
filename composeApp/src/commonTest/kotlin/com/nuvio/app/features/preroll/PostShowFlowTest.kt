@@ -49,6 +49,21 @@ class PostShowFlowTest {
     }
 
     @Test
+    fun `a forward jump inside the window closes the cards`() {
+        val t = PostShowTracker()
+        t.tick(6_600_500L, showing = true)
+        assertEquals(listOf(PostShowSignal.Stop), t.tick(6_700_000L, showing = true))
+    }
+
+    @Test
+    fun `ordinary playback inside the window keeps the cards`() {
+        val t = PostShowTracker()
+        t.tick(6_600_500L, showing = true)
+        assertTrue(t.tick(6_601_000L, showing = true).isEmpty())
+        assertTrue(t.tick(6_605_000L, showing = true).isEmpty())
+    }
+
+    @Test
     fun `reset allows a new playback to start again`() {
         val t = PostShowTracker()
         t.tick(6_598_000L); t.tick(6_600_500L)
