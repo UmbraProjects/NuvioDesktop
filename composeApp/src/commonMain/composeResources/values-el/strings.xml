@@ -1232,11 +1232,13 @@
   <string name="continue_watching_upcoming">Προσεχώς</string>
   <string name="settings_continue_watching_section_sort_order">ΣΕΙΡΑ ΤΑΞΙΝΟΜΗΣΗΣ</string>
   <string name="settings_continue_watching_sort_mode_title">Σειρά ταξινόμησης</string>
-  <string name="settings_continue_watching_sort_mode_description">Η επιλογή «Τελευταία παρακολούθηση» κρατά τη γραμμή με τη σειρά που παρακολουθήσατε. Η επιλογή «Προβλήθηκαν πρώτα» μετακινεί στο τέλος, με το πλησιέστερο πρώτο, τα επεισόδια «Επόμενο» που δεν έχουν προβληθεί ακόμα, ώστε στην αρχή της γραμμής να υπάρχει πάντα κάτι που μπορείτε να παίξετε.</string>
+  <string name="settings_continue_watching_sort_mode_description">Η επιλογή «Τελευταία παρακολούθηση» κρατά τη γραμμή με τη σειρά που παρακολουθήσατε. Η επιλογή «Προβλήθηκαν πρώτα» μετακινεί στο τέλος, με το πλησιέστερο πρώτο, τα επεισόδια «Επόμενο» που δεν έχουν προβληθεί ακόμα, ώστε στην αρχή της γραμμής να υπάρχει πάντα κάτι που μπορείτε να παίξετε. Η επιλογή «Εναλλαγή» κρατά στην αρχή τα επεισόδια που έχετε αφήσει στη μέση και τα νέα επεισόδια και μετά φέρνει μπροστά τις σειρές που δεν έχετε δει περισσότερο καιρό.</string>
   <string name="settings_continue_watching_sort_mode_default">Τελευταία παρακολούθηση</string>
   <string name="settings_continue_watching_sort_mode_default_desc">Ταξινόμηση όλων με βάση το πότε τα παρακολουθήσατε τελευταία φορά</string>
   <string name="settings_continue_watching_sort_mode_streaming">Προβλήθηκαν πρώτα</string>
   <string name="settings_continue_watching_sort_mode_streaming_desc">Τα μη προβληθέντα επεισόδια «Επόμενο» μπαίνουν τελευταία, με το πλησιέστερο πρώτο</string>
+  <string name="settings_continue_watching_sort_mode_rotation">Εναλλαγή</string>
+  <string name="settings_continue_watching_sort_mode_rotation_desc">Φέρνει μπροστά τις σειρές που δεν έχετε δει περισσότερο καιρό</string>
   <string name="settings_continue_watching_section_card_style">ΣΤΥΛ ΚΑΡΤΑΣ</string>
   <string name="settings_continue_watching_section_on_launch">ΚΑΤΑ ΤΗΝ ΕΚΚΙΝΗΣΗ</string>
   <string name="settings_continue_watching_section_up_next_behavior">ΣΥΜΠΕΡΙΦΟΡΑ UP NEXT</string>

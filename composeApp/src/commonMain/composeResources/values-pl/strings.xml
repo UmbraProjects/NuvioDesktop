@@ -1232,11 +1232,13 @@
   <string name="continue_watching_upcoming">Nadchodzące</string>
   <string name="settings_continue_watching_section_sort_order">KOLEJNOŚĆ SORTOWANIA</string>
   <string name="settings_continue_watching_sort_mode_title">Kolejność sortowania</string>
-  <string name="settings_continue_watching_sort_mode_description">Ostatnio oglądane zachowuje kolejność, w jakiej oglądasz. Najpierw wyemitowane przenosi odcinki z Następne w kolejce, które jeszcze się nie ukazały, na koniec, od najbliższego, dzięki czemu początek wiersza to zawsze coś, co możesz odtworzyć.</string>
+  <string name="settings_continue_watching_sort_mode_description">Ostatnio oglądane zachowuje kolejność, w jakiej oglądasz. Najpierw wyemitowane przenosi odcinki z Następne w kolejce, które jeszcze się nie ukazały, na koniec, od najbliższego, dzięki czemu początek wiersza to zawsze coś, co możesz odtworzyć. Rotacja zostawia na początku rozpoczęte i nowe odcinki, a potem wysuwa do przodu seriale, których nie oglądasz najdłużej.</string>
   <string name="settings_continue_watching_sort_mode_default">Ostatnio oglądane</string>
   <string name="settings_continue_watching_sort_mode_default_desc">Sortuj wszystko według czasu ostatniego oglądania</string>
   <string name="settings_continue_watching_sort_mode_streaming">Najpierw wyemitowane</string>
   <string name="settings_continue_watching_sort_mode_streaming_desc">Niewyemitowane odcinki Następny trafiają na koniec, najbliższe jako pierwsze</string>
+  <string name="settings_continue_watching_sort_mode_rotation">Rotacja</string>
+  <string name="settings_continue_watching_sort_mode_rotation_desc">Wysuwa do przodu seriale, których nie oglądasz najdłużej</string>
   <string name="settings_continue_watching_section_card_style">STYL KARTY</string>
   <string name="settings_continue_watching_section_on_launch">PRZY URUCHOMIENIU</string>
   <string name="settings_continue_watching_section_up_next_behavior">ZACHOWANIE NASTĘPNEGO</string>

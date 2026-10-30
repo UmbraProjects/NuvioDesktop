@@ -1232,11 +1232,13 @@
     <string name="continue_watching_upcoming">Upcoming</string>
     <string name="settings_continue_watching_section_sort_order">SORT ORDER</string>
     <string name="settings_continue_watching_sort_mode_title">Sort Order</string>
-    <string name="settings_continue_watching_sort_mode_description">Last watched keeps the row in the order you watched things. Aired first moves Up Next episodes that have not aired yet to the end, soonest first, so the front of the row is always something you can play.</string>
+    <string name="settings_continue_watching_sort_mode_description">Last watched keeps the row in the order you watched things. Aired first moves Up Next episodes that have not aired yet to the end, soonest first, so the front of the row is always something you can play. Rotation keeps episodes you’re partway through and new episodes at the front, then brings forward the shows you haven’t watched in the longest time.</string>
     <string name="settings_continue_watching_sort_mode_default">Last watched</string>
     <string name="settings_continue_watching_sort_mode_default_desc">Sort everything by when you last watched it</string>
     <string name="settings_continue_watching_sort_mode_streaming">Aired first</string>
     <string name="settings_continue_watching_sort_mode_streaming_desc">Unaired Up Next episodes go last, soonest first</string>
+    <string name="settings_continue_watching_sort_mode_rotation">Rotation</string>
+    <string name="settings_continue_watching_sort_mode_rotation_desc">Brings forward the shows you haven’t watched in the longest time</string>
     <string name="settings_continue_watching_section_card_style">Poster Card Style</string>
     <string name="settings_continue_watching_section_on_launch">ON LAUNCH</string>
     <string name="settings_continue_watching_section_up_next_behavior">UP NEXT BEHAVIOR</string>

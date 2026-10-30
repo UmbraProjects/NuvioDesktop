@@ -1232,11 +1232,13 @@
   <string name="continue_watching_upcoming">Yakında</string>
   <string name="settings_continue_watching_section_sort_order">SIRALAMA DÜZENİ</string>
   <string name="settings_continue_watching_sort_mode_title">Sıralama Düzeni</string>
-  <string name="settings_continue_watching_sort_mode_description">Son izlenen, rafı bir şeyleri izleme sırana göre tutar. Yayınlanan önce, henüz yayınlanmamış Sıradaki bölümlerini en yakın olandan başlayarak sona taşır; böylece rafın başı her zaman oynatabileceğin bir şey olur.</string>
+  <string name="settings_continue_watching_sort_mode_description">Son izlenen, rafı bir şeyleri izleme sırana göre tutar. Yayınlanan önce, henüz yayınlanmamış Sıradaki bölümlerini en yakın olandan başlayarak sona taşır; böylece rafın başı her zaman oynatabileceğin bir şey olur. Rotasyon, yarıda bıraktığın bölümleri ve yeni bölümleri başta tutar, ardından en uzun süredir izlemediğin dizileri öne getirir.</string>
   <string name="settings_continue_watching_sort_mode_default">Son izlenen</string>
   <string name="settings_continue_watching_sort_mode_default_desc">Her şeyi en son ne zaman izlediğine göre sırala</string>
   <string name="settings_continue_watching_sort_mode_streaming">Yayınlananlar önce</string>
   <string name="settings_continue_watching_sort_mode_streaming_desc">Henüz yayınlanmamış Sıradaki bölümler sona gider, en yakın olan önce</string>
+  <string name="settings_continue_watching_sort_mode_rotation">Rotasyon</string>
+  <string name="settings_continue_watching_sort_mode_rotation_desc">En uzun süredir izlemediğin diziler öne gelir</string>
   <string name="settings_continue_watching_section_card_style">KART STİLİ</string>
   <string name="settings_continue_watching_section_on_launch">AÇILIŞTA</string>
   <string name="settings_continue_watching_section_up_next_behavior">SONRAKİ DAVRANIŞI</string>

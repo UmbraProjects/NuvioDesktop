@@ -1232,11 +1232,13 @@
   <string name="continue_watching_upcoming">Kommer</string>
   <string name="settings_continue_watching_section_sort_order">SORTERINGSREKKefølge</string>
   <string name="settings_continue_watching_sort_mode_title">Sorteringsrekkefølge</string>
-  <string name="settings_continue_watching_sort_mode_description">Sist sett holder raden i den rekkefølgen du har sett ting. Sendt først flytter Neste-episoder som ikke er sendt ennå til slutten, nærmeste først, slik at starten av raden alltid er noe du kan spille av.</string>
+  <string name="settings_continue_watching_sort_mode_description">Sist sett holder raden i den rekkefølgen du har sett ting. Sendt først flytter Neste-episoder som ikke er sendt ennå til slutten, nærmeste først, slik at starten av raden alltid er noe du kan spille av. Rotasjon holder påbegynte og nye episoder først, og henter deretter fram seriene du ikke har sett på lengst.</string>
   <string name="settings_continue_watching_sort_mode_default">Sist sett</string>
   <string name="settings_continue_watching_sort_mode_default_desc">Sorter alt etter når du sist så det</string>
   <string name="settings_continue_watching_sort_mode_streaming">Utgitt først</string>
   <string name="settings_continue_watching_sort_mode_streaming_desc">Neste-episoder som ikke er utgitt ennå havner sist, nærmeste først</string>
+  <string name="settings_continue_watching_sort_mode_rotation">Rotasjon</string>
+  <string name="settings_continue_watching_sort_mode_rotation_desc">Henter fram seriene du ikke har sett på lengst</string>
   <string name="settings_continue_watching_section_card_style">Plakatstil</string>
   <string name="settings_continue_watching_section_on_launch">VED OPPSTART</string>
   <string name="settings_continue_watching_section_up_next_behavior">NESTE OPPFØRSEL</string>

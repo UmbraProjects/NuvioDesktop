@@ -1940,11 +1940,13 @@
     <string name="continue_watching_upcoming">Demnächst</string>
     <string name="settings_continue_watching_section_sort_order">SORTIERUNG</string>
     <string name="settings_continue_watching_sort_mode_title">Sortierung</string>
-    <string name="settings_continue_watching_sort_mode_description">„Zuletzt gesehen“ hält die Reihe in der Reihenfolge, in der du geschaut hast. „Ausgestrahlt zuerst“ verschiebt noch nicht ausgestrahlte Folgen ans Ende, die früheste zuerst, sodass vorne immer etwas Abspielbares steht.</string>
+    <string name="settings_continue_watching_sort_mode_description">„Zuletzt gesehen“ hält die Reihe in der Reihenfolge, in der du geschaut hast. „Ausgestrahlt zuerst“ verschiebt noch nicht ausgestrahlte Folgen ans Ende, die früheste zuerst, sodass vorne immer etwas Abspielbares steht. „Rotation“ hält angefangene und neue Folgen vorne und holt danach die Serien nach vorne, die du am längsten nicht gesehen hast.</string>
     <string name="settings_continue_watching_sort_mode_default">Zuletzt gesehen</string>
     <string name="settings_continue_watching_sort_mode_default_desc">Alles nach dem letzten Ansehen sortieren</string>
     <string name="settings_continue_watching_sort_mode_streaming">Ausgestrahlt zuerst</string>
     <string name="settings_continue_watching_sort_mode_streaming_desc">Noch nicht ausgestrahlte Folgen kommen zuletzt, die früheste zuerst</string>
+    <string name="settings_continue_watching_sort_mode_rotation">Rotation</string>
+    <string name="settings_continue_watching_sort_mode_rotation_desc">Holt die am längsten nicht gesehenen Serien nach vorne</string>
     <string name="settings_continue_watching_style_card">Karte</string>
     <string name="settings_continue_watching_style_card_description">Querformat-Karte im TV-Stil</string>
     <string name="settings_continue_watching_use_episode_thumbnails_description">Folgen-Vorschaubilder bevorzugen, wenn verfügbar.</string>

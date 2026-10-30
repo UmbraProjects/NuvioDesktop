@@ -579,6 +579,8 @@
     <string name="settings_continue_watching_sort_mode_default_desc">Trie tout selon la date de dernier visionnage</string>
     <string name="settings_continue_watching_sort_mode_streaming">Diffusés d’abord</string>
     <string name="settings_continue_watching_sort_mode_streaming_desc">Les épisodes À suivre pas encore diffusés passent en dernier, du plus proche au plus lointain</string>
+    <string name="settings_continue_watching_sort_mode_rotation">Rotation</string>
+    <string name="settings_continue_watching_sort_mode_rotation_desc">Ramène en avant les séries que vous n’avez pas regardées depuis le plus longtemps</string>
     <string name="settings_continue_watching_section_card_style">STYLE DE CARTE D’AFFICHE</string>
     <string name="settings_continue_watching_section_on_launch">AU DÉMARRAGE</string>
     <string name="settings_continue_watching_section_up_next_behavior">COMPORTEMENT DE LA SUITE</string>
@@ -2381,7 +2383,7 @@
     <string name="settings_continue_watching_separate_upcoming_description">Place les épisodes pas encore diffusés dans leur propre rangée Prochainement. Fonctionne avec Rangée À suivre séparée.</string>
     <string name="settings_continue_watching_separate_upcoming_title">Rangée Prochainement séparée</string>
     <string name="continue_watching_upcoming">Prochainement</string>
-    <string name="settings_continue_watching_sort_mode_description">Dernier vu conserve la rangée dans l’ordre où vous avez regardé. Diffusés d’abord place à la fin les épisodes À suivre pas encore diffusés, du plus proche au plus lointain, pour que le début de la rangée soit toujours lisible.</string>
+    <string name="settings_continue_watching_sort_mode_description">Dernier vu conserve la rangée dans l’ordre où vous avez regardé. Diffusés d’abord place à la fin les épisodes À suivre pas encore diffusés, du plus proche au plus lointain, pour que le début de la rangée soit toujours lisible. Rotation garde en tête les épisodes entamés et les nouveaux épisodes, puis ramène en avant les séries que vous n’avez pas regardées depuis le plus longtemps.</string>
     <string name="settings_continue_watching_style_card">Carte</string>
     <string name="settings_continue_watching_style_card_description">Carte paysage de style TV</string>
     <string name="settings_integrations_sources_section">Sources</string>

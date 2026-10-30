@@ -1232,11 +1232,13 @@
   <string name="continue_watching_upcoming">Akan Datang</string>
   <string name="settings_continue_watching_section_sort_order">URUTAN SORTIR</string>
   <string name="settings_continue_watching_sort_mode_title">Urutan Sortir</string>
-  <string name="settings_continue_watching_sort_mode_description">Terakhir ditonton mempertahankan urutan baris sesuai yang Anda tonton. Yang tayang dulu memindahkan episode Berikutnya yang belum tayang ke akhir, yang terdekat lebih dulu, sehingga bagian depan baris selalu berisi sesuatu yang bisa Anda putar.</string>
+  <string name="settings_continue_watching_sort_mode_description">Terakhir ditonton mempertahankan urutan baris sesuai yang Anda tonton. Yang tayang dulu memindahkan episode Berikutnya yang belum tayang ke akhir, yang terdekat lebih dulu, sehingga bagian depan baris selalu berisi sesuatu yang bisa Anda putar. Rotasi menjaga episode yang sedang ditonton dan episode baru tetap di depan, lalu memajukan serial yang paling lama tidak Anda tonton.</string>
   <string name="settings_continue_watching_sort_mode_default">Terakhir ditonton</string>
   <string name="settings_continue_watching_sort_mode_default_desc">Urutkan semuanya berdasarkan kapan terakhir Anda menontonnya</string>
   <string name="settings_continue_watching_sort_mode_streaming">Yang tayang dulu</string>
   <string name="settings_continue_watching_sort_mode_streaming_desc">Episode Berikutnya yang belum tayang diletakkan di akhir, yang paling dekat lebih dulu</string>
+  <string name="settings_continue_watching_sort_mode_rotation">Rotasi</string>
+  <string name="settings_continue_watching_sort_mode_rotation_desc">Memajukan serial yang paling lama tidak Anda tonton</string>
   <string name="settings_continue_watching_section_card_style">Gaya Kartu Poster</string>
   <string name="settings_continue_watching_section_on_launch">SAAT DIBUKA</string>
   <string name="settings_continue_watching_section_up_next_behavior">PERILAKU BERIKUTNYA</string>

@@ -8,6 +8,7 @@ import com.nuvio.app.features.cloud.CloudLibraryUiState
 import com.nuvio.app.features.cloud.playbackVideoId
 import com.nuvio.app.features.debrid.DebridProviders
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
+import com.nuvio.app.features.watchprogress.ContinueWatchingSortMode
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watched.WatchedItem
 import com.nuvio.app.features.tracking.ContinueWatchingSource
@@ -428,6 +429,70 @@ class HomeScreenTest {
         assertTrue(result.isEmpty())
     }
 
+    private fun rotationFixture(): List<ContinueWatchingItem> {
+        val recentPartial = progressEntry(videoId = "a:1:4", title = "A", lastUpdatedEpochMs = 300L)
+        val olderPartial = progressEntry(videoId = "b:1:4", title = "B", lastUpdatedEpochMs = 100L)
+        val partialMovie = progressEntry(
+            videoId = "movie",
+            title = "Movie",
+            lastUpdatedEpochMs = 150L,
+            seasonNumber = null,
+            episodeNumber = null,
+            episodeTitle = null,
+        )
+        val newEpisode = continueWatchingItem(videoId = "c:2:1", subtitle = "Up Next • S2E1 • New")
+            .copy(isReleaseAlert = true, isNewSeasonRelease = true, released = "2026-10-20")
+        val staleNextUp = continueWatchingItem(videoId = "d:1:5", subtitle = "Up Next • S1E5 • Stale")
+            .copy(released = "2026-01-01")
+        val justFinishedNextUp = continueWatchingItem(videoId = "e:1:5", subtitle = "Up Next • S1E5 • Fresh")
+            .copy(released = "2026-02-01")
+        val unairedLater = continueWatchingItem(videoId = "f:1:5", subtitle = "Up Next • S1E5 • Later")
+            .copy(released = "2099-01-01")
+        val unairedSooner = continueWatchingItem(videoId = "g:1:5", subtitle = "Up Next • S1E5 • Sooner")
+            .copy(released = "2098-01-01")
+
+        return buildHomeContinueWatchingItems(
+            visibleEntries = listOf(recentPartial, olderPartial, partialMovie),
+            nextUpItemsBySeries = mapOf(
+                "c" to (200L to newEpisode),
+                "d" to (50L to staleNextUp),
+                "e" to (400L to justFinishedNextUp),
+                "f" to (10L to unairedLater),
+                "g" to (20L to unairedSooner),
+            ),
+            sortMode = ContinueWatchingSortMode.ROTATION,
+            todayIsoDate = ROTATION_TODAY_ISO_DATE,
+        )
+    }
+
+    @Test
+    fun `rotation keeps partly watched and new episodes in front then least recently watched then unaired`() {
+        assertEquals(
+            listOf("a:1:4", "c:2:1", "movie", "b:1:4", "d:1:5", "e:1:5", "g:1:5", "f:1:5"),
+            rotationFixture().map(ContinueWatchingItem::videoId),
+        )
+    }
+
+    @Test
+    fun `rotation order carries into separated rows`() {
+        val rows = splitContinueWatchingRows(
+            items = rotationFixture(),
+            separateNextUpRow = true,
+            separateUpcomingRow = true,
+            nowEpochMs = ROTATION_NOW_EPOCH_MS,
+        )
+
+        assertEquals(listOf("a:1:4", "movie", "b:1:4"), rows.continueWatching.map(ContinueWatchingItem::videoId))
+        assertEquals(listOf("c:2:1", "d:1:5", "e:1:5"), rows.nextUp.map(ContinueWatchingItem::videoId))
+        assertEquals(listOf("g:1:5", "f:1:5"), rows.upcoming.map(ContinueWatchingItem::videoId))
+    }
+
+    @Test
+    fun `rotation is stored as last watched for builds that do not know it`() {
+        assertEquals(ContinueWatchingSortMode.DEFAULT, ContinueWatchingSortMode.ROTATION.legacyValue)
+        assertEquals(ContinueWatchingSortMode.STREAMING_STYLE, ContinueWatchingSortMode.STREAMING_STYLE.legacyValue)
+    }
+
     private fun progressEntry(
         videoId: String,
         title: String,
@@ -519,5 +584,10 @@ class HomeScreenTest {
 
     private companion object {
         const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L
+
+        // The rotation fixture's "today": the sort reads the date, the row split reads the
+        // instant. They must name the same day, or aired episodes land in the Upcoming row.
+        const val ROTATION_TODAY_ISO_DATE = "2026-10-28"
+        const val ROTATION_NOW_EPOCH_MS = 1_793_188_800_000L // 2026-10-28T12:00:00Z
     }
 }

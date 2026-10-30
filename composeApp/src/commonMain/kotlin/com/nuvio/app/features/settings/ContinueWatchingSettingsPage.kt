@@ -117,6 +117,8 @@ import nuvio.composeapp.generated.resources.settings_continue_watching_show_desc
 import nuvio.composeapp.generated.resources.settings_continue_watching_show_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_sort_mode_default
 import nuvio.composeapp.generated.resources.settings_continue_watching_sort_mode_default_desc
+import nuvio.composeapp.generated.resources.settings_continue_watching_sort_mode_rotation
+import nuvio.composeapp.generated.resources.settings_continue_watching_sort_mode_rotation_desc
 import nuvio.composeapp.generated.resources.settings_continue_watching_sort_mode_streaming
 import nuvio.composeapp.generated.resources.settings_continue_watching_sort_mode_streaming_desc
 import nuvio.composeapp.generated.resources.settings_continue_watching_sort_mode_title
@@ -321,6 +323,10 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                             ContinueWatchingSortMode.STREAMING_STYLE,
                             stringResource(Res.string.settings_continue_watching_sort_mode_streaming),
                         ),
+                        SettingsChoiceOption(
+                            ContinueWatchingSortMode.ROTATION,
+                            stringResource(Res.string.settings_continue_watching_sort_mode_rotation),
+                        ),
                     ),
                     selectedValue = sortMode,
                     isTablet = isTablet,
@@ -504,6 +510,11 @@ private fun ContinueWatchingSortModeDialog(
             ContinueWatchingSortMode.STREAMING_STYLE,
             Res.string.settings_continue_watching_sort_mode_streaming,
             Res.string.settings_continue_watching_sort_mode_streaming_desc,
+        ),
+        Triple(
+            ContinueWatchingSortMode.ROTATION,
+            Res.string.settings_continue_watching_sort_mode_rotation,
+            Res.string.settings_continue_watching_sort_mode_rotation_desc,
         ),
     )
 

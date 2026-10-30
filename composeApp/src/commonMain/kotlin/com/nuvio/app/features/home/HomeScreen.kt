@@ -5718,6 +5718,7 @@ internal fun buildHomeContinueWatchingItems(
     return when (sortMode) {
         ContinueWatchingSortMode.DEFAULT -> deduplicated.map(HomeContinueWatchingCandidate::item)
         ContinueWatchingSortMode.STREAMING_STYLE -> applyStreamingStyleSort(deduplicated, todayIsoDate)
+        ContinueWatchingSortMode.ROTATION -> applyRotationSort(deduplicated, todayIsoDate)
     }
 }
 
@@ -5725,7 +5726,36 @@ private fun applyStreamingStyleSort(
     candidates: List<HomeContinueWatchingCandidate>,
     todayIsoDate: String,
 ): List<ContinueWatchingItem> {
-    val (released, unreleased) = candidates.partition { candidate ->
+    val (released, unreleased) = partitionAired(candidates, todayIsoDate)
+
+    // Released: most recently watched first (already sorted by dedup pass)
+    return released.map(HomeContinueWatchingCandidate::item) + sortUnaired(unreleased)
+}
+
+/**
+ * Partly watched cards and New Episode / New Season cards keep the "Last watched" order at the
+ * front, newest first. The rest of Up Next follows least recently watched first, so a show finished
+ * just now goes to the back and one untouched for weeks comes forward. Unaired episodes go last, as
+ * in [applyStreamingStyleSort].
+ */
+private fun applyRotationSort(
+    candidates: List<HomeContinueWatchingCandidate>,
+    todayIsoDate: String,
+): List<ContinueWatchingItem> {
+    val (released, unreleased) = partitionAired(candidates, todayIsoDate)
+    val (front, rotating) = released.partition { candidate ->
+        !candidate.item.isNextUp || candidate.item.isReleaseAlert
+    }
+    return front.map(HomeContinueWatchingCandidate::item) +
+        rotating.sortedBy(HomeContinueWatchingCandidate::lastUpdatedEpochMs).map(HomeContinueWatchingCandidate::item) +
+        sortUnaired(unreleased)
+}
+
+private fun partitionAired(
+    candidates: List<HomeContinueWatchingCandidate>,
+    todayIsoDate: String,
+): Pair<List<HomeContinueWatchingCandidate>, List<HomeContinueWatchingCandidate>> =
+    candidates.partition { candidate ->
         val item = candidate.item
         if (!item.isNextUp) {
             true // in-progress items are always "released"
@@ -5739,11 +5769,9 @@ private fun applyStreamingStyleSort(
         }
     }
 
-    // Released: most recently watched first (already sorted by dedup pass)
-    val sortedReleased = released.map(HomeContinueWatchingCandidate::item)
-
-    // Unaired: soonest air date first; unknown dates go to the end
-    val sortedUnreleased = unreleased
+// Unaired: soonest air date first; unknown dates go to the end
+private fun sortUnaired(unreleased: List<HomeContinueWatchingCandidate>): List<ContinueWatchingItem> =
+    unreleased
         .sortedWith { a, b ->
             val dateA = a.item.released?.takeIf { it.isNotBlank() }
             val dateB = b.item.released?.takeIf { it.isNotBlank() }
@@ -5755,9 +5783,6 @@ private fun applyStreamingStyleSort(
             }
         }
         .map(HomeContinueWatchingCandidate::item)
-
-    return sortedReleased + sortedUnreleased
-}
 
 internal data class CompletedSeriesCandidate(
     val content: WatchingContentRef,

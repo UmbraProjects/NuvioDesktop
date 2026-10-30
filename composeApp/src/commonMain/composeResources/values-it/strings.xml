@@ -1232,11 +1232,13 @@
   <string name="continue_watching_upcoming">In arrivo</string>
   <string name="settings_continue_watching_section_sort_order">ORDINE DI ORDINAMENTO</string>
   <string name="settings_continue_watching_sort_mode_title">Ordine di ordinamento</string>
-  <string name="settings_continue_watching_sort_mode_description">Ultimo visto mantiene la riga nell'ordine in cui hai guardato i contenuti. Trasmessi prima sposta alla fine gli episodi di Prossimo contenuto non ancora trasmessi, dal più vicino, così l'inizio della riga è sempre qualcosa che puoi riprodurre.</string>
+  <string name="settings_continue_watching_sort_mode_description">Ultimo visto mantiene la riga nell'ordine in cui hai guardato i contenuti. Trasmessi prima sposta alla fine gli episodi di Prossimo contenuto non ancora trasmessi, dal più vicino, così l'inizio della riga è sempre qualcosa che puoi riprodurre. Rotazione tiene all'inizio gli episodi iniziati e quelli nuovi, poi porta avanti le serie che non guardi da più tempo.</string>
   <string name="settings_continue_watching_sort_mode_default">Ultimo visto</string>
   <string name="settings_continue_watching_sort_mode_default_desc">Ordina tutto in base a quando l'hai guardato l'ultima volta</string>
   <string name="settings_continue_watching_sort_mode_streaming">Prima i già usciti</string>
   <string name="settings_continue_watching_sort_mode_streaming_desc">I prossimi episodi non ancora usciti vanno in fondo, i più vicini per primi</string>
+  <string name="settings_continue_watching_sort_mode_rotation">Rotazione</string>
+  <string name="settings_continue_watching_sort_mode_rotation_desc">Porta avanti le serie che non guardi da più tempo</string>
   <string name="settings_continue_watching_section_card_style">STILE SCHEDA</string>
   <string name="settings_continue_watching_section_on_launch">ALL'AVVIO</string>
   <string name="settings_continue_watching_section_up_next_behavior">COMPORTAMENTO "PROSSIMO EPISODIO"</string>

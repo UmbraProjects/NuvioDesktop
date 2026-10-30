@@ -33,12 +33,18 @@ private data class StoredContinueWatchingPreferences(
     val showResumePromptOnLaunch: Boolean = true,
     @SerialName("sort_mode")
     val sortMode: ContinueWatchingSortMode = ContinueWatchingSortMode.DEFAULT,
+    /** The full sort mode; `sort_mode` holds only values older builds can read (see legacyValue). */
+    @SerialName("sort_mode_v2")
+    val sortModeV2: ContinueWatchingSortMode? = null,
 )
 
 object ContinueWatchingPreferencesRepository {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
+        // An enum value from a newer build falls back to that field's default instead of failing
+        // the whole blob and resetting every Continue Watching setting.
+        coerceInputValues = true
     }
 
     private val _uiState = MutableStateFlow(ContinueWatchingPreferencesUiState())
@@ -113,7 +119,7 @@ object ContinueWatchingPreferencesRepository {
                 blurNextUp = stored.blurNextUp,
                 dismissedNextUpKeys = stored.dismissedNextUpKeys,
                 showResumePromptOnLaunch = stored.showResumePromptOnLaunch,
-                sortMode = stored.sortMode,
+                sortMode = stored.sortModeV2 ?: stored.sortMode,
             )
         } else {
             ContinueWatchingPreferencesUiState()
@@ -241,7 +247,8 @@ object ContinueWatchingPreferencesRepository {
                     blurNextUp = _uiState.value.blurNextUp,
                     dismissedNextUpKeys = _uiState.value.dismissedNextUpKeys,
                     showResumePromptOnLaunch = _uiState.value.showResumePromptOnLaunch,
-                    sortMode = _uiState.value.sortMode,
+                    sortMode = _uiState.value.sortMode.legacyValue,
+                    sortModeV2 = _uiState.value.sortMode,
                 ),
             ),
         )

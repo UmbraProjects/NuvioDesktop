@@ -1937,11 +1937,13 @@
     <string name="continue_watching_upcoming">Próximamente</string>
     <string name="settings_continue_watching_section_sort_order">ORDEN</string>
     <string name="settings_continue_watching_sort_mode_title">Orden</string>
-    <string name="settings_continue_watching_sort_mode_description">Visto recientemente mantiene la fila en el orden en que viste las cosas. Emitidos primero mueve al final los episodios de Siguiente que aún no se han emitido, los más próximos primero, para que el inicio de la fila sea siempre algo que puedas reproducir.</string>
+    <string name="settings_continue_watching_sort_mode_description">Visto recientemente mantiene la fila en el orden en que viste las cosas. Emitidos primero mueve al final los episodios de Siguiente que aún no se han emitido, los más próximos primero, para que el inicio de la fila sea siempre algo que puedas reproducir. Rotación mantiene al principio los episodios a medio ver y los episodios nuevos, y después adelanta las series que llevas más tiempo sin ver.</string>
     <string name="settings_continue_watching_sort_mode_default">Visto recientemente</string>
     <string name="settings_continue_watching_sort_mode_default_desc">Ordena todo según cuándo lo viste por última vez</string>
     <string name="settings_continue_watching_sort_mode_streaming">Emitidos primero</string>
     <string name="settings_continue_watching_sort_mode_streaming_desc">Los episodios de Siguiente sin emitir van al final, los más próximos primero</string>
+    <string name="settings_continue_watching_sort_mode_rotation">Rotación</string>
+    <string name="settings_continue_watching_sort_mode_rotation_desc">Adelanta las series que llevas más tiempo sin ver</string>
     <string name="settings_continue_watching_style_card">Tarjeta</string>
     <string name="settings_continue_watching_style_card_description">Tarjeta horizontal estilo TV</string>
     <string name="settings_continue_watching_use_episode_thumbnails_description">Prefiere las miniaturas de episodio cuando estén disponibles.</string>

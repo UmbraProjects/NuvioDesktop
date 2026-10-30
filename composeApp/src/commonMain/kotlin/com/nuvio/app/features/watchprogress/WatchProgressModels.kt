@@ -25,6 +25,21 @@ enum class ContinueWatchingSectionStyle {
 enum class ContinueWatchingSortMode {
     DEFAULT,
     STREAMING_STYLE,
+
+    /**
+     * Partly watched and newly aired cards stay in front as in [DEFAULT]; the rest of Up Next is
+     * ordered least recently watched first, so shows not touched in a while come back around.
+     */
+    ROTATION,
+    ;
+
+    /**
+     * The value written to the `sort_mode` key every build reads. Builds that predate a mode fail to
+     * decode the whole preferences blob on an enum value they don't know, so newer modes are saved
+     * there as their nearest older equivalent and in full under `sort_mode_v2`.
+     */
+    internal val legacyValue: ContinueWatchingSortMode
+        get() = if (this == ROTATION) DEFAULT else this
 }
 
 @Serializable
