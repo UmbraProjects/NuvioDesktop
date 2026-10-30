@@ -1,16 +1,21 @@
 package com.nuvio.app.features.preroll
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -33,7 +38,10 @@ sealed interface PreshowCardModel {
         val certificate: String,
         val region: RatingRegion,
         val title: String,
-        /** The BBFC's content advisory ("Contains moderate threat, ..."), when it could be found. */
+        /**
+         * The content line, when it could be found: the BBFC's advisory ("Contains moderate threat, ...") or the
+         * MPA's reasons ("for strong violence and language").
+         */
         val advisory: String? = null,
     ) : PreshowCardModel
     data class FeaturePresentation(val title: String) : PreshowCardModel
@@ -117,6 +125,82 @@ private fun BbfcRatingCard(model: PreshowCardModel.Rating) {
     }
 }
 
+private val MpaGreen = Color(0xFF1F5C3A)
+
+/** The MPA's wording under the rating letters, as its rating boxes print it: headline, then small print. */
+private fun mpaDescriptor(certificate: String): Pair<String, String> = when (certificate.uppercase()) {
+    "G" -> "GENERAL AUDIENCES" to "All Ages Admitted"
+    "PG" -> "PARENTAL GUIDANCE SUGGESTED" to "Some Material May Not Be Suitable for Children"
+    "PG-13" -> "PARENTS STRONGLY CAUTIONED" to "Some Material May Be Inappropriate for Children Under 13"
+    "R" -> "RESTRICTED" to "Under 17 Requires Accompanying Parent or Adult Guardian"
+    "NC-17" -> "NO CHILDREN UNDER 17 ADMITTED" to ""
+    else -> "NOT RATED" to "The Content of This Film Has Not Been Evaluated"
+}
+
+/**
+ * The MPA card: a green card in the manner of the MPA's own rating cards. The film's title, then a bordered
+ * rating box with the letters on the left and, on the right, the headline for the rating, the reasons for it
+ * (when they could be found) and the small print.
+ *
+ * Deliberately text and shapes only. The MPA's logo and web addresses are not drawn.
+ */
+@Composable
+private fun MpaRatingCard(model: PreshowCardModel.Rating) {
+    val (headline, smallPrint) = mpaDescriptor(model.certificate)
+    Box(modifier = Modifier.fillMaxSize().background(MpaGreen)) {
+        Text(
+            "MOTION PICTURE ASSOCIATION",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 16.sp,
+            letterSpacing = 3.sp,
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 96.dp, top = 72.dp),
+        )
+        Column(
+            modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 96.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("THE FILM", color = Color.White.copy(alpha = 0.85f), fontSize = 22.sp, letterSpacing = 4.sp)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                model.title.uppercase(),
+                color = Color.White,
+                fontSize = 44.sp,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("HAS BEEN RATED", color = Color.White.copy(alpha = 0.85f), fontSize = 22.sp, letterSpacing = 4.sp)
+            Spacer(Modifier.height(36.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(0.82f).border(3.dp, Color.White).height(IntrinsicSize.Min),
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxHeight().widthIn(min = 150.dp).padding(horizontal = 24.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        model.certificate,
+                        color = Color.White,
+                        fontSize = if (model.certificate.length > 2) 72.sp else 96.sp,
+                        fontFamily = FontFamily.Serif,
+                        fontWeight = FontWeight.Black,
+                    )
+                }
+                Box(Modifier.fillMaxHeight().width(3.dp).background(Color.White))
+                Column(
+                    modifier = Modifier.weight(1f).padding(horizontal = 24.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(headline, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                    model.advisory?.let { Text(it, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold) }
+                    if (smallPrint.isNotEmpty()) Text(smallPrint, color = Color.White.copy(alpha = 0.85f), fontSize = 18.sp)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun PreshowCard(model: PreshowCardModel, onFinished: () -> Unit, modifier: Modifier = Modifier) {
     LaunchedEffect(model) {
@@ -126,6 +210,10 @@ fun PreshowCard(model: PreshowCardModel, onFinished: () -> Unit, modifier: Modif
     Box(modifier = modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         if (model is PreshowCardModel.Rating && model.region == RatingRegion.Bbfc) {
             BbfcRatingCard(model)
+            return@Box
+        }
+        if (model is PreshowCardModel.Rating && model.region == RatingRegion.Mpaa) {
+            MpaRatingCard(model)
             return@Box
         }
         Column(

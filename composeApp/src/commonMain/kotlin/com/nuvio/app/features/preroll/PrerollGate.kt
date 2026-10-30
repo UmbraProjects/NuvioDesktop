@@ -66,7 +66,7 @@ private const val CLIP_RESOLVE_TIMEOUT_MS = 25_000L
 private const val TRIVIA_WAIT_AFTER_TRAILERS_MS = 10_000L
 private const val TRIVIA_WAIT_ALONE_MS = 6_000L
 private const val TRIVIA_WIKIPEDIA_WAIT_MS = 4_000L
-/** How long the drawn BBFC card waits for its advisory; past this it is drawn without one. */
+/** How long the drawn rating card waits for its advisory; past this it is drawn without one. */
 private const val ADVISORY_WAIT_MS = 3_000L
 // Long on purpose: packFor returns the moment the pack exists, so this only matters when the provider
 // is struggling, and the trailers are playing anyway. It covers the retries in TriviaRepository.
@@ -165,14 +165,18 @@ fun PrerollGate(
                     }
                 return found.also { detailsCache = it }
             }
-            // The BBFC card's content advisory comes from the BBFC's own page. Started now so it is
-            // usually in hand by the time the card is drawn; it is only awaited, briefly, there.
+            // The rating card's content line (the BBFC's advisory, or the MPA's reasons) comes from outside. Started
+            // now so it is usually in hand by the time the card is drawn; it is only awaited, briefly, there.
             val advisoryDeferred = async {
-                if (PreshowSettings.ratingRegion.value != RatingRegion.Bbfc) return@async null
                 if (PreshowSlot.RatingCard !in clipSlots) return@async null
                 val meta = details() ?: return@async null
                 runCatching {
-                    BbfcAdvisory.advisoryFor(title, meta.releaseInfo?.trim()?.take(4)?.takeIf { it.length == 4 && it.all(Char::isDigit) })
+                    when (PreshowSettings.ratingRegion.value) {
+                        RatingRegion.Bbfc ->
+                            BbfcAdvisory.advisoryFor(title, meta.releaseInfo?.trim()?.take(4)?.takeIf { it.length == 4 && it.all(Char::isDigit) })
+                        RatingRegion.Mpaa ->
+                            MpaAdvisory.reasonFor(meta.imdbId ?: metaId.substringBefore(':').takeIf { it.startsWith("tt") })
+                    }
                 }.getOrNull()
             }
             // Anything that plays ahead of the trivia is also time the AI provider gets to answer.
@@ -339,9 +343,7 @@ fun PrerollGate(
                 val region = PreshowSettings.ratingRegion.value
                 val card = when (slot) {
                     PreshowSlot.RatingCard -> normalizeCertification(details()?.ageRating, region)?.let {
-                        val advisory = if (region == RatingRegion.Bbfc) {
-                            withTimeoutOrNull(ADVISORY_WAIT_MS) { advisoryDeferred.await() }
-                        } else null
+                        val advisory = withTimeoutOrNull(ADVISORY_WAIT_MS) { advisoryDeferred.await() }
                         PreshowCardModel.Rating(it, region, titleWithYear(title, details()?.releaseInfo), advisory)
                     }
                     PreshowSlot.FeaturePresentation -> PreshowCardModel.FeaturePresentation(title)
