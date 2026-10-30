@@ -162,18 +162,20 @@ internal fun ArtistRoom(
 ) {
     val colors = MaterialTheme.nuvio.colors
     val context = LocalPlatformContext.current
-    // Built from every release, so the filter changes the release grid, never the timeline.
+    // Built from every release. The release grid follows the whole filter; the side timeline follows only
+    // the Playable / All toggle (the kind chips do not narrow it).
     val timeline = remember(artist.releases) { buildEraTimeline(artist.releases) }
     val dated = remember(timeline) {
         timeline.eras.flatMap { it.groups }
             .sortedWith(compareByDescending<ReleaseGroup> { releasePosition(it.primary) ?: 0.0 }.thenBy { it.primary.title })
     }
+    val timelineGroups = remember(dated, playableOnly) { timelineEntries(dated, playableOnly) }
     val shown = if (filter == ReleaseFilter.Demos) emptyList() else dated.filter { it.passes(playableOnly, filter) }
     val undated = if (filter == ReleaseFilter.Demos) emptyList() else timeline.undated.filter { it.passes(playableOnly, filter) }
-    // The newest covers get a palette (the disc label and a missing cover use it).
-    val wantedKeys = remember(dated) { dated.take(TIMELINE_PALETTE_LIMIT).map { it.primary.key }.toSet() }
+    // The newest covers on the timeline get a palette (the disc label and a missing cover use it).
+    val wantedKeys = remember(timelineGroups) { timelineGroups.take(TIMELINE_PALETTE_LIMIT).map { it.primary.key }.toSet() }
     val missing = artist.releases.count { it.key in wantedKeys && it.needsPalette }
-    LaunchedEffect(artist.id, missing) { ReleasePaletteResolver.ensure(context, artist, keys = wantedKeys) }
+    LaunchedEffect(artist.id, missing, wantedKeys) { ReleasePaletteResolver.ensure(context, artist, keys = wantedKeys) }
 
     BoxWithConstraints(modifier.background(colors.background)) {
         val wide = maxWidth >= ROOM_WIDE_FROM
@@ -223,8 +225,8 @@ internal fun ArtistRoom(
                         onOpenArtist,
                         Modifier.onGloballyPositioned { similarBottomY = it.positionInRoot().y + it.size.height }.padding(bottom = 14.dp),
                     )
-                    if (!wide && dated.isNotEmpty()) {
-                        ReleaseTimeline(dated, onOpen, onInfo, Modifier.padding(bottom = 14.dp).fillMaxWidth())
+                    if (!wide && timelineGroups.isNotEmpty()) {
+                        ReleaseTimeline(timelineGroups, onOpen, onInfo, Modifier.padding(bottom = 14.dp).fillMaxWidth())
                     }
                     Row(
                         Modifier.testTag("artistReleases"),
@@ -273,8 +275,8 @@ internal fun ArtistRoom(
                         DemosArchive(discography.demos, open = demosOpen, onToggle = onToggleDemos, onOpen = onOpen, onInfo = onInfo)
                     }
                 }
-                if (wide && dated.isNotEmpty()) {
-                    ReleaseTimeline(dated, onOpen, onInfo, Modifier.width(timelineWidth).padding(end = TIMELINE_END_GAP))
+                if (wide && timelineGroups.isNotEmpty()) {
+                    ReleaseTimeline(timelineGroups, onOpen, onInfo, Modifier.width(timelineWidth).padding(end = TIMELINE_END_GAP))
                 }
                 }
             }
