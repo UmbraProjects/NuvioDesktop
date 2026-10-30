@@ -40,6 +40,10 @@ internal fun parseAvidClips(html: String): List<AvidClip> =
         .distinctBy { it.videoId }
         .toList()
 
+/** The links in a slot's AVID setting: one or several, separated by spaces, commas, semicolons or new lines. */
+internal fun splitAvidLinks(raw: String): List<String> =
+    raw.split(Regex("[\\s,;]+")).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
 internal fun selectRatingClip(clips: List<AvidClip>, certificate: String): AvidClip? =
     clips.firstOrNull { mentionsCertificate(it.context, certificate) }
 
@@ -95,8 +99,9 @@ object PreshowAssets {
     }
 
     private suspend fun avidClip(slot: PreshowSlot, region: RatingRegion, certificate: String?): TrailerPlaybackSource? {
-        val url = PreshowSettings.avidUrl(slot, region).ifBlank { return null }
-        val clips = AvidClips.forPage(url)
+        val urls = splitAvidLinks(PreshowSettings.avidUrl(slot, region)).ifEmpty { return null }
+        // Several pages pool their clips, so a slot can draw from more than one source.
+        val clips = urls.flatMap { AvidClips.forPage(it) }.distinctBy { it.videoId }
         val candidates = if (certificate != null) {
             listOfNotNull(selectRatingClip(clips, certificate))
         } else {

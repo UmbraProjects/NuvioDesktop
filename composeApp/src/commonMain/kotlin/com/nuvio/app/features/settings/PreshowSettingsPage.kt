@@ -125,7 +125,7 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
                     SettingsGroupDivider(isTablet)
                     SettingsTextInputRow(
                         title = "AVID: " + if (key.startsWith("rating")) "Rating card" + " ($label)" else label,
-                        description = "An avid.wiki page, or a YouTube link, with embedded videos. Used when no local file matches.",
+                        description = "An avid.wiki page, or a YouTube link, with embedded videos. Separate several links with spaces or commas and the clips are pooled. Used when no local file matches.",
                         value = avid[key].orEmpty(),
                         placeholder = "https://avid.wiki/…",
                         isTablet = isTablet,
