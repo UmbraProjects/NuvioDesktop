@@ -16,7 +16,7 @@ enum class DiscoverAiProvider(val defaultModel: String) {
      * it exists as its own choice so the base URL and a sensible model are preset and the user only
      * pastes a key. Groq's free tier is fast, which suits a pre-show that only waits a few seconds.
      */
-    Groq(defaultModel = "llama-3.3-70b-versatile"),
+    Groq(defaultModel = "openai/gpt-oss-120b"),
 
     /** Anthropic's native Messages API. */
     Anthropic(defaultModel = "claude-opus-5"),
