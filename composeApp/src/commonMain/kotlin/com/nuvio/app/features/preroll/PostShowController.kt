@@ -36,7 +36,7 @@ object PostShowController {
     )
 
     private val tracker = PostShowTracker()
-    private var film by mutableStateOf<Film?>(null)
+    private var nowPlaying by mutableStateOf<Film?>(null)
     private var job: Job? = null
 
     /** The cards have been shown, closed or abandoned for this playback; they will not come back. */
@@ -55,10 +55,10 @@ object PostShowController {
     /** The cards are up: the video belongs in the corner box. */
     val active: State<Boolean> = derivedStateOf { pack != null }
 
-    val title: String get() = film?.title.orEmpty()
+    val title: String get() = nowPlaying?.title.orEmpty()
 
     /** The cards are about a season or series finale, not a film. */
-    val isFinale: Boolean get() = film?.scope.let { it != null && it != PostShowScope.Film }
+    val isFinale: Boolean get() = nowPlaying?.scope.let { it != null && it != PostShowScope.Film }
 
     /**
      * A finale's cards are still to come this playback. While true the player holds back the
@@ -66,10 +66,10 @@ object PostShowController {
      * the cards are due. Clears when the cards close or fail, and the player carries on as usual.
      */
     val pending: Boolean
-        get() = film?.let { it.scope != PostShowScope.Film && !spent && PostShowRepository.isReady() } == true
+        get() = nowPlaying?.let { it.scope != PostShowScope.Film && !spent && PostShowRepository.isReady() } == true
 
     fun setFilm(value: Film?) {
-        film = value
+        nowPlaying = value
     }
 
     /** A new playback attempt, or the player leaving. Forgets everything. */
@@ -83,7 +83,7 @@ object PostShowController {
     }
 
     fun onTick(positionMs: Long, durationMs: Long) {
-        val current = film ?: return
+        val current = nowPlaying ?: return
         if (!PreshowSettings.postShowEnabled.value) return
         tracker.onTick(positionMs, durationMs, current.intervals, showing = loading || pack != null).forEach {
             when (it) {
