@@ -1981,6 +1981,7 @@ private fun settingsSearchEntries(
             PlaybackSearchRow("separate-next-up", resolve(Res.string.settings_continue_watching_separate_next_up_title), resolve(Res.string.settings_continue_watching_separate_next_up_description)),
             PlaybackSearchRow("separate-upcoming", resolve(Res.string.settings_continue_watching_separate_upcoming_title), resolve(Res.string.settings_continue_watching_separate_upcoming_description)),
             PlaybackSearchRow("unaired-next-up", resolve(Res.string.settings_continue_watching_show_unaired_next_up_title), resolve(Res.string.settings_continue_watching_show_unaired_next_up_description)),
+            PlaybackSearchRow("relative-countdown", resolve(Res.string.settings_continue_watching_relative_countdown_title), resolve(Res.string.settings_continue_watching_relative_countdown_description)),
             PlaybackSearchRow("blur-next-up", resolve(Res.string.settings_continue_watching_blur_next_up_title), resolve(Res.string.settings_continue_watching_blur_next_up_description)),
         ),
     )

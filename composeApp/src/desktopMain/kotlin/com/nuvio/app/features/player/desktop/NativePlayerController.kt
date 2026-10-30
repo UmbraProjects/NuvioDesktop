@@ -2735,6 +2735,8 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("hiddenHudButtons", hiddenHudButtons)
         append(',')
+        appendJsonField("hudButtonOrder", hudButtonOrder)
+        append(',')
         appendJsonField("alwaysShowClock", alwaysShowClock)
         append(',')
         appendJsonField("playbackSpeedFineIncrementsEnabled", playbackSpeedFineIncrementsEnabled)

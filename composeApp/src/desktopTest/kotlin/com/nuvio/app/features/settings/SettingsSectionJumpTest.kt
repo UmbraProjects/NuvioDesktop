@@ -131,6 +131,7 @@ class SettingsSectionJumpTest {
                             blurNextUp = defaults.blurNextUp,
                             showResumePromptOnLaunch = defaults.showResumePromptOnLaunch,
                             sortMode = defaults.sortMode,
+                            relativeAirCountdown = defaults.relativeAirCountdown,
                         )
                     }
                 }

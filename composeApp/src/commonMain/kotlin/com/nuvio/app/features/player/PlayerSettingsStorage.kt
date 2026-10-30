@@ -27,6 +27,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopHudVignetteEnabled(enabled: Boolean)
     fun loadDesktopHiddenHudButtons(): String?
     fun saveDesktopHiddenHudButtons(commands: String)
+    fun loadDesktopHudButtonOrder(): String?
+    fun saveDesktopHudButtonOrder(commands: String)
     fun loadDesktopAlwaysShowClockEnabled(): Boolean?
     fun saveDesktopAlwaysShowClockEnabled(enabled: Boolean)
     fun loadDesktopPauseOverlaySourceEnabled(): Boolean?

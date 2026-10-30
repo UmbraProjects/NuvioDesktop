@@ -36,6 +36,8 @@ private data class StoredContinueWatchingPreferences(
     /** The full sort mode; `sort_mode` holds only values older builds can read (see legacyValue). */
     @SerialName("sort_mode_v2")
     val sortModeV2: ContinueWatchingSortMode? = null,
+    @SerialName("relative_air_countdown")
+    val relativeAirCountdown: Boolean = false,
 )
 
 object ContinueWatchingPreferencesRepository {
@@ -120,6 +122,7 @@ object ContinueWatchingPreferencesRepository {
                 dismissedNextUpKeys = stored.dismissedNextUpKeys,
                 showResumePromptOnLaunch = stored.showResumePromptOnLaunch,
                 sortMode = stored.sortModeV2 ?: stored.sortMode,
+                relativeAirCountdown = stored.relativeAirCountdown,
             )
         } else {
             ContinueWatchingPreferencesUiState()
@@ -219,6 +222,13 @@ object ContinueWatchingPreferencesRepository {
         persist()
     }
 
+    fun setRelativeAirCountdown(enabled: Boolean) {
+        ensureLoaded()
+        if (_uiState.value.relativeAirCountdown == enabled) return
+        _uiState.value = _uiState.value.copy(relativeAirCountdown = enabled)
+        persist()
+    }
+
     fun removeDismissedNextUpKeysForContent(contentId: String) {
         ensureLoaded()
         val normalizedContentId = contentId.trim()
@@ -249,6 +259,7 @@ object ContinueWatchingPreferencesRepository {
                     showResumePromptOnLaunch = _uiState.value.showResumePromptOnLaunch,
                     sortMode = _uiState.value.sortMode.legacyValue,
                     sortModeV2 = _uiState.value.sortMode,
+                    relativeAirCountdown = _uiState.value.relativeAirCountdown,
                 ),
             ),
         )

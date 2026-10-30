@@ -325,6 +325,8 @@ data class PlayerControlsState(
     val hudVignetteEnabled: Boolean = true,
     // Comma-separated controls.html `data-command`s the user hid from the HUD.
     val hiddenHudButtons: String = "",
+    // Comma-separated action-row `data-command`s in the user's order; empty keeps the authored order.
+    val hudButtonOrder: String = "",
     val alwaysShowClock: Boolean = false,
     val playbackSpeedFineIncrementsEnabled: Boolean = false,
     val playbackSpeedToggleLow: Float = 1f,

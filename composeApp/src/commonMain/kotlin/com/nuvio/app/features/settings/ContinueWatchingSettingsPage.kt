@@ -103,6 +103,8 @@ import nuvio.composeapp.generated.resources.settings_continue_watching_source_sh
 import nuvio.composeapp.generated.resources.settings_continue_watching_section_default_action
 import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_blur_next_up_title
+import nuvio.composeapp.generated.resources.settings_continue_watching_relative_countdown_description
+import nuvio.composeapp.generated.resources.settings_continue_watching_relative_countdown_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_show_unaired_next_up_description
 import nuvio.composeapp.generated.resources.settings_continue_watching_show_unaired_next_up_title
 import nuvio.composeapp.generated.resources.settings_continue_watching_separate_next_up_description
@@ -148,6 +150,7 @@ internal fun LazyListScope.continueWatchingSettingsContent(
     blurNextUp: Boolean,
     showResumePromptOnLaunch: Boolean,
     sortMode: ContinueWatchingSortMode,
+    relativeAirCountdown: Boolean,
 ) {
     // One panel, the look of the row first and then ordered by how much each row changes it:
     // whether it is there and where it reads from first, then how Up Next is split out, then what a click does, then the
@@ -289,6 +292,15 @@ internal fun LazyListScope.continueWatchingSettingsContent(
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-unaired-next-up")),
                     onCheckedChange = ContinueWatchingPreferencesRepository::setShowUnairedNextUp,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_continue_watching_relative_countdown_title),
+                    description = stringResource(Res.string.settings_continue_watching_relative_countdown_description),
+                    checked = relativeAirCountdown,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("continue-watching-relative-countdown")),
+                    onCheckedChange = ContinueWatchingPreferencesRepository::setRelativeAirCountdown,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(

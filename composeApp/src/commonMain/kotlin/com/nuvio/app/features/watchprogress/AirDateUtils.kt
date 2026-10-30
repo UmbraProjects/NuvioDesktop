@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.format.formatReleaseDateWithoutYear
 import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.*
@@ -23,8 +24,24 @@ fun computeAirDateBadgeText(
     compact: Boolean,
 ): String? {
     val release = remember(releasedIso) { resolveReleaseInstant(releasedIso) } ?: return null
+    val prefs by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
+    val relative = prefs.relativeAirCountdown
 
-    return when (val countdown = rememberReleaseCountdown(release)) {
+    val countdown = rememberReleaseCountdown(release, relative)
+    if (relative) {
+        // One wording for every card size: "In 5 hours", "In 1 day".
+        return when (countdown) {
+            null -> null
+            is ReleaseCountdown.InMinutes -> pluralStringResource(Res.plurals.cw_in_minutes, countdown.minutes, countdown.minutes)
+            is ReleaseCountdown.InHours -> pluralStringResource(Res.plurals.cw_in_hours, countdown.hours, countdown.hours)
+            is ReleaseCountdown.InDays -> pluralStringResource(Res.plurals.cw_airs_in_days_short, countdown.days, countdown.days)
+            ReleaseCountdown.Today -> stringResource(Res.string.cw_airs_today_short)
+            ReleaseCountdown.Tomorrow -> pluralStringResource(Res.plurals.cw_airs_in_days_short, 1, 1)
+            is ReleaseCountdown.OnDate -> stringResource(Res.string.cw_airs_date_short, formatReleaseDateWithoutYear(countdown.localIsoDate))
+        }
+    }
+
+    return when (countdown) {
         null -> null
         is ReleaseCountdown.InMinutes ->
             if (compact) stringResource(Res.string.cw_airs_in_minutes_short, countdown.minutes)
@@ -56,23 +73,25 @@ fun computeAirDateBadgeText(
  * move every few seconds, a "In 3 days" badge only has to survive midnight.
  */
 @Composable
-private fun rememberReleaseCountdown(release: ReleaseInstant): ReleaseCountdown? {
-    var countdown by remember(release) {
+private fun rememberReleaseCountdown(release: ReleaseInstant, relative: Boolean): ReleaseCountdown? {
+    var countdown by remember(release, relative) {
         mutableStateOf(
             releaseCountdown(
                 release = release,
                 nowMs = WatchProgressClock.nowEpochMs(),
                 todayIsoDate = CurrentDateProvider.todayIsoDate(),
+                relative = relative,
             ),
         )
     }
 
-    LaunchedEffect(release) {
+    LaunchedEffect(release, relative) {
         while (true) {
             val current = releaseCountdown(
                 release = release,
                 nowMs = WatchProgressClock.nowEpochMs(),
                 todayIsoDate = CurrentDateProvider.todayIsoDate(),
+                relative = relative,
             )
             countdown = current
             delay(countdownRefreshIntervalMs(current))

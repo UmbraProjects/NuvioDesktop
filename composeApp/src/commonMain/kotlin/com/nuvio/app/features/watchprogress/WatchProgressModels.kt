@@ -262,6 +262,12 @@ data class ContinueWatchingPreferencesUiState(
     val dismissedNextUpKeys: Set<String> = emptySet(),
     val showResumePromptOnLaunch: Boolean = true,
     val sortMode: ContinueWatchingSortMode = ContinueWatchingSortMode.DEFAULT,
+    /**
+     * Upcoming episodes count down in plain elapsed time: hours under a day, then whole days with no
+     * cut-over to a date ("In 1 day" from 24 hours, "In 2 days" from 48). Off keeps Today / Tomorrow
+     * and the date past a week.
+     */
+    val relativeAirCountdown: Boolean = false,
 )
 
 internal fun nextUpDismissKey(

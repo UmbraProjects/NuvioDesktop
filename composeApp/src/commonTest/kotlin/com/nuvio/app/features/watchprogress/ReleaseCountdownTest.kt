@@ -21,6 +21,34 @@ class ReleaseCountdownTest {
         todayIsoDate = "2026-08-30",
     )
 
+    private fun relativeIn(remainingMs: Long): ReleaseCountdown? = releaseCountdown(
+        release = timestamped(epochMs = 1_000_000_000_000L + remainingMs),
+        nowMs = 1_000_000_000_000L,
+        todayIsoDate = "2026-08-30",
+        relative = true,
+    )
+
+    @Test
+    fun `relative countdown is hours under a day then whole days with no date`() {
+        assertEquals(ReleaseCountdown.InHours(23), relativeIn(23 * hour + 59 * 60_000L))
+        assertEquals(ReleaseCountdown.InDays(1), relativeIn(24 * hour))
+        assertEquals(ReleaseCountdown.InDays(1), relativeIn(47 * hour + 59 * 60_000L))
+        assertEquals(ReleaseCountdown.InDays(2), relativeIn(48 * hour))
+        assertEquals(ReleaseCountdown.InDays(2), relativeIn(71 * hour))
+        assertEquals(ReleaseCountdown.InDays(3), relativeIn(72 * hour))
+        assertEquals(ReleaseCountdown.InDays(20), relativeIn(20 * day + hour))
+        assertEquals(ReleaseCountdown.InMinutes(30), relativeIn(30 * 60_000L))
+        assertNull(relativeIn(0L))
+    }
+
+    @Test
+    fun `relative countdown keeps calendar days for a bare date`() {
+        fun relativeDate(date: String) = releaseCountdown(dateOnly(date), nowMs = 0L, todayIsoDate = "2026-08-30", relative = true)
+        assertEquals(ReleaseCountdown.Today, relativeDate("2026-08-30"))
+        assertEquals(ReleaseCountdown.InDays(1), relativeDate("2026-08-31"))
+        assertEquals(ReleaseCountdown.InDays(12), relativeDate("2026-09-11"))
+    }
+
     @Test
     fun `four days and one hour out is four days, not five`() {
         // The original report: the calendar-date subtraction called this "In 5 days" because the

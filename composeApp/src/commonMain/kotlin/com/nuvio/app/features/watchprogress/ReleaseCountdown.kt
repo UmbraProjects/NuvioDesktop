@@ -34,7 +34,9 @@ fun releaseCountdown(
     release: ReleaseInstant,
     nowMs: Long,
     todayIsoDate: String,
+    relative: Boolean = false,
 ): ReleaseCountdown? {
+    if (relative) return relativeReleaseCountdown(release, nowMs, todayIsoDate)
     // Without a time of day the only honest unit is the calendar day, so a bare date keeps the
     // "Today / Tomorrow / In N days" wording it has always had.
     if (!release.hasTimeOfDay) {
@@ -61,6 +63,36 @@ fun releaseCountdown(
         remainingMs < HoursCutoffMs -> ReleaseCountdown.InHours((remainingMs / HourMs).toInt())
         remainingMs < (DaysCutoff + 1) * DayMs -> ReleaseCountdown.InDays((remainingMs / DayMs).toInt())
         else -> ReleaseCountdown.OnDate(release.localIsoDate)
+    }
+}
+
+/**
+ * The "relative" countdown (Continue Watching > Relative Air Countdown): hours under a day, then
+ * whole elapsed days with no switch to a date, so 24-48 hours is "In 1 day" and 48-72 "In 2 days".
+ * Under an hour stays in minutes rather than reading "In 0 hours". A bare date has no time to count
+ * hours from, so it keeps calendar days ("Today", then "In N days").
+ */
+private fun relativeReleaseCountdown(
+    release: ReleaseInstant,
+    nowMs: Long,
+    todayIsoDate: String,
+): ReleaseCountdown? {
+    if (!release.hasTimeOfDay) {
+        val daysUntil = isoDaysBetween(from = todayIsoDate, to = release.localIsoDate) ?: return null
+        return when {
+            daysUntil < 0 -> null
+            daysUntil == 0 -> ReleaseCountdown.Today
+            else -> ReleaseCountdown.InDays(daysUntil)
+        }
+    }
+    val remainingMs = release.epochMs - nowMs
+    if (remainingMs <= 0L) return null
+    return when {
+        remainingMs < HourMs -> ReleaseCountdown.InMinutes(
+            ((remainingMs + MinuteMs - 1) / MinuteMs).toInt().coerceAtLeast(1),
+        )
+        remainingMs < DayMs -> ReleaseCountdown.InHours((remainingMs / HourMs).toInt())
+        else -> ReleaseCountdown.InDays((remainingMs / DayMs).toInt())
     }
 }
 

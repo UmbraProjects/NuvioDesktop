@@ -1140,6 +1140,7 @@ private fun MobileSettingsScreen(
                     blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
                     showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
                     sortMode = continueWatchingPreferencesUiState.sortMode,
+                    relativeAirCountdown = continueWatchingPreferencesUiState.relativeAirCountdown,
                 )
                 SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                     isTablet = false,
@@ -1989,6 +1990,7 @@ private fun TabletSettingsScreen(
                         blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
                         showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
                         sortMode = continueWatchingPreferencesUiState.sortMode,
+                        relativeAirCountdown = continueWatchingPreferencesUiState.relativeAirCountdown,
                     )
                     SettingsPage.ContentDiscovery -> contentDiscoveryContent(
                         isTablet = true,
@@ -2053,6 +2055,7 @@ private fun TabletSettingsScreen(
                                     blurNextUp = continueWatchingPreferencesUiState.blurNextUp,
                                     showResumePromptOnLaunch = continueWatchingPreferencesUiState.showResumePromptOnLaunch,
                                     sortMode = continueWatchingPreferencesUiState.sortMode,
+                                    relativeAirCountdown = continueWatchingPreferencesUiState.relativeAirCountdown,
                                 )
                             }
                         },

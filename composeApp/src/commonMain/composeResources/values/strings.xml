@@ -1236,6 +1236,8 @@
     <string name="settings_continue_watching_sort_mode_default">Last watched</string>
     <string name="settings_continue_watching_sort_mode_default_desc">Sort everything by when you last watched it</string>
     <string name="settings_continue_watching_sort_mode_streaming">Aired first</string>
+    <string name="settings_continue_watching_relative_countdown_title">Relative Air Countdown</string>
+    <string name="settings_continue_watching_relative_countdown_description">Upcoming episodes count down in hours under a day, then in whole days ("In 1 day" from 24 hours, "In 2 days" from 48), instead of Today, Tomorrow and a date.</string>
     <string name="settings_continue_watching_sort_mode_streaming_desc">Unaired Up Next episodes go last, soonest first</string>
     <string name="settings_continue_watching_sort_mode_rotation">Rotation</string>
     <string name="settings_continue_watching_sort_mode_rotation_desc">Brings forward the shows you haven’t watched in the longest time</string>
@@ -1771,6 +1773,16 @@
     <string name="settings_playback_hud_button_toggle_fullscreen">Fullscreen</string>
     <string name="settings_playback_hud_button_lock">Lock controls</string>
     <string name="settings_playback_hud_button_video_settings">Video settings</string>
+    <string name="settings_playback_hud_button_stream_info">Stream info</string>
+    <string name="settings_playback_hud_button_channels">Channels (Live TV)</string>
+    <string name="settings_playback_hud_button_order">Player Button Order</string>
+    <string name="settings_playback_hud_button_order_description">The order of the tool buttons beside the play controls. Buttons that do not fit fold into the More menu in this order too.</string>
+    <string name="settings_playback_hud_button_order_default">Default</string>
+    <string name="settings_playback_hud_button_order_custom">Custom</string>
+    <string name="settings_playback_hud_button_order_reset">Reset</string>
+    <string name="settings_playback_hud_button_order_hidden">(hidden)</string>
+    <string name="settings_playback_hud_button_move_up">Move up</string>
+    <string name="settings_playback_hud_button_move_down">Move down</string>
     <string name="settings_playback_hud_vignette_description">Darken the top and bottom edges of the picture while the player controls are showing. Off leaves the picture untouched.</string>
     <string name="settings_playback_hud_layout_minimal_description">One slim row: playback, volume and time on the left, tools on the right, under an edge-to-edge seek bar.</string>
     <string name="settings_playback_hud_layout_ultra">Ultra Minimal</string>
@@ -3401,6 +3413,14 @@
         <item quantity="other">Airs in %1$d minutes</item>
     </plurals>
     <string name="cw_airs_in_hours_short">In %1$dh</string>
+    <plurals name="cw_in_hours">
+        <item quantity="one">In %1$d hour</item>
+        <item quantity="other">In %1$d hours</item>
+    </plurals>
+    <plurals name="cw_in_minutes">
+        <item quantity="one">In %1$d minute</item>
+        <item quantity="other">In %1$d minutes</item>
+    </plurals>
     <string name="cw_airs_in_minutes_short">In %1$dm</string>
     <string name="cw_new_episode">New Episode</string>
     <string name="cw_new_season">New Season</string>

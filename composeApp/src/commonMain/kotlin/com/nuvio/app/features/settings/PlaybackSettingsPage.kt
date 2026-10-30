@@ -1224,6 +1224,12 @@ private fun PlaybackSettingsSection(
                             isTablet = isTablet,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
+                        HudButtonOrderRow(
+                            order = autoPlayPlayerSettings.desktopHudButtonOrder,
+                            hidden = autoPlayPlayerSettings.desktopHiddenHudButtons,
+                            isTablet = isTablet,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(
                             title = stringResource(Res.string.settings_playback_always_show_clock),
                             description = stringResource(Res.string.settings_playback_always_show_clock_description),
@@ -4997,24 +5003,14 @@ private fun formatP2pCacheBytes(bytes: Long): String {
 /** Desktop HUD buttons the user can switch off; values are controls.html `data-command`s. */
 @Composable
 private fun HiddenHudButtonsRow(hidden: Set<String>, isTablet: Boolean) {
+    // The transport first, then the action row (shared with the order editor, so a button added to the
+    // HUD only has to be listed once), then the header buttons.
     val options = listOf(
         SettingsChoiceOption("previousEpisode", stringResource(Res.string.settings_playback_hud_button_previous_episode)),
         SettingsChoiceOption("seekBack", stringResource(Res.string.settings_playback_hud_button_seek_back)),
         SettingsChoiceOption("seekForward", stringResource(Res.string.settings_playback_hud_button_seek_forward)),
         SettingsChoiceOption("nextEpisode", stringResource(Res.string.settings_playback_hud_button_next_episode)),
-        SettingsChoiceOption("resize", stringResource(Res.string.settings_playback_hud_button_resize)),
-        SettingsChoiceOption("speed", stringResource(Res.string.settings_playback_hud_button_speed)),
-        SettingsChoiceOption("subtitles", stringResource(Res.string.settings_playback_hud_button_subtitles)),
-        SettingsChoiceOption("audio", stringResource(Res.string.settings_playback_hud_button_audio)),
-        SettingsChoiceOption("keyboardCycleHdrMode", stringResource(Res.string.settings_playback_hud_button_keyboard_cycle_hdr_mode)),
-        SettingsChoiceOption("keyboardCycleColorProfile", stringResource(Res.string.settings_playback_hud_button_keyboard_cycle_color_profile)),
-        SettingsChoiceOption("keyboardCycleAnimeMode", stringResource(Res.string.settings_playback_hud_button_keyboard_cycle_anime_mode)),
-        SettingsChoiceOption("keyboardCycleAnimeSvp", stringResource(Res.string.settings_playback_hud_button_keyboard_cycle_anime_svp)),
-        SettingsChoiceOption("sources", stringResource(Res.string.settings_playback_hud_button_sources)),
-        SettingsChoiceOption("episodes", stringResource(Res.string.settings_playback_hud_button_episodes)),
-        SettingsChoiceOption("submitIntro", stringResource(Res.string.settings_playback_hud_button_submit_intro)),
-        SettingsChoiceOption("party", stringResource(Res.string.settings_playback_hud_button_party)),
-        SettingsChoiceOption("pictureInPicture", stringResource(Res.string.settings_playback_hud_button_picture_in_picture)),
+    ) + HudActionRowButtons.map { (command, label) -> SettingsChoiceOption(command, stringResource(label)) } + listOf(
         SettingsChoiceOption("toggleFullscreen", stringResource(Res.string.settings_playback_hud_button_toggle_fullscreen)),
         SettingsChoiceOption("lock", stringResource(Res.string.settings_playback_hud_button_lock)),
         SettingsChoiceOption("videoSettings", stringResource(Res.string.settings_playback_hud_button_video_settings)),

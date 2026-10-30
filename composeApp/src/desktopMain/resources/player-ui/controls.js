@@ -5932,6 +5932,7 @@ const renderChrome = () => {
   root.classList.toggle("seek-handle-hidden", state.seekHandleEnabled === false);
   root.classList.toggle("vignette-hidden", state.hudVignetteEnabled === false);
   applyHiddenHudButtons(state.hiddenHudButtons);
+  applyHudButtonOrder(state.hudButtonOrder);
   // The official bar also reads the time as one "position / duration" readout, right-aligned.
   applyMinimalHudTimeLayout(minimalHud || officialHud);
   applyUltraHudLayout(ultraHud);
@@ -6797,7 +6798,28 @@ const applyHiddenHudButtons = value => {
   // render() schedules the overflow pass right after; its signature counts user-hidden buttons.
 };
 
-// Returns every collapsible button to the row in authored order, so a measurement always starts
+// The action row in the order set in Settings > Playback (comma-separated data-commands). Sorting
+// overflowCapableActions itself means restoreActionRowLayout and the overflow menu follow it too.
+// Commands the setting does not name (a button added after it was saved) keep their authored order
+// after the named ones; an empty value is the authored order.
+const authoredActionOrder = overflowCapableActions.slice();
+let appliedHudButtonOrder = "";
+const applyHudButtonOrder = value => {
+  const next = String(value || "");
+  if (next === appliedHudButtonOrder) return;
+  appliedHudButtonOrder = next;
+  const order = next.split(",").map(part => part.trim()).filter(Boolean);
+  const rank = button => {
+    const index = order.indexOf(button.dataset.command);
+    return index >= 0 ? index : order.length + authoredActionOrder.indexOf(button);
+  };
+  overflowCapableActions.sort((a, b) => rank(a) - rank(b));
+  if (!actionRow || !actionOverflowButton) return;
+  restoreActionRowLayout();
+  invalidateActionRowOverflow();
+};
+
+// Returns every collapsible button to the row in the current order, so a measurement always starts
 // from the uncollapsed layout.
 const restoreActionRowLayout = () => {
   overflowCapableActions.forEach(button => {

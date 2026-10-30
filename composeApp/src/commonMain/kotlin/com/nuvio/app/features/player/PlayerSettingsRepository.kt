@@ -81,6 +81,8 @@ data class PlayerSettingsUiState(
     val desktopHudVignetteEnabled: Boolean = true,
     // HUD buttons the user switched off, by their controls.html `data-command`.
     val desktopHiddenHudButtons: Set<String> = emptySet(),
+    // The action row's buttons in the user's order, by `data-command`; empty keeps controls.html's order.
+    val desktopHudButtonOrder: List<String> = emptyList(),
     val desktopAlwaysShowClockEnabled: Boolean = false,
     // Adds the playing source (release name + provider) as the bottom row of the paused metadata
     // overlay. Off by default: the raw release strings are noisy, and only some viewers want them.
@@ -297,6 +299,7 @@ object PlayerSettingsRepository {
     private var desktopSeekHandleEnabled = true
     private var desktopHudVignetteEnabled = true
     private var desktopHiddenHudButtons: Set<String> = emptySet()
+    private var desktopHudButtonOrder: List<String> = emptyList()
     private var desktopAlwaysShowClockEnabled = false
     private var desktopPauseOverlaySourceEnabled = false
     private var desktopPlaybackSpeedFineIncrementsEnabled = false
@@ -450,6 +453,7 @@ object PlayerSettingsRepository {
         desktopSeekHandleEnabled = true
         desktopHudVignetteEnabled = true
         desktopHiddenHudButtons = emptySet()
+        desktopHudButtonOrder = emptyList()
         desktopAlwaysShowClockEnabled = false
         desktopPauseOverlaySourceEnabled = false
         desktopPlaybackSpeedFineIncrementsEnabled = false
@@ -597,6 +601,12 @@ object PlayerSettingsRepository {
         desktopMinimalHudPillsEnabled = PlayerSettingsStorage.loadDesktopMinimalHudPillsEnabled() ?: true
         desktopSeekHandleEnabled = PlayerSettingsStorage.loadDesktopSeekHandleEnabled() ?: true
         desktopHudVignetteEnabled = PlayerSettingsStorage.loadDesktopHudVignetteEnabled() ?: true
+        desktopHudButtonOrder = PlayerSettingsStorage.loadDesktopHudButtonOrder()
+            ?.split(',')
+            ?.map(String::trim)
+            ?.filter(String::isNotEmpty)
+            ?.distinct()
+            .orEmpty()
         desktopHiddenHudButtons = PlayerSettingsStorage.loadDesktopHiddenHudButtons()
             ?.split(',')
             ?.map(String::trim)
@@ -961,6 +971,16 @@ object PlayerSettingsRepository {
         desktopHiddenHudButtons = next
         publish()
         PlayerSettingsStorage.saveDesktopHiddenHudButtons(next.sorted().joinToString(","))
+    }
+
+    /** [order] is every action-row command, first to last; empty goes back to the HUD's own order. */
+    fun setDesktopHudButtonOrder(order: List<String>) {
+        ensureLoaded()
+        val next = order.map(String::trim).filter(String::isNotEmpty).distinct()
+        if (next == desktopHudButtonOrder) return
+        desktopHudButtonOrder = next
+        publish()
+        PlayerSettingsStorage.saveDesktopHudButtonOrder(next.joinToString(","))
     }
 
     fun setDesktopHudLayout(layout: DesktopHudLayout) {
@@ -1790,6 +1810,7 @@ object PlayerSettingsRepository {
             desktopSeekHandleEnabled = desktopSeekHandleEnabled,
             desktopHudVignetteEnabled = desktopHudVignetteEnabled,
             desktopHiddenHudButtons = desktopHiddenHudButtons,
+            desktopHudButtonOrder = desktopHudButtonOrder,
             desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
             desktopPauseOverlaySourceEnabled = desktopPauseOverlaySourceEnabled,
             desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,
