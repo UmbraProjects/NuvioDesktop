@@ -86,7 +86,8 @@ object DiscoverAiClient {
                 runCatching {
                     when (settings.provider) {
                         DiscoverAiProvider.Anthropic -> callAnthropic(settings, prompt)
-                        DiscoverAiProvider.OpenAiCompat -> callOpenAiCompat(settings, prompt)
+                        DiscoverAiProvider.OpenAiCompat,
+                        DiscoverAiProvider.Groq -> callOpenAiCompat(settings, prompt)
                     }
                 }
             }

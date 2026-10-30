@@ -44,4 +44,13 @@ expect fun HomeHeroTrailerSurface(
     // that point, silently swallowing all further key presses; the caller should reclaim
     // keyboard focus for its own focusable content here.
     onSurfaceDisposed: () -> Unit = {},
+    // Real-time loudness normalisation (dynaudnorm) for uploads of wildly varying loudness. Clips
+    // that are already mastered (pre-show cinema intro, bumper, rating card) pass false: the
+    // normaliser ramps up from unity gain and shows up as a swell at the start of each clip.
+    normalizeAudio: Boolean = true,
+    // The pre-show pipeline: every clip and trailer plays as a plain video. No volume slider and no
+    // mute button (a Skip button is the only chrome), a fixed full volume that ignores the shared
+    // hero-trailer mute/volume state, and a one-second fade in at the start and out at the end so
+    // consecutive items do not click or jump. Loudness evening still follows [normalizeAudio].
+    preshow: Boolean = false,
 )

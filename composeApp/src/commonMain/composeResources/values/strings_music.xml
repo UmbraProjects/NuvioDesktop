@@ -1,0 +1,36 @@
+<resources>
+    <!-- fork:music  Strings for the Music settings page (kept out of strings.xml so upstream merges never touch them). -->
+    <string name="compose_settings_page_music">Music</string>
+    <string name="settings_music_description">The Music tab, its artwork sources and playback.</string>
+    <string name="settings_music_section_general">General</string>
+    <string name="settings_music_section_sources">Artwork and details</string>
+    <string name="settings_music_section_playback">Playback</string>
+    <string name="settings_music_show_tab">Show Music</string>
+    <string name="settings_music_show_tab_description">The Music tab in the navigation bar. Turning it off hides the tab and stops the player; your library and settings are kept.</string>
+    <string name="settings_music_fanart_key">Fanart.tv API key</string>
+    <string name="settings_music_fanart_key_description">Adds HD logos, banners, backgrounds and CD art. A free personal key from fanart.tv (Account, Your API keys). Applies the next time an artist is added or refreshed.</string>
+    <string name="settings_music_lastfm_key">Last.fm API key</string>
+    <string name="settings_music_lastfm_key_description">Artist tags and ladder suggestions from Last.fm instead of MusicBrainz, which is often slow or unreachable. A free key from last.fm/api/account/create. MusicBrainz is still used when Last.fm has no answer.</string>
+    <string name="settings_music_audiodb_key">TheAudioDB API key</string>
+    <string name="settings_music_audiodb_key_description">Biographies, logos and backgrounds. Without a key the shared test key is used, which is rate limited. Applies the next time an artist is added or refreshed.</string>
+    <string name="settings_music_where_next">Build "Where next?" automatically</string>
+    <string name="settings_music_where_next_description">On an artist page, finds where to go next without being asked. Turn off on a slow connection; the page then waits for a button.</string>
+    <string name="settings_music_nebula_link">Music addon link (Nebula)</string>
+    <string name="settings_music_nebula_link_description">With a link, an album page can play a lossless copy from your addon instead of YouTube Music. Paste your addon's manifest link. It is private to you and is not included in settings backups.</string>
+    <string name="settings_music_prefer_addon">Prefer the addon when it has the album</string>
+    <string name="settings_music_prefer_addon_description">Albums open on the addon's lossless copy when it has one; the switch on the album page still lets you pick YouTube Music.</string>
+    <string name="settings_music_reduced_motion">Reduce motion</string>
+    <string name="settings_music_reduced_motion_description">Holds the Music pages still: no drifting backgrounds, pulsing, cycling or spinning disc.</string>
+    <string name="settings_music_mb_offline">MusicBrainz offline copy</string>
+    <string name="settings_music_mb_offline_absent">MusicBrainz's web service answers one request a second and often turns requests away, which slows artist pages and "Where next?". An offline copy answers instantly. About 3 GB to download, then about ten minutes of building in the background; it keeps about 2 GB.</string>
+    <string name="settings_music_mb_offline_downloading">Downloading %1$s of %2$s</string>
+    <string name="settings_music_mb_offline_building">Building the index, %1$d%%. The app stays usable meanwhile.</string>
+    <string name="settings_music_mb_offline_ready">Dump of %1$s: %2$s artists, %3$s release groups, %4$s on disk.</string>
+    <string name="settings_music_mb_offline_newer">A newer dump (%1$s) is available.</string>
+    <string name="settings_music_mb_offline_failed">Didn't finish: %1$s</string>
+    <string name="settings_music_mb_offline_download">Download</string>
+    <string name="settings_music_mb_offline_update">Update</string>
+    <string name="settings_music_mb_offline_cancel">Cancel</string>
+    <string name="settings_music_mb_offline_delete">Delete</string>
+    <string name="settings_music_mb_offline_retry">Try again</string>
+</resources>

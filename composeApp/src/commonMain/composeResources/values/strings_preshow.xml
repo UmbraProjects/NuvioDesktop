@@ -1,0 +1,40 @@
+<resources>
+    <!-- fork:preshow  Strings for the pre-show, trivia and theme-song features (kept out of strings.xml so upstream merges never touch them). -->
+    <string name="settings_discover_ai_provider_groq">Groq</string>
+    <string name="settings_ai_trivia_enabled">Pre-show Trivia</string>
+    <string name="settings_ai_trivia_enabled_description">Show trivia slides before a film starts. With an AI provider set up above, it writes the slides and a short quiz (one request per film when you press play; each result is kept so replaying it is free). Without one, or if it is unavailable, slides come from the film's Wikipedia article.</string>
+    <string name="preshow_starting">Starting your pre-show…</string>
+    <string name="preshow_starting_hint">Esc to skip</string>
+    <string name="trivia_skip">Skip</string>
+    <string name="trivia_hint_question">Up / Down to choose · Enter to answer · Esc to skip the pre-show</string>
+    <string name="trivia_not_right">Not right?</string>
+    <string name="trivia_origin_ai">Written by AI</string>
+    <string name="trivia_origin_wikipedia">From Wikipedia</string>
+    <string name="trivia_origin_metadata">From the film's details</string>
+    <string name="trivia_question_progress">Question %1$d of %2$d</string>
+    <string name="trivia_correct">Correct</string>
+    <string name="trivia_incorrect">Not quite</string>
+    <string name="trivia_category_production">Production</string>
+    <string name="trivia_category_cast">Cast</string>
+    <string name="trivia_category_legacy">Legacy</string>
+    <string name="trivia_category_awards">Awards</string>
+    <string name="trivia_category_trivia">Trivia</string>
+    <string name="settings_preroll_trailers">Pre-show trailers</string>
+    <string name="settings_preroll_trailers_description">Play trailers of similar titles (from More Like This) before a film starts. Escape skips them all.</string>
+    <string name="settings_preroll_trailers_off">Off</string>
+    <string name="settings_preshow_keep_audio_alive">Keep audio output awake</string>
+    <string name="settings_preshow_keep_audio_alive_description">Plays an inaudible signal during the pre-show so an HDMI receiver does not drop its input between trailers, which can cause a dip and a Dolby flash at the start of each one.</string>
+    <string name="settings_music_keep_audio_alive">Keep audio output awake for music</string>
+    <string name="settings_music_keep_audio_alive_description">Plays an inaudible signal while music plays so an HDMI receiver does not drop its input between tracks. Try it if you hear a dip or see the format indicator flash when a track changes.</string>
+    <string name="compose_settings_page_preshow">Pre-show</string>
+    <string name="settings_preshow_description">Trailers and trivia that play before a film starts.</string>
+    <string name="settings_preshow_section_trailers">Trailers</string>
+    <string name="settings_preshow_section_trivia">Trivia</string>
+    <string name="settings_preshow_trivia_needs_ai">No AI provider is set up, so trivia comes from Wikipedia and has no quiz. For AI-written trivia, set a provider (OpenAI, Groq, Anthropic and others), model and key under Discover, then AI.</string>
+    <string name="settings_theme_song_section">Theme songs</string>
+    <string name="settings_theme_song_trivia">Theme song during trivia</string>
+    <string name="settings_theme_song_trivia_description">Plays the film or show\'s main theme quietly while the trivia cards are on screen. It is found on YouTube and may not exist for every title.</string>
+    <string name="settings_theme_song_details">Theme song on details screen</string>
+    <string name="settings_theme_song_details_description">Plays the main theme behind a film\'s or show\'s details page. It stays silent while a hero trailer has its sound on.</string>
+    <string name="settings_theme_song_volume">Theme song volume</string>
+</resources>

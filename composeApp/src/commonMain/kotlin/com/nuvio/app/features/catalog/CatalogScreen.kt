@@ -377,8 +377,6 @@ private fun CatalogHeader(
             onClick = onBack,
             modifier = Modifier
                 .size(40.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
             iconSize = 24.dp,
         )
         Spacer(modifier = Modifier.height(16.dp))

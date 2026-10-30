@@ -50,6 +50,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.MusicNote // fork:music
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -115,6 +116,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import com.nuvio.app.features.music.MusicRootHosts
+import com.nuvio.app.features.music.isMusicFullBleedPage
+import com.nuvio.app.features.music.musicRoutes
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -660,6 +664,7 @@ enum class AppScreenTab {
     Library,
     /** IPTV channels; only in the navigation while a playlist exists (see rememberLiveTvTabVisible). */
     LiveTv,
+    Music, // fork:music - its own screen, like LiveTv (see MusicTabHost)
     Settings,
 }
 
@@ -677,7 +682,7 @@ internal fun rootTabHistoryAfterNavigation(
 // the five nav quadrants keep the 80.dp rhythm they had when there were four. Quadrants divide the
 // bar by weight, so hiding Discover subtracts one quadrant instead of stretching the other four.
 private val FloatingTopBarQuadrantWidth = 64.dp
-private val FloatingTopBarWidth = 320.dp
+private val FloatingTopBarWidth = 384.dp // fork:music (320.dp + one quadrant for Music)
 
 // The sidebar's nav glyphs sit alone in a wide rail rather than in a dense pill, so they carry
 // 15% more than the standard 20.dp icon step to stop them reading as undersized.
@@ -693,6 +698,7 @@ private fun AppScreenTab.toNativeNavigationTab(): NativeNavigationTab = when (th
     // Home rather than inventing a tab the native bar cannot render or select back.
     AppScreenTab.Discover -> NativeNavigationTab.Home
     AppScreenTab.LiveTv -> NativeNavigationTab.Home
+    AppScreenTab.Music -> NativeNavigationTab.Home // fork:music - no slot on the native tab bar
     AppScreenTab.Library -> NativeNavigationTab.Library
     AppScreenTab.Settings -> NativeNavigationTab.Settings
 }
@@ -1422,6 +1428,9 @@ private fun MainAppContent(
         val hapticFeedback = LocalHapticFeedback.current
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
+        // fork:music-navbar - where the Music bar's swap button returns to.
+        var lastTabBeforeMusic by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
+        LaunchedEffect(selectedTab) { if (selectedTab != AppScreenTab.Music) lastTabBeforeMusic = selectedTab }
         var rootTabBackStack by remember { mutableStateOf<List<AppScreenTab>>(emptyList()) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
         var navigateToContentCount by remember { mutableStateOf(0) }
@@ -1555,6 +1564,8 @@ private fun MainAppContent(
                             searchOverlayActive = false
                             navigateToContentCount++
                         }
+                        // fork:music - a page open inside the tab (the Music ladder) closes before the tab is left.
+                        com.nuvio.app.core.ui.TabBackInterceptor.handle() -> Unit
                         rootTabBackStack.isNotEmpty() -> {
                             val target = rootTabBackStack.last()
                             rootTabBackStack = rootTabBackStack.dropLast(1)
@@ -1679,6 +1690,7 @@ private fun MainAppContent(
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.Discover -> discoverScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.LiveTv -> Unit
+            AppScreenTab.Music -> Unit // fork:music
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
     }
@@ -2990,6 +3002,11 @@ private fun MainAppContent(
             val latestPosterOverlayOpen = rememberUpdatedState(
                 selectedPosterActionTarget != null || selectedContinueWatchingForActions != null,
             )
+            // fork:music - a film on screen pauses the music player and takes its bar away.
+            val musicPlayerHidden = currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true
+            val musicBarInset = com.nuvio.app.features.music.rememberMusicBarInset(musicPlayerHidden)
+            // The album and artist pages paint under the bar themselves, so the shell must not pad them.
+            val musicPageTakesInset = currentBackStackEntry?.destination?.isMusicFullBleedPage() == true
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -3011,6 +3028,10 @@ private fun MainAppContent(
                     },
                 ) {
                 Box(modifier = Modifier.fillMaxSize()) {
+                CompositionLocalProvider(
+                    com.nuvio.app.features.music.LocalMusicBarInset provides
+                        (if (musicPageTakesInset) musicBarInset else 0.dp), // fork:music
+                ) {
                 NavHost(
                     navController = navController,
                     startDestination = TabsRoute,
@@ -3027,6 +3048,7 @@ private fun MainAppContent(
                     popExitTransition = { if (isIos) fadeOut(animationSpec = tween(700)) else ExitTransition.None },
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(bottom = if (musicPageTakesInset) 0.dp else musicBarInset) // fork:music
                         // Right-click on empty space in a pushed screen (anything with a back arrow)
                         // acts as Back — the same request the mouse Back button sends. Posters and
                         // every other right-click action consume the press first, so they win.
@@ -3069,6 +3091,11 @@ private fun MainAppContent(
                         },
                     )
                 }
+                // fork:music
+                musicRoutes(
+                    guardedBack = { entry -> rememberGuardedPopBackStack(navController = navController, backStackEntry = entry) },
+                    navigate = { navController.navigateIfResumed(it) },
+                )
                 composable<DetailRoute> { backStackEntry ->
                     val route = backStackEntry.toRoute<DetailRoute>()
                     val randomPlayAutoPlayConsumed =
@@ -3291,6 +3318,10 @@ private fun MainAppContent(
                             }
                         },
                     )
+                    // fork:preroll - the pre-show owns the screen until it finishes (module hook, no re-indent).
+                    if (!com.nuvio.app.features.preroll.prerollGateCleared(route.launchId.toString(), launch)) {
+                        return@composable
+                    }
                     PlayerScreen(
                         title = launch.title,
                         sourceUrl = launch.sourceUrl,
@@ -3582,6 +3613,7 @@ private fun MainAppContent(
                     )
                 }
                 }
+                } // fork:music - CompositionLocalProvider(LocalMusicBarInset)
                 // Home and the other tabs stay composed while a pushed screen covers them, so Back shows a
                 // frame that already exists instead of rebuilding Home (2026-10-19: every Details -> Home
                 // return hitched 80-150 ms, with the details page lingering until Home's first frame). Not
@@ -3893,6 +3925,7 @@ private fun MainAppContent(
                                                 requestedSettingsPageName = "Iptv"
                                                 handleRootTabClick(AppScreenTab.Settings)
                                             },
+                                            onMusicNavigate = { navController.navigateIfResumed(it) }, // fork:music
                                         )
                                     }
 
@@ -3920,6 +3953,7 @@ private fun MainAppContent(
                                         TabletFloatingTopBar(
                                             selectedTab = selectedTab,
                                             onTabSelected = ::handleRootTabClick,
+                                            onLeaveMusic = { handleRootTabClick(lastTabBeforeMusic) }, // fork:music-navbar
                                             onProfileSelected = onProfileSelected,
                                             onAddProfileRequested = onSwitchProfile,
                                             // TV mode docks the source picker into the home hero, right where
@@ -3936,6 +3970,7 @@ private fun MainAppContent(
                                                     selectedTab == AppScreenTab.Discover ||
                                                     selectedTab == AppScreenTab.Search ||
                                                     selectedTab == AppScreenTab.LiveTv ||
+                                                    selectedTab == AppScreenTab.Music || // fork:music
                                                     selectedTab == AppScreenTab.Settings
                                                 ),
                                             searchOverlayActive = searchOverlayActive,
@@ -5348,6 +5383,8 @@ private fun MainAppContent(
                     streamPickerRequest != null,
             )
 
+            MusicRootHosts(hidden = musicPlayerHidden) // fork:music
+
             NuvioToastHost(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -5600,6 +5637,7 @@ private fun tabsDiscordBrowsingActivity(
         selectedTab == AppScreenTab.Library -> browsingActivity(localizedString(Res.string.discord_presence_viewing_library))
         selectedTab == AppScreenTab.Discover -> browsingActivity(localizedString(Res.string.discord_presence_browsing_discover))
         selectedTab == AppScreenTab.LiveTv -> browsingActivity(localizedString(Res.string.discord_presence_browsing_live_tv))
+        selectedTab == AppScreenTab.Music -> browsingActivity("Browsing Music") // fork:music
         selectedTab == AppScreenTab.Settings -> settingsBrowsingActivity()
         else -> browsingActivity(localizedString(Res.string.discord_presence_browsing_nuvio))
     }
@@ -5696,6 +5734,7 @@ private fun AppTabHost(
     onNavigateToCalendar: (() -> Unit)? = null,
     onNavigateToLiveTv: (() -> Unit)? = null,
     onLiveTvSettingsClick: () -> Unit = {},
+    onMusicNavigate: (Any) -> Unit = {}, // fork:music
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
     // A cloud item can be a folder (a season pack), so a poster click has to ask which file rather
@@ -5706,11 +5745,12 @@ private fun AppTabHost(
         val settingsSelected = selectedTab == AppScreenTab.Settings
         // Live TV is its own screen, built and disposed like Settings, with HomeScreen kept behind it.
         val liveTvSelected = selectedTab == AppScreenTab.LiveTv
-        val homeHidden = settingsSelected || liveTvSelected
+        val musicSelected = selectedTab == AppScreenTab.Music // fork:music - its own screen, like Live TV
+        val homeHidden = settingsSelected || liveTvSelected || musicSelected
         // The content tab HomeScreen shows; kept while Settings is up, so the hidden screen does
         // not change mode underneath it.
         var contentTab by remember {
-            mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings && it != AppScreenTab.LiveTv } ?: AppScreenTab.Home)
+            mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings && it != AppScreenTab.LiveTv && it != AppScreenTab.Music } ?: AppScreenTab.Home)
         }
         if (!homeHidden) contentTab = selectedTab
         // HomeScreen stays composed (hidden) while Settings is open, so switching back shows it at
@@ -5805,6 +5845,20 @@ private fun AppTabHost(
                     topChromePadding = topChromePadding,
                     onOpenSettings = onLiveTvSettingsClick,
                 )
+            }
+        }
+
+        if (musicSelected) { // fork:music
+            if (com.nuvio.app.features.music.rememberMusicTabVisible()) {
+                tabStateHolder.SaveableStateProvider(AppScreenTab.Music.name) {
+                    com.nuvio.app.features.music.MusicTabHost(
+                        navigate = onMusicNavigate,
+                        topChromePadding = topChromePadding,
+                    )
+                }
+            } else {
+                // Switched off in Settings while it was the open tab: nothing to show here any more.
+                LaunchedEffect(Unit) { onNavigateToHome?.invoke() }
             }
         }
 
@@ -6055,6 +6109,19 @@ private fun DesktopHoverSidebar(
                         )
                     }
                 }
+                if (com.nuvio.app.features.music.rememberMusicTabVisible()) DesktopSidebarItem( // fork:music
+                    label = "Music",
+                    selected = selectedTab == AppScreenTab.Music,
+                    expanded = false,
+                    onClick = { selectTab(AppScreenTab.Music) },
+                ) { color ->
+                    Icon(
+                        imageVector = Icons.Rounded.MusicNote,
+                        contentDescription = "Music",
+                        modifier = Modifier.size(DesktopSidebarIconSize),
+                        tint = color,
+                    )
+                }
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_settings_page_root),
                     selected = selectedTab == AppScreenTab.Settings,
@@ -6221,19 +6288,24 @@ private fun TabletFloatingTopBar(
     searchFocusRequestCount: Int = 0,
     onSearchSubmit: (String) -> Unit = {},
     onNavigateToContent: () -> Unit = {},
+    onLeaveMusic: () -> Unit = {}, // fork:music-navbar
 ) {
     val tokens = MaterialTheme.nuvio
     val focusManager = LocalFocusManager.current
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var activationZoneHovered by remember { mutableStateOf(false) }
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
+    // fork:music-navbar - on the Music tab the bar holds the Music search instead of the tabs.
+    val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsStateWithLifecycle()
     val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
+    val musicTabVisible = com.nuvio.app.features.music.rememberMusicTabVisible() // fork:music
     val topBarWidth = FloatingTopBarWidth -
         (if (discoverTabVisible) 0.dp else FloatingTopBarQuadrantWidth) +
-        (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp)
+        (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp) -
+        (if (musicTabVisible) 0.dp else FloatingTopBarQuadrantWidth) // fork:music
     // Right-clicking the Library quadrant hangs its quick-access menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
     var libraryMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
@@ -6242,7 +6314,7 @@ private fun TabletFloatingTopBar(
         // it and the menu is left floating over nothing.
         targetValue = when {
             hidden -> 0f
-            dimUntilHovered && !isSearchActive && !activationZoneHovered && !libraryMenuVisible -> 0f
+            dimUntilHovered && !isSearchActive && !musicBarActive && !activationZoneHovered && !libraryMenuVisible -> 0f // fork:music-navbar
             else -> 1f
         },
         animationSpec = tween(durationMillis = 200),
@@ -6515,6 +6587,8 @@ private fun TabletFloatingTopBar(
                             )
                         }
                     }
+                } else if (musicBarActive) { // fork:music-navbar
+                    com.nuvio.app.features.music.MusicTopBarContent(onLeave = onLeaveMusic, modifier = Modifier.fillMaxSize())
                 } else {
                     Row(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
@@ -6577,6 +6651,17 @@ private fun TabletFloatingTopBar(
                             Icon(
                                 painter = painterResource(Res.drawable.sidebar_library),
                                 contentDescription = stringResource(Res.string.compose_nav_library),
+                                modifier = iconModifier,
+                                tint = iconTint,
+                            )
+                        }
+                        if (musicTabVisible) NavQuadrant( // fork:music
+                            selected = selectedTab == AppScreenTab.Music,
+                            onClick = { onTabSelected(AppScreenTab.Music) },
+                        ) { iconModifier, iconTint ->
+                            Icon(
+                                imageVector = Icons.Rounded.MusicNote,
+                                contentDescription = "Music",
                                 modifier = iconModifier,
                                 tint = iconTint,
                             )

@@ -36,10 +36,15 @@ private val CredentialStoreNames = setOf(
     "nuvio_trakt_auth.properties",
     "nuvio_simkl_auth.properties",
     "nuvio_profile_pin_cache.properties",
+    // fork:ytmusic-login — the saved Google session cookies; its only key is "cookie_header",
+    // which no key-name marker would catch, so the whole store has to be excluded.
+    "nuvio_youtube_music_auth.properties",
 )
 
 private val SensitiveKeyFragments = listOf(
     "access_token",
+    // fork:music - the music settings JSON names TheAudioDB's key `audioDbKey`, which no other fragment catches.
+    "audiodbkey",
     "refreshtoken",
     "refresh_token",
     "api_key",

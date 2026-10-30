@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import nuvio.composeapp.generated.resources.compose_settings_page_music
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Info
@@ -43,10 +44,12 @@ import nuvio.composeapp.generated.resources.compose_settings_page_tmdb_enrichmen
 import nuvio.composeapp.generated.resources.compose_settings_page_trakt
 import nuvio.composeapp.generated.resources.compose_settings_page_simkl
 import nuvio.composeapp.generated.resources.compose_settings_page_yamtrack
+import nuvio.composeapp.generated.resources.compose_settings_page_youtube
 import nuvio.composeapp.generated.resources.compose_settings_page_lights
 import nuvio.composeapp.generated.resources.compose_settings_page_seekr
 import nuvio.composeapp.generated.resources.compose_settings_page_discord_presence
 import nuvio.composeapp.generated.resources.compose_settings_page_screensaver
+import nuvio.composeapp.generated.resources.compose_settings_page_preshow
 import nuvio.composeapp.generated.resources.settings_account
 import nuvio.composeapp.generated.resources.compose_settings_page_video_audio
 import nuvio.composeapp.generated.resources.compose_settings_page_player
@@ -164,6 +167,16 @@ internal enum class SettingsPage(
         category = SettingsCategory.General,
         parentPage = Root,
     ),
+    Preshow(
+        titleRes = Res.string.compose_settings_page_preshow,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
+    Music( // fork:music
+        titleRes = Res.string.compose_settings_page_music,
+        category = SettingsCategory.General,
+        parentPage = Root,
+    ),
     Advanced(
         titleRes = Res.string.compose_settings_page_advanced,
         category = SettingsCategory.Advanced,
@@ -251,6 +264,11 @@ internal enum class SettingsPage(
     ),
     YamtrackAuthentication(
         titleRes = Res.string.compose_settings_page_yamtrack,
+        category = SettingsCategory.General,
+        parentPage = Integrations,
+    ),
+    YouTubeAccount(
+        titleRes = Res.string.compose_settings_page_youtube,
         category = SettingsCategory.General,
         parentPage = Integrations,
     ),

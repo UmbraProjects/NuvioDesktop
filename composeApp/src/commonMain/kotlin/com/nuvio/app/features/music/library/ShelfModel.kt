@@ -1,0 +1,173 @@
+package com.nuvio.app.features.music.library
+
+import kotlin.math.abs
+
+/**
+ * Phase 4b: the Library shelf, as pure data. A shelf is one artist; a tile is one folded release shown
+ * as its cover. Only releases that can be played are tiles: the rest are what the Discover layer will
+ * show later. The artist's top albums come first, then every other playable release oldest to newest.
+ */
+
+internal data class ShelfTile(
+    val release: LibraryRelease,
+    /** 1..5 for a ranked or starred top album, else null. */
+    val rank: Int?,
+    val featured: Boolean,
+    /** The person starred this album, so it leads the top five. */
+    val pinned: Boolean,
+)
+
+internal data class ShelfRow(
+    val artist: LibraryArtist,
+    /** The quick-play albums, first on the rail with a line after them. */
+    val top: List<ShelfTile>,
+    val rest: List<ShelfTile>,
+    /** "Top 5", or "Latest 5" when nothing is ranked or starred. */
+    val topLabel: String,
+    /** Same count as the artist page: [countReleaseCards]. */
+    val totalReleases: Int,
+    /** Cards that can be played, demos included, as the room's "playable" figure counts them. */
+    val playableReleases: Int,
+) {
+    val tiles: List<ShelfTile> get() = top + rest
+}
+
+private fun LibraryRelease.dateKey(): String = releaseDate ?: year ?: ""
+
+internal fun buildShelfRow(artist: LibraryArtist): ShelfRow {
+    val total = countReleaseCards(artist.releases)
+    val playable = buildDiscography(artist.releases, playableOnly = true, filter = ReleaseFilter.All)
+    val topAlbums = selectTopAlbums(artist)
+    val topKeys = topAlbums.releases.map { it.key }.toSet()
+
+    val top = topAlbums.releases.mapIndexed { index, release ->
+        ShelfTile(
+            release = release,
+            rank = (index + 1).takeIf { index < topAlbums.rankedCount },
+            featured = true,
+            pinned = release.key in artist.pinnedTopKeys,
+        )
+    }
+    val rest = playable.eras
+        .flatMap { it.full + it.singles }
+        .map { it.primary }
+        .filter { it.key !in topKeys }
+        .sortedBy { it.dateKey() }
+        .map { ShelfTile(release = it, rank = null, featured = false, pinned = false) }
+
+    val label = if (topAlbums.rankedCount > 0) "Top ${top.size}" else "Latest ${top.size}"
+    return ShelfRow(artist, top, rest, label, totalReleases = total, playableReleases = playable.playableCount)
+}
+
+// region a year ago this week
+
+internal data class YearAgoPick(val artist: LibraryArtist, val release: LibraryRelease)
+
+private val cumulativeDays = intArrayOf(0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
+
+private fun ordinal(month: Int, day: Int): Int = cumulativeDays[month - 1] + day
+
+/**
+ * The release whose full date falls within [windowDays] of today's date one year earlier. A playable
+ * release beats an unplayable one, then the nearest date, then a full release over a single. Releases
+ * with only a year or month are ignored (no day to compare). A window crossing New Year is not handled.
+ */
+internal fun pickYearAgo(
+    artists: List<LibraryArtist>,
+    todayYear: Int,
+    todayMonth: Int,
+    todayDay: Int,
+    windowDays: Int = 3,
+): YearAgoPick? {
+    val target = ordinal(todayMonth, todayDay)
+    return artists.asSequence()
+        .flatMap { a -> a.releases.asSequence().filterNot { it.isDemo() }.map { a to it } }
+        .mapNotNull { (a, r) ->
+            val p = r.releaseDate?.takeIf { it.length == 10 }?.split("-") ?: return@mapNotNull null
+            val y = p[0].toIntOrNull() ?: return@mapNotNull null
+            val m = p[1].toIntOrNull()?.takeIf { it in 1..12 } ?: return@mapNotNull null
+            val d = p[2].toIntOrNull()?.takeIf { it in 1..31 } ?: return@mapNotNull null
+            if (y != todayYear - 1) return@mapNotNull null
+            val diff = abs(ordinal(m, d) - target)
+            if (diff > windowDays) null else Triple(YearAgoPick(a, r), diff, r)
+        }
+        .sortedWith(
+            compareBy<Triple<YearAgoPick, Int, LibraryRelease>>(
+                { !it.third.isPlayable },
+                { it.second },
+                { it.third.kind == ReleaseKind.Single },
+            ),
+        )
+        .firstOrNull()?.first
+}
+
+// endregion
+
+// region the shelf's card row (HTPC phase 4)
+
+internal enum class ShelfCardKind { YearAgo, Starred, Added, Ladder }
+
+/**
+ * One card in the strip above the shelf. [release] gives the cover and, when it can be opened, a Play button;
+ * [ladder] (for [ShelfCardKind.Ladder]) is what tapping reopens.
+ */
+internal data class ShelfCard(
+    val kind: ShelfCardKind,
+    val label: String,
+    val title: String,
+    val detail: String?,
+    val artist: LibraryArtist? = null,
+    val release: LibraryRelease? = null,
+    val ladder: LadderRequest? = null,
+    /** The artist whose picture stands in for a cover on a card with no release (the ladder's own artist). */
+    val pictureOf: String? = null,
+)
+
+private fun LibraryArtist.cardRelease(): LibraryRelease? {
+    val candidates = releases.filterNot { it.isDemo() }
+    return topAlbumKeys.firstNotNullOfOrNull { key -> candidates.firstOrNull { it.key == key && it.isPlayable } }
+        ?: candidates.filter { it.isPlayable }.maxByOrNull { it.releaseDate ?: it.year.orEmpty() }
+        ?: candidates.firstOrNull()
+}
+
+/**
+ * The cards, in order: a year ago this week, a starred artist (one per day, so the card changes daily; the Library keeps
+ * no play history, so "not played lately" is not possible), the artist added most recently, and the ladder most recently
+ * climbed ([resumable], most recent first). A card with nothing to show is left out.
+ */
+internal fun shelfCards(
+    artists: List<LibraryArtist>,
+    yearAgo: YearAgoPick?,
+    resumable: List<LadderProgress>,
+    daySeed: Int,
+): List<ShelfCard> = buildList {
+    if (yearAgo != null) {
+        val r = yearAgo.release
+        add(
+            ShelfCard(
+                ShelfCardKind.YearAgo, "A year ago this week", r.title,
+                listOfNotNull(yearAgo.artist.name, r.kind.label.lowercase()).joinToString(" · "),
+                yearAgo.artist, r,
+            ),
+        )
+    }
+    val starred = artists.filter { it.favourite }
+    if (starred.isNotEmpty()) {
+        val a = starred[Math.floorMod(daySeed, starred.size)]
+        val r = a.cardRelease()
+        add(ShelfCard(ShelfCardKind.Starred, "Starred, worth a spin", a.name, r?.title, a, r))
+    }
+    artists.filter { it.addedAtEpochMs > 0L }.maxByOrNull { it.addedAtEpochMs }?.let { a ->
+        add(ShelfCard(ShelfCardKind.Added, "Added recently", a.name, a.foundVia ?: "New in your Library", a, a.cardRelease()))
+    }
+    continueCards(resumable, limit = 1).firstOrNull()?.let { c ->
+        val subject = when (val r = c.request) {
+            is LadderRequest.Artist -> r.name
+            is LadderRequest.Album -> r.artist
+            is LadderRequest.Genre -> c.names.firstOrNull() // a genre has no artist of its own: the first rung climbed
+        }
+        add(ShelfCard(ShelfCardKind.Ladder, "Continue your ladder", c.title, c.detail, ladder = c.request, pictureOf = subject))
+    }
+}
+
+// endregion

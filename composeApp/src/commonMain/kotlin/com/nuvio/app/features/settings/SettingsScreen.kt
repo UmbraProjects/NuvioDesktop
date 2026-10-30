@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.material.icons.rounded.MusicNote
 import com.nuvio.app.core.ui.LocalOpenMetaDetails
 import nuvio.composeapp.generated.resources.settings_desktop_recent_searches
 import androidx.compose.material.icons.rounded.History
@@ -69,6 +70,8 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.LiveTv
@@ -1187,6 +1190,7 @@ private fun MobileSettingsScreen(
                     onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                     onSimklClick = { onPageChange(SettingsPage.SimklAuthentication) },
                     onYamtrackClick = { onPageChange(SettingsPage.YamtrackAuthentication) },
+                    onYouTubeAccountClick = { onPageChange(SettingsPage.YouTubeAccount) },
                     onSeekrClick = { onPageChange(SettingsPage.Seekr) },
                     onLightsClick = { onPageChange(SettingsPage.Lights) },
                     onDiscordClick = { onPageChange(SettingsPage.DiscordPresence) },
@@ -1216,6 +1220,8 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     settings = screensaverSettings,
                 )
+                SettingsPage.Preshow -> preshowSettingsContent(isTablet = false)
+                SettingsPage.Music -> musicSettingsContent(isTablet = false) // fork:music
                 SettingsPage.Debrid -> debridSettingsContent(
                     isTablet = false,
                     settings = debridSettings,
@@ -1229,6 +1235,7 @@ private fun MobileSettingsScreen(
                 )
                 SettingsPage.SimklAuthentication -> simklSettingsContent(isTablet = false, uiState = simklAuthUiState, settingsUiState = simklSettingsUiState)
                 SettingsPage.YamtrackAuthentication -> yamtrackSettingsContent(isTablet = false, settings = yamtrackSettingsUiState)
+                SettingsPage.YouTubeAccount -> youTubeAccountSettingsContent(isTablet = false)
                 SettingsPage.Seekr -> seekrSettingsContent(isTablet = false)
                 SettingsPage.Lights -> lightsSettingsContent(isTablet = false, settings = lightsSettingsUiState)
                 SettingsPage.DiscordPresence -> discordPresenceSettingsContent(
@@ -2064,6 +2071,7 @@ private fun TabletSettingsScreen(
                         onTraktClick = { onPageChange(SettingsPage.TraktAuthentication) },
                         onSimklClick = { onPageChange(SettingsPage.SimklAuthentication) },
                         onYamtrackClick = { onPageChange(SettingsPage.YamtrackAuthentication) },
+                        onYouTubeAccountClick = { onPageChange(SettingsPage.YouTubeAccount) },
                         onSeekrClick = { onPageChange(SettingsPage.Seekr) },
                         onLightsClick = { onPageChange(SettingsPage.Lights) },
                         onDiscordClick = { onPageChange(SettingsPage.DiscordPresence) },
@@ -2093,6 +2101,8 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         settings = screensaverSettings,
                     )
+                    SettingsPage.Preshow -> preshowSettingsContent(isTablet = true)
+                    SettingsPage.Music -> musicSettingsContent(isTablet = true) // fork:music
                     SettingsPage.Debrid -> debridSettingsContent(
                         isTablet = true,
                         settings = debridSettings,
@@ -2106,6 +2116,7 @@ private fun TabletSettingsScreen(
                     )
                     SettingsPage.SimklAuthentication -> simklSettingsContent(isTablet = true, uiState = simklAuthUiState, settingsUiState = simklSettingsUiState)
                     SettingsPage.YamtrackAuthentication -> yamtrackSettingsContent(isTablet = true, settings = yamtrackSettingsUiState)
+                    SettingsPage.YouTubeAccount -> youTubeAccountSettingsContent(isTablet = true)
                     SettingsPage.Seekr -> seekrSettingsContent(isTablet = true)
                     SettingsPage.Lights -> lightsSettingsContent(isTablet = true, settings = lightsSettingsUiState)
                     SettingsPage.DiscordPresence -> discordPresenceSettingsContent(
@@ -2249,6 +2260,16 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         page = SettingsPage.Screensaver,
     ),
     DesktopSettingsSidebarItem(
+        label = stringResource(Res.string.compose_settings_page_preshow),
+        icon = Icons.Rounded.Theaters,
+        page = SettingsPage.Preshow,
+    ),
+    DesktopSettingsSidebarItem( // fork:music
+        label = stringResource(Res.string.compose_settings_page_music),
+        icon = Icons.Rounded.MusicNote,
+        page = SettingsPage.Music,
+    ),
+    DesktopSettingsSidebarItem(
         label = stringResource(Res.string.random_play_title),
         icon = Icons.Rounded.Casino,
         page = SettingsPage.RandomPlay,
@@ -2295,6 +2316,8 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Discover -> SettingsPage.Discover
     SettingsPage.Appearance -> SettingsPage.Appearance
     SettingsPage.Screensaver -> SettingsPage.Screensaver
+    SettingsPage.Preshow -> SettingsPage.Preshow
+    SettingsPage.Music -> SettingsPage.Music // fork:music
     SettingsPage.Homescreen -> SettingsPage.Homescreen
     SettingsPage.Plugins -> SettingsPage.Addons
     SettingsPage.Streams -> SettingsPage.Streams
@@ -2311,6 +2334,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.TraktAuthentication,
     SettingsPage.SimklAuthentication -> SettingsPage.Integrations
     SettingsPage.YamtrackAuthentication,
+    SettingsPage.YouTubeAccount,
     SettingsPage.Seekr,
     SettingsPage.Lights,
     SettingsPage.DiscordPresence -> SettingsPage.Integrations
@@ -2335,6 +2359,7 @@ private fun SettingsPage.desktopBackPage(): SettingsPage? = when (this) {
     SettingsPage.TraktAuthentication,
     SettingsPage.SimklAuthentication,
     SettingsPage.YamtrackAuthentication,
+    SettingsPage.YouTubeAccount,
     SettingsPage.Seekr,
     SettingsPage.Lights,
     SettingsPage.DiscordPresence -> SettingsPage.Integrations

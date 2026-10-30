@@ -29,6 +29,8 @@ internal expect object DiscoverAiSettingsStorage {
     fun saveRecapEnabled(value: Boolean)
     fun loadRecapUseModelKnowledge(): Boolean?
     fun saveRecapUseModelKnowledge(value: Boolean)
+    fun loadTriviaEnabled(): Boolean?
+    fun saveTriviaEnabled(value: Boolean)
     fun exportToSyncPayload(): JsonObject
     fun replaceFromSyncPayload(payload: JsonObject)
 }

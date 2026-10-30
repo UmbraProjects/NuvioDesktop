@@ -1,6 +1,7 @@
 package com.nuvio.app.core.network
 
 import com.nuvio.app.core.build.AppFeaturePolicy
+import co.touchlab.kermit.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,14 +45,32 @@ object ServerConfigurationRepository {
     }
 
     private fun loadActiveConfiguration(): ServerConfiguration {
-        if (!AppFeaturePolicy.customServerConnectionsEnabled) return officialConfiguration()
-        return ServerConfigurationStorage.loadCustom() ?: officialConfiguration()
+        val custom = if (AppFeaturePolicy.customServerConnectionsEnabled) {
+            ServerConfigurationStorage.loadCustom()
+        } else {
+            null
+        }
+        val configuration = custom ?: officialConfiguration()
+        // Host only; never log the key. Makes "which backend is this build talking to" answerable
+        // from nuvio.log.
+        Logger.withTag("ServerConfig").i {
+            "active backend=${configuration.backendUrl} custom=${configuration.isCustom} " +
+                "builtInUrlBlank=${SupabaseConfig.URL.isBlank()}"
+        }
+        return configuration
     }
 }
 
+// Used when the build was made without SUPABASE_URL / SUPABASE_ANON_KEY (no local.properties), so
+// an unconfigured build talks to the official backend instead of https://localhost. The key is the
+// public anon key published at https://api.nuvio.tv/.well-known/nuvio.
+internal const val OFFICIAL_BACKEND_URL = "https://api.nuvio.tv"
+internal const val OFFICIAL_PUBLISHABLE_KEY =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI"
+
 internal fun officialConfiguration() = ServerConfiguration(
-    backendUrl = SupabaseConfig.URL.trim().trimEnd('/'),
-    publishableKey = SupabaseConfig.ANON_KEY.trim(),
+    backendUrl = SupabaseConfig.URL.trim().trimEnd('/').ifBlank { OFFICIAL_BACKEND_URL },
+    publishableKey = SupabaseConfig.ANON_KEY.trim().ifBlank { OFFICIAL_PUBLISHABLE_KEY },
     capabilities = ServerCapabilities(
         emailPasswordAuth = true,
         tvLogin = true,

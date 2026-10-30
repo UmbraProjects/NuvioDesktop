@@ -232,6 +232,11 @@ internal class NativePlayerController(
         // Re-applies the last user-set volume ([persistedVolumeFraction]) once the fresh mpv
         // instance exists, so volume carries over between episodes. Only the main player passes true.
         restoreVolume: Boolean = false,
+        // fork:preshow - extra "key=value" mpv init options applied before mpv_initialize/loadfile.
+        // For anything that must be in place before the first audio frame (volume, mute, af):
+        // as runtime properties they land after create() returns, after loading has started,
+        // which rebuilds the audio chain mid-start and is audible as a dip or blip.
+        initMpvOptions: List<String> = emptyList(),
     ) {
         if (disposed) return
         if (enableUserMpvOptions || animeSvpEnabled) mayHostVapourSynth = true
@@ -323,6 +328,7 @@ internal class NativePlayerController(
                 // and cache-pause-wait.
                 addAll(com.nuvio.app.features.iptv.iptvLiveBufferMpvOptions(sourceUrl))
                 addAll(com.nuvio.app.features.iptv.iptvRewindMpvOptions(sourceUrl))
+                addAll(initMpvOptions) // fork:preshow
                 // An init option rather than a runtime property: mpv filters text subtitles as it
                 // parses them, so it has to be set before the first track loads. Only ever turned
                 // on here, never forced off, so an mpv.conf that enables it keeps working.

@@ -32,6 +32,11 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
     @get:InputFile
     abstract val localPropertiesFile: RegularFileProperty
 
+    // Bump when the built-in defaults written below change, so Gradle regenerates the file even
+    // though local.properties (the other input) is absent and unchanged.
+    @get:Input
+    abstract val defaultsRevision: Property<String>
+
     @get:Input
     abstract val appVersionName: Property<String>
 
@@ -49,6 +54,16 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
         val props = Properties()
         localPropertiesFile.asFile.orNull?.takeIf { it.exists() }?.inputStream()?.use { props.load(it) }
 
+        // With no local.properties (or blank values) fall back to the official Nuvio backend. The
+        // key is the public "anon" key the server itself publishes at
+        // https://api.nuvio.tv/.well-known/nuvio; it is meant to ship inside every client.
+        val supabaseUrl = props.getProperty("SUPABASE_URL").orEmpty().trim()
+            .ifBlank { "https://api.nuvio.tv" }
+        val supabaseAnonKey = props.getProperty("SUPABASE_ANON_KEY").orEmpty().trim()
+            .ifBlank {
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgxNTIxMzQ2LCJleHAiOjE5MzkyMDEzNDZ9.tmQaj682pwzehpqlgCDMnySOqiUvpgRbrE43T4VJpDI"
+            }
+
         val outDir = outputDir.get().asFile
         outDir.resolve("com/nuvio/app/core/network").apply {
             mkdirs()
@@ -57,8 +72,8 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |package com.nuvio.app.core.network
                 |
                 |object SupabaseConfig {
-                |    const val URL = "${props.getProperty("SUPABASE_URL", "")}" 
-                |    const val ANON_KEY = "${props.getProperty("SUPABASE_ANON_KEY", "")}" 
+                |    const val URL = "$supabaseUrl" 
+                |    const val ANON_KEY = "$supabaseAnonKey" 
                 |}
                 """.trimMargin()
             )
@@ -275,6 +290,8 @@ val releaseAppVersionName = desktopReleaseVersionName
 val releaseAppVersionCode = desktopReleaseVersionCode
 val desktopReleasePackageVersion = jpackageCompatibleVersion(desktopReleaseVersionName)
 val fullCommonSourceDir = project.file("src/fullCommonMain/kotlin")
+// fork:innertubex — see settings.gradle.kts. Off by default: the resolver library comes from JitPack.
+val innerTubeXEnabled = providers.gradleProperty("nuvio.innertubex").map { it.equals("true", ignoreCase = true) }.getOrElse(false)
 val fullPluginSourceDir = fullCommonSourceDir.resolve("com/nuvio/app/features/plugins")
 val generatedRuntimeConfigDir = layout.buildDirectory.dir("generated/runtime-config/kotlin")
 val requestedGradleTasks = gradle.startParameter.taskNames.map { taskName ->
@@ -291,7 +308,10 @@ val isAndroidAppBundleBuild = requestedGradleTasks.any { taskName ->
 
 val generateRuntimeConfigs = tasks.register<GenerateRuntimeConfigsTask>("generateRuntimeConfigs") {
     outputDir.set(generatedRuntimeConfigDir)
-    localPropertiesFile.set(rootProject.layout.projectDirectory.file("local.properties"))
+    defaultsRevision.set("official-backend-fallback-1")
+    val localProps = rootProject.layout.projectDirectory.file("local.properties")
+    // @Optional only tolerates null, not a missing file (local.properties is gitignored, absent in CI).
+    localPropertiesFile.set(providers.provider { localProps.takeIf { it.asFile.exists() } })
     appVersionName.set(releaseAppVersionName)
     appVersionCode.set(releaseAppVersionCode)
     desktopAppVersionName.set(desktopReleaseVersionName)
@@ -647,6 +667,10 @@ val nuvioEngineMsys2Root = providers.gradleProperty("nuvio.windows.msys2.ucrt64"
 val nuvioEngineConfiguredCMake = providers.gradleProperty("nuvio.windows.cmake").orNull
     ?.takeIf { it.isNotBlank() }
     ?.let(::File)
+// CI/dev escape hatch: -Pnuvio.engine.optional=true lets a distributable be created without
+// nuvio_engine.dll (P2P then falls back to TorrServer at runtime). Release builds leave it off.
+val nuvioEngineOptional =
+    providers.gradleProperty("nuvio.engine.optional").orNull?.toBoolean() == true
 val nuvioEngineJniIncludeDir = File(providers.systemProperty("java.home").get()).resolve("include")
 
 // Resolved at execution time: vswhere is a process launch, which the configuration cache forbids
@@ -810,7 +834,14 @@ val buildWindowsQuickJs = tasks.register("buildWindowsQuickJs") {
         val log = process.inputStream.bufferedReader().readText()
         val code = process.waitFor()
         if (code != 0 || !output.isFile) {
-            throw GradleException("QuickJS build failed (exit $code)\n${log.lines().filter { "error" in it }.joinToString("\n").takeLast(6000)}")
+            val detail = "QuickJS build failed (exit $code)\n${log.takeLast(8000)}"
+            if (nuvioEngineOptional) {
+                // Same escape hatch as the Nuvio Engine: the app falls back to quickjs-kt's bundled DLL.
+                logger.warn("$detail\nContinuing because -Pnuvio.engine.optional=true; using quickjs-kt's bundled DLL.")
+                output.delete()
+                return@doLast
+            }
+            throw GradleException(detail)
         }
         logger.lifecycle("QuickJS DLL: ${output.absolutePath} (${output.length() / 1024} KB)")
     }
@@ -858,7 +889,8 @@ val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRunt
             ?.firstOrNull()
             ?: throw GradleException("The Windows libmpv runtime does not contain avfilter.dll.")
         val avfilterText = avfilter.readBytes().toString(Charsets.ISO_8859_1).lowercase()
-        val forbiddenImports = listOf("libwhisper-1.dll", "ggml.dll").filter(avfilterText::contains)
+        val forbiddenImports = if (windowsAllowWhisperAvfilter) emptyList() else
+            listOf("libwhisper-1.dll", "ggml.dll").filter(avfilterText::contains)
         if (forbiddenImports.isNotEmpty()) {
             throw GradleException(
                 "${avfilter.name} still imports ${forbiddenImports.joinToString()}. " +
@@ -910,7 +942,14 @@ val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRunt
 // - ggml*.dll / libwhisper-1.dll: Nuvio's FFmpeg build omits --enable-whisper, so avfilter has
 //   no imports from these libraries. prepareWindowsPlayerRuntime verifies that invariant before
 //   copying any DLLs, preventing an unmodified MSYS2 FFmpeg package from reintroducing them.
-val windowsUnusedLibmpvRuntimeDlls = listOf(
+// CI escape hatch: stock MSYS2 FFmpeg is built with --enable-whisper, so avfilter imports
+// libwhisper-1.dll/ggml*.dll. With -Pnuvio.windows.allowWhisperAvfilter=true the check below is
+// skipped and those DLLs are bundled (otherwise avfilter would fail to load). Release builds
+// with Nuvio's own FFmpeg leave this off and keep the strict check + exclusion.
+val windowsAllowWhisperAvfilter =
+    providers.gradleProperty("nuvio.windows.allowWhisperAvfilter").orNull?.toBoolean() == true
+
+val windowsUnusedLibmpvRuntimeDllsAll = listOf(
     "OpenCL.dll", "edit.dll",
     "ggml.dll", "ggml-base.dll", "ggml-blas.dll", "ggml-opencl.dll", "ggml-rpc.dll",
     "ggml-vulkan.dll", "libwhisper-1.dll",
@@ -942,6 +981,25 @@ val windowsUnusedLibmpvRuntimeDlls = listOf(
     "libturbojpeg.dll", "libudf-0.dll", "libvamp-hostsdk.dll", "libvamp-sdk.dll",
     "libvorbisfile-3.dll", "libwebpdecoder-3.dll", "libwebpdemux-2.dll", "tcl86.dll", "tk86.dll",
 )
+
+// CI escape hatch #2: the exclusion list above was traced against Nuvio's own FFmpeg/mpv build.
+// A stock MSYS2 mpv/ffmpeg links a different set of optional libraries (libmysofa, libtheora,
+// libFLAC, libvorbisfile, libsndfile, ...), and dropping any DLL that avcodec/avfilter/libmpv
+// import makes LoadLibrary fail for libmpv-2.dll with a generic "Unable to load libmpv-2.dll".
+// -Pnuvio.windows.bundleFullRuntime=true ships every DLL from the runtime dir instead.
+val windowsBundleFullRuntime =
+    providers.gradleProperty("nuvio.windows.bundleFullRuntime").orNull?.toBoolean() == true
+
+val windowsUnusedLibmpvRuntimeDlls =
+    if (windowsBundleFullRuntime) {
+        emptyList()
+    } else if (windowsAllowWhisperAvfilter) {
+        windowsUnusedLibmpvRuntimeDllsAll.filterNot {
+            it.startsWith("ggml", ignoreCase = true) || it.equals("libwhisper-1.dll", ignoreCase = true)
+        }
+    } else {
+        windowsUnusedLibmpvRuntimeDllsAll
+    }
 
 val prepareWindowsPythonLib = tasks.register<Sync>("prepareWindowsPythonLib") {
     notCompatibleWithConfigurationCache("Bundles a curated minimal Python stdlib subset for VapourSynth/SVP scripting.")
@@ -1150,11 +1208,11 @@ if (isWindowsHost) {
                     from(quickJsOutput)
                     into(imageDir)
                 }
-                check(nuvioEngineOutput.get().asFile.isFile) {
+                check(nuvioEngineOptional || nuvioEngineOutput.get().asFile.isFile) {
                     "Nuvio Engine DLL was not built; a distributable must not ship without it. " +
                         "Missing inputs: ${missingNuvioEngineInputs(resolveNuvioEngineCMake()).joinToString("; ").ifBlank { "(build failed, see buildWindowsNuvioEngine output)" }}"
                 }
-                check(quickJsOutput.get().asFile.isFile) {
+                check(nuvioEngineOptional || quickJsOutput.get().asFile.isFile) {
                     "libquickjs.dll was not built (see buildWindowsQuickJs); a distributable must not fall back to quickjs-kt's unpatched copy."
                 }
                 copy {
@@ -1677,11 +1735,27 @@ kotlin {
             // variants. Desktop pulls in the extractor and the resolver actual and
             // provides its own TrailerExtractionPlatform (java.net.http based).
             kotlin.srcDir(fullCommonSourceDir.resolve("com/nuvio/app/features/trailer"))
+            // The album player resolves tracks through YouTube Music (MusicResolver, MusicMetadataClient),
+            // which reaches into the trailer extractor above.
+            kotlin.srcDir(fullCommonSourceDir.resolve("com/nuvio/app/features/music"))
+            if (innerTubeXEnabled) {
+                // The second-chance stream lookup for age-gated tracks (InnerTubeXFallback.kt). Found at
+                // runtime by name, so the app builds and runs the same without it.
+                kotlin.srcDir(project.file("src/desktopMain/innertubex/kotlin"))
+            }
             dependencies {
+                if (innerTubeXEnabled) {
+                    implementation("com.github.MetrolistGroup.innertubex:innertubex:v0.7.0")
+                    implementation("io.ktor:ktor-client-okhttp:${libs.versions.ktor.get()}")
+                    implementation("io.ktor:ktor-client-content-negotiation:${libs.versions.ktor.get()}")
+                    implementation("io.ktor:ktor-serialization-kotlinx-json:${libs.versions.ktor.get()}")
+                }
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.cio)
                 implementation("com.squareup.okhttp3:okhttp:4.12.0")
+                // fork:music - reads MusicBrainz's .tar.xz data dumps for the offline copy (pure Java, public domain).
+                implementation("org.tukaani:xz:1.10")
                 implementation(libs.quickjs.kt)
                 implementation(libs.ksoup)
                 // Automatic hero backdrop framing (U2-Netp saliency + YuNet faces). The packaged jar

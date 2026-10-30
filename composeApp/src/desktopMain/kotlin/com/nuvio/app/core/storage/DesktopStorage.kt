@@ -384,7 +384,7 @@ internal object DesktopStorage {
     private const val PORTABLE_RETURN_FLAG = "return-to-appdata"
 
     /** Caches worth keeping across a switch; moved only when that is a rename (see above). */
-    private val PORTABLE_MOVABLE_CACHES = listOf("image_cache", "image_cache_animated", "shader-cache", "cache")
+    private val PORTABLE_MOVABLE_CACHES = listOf("image_cache", "image_cache_animated", "shader-cache", "cache", "musicbrainz") // fork:music
 
     /**
      * Top-level entries the settings copy skips: caches (moved separately, or rebuilt), the torrent
@@ -395,6 +395,7 @@ internal object DesktopStorage {
         "image_cache_animated",
         "cache",
         "shader-cache",
+        "musicbrainz", // fork:music - the offline MusicBrainz copy, 1-2 GB
         "nuvio-engine",
         "logs",
         "updates",

@@ -5,4 +5,6 @@ expect object TrailerPlaybackResolver {
 
     /** One URL with video and audio together, for playing a YouTube video as a stream. */
     suspend fun resolveSingleUrlFromYouTubeUrl(youtubeUrl: String): String?
+    /** YouTube search results for [query]; empty on any failure. */
+    suspend fun searchYouTube(query: String): List<YouTubeSearchHit>
 }

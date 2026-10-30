@@ -172,6 +172,7 @@ import com.nuvio.app.features.trakt.TraktCommentsSettings
 import com.nuvio.app.features.trakt.TraktConnectionMode
 import com.nuvio.app.features.trakt.TraktListTab
 import com.nuvio.app.features.trakt.TraktSettingsRepository
+import com.nuvio.app.features.themesong.DetailsThemeSong // fork:themesong
 import com.nuvio.app.features.trailer.TrailerPlaybackResolver
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import com.nuvio.app.features.trailer.TrailerResolution
@@ -2862,6 +2863,21 @@ fun MetaDetailsScreen(
                                 onDismiss = { recapBoundary = null },
                             )
                         }
+
+                        DetailsThemeSong( // fork:themesong
+                            metaType = meta.type,
+                            metaName = meta.name,
+                            releaseInfo = meta.releaseInfo,
+                            metaId = meta.id,
+                            deferredWorkAllowed = deferredMetaWorkAllowed,
+                            leavingDetails = isLeavingDetails,
+                            heroTrailerAudible = heroTrailerSourceUrl != null && heroTrailerPlayWhenReady && !heroTrailerMuted,
+                            modalVisible = heroTrailerModalVisible,
+                            // An auto-playing trailer with sound is resolving or counting down.
+                            heroTrailerPending = heroTrailerPlaybackEnabled && heroTrailerCandidate != null &&
+                                !heroTrailerManualOnly && !heroTrailerFinished && !heroTrailerDismissed &&
+                                !heroTrailerMuted,
+                        )
 
                         if (inAppTrailerPlaybackEnabled) {
                             TrailerPlayerPopup(

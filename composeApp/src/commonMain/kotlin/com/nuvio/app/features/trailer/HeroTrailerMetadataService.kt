@@ -2,7 +2,7 @@ package com.nuvio.app.features.trailer
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetailsRepository
-import com.nuvio.app.features.details.selectHeroTrailer
+import com.nuvio.app.features.details.rankHeroTrailers
 import com.nuvio.app.features.details.youtubePlaybackUrl
 import com.nuvio.app.features.library.LibraryClock
 import kotlinx.coroutines.CancellationException
@@ -36,12 +36,15 @@ object HeroTrailerMetadataService {
      * while the details screen (which always re-extracts) played it fine.
      */
     suspend fun invalidate(type: String, id: String) {
-        cacheMutex.withLock { cache.remove(cacheKey(type, id)) }
+        cacheMutex.withLock {
+            cache.remove(cacheKey(type, id, sharpest = false))
+            cache.remove(cacheKey(type, id, sharpest = true))
+        }
     }
 
     /** Returns a cached, still-valid resolved trailer source if present, else null. */
     fun peek(type: String, id: String): TrailerPlaybackSource? {
-        val entry = cache[cacheKey(type, id)] ?: return null
+        val entry = cache[cacheKey(type, id, sharpest = false)] ?: return null
         return entry.source.takeIf { entry.expiresAtMs > LibraryClock.nowEpochMs() }
     }
 
@@ -49,9 +52,13 @@ object HeroTrailerMetadataService {
      * Resolves a playable trailer source for [type]/[id], or null when the item has no
      * usable YouTube trailer or resolution fails. Concurrent callers for the same item
      * share a single resolution.
+     *
+     * [sharpest] (the pre-show) also resolves other uploads of the trailer and plays the sharpest
+     * one; that is up to ten lookups, so the Home and details heroes, which start on focus, keep
+     * to the listed trailer. The two are cached apart.
      */
-    suspend fun resolve(type: String, id: String): TrailerPlaybackSource? {
-        val cacheKey = cacheKey(type, id)
+    suspend fun resolve(type: String, id: String, sharpest: Boolean = false): TrailerPlaybackSource? {
+        val cacheKey = cacheKey(type, id, sharpest)
         val now = LibraryClock.nowEpochMs()
         var ownsRequest = false
         val pending = cacheMutex.withLock {
@@ -75,13 +82,19 @@ object HeroTrailerMetadataService {
             // a major spoiler risk to surface unprompted on the hero.
             val spoilerSafeTrailers = meta?.trailers
                 ?.filter { it.seasonNumber == null || it.seasonNumber == 1 }
-            val candidate = spoilerSafeTrailers?.let(::selectHeroTrailer)
+            val ranked = spoilerSafeTrailers?.let(::rankHeroTrailers).orEmpty() // fork:trailer-quality
+            val candidate = ranked.firstOrNull()
             log.i {
                 "resolve $type/$id metaFound=${meta != null} trailers=${meta?.trailers?.size ?: 0} " +
                     "candidate=${candidate?.key} (${candidate?.site})"
             }
-            candidate?.let { TrailerPlaybackResolver.resolveFromYouTubeUrl(it.youtubePlaybackUrl()).sourceOrNull() }
-                .also { log.i { "resolve $type/$id playbackSource=${it != null}" } }
+            // fork:trailer-quality - the pre-show plays the sharpest upload, not just the listed one.
+            if (sharpest) {
+                SharpestTrailerResolver.resolve(meta?.name, meta?.releaseInfo, ranked.map { it.key })
+            } else {
+                candidate?.let { TrailerPlaybackResolver.resolveFromYouTubeUrl(it.youtubePlaybackUrl()).sourceOrNull() }
+            }
+                .also { log.i { "resolve $type/$id playbackSource=${it != null} height=${it?.heightPx}" } }
         } catch (error: CancellationException) {
             cacheMutex.withLock {
                 inFlightRequests.remove(cacheKey)?.completeExceptionally(error)
@@ -100,7 +113,8 @@ object HeroTrailerMetadataService {
         return source
     }
 
-    private fun cacheKey(type: String, id: String): String = "$type:$id"
+    private fun cacheKey(type: String, id: String, sharpest: Boolean): String =
+        if (sharpest) "$type:$id:sharpest" else "$type:$id"
 
     private data class CachedTrailer(
         val source: TrailerPlaybackSource?,

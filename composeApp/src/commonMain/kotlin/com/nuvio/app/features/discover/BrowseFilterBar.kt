@@ -166,11 +166,11 @@ fun BrowseFilterCaption(text: String) {
     )
 }
 
-/** An icon that acts straight away ("Clear filters"), named by its tooltip. */
+/** An icon that acts straight away ("Clear filters"), named by its tooltip; [on] tints it as the current choice (no dot). */
 @Composable
-fun BrowseFilterIconAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun BrowseFilterIconAction(icon: ImageVector, label: String, on: Boolean = false, onClick: () -> Unit) {
     NuvioPosterHoverTooltip(title = label) {
-        BrowseFilterIconButton(icon = icon, label = label, on = false, open = false, onPress = { onClick() })
+        BrowseFilterIconButton(icon = icon, label = label, on = on, open = false, dot = false, onPress = { onClick() })
     }
 }
 
@@ -238,6 +238,8 @@ private fun BrowseFilterIconButton(
     label: String,
     on: Boolean,
     open: Boolean,
+    /** The accent dot that marks an [on] filter; a plain choice is shown by the tint alone. */
+    dot: Boolean = true,
     onPress: (IntOffset) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -280,7 +282,7 @@ private fun BrowseFilterIconButton(
             modifier = Modifier.size(IconSize),
             tint = if (on) tokens.colors.accent else Color.White.copy(alpha = if (hovered || open) 1f else 0.82f),
         )
-        if (on) {
+        if (on && dot) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)

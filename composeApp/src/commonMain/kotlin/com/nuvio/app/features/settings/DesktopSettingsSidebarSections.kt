@@ -123,6 +123,7 @@ internal fun desktopSettingsSidebarSubItems(
             subPage(SettingsPage.TraktAuthentication),
             subPage(SettingsPage.SimklAuthentication),
             subPage(SettingsPage.YamtrackAuthentication),
+            if (isDesktop) subPage(SettingsPage.YouTubeAccount) else null,
             if (isDesktop) subPage(SettingsPage.Seekr) else null,
             if (isDesktop) subPage(SettingsPage.Lights) else null,
             if (isDesktop) subPage(SettingsPage.DiscordPresence) else null,
@@ -152,6 +153,15 @@ internal fun desktopSettingsSidebarSubItems(
         SettingsPage.Screensaver -> listOf(
             section(SettingsPage.Screensaver, Res.string.settings_screensaver_section_title),
             section(SettingsPage.Screensaver, Res.string.settings_screensaver_section_shutdown),
+        )
+        SettingsPage.Music -> listOf( // fork:music
+            section(SettingsPage.Music, Res.string.settings_music_section_general),
+            section(SettingsPage.Music, Res.string.settings_music_section_sources),
+            section(SettingsPage.Music, Res.string.settings_music_section_playback),
+        )
+        SettingsPage.Preshow -> listOf(
+            section(SettingsPage.Preshow, Res.string.settings_preshow_section_trailers),
+            section(SettingsPage.Preshow, Res.string.settings_preshow_section_trivia),
         )
         SettingsPage.Games -> listOf(
             section(SettingsPage.Games, Res.string.settings_games_title),

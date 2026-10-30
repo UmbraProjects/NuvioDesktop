@@ -11,11 +11,19 @@ enum class DiscoverAiProvider(val defaultModel: String) {
     /** OpenAI, OpenRouter, Groq, Ollama, LM Studio, Gemini's compat endpoint — base URL + key. */
     OpenAiCompat(defaultModel = "gpt-4o-mini"),
 
+    /**
+     * Groq's hosted models. Speaks the OpenAI chat-completions shape, so it shares that code path;
+     * it exists as its own choice so the base URL and a sensible model are preset and the user only
+     * pastes a key. Groq's free tier is fast, which suits a pre-show that only waits a few seconds.
+     */
+    Groq(defaultModel = "llama-3.3-70b-versatile"),
+
     /** Anthropic's native Messages API. */
     Anthropic(defaultModel = "claude-opus-5"),
 }
 
 const val DISCOVER_AI_DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+const val DISCOVER_AI_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 const val DISCOVER_AI_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 
 data class DiscoverAiSettings(
@@ -54,12 +62,21 @@ data class DiscoverAiSettings(
      * reported as already having happened — is only visible to someone who has seen the show.
      */
     val recapUseModelKnowledge: Boolean = false,
+    /**
+     * The pre-show (trivia slides and quiz before a film starts) may ask the provider for trivia.
+     *
+     * A third consumer of the same credential, with its own switch for the same reason recaps
+     * have one: it costs one small request per film, on playback, and is wanted independently of
+     * Discover rows. Off by default; every request is billed to the user's own key.
+     */
+    val triviaEnabled: Boolean = false,
 ) {
     val effectiveModel: String get() = model.trim().ifBlank { provider.defaultModel }
 
     val effectiveBaseUrl: String
         get() = when (provider) {
             DiscoverAiProvider.Anthropic -> DISCOVER_AI_ANTHROPIC_BASE_URL
+            DiscoverAiProvider.Groq -> DISCOVER_AI_GROQ_BASE_URL
             DiscoverAiProvider.OpenAiCompat ->
                 baseUrl.trim().trimEnd('/').ifBlank { DISCOVER_AI_DEFAULT_OPENAI_BASE_URL }
         }
@@ -81,4 +98,8 @@ data class DiscoverAiSettings(
     /** The details screen may build a recap. */
     val isRecapReady: Boolean
         get() = recapEnabled && isConfigured
+
+    /** The pre-show may ask the AI provider for trivia. Wikipedia and metadata slides only need [triviaEnabled]. */
+    val isTriviaReady: Boolean
+        get() = triviaEnabled && isConfigured
 }

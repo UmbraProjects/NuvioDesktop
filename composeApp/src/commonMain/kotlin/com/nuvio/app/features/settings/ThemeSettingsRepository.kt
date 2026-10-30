@@ -337,6 +337,16 @@ object ThemeSettingsRepository {
         ThemeSettingsStorage.saveDesktopAppUiScalePercent(clamped)
     }
 
+    /**
+     * Nudges the app UI scale by [deltaPercent] (Ctrl+plus / Ctrl+minus, and the size buttons on the
+     * music Library header). Returns the new value so a caller can show it.
+     */
+    fun stepDesktopAppUiScalePercent(deltaPercent: Int): Int {
+        ensureLoaded()
+        setDesktopAppUiScalePercent(_desktopAppUiScalePercent.value + deltaPercent)
+        return _desktopAppUiScalePercent.value
+    }
+
     fun setDesktopAppUiScaleAppliesToDetails(enabled: Boolean) {
         ensureLoaded()
         if (_desktopAppUiScaleAppliesToDetails.value == enabled) return
