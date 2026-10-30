@@ -6117,6 +6117,24 @@ if (isPreshowSurface) {
       '<span class="hero-trailer-skip-label">Skip</span>' +
       '<svg><use href="#icon-skip-next"></use></svg>';
   }
+  // "Add to library" pill beside Skip, same look. Kotlin supplies the label (empty hides it) and whether the
+  // title is already saved; a click tells Kotlin to save and the pill marks itself done straight away.
+  const addButton = document.createElement("button");
+  addButton.className = "hero-trailer-button";
+  addButton.type = "button";
+  addButton.id = "heroTrailerLibraryButton";
+  addButton.style.display = "none";
+  addButton.innerHTML =
+    '<span class="hero-trailer-skip-label"></span>' +
+    '<svg><use id="heroTrailerLibraryIcon" href="#icon-add"></use></svg>';
+  addButton.addEventListener("click", () => {
+    if (addButton.dataset.done === "1") return;
+    addButton.dataset.done = "1";
+    addButton.querySelector("use").setAttribute("href", "#icon-check");
+    addButton.querySelector(".hero-trailer-skip-label").textContent = "In library";
+    send("preshowAddToLibrary", 0);
+  });
+  heroTrailerChrome.insertBefore(addButton, skipButton || heroTrailerChrome.firstChild);
 }
 root.appendChild(heroTrailerChrome);
 
@@ -6240,6 +6258,20 @@ function applyHeroTrailerContent() {
   setHeroTrailerLine(heroTrailerTitle, useLogo ? "" : title);
   setHeroTrailerLine(heroTrailerMeta, state.heroTrailerMeta);
   setHeroTrailerLine(heroTrailerDescription, state.heroTrailerDescription);
+  const addButton = heroTrailerChrome.querySelector("#heroTrailerLibraryButton");
+  if (addButton) {
+    const label = String(state.heroTrailerLibraryLabel || "").trim();
+    // A new trailer pushes fresh state; only reset the pill when the title under it changed, so
+    // the "done" mark survives the other re-renders of the same trailer.
+    if (addButton.dataset.forTitle !== title) {
+      addButton.dataset.forTitle = title;
+      addButton.dataset.done = state.heroTrailerInLibrary ? "1" : "0";
+    }
+    const done = addButton.dataset.done === "1";
+    addButton.style.display = label ? "" : "none";
+    addButton.querySelector(".hero-trailer-skip-label").textContent = done ? "In library" : label;
+    addButton.querySelector("use").setAttribute("href", done ? "#icon-check" : "#icon-add");
+  }
 }
 
 const applyHeroTrailer = () => {

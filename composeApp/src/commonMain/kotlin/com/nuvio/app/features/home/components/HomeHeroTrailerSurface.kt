@@ -53,4 +53,9 @@ expect fun HomeHeroTrailerSurface(
     // hero-trailer mute/volume state, and a one-second fade in at the start and out at the end so
     // consecutive items do not click or jump. Loudness evening still follows [normalizeAudio].
     preshow: Boolean = false,
+    // Pre-show only: an "add to library" pill beside Skip. Empty [libraryLabel] hides it; [inLibrary] starts it
+    // as already done; a click calls [onAddToLibrary] and the pill marks itself done.
+    libraryLabel: String = "",
+    inLibrary: Boolean = false,
+    onAddToLibrary: () -> Unit = {},
 )

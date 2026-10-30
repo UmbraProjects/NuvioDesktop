@@ -66,6 +66,9 @@ actual fun HomeHeroTrailerSurface(
     onSurfaceDisposed: () -> Unit,
     normalizeAudio: Boolean, // fork:preshow
     preshow: Boolean, // fork:preshow
+    libraryLabel: String,
+    inLibrary: Boolean,
+    onAddToLibrary: () -> Unit,
 ) {
     val supported = DesktopHostOs.current == DesktopHostOs.WINDOWS ||
         DesktopHostOs.current == DesktopHostOs.MACOS
@@ -75,6 +78,7 @@ actual fun HomeHeroTrailerSurface(
     val latestOnNavChromeDismiss = rememberUpdatedState(onNavChromeDismiss)
     val latestOnVolumeChange = rememberUpdatedState(onVolumeChange)
     val latestOnSurfaceDisposed = rememberUpdatedState(onSurfaceDisposed)
+    val latestOnAddToLibrary = rememberUpdatedState(onAddToLibrary)
     // The settings toggle gates sound on/off; the shared slider sets the level.
     // fork:preshow - the pre-show has neither: it always plays at one fixed level.
     val effectiveVolume = if (preshow) PRESHOW_VOLUME else if (muted) 0 else volume.coerceIn(0, 100)
@@ -160,6 +164,11 @@ actual fun HomeHeroTrailerSurface(
                         latestOnVolumeChange.value(value.toInt().coerceIn(0, 100))
                         true
                     }
+                    // Pre-show "add to library" pill; the page marks itself done, Kotlin does the saving.
+                    "preshowAddToLibrary" -> {
+                        latestOnAddToLibrary.value()
+                        true
+                    }
                     // The WebView2 grabbed OS focus (e.g. a click on the mute/volume chrome).
                     // Hand keyboard focus straight back to the Compose home root so navigation
                     // keeps working; the trailer surface itself never keeps focus.
@@ -199,6 +208,8 @@ actual fun HomeHeroTrailerSurface(
                     description = description,
                     muted = effectiveMuted, // fork:preshow
                     volume = effectiveVolume,
+                    libraryLabel = if (preshow) libraryLabel else "",
+                    inLibrary = inLibrary,
                     navDismissEdge = navDismissEdge,
                     navDismissBandFraction = navDismissBandFraction,
                 ),

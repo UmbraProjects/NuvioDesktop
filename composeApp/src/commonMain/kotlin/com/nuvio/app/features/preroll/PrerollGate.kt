@@ -39,6 +39,9 @@ import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.features.library.LibraryRepository
+import com.nuvio.app.features.library.toLibraryItem
 import com.nuvio.app.features.home.components.HomeHeroTrailerSurface
 import com.nuvio.app.features.themesong.THEME_SONG_FADE_MS
 import com.nuvio.app.features.themesong.ThemeSongPlayer
@@ -462,6 +465,17 @@ fun PrerollGate(
                 // normaliser ramping up from unity gain at the start of a clip.
                 normalizeAudio = true,
                 preshow = true,
+                // Only a trailer has a parent title to save; clips and cards have no subject.
+                libraryLabel = if (activeTrailer.subject != null) "Add to library" else "",
+                inLibrary = activeTrailer.subject?.let { LibraryRepository.isSaved(it.id, it.type) } == true,
+                onAddToLibrary = {
+                    activeTrailer.subject?.let { subject ->
+                        if (!LibraryRepository.isSaved(subject.id, subject.type)) {
+                            LibraryRepository.toggleSaved(subject.toLibraryItem(LibraryClock.nowEpochMs()))
+                            NuvioToastController.show("Added ${subject.name} to your library")
+                        }
+                    }
+                },
             )
         }
         if (showWaiting && nothingShowing) {
