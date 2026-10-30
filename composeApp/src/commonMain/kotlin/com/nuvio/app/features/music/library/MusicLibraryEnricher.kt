@@ -61,6 +61,7 @@ internal class MusicLibraryEnricher(
             }
         }
 
+        // MusicBrainz (name search, artist facts and tags, discography) runs in the background while the quick artwork below is fetched.
         val mbJob = async {
             val mbHit = pickMbArtist(MusicBrainzClient.searchArtist(name), name)
             val found = mbHit?.let { MusicBrainzClient.artist(it.id) }
