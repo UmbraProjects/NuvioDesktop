@@ -125,78 +125,91 @@ private fun BbfcRatingCard(model: PreshowCardModel.Rating) {
     }
 }
 
-private val MpaBlue = Color(0xFF173B7A)
+/** The bright blue of the MPA's feature rating tag. */
+private val MpaBlue = Color(0xFF0B34C8)
 
-/** The MPA's wording under the rating letters, as its rating boxes print it: headline, then small print. */
+/** The MPA's wording for a rating: the label above the letters, then the small print along the bottom. */
 private fun mpaDescriptor(certificate: String): Pair<String, String> = when (certificate.uppercase()) {
     "G" -> "GENERAL AUDIENCES" to "All Ages Admitted"
     "PG" -> "PARENTAL GUIDANCE SUGGESTED" to "Some Material May Not Be Suitable for Children"
     "PG-13" -> "PARENTS STRONGLY CAUTIONED" to "Some Material May Be Inappropriate for Children Under 13"
     "R" -> "RESTRICTED" to "Under 17 Requires Accompanying Parent or Adult Guardian"
-    "NC-17" -> "NO CHILDREN UNDER 17 ADMITTED" to ""
+    "NC-17" -> "NO ONE 17 AND UNDER ADMITTED" to ""
     else -> "NOT RATED" to "The Content of This Film Has Not Been Evaluated"
 }
 
 /**
- * The MPA card: a blue card, the colour of the MPA's feature rating tag. The film's title, then a bordered
- * rating box with the letters on the left and, on the right, the headline for the rating, the reasons for it
- * (when they could be found) and the small print.
+ * The MPA card, laid out like the MPA's feature rating tag: bright blue, "This motion picture has been rated", then a
+ * bordered box with the rating's label and letters on the left, the reasons for the rating on the right and the
+ * small print along the bottom, and "by the Classification and Rating Administration" underneath. The film's title
+ * sits above, as on the BBFC card.
  *
  * Deliberately text and shapes only. The MPA's logo and web addresses are not drawn.
  */
 @Composable
 private fun MpaRatingCard(model: PreshowCardModel.Rating) {
-    val (headline, smallPrint) = mpaDescriptor(model.certificate)
+    val (label, smallPrint) = mpaDescriptor(model.certificate)
+    val line = 3.dp
     Box(modifier = Modifier.fillMaxSize().background(MpaBlue)) {
-        Text(
-            "MOTION PICTURE ASSOCIATION",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 16.sp,
-            letterSpacing = 3.sp,
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 96.dp, top = 72.dp),
-        )
         Column(
             modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 96.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("THE FILM", color = Color.White.copy(alpha = 0.85f), fontSize = 22.sp, letterSpacing = 4.sp)
-            Spacer(Modifier.height(12.dp))
             Text(
                 model.title.uppercase(),
-                color = Color.White,
-                fontSize = 44.sp,
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 24.sp,
+                letterSpacing = 2.sp,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(12.dp))
-            Text("HAS BEEN RATED", color = Color.White.copy(alpha = 0.85f), fontSize = 22.sp, letterSpacing = 4.sp)
-            Spacer(Modifier.height(36.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(0.82f).border(3.dp, Color.White).height(IntrinsicSize.Min),
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxHeight().widthIn(min = 150.dp).padding(horizontal = 24.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        model.certificate,
-                        color = Color.White,
-                        fontSize = if (model.certificate.length > 2) 72.sp else 96.sp,
-                        fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.Black,
-                    )
+            Spacer(Modifier.height(20.dp))
+            Text("THIS MOTION PICTURE HAS BEEN RATED", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Spacer(Modifier.height(28.dp))
+            Column(modifier = Modifier.fillMaxWidth(0.62f).border(line, Color.White)) {
+                Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    Column(modifier = Modifier.width(280.dp)) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 12.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Text(label, color = MpaBlue, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                        }
+                        Box(
+                            modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                model.certificate,
+                                color = Color.White,
+                                fontSize = if (model.certificate.length > 2) 84.sp else 120.sp,
+                                fontFamily = FontFamily.Serif,
+                                fontWeight = FontWeight.Black,
+                            )
+                        }
+                    }
+                    Box(Modifier.fillMaxHeight().width(line).background(Color.White))
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxHeight().padding(horizontal = 24.dp, vertical = 16.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        model.advisory?.let { Text(it, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold) }
+                    }
                 }
-                Box(Modifier.fillMaxHeight().width(3.dp).background(Color.White))
-                Column(
-                    modifier = Modifier.weight(1f).padding(horizontal = 24.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(headline, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                    model.advisory?.let { Text(it, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold) }
-                    if (smallPrint.isNotEmpty()) Text(smallPrint, color = Color.White.copy(alpha = 0.85f), fontSize = 18.sp)
+                if (smallPrint.isNotEmpty()) {
+                    Box(Modifier.fillMaxWidth().height(line).background(Color.White))
+                    Text(smallPrint, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
                 }
             }
+            Spacer(Modifier.height(32.dp))
+            Text("BY THE", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Text(
+                "CLASSIFICATION AND RATING ADMINISTRATION",
+                color = Color.White,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
