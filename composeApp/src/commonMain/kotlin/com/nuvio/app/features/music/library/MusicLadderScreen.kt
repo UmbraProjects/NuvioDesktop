@@ -63,6 +63,31 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.LocalPlatformContext
 import com.nuvio.app.core.ui.PlatformBackHandler
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.TrendingUp
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import com.nuvio.app.core.ui.NuvioBackButton
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
+import com.nuvio.app.features.details.components.DetailIconAction
+import com.nuvio.app.core.ui.TabBackHandler
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.core.ui.nuvio
@@ -117,6 +142,8 @@ internal fun MusicLadderScreen(
         progress = applyFeedback(progress, rung, feedback).also { LadderProgressStore.put(request, it) }
     }
     PlatformBackHandler(enabled = true, onBack = onBack)
+    // Desktop: Escape and the mouse's back button close the ladder, like the artist page, instead of leaving the tab.
+    TabBackHandler(onBack = onBack)
 
     // Phase 6: what happened to each rung the person played or saved, by candidate id.
     val catalog = remember { defaultMusicCatalog() }
@@ -251,35 +278,29 @@ internal fun MusicLadderScreen(
                 .padding(top = topChromePadding)
                 .padding(horizontal = SAFE_MARGIN),
         ) {
-            Column(Modifier.padding(vertical = 12.dp)) {
-                Text(
-                    text = "Back",
-                    style = ladderText(LadderType.Body),
-                    color = colors.accent,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onBack)
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = view?.title ?: requestTitle(request),
-                    style = MaterialTheme.typography.displayLarge,
-                    color = colors.textPrimary,
-                )
-                view?.subtitle?.let {
-                    Text(text = it, style = ladderText(LadderType.Body), color = colors.textSecondary)
+            // The title and what the ladder climbs into; Start over is an icon at the end. (Back is in the corner.)
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = view?.title ?: requestTitle(request),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    view?.subtitle?.let {
+                        Text(text = it, style = ladderText(LadderType.Legend), color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
                 if (!progress.isFresh) {
-                    Text(
-                        text = "Start over",
-                        style = ladderText(LadderType.Body),
-                        color = colors.accent,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { progress = LadderProgress().also { LadderProgressStore.put(request, it) } }
-                            .padding(vertical = 6.dp),
-                    )
+                    LadderIcon("Start over", Icons.Rounded.RestartAlt) {
+                        progress = LadderProgress().also { LadderProgressStore.put(request, it) }
+                    }
                 }
             }
 
@@ -297,7 +318,7 @@ internal fun MusicLadderScreen(
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
                     shown.view.note?.let { note ->
-                        Text(text = note, style = ladderText(LadderType.Body), color = colors.textMuted)
+                        Text(text = note, style = ladderText(LadderType.Legend), color = colors.textMuted)
                     }
                     if (shown.view.alternatives.isNotEmpty() && request.hasDestinations) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -308,18 +329,13 @@ internal fun MusicLadderScreen(
                         }
                     }
 
-                    PathRail(
-                        start = pathStart(request),
-                        target = shown.view.ladder.target,
-                        rungs = rungs,
-                        focusedId = activeRung?.candidate?.id,
-                    )
-
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                         val cardWidth = maxWidth * CARD_WIDTH_FRACTION
                         LazyRow(
                             state = listState,
-                            horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
+                            // Centred: five cards fill less than the width, and they sat against the left edge.
+                            horizontalArrangement = Arrangement.spacedBy(CARD_GAP, Alignment.CenterHorizontally),
+                            modifier = Modifier.fillMaxWidth(),
                             contentPadding = PaddingValues(vertical = 20.dp, horizontal = 12.dp),
                         ) {
                             items(rungs, key = { it.candidate.id }) { rung ->
@@ -363,11 +379,12 @@ internal fun MusicLadderScreen(
                         }
                     }
                     if (debug) LadderDebugPanel(ladderDebugLines(shown.view.ladder, shown.view.title))
-                    LadderLegend()
                     Spacer(Modifier.height(24.dp))
                 }
             }
         }
+        // Where every other Music page keeps it: the top left corner of the window, above the floating bar's line.
+        Box(Modifier.padding(start = 16.dp, top = 12.dp)) { NuvioBackButton(onClick = onBack) }
     }
 }
 
@@ -380,87 +397,97 @@ private object LadderType {
 
 private val SAFE_MARGIN = 48.dp
 private val CARD_GAP = 16.dp
-private const val CARD_WIDTH_FRACTION = 0.18f
-private const val FOCUS_SCALE = 1.08f
+private const val CARD_WIDTH_FRACTION = 0.135f
 
 @Composable
 private fun ladderText(size: TextUnit): TextStyle =
     MaterialTheme.typography.bodyLarge.copy(fontSize = size, lineHeight = size * 1.25f)
 
-/** Where the climb starts: the artist or record it leads out from, otherwise the listener's own Library. */
-private fun pathStart(request: LadderRequest): String = when (request) {
-    is LadderRequest.Genre -> "Your Library"
-    is LadderRequest.Artist -> if (request.mode == LadderMode.OutFrom) request.name else "Your Library"
-    is LadderRequest.Album -> if (request.mode == LadderMode.OutFrom) request.title else "Your Library"
-}
-
-/** The path rail: start on the left, target on the right, one dot per rung (filled once marked, ringed when current). */
-@Composable
-private fun PathRail(start: String, target: String, rungs: List<LadderRung>, focusedId: String?) {
-    val colors = MaterialTheme.nuvio.colors
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(start, style = ladderText(LadderType.Body), color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 260.dp))
-        Spacer(Modifier.width(16.dp))
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            rungs.forEach { rung ->
-                Box(Modifier.weight(1f).height(4.dp).background(colors.surfaceElevated))
-                val current = rung.candidate.id == focusedId
-                Box(
-                    modifier = Modifier
-                        .size(if (current) 28.dp else 20.dp)
-                        .clip(CircleShape)
-                        .background(if (rung.mark != null) colors.accent else colors.surfaceElevated)
-                        .then(if (current) Modifier.border(3.dp, colors.accent, CircleShape) else Modifier),
-                )
-            }
-            Box(Modifier.weight(1f).height(4.dp).background(colors.surfaceElevated))
-        }
-        Spacer(Modifier.width(16.dp))
-        Text(target, style = ladderText(LadderType.Body), color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 260.dp))
-    }
-}
-
-/** One rung as a large card: the picture fills it, the focused card grows and the others dim. */
+/**
+ * One rung as a glass card: the portrait with its step in a silver badge at the top left, the name under it and one line
+ * for the mark. Every card is the same size (one-line name, a mark line kept even when empty); the focused one is ringed
+ * in the accent and the others dim, rather than growing, so the row keeps one height.
+ */
 @Composable
 private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, playing: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
-    val scale by animateFloatAsState(if (focused) FOCUS_SCALE else 1f)
-    val alpha by animateFloatAsState(if (focused) 1f else 0.55f)
+    val alpha by animateFloatAsState(if (focused) 1f else 0.6f)
     val shape = RoundedCornerShape(16.dp)
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
     Column(
         modifier = Modifier
             .width(width)
-            .graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }
-            .clip(shape)
-            .background(if (focused) colors.surfaceElevated else colors.surfaceCard)
+            .graphicsLayer { this.alpha = alpha }
+            .musicGlass(shape, raised = focused || hovered)
             .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
-            .clickable(onClick = onClick)
+            .hoverable(source)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        MusicCover(picture, rung.candidate.name, size = width - 24.dp)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box {
+            MusicCover(picture, rung.candidate.name, size = width - 24.dp)
+            // The step, or a stop mark while this rung's hook plays, so the card says what a second press does.
             Box(
                 Modifier
-                    .size(48.dp)
+                    .padding(10.dp)
+                    .size(40.dp)
+                    .shadow(6.dp, CircleShape)
                     .clip(CircleShape)
-                    .background(colors.accent)
-                    .then(if (playing) Modifier.border(4.dp, colors.textPrimary, CircleShape) else Modifier),
+                    .background(Brush.linearGradient(listOf(Color.White, SILVER)))
+                    .then(if (playing) Modifier.border(3.dp, colors.accent, CircleShape) else Modifier),
                 contentAlignment = Alignment.Center,
             ) {
-                // The number becomes a play mark while this rung's hook is on, so the card says what a second press does.
-                Text(if (playing) "■" else "${rung.step}", style = ladderText(LadderType.Body), color = colors.onAccent)
+                if (playing) {
+                    Icon(Icons.Rounded.Stop, contentDescription = "Playing", tint = ON_SILVER, modifier = Modifier.size(22.dp))
+                } else {
+                    Text("${rung.step}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ON_SILVER)
+                }
             }
-            rung.mark?.let { Text(feedbackLabel(it), style = ladderText(LadderType.Legend), color = colors.textSecondary) }
+            // A mark sits on the picture rather than in a line of its own, so unmarked cards carry no empty row.
+            rung.mark?.let { mark ->
+                Text(
+                    feedbackLabel(mark),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(10.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black.copy(alpha = 0.62f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
         }
+        // Sized so most names fit the card on one line (about 20 characters at the usual card width); a longer one ends in an ellipsis.
         Text(
             text = rung.candidate.name,
-            style = ladderText(LadderType.Row),
+            fontSize = RUNG_NAME_SIZE,
+            lineHeight = RUNG_NAME_SIZE * 1.2f,
+            fontWeight = FontWeight.Medium,
             color = colors.textPrimary,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp),
         )
+    }
+}
+
+private val RUNG_NAME_SIZE = 22.sp
+
+private val SILVER = Color(0xFFB9C0CA)
+private val ON_SILVER = Color(0xFF1B1F26)
+
+/** A round action with its name on hover: the artist page's buttons, so the ladder reads the same and stays light on text. */
+@Composable
+private fun LadderIcon(label: String, icon: ImageVector, active: Boolean = false, onClick: () -> Unit) {
+    NuvioPosterHoverTooltip(title = label) {
+        DetailIconAction(label = label, icon = icon, active = active, size = 56.dp, onClick = onClick)
     }
 }
 
@@ -482,13 +509,36 @@ private fun LadderDetailPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.surfaceCard)
+            .musicGlass(RoundedCornerShape(16.dp))
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(rung.candidate.name, style = ladderText(LadderType.Row), color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(rung.why, style = ladderText(LadderType.Body), color = colors.textSecondary)
+        // The name with the actions beside it, each a round icon named by its tooltip.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                rung.candidate.name,
+                style = ladderText(LadderType.Row),
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            // The same action as Enter or A on the card, made visible: a taste of this artist before committing.
+            // Each tooltip names its key and pad button (the legend that listed them is gone); Left and Right browse the cards.
+            LadderIcon(
+                if (previewing) "Stop preview (Enter / A)" else "Preview (Enter / A; ◀ ▶ browse)",
+                if (previewing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                active = previewing,
+                onClick = onPreview,
+            )
+            LadderIcon("Closer to my taste (▼)", Icons.Rounded.ArrowDownward, active = rung.mark == RungFeedback.TooFar) { onFeedback(RungFeedback.TooFar) }
+            LadderIcon("Further out (▲)", Icons.Rounded.ArrowUpward, active = rung.mark == RungFeedback.TooClose) { onFeedback(RungFeedback.TooClose) }
+            LadderIcon("Skip (S / Y)", Icons.Rounded.SkipNext) { onFeedback(RungFeedback.Skip) }
+            LadderIcon("Love (L / X)", Icons.Rounded.Favorite, active = rung.mark == RungFeedback.Love) { onFeedback(RungFeedback.Love) }
+            LadderIcon("Save to your Library", Icons.Rounded.LibraryAdd, onClick = onSave)
+            LadderIcon("Play an album", Icons.Rounded.Album, onClick = onPlayAlbum)
+        }
+        Text(rung.why, style = ladderText(LadderType.Legend), color = colors.textSecondary)
         if (!rung.candidate.playable) {
             Text("May not be playable here", style = ladderText(LadderType.Legend), color = colors.textMuted)
         }
@@ -524,22 +574,7 @@ private fun LadderDetailPanel(
             }
         }
 
-        // A flow, not a row: with Preview there are seven pills, too many for one line at TV text size.
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            itemVerticalAlignment = Alignment.CenterVertically,
-        ) {
-            // The same action as Enter or A on the card, made visible: a taste of this artist before committing.
-            BigPill(if (previewing) "Stop preview" else "Preview", onPreview, selected = previewing)
-            BigPill("Closer", { onFeedback(RungFeedback.TooFar) }, selected = rung.mark == RungFeedback.TooFar)
-            BigPill("Further out", { onFeedback(RungFeedback.TooClose) }, selected = rung.mark == RungFeedback.TooClose)
-            BigPill("Skip", { onFeedback(RungFeedback.Skip) })
-            BigPill("Love", { onFeedback(RungFeedback.Love) }, selected = rung.mark == RungFeedback.Love)
-            BigPill("Save", onSave)
-            BigPill("Play album", onPlayAlbum)
-        }
-        if (note != null) Text(note, style = ladderText(LadderType.Body), color = colors.textSecondary)
+        if (note != null) Text(note, style = ladderText(LadderType.Legend), color = colors.textSecondary)
     }
 }
 
@@ -548,37 +583,19 @@ private fun LadderDetailPanel(
 private fun LadderSummary(rungs: List<LadderRung>, onSaveAll: () -> Unit, onPlayPlaylist: () -> Unit, onClimbHigher: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     Column(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.surfaceCard).padding(24.dp),
+        modifier = Modifier.fillMaxWidth().musicGlass(RoundedCornerShape(16.dp)).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("The top of the ladder", style = ladderText(LadderType.Row), color = colors.textPrimary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("The top of the ladder", style = ladderText(LadderType.Row), color = colors.textPrimary, modifier = Modifier.weight(1f))
+            LadderIcon("Save all to your Library", Icons.Rounded.LibraryAdd, onClick = onSaveAll)
+            LadderIcon("Play as a playlist, one album per rung", Icons.Rounded.PlaylistPlay, onClick = onPlayPlaylist)
+            LadderIcon("Climb higher, out from the last rung", Icons.Rounded.TrendingUp, onClick = onClimbHigher)
+        }
         Text(
             rungs.joinToString("  ›  ") { it.candidate.name },
-            style = ladderText(LadderType.Body),
+            style = ladderText(LadderType.Legend),
             color = colors.textSecondary,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BigPill("Save all", onSaveAll)
-            BigPill("Play as a playlist", onPlayPlaylist)
-            BigPill("Climb higher", onClimbHigher)
-        }
-    }
-}
-
-/** The controls, shown once at the bottom instead of on every row. Keyboard and pad keys side by side. */
-@Composable
-private fun LadderLegend() {
-    val colors = MaterialTheme.nuvio.colors
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = "◀ ▶ browse     ▲ further out     ▼ closer to my taste",
-            style = ladderText(LadderType.Legend),
-            color = colors.textMuted,
-        )
-        Text(
-            text = "Enter / A preview, again to stop     L / X love     S / Y skip",
-            style = ladderText(LadderType.Legend),
-            color = colors.textMuted,
         )
     }
 }
@@ -592,8 +609,7 @@ private fun BigPill(text: String, onClick: () -> Unit, selected: Boolean = false
         color = if (selected) colors.onAccent else colors.textPrimary,
         maxLines = 1,
         modifier = Modifier
-            .clip(RoundedCornerShape(28.dp))
-            .background(if (selected) colors.accent else colors.surfaceElevated)
+            .musicGlass(RoundedCornerShape(28.dp), selected = selected)
             .clickable(onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 12.dp),
     )
@@ -647,7 +663,7 @@ private fun feedbackLabel(feedback: RungFeedback): String = when (feedback) {
 private fun LadderDebugPanel(lines: List<String>) {
     val colors = MaterialTheme.nuvio.colors
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surfaceCard).padding(16.dp),
+        Modifier.fillMaxWidth().musicGlass(RoundedCornerShape(12.dp)).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text("Debug (F3 hides)", style = ladderText(LadderType.Legend), color = colors.textMuted)

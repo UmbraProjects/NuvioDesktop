@@ -315,7 +315,14 @@ fun MusicTabScreen(
             MusicPlayback.slimBar.value = true
             onDispose { MusicPlayback.slimBar.value = false }
         }
-        MusicLadderScreen(openLadder, onBack = { ladder = null }, onRequest = { ladder = it }, modifier = modifier, topChromePadding = topChromePadding)
+        // The same top as the tab's own search and Library, so opening a ladder does not drop the page down.
+        MusicLadderScreen(
+            openLadder,
+            onBack = { ladder = null },
+            onRequest = { ladder = it },
+            modifier = modifier,
+            topChromePadding = if (MusicTabState.barHosted) (topChromePadding - BAR_HOSTED_TRIM).coerceAtLeast(0.dp) else topChromePadding,
+        )
         return
     }
 

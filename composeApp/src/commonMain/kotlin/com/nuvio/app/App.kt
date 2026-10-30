@@ -1564,6 +1564,8 @@ private fun MainAppContent(
                             searchOverlayActive = false
                             navigateToContentCount++
                         }
+                        // fork:music - a page open inside the tab (the Music ladder) closes before the tab is left.
+                        com.nuvio.app.core.ui.TabBackInterceptor.handle() -> Unit
                         rootTabBackStack.isNotEmpty() -> {
                             val target = rootTabBackStack.last()
                             rootTabBackStack = rootTabBackStack.dropLast(1)
