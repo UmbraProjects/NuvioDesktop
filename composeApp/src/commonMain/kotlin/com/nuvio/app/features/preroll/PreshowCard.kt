@@ -125,7 +125,7 @@ private fun BbfcRatingCard(model: PreshowCardModel.Rating) {
     }
 }
 
-private val MpaGreen = Color(0xFF1F5C3A)
+private val MpaBlue = Color(0xFF173B7A)
 
 /** The MPA's wording under the rating letters, as its rating boxes print it: headline, then small print. */
 private fun mpaDescriptor(certificate: String): Pair<String, String> = when (certificate.uppercase()) {
@@ -138,7 +138,7 @@ private fun mpaDescriptor(certificate: String): Pair<String, String> = when (cer
 }
 
 /**
- * The MPA card: a green card in the manner of the MPA's own rating cards. The film's title, then a bordered
+ * The MPA card: a blue card, the colour of the MPA's feature rating tag. The film's title, then a bordered
  * rating box with the letters on the left and, on the right, the headline for the rating, the reasons for it
  * (when they could be found) and the small print.
  *
@@ -147,7 +147,7 @@ private fun mpaDescriptor(certificate: String): Pair<String, String> = when (cer
 @Composable
 private fun MpaRatingCard(model: PreshowCardModel.Rating) {
     val (headline, smallPrint) = mpaDescriptor(model.certificate)
-    Box(modifier = Modifier.fillMaxSize().background(MpaGreen)) {
+    Box(modifier = Modifier.fillMaxSize().background(MpaBlue)) {
         Text(
             "MOTION PICTURE ASSOCIATION",
             color = Color.White.copy(alpha = 0.7f),
