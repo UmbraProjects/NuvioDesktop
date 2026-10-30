@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -84,6 +85,13 @@ data class MusicLibraryState(
 
 /** An artist whose top albums could not be ranked is asked about again after this long. */
 private const val TOP_RECHECK_MS = 7L * 24 * 60 * 60 * 1000
+
+/** How many artists a Library refresh looks up together; the next group starts when the whole group is done. */
+internal const val REFRESH_STAGE_SIZE = 5
+
+/** [ids] split into stages of [size], in order. Pure, so the staging rule is tested without the repository. */
+internal fun refreshStages(ids: List<String>, size: Int = REFRESH_STAGE_SIZE): List<List<String>> =
+    ids.chunked(size.coerceAtLeast(1))
 
 /** How many unsaved artists are kept for this session before the least recently touched is dropped. */
 internal const val MAX_PREVIEWS = 12
@@ -397,14 +405,40 @@ object MusicLibraryRepository {
     /** Looks the artist up again, keeping the old data where the sources now say nothing. */
     fun refresh(artistId: String, catalog: MusicCatalog = defaultMusicCatalog()) {
         ensureLoaded()
-        val existing = _state.value.artist(artistId) ?: return
-        if (jobs[artistId]?.isActive == true) return
-        jobs[artistId] = scope.launch { fillIn(artistId, catalog, existing, preview = false) }
+        startRefresh(artistId, catalog)
     }
 
+    /**
+     * Starts looking a saved artist up again and returns the running job, or null when the artist is not
+     * in the library. A look-up already under way is returned as it is, not started a second time.
+     */
+    private fun startRefresh(artistId: String, catalog: MusicCatalog): Job? {
+        val existing = _state.value.artist(artistId) ?: return null
+        jobs[artistId]?.takeIf { it.isActive }?.let { return it }
+        return scope.launch { fillIn(artistId, catalog, existing, preview = false) }
+            .also { jobs[artistId] = it }
+    }
+
+    /** The staged pass started by [refreshAll], while it runs. */
+    private var refreshAllJob: Job? = null
+
+    /**
+     * Looks every saved artist up again in stages of [REFRESH_STAGE_SIZE]: a stage's artists run together,
+     * and the next stage starts only when the whole stage has finished. A big library therefore never has
+     * more than one stage in flight, instead of a look-up for every artist at once, which swamped the app.
+     * Pressing it again while a pass is running does nothing.
+     */
     fun refreshAll(catalog: MusicCatalog = defaultMusicCatalog()) {
         ensureLoaded()
-        _state.value.artists.forEach { refresh(it.id, catalog) }
+        if (refreshAllJob?.isActive == true) return
+        val ids = _state.value.artists.map { it.id }
+        // Runs on the main thread, like every other caller of startRefresh, so the jobs map is never
+        // touched from two threads. It only starts and waits: the look-ups themselves run on [scope].
+        refreshAllJob = scope.launch(Dispatchers.Main) {
+            for (stage in refreshStages(ids)) {
+                stage.mapNotNull { startRefresh(it, catalog) }.joinAll()
+            }
+        }
     }
 
     /**
