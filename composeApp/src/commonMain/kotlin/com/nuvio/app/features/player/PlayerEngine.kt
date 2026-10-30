@@ -490,6 +490,12 @@ data class PlayerHeroTrailerState(
      * moving onto the strip at all trips the dismiss.
      */
     val navDismissBandFraction: Float = 0.22f,
+    /**
+     * Post-show cards are up and the video is in a corner box: the controls page forwards the D-pad
+     * keys to Kotlin instead of using them. Lives here rather than on [PlayerControlsState] itself,
+     * which is at the JVM's method-signature limit.
+     */
+    val postShowInput: Boolean = false,
 )
 
 /**

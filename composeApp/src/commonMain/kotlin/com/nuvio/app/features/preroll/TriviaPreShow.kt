@@ -299,7 +299,7 @@ fun TriviaPreShow(
 }
 
 @Composable
-private fun ProgressBars(
+internal fun ProgressBars(
     total: Int,
     current: Int,
     currentFraction: () -> Float,
@@ -357,7 +357,7 @@ private fun SlideBody(slide: TriviaSlide, palette: TriviaPalette) {
 }
 
 @Composable
-private fun QuestionBody(
+internal fun QuestionBody(
     question: ShuffledQuestion,
     number: Int,
     total: Int,

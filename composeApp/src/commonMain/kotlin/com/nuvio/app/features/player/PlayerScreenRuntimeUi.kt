@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import com.nuvio.app.features.preroll.PostShowController
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -73,6 +75,18 @@ import com.nuvio.app.core.i18n.localizedString
 @Composable
 internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val runtime = this
+    // Tells the post-show which film this is and where its credits are. Films only for now.
+    val postShowTitle = title
+    LaunchedEffect(parentMetaType, parentMetaId, skipIntervals, postShowTitle) {
+        PostShowController.setFilm(
+            if (parentMetaType == "movie") {
+                PostShowController.Film(parentMetaType, parentMetaId, postShowTitle, skipIntervals)
+            } else {
+                null
+            },
+        )
+    }
+    DisposableEffect(Unit) { onDispose { PostShowController.setFilm(null) } }
     val playbackFailedToast = stringResource(Res.string.player_error_playback_failed)
     val unableToPlayStreamMessage = stringResource(Res.string.player_error_unable_to_play_stream)
     val debridRateLimitedToast = stringResource(Res.string.player_error_debrid_rate_limited)

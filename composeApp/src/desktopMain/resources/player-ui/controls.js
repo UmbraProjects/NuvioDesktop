@@ -8079,6 +8079,21 @@ document.addEventListener("keydown", event => {
   if (isHeroTrailerSurface || state.heroTrailerMode) {
     return;
   }
+  // Post-show cards are up and the video is in a corner box: the D-pad drives the cards, which Kotlin
+  // draws, so the keys they use are forwarded instead of seeking or showing the controls. Anything
+  // else (volume, fullscreen, ...) keeps working.
+  if (state.postShowInput) {
+    const postShowCodes = {
+      ArrowLeft: 1, ArrowRight: 2, ArrowUp: 3, ArrowDown: 4, Enter: 5, " ": 5,
+      Escape: 6, Backspace: 6, "1": 11, "2": 12, "3": 13, "4": 14,
+    };
+    const postShowCode = postShowCodes[event.key];
+    if (postShowCode) {
+      event.preventDefault();
+      send("postShowKey", postShowCode);
+      return;
+    }
+  }
   // The hex prompt is its own layer rather than an activeModal, so the modal branches below would
   // otherwise close the panel underneath it and leave the prompt stranded.
   if (subtitleHexField) {

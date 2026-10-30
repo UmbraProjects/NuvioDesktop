@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player.desktop
 
+import com.nuvio.app.features.preroll.PostShowController
+import com.nuvio.app.features.preroll.PostShowKey
 import com.nuvio.app.core.i18n.localizedString
 import androidx.compose.ui.graphics.Color
 import co.touchlab.kermit.Logger
@@ -1309,10 +1311,12 @@ internal class NativePlayerController(
             }
             "toggleFullscreen" -> toggleDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
             // The HUD's Escape (with nothing of its own to close). The back button still sends "back".
+            // A D-pad key while the post-show cards are up (the controls page forwards them: it holds keyboard focus).
+            "postShowKey" -> PostShowController.press(value.toInt())
             "escapeBack" -> {
-                if (DesktopPostShowSpike.boxed.value) {
-                    // P0 resize spike: Escape closes the corner box instead of leaving the player.
-                    DesktopPostShowSpike.dismiss()
+                if (PostShowController.active.value) {
+                    // Escape closes the post-show cards instead of leaving the player.
+                    PostShowController.press(PostShowKey.Back)
                 } else if (escapeShouldGoWindowed()) {
                     toggleDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
                 } else {
@@ -2961,6 +2965,8 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("heroTrailerNavDismissBandFraction", heroTrailer.navDismissBandFraction.toDouble())
         append(',')
         appendJsonField("streamFailoverEnabled", streamFailoverEnabled)
+        append(',')
+        appendJsonField("postShowInput", heroTrailer.postShowInput)
         append('}')
     }
 
