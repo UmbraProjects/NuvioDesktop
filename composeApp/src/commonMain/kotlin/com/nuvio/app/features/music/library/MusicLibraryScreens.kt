@@ -325,8 +325,10 @@ fun MusicArtistScreen(
 
     val working = state.working[artist.id]
     val filter = ReleaseFilter.entries.firstOrNull { it.name == filterName } ?: ReleaseFilter.All
-    val discography = remember(artist.releases, playableOnly, filter) {
-        buildDiscography(artist.releases, playableOnly, filter)
+    // fork:nebula - releases YouTube Music lacks that the music addon has: not dimmed, and kept by Playable. Empty without an addon link.
+    val addonKeys = com.nuvio.app.features.music.nebula.rememberAddonReleases(artist).keys
+    val discography = remember(artist.releases, playableOnly, filter, addonKeys) {
+        buildDiscography(artist.releases, playableOnly, filter, addonKeys)
     }
     val latest = remember(artist.releases) { latestRelease(artist.releases) }
     val uriHandler = LocalUriHandler.current
@@ -403,6 +405,7 @@ fun MusicArtistScreen(
         onPlayableOnly = { playableOnly = it },
         onFilter = { filterName = it.name },
         onToggleDemos = { demosOpen = !demosOpen },
+        addonKeys = addonKeys,
         modifier = modifier.fillMaxSize(),
     )
 
@@ -412,6 +415,7 @@ fun MusicArtistScreen(
                 artist = artist,
                 release = release,
                 versions = artist.releases.filter { it.dedupeKey() == release.dedupeKey() },
+                addonKeys = addonKeys,
                 onPickVersion = { selectedKey = it },
                 onOpen = release.ytBrowseId?.let { id ->
                     {
@@ -532,9 +536,12 @@ internal fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: ()
 /** A single (or any one-track release) plays on a click; anything longer opens its album page. */
 internal fun LibraryRelease.playsOnClick(): Boolean = kind == ReleaseKind.Single || trackCount == 1
 
-/** A release as a card. Releases YouTube Music does not have are dimmed instead of stamped. */
+/**
+ * A release as a card. Releases YouTube Music does not have are dimmed instead of stamped, unless [addon]: the music
+ * addon has it, so it is drawn in full and says so.
+ */
 @Composable
-internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null) {
+internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null, addon: Boolean = false) {
     val colors = MaterialTheme.nuvio.colors
     val release = group.primary
     Column(
@@ -543,7 +550,7 @@ internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: 
             .clip(RoundedCornerShape(10.dp))
             .secondaryClick(onSecondary)
             .clickable(onClick = onClick)
-            .alpha(if (group.isPlayable) 1f else 0.5f),
+            .alpha(if (group.isPlayable || addon) 1f else 0.5f),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
@@ -570,6 +577,10 @@ internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: 
         ).joinToString(" · ")
         if (sub.isNotEmpty()) {
             Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (addon) {
+            // fork:nebula - the same wording as the badge on a YouTube Music album row.
+            Text("Lossless on your addon", style = MaterialTheme.typography.labelSmall, color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -785,6 +796,8 @@ private fun ReleaseDialog(
     artist: LibraryArtist,
     release: LibraryRelease,
     versions: List<LibraryRelease>,
+    /** Keys of the releases the music addon has that YouTube Music lacks. */
+    addonKeys: Set<String> = emptySet(),
     onPickVersion: (key: String) -> Unit,
     onOpen: (() -> Unit)?,
     onPlay: (() -> Unit)?,
@@ -840,7 +853,11 @@ private fun ReleaseDialog(
                         versions.forEach { v ->
                             val label = listOfNotNull(
                                 v.trackCount?.let { "$it track${if (it == 1) "" else "s"}" },
-                                if (v.isPlayable) "YouTube Music" else "not on YouTube Music",
+                                when {
+                                    v.isPlayable -> "YouTube Music"
+                                    v.key in addonKeys -> "your music addon"
+                                    else -> "not on YouTube Music"
+                                },
                             ).joinToString(" · ")
                             ActionPill(label, selected = v.key == release.key) { onPickVersion(v.key) }
                         }
@@ -848,7 +865,9 @@ private fun ReleaseDialog(
                 }
                 if (onOpen == null) {
                     Text(
-                        "YouTube Music has no matching release, so it can't be played from here.",
+                        // fork:nebula - until the album page can open an addon release, say what is true.
+                        if (versions.any { it.key in addonKeys }) "Your music addon has this release (lossless). It can't be opened or played from here yet."
+                        else "YouTube Music has no matching release, so it can't be played from here.",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textMuted,
                     )

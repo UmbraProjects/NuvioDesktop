@@ -158,6 +158,8 @@ internal fun ArtistRoom(
     onPlayableOnly: (Boolean) -> Unit,
     onFilter: (ReleaseFilter) -> Unit,
     onToggleDemos: () -> Unit,
+    /** Keys of the releases the music addon has that YouTube Music lacks (see AddonReleases): not dimmed, and kept by Playable. */
+    addonKeys: Set<String> = emptySet(),
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
@@ -169,9 +171,9 @@ internal fun ArtistRoom(
         timeline.eras.flatMap { it.groups }
             .sortedWith(compareByDescending<ReleaseGroup> { releasePosition(it.primary) ?: 0.0 }.thenBy { it.primary.title })
     }
-    val timelineGroups = remember(dated, playableOnly) { timelineEntries(dated, playableOnly) }
-    val shown = if (filter == ReleaseFilter.Demos) emptyList() else dated.filter { it.passes(playableOnly, filter) }
-    val undated = if (filter == ReleaseFilter.Demos) emptyList() else timeline.undated.filter { it.passes(playableOnly, filter) }
+    val timelineGroups = remember(dated, playableOnly, addonKeys) { timelineEntries(dated, playableOnly, addonKeys) }
+    val shown = if (filter == ReleaseFilter.Demos) emptyList() else dated.filter { it.passes(playableOnly, filter, addonKeys) }
+    val undated = if (filter == ReleaseFilter.Demos) emptyList() else timeline.undated.filter { it.passes(playableOnly, filter, addonKeys) }
     // The newest covers on the timeline get a palette (the disc label and a missing cover use it).
     val wantedKeys = remember(timelineGroups) { timelineGroups.take(TIMELINE_PALETTE_LIMIT).map { it.primary.key }.toSet() }
     val missing = artist.releases.count { it.key in wantedKeys && it.needsPalette }
@@ -226,7 +228,7 @@ internal fun ArtistRoom(
                         Modifier.onGloballyPositioned { similarBottomY = it.positionInRoot().y + it.size.height }.padding(bottom = 14.dp),
                     )
                     if (!wide && timelineGroups.isNotEmpty()) {
-                        ReleaseTimeline(timelineGroups, onOpen, onInfo, Modifier.padding(bottom = 14.dp).fillMaxWidth())
+                        ReleaseTimeline(timelineGroups, addonKeys, onOpen, onInfo, Modifier.padding(bottom = 14.dp).fillMaxWidth())
                     }
                     Row(
                         Modifier.testTag("artistReleases"),
@@ -241,7 +243,7 @@ internal fun ArtistRoom(
                             modifier = Modifier.padding(bottom = 4.dp),
                         )
                     }
-                    FilterPanel(discography, filter, playableOnly, onPlayableOnly, onFilter)
+                    FilterPanel(discography, filter, playableOnly, onPlayableOnly, onFilter, addonInPlay = addonKeys.isNotEmpty())
                     if (shown.isEmpty() && undated.isEmpty() && filter != ReleaseFilter.Demos) {
                         Text(
                             when {
@@ -268,7 +270,9 @@ internal fun ArtistRoom(
                             Text("${section.size}", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(bottom = 2.dp))
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            section.forEach { group -> ReleaseCard(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }) }
+                            section.forEach { group ->
+                                ReleaseCard(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }, addon = group.onAddon(addonKeys))
+                            }
                         }
                     }
                     if (discography.demos.isNotEmpty()) {
@@ -276,7 +280,7 @@ internal fun ArtistRoom(
                     }
                 }
                 if (wide && timelineGroups.isNotEmpty()) {
-                    ReleaseTimeline(timelineGroups, onOpen, onInfo, Modifier.width(timelineWidth).padding(end = TIMELINE_END_GAP))
+                    ReleaseTimeline(timelineGroups, addonKeys, onOpen, onInfo, Modifier.width(timelineWidth).padding(end = TIMELINE_END_GAP))
                 }
                 }
             }
@@ -308,8 +312,8 @@ private val TIMELINE_END_GAP = 24.dp
 /** How many of the newest releases get a palette worked out as the page opens. */
 private const val TIMELINE_PALETTE_LIMIT = 40
 
-private fun ReleaseGroup.passes(playableOnly: Boolean, filter: ReleaseFilter): Boolean =
-    (!playableOnly || isPlayable) && matches(filter)
+private fun ReleaseGroup.passes(playableOnly: Boolean, filter: ReleaseFilter, addonKeys: Set<String>): Boolean =
+    (!playableOnly || isPlayableWith(addonKeys)) && matches(filter)
 
 // region backdrop and lane
 
@@ -518,19 +522,20 @@ private val TIMELINE_ROW = 44.dp
  * so neighbours never collide. No panel behind it: it sits straight on the page.
  */
 @Composable
-private fun ReleaseTimeline(releases: List<ReleaseGroup>, onOpen: (LibraryRelease) -> Unit, onInfo: (LibraryRelease) -> Unit, modifier: Modifier) {
+private fun ReleaseTimeline(releases: List<ReleaseGroup>, addonKeys: Set<String>, onOpen: (LibraryRelease) -> Unit, onInfo: (LibraryRelease) -> Unit, modifier: Modifier) {
     Column(modifier.testTag("artistTimeline")) {
         releases.forEachIndexed { index, group ->
             TimelineRow(
-                group, leftSide = index % 2 == 0, first = index == 0, last = index == releases.lastIndex,
+                group, playsHere = group.isPlayableWith(addonKeys), leftSide = index % 2 == 0, first = index == 0, last = index == releases.lastIndex,
                 onOpen = { onOpen(group.primary) }, onInfo = { onInfo(group.primary) },
             )
         }
     }
 }
 
+/** [playsHere]: on YouTube Music or on the music addon, so drawn in full rather than dimmed. */
 @Composable
-private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, last: Boolean, onOpen: () -> Unit, onInfo: () -> Unit) {
+private fun TimelineRow(group: ReleaseGroup, playsHere: Boolean, leftSide: Boolean, first: Boolean, last: Boolean, onOpen: () -> Unit, onInfo: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
@@ -539,7 +544,7 @@ private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, 
     val label: @Composable (Alignment.Horizontal) -> Unit = { align ->
         val release = group.primary
         Column(
-            Modifier.alpha(if (group.isPlayable) 1f else 0.55f).padding(horizontal = 12.dp),
+            Modifier.alpha(if (playsHere) 1f else 0.55f).padding(horizontal = 12.dp),
             horizontalAlignment = align,
         ) {
             Text(
@@ -575,8 +580,8 @@ private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, 
                 Modifier
                     .size(if (lit) 12.dp else 9.dp)
                     .clip(CircleShape)
-                    .background(if (group.isPlayable) colors.accent else colors.background)
-                    .border(1.5.dp, if (group.isPlayable) colors.accent else NuvioGlass.EdgeColor, CircleShape),
+                    .background(if (playsHere) colors.accent else colors.background)
+                    .border(1.5.dp, if (playsHere) colors.accent else NuvioGlass.EdgeColor, CircleShape),
             )
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { if (!leftSide) label(Alignment.Start) }
@@ -594,6 +599,8 @@ private fun FilterPanel(
     playableOnly: Boolean,
     onPlayableOnly: (Boolean) -> Unit,
     onFilter: (ReleaseFilter) -> Unit,
+    /** True once the music addon is known to have some releases: the note then says dimmed ones are on neither. */
+    addonInPlay: Boolean = false,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Column(
@@ -614,7 +621,11 @@ private fun FilterPanel(
                 ActionPill("${f.label} $n", selected = f == filter) { onFilter(if (f == filter) ReleaseFilter.All else f) }
             }
         }
-        Text("Dimmed releases aren't on YouTube Music.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+        Text(
+            if (addonInPlay) "Dimmed releases aren't on YouTube Music or your music addon." else "Dimmed releases aren't on YouTube Music.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textMuted,
+        )
     }
 }
 

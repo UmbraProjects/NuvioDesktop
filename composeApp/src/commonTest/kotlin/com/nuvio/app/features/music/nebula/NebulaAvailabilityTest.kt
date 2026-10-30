@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music.nebula
 
+import com.nuvio.app.features.music.library.LibraryArtist
+import com.nuvio.app.features.music.library.LibraryRelease
+import com.nuvio.app.features.music.library.ReleaseKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -84,6 +87,33 @@ class AddonAvailabilityCacheTest {
         assertEquals(ADDON_MAX_ENTRIES, book.entries.size)
         assertFalse(book.entries.containsKey("k0"))
         assertTrue(book.entries.containsKey("k$ADDON_MAX_ENTRIES"))
+    }
+}
+
+class AddonReleaseQueryTest {
+    private val artist = LibraryArtist(id = "UC1", name = "Queen")
+
+    @Test fun buildsTheQueryFromTheReleaseAndItsArtist() {
+        val q = LibraryRelease(key = "mb-1", title = "Greatest Hits", kind = ReleaseKind.Album, releaseDate = "1981-10-26", trackCount = 17)
+            .addonQuery(artist)
+        assertEquals(addonCacheKey("UC1", "mb-1"), q.cacheKey)
+        assertEquals("Greatest Hits", q.title)
+        assertEquals("Queen", q.artist)
+        assertEquals("1981", q.year)
+        assertEquals(17, q.trackCount)
+    }
+
+    @Test fun theYearFieldWinsOverTheDateAndMissingOnesStayNull() {
+        val withYear = LibraryRelease(key = "k", title = "T", kind = ReleaseKind.EP, year = "1999", releaseDate = "2001-01-01")
+        assertEquals("1999", withYear.addonQuery(artist).year)
+        val bare = LibraryRelease(key = "k", title = "T", kind = ReleaseKind.EP)
+        assertNull(bare.addonQuery(artist).year)
+        assertNull(bare.addonQuery(artist).trackCount)
+    }
+
+    @Test fun twoArtistsWithTheSameReleaseKeyDoNotShareAnAnswer() {
+        val release = LibraryRelease(key = "greatest hits|album", title = "Greatest Hits", kind = ReleaseKind.Album)
+        assertNotEquals(release.addonQuery(artist).cacheKey, release.addonQuery(LibraryArtist(id = "UC2", name = "ABBA")).cacheKey)
     }
 }
 
