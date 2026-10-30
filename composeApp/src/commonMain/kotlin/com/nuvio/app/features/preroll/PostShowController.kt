@@ -66,7 +66,7 @@ object PostShowController {
      * the cards are due. Clears when the cards close or fail, and the player carries on as usual.
      */
     val pending: Boolean
-        get() = nowPlaying?.let { it.scope != PostShowScope.Film && !spent && PostShowRepository.isReady() } == true
+        get() = nowPlaying?.let { it.scope != PostShowScope.Film && !spent && PostShowRepository.isReady(it.scope) } == true
 
     fun setFilm(value: Film?) {
         nowPlaying = value
@@ -95,7 +95,7 @@ object PostShowController {
     }
 
     private fun start(current: Film) {
-        if (!PostShowRepository.isReady()) {
+        if (!PostShowRepository.isReady(current.scope)) {
             spent = true
             return
         }

@@ -36,34 +36,50 @@ object PostShowRepository {
     private val inFlight = mutableMapOf<String, Deferred<Result<PostShowPack>>>()
     private val inFlightLock = Mutex()
 
-    /** The post-show has its own switch, but it still needs a key and consent to ask anything. */
-    fun isReady(): Boolean =
-        PreshowSettings.postShowEnabled.value && DiscoverAiSettingsRepository.snapshot().isConfigured
+    /** The post-show has its own switch. Writing cards with AI also needs a key and consent. */
+    private fun enabled(): Boolean = PreshowSettings.postShowEnabled.value
 
-    private fun keyFor(meta: MetaDetails, scope: PostShowScope): Pair<String, TriviaSource> {
+    private fun aiReady(): Boolean = enabled() && DiscoverAiSettingsRepository.snapshot().isConfigured
+
+    /**
+     * Whether cards can be produced for [scope]: a film can always fall back to Wikipedia; a
+     * finale needs the AI provider, because Wikipedia cannot honour the per-season spoiler gate.
+     */
+    fun isReady(scope: PostShowScope = PostShowScope.Film): Boolean =
+        if (scope == PostShowScope.Film) enabled() else aiReady()
+
+    private fun keyFor(meta: MetaDetails, scope: PostShowScope, model: String? = null): Pair<String, TriviaSource> {
         val settings = DiscoverAiSettingsRepository.snapshot()
         val source = meta.toTriviaSource()
         val key = postShowCacheKey(
             metaId = meta.id,
             scope = scope,
-            model = settings.effectiveModel,
+            model = model ?: settings.effectiveModel,
             languageTag = ThemeSettingsRepository.selectedAppLanguage.value.code,
             fingerprint = source.fingerprint(),
         )
         return key to source
     }
 
+    private fun wikiKeyFor(meta: MetaDetails): String =
+        // English only, whatever the app language, so the language slot is fixed.
+        postShowCacheKey(meta.id, PostShowScope.Film, PostShowWikipedia.MODEL, "en", meta.toTriviaSource().fingerprint())
+
+    private fun peekWiki(meta: MetaDetails): PostShowPack? =
+        PostShowCache.get(wikiKeyFor(meta))?.pack?.takeUnless { it.isEmpty }
+
     /** Cache-only lookup. Never makes a request. */
     fun peek(meta: MetaDetails, scope: PostShowScope = PostShowScope.Film): PostShowPack? {
-        if (!isReady()) return null
+        if (!isReady(scope)) return null
         val (key, source) = keyFor(meta, scope)
         if (!source.isUsable) return null
-        return PostShowCache.get(key)?.pack?.takeUnless { it.isEmpty }
+        if (aiReady()) PostShowCache.get(key)?.pack?.takeUnless { it.isEmpty }?.let { return it }
+        return if (scope == PostShowScope.Film) peekWiki(meta) else null
     }
 
     /** Fire-and-forget: starts generation if nothing is cached or in flight. Errors are logged only. */
     fun prefetchFor(type: String, metaId: String, scope: PostShowScope = PostShowScope.Film) {
-        if (!isReady()) return
+        if (!isReady(scope)) return
         workScope.launch {
             val meta = MetaDetailsRepository.peekAny(type, metaId)
                 ?: runCatching { MetaDetailsRepository.fetch(type, metaId) }.getOrNull()
@@ -74,7 +90,8 @@ object PostShowRepository {
 
     /**
      * The pack for the credits, waiting up to [waitMs] for one still being generated. Past that it
-     * gives up (the credits are short) and the request still completes into the cache.
+     * gives up (the credits are short) and the request still completes into the cache. A film
+     * whose AI pack is late gets its Wikipedia cards instead, if they can be had in a few seconds.
      */
     suspend fun packFor(
         type: String,
@@ -82,15 +99,28 @@ object PostShowRepository {
         scope: PostShowScope = PostShowScope.Film,
         waitMs: Long = 8_000,
     ): Result<PostShowPack> {
-        if (!isReady()) return Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnabled))
+        if (!isReady(scope)) return Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnabled))
         val meta = MetaDetailsRepository.peekAny(type, metaId)
             ?: withTimeoutOrNull(waitMs) {
                 runCatching { MetaDetailsRepository.fetch(type, metaId) }.getOrNull()
             }
             ?: return Result.failure(TriviaUnavailableException(TriviaUnavailable.MetadataNotFound))
         peek(meta, scope)?.let { return Result.success(it) }
-        return withTimeoutOrNull(waitMs) { pack(meta, scope) }
-            ?: Result.failure(TriviaUnavailableException(TriviaUnavailable.TimedOut))
+        withTimeoutOrNull(waitMs) { pack(meta, scope) }?.let { return it }
+        if (scope == PostShowScope.Film) {
+            withTimeoutOrNull(WIKI_LATE_WAIT_MS) { wikipedia(meta) }?.let { return Result.success(it) }
+        }
+        return Result.failure(TriviaUnavailableException(TriviaUnavailable.TimedOut))
+    }
+
+    private suspend fun wikipedia(meta: MetaDetails): PostShowPack? {
+        peekWiki(meta)?.let { return it }
+        val pack = PostShowWikipedia.packFor(meta) ?: return null
+        PostShowCache.put(
+            wikiKeyFor(meta),
+            PostShowCacheEntry(pack = pack, builtAtEpochMs = System.currentTimeMillis(), model = PostShowWikipedia.MODEL),
+        )
+        return pack
     }
 
     suspend fun pack(
@@ -98,11 +128,27 @@ object PostShowRepository {
         scope: PostShowScope = PostShowScope.Film,
         forceRefresh: Boolean = false,
     ): Result<PostShowPack> {
-        if (!isReady()) return Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnabled))
-        val (key, source) = keyFor(meta, scope)
+        if (!isReady(scope)) return Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnabled))
+        val source = meta.toTriviaSource()
         if (!source.isUsable) {
             return Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnoughMetadata))
         }
+        val isFilm = scope == PostShowScope.Film
+        if (!aiReady()) {
+            return wikipedia(meta)?.let { Result.success(it) }
+                ?: Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnoughMetadata))
+        }
+        val aiResult = aiPack(meta, scope, forceRefresh)
+        if (aiResult.isSuccess || !isFilm) return aiResult
+        return wikipedia(meta)?.let { Result.success(it) } ?: aiResult
+    }
+
+    private suspend fun aiPack(
+        meta: MetaDetails,
+        scope: PostShowScope,
+        forceRefresh: Boolean,
+    ): Result<PostShowPack> {
+        val (key, source) = keyFor(meta, scope)
         if (!forceRefresh) {
             PostShowCache.get(key)?.pack?.takeUnless { it.isEmpty }?.let { return Result.success(it) }
         }
@@ -160,3 +206,4 @@ object PostShowRepository {
 }
 
 private const val MAX_RETRIES = 3
+private const val WIKI_LATE_WAIT_MS = 6_000L

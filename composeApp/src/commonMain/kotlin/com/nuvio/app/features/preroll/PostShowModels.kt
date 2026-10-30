@@ -30,7 +30,13 @@ enum class PostShowCardKind {
     WatchAgain,
     Motivation,
     Connection,
-    BehindTheScenes;
+    BehindTheScenes,
+
+    /** Wikipedia fallback only: what the film is about. The model's cards use Motivation. */
+    Themes,
+
+    /** Wikipedia fallback only: the attribution its licence asks for. Never produced by [from]. */
+    Source;
 
     companion object {
         /** Null for anything unrecognised: a card mislabelled "Easter egg" is worse than no card. */

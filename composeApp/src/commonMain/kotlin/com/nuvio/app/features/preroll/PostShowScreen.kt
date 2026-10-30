@@ -260,4 +260,6 @@ internal fun PostShowCardKind.heading(finale: Boolean = false): String = when (t
     PostShowCardKind.Motivation -> "WHY THEY DID IT"
     PostShowCardKind.Connection -> "CONNECTIONS"
     PostShowCardKind.BehindTheScenes -> "BEHIND THE SCENES"
+    PostShowCardKind.Themes -> "THEMES"
+    PostShowCardKind.Source -> "SOURCE"
 }

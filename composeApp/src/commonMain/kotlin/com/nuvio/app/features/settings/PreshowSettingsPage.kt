@@ -211,8 +211,8 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
             val postShow by PreshowSettings.postShowEnabled.collectAsStateWithLifecycle()
             var consentPromptFor by remember { mutableStateOf<AiConsentTarget?>(null) }
             val description = "When a film's credits start, the video moves to a corner and cards look back at what you " +
-                "just watched: what the ending meant, hidden details, and a short quiz. Uses your AI key." +
-                if (ai.isConfigured) "" else "\nNeeds an AI provider and key set up under Discover AI."
+                "just watched: what the ending meant, themes, and a short quiz. With your AI key the cards are written for the film; " +
+                "without one, films use their Wikipedia article (English, with the plot). Season and series finales need the AI key."
             SettingsGroup(isTablet = isTablet) {
                 SettingsSwitchRow(
                     title = "Post-show cards",
