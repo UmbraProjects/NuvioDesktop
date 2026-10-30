@@ -248,6 +248,94 @@ internal object NebulaMusicSource {
 
     // endregion
 
+    // region releases YouTube Music does not have
+
+    private var avail = AddonAvailabilityBook()
+    private var availProfile: Int? = null
+    private val availGate = kotlinx.coroutines.sync.Semaphore(2)
+    private var availFailures = 0
+    private var availPausedUntil = 0L
+
+    private fun loadAvail(): AddonAvailabilityBook {
+        val profile = ProfileRepository.activeProfileId
+        if (availProfile != profile) {
+            avail = decodeAddonAvailability(MusicLibraryStorage.loadNebulaAvailability(profile))
+            availProfile = profile
+        }
+        return avail
+    }
+
+    private fun saveAvail(next: AddonAvailabilityBook) {
+        avail = next
+        availProfile?.let { MusicLibraryStorage.saveNebulaAvailability(it, encodeAddonAvailability(next)) }
+    }
+
+    /** What was kept for [cacheKey] while it is still fresh, else null. Memory and disk only: no request is made. */
+    suspend fun cachedAvailability(cacheKey: String): AddonAvailability? = lock.withLock {
+        loadAvail()
+        avail.entries[cacheKey]?.takeIf { it.isFresh(LibraryClock.nowEpochMs()) }
+    }
+
+    /** Drops what was kept for [cacheKey], so the next check asks the addon again (a stream that said "no such track"). */
+    suspend fun forgetRelease(cacheKey: String) = lock.withLock {
+        loadAvail()
+        saveAvail(avail.without(cacheKey))
+    }
+
+    /**
+     * Whether the addon has [query]'s release, for one that YouTube Music does not list. A kept answer comes back
+     * with no request. Otherwise the addon's search is asked (at most two requests, two checks at a time) and the
+     * answer kept: a match for two weeks, a miss for longer each time it repeats. A check that queued behind another
+     * for the same release finds that one's answer instead of asking again. Only a strict match counts
+     * ([strictNebulaMatch]), since the row is un-dimmed and opened on it.
+     *
+     * Null when it could not be asked (no link, offline, or paused for a minute after three failures in a row); that
+     * is never kept, so the next call asks again. A match found earlier that cannot be re-checked now (expired, addon
+     * down) is returned as it was rather than dropped.
+     */
+    suspend fun availabilityOf(query: AddonReleaseQuery): AddonAvailability? {
+        val base = baseUrl() ?: return null
+        cachedAvailability(query.cacheKey)?.let { return it }
+        if (LibraryClock.nowEpochMs() < availPausedUntil) return null
+        return availGate.withPermit {
+            cachedAvailability(query.cacheKey)?.let { return@withPermit it }
+            val previous = lock.withLock { avail.entries[query.cacheKey] }
+            try {
+                val match = searchRelease(base, query)
+                availFailures = 0
+                val now = LibraryClock.nowEpochMs()
+                val entry = if (match != null) addonFound(now, match) else addonMissed(now, previous)
+                lock.withLock {
+                    loadAvail()
+                    saveAvail(avail.withEntry(query.cacheKey, entry))
+                }
+                entry
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.w(e) { "Music addon availability check failed" }
+                // A broken addon would otherwise be asked about every row on screen: stop for a minute after three in a row.
+                if (++availFailures >= 3) {
+                    availPausedUntil = LibraryClock.nowEpochMs() + 60_000L
+                    availFailures = 0
+                }
+                previous?.takeIf { it.albumId != null }
+            }
+        }
+    }
+
+    /** The addon's album for [query] from /search alone: artist and title first, then the title alone. */
+    private suspend fun searchRelease(base: String, query: AddonReleaseQuery): NebulaAlbumSummary? {
+        for (text in nebulaSearchQueries(query.title, query.artist)) {
+            val body = get(base, "/search?q=${urlEncodeQuery(text)}").requireOk()
+            val match = strictNebulaMatch(parseNebulaSearchAlbums(body), query.title, query.artist, query.year, query.trackCount ?: 0)
+            if (match != null) return match
+        }
+        return null
+    }
+
+    // endregion
+
     /** [album] with its tracks pointed at the addon; tracks with no counterpart are marked unavailable. */
     fun prepare(album: MusicAlbum, match: StoredLookup): MusicAlbum = album.copy(
         tracks = album.tracks.mapIndexed { i, track ->

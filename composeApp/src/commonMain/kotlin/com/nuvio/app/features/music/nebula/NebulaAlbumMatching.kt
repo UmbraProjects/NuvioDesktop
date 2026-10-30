@@ -66,7 +66,19 @@ internal fun rankNebulaAlbums(
     artist: String,
     year: String?,
     trackCount: Int,
-): List<NebulaAlbumSummary> {
+): List<NebulaAlbumSummary> = scoreNebulaAlbums(candidates, title, artist, year, trackCount).map { it.album }
+
+/** A candidate with the score [rankNebulaAlbums] gave it; [exactTitle] is true when its core title words are the same set as ours. */
+internal data class ScoredNebulaAlbum(val album: NebulaAlbumSummary, val score: Int, val exactTitle: Boolean)
+
+/** [rankNebulaAlbums] with the scores kept, best first (the addon's own order breaks ties). */
+internal fun scoreNebulaAlbums(
+    candidates: List<NebulaAlbumSummary>,
+    title: String,
+    artist: String,
+    year: String?,
+    trackCount: Int,
+): List<ScoredNebulaAlbum> {
     val wantTokens = albumCoreTokens(title).toSet()
     if (wantTokens.isEmpty()) return emptyList()
     val wantArtist = if (isVariousArtists(artist)) emptySet() else searchTokens(artist).filter { it != "the" }.toSet()
@@ -83,8 +95,35 @@ internal fun rankNebulaAlbums(
         var score = titleScore
         if (wantYear != null && c.year == wantYear) score += 15
         if (trackCount > 0 && c.trackCount == trackCount) score += 15
-        c to score
-    }.sortedByDescending { it.second }.map { it.first }
+        ScoredNebulaAlbum(c, score, exactTitle = titleScore == 50)
+    }.sortedByDescending { it.score }
+}
+
+/** Score a various-artists match needs: an exact title alone is too common ("Greatest Hits"), so the year or the track count must agree too. */
+private const val VARIOUS_ARTISTS_MIN_SCORE = 65
+
+/**
+ * The one addon album that is this release, or null when none is clearly it. Stricter than [rankNebulaAlbums], because
+ * a release that YouTube Music does not have is un-dimmed and opened on this answer alone: a wrong match is worse than
+ * a missing one. The core title must be equal (not merely contained), the artist must share a word (a various-artists
+ * release needs its year or track count to agree as well), and a candidate whose year AND track count both differ from
+ * ours is another record. A remaster (year differs, count the same) and an unknown count still match.
+ */
+internal fun strictNebulaMatch(
+    candidates: List<NebulaAlbumSummary>,
+    title: String,
+    artist: String,
+    year: String?,
+    trackCount: Int,
+): NebulaAlbumSummary? {
+    val wantYear = year?.trim()?.take(4)?.toIntOrNull()
+    val various = isVariousArtists(artist)
+    return scoreNebulaAlbums(candidates, title, artist, year, trackCount).firstOrNull { s ->
+        val c = s.album
+        val yearDiffers = wantYear != null && c.year != null && c.year != wantYear
+        val countDiffers = trackCount > 0 && c.trackCount != null && c.trackCount != trackCount
+        s.exactTitle && !(yearDiffers && countDiffers) && (!various || s.score >= VARIOUS_ARTISTS_MIN_SCORE)
+    }?.album
 }
 
 /** An album track as the matcher needs it: its place in our list, its number, title and length. */
