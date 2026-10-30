@@ -43,6 +43,13 @@ data class MusicTrack(
     val trackNumber: Int,
     /** False when YouTube Music greys the track out (removed or blocked here). */
     val isAvailable: Boolean,
+    /**
+     * fork:music-playlists - the track's own cover, album and album page. Set for a playlist's tracks, which come from
+     * many albums; an album's own tracks leave them null and the album's are used ([MusicPlayerState.coverUrl]).
+     */
+    val coverUrl: String? = null,
+    val albumTitle: String? = null,
+    val albumBrowseId: String? = null,
 )
 
 data class MusicAlbum(

@@ -4,6 +4,15 @@ import com.nuvio.app.features.music.nebula.NebulaMusicSource
 import com.nuvio.app.features.music.nebula.NebulaSourceRow
 import com.nuvio.app.features.music.nebula.rememberNebulaAlbumController
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.alpha
+import com.nuvio.app.features.music.playlist.PlaylistPicker
+import com.nuvio.app.features.music.playlist.MusicPlaylistTracks.forPlaylist
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -235,6 +244,10 @@ private fun AlbumContent(
                     onClick = { addon.choose(if (onAddon) MusicSource.YouTube else MusicSource.Addon) },
                 )
             },
+            // fork:music-playlists - the album's playable songs into a playlist (YouTube Music's ids, whichever source plays).
+            AlbumAction("Add the album to a playlist", Icons.Rounded.PlaylistAdd, active = false, onClick = {
+                PlaylistPicker.request(album.tracks.filter { it.isAvailable }.map { it.forPlaylist(album) })
+            }),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally), modifier = Modifier.fillMaxWidth()) {
             actions.forEach { action ->
@@ -285,6 +298,7 @@ private fun AlbumContent(
                 album = album,
                 track = track,
                 current = loaded && state.trackIndex == index,
+                onAddToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
                 onClick = {
                     if (loaded && startsFresh) {
                         // fork:nebula - the album is playing from the other source: start it over in the chosen one.
@@ -516,7 +530,11 @@ private fun TrackRow(
     track: MusicTrack,
     current: Boolean,
     onClick: () -> Unit,
+    /** fork:music-playlists - shown as a + on hover. */
+    onAddToPlaylist: (() -> Unit)? = null,
 ) {
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered by hoverSource.collectIsHoveredAsState()
     val colors = MaterialTheme.nuvio.colors
     val albumArtists = album.artists.map { it.name }
     val trackArtists = track.artists.map { it.name }
@@ -528,6 +546,7 @@ private fun TrackRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(if (current) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
+            .hoverable(hoverSource)
             .clickable(enabled = track.isAvailable, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -568,6 +587,17 @@ private fun TrackRow(
                         .background(Color.White.copy(alpha = 0.10f))
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
+            }
+        }
+        if (onAddToPlaylist != null && track.isAvailable) {
+            // Always laid out (only shown on hover), so the length does not jump when the pointer arrives.
+            NuvioPosterHoverTooltip(title = "Add to playlist") {
+                Box(
+                    Modifier.size(28.dp).alpha(if (hovered) 1f else 0f).clip(CircleShape).clickable(enabled = hovered, onClick = onAddToPlaylist),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Add to playlist", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+                }
             }
         }
         Spacer(Modifier.width(12.dp))

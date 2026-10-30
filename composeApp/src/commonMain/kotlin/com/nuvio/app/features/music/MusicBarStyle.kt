@@ -43,17 +43,18 @@ fun setMusicBarStyle(style: MusicBarStyle) {
 }
 
 /**
- * Whether the corner card is what shows. The bottom bar takes over wherever the card would be wrong: a real video
- * draws its picture in the bar, the lyric view already fills the screen and leans on the bar's controls, and a
- * ladder wants the slim pill ([musicBarSlim]).
+ * Whether the corner card is what shows. The bottom bar takes over where the card would be wrong: a real video draws
+ * its picture in the bar, and a ladder wants the slim pill ([musicBarSlim]). The lyric view keeps the person's style
+ * (it has its own Collapse; [nowPlayingOpen] is kept for the callers).
  */
+@Suppress("UNUSED_PARAMETER")
 internal fun musicBarCorner(state: MusicPlayerState, slimRequested: Boolean, nowPlayingOpen: Boolean, style: MusicBarStyle): Boolean =
-    style == MusicBarStyle.Corner && !slimRequested && !nowPlayingOpen && !(state.mode == MusicPlayMode.Video && !state.lyricVideo)
+    style == MusicBarStyle.Corner && !slimRequested && !(state.mode == MusicPlayMode.Video && !state.lyricVideo)
 
 /**
- * Whether the dock is the player. The bottom bar still takes over where the dock cannot serve: a real video draws its
- * picture in the bar, and the lyric view leans on the bar's controls. A ladder keeps the dock (it is smaller than the
- * slim pill the other styles shrink to there).
+ * Whether the dock is the player: always, in the Dock style. The lyric view and a ladder keep it, and so does a real
+ * video: its picture waits off screen while the dock plays it, and the dock's Expand video opens it.
  */
+@Suppress("UNUSED_PARAMETER")
 internal fun musicPlayerDocked(state: MusicPlayerState, nowPlayingOpen: Boolean, style: MusicBarStyle): Boolean =
-    style == MusicBarStyle.Dock && !nowPlayingOpen && !(state.mode == MusicPlayMode.Video && !state.lyricVideo)
+    style == MusicBarStyle.Dock

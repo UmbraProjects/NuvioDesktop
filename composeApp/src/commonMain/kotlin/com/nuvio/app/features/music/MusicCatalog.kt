@@ -24,6 +24,15 @@ interface MusicCatalog {
      * (one request, for background look-ups). Empty on failure; the default is empty for test fakes.
      */
     suspend fun searchReleases(query: String): List<MusicAlbumSummary> = emptyList()
+
+    /** fork:music-playlists - songs for [query], best match first, each with its album and cover. Empty on failure. */
+    suspend fun searchSongs(query: String): List<MusicTrack> = emptyList()
+
+    /**
+     * fork:music-playlists - a YouTube Music or YouTube playlist by id (`PL...`, `OLAK5uy...`, `RDCLAK...`; a leading
+     * `VL` is allowed), every page of it up to a few thousand tracks. Null when it could not be read.
+     */
+    suspend fun playlist(playlistId: String): MusicPlaylistPage? = null
 }
 
 /** The catalog the app uses: [MusicMetadataClient] on desktop. */

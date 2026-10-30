@@ -399,3 +399,69 @@ internal fun parseCounterpart(body: String, videoId: String): MusicCounterpart? 
     }
     return null
 }
+
+// region fork:music-playlists - songs and playlists
+
+/** One page of a YouTube Music playlist: its title (first page only), its tracks, and the token for the next page. */
+data class MusicPlaylistPage(val title: String?, val tracks: List<MusicTrack>, val continuation: String?)
+
+/**
+ * A song row of a search or a playlist page. The second column holds the artists and, in a search, the album and the
+ * length; a playlist puts the album in the third column and the length in a fixed column. Every run is read for an
+ * artist (a `UC` link) or an album (an `MPREb_` link) wherever it sits, so either layout parses.
+ */
+private fun JsonObject.toListTrack(number: Int): MusicTrack? {
+    val videoId = trackVideoId()
+        ?: runsOf(flexText(0)).firstNotNullOfOrNull { it.at("navigationEndpoint", "watchEndpoint", "videoId").str() }
+        ?: return null
+    val title = textOf(flexText(0)).trim().ifEmpty { return null }
+    val columns = this["flexColumns"].arr().orEmpty().indices.drop(1)
+    val runs = columns.flatMap { runsOf(flexText(it)) }
+    val artists = artistsFrom(runs).ifEmpty {
+        // An uploaded track names its channel without a link: the first plain segment of the second column.
+        segments(runsOf(flexText(1))).firstOrNull()?.let(::segmentText)?.takeIf { it.isNotEmpty() }
+            ?.let { listOf(MusicArtistRef(it)) }.orEmpty()
+    }
+    val albumRun = runs.firstOrNull { it.runBrowseId()?.startsWith(ALBUM_PREFIX) == true }
+    val fixed = textOf(this["fixedColumns"].arr()?.getOrNull(0).at("musicResponsiveListItemFixedColumnRenderer", "text")).trim()
+    val lengthText = fixed.takeIf { TRACK_LENGTH.matches(it) }
+        ?: runs.mapNotNull { it["text"].str()?.trim() }.firstOrNull { TRACK_LENGTH.matches(it) }
+        ?: ""
+    val greyedOut = this["musicItemRendererDisplayPolicy"].str()?.contains("GREY_OUT") == true
+    return MusicTrack(
+        videoId = videoId,
+        title = title,
+        artists = artists,
+        durationSeconds = if (lengthText.isEmpty()) 0 else parseDurationSeconds(lengthText),
+        trackNumber = number,
+        isAvailable = !greyedOut,
+        coverUrl = thumbnailOf(this["thumbnail"]),
+        albumTitle = albumRun?.get("text").str()?.trim(),
+        albumBrowseId = albumRun?.runBrowseId(),
+    )
+}
+
+/** Songs in a search response made with the songs filter, best match first. */
+internal fun parseSongSearch(body: String): List<MusicTrack> {
+    val root = parseRoot(body) ?: return emptyList()
+    return findAll(root, "musicResponsiveListItemRenderer")
+        .mapIndexedNotNull { i, item -> item.toListTrack(i + 1) }
+        .distinctBy { it.videoId }
+}
+
+/** A playlist page (`browse` with `VL<id>`), or one of its continuation pages (no title). Null when nothing parses. */
+internal fun parsePlaylistPage(body: String, firstNumber: Int = 1): MusicPlaylistPage? {
+    val root = parseRoot(body) ?: return null
+    val header = findAll(root, "musicResponsiveHeaderRenderer").firstOrNull()
+        ?: findAll(root, "musicDetailHeaderRenderer").firstOrNull()
+    val title = header?.let { textOf(it["title"]).trim() }?.takeIf { it.isNotEmpty() }
+    val tracks = findAll(root, "musicResponsiveListItemRenderer")
+        .mapIndexedNotNull { i, item -> item.toListTrack(firstNumber + i) }
+        .distinctBy { it.videoId }
+    val continuation = findAll(root, "continuationCommand").firstNotNullOfOrNull { it["token"].str() }
+        ?: findAll(root, "nextContinuationData").firstNotNullOfOrNull { it["continuation"].str() }
+    if (title == null && tracks.isEmpty()) return null
+    return MusicPlaylistPage(title, tracks, continuation)
+}
+
+// endregion

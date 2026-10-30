@@ -122,6 +122,15 @@ actual fun MusicPlayerSurface(
     // Re-opens of this load's URL after a googlevideo 403 (see forbiddenStreamRetryDelayMs).
     var forbiddenRetries by remember(loadId) { mutableIntStateOf(0) }
 
+    // fork:music - a video opened part way in (switching to Video mid-song) on YouTube's separate video and audio
+    // streams, or an HLS manifest, sat in the native player's start-position hand-off: held paused until the seek
+    // landed, which it did not within the stall watchdog's ten seconds, so the load was dropped and the next fallback
+    // tried, down to the 360p stream from the beginning. Such a load now opens at 0:00, muted, and jumps to the
+    // position once it is really playing; until then its position is not reported, so a fallback keeps the place.
+    val deferStartMs = remember(loadId, forbiddenRetries) {
+        if (startPositionMs > 0L && (sourceAudioUrl != null || "/manifest/" in sourceUrl)) startPositionMs else 0L
+    }
+
     LaunchedEffect(controller, loadId, forbiddenRetries) {
         val attachScope = this
         revealed = false
@@ -142,7 +151,7 @@ actual fun MusicPlayerSurface(
             sourceAudioUrl = sourceAudioUrl,
             sourceHeaders = source.headers,
             playWhenReady = playWhenReady,
-            initialPositionMs = startPositionMs,
+            initialPositionMs = if (deferStartMs > 0L) 0L else startPositionMs,
             nvidiaRtxSuperResolutionEnabled = false,
             nvidiaRtxHdrEnabled = false,
             animeSvpEnabled = false,
@@ -167,6 +176,7 @@ actual fun MusicPlayerSurface(
             },
         )
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")
+        if (deferStartMs > 0L) controller.setMuted(true)
     }
 
     // A thumbnail fills its frame (cropped); a big view shows the whole picture.
@@ -194,13 +204,19 @@ actual fun MusicPlayerSurface(
 
     // playWhenReady is read through this so a pause does not restart the poll (and the watchdog).
     val latestPlayWhenReady = rememberUpdatedState(playWhenReady)
-    LaunchedEffect(controller, loadId, forbiddenRetries) {
+    LaunchedEffect(controller, loadId, forbiddenRetries, deferStartMs) {
         var endedReported = false
         var readyReported = false
         // mpv's end-of-file flag outlives the file: the first polls of a new load can still read the previous
         // track's "ended", which advanced the queue a second time and skipped every other track. A load only
         // counts as ended once it has been seen not ended (a load stuck on that flag is the watchdog's to catch).
         var seenUnended = false
+        var pendingStartMs = deferStartMs
+        // The first polls after an attach still read the stream that was playing before (it was at, say, 0:40): the jump
+        // fired on that within a few milliseconds, before the new file had opened, and was lost, so the video restarted at
+        // 0:00. It now waits until this load is seen at its own start (loading, or under a second in) and then playing.
+        var freshStartSeen = false
+        val attachedAt = System.currentTimeMillis()
         // A googlevideo stream can hang "reconnecting" with no error and no end of file, which held
         // the player on a frozen frame (or a spinner) for good. No progress for a while is treated as
         // a failed open, so the player tries the stream's fallback or moves on to the next track.
@@ -215,7 +231,17 @@ actual fun MusicPlayerSurface(
                 log.w { "load $loadId stalled for ${stuckMs}ms at ${snapshot.positionMs}ms" }
                 latestOnError.value(loadId)
             }
-            latestOnSnapshot.value(loadId, snapshot)
+            if (snapshot.isLoading || snapshot.positionMs < FRESH_START_MS) freshStartSeen = true
+            val ownPlayback = freshStartSeen && snapshot.isPlaying && snapshot.positionMs >= 150L &&
+                System.currentTimeMillis() - attachedAt >= MIN_JUMP_DELAY_MS
+            if (pendingStartMs > 0L && ownPlayback) {
+                log.i { "load $loadId: playing, jumping to ${pendingStartMs}ms" }
+                controller.seekTo(pendingStartMs)
+                pendingStartMs = 0L
+                delay(350)
+                controller.setMuted(false)
+            }
+            if (pendingStartMs == 0L) latestOnSnapshot.value(loadId, snapshot)
             if (!snapshot.isEnded) seenUnended = true
             if (snapshot.isEnded && seenUnended && !endedReported) {
                 endedReported = true
@@ -240,3 +266,7 @@ actual fun MusicPlayerSurface(
         }
     }
 }
+
+/** A deferred start only jumps once its load was seen this near its own beginning, and no sooner than this after attaching. */
+private const val FRESH_START_MS = 1_000L
+private const val MIN_JUMP_DELAY_MS = 400L

@@ -31,6 +31,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -79,6 +81,8 @@ internal fun MusicDockNotch(
     player: MusicPlayer,
     onRestore: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Set while a real video plays: the open dock offers to show it. */
+    onExpandVideo: (() -> Unit)? = null,
 ) {
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
@@ -109,7 +113,7 @@ internal fun MusicDockNotch(
             transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
             label = "dockNotch",
         ) { expanded ->
-            if (expanded) DockPanel(state, player, onRestore) else Notch(state, onRestore)
+            if (expanded) DockPanel(state, player, onRestore, onExpandVideo) else Notch(state, onRestore)
         }
     }
 }
@@ -128,7 +132,7 @@ private fun Notch(state: MusicPlayerState, onRestore: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Cover(state.album?.thumbnailUrl, size = 26, round = true)
+        Cover(state.coverUrl, size = 26, round = true)
         Text(
             state.track?.title.orEmpty().ifBlank { "Now playing" },
             style = MaterialTheme.typography.labelLarge,
@@ -152,7 +156,7 @@ private fun Notch(state: MusicPlayerState, onRestore: () -> Unit) {
  * it), then the track, the time and the controls at the bottom, where the notch was.
  */
 @Composable
-private fun DockPanel(state: MusicPlayerState, player: MusicPlayer, onRestore: () -> Unit) {
+private fun DockPanel(state: MusicPlayerState, player: MusicPlayer, onRestore: () -> Unit, onExpandVideo: (() -> Unit)?) {
     val colors = MaterialTheme.nuvio.colors
     val upNext = remember(state.track, state.trackIndex, state.shuffled) { player.upNext(UP_NEXT_COUNT) }
     Column(Modifier.width(440.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -185,7 +189,7 @@ private fun DockPanel(state: MusicPlayerState, player: MusicPlayer, onRestore: (
         }
         Box(Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(NuvioGlass.EdgeColor))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Cover(state.album?.thumbnailUrl, size = 56)
+            Cover(state.coverUrl, size = 56)
             Column(Modifier.weight(1f)) {
                 Text(
                     state.track?.title.orEmpty().ifBlank { "Now playing" },
@@ -215,6 +219,14 @@ private fun DockPanel(state: MusicPlayerState, player: MusicPlayer, onRestore: (
                 filled = true,
             ) { player.togglePlayback() }
             DockButton(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
+            onExpandVideo?.let { DockButton(Icons.Rounded.OpenInFull, "Expand video", onClick = it) }
+            state.track?.let { track ->
+                DockButton(Icons.Rounded.PlaylistAdd, "Add to playlist") {
+                    com.nuvio.app.features.music.playlist.PlaylistPicker.request(
+                        listOf(with(com.nuvio.app.features.music.playlist.MusicPlaylistTracks) { track.forPlaylist(state.album) }),
+                    )
+                }
+            }
             DockButton(Icons.Rounded.KeyboardArrowUp, "Show the player") { onRestore() }
         }
         // The progress under the header: the bar's own seek bar, so a click, drag or Left/Right moves the song.

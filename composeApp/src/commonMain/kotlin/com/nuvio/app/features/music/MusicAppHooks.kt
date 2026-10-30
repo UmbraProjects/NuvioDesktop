@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.playlist.PlaylistPickerHost
 import androidx.compose.runtime.remember
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import androidx.compose.foundation.layout.BoxScope
@@ -47,6 +48,10 @@ data class MusicAlbumRoute(val browseId: String)
 @Serializable
 data class MusicArtistRoute(val browseId: String)
 
+/** fork:music-playlists - one of the profile's music playlists, by its id. */
+@Serializable
+data class MusicPlaylistRoute(val playlistId: String)
+
 /**
  * The Music tab. Like Live TV it is its own screen, built and disposed with the tab, rather than a
  * mode of the shared home screen. [navigate] takes one of the music routes above.
@@ -60,6 +65,7 @@ fun MusicTabHost(
     MusicTabScreen(
         onAlbumClick = { navigate(MusicAlbumRoute(it)) },
         onArtistClick = { navigate(MusicArtistRoute(it)) },
+        onPlaylistClick = { navigate(MusicPlaylistRoute(it)) },
         modifier = modifier.fillMaxSize(),
         topChromePadding = topChromePadding ?: 0.dp,
     )
@@ -83,7 +89,7 @@ val LocalMusicBarInset = compositionLocalOf { 0.dp }
 
 /** True for the pages that take the bar inset themselves through [LocalMusicBarInset]. */
 fun NavDestination?.isMusicFullBleedPage(): Boolean =
-    this != null && (hasRoute<MusicAlbumRoute>() || hasRoute<MusicArtistRoute>())
+    this != null && (hasRoute<MusicAlbumRoute>() || hasRoute<MusicArtistRoute>() || hasRoute<MusicPlaylistRoute>())
 
 /**
  * The music player lives at the root so a track keeps playing across screens. A film on screen
@@ -129,6 +135,8 @@ fun BoxScope.MusicRootHosts(hidden: Boolean) {
             .align(Alignment.BottomCenter)
             .zIndex(15f),
     )
+    // fork:music-playlists - the "Add to playlist" picker and its confirmation, over everything.
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().zIndex(16f)) { PlaylistPickerHost() }
 }
 
 /**
@@ -147,6 +155,18 @@ fun NavGraphBuilder.musicRoutes(
                 onBack = guardedBack(backStackEntry),
                 onArtistClick = { navigate(MusicArtistRoute(it)) },
                 onAlbumClick = { navigate(MusicAlbumRoute(it)) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+    composable<MusicPlaylistRoute> { backStackEntry ->
+        val route = backStackEntry.toRoute<MusicPlaylistRoute>()
+        MusicAccentScope {
+            com.nuvio.app.features.music.playlist.MusicPlaylistScreen(
+                playlistId = route.playlistId,
+                onBack = guardedBack(backStackEntry),
+                onAlbumClick = { navigate(MusicAlbumRoute(it)) },
+                onArtistClick = { navigate(MusicArtistRoute(it)) },
                 modifier = Modifier.fillMaxSize(),
             )
         }

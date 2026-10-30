@@ -282,8 +282,17 @@ object LyricsRepository {
     suspend fun forTrack(track: MusicTrack, album: MusicAlbum?): Lyrics? {
         val key = track.videoId
         lock.withLock { if (cache.containsKey(key)) return cache[key] }
-        val artist = artistOf(track, album)
-        val result = LrcLibClient.find(track.title, artist, album?.title.orEmpty(), track.durationSeconds)
+        val albumName = (track.albumTitle ?: album?.title).orEmpty()
+        // fork:music-playlists - a YouTube upload in a playlist (a cover, a duet) names several people in one artist
+        // string and the original song in its title; each reading is asked in turn until one has lyrics.
+        var result: LyricsLookup = LyricsLookup.Missing
+        var reached = false
+        for ((title, artist) in lyricLookupCandidates(track.title, artistOf(track, album))) {
+            val found = LrcLibClient.find(title, artist, albumName, track.durationSeconds)
+            if (found is LyricsLookup.Found) { result = found; break }
+            if (found == LyricsLookup.Missing) reached = true
+            result = if (reached) LyricsLookup.Missing else found
+        }
         return when (result) {
             is LyricsLookup.Found -> result.lyrics.also { lock.withLock { cache[key] = it } }
             LyricsLookup.Missing -> null.also { lock.withLock { cache[key] = null } }
@@ -339,3 +348,29 @@ internal fun fanartFromAudioDb(body: String, artist: String): List<String> {
 }
 
 // endregion
+
+private val ARTIST_JOINER = Regex("""\s*(?:,|&|\bx\b|\bfeat\.?|\bft\.?|\band\b|\bwith\b)\s*""", RegexOption.IGNORE_CASE)
+private val COVER_NOTE = Regex("""\s*[(\[][^)\]]*\bcover\b[^)\]]*[)\]]""", RegexOption.IGNORE_CASE)
+
+/**
+ * fork:music-playlists - the (title, artist) pairs to ask LRCLIB for, best first. An album track is just its own title
+ * and artist. A YouTube upload often is not: "Alex Goot, Kurt Hugo Schneider & First to Eleven" names three people,
+ * and "Hopelessly Devoted To You - Olivia Newton-John (Cover by Emily Linge)" holds the original song and singer.
+ * So the first named artist is tried, and a title split at " - " is tried both ways round with cover notes removed.
+ */
+internal fun lyricLookupCandidates(title: String, artist: String): List<Pair<String, String>> {
+    val out = LinkedHashSet<Pair<String, String>>()
+    val cleanTitle = title.replace(COVER_NOTE, "").trim()
+    val first = artist.split(ARTIST_JOINER).firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    out += title to artist
+    if (first.isNotEmpty() && first != artist) out += cleanTitle to first
+    if (" - " in cleanTitle) {
+        val left = cleanTitle.substringBefore(" - ").trim()
+        val right = cleanTitle.substringAfter(" - ").trim()
+        if (left.isNotEmpty() && right.isNotEmpty()) {
+            out += left to right
+            out += right to left
+        }
+    }
+    return out.filter { (t, a) -> t.isNotBlank() && a.isNotBlank() }
+}

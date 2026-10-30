@@ -87,7 +87,7 @@ internal object NebulaMusicSource {
     /** The format and quality each track last streamed at, by track id. Snapshot state, so the player bar updates when it arrives. */
     private val qualities = mutableStateMapOf<String, String>()
 
-    fun qualityOf(videoId: String): String? = if (videoId.startsWith(ID_PREFIX)) qualities[videoId] else null
+    fun qualityOf(videoId: String): String? = qualities[videoId]
 
     /** Snapshot state for the album page: the stream request in flight, or the last one that failed; null once a link arrived. */
     var streamStatus by androidx.compose.runtime.mutableStateOf<NebulaStreamStatus?>(null)
@@ -252,11 +252,35 @@ internal object NebulaMusicSource {
     fun prepare(album: MusicAlbum, match: StoredLookup): MusicAlbum = album.copy(
         tracks = album.tracks.mapIndexed { i, track ->
             val id = match.trackIds.getOrNull(i)
-            if (id == null) track.copy(isAvailable = false) else track.copy(videoId = ID_PREFIX + id, isAvailable = true)
+            if (id == null) {
+                track.copy(isAvailable = false)
+            } else {
+                // Kept so Video mode can still find the song's YouTube video (the addon has audio only).
+                youTubeTracks[ID_PREFIX + id] = track to album
+                track.copy(videoId = ID_PREFIX + id, isAvailable = true)
+            }
         },
     )
 
+    /** The YouTube Music track (and its album) each addon track stands in for, by the addon track's id. */
+    private val youTubeTracks = HashMap<String, Pair<MusicTrack, MusicAlbum>>()
+
     suspend fun resolve(track: MusicTrack, album: MusicAlbum, mode: MusicPlayMode): MusicResolution {
+        // Video mode: the addon has the album's audio only, so the song's YouTube video plays (with its own sound: a
+        // video is often another cut than the album track, so the lossless audio would not line up with it). Only
+        // when YouTube has no video does the addon's audio play, with the lyric view as the picture.
+        if (mode == MusicPlayMode.Video) {
+            youTubeTracks[track.videoId]?.let { (original, originalAlbum) ->
+                val video = try {
+                    com.nuvio.app.features.music.resolveMusicTrack(original, originalAlbum, mode)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+                if (video is MusicResolution.Playable && !video.lyricVideo) return video.copy(track = track)
+            }
+        }
         val base = baseUrl() ?: return MusicResolution.Failed(track, "The music addon link isn't set")
         val id = track.videoId.removePrefix(ID_PREFIX)
         streamStatus = NebulaStreamStatus.Asking(track.title, LibraryClock.nowEpochMs())
@@ -284,7 +308,7 @@ internal object NebulaMusicSource {
                 videoId = track.videoId,
                 source = TrailerPlaybackSource(videoUrl = stream.url),
                 viaCounterpart = false,
-                // The addon gives audio only, so video mode shows the lyric view as its picture.
+                // The addon gives audio only: in video mode (no YouTube video found) the lyric view is the picture.
                 lyricVideo = mode == MusicPlayMode.Video,
             )
         } catch (e: CancellationException) {
@@ -294,6 +318,36 @@ internal object NebulaMusicSource {
             val reason = e.message ?: "The music addon failed"
             streamStatus = NebulaStreamStatus.Failed(track.title, reason)
             MusicResolution.Failed(track, reason)
+        }
+    }
+
+    /**
+     * fork:music-playlists - a playlist song (a YouTube Music track that knows its album) played from the addon's copy
+     * of that album: the album is read from YouTube Music, looked up on the addon like an album page does (and kept the
+     * same way), and the song's place in it gives the addon's track. Only in audio mode (the addon has no video), only
+     * when the person prefers the addon, and null whenever any of it is missing, so the caller plays YouTube Music.
+     */
+    suspend fun resolveFromItsAlbum(track: MusicTrack, mode: MusicPlayMode): MusicResolution.Playable? {
+        if (mode != MusicPlayMode.Audio || baseUrl() == null) return null
+        if (!MusicLibraryRepository.state.value.settings.preferAddon) return null
+        val albumId = track.albumBrowseId ?: return null
+        return try {
+            val album = com.nuvio.app.features.music.defaultMusicCatalog().album(albumId) ?: return null
+            val index = album.tracks.indexOfFirst { it.videoId == track.videoId }.takeIf { it >= 0 }
+                ?: album.tracks.indexOfFirst { it.title.equals(track.title, ignoreCase = true) }.takeIf { it >= 0 }
+                ?: return null
+            val match = (find(album) as? NebulaAlbumLookup.Found)?.match ?: return null
+            val addonId = match.trackIds.getOrNull(index) ?: return null
+            val playable = resolve(track.copy(videoId = ID_PREFIX + addonId), album, mode) as? MusicResolution.Playable ?: return null
+            qualities[ID_PREFIX + addonId]?.let { qualities[track.videoId] = it }
+            log.i { "\"${track.title}\" plays from the addon's copy of \"${album.title}\"" }
+            // The playlist's own track stays the one playing (its cover, its place in the list); only the stream is the addon's.
+            playable.copy(track = track, videoId = track.videoId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.w(e) { "Addon look-up for \"${track.title}\" failed; playing YouTube Music" }
+            null
         }
     }
 

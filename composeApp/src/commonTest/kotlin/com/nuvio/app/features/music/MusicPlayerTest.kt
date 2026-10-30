@@ -136,6 +136,31 @@ class MusicPlayerTest {
     }
 
     @Test
+    fun videoToAudioKeepsTheStreamPlayingAndTheNextSongIsAudio() {
+        val p = player(Fake())
+        p.play(album(3))
+        p.playing(10_000L)
+        p.switchMode(MusicPlayMode.Video)
+        val video = p.state.value
+        p.playing(40_000L)
+        p.switchMode(MusicPlayMode.Audio)
+        val s = p.state.value
+        assertEquals(MusicPlayMode.Audio, s.mode)
+        assertEquals(video.loadId, s.loadId)
+        assertEquals(video.source, s.source)
+        assertTrue(s.videoCutPlaying)
+        // Back to video on the same song: the stream never stopped, so nothing reloads.
+        p.switchMode(MusicPlayMode.Video)
+        assertEquals(video.loadId, p.state.value.loadId)
+        p.switchMode(MusicPlayMode.Audio)
+        p.playing(199_000L)
+        p.onSurfaceEnded()
+        assertEquals("v-id2-Audio", p.state.value.source?.videoUrl)
+        assertEquals(MusicPlayMode.Audio, p.state.value.mode)
+        assertTrue(!p.state.value.videoCutPlaying)
+    }
+
+    @Test
     fun switchingModeKeepsTheSongAndThePosition() {
         val p = player(Fake())
         p.play(album(3))

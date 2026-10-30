@@ -13,6 +13,10 @@ private val log = Logger.withTag("MusicMetadata")
 // Search filters YouTube Music understands (the same ones ytmusicapi sends).
 private const val FILTER_ALBUMS = "EgWKAQIYAWoMEA4QChADEAQQCRAF"
 private const val FILTER_ARTISTS = "EgWKAQIgAWoMEA4QChADEAQQCRAF"
+private const val FILTER_SONGS = "EgWKAQIIAWoMEA4QChADEAQQCRAF"
+
+/** Playlist pages read at most (100 tracks each). */
+private const val MAX_PLAYLIST_PAGES = 30
 
 private const val FOUND_TTL_MS = 30 * 60_000L
 
@@ -104,6 +108,35 @@ object MusicMetadataClient {
         cached("top:${q.lowercase()}") {
             TrailerPlaybackResolver.musicRequest("search", mapOf("query" to q))?.let(::parseTopResult)
         }
+
+    /** fork:music-playlists - see [MusicCatalog.searchSongs]. */
+    suspend fun searchSongs(query: String): List<MusicTrack> {
+        val q = query.trim().ifEmpty { return emptyList() }
+        return cached("songs:$q") {
+            TrailerPlaybackResolver.musicRequest("search", mapOf("query" to q, "params" to FILTER_SONGS))
+                ?.let(::parseSongSearch)?.takeIf { it.isNotEmpty() }
+        }.orEmpty()
+    }
+
+    /** fork:music-playlists - see [MusicCatalog.playlist]. Not cached: an import should read the list as it is now. */
+    suspend fun playlist(playlistId: String): MusicPlaylistPage? {
+        val id = playlistId.trim().removePrefix("VL").ifEmpty { return null }
+        val first = TrailerPlaybackResolver.musicRequest("browse", mapOf("browseId" to "VL$id"))
+            ?.let { parsePlaylistPage(it) }
+            ?: return null.also { log.w { "playlist $id: no readable page" } }
+        val tracks = first.tracks.toMutableList()
+        var token = first.continuation
+        var pages = 1
+        while (token != null && pages < MAX_PLAYLIST_PAGES) {
+            val page = TrailerPlaybackResolver.musicRequest("browse", mapOf("continuation" to token))
+                ?.let { parsePlaylistPage(it, firstNumber = tracks.size + 1) } ?: break
+            if (page.tracks.isEmpty()) break
+            tracks += page.tracks
+            token = page.continuation?.takeIf { it != token }
+            pages++
+        }
+        return MusicPlaylistPage(first.title, tracks.distinctBy { it.videoId }, null)
+    }
 
     suspend fun album(browseId: String): MusicAlbum? {
         if (!browseId.startsWith("MPREb_")) return null

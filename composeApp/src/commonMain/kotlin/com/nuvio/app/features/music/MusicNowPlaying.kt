@@ -1,5 +1,18 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.foundation.layout.wrapContentWidth
+import com.nuvio.app.features.music.library.musicGlass
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FastRewind
+import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
@@ -85,7 +98,6 @@ import com.nuvio.app.features.music.identity.MusicAccentScope
 import com.nuvio.app.features.music.identity.StageMotionSpec
 import com.nuvio.app.features.music.identity.identity
 import com.nuvio.app.features.music.identity.playingArtist
-import com.nuvio.app.features.music.identity.stageMotionCaption
 import com.nuvio.app.features.music.identity.stageMotionSpec
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.rememberCdArtFor
@@ -191,10 +203,8 @@ private fun MusicNowPlayingScreen(
     LaunchedEffect(wantVideo, state.mode, state.lyricVideo, state.notice) {
         if (!wantVideo) return@LaunchedEffect
         when {
-            realVideo -> {
-                wantVideo = false
-                MusicPlayback.setVideoView(MusicVideoView.Expanded)
-            }
+            // The video opens right here, above the lyrics.
+            realVideo -> wantVideo = false
             // A new line from the player ("No video for this track") means the switch did not happen.
             state.notice != null && state.notice != noticeAtRequest -> wantVideo = false
         }
@@ -209,7 +219,7 @@ private fun MusicNowPlayingScreen(
 
     // The video is often another cut than the album track the lyrics were timed to: find how far
     // apart they are once the stream's length is known, and shift the lines by it.
-    val syncKey = track?.let { lyricSyncKey(it, realVideo) }
+    val syncKey = track?.let { lyricSyncKey(it, realVideo || state.videoCutPlaying) }
     val syncStates by MusicLyricSync.states.collectAsStateWithLifecycle()
     val syncState = syncKey?.let { syncStates[it] } ?: LyricSyncState.Idle
     val streamKnown = state.durationMs > 0L && !state.isLoading
@@ -237,6 +247,7 @@ private fun MusicNowPlayingScreen(
     // HTPC phase 7: the widgets fade out a few seconds after the last input or track change.
     var inputTick by remember { mutableIntStateOf(0) }
     var widgetsVisible by remember { mutableStateOf(true) }
+    val fadeQueue = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.fadeQueue
     LaunchedEffect(inputTick, track?.videoId) {
         widgetsVisible = true
         delay(WIDGET_IDLE_MS)
@@ -256,29 +267,53 @@ private fun MusicNowPlayingScreen(
                 }
             },
     ) {
-        FanartBackdrop(images = backgrounds, coverUrl = album?.thumbnailUrl, spec = spec)
+        // While a video plays the backdrop holds still (the blurred cover, no slideshow) so the picture is what moves.
+        FanartBackdrop(
+            images = if (realVideo) emptyList() else backgrounds,
+            coverUrl = state.coverUrl,
+            spec = if (realVideo) spec.copy(animated = false) else spec,
+        )
         StageGlow(color = colors.accent, spec = spec)
-        BoxWithConstraints(Modifier.fillMaxSize().padding(bottom = MusicMiniPlayerHeight)) {
+        // The view is its own player (NowPlayingControls); the bar, dock and card step aside, so nothing is kept for them.
+        BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 860.dp
             val cutout = identity?.cutoutUrl.takeIf { wide }
-            if (cutout != null) StageCutout(cutout, Modifier.align(Alignment.BottomEnd).fillMaxHeight(0.94f).widthIn(max = 460.dp))
+            // Small in a corner while a video plays, so it stays clear of the video and the lyric sync controls.
+            if (cutout != null) {
+                StageCutout(
+                    cutout,
+                    if (realVideo) Modifier.align(Alignment.BottomEnd).fillMaxHeight(0.28f).widthIn(max = 180.dp)
+                    else Modifier.align(Alignment.BottomEnd).fillMaxHeight(0.94f).widthIn(max = 460.dp),
+                )
+            }
             if (wide) {
                 Row(
-                    Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 72.dp, bottom = 32.dp),
+                    Modifier.fillMaxSize().padding(start = 56.dp, end = 56.dp, top = 72.dp, bottom = 40.dp),
                     horizontalArrangement = Arrangement.spacedBy(48.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.width(300.dp * 1.3f)) {
-                        StageLogo(identity?.logoUrl, identity?.name ?: primaryArtist)
+                    // Centred while it fits; when Up next is long it takes the height that is left and scrolls in it.
+                    // Everything in the column is centred on one line, the player and queue below included. The album's case
+                    // (not the disc peeking out beside it) is what sits on that line, and the logo above it.
+                    Column(
+                        Modifier.width(STAGE_COLUMN_WIDTH).fillMaxHeight(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        StageLogo(identity?.logoUrl, identity?.name ?: primaryArtist, maxHeight = 104.dp, maxWidth = 280.dp, centred = true)
                         Spacer(Modifier.height(18.dp))
                         MusicCdSleeve(
-                            coverUrl = album?.thumbnailUrl,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentWidth(Alignment.Start, unbounded = true)
+                                .padding(start = (STAGE_COLUMN_WIDTH - STAGE_CASE_SIZE) / 2),
+                            coverUrl = state.coverUrl,
                             cdArtUrl = cdArt,
                             spinning = state.isPlaying && spec.discSpins,
                             slideOut = state.isPlaying || reduced,
                             secondsPerTurn = spec.discSecondsPerTurn,
                             instant = reduced,
-                            size = 280.dp,
+                            size = STAGE_CASE_SIZE,
                             peek = 0.3f,
                         )
                         Spacer(Modifier.height(20.dp))
@@ -290,54 +325,73 @@ private fun MusicNowPlayingScreen(
                             lineHeight = 46.sp,
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            listOfNotNull(artist.takeIf { it.isNotBlank() }, album?.title, album?.year).joinToString(" · "),
+                            listOfNotNull(artist.takeIf { it.isNotBlank() }, state.albumTitle, album?.year).joinToString(" · "),
                             color = Color.White.copy(alpha = 0.8f),
                             fontSize = 16.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                         val chips = listOfNotNull(libraryArtist?.mood) + libraryArtist?.genres.orEmpty().take(2)
                         if (chips.isNotEmpty()) {
                             Spacer(Modifier.height(12.dp))
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 chips.forEachIndexed { i, chip -> StageChip(chip, accented = i == 0 && libraryArtist?.mood != null) }
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Text(stageMotionCaption(libraryArtist?.mood, spec), color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(16.dp))
+                        NowPlayingControls(state, player)
+                        Spacer(Modifier.height(16.dp))
                         NowPlayingWidgets(
                             state = state,
                             player = player,
                             libraryArtist = libraryArtist,
                             lyricsMissing = lyrics is LyricsUi.Missing,
-                            visible = widgetsVisible,
+                            visible = widgetsVisible || !fadeQueue,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                     }
+                    Column(
+                        // Under a video nothing is held back for the cut-out (it is small, in the corner), so the picture is centred on the
+                        // area right of the sidebar column rather than shifted left of it.
+                        Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null && !realVideo) 200.dp else 0.dp),
+                        // Under a video the column is centred: the picture, then the lyric strip beneath it.
+                        horizontalAlignment = if (realVideo) Alignment.CenterHorizontally else Alignment.Start,
+                    ) {
+                    // With a video: as large as the column allows, and four lines of lyrics under it.
+                    if (realVideo) InlineVideoSlot()
                     LyricsPane(
                         shownLyrics, state.positionMs, onSeek, reduced,
-                        Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null) 200.dp else 0.dp),
+                        if (realVideo) Modifier.fillMaxWidth() else Modifier.weight(1f).fillMaxWidth(),
+                        compact = realVideo,
                         syncState = syncState,
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
                         onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
                     )
+                    }
                 }
             } else {
                 Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 64.dp, bottom = 24.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Cover(album?.thumbnailUrl, Modifier.size(64.dp))
+                        Cover(state.coverUrl, Modifier.size(64.dp))
                         Column {
                             Text(track?.title.orEmpty(), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(artist, color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     Spacer(Modifier.height(12.dp))
+                    NowPlayingControls(state, player)
+                    Spacer(Modifier.height(12.dp))
+                    if (realVideo) InlineVideoSlot()
                     LyricsPane(
-                        shownLyrics, state.positionMs, onSeek, reduced, Modifier.weight(1f).fillMaxWidth(),
+                        shownLyrics, state.positionMs, onSeek, reduced,
+                        if (realVideo) Modifier.fillMaxWidth() else Modifier.weight(1f).fillMaxWidth(),
+                        compact = realVideo,
                         syncState = syncState,
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
@@ -347,7 +401,7 @@ private fun MusicNowPlayingScreen(
             }
         }
         StageTopBar(
-            title = album?.title.orEmpty(),
+            title = state.albumTitle.orEmpty(),
             view = if (state.mode == MusicPlayMode.Video) StageView.Video else StageView.Stage,
             reduced = reduced,
             canFullscreen = realVideo,
@@ -355,7 +409,7 @@ private fun MusicNowPlayingScreen(
             onView = { picked ->
                 when {
                     picked == StageView.Stage -> if (state.mode == MusicPlayMode.Video) player.switchMode(MusicPlayMode.Audio)
-                    realVideo -> MusicPlayback.setVideoView(MusicVideoView.Expanded)
+                    realVideo -> Unit // already showing, above the lyrics
                     state.mode == MusicPlayMode.Audio -> {
                         noticeAtRequest = state.notice
                         wantVideo = true
@@ -364,6 +418,11 @@ private fun MusicNowPlayingScreen(
                 }
             },
             onToggleMotion = { setMusicReducedMotion(!reduced) },
+            fadeQueue = fadeQueue,
+            onToggleFadeQueue = {
+                val settings = MusicLibraryRepository.state.value.settings
+                MusicLibraryRepository.updateSettings(settings.copy(fadeQueue = !settings.fadeQueue))
+            },
             onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Fullscreen) },
             modifier = Modifier.align(Alignment.TopStart),
         )
@@ -390,6 +449,8 @@ private fun StageTopBar(
     onToggleMotion: () -> Unit,
     onFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
+    fadeQueue: Boolean = true,
+    onToggleFadeQueue: () -> Unit = {},
 ) {
     Row(
         modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -418,6 +479,7 @@ private fun StageTopBar(
             selected = view,
             onSelect = onView,
         )
+        MusicTextChip(if (fadeQueue) "Fade queue: on" else "Fade queue: off", onToggleFadeQueue)
         MusicTextChip(if (reduced) "Motion: reduced" else "Motion: full", onToggleMotion)
         if (canFullscreen) MusicTextChip("Fullscreen", onFullscreen)
     }
@@ -444,68 +506,19 @@ private fun StageChip(text: String, accented: Boolean) {
 
 /** The artist's logo; with none (or one that fails to load) their name is set in text. */
 @Composable
-private fun StageLogo(url: String?, name: String, maxHeight: Dp = 72.dp) {
+private fun StageLogo(url: String?, name: String, maxHeight: Dp = 72.dp, maxWidth: Dp = 300.dp, centred: Boolean = false) {
     var failed by remember(url) { mutableStateOf(false) }
     if (url != null && !failed) {
         NuvioAsyncImage(
             model = url,
             contentDescription = name,
-            modifier = Modifier.heightIn(max = maxHeight).widthIn(max = 300.dp),
+            modifier = Modifier.heightIn(max = maxHeight).widthIn(max = maxWidth),
             contentScale = ContentScale.Fit,
-            alignment = Alignment.CenterStart,
+            alignment = if (centred) Alignment.Center else Alignment.CenterStart,
             onError = { failed = true },
         )
     } else if (name.isNotBlank()) {
         Text(name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-/**
- * Video mode's atmosphere: a blurred, saturated copy of the album cover with the artist's glow over it,
- * filling the space around the framed video. The picture is the cover, not the video itself: the
- * video is drawn by a native surface whose pixels the app cannot read, so a colour sampled from it
- * is not possible here. Under reduced motion the glow holds still.
- */
-@Composable
-internal fun MusicVideoAmbient(
-    coverUrl: String?,
-    title: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-    /** Where the caption starts: level with the framed video's left edge, and just under its bottom edge. */
-    captionStart: Dp = 0.dp,
-    captionTop: Dp = 0.dp,
-) {
-    val identity = LocalArtistIdentity.current
-    val reduced = rememberMusicReducedMotion()
-    val spec = remember(identity?.motion, reduced) { stageMotionSpec(identity?.motion ?: MotionProfile.Steady, reduced) }
-    Box(modifier.background(Color.Black)) {
-        if (coverUrl != null) {
-            NuvioAsyncImage(
-                model = coverUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().blur(90.dp).graphicsLayer { alpha = 0.7f },
-                contentScale = ContentScale.Crop,
-                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.6f) }),
-            )
-        }
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
-        StageGlow(color = MaterialTheme.nuvio.colors.accent, spec = spec)
-        // Title and artist under the video, with the artist's logo beside them. The logo cannot sit
-        // over the picture itself: the video is a native surface that nothing can be drawn on top of.
-        Row(
-            Modifier.padding(start = captionStart, top = captionTop),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Column {
-                Text(title, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (subtitle.isNotBlank()) {
-                    Text(subtitle, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            identity?.logoUrl?.let { StageLogo(it, identity?.name.orEmpty(), maxHeight = 40.dp) }
-        }
     }
 }
 
@@ -585,12 +598,14 @@ private fun FanartBackdrop(images: List<String>, coverUrl: String?, spec: StageM
     }
     Box(Modifier.fillMaxSize()) {
         if (pool.isNotEmpty()) {
+            // Crossfaded by the picture itself, not its place in the list: the outgoing picture is still drawn while it
+            // fades, and when the next track's list was shorter its old index ran past the end and crashed the app.
             Crossfade(
-                targetState = index.coerceIn(0, pool.size - 1),
+                targetState = pool[index.coerceIn(0, pool.size - 1)],
                 animationSpec = tween(if (spec.animated) 1800 else 0),
                 label = "fanart",
-            ) { i ->
-                key(pool[i]) {
+            ) { picture ->
+                key(picture) {
                     val push = remember { Animatable(spec.scaleFrom) }
                     LaunchedEffect(spec.animated, spec.scaleFrom, spec.scaleTo, spec.driftMs) {
                         if (spec.animated) {
@@ -601,7 +616,7 @@ private fun FanartBackdrop(images: List<String>, coverUrl: String?, spec: StageM
                         }
                     }
                     NuvioAsyncImage(
-                        model = pool[i],
+                        model = picture,
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxSize()
@@ -639,9 +654,34 @@ private fun LyricsPane(
     onNudge: (Long) -> Unit = {},
     onResetSync: () -> Unit = {},
     onTapSync: (shownLineTimeMs: Long, positionMs: Long) -> Unit = { _, _ -> },
+    /** Under a video: four lines (the one before, the sung one, the next two) and the sync strip, at a fixed height. */
+    compact: Boolean = false,
 ) {
     // Tap to sync: the next line tapped is the one being heard, not a seek.
     var tapping by remember { mutableStateOf(false) }
+    if (compact) {
+        Column(modifier.height(COMPACT_LYRICS_HEIGHT)) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                when (ui) {
+                    LyricsUi.Loading -> Unit
+                    LyricsUi.Missing -> Message("No lyrics found for this track")
+                    is LyricsUi.Ready -> when (val lyrics = ui.lyrics) {
+                        Lyrics.Instrumental -> Message("Instrumental")
+                        is Lyrics.Plain -> PlainLyrics(lyrics.lines)
+                        is Lyrics.Synced -> CompactSyncedLyrics(lyrics.lines, positionMs, onSeek, reduced, tapping) { lineTimeMs, tappedAtMs ->
+                            onTapSync(lineTimeMs, tappedAtMs)
+                            tapping = false
+                        }
+                    }
+                }
+            }
+            if ((ui as? LyricsUi.Ready)?.lyrics is Lyrics.Synced) {
+                Spacer(Modifier.height(26.dp))
+                LyricSyncStrip(syncState, tapping, { tapping = !tapping }, onNudge, onResetSync, Modifier.align(Alignment.CenterHorizontally))
+            }
+        }
+        return
+    }
     Box(modifier, contentAlignment = Alignment.Center) {
         when (ui) {
             LyricsUi.Loading -> Unit
@@ -660,7 +700,8 @@ private fun LyricsPane(
                     )
                     LyricSyncStrip(
                         syncState, tapping, { tapping = !tapping }, onNudge, onResetSync,
-                        Modifier.align(Alignment.BottomEnd),
+                        // Down at the pane's foot, apart from the lines, so it does not read as one of them.
+                        Modifier.align(Alignment.BottomEnd).offset(y = 36.dp),
                     )
                 }
             }
@@ -679,22 +720,28 @@ private fun LyricSyncStrip(
     modifier: Modifier = Modifier,
 ) {
     val offset = state.offsetMs()
+    // A word or two above the buttons: the offset itself, or what is going on.
     val label = when {
-        tapping -> "Tap the line you hear now"
-        state is LyricSyncState.Checking -> "Syncing lyrics…"
-        state is LyricSyncState.Offset && !state.auto -> "Lyrics ${formatLyricOffset(offset)}"
-        state is LyricSyncState.Offset && offset != 0L -> "Auto-synced ${formatLyricOffset(offset)}"
+        tapping -> "Click the line being sung"
+        state is LyricSyncState.Checking -> "Syncing\u2026"
         state is LyricSyncState.Unsure -> "Couldn't auto-sync"
+        offset != 0L -> formatLyricOffset(offset)
         else -> null
     }
-    Row(modifier.padding(end = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (label != null) {
-            Text(label, color = Color.White.copy(alpha = if (tapping) 0.9f else 0.5f), fontSize = 13.sp, maxLines = 1)
+    Column(modifier.padding(bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label.orEmpty(), color = Color.White.copy(alpha = if (tapping) 0.85f else 0.5f), fontSize = 12.sp, maxLines = 1)
+        // Grouped in one glass pill, as icons, so the controls read as a set apart from the lyrics.
+        Row(Modifier.musicGlass(RoundedCornerShape(percent = 50)).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            SyncIcon(
+                if (tapping) Icons.Rounded.Close else Icons.Rounded.Sync,
+                if (tapping) "Cancel" else "Sync to a line: click the line being sung",
+                active = tapping,
+                onClick = onToggleTap,
+            )
+            SyncIcon(Icons.Rounded.FastRewind, "Lyrics 0.5 s earlier") { onNudge(-LYRIC_NUDGE_MS) }
+            SyncIcon(Icons.Rounded.FastForward, "Lyrics 0.5 s later") { onNudge(LYRIC_NUDGE_MS) }
+            if (offset != 0L) SyncIcon(Icons.Rounded.RestartAlt, "Reset the lyric timing", onClick = onReset)
         }
-        MusicTextChip(if (tapping) "Cancel" else "Tap to sync", onToggleTap)
-        MusicTextChip("-0.5s") { onNudge(-LYRIC_NUDGE_MS) }
-        MusicTextChip("+0.5s") { onNudge(LYRIC_NUDGE_MS) }
-        if (offset != 0L) MusicTextChip("Reset", onReset)
     }
 }
 
@@ -776,3 +823,103 @@ private fun SyncedLyrics(
 
 /** How long the Stage widgets stay up after the last input. */
 private const val WIDGET_IDLE_MS = 6_000L
+
+/**
+ * The place for a real video above the lyrics: 16:9, as large as the room left above the four lyric lines allows.
+ * Compose cannot draw over the native video, so this only reserves the space and publishes where it is
+ * ([MusicPlayback.inlineVideoFrame]); the player moves its video surface onto it.
+ */
+@Composable
+private fun ColumnScope.InlineVideoSlot() {
+    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+        val width = minOf(maxWidth, maxHeight * (16f / 9f))
+        Box(
+            Modifier
+                .width(width)
+                .height(width * (9f / 16f))
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.Black)
+                .onGloballyPositioned { c ->
+                    val at = c.positionInRoot()
+                    MusicPlayback.inlineVideoFrame.value =
+                        MusicInlineVideoFrame(at.x, at.y, c.size.width.toFloat(), c.size.height.toFloat())
+                },
+        )
+    }
+    DisposableEffect(Unit) { onDispose { MusicPlayback.inlineVideoFrame.value = null } }
+    Spacer(Modifier.height(16.dp))
+}
+
+/** The lyric strip under a video: four line slots and the sync controls. */
+private val COMPACT_LYRICS_HEIGHT = 284.dp
+
+/**
+ * Four lines around the sung one: the line before, the sung line (lit, up to two lines tall), the next two. Each slot
+ * has a fixed height so the video above never jumps as the lines change. A click seeks there (or syncs, while tapping).
+ */
+@Composable
+private fun CompactSyncedLyrics(
+    lines: List<LyricLine>,
+    positionMs: Long,
+    onSeek: (Long) -> Unit,
+    reduced: Boolean,
+    tapping: Boolean,
+    onTapLine: (lineTimeMs: Long, positionMs: Long) -> Unit,
+) {
+    val accent = MaterialTheme.nuvio.colors.accent
+    val active = activeLyricIndex(lines, positionMs + NOW_PLAYING_LYRIC_LEAD_MS)
+    val centre = active.coerceAtLeast(0)
+    Column(Modifier.fillMaxWidth()) {
+        for (offset in -1..2) {
+            val index = centre + offset
+            val line = lines.getOrNull(index)
+            val sung = index == active
+            val alpha by animateFloatAsState(
+                when {
+                    line == null -> 0f
+                    sung -> 1f
+                    offset == 1 -> 0.6f
+                    else -> 0.38f
+                },
+                tween(if (reduced) 0 else 300),
+                label = "compactLine",
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(if (offset == 0) 72.dp else 40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .then(if (line != null) Modifier.clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) } else Modifier)
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (line != null) {
+                    Text(
+                        text = line.text.ifBlank { "\u266A" },
+                        color = (if (sung) accent else Color.White).copy(alpha = alpha),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        fontSize = if (offset == 0) 28.sp else 22.sp,
+                        lineHeight = if (offset == 0) 34.sp else 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = if (offset == 0) 2 else 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SyncIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
+    val accent = MaterialTheme.nuvio.colors.accent
+    com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = label) {
+        Box(Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = label, tint = if (active) accent else Color.White.copy(alpha = 0.55f), modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+/** The Stage's left column, and the album case in it (the disc peeks out to the right of the case). */
+private val STAGE_COLUMN_WIDTH = 390.dp
+private val STAGE_CASE_SIZE = 280.dp

@@ -7,6 +7,8 @@ private object MetadataClientCatalog : MusicCatalog {
     override suspend fun artist(browseId: String) = MusicMetadataClient.artist(browseId)
     override suspend fun artistReleases(browseId: String) = MusicMetadataClient.artistReleases(browseId)
     override suspend fun searchReleases(query: String) = MusicMetadataClient.searchReleases(query)
+    override suspend fun searchSongs(query: String) = MusicMetadataClient.searchSongs(query)
+    override suspend fun playlist(playlistId: String) = MusicMetadataClient.playlist(playlistId)
 }
 
 actual fun defaultMusicCatalog(): MusicCatalog = MetadataClientCatalog

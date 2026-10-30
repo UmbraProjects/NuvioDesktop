@@ -39,6 +39,10 @@ class MusicQueue(
     val currentIndex: Int? get() = order.getOrNull(position)
     val current: MusicTrack? get() = currentIndex?.let { album.tracks.getOrNull(it) }
 
+    /** Every track in playing order, and where the one playing is in it (for the lyric view's queue). */
+    val ordered: List<MusicTrack> get() = order.mapNotNull { album.tracks.getOrNull(it) }
+    val orderedPosition: Int get() = position
+
     /** Tracks still to come, in playing order. */
     val upNext: List<MusicTrack> get() = order.drop(position + 1).mapNotNull { album.tracks.getOrNull(it) }
 

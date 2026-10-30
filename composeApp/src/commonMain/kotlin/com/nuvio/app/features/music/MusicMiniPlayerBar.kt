@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -143,10 +144,12 @@ fun MusicMiniPlayerBar(
     initiallyShown: Boolean = false,
     /** The window's height, so a dragged bar is kept inside it. */
     areaHeight: Dp = Dp.Unspecified,
+    /** The video is drawn above the lyrics, not in the bar: the bar shows the cover. */
+    videoInline: Boolean = false,
 ) {
     val colors = MaterialTheme.nuvio.colors
     // The picture only sits in the bar when there is a real video; a lyric video is audio.
-    val video = state.mode == MusicPlayMode.Video && !state.lyricVideo
+    val video = state.mode == MusicPlayMode.Video && !state.lyricVideo && !videoInline
     val reduced = rememberMusicReducedMotion()
     val showCard = visible && !slim
     val showPill = visible && slim
@@ -186,7 +189,7 @@ fun MusicMiniPlayerBar(
         ) {
             val shape = RoundedCornerShape(28.dp)
             val ground = lerp(colors.surfaceCard, colors.accent, 0.16f)
-            val cover = state.album?.thumbnailUrl
+            val cover = state.coverUrl
             val fade = if (reduced) snap<Float>() else tween(400)
             val cardSource = remember { MutableInteractionSource() }
             val cardFocused by cardSource.collectIsFocusedAsState()
@@ -254,7 +257,7 @@ fun MusicMiniPlayerBar(
                                     if (url != null) {
                                         NuvioAsyncImage(
                                             model = url,
-                                            contentDescription = state.album?.title,
+                                            contentDescription = state.albumTitle,
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = ContentScale.Crop,
                                         )
@@ -373,7 +376,7 @@ private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, play
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
     val shape = RoundedCornerShape(50)
-    val cover = state.album?.thumbnailUrl
+    val cover = state.coverUrl
     val fraction = if (state.durationMs > 0L) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
     Row(
         modifier = modifier
@@ -446,8 +449,10 @@ private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, play
 internal fun subtitle(state: MusicPlayerState): String {
     val artist = (state.track?.artists?.takeIf { it.isNotEmpty() } ?: state.album?.artists.orEmpty())
         .joinToString(", ") { it.name }
+    // Only while the addon's audio is what plays: a real video carries YouTube's own sound.
     val quality = state.track?.videoId?.let(com.nuvio.app.features.music.nebula.NebulaMusicSource::qualityOf)
-    return listOf(artist, state.album?.title.orEmpty(), quality.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
+        ?.takeUnless { state.mode == MusicPlayMode.Video && !state.lyricVideo }
+    return listOf(artist, state.albumTitle.orEmpty(), quality.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
 /** The three controls that stay on the bar: previous, play or pause, next. */
@@ -585,12 +590,11 @@ internal fun MorePanel(
                 player.switchMode(if (video) MusicPlayMode.Audio else MusicPlayMode.Video)
             }
             if (video && !state.lyricVideo) {
-                val (label, target) = when (videoView) {
-                    MusicVideoView.Bar -> "Expand video" to MusicVideoView.Expanded
-                    MusicVideoView.Expanded -> "Fullscreen video" to MusicVideoView.Fullscreen
-                    MusicVideoView.Fullscreen -> "Exit fullscreen" to MusicVideoView.Expanded
+                // The video shows in the lyric view; from there it can go fullscreen.
+                PanelRow(Icons.Rounded.OpenInFull, if (videoView == MusicVideoView.Fullscreen) "Exit fullscreen" else "Show video") {
+                    onDismiss()
+                    if (videoView == MusicVideoView.Fullscreen) onSetVideoView(MusicVideoView.Bar) else MusicPlayback.showVideo()
                 }
-                PanelRow(Icons.Rounded.OpenInFull, label) { onDismiss(); onSetVideoView(target) }
             }
             val style = rememberMusicBarStyle()
             PanelRow(
@@ -605,6 +609,14 @@ internal fun MorePanel(
             VolumeRow(state.volume, onChange = { player.setVolume(it.coerceIn(0, 100)) })
             if (onCollapse != null) {
                 PanelRow(Icons.Rounded.KeyboardArrowDown, "Minimise to the dock") { onDismiss(); onCollapse() }
+            }
+            state.track?.let { track ->
+                PanelRow(Icons.Rounded.PlaylistAdd, "Add to playlist") {
+                    onDismiss()
+                    com.nuvio.app.features.music.playlist.PlaylistPicker.request(
+                        listOf(with(com.nuvio.app.features.music.playlist.MusicPlaylistTracks) { track.forPlaylist(state.album) }),
+                    )
+                }
             }
             PanelRow(Icons.Rounded.Close, "Close player") { onDismiss(); player.stop() }
         }
@@ -692,6 +704,8 @@ internal fun SeekBar(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     onNudge: ((Int) -> Unit)? = null,
+    /** The app's glass for the track (a faint fill and a light edge) instead of the flat grey. */
+    glass: Boolean = false,
 ) {
     val colors = MaterialTheme.nuvio.colors
     // While dragging, follow the finger rather than the (older) playback position.
@@ -739,7 +753,12 @@ internal fun SeekBar(
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        Box(Modifier.fillMaxWidth().height(trackHeight).clip(track).background(Color.White.copy(alpha = 0.20f)))
+        Box(
+            Modifier.fillMaxWidth().height(trackHeight).clip(track).then(
+                if (glass) Modifier.ditheredBackground(NuvioGlass.Fill, track).border(1.dp, NuvioGlass.EdgeColor, track)
+                else Modifier.background(Color.White.copy(alpha = 0.20f)),
+            ),
+        )
         Box(Modifier.fillMaxWidth(shown).height(trackHeight).clip(track).background(colors.accent))
         if (active && enabled) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

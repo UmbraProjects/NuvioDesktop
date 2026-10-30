@@ -135,7 +135,7 @@ internal fun MusicCornerCard(
         ) {
             val shape = RoundedCornerShape(32.dp)
             val ground = lerp(colors.surfaceCard, colors.accent, 0.16f)
-            val cover = state.album?.thumbnailUrl
+            val cover = state.coverUrl
             val fade = if (reduced) snap<Float>() else tween(400)
             val cardSource = remember { MutableInteractionSource() }
             val cardFocused by cardSource.collectIsFocusedAsState()
@@ -191,7 +191,7 @@ internal fun MusicCornerCard(
                                 if (url != null) {
                                     NuvioAsyncImage(
                                         model = url,
-                                        contentDescription = state.album?.title,
+                                        contentDescription = state.albumTitle,
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop,
                                     )

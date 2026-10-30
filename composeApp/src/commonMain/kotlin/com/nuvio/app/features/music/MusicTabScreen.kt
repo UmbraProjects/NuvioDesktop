@@ -110,6 +110,7 @@ import com.nuvio.app.features.settings.settingsSkyBackground
 import kotlinx.coroutines.CancellationException
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.QueueMusic
 import kotlinx.coroutines.delay
 
 private enum class MusicSearchKind { Albums, Artists }
@@ -261,6 +262,8 @@ private const val TYPING_PAUSE_MS = 350L
 fun MusicTabScreen(
     onAlbumClick: (browseId: String) -> Unit,
     onArtistClick: (browseId: String) -> Unit,
+    /** fork:music-playlists - opens a playlist's page. */
+    onPlaylistClick: (playlistId: String) -> Unit = {},
     modifier: Modifier = Modifier,
     topChromePadding: Dp = 0.dp,
     catalog: MusicCatalog = remember { defaultMusicCatalog() },
@@ -408,6 +411,10 @@ fun MusicTabScreen(
         }
 
         if (section == MusicSection.Library) {
+            if (libraryView == LibraryView.Playlists) {
+                com.nuvio.app.features.music.playlist.PlaylistsView(onOpenPlaylist = onPlaylistClick, modifier = Modifier.weight(1f).fillMaxWidth())
+                return@Column
+            }
             MusicLibraryShelf(
                 onArtistClick = onArtistClick,
                 onAlbumClick = onAlbumClick,
@@ -474,6 +481,7 @@ private val LIBRARY_VIEW_ICONS = listOf(
     Triple(LibraryView.Shelf, Icons.Rounded.ViewModule, "Shelf"),
     Triple(LibraryView.Constellation, Icons.Rounded.Hub, "Constellation"),
     Triple(LibraryView.Eras, Icons.Rounded.Timeline, "Eras"),
+    Triple(LibraryView.Playlists, Icons.Rounded.QueueMusic, "Playlists"),
 )
 
 /** The search header is a centred column this wide at most; the grid below gets the room. */

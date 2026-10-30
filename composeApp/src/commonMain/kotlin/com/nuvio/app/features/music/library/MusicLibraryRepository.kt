@@ -36,6 +36,8 @@ data class MusicLibrarySettings(
      * the dock existed has "Bar" stored without anyone choosing it; until a choice is made the dock is used.
      */
     val barStyleChosen: Boolean = false,
+    /** The lyric view's queue (and its Where next) fades out after a few idle seconds; off keeps it on screen. */
+    val fadeQueue: Boolean = true,
     /** The artist page's "Where next?" ladder builds by itself (lazily, behind other MusicBrainz calls). Off for a slow connection: it then waits for a button. */
     val autoWhereNext: Boolean = true,
     /** The Music tab in the navigation bar. Off hides it everywhere; the library and these settings are kept. */

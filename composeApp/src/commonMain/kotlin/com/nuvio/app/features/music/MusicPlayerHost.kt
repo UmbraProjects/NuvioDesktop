@@ -1,5 +1,11 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import com.nuvio.app.features.music.identity.MusicAccentScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -81,20 +87,9 @@ internal fun musicBarSlim(state: MusicPlayerState, requested: Boolean, nowPlayin
 
 /** A real video's picture in the bar: 16:9-ish, inset 12dp inside the card at its left end. */
 internal val BarThumbnailWidth = 136.dp
-private val ExpandedHeaderHeight = 48.dp
-private val ExpandedFrameTop = 16.dp
 
-/** Room kept under the framed video for its title line. */
-private val ExpandedCaptionRoom = 84.dp
 
-private data class ExpandedFrame(val width: Dp, val height: Dp)
 
-/** The 16:9 frame of the expanded video: about 70% of the width (as on board 4), as tall as the space leaves. */
-private fun expandedFrame(windowWidth: Dp, windowHeight: Dp): ExpandedFrame {
-    val room = (windowHeight - ExpandedHeaderHeight - MusicMiniPlayerHeight - ExpandedFrameTop - ExpandedCaptionRoom).coerceAtLeast(1.dp)
-    val width = minOf(windowWidth * 0.72f, room * (16f / 9f))
-    return ExpandedFrame(width, width * (9f / 16f))
-}
 
 /**
  * Plays [MusicPlayback.player] and draws the mini-player bar. Place it once, at the app root, over
@@ -102,8 +97,7 @@ private fun expandedFrame(windowWidth: Dp, windowHeight: Dp): ExpandedFrame {
  * content by [MusicMiniPlayerHeight] while [MusicPlayerState.isActive] so nothing sits under the bar.
  *
  * The host owns the one native video surface and resizes it rather than moving it: a thumbnail at
- * the bar's left end, a window over the app ([MusicVideoView.Expanded]), or the whole window
- * ([MusicVideoView.Fullscreen]). The surface keeps one place in the composition, so changing size
+ * the bar's left end, the lyric view's frame above the lyrics, or the whole window ([MusicVideoView.Fullscreen]). The surface keeps one place in the composition, so changing size
  * never reopens the stream. In the big views the host fills the window and the bar stays under the
  * picture, because compose controls cannot be drawn over a native surface.
  *
@@ -181,7 +175,18 @@ fun MusicPlayerHost(
     val corner = musicBarCorner(state, slimRequested, nowPlayingOpen, barStyle)
     val docked = musicPlayerDocked(state, nowPlayingOpen, barStyle)
     val videoVisible = realVideo && !hidden
-    val big = videoVisible && view != MusicVideoView.Bar
+    // Docked, a video in the Bar view has no thumbnail to show in: the surface is parked out of sight until it is
+    // expanded. It still plays the video stream (a surface told it is not visible opens the audio alone, and
+    // expanding then showed a black frame), so expanding only resizes it.
+    // The lyric view's frame, while that view is open on a real video: the video draws there, above the lyrics.
+    val inlineFrame by MusicPlayback.inlineVideoFrame.collectAsStateWithLifecycle()
+    val inline = videoVisible && view == MusicVideoView.Bar && nowPlayingOpen && inlineFrame != null
+    // The native video draws over the app's own popups, so while the "Add to playlist" picker is open the picture
+    // steps out of sight (it keeps playing) and comes back when the picker closes.
+    val pickerOpen = com.nuvio.app.features.music.playlist.PlaylistPicker.pending.collectAsStateWithLifecycle().value != null
+    val videoParked = (docked && view == MusicVideoView.Bar && !inline) || pickerOpen
+    val big = videoVisible && view == MusicVideoView.Fullscreen
+    var hostOrigin by remember { mutableStateOf(Offset.Zero) }
     val keys = remember { FocusRequester() }
     LaunchedEffect(big) {
         if (big) runCatching { keys.requestFocus() }
@@ -190,16 +195,22 @@ fun MusicPlayerHost(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .then(if (big) Modifier.fillMaxHeight().background(Color.Black) else Modifier)
+            .then(
+                when {
+                    big -> Modifier.fillMaxHeight().background(Color.Black)
+                    // The whole window, see-through, so the surface can sit on the lyric view's frame.
+                    inline -> Modifier.fillMaxHeight()
+                    else -> Modifier
+                },
+            )
+            .onGloballyPositioned { hostOrigin = it.positionInRoot() }
             .focusRequester(keys)
             .focusable()
             .onPreviewKeyEvent { event ->
                 if (!big || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.Escape -> {
-                        MusicPlayback.setVideoView(
-                            if (view == MusicVideoView.Fullscreen) MusicVideoView.Expanded else MusicVideoView.Bar,
-                        )
+                        MusicPlayback.setVideoView(MusicVideoView.Bar)
                         true
                     }
                     Key.Spacebar -> {
@@ -213,7 +224,15 @@ fun MusicPlayerHost(
         val windowHeight = maxHeight
         val barPlacement by MusicPlayback.barPlacement.collectAsStateWithLifecycle()
         val surfaceModifier = when {
-            !videoVisible -> Modifier.align(Alignment.BottomStart).size(1.dp)
+            !videoVisible || videoParked -> Modifier.align(Alignment.BottomStart).size(1.dp)
+            inline -> {
+                val frame = inlineFrame!!
+                val density = LocalDensity.current
+                Modifier
+                    .align(Alignment.TopStart)
+                    .offset { IntOffset((frame.left - hostOrigin.x).roundToInt(), (frame.top - hostOrigin.y).roundToInt()) }
+                    .size(with(density) { frame.width.toDp() }, with(density) { frame.height.toDp() })
+            }
             view == MusicVideoView.Bar -> {
                 // Inset 12dp inside the bar's left end, wherever the bar was dragged to.
                 val bar = musicBarFrame(maxWidth, windowHeight, MusicBarCardHeight, barPlacement)
@@ -223,39 +242,11 @@ fun MusicPlayerHost(
                     .padding(bottom = MusicBarBottomMargin + 12.dp)
                     .size(BarThumbnailWidth, MusicBarCardHeight - 24.dp)
             }
-            view == MusicVideoView.Expanded -> {
-                // Framed 16:9 near the top with room for the title under it, so the ambient glow shows
-                // round it (mpv letterboxes any other shape inside the frame).
-                val frame = expandedFrame(maxWidth, windowHeight)
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = ExpandedHeaderHeight + ExpandedFrameTop)
-                    .size(frame.width, frame.height)
-            }
             else ->
                 Modifier
                     .align(Alignment.TopStart)
                     .fillMaxWidth()
-                    .height((windowHeight - MusicMiniPlayerHeight).coerceAtLeast(1.dp))
-        }
-        // Behind the framed video (conditional group, so the surface below keeps its place in the composition).
-        if (big && view == MusicVideoView.Expanded) {
-            val frame = expandedFrame(maxWidth, windowHeight)
-            MusicAccentScope {
-                MusicVideoAmbient(
-                    coverUrl = state.album?.thumbnailUrl,
-                    title = state.track?.title.orEmpty(),
-                    subtitle = listOfNotNull(
-                        (state.track?.artists?.takeIf { it.isNotEmpty() } ?: state.album?.artists.orEmpty())
-                            .joinToString(", ") { it.name }.takeIf { it.isNotBlank() },
-                        state.album?.title,
-                        state.album?.year,
-                    ).joinToString(" · "),
-                    modifier = Modifier.fillMaxSize().padding(top = ExpandedHeaderHeight, bottom = MusicMiniPlayerHeight),
-                    captionStart = (maxWidth - frame.width) / 2,
-                    captionTop = ExpandedFrameTop + frame.height + 18.dp,
-                )
-            }
+                    .height((windowHeight - MusicVideoStripHeight).coerceAtLeast(1.dp))
         }
         // First, and always at this spot, so the native player is never torn down by a size change.
         MusicPlayerSurface(
@@ -267,25 +258,20 @@ fun MusicPlayerHost(
             volume = state.volume,
             seekRequestId = seek?.id ?: 0L,
             seekRequestMs = seek?.positionMs ?: 0L,
-            letterbox = big,
+            letterbox = big || inline,
             modifier = surfaceModifier,
             onSnapshot = { id, snapshot -> if (id == player.state.value.loadId) player.onSnapshot(snapshot) },
             onEnded = { id -> if (id == player.state.value.loadId) player.onSurfaceEnded() },
             onError = { id -> if (id == player.state.value.loadId) player.onSurfaceError() },
         )
-        if (big && view == MusicVideoView.Expanded) {
-            ExpandedHeader(
-                title = state.track?.title.orEmpty(),
-                onCollapse = { MusicPlayback.setVideoView(MusicVideoView.Bar) },
-                onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Fullscreen) },
-                modifier = Modifier.align(Alignment.TopStart),
-            )
-        }
         // The bar and the card wear the app's own glass and accent, like the rest of the app.
         run {
             MusicMiniPlayerBar(
                 state = state,
-                visible = !hidden && !collapsed && !corner && !docked,
+                // The big video views have their own slim strip instead (below).
+                // The big video has its own strip; the lyric view is its own player. The bar steps aside for both.
+                visible = !hidden && !collapsed && !corner && !docked && !big && !nowPlayingOpen,
+                videoInline = inline,
                 player = player,
                 slim = musicBarSlim(state, slimRequested, nowPlayingOpen),
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -300,7 +286,7 @@ fun MusicPlayerHost(
             )
             MusicCornerCard(
                 state = state,
-                visible = !hidden && !collapsed && corner && !docked,
+                visible = !hidden && !collapsed && corner && !docked && !nowPlayingOpen,
                 player = player,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 onOpenNowPlaying = { MusicPlayback.nowPlayingOpen.value = true },
@@ -310,12 +296,23 @@ fun MusicPlayerHost(
                 },
                 areaHeight = windowHeight,
             )
+            // fork:music - the expanded and fullscreen video's own controls, under the picture.
+            if (big) {
+                MusicVideoControlStrip(
+                    state = state,
+                    player = player,
+                    fullscreen = view == MusicVideoView.Fullscreen,
+                    onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Bar) },
+                    onCollapse = { MusicPlayback.setVideoView(MusicVideoView.Bar) },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
             // The dock: the player itself in the Dock style, or where another style was minimised to. It can be dragged
             // anywhere (a double-click puts it back) and still opens on hover.
             val dockPlacement by MusicPlayback.dockPlacement.collectAsStateWithLifecycle()
             val areaWidth = maxWidth
             AnimatedVisibility(
-                visible = (collapsed || docked) && !hidden && !realVideo,
+                visible = ((collapsed && !realVideo) || docked) && !hidden && !big && !nowPlayingOpen,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .offset(x = dockPlacement.dx, y = dockPlacement.dy)
@@ -326,11 +323,13 @@ fun MusicPlayerHost(
                 MusicDockNotch(
                     state = state,
                     player = player,
-                    // Minimised, the arrow brings the bar or card back; as the player itself it opens Now Playing.
+                    // Minimised, the arrow brings the bar or card back; as the player itself it opens Now Playing, or
+                    // closes it when it is already open.
                     onRestore = {
                         if (collapsed) MusicPlayback.barCollapsed.value = false
-                        else MusicPlayback.nowPlayingOpen.value = true
+                        else MusicPlayback.nowPlayingOpen.value = !MusicPlayback.nowPlayingOpen.value
                     },
+                    onExpandVideo = if (realVideo && !inline) ({ MusicPlayback.showVideo() }) else null,
                     modifier = Modifier.padding(bottom = 10.dp),
                 )
             }
@@ -338,27 +337,3 @@ fun MusicPlayerHost(
     }
 }
 
-@Composable
-private fun ExpandedHeader(
-    title: String,
-    onCollapse: () -> Unit,
-    onFullscreen: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth().height(ExpandedHeaderHeight).background(Color.Black).padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MusicTextChip("Collapse", onCollapse)
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = title,
-            color = Color.White,
-            fontSize = 15.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        MusicTextChip("Fullscreen", onFullscreen)
-    }
-}

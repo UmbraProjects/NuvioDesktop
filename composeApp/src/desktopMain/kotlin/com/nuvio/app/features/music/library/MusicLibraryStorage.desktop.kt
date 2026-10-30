@@ -46,4 +46,10 @@ internal actual object MusicLibraryStorage {
     actual fun saveNebulaLookups(profileId: Int, payload: String) {
         store.putString("nebula_lookups_$profileId", payload)
     }
+
+    actual fun loadPlaylists(profileId: Int): String? = store.getString("playlists_$profileId")
+
+    actual fun savePlaylists(profileId: Int, payload: String) {
+        store.putString("playlists_$profileId", payload)
+    }
 }

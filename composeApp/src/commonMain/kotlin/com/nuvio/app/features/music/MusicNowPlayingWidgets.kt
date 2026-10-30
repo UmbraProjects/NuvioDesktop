@@ -1,8 +1,30 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import com.nuvio.app.core.ui.nuvio
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,29 +72,51 @@ internal fun NowPlayingWidgets(
 ) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(600))
     val album = state.album
-    val upNext = remember(state.track?.videoId, state.shuffled, state.loadId) { player.upNext(3) }
+    val (queue, playingAt) = remember(state.track?.videoId, state.shuffled, state.loadId) { player.queueView() }
     val total = album?.tracks?.size ?: 0
     Column(modifier.graphicsLayer { this.alpha = alpha }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (album != null && total > 1 && state.trackIndex >= 0) {
-            Text("Track ${state.trackIndex + 1} of $total", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
-            Row(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.15f))) {
-                val done = ((state.trackIndex + 1).toFloat() / total).coerceIn(0.02f, 1f)
-                Box(Modifier.weight(done).fillMaxHeight().background(Color.White.copy(alpha = 0.85f)))
-                if (done < 1f) Box(Modifier.weight(1f - done).fillMaxHeight())
-            }
-        }
-        if (upNext.isNotEmpty()) {
-            Text("UP NEXT", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
-            upNext.forEach { next ->
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.08f)).padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    MusicCover(album?.thumbnailUrl, next.title, size = 40.dp)
-                    Text(next.title, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (next.durationSeconds > 0) {
-                        Text(formatMusicTime(next.durationSeconds * 1_000L), color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+        if (queue.size > 1) {
+            Text("QUEUE", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+            // The whole queue, scrolling in whatever height the column has left, kept on the song playing: earlier songs
+            // above it (dimmed), the rest below. A click plays that song; a later album's songs are reached by Next.
+            val listState = rememberLazyListState()
+            LaunchedEffect(playingAt) { if (playingAt > 0) listState.animateScrollToItem((playingAt - 1).coerceAtLeast(0)) }
+            LazyColumn(
+                Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(min = UP_NEXT_MIN_HEIGHT),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(queue, key = { i, e -> "$i:${e.track.videoId}" }) { i, entry ->
+                    val next = entry.track
+                    val playing = i == playingAt
+                    val source = remember { MutableInteractionSource() }
+                    val hovered by source.collectIsHoveredAsState()
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer { this.alpha = if (i < playingAt) 0.5f else 1f }
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                when {
+                                    playing -> MaterialTheme.nuvio.colors.accent.copy(alpha = 0.22f)
+                                    hovered && entry.inAlbum -> Color.White.copy(alpha = 0.16f)
+                                    else -> Color.White.copy(alpha = 0.08f)
+                                },
+                            )
+                            .hoverable(source)
+                            .then(
+                                if (entry.inAlbum && !playing) Modifier.clickable(interactionSource = source, indication = null) { player.jumpTo(entry.albumIndex) }
+                                else Modifier,
+                            )
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        MusicCover(next.coverUrl ?: album?.thumbnailUrl, next.title, size = 40.dp)
+                        Text(next.title, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        if (next.durationSeconds > 0) {
+                            Text(formatMusicTime(next.durationSeconds * 1_000L), color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+                        }
                     }
                 }
             }
@@ -102,6 +146,86 @@ private fun MiniLadder(artist: LibraryArtist) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.1f)).padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
+/** The least height the queue's scrolling box keeps (about two rows). */
+private val UP_NEXT_MIN_HEIGHT = 112.dp
+
+/**
+ * The lyric view's own player, which stays on screen (the bar, dock and card step aside while the view is open). One
+ * compact row: where the song is in the album or playlist on the left, previous / play / next and Add to playlist in
+ * the middle, the time on the right; the seek bar under it, full width. The middle is placed in a Box on its own, so
+ * it never moves as the texts either side change width.
+ */
+@Composable
+internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, modifier: Modifier = Modifier) {
+    val total = state.album?.tracks?.size ?: 0
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.fillMaxWidth().height(44.dp)) {
+            if (total > 1 && state.trackIndex >= 0) {
+                Text(
+                    "Track ${state.trackIndex + 1} of $total",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                )
+            }
+            Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+                ControlIcon(Icons.Rounded.SkipPrevious, "Previous") { player.previous() }
+                ControlIcon(
+                    if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    if (state.playWhenReady) "Pause" else "Play",
+                    large = true,
+                ) { player.togglePlayback() }
+                ControlIcon(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
+                state.track?.let { track ->
+                    ControlIcon(Icons.Rounded.PlaylistAdd, "Add to playlist") {
+                        com.nuvio.app.features.music.playlist.PlaylistPicker.request(
+                            listOf(with(com.nuvio.app.features.music.playlist.MusicPlaylistTracks) { track.forPlaylist(state.album) }),
+                        )
+                    }
+                }
+            }
+            Text(
+                "${formatMusicTime(state.positionMs)}/${formatMusicTime(state.durationMs)}",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
+        SeekBar(
+            fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
+            onSeek = { player.seekTo((it * state.durationMs).toLong()) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.durationMs > 0L,
+            onNudge = { d -> player.seekTo((state.positionMs + d * 5_000L).coerceIn(0L, state.durationMs)) },
+            glass = true,
+        )
+    }
+}
+
+@Composable
+private fun ControlIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean = true,
+    /** Play / pause: a bigger plain white glyph, no circle behind it. */
+    large: Boolean = false,
+    onClick: () -> Unit,
+) {
+    com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = label) {
+        Box(Modifier.size(if (large) 44.dp else 38.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = if (large) Color.White else Color.White.copy(alpha = if (enabled) 0.9f else 0.3f),
+                modifier = Modifier.size(if (large) 30.dp else 22.dp),
             )
         }
     }

@@ -20,6 +20,12 @@ import kotlinx.coroutines.launch
 typealias MusicTrackResolver = suspend (track: MusicTrack, album: MusicAlbum, mode: MusicPlayMode) -> MusicResolution
 
 /** Everything the surface and the mini-player draw from. [track] is null when nothing is loaded. */
+/** The cover to show for what is playing: the track's own (a playlist mixes albums), else its album's. */
+internal val MusicPlayerState.coverUrl: String? get() = track?.coverUrl ?: album?.thumbnailUrl
+
+/** The album the playing track is from: the track's own (a playlist mixes albums), else the queue's album. */
+internal val MusicPlayerState.albumTitle: String? get() = track?.albumTitle ?: album?.title
+
 data class MusicPlayerState(
     val album: MusicAlbum? = null,
     val track: MusicTrack? = null,
@@ -43,6 +49,11 @@ data class MusicPlayerState(
     val hasNext: Boolean = false,
     /** Video mode with no official video for [track]: audio plays and the lyric view is the picture. */
     val lyricVideo: Boolean = false,
+    /**
+     * fork:music - switched from Video to Audio mid-song: the video's stream plays on with its picture hidden instead
+     * of reloading the song, and the next song loads as audio. Switching back to Video on this song is then instant.
+     */
+    val videoCutPlaying: Boolean = false,
     /** A short line for the bar ("No video for this track"). Cleared by the next track change. */
     val notice: String? = null,
 ) {
@@ -214,7 +225,22 @@ class MusicPlayer(
     fun switchMode(newMode: MusicPlayMode) {
         val q = queue ?: return
         if (q.mode == newMode) return
-        val positionAtRequest = _state.value.positionMs
+        val now = _state.value
+        // Video to Audio on a real video: keep its stream playing and only hide the picture (no reload, no gap); the
+        // next song is resolved as audio. Back to Video while that stream still plays: show the picture again.
+        if (newMode == MusicPlayMode.Audio && now.mode == MusicPlayMode.Video && !now.lyricVideo) {
+            q.setMode(MusicPlayMode.Audio)
+            _state.update { it.copy(mode = MusicPlayMode.Audio, videoCutPlaying = true, notice = null) }
+            prefetchNext(q)
+            return
+        }
+        if (newMode == MusicPlayMode.Video && now.videoCutPlaying) {
+            q.setMode(MusicPlayMode.Video)
+            _state.update { it.copy(mode = MusicPlayMode.Video, videoCutPlaying = false, notice = null) }
+            prefetchNext(q)
+            return
+        }
+        val positionAtRequest = now.positionMs
         launchRequest {
             val album = q.album
             when (val result = q.switchMode(newMode, positionAtRequest) { track, mode -> resolve(track, album, mode) }) {
@@ -227,6 +253,7 @@ class MusicPlayer(
                             loadId = ++loadCounter,
                             isLoading = true,
                             lyricVideo = result.playable.lyricVideo,
+                            videoCutPlaying = false,
                             notice = if (result.playable.lyricVideo) "No official video, showing lyrics" else null,
                         )
                     }
@@ -276,6 +303,18 @@ class MusicPlayer(
             delay(VOLUME_SAVE_DELAY_MS)
             saveVolume(level)
         }
+    }
+
+    /**
+     * The whole queue in playing order (the album or playlist, then any albums queued after it) and the index of the
+     * track playing in it, for the lyric view's list. Tracks after the album's own are [MusicQueueEntry.inAlbum] false:
+     * they cannot be jumped to, Next reaches them.
+     */
+    fun queueView(): Pair<List<MusicQueueEntry>, Int> {
+        val q = queue ?: return emptyList<MusicQueueEntry>() to -1
+        val own = q.ordered.map { t -> MusicQueueEntry(t, q.album.tracks.indexOfFirst { it.videoId == t.videoId }) }
+        val later = following.flatMap { it.tracks }.map { MusicQueueEntry(it, -1) }
+        return (own + later) to q.orderedPosition
     }
 
     /** The next [limit] tracks in the queue that can be played, then the queued albums', for the Up next cards. */
@@ -421,6 +460,7 @@ class MusicPlayer(
                 loadId = ++loadCounter,
                 isLoading = true,
                 lyricVideo = found.playable.lyricVideo,
+                videoCutPlaying = false,
                 positionMs = startPositionMs,
                 durationMs = track.durationSeconds * 1000L,
                 hasNext = q.upNext.isNotEmpty() || following.isNotEmpty(),
@@ -483,4 +523,9 @@ class MusicPlayer(
     }
 
     // endregion
+}
+
+/** One row of [MusicPlayer.queueView]: the track and its index in the playing album, or -1 for a later album's track. */
+data class MusicQueueEntry(val track: MusicTrack, val albumIndex: Int) {
+    val inAlbum: Boolean get() = albumIndex >= 0
 }
