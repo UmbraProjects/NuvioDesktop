@@ -105,6 +105,8 @@ fun rememberMusicBarInset(playerHidden: Boolean): Dp {
         barPlacement.isFloating -> 0.dp
         // The corner card floats over the page and reserves nothing.
         musicBarCorner(state, slimRequested, nowPlayingOpen, style) -> 0.dp
+        // The dock floats over the page too.
+        musicPlayerDocked(state, nowPlayingOpen, style) -> 0.dp
         musicBarSlim(state, slimRequested, nowPlayingOpen) -> MusicBarSlimHeight
         else -> MusicMiniPlayerHeight
     }

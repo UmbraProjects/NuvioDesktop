@@ -29,8 +29,13 @@ data class MusicLibrarySettings(
     val audioDbKey: String = "",
     /** Stage and album motion off: no drift, pulse, cycling or spinning disc. Applies to the whole Music section. */
     val reducedMotion: Boolean = false,
-    /** The player as a bottom bar or as a corner card. */
-    val barStyle: com.nuvio.app.features.music.MusicBarStyle = com.nuvio.app.features.music.MusicBarStyle.Bar,
+    /** The player as the dock, a bottom bar or a corner card. */
+    val barStyle: com.nuvio.app.features.music.MusicBarStyle = com.nuvio.app.features.music.MusicBarStyle.Dock,
+    /**
+     * True once the person picked a style. Settings are saved with their defaults written out, so an install from before
+     * the dock existed has "Bar" stored without anyone choosing it; until a choice is made the dock is used.
+     */
+    val barStyleChosen: Boolean = false,
     /** The artist page's "Where next?" ladder builds by itself (lazily, behind other MusicBrainz calls). Off for a slow connection: it then waits for a button. */
     val autoWhereNext: Boolean = true,
     /** The Music tab in the navigation bar. Off hides it everywhere; the library and these settings are kept. */
@@ -129,6 +134,7 @@ object MusicLibraryRepository {
             .orEmpty()
         val settings = MusicLibraryStorage.loadSettings()
             ?.let { runCatching { json.decodeFromString<MusicLibrarySettings>(it) }.getOrNull() }
+            ?.let { if (it.barStyleChosen) it else it.copy(barStyle = com.nuvio.app.features.music.MusicBarStyle.Dock) }
             ?: MusicLibrarySettings()
         _state.value = MusicLibraryState(artists = sorted(artists.map { it.withSaneDates() }), settings = settings)
     }

@@ -23,6 +23,7 @@ object MusicPlayback {
     /** fork:music - where the bar and the corner card were dragged and how wide they were made, for this session. */
     val barPlacement = MutableStateFlow(MusicPlayerPlacement.Default)
     val cardPlacement = MutableStateFlow(MusicPlayerPlacement.Default)
+    val dockPlacement = MutableStateFlow(MusicPlayerPlacement.Default)
 
     /**
      * True while a screen that needs the room (the ladder) asks for the bar to shrink to a slim pill. The bar only

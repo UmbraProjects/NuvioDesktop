@@ -596,10 +596,11 @@ internal fun MorePanel(
             PanelRow(
                 icon = Icons.Rounded.Dashboard,
                 label = "Player style",
-                value = if (style == MusicBarStyle.Corner) "Corner card" else "Bottom bar",
+                value = style.label,
             ) {
+                // Cycles Dock, Bottom bar, Corner card; the choice is kept between sessions.
                 onDismiss()
-                setMusicBarStyle(if (style == MusicBarStyle.Corner) MusicBarStyle.Bar else MusicBarStyle.Corner)
+                setMusicBarStyle(style.next())
             }
             VolumeRow(state.volume, onChange = { player.setVolume(it.coerceIn(0, 100)) })
             if (onCollapse != null) {

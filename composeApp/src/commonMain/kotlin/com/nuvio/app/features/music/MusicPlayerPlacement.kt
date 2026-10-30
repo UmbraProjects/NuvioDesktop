@@ -91,6 +91,22 @@ internal fun clampCornerPlacement(areaWidth: Dp, areaHeight: Dp, cardHeight: Dp,
     return placement.copy(dx = f.left - musicBarSideMargin(areaWidth), dy = f.dy)
 }
 
+/** The open dock's width and height: the drag keeps the whole open panel inside the window, not just the notch. */
+private val DockOpenWidth = 440.dp
+private val DockOpenHeight = 340.dp
+
+/** The dock's placement (an offset from bottom centre) pulled inside the area, with room for it to open upwards. */
+internal fun clampDockPlacement(areaWidth: Dp, areaHeight: Dp, placement: MusicPlayerPlacement): MusicPlayerPlacement {
+    val side = ((areaWidth - DockOpenWidth) / 2).coerceAtLeast(0.dp)
+    val dx = if (areaWidth == Dp.Unspecified || areaWidth == Dp.Infinity) placement.dx else placement.dx.coerceIn(-side, side)
+    val dy = when {
+        placement.dy > 0.dp -> 0.dp
+        areaHeight == Dp.Unspecified || areaHeight == Dp.Infinity -> placement.dy
+        else -> placement.dy.coerceAtLeast(-(areaHeight - DockOpenHeight - MusicBarBottomMargin).coerceAtLeast(0.dp))
+    }
+    return placement.copy(dx = dx, dy = dy)
+}
+
 /** A lift between the bottom edge (0) and the top of the area; unbounded while the area's height is unknown. */
 private fun clampLift(dy: Dp, areaHeight: Dp, cardHeight: Dp): Dp {
     if (dy > 0.dp) return 0.dp

@@ -161,7 +161,8 @@ fun MusicPlayerHost(
                     player = player,
                     modifier = Modifier.align(Alignment.BottomCenter),
                     slim = musicBarSlim(gone, slimRequested, nowPlayingOpen),
-                    initiallyShown = !musicBarCorner(gone, slimRequested, nowPlayingOpen, barStyle),
+                    initiallyShown = !musicBarCorner(gone, slimRequested, nowPlayingOpen, barStyle) &&
+                        !musicPlayerDocked(gone, nowPlayingOpen, barStyle),
                     areaHeight = maxHeight,
                 )
                 MusicCornerCard(
@@ -178,6 +179,7 @@ fun MusicPlayerHost(
     }
     lastActive[0] = state
     val corner = musicBarCorner(state, slimRequested, nowPlayingOpen, barStyle)
+    val docked = musicPlayerDocked(state, nowPlayingOpen, barStyle)
     val videoVisible = realVideo && !hidden
     val big = videoVisible && view != MusicVideoView.Bar
     val keys = remember { FocusRequester() }
@@ -283,7 +285,7 @@ fun MusicPlayerHost(
         run {
             MusicMiniPlayerBar(
                 state = state,
-                visible = !hidden && !collapsed && !corner,
+                visible = !hidden && !collapsed && !corner && !docked,
                 player = player,
                 slim = musicBarSlim(state, slimRequested, nowPlayingOpen),
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -298,7 +300,7 @@ fun MusicPlayerHost(
             )
             MusicCornerCard(
                 state = state,
-                visible = !hidden && !collapsed && corner,
+                visible = !hidden && !collapsed && corner && !docked,
                 player = player,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 onOpenNowPlaying = { MusicPlayback.nowPlayingOpen.value = true },
@@ -308,16 +310,27 @@ fun MusicPlayerHost(
                 },
                 areaHeight = windowHeight,
             )
+            // The dock: the player itself in the Dock style, or where another style was minimised to. It can be dragged
+            // anywhere (a double-click puts it back) and still opens on hover.
+            val dockPlacement by MusicPlayback.dockPlacement.collectAsStateWithLifecycle()
+            val areaWidth = maxWidth
             AnimatedVisibility(
-                visible = collapsed && !hidden && !realVideo,
-                modifier = Modifier.align(Alignment.BottomCenter),
+                visible = (collapsed || docked) && !hidden && !realVideo,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(x = dockPlacement.dx, y = dockPlacement.dy)
+                    .musicPlayerDrag(MusicPlayback.dockPlacement) { clampDockPlacement(areaWidth, windowHeight, it) },
                 enter = if (reduced) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 2 },
                 exit = if (reduced) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 2 },
             ) {
                 MusicDockNotch(
                     state = state,
                     player = player,
-                    onRestore = { MusicPlayback.barCollapsed.value = false },
+                    // Minimised, the arrow brings the bar or card back; as the player itself it opens Now Playing.
+                    onRestore = {
+                        if (collapsed) MusicPlayback.barCollapsed.value = false
+                        else MusicPlayback.nowPlayingOpen.value = true
+                    },
                     modifier = Modifier.padding(bottom = 10.dp),
                 )
             }
