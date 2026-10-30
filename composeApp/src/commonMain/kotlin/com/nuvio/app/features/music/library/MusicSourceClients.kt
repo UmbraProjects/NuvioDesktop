@@ -128,17 +128,38 @@ internal object MusicBrainzClient {
     val hasOfflineCopy: Boolean get() = musicBrainzOfflineCopy().index != null
 
     /** [searchByTag] from the offline copy alone: null when there is none, or it has no answer. */
-    suspend fun searchByTagOffline(tag: String): List<LadderCandidate>? =
-        offline { it.searchByTag(tag, TAG_SEARCH_LIMIT) }?.let(::parseMbTagSearch)
+    suspend fun searchByTagOffline(tag: String): List<LadderCandidate>? = offlineTagSearch(tag)
+
+    /**
+     * The offline copy's artists for [tag] under every spelling of it ("hip-hop" and "hip hop": the copy matches a tag
+     * exactly), merged. Null when there is no copy.
+     */
+    private suspend fun offlineTagSearch(tag: String): List<LadderCandidate>? {
+        val spellings = tagSpellings(tag)
+        val found = ArrayList<List<LadderCandidate>>()
+        for (spelling in spellings) {
+            val body = offline { it.searchByTag(spelling, TAG_SEARCH_LIMIT) } ?: return null
+            found += parseMbTagSearch(body)
+        }
+        return if (found.isEmpty()) null else mergeTagSpellings(spellings, found, TAG_SEARCH_LIMIT)
+    }
 
     /** [searchArtistWithTags] from the offline copy alone: null when there is none, or it has no answer. */
     suspend fun searchArtistWithTagsOffline(name: String): List<LadderCandidate>? =
         offline { it.searchArtist(name, ARTIST_SEARCH_LIMIT) }?.let(::parseMbTagSearch)
 
     suspend fun searchByTag(tag: String): List<LadderCandidate>? {
-        offline { it.searchByTag(tag, TAG_SEARCH_LIMIT) }?.let { return parseMbTagSearch(it) }
-        val query = "tag:\"${tag.replace("\"", "\\\"")}\"".encodeURLParameter()
-        return paced("$BASE/artist?query=$query&limit=$TAG_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
+        offlineTagSearch(tag)?.let { return it }
+        // The web service: the next spelling is tried only when the one before found nobody.
+        var answer = emptyList<LadderCandidate>()
+        for (spelling in tagSpellings(tag)) {
+            val query = "tag:\"${spelling.replace("\"", "\\\"")}\"".encodeURLParameter()
+            val found = paced("$BASE/artist?query=$query&limit=$TAG_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
+                ?: return null
+            if (found.isNotEmpty()) return found
+            answer = found
+        }
+        return answer
     }
 
     /**

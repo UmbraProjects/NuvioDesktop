@@ -108,6 +108,37 @@ internal fun parseMbTagSearch(body: String): List<LadderCandidate> =
         LadderCandidate(id = id, name = name, votes = votes, beginYear = begin)
     }
 
+/**
+ * The ways MusicBrainz might spell the tag [tag], the given spelling first: hyphens read as spaces and spaces as
+ * hyphens. The ladder names a genre "hip-hop" or "trip-hop", MusicBrainz's own tags are "hip hop" and "trip hop",
+ * and the offline copy matches a tag exactly, so the one spelling found nobody.
+ */
+internal fun tagSpellings(tag: String): List<String> {
+    val clean = tag.trim()
+    if (clean.isEmpty()) return emptyList()
+    return listOf(clean, clean.replace('-', ' '), clean.replace(' ', '-')).distinct()
+}
+
+/**
+ * The artists found under several spellings of one tag ([found], in the order of [spellings]), merged: each artist
+ * once, most votes across the spellings first. With a single spelling the answer is returned as it came.
+ */
+internal fun mergeTagSpellings(
+    spellings: List<String>,
+    found: List<List<LadderCandidate>>,
+    limit: Int,
+): List<LadderCandidate> {
+    if (found.size <= 1) return found.firstOrNull().orEmpty().take(limit)
+    val keys = spellings.mapTo(HashSet()) { it.trim().lowercase() }
+    val byId = LinkedHashMap<String, LadderCandidate>()
+    for (candidate in found.flatten()) byId.putIfAbsent(candidate.id, candidate)
+    return byId.values
+        .sortedByDescending { candidate ->
+            candidate.votes.entries.sumOf { (name, count) -> if (name.trim().lowercase() in keys) count else 0 }
+        }
+        .take(limit)
+}
+
 private fun linkLabelFor(type: String, url: String): String? = when {
     type == "official homepage" -> "Website"
     type == "wikipedia" -> "Wikipedia"
