@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.LocalPlatformContext
 import com.nuvio.app.core.ui.PlatformBackHandler
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicCover
 import com.nuvio.app.features.music.MusicPlayback
@@ -107,7 +108,10 @@ internal fun MusicLadderScreen(
         // A ladder being re-ranked keeps showing the old one rather than flashing a spinner.
         if (value !is LadderState.Ready) value = LadderState.Loading
         MusicLibraryRepository.ensureLoaded()
+        val started = LibraryClock.nowEpochMs()
         value = LadderArtistTargets.load(request, MusicLibraryRepository.state.value.artists, LadderProgressStore.forBuilding(progress))
+        // How long the build took, and from which source, so a slow ladder can be traced to its lookups.
+        Logger.withTag("LadderDebug").i { "Built in ${LibraryClock.nowEpochMs() - started} ms (tags: ${MusicTagSource.describe()})" }
     }
     fun mark(rung: LadderRung, feedback: RungFeedback) {
         progress = applyFeedback(progress, rung, feedback).also { LadderProgressStore.put(request, it) }

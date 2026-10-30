@@ -110,6 +110,17 @@ internal object MusicBrainzClient {
      * One search for the artists tagged [tag] (about [TAG_SEARCH_LIMIT]), each with its tag votes. A single paced
      * call, no per-artist look-ups. Null when MusicBrainz could not be reached; empty when nobody carries the tag.
      */
+    /** True while an offline copy is installed and readable. */
+    val hasOfflineCopy: Boolean get() = musicBrainzOfflineCopy().index != null
+
+    /** [searchByTag] from the offline copy alone: null when there is none, or it has no answer. */
+    suspend fun searchByTagOffline(tag: String): List<LadderCandidate>? =
+        offline { it.searchByTag(tag, TAG_SEARCH_LIMIT) }?.let(::parseMbTagSearch)
+
+    /** [searchArtistWithTags] from the offline copy alone: null when there is none, or it has no answer. */
+    suspend fun searchArtistWithTagsOffline(name: String): List<LadderCandidate>? =
+        offline { it.searchArtist(name, ARTIST_SEARCH_LIMIT) }?.let(::parseMbTagSearch)
+
     suspend fun searchByTag(tag: String): List<LadderCandidate>? {
         offline { it.searchByTag(tag, TAG_SEARCH_LIMIT) }?.let { return parseMbTagSearch(it) }
         val query = "tag:\"${tag.replace("\"", "\\\"")}\"".encodeURLParameter()
@@ -174,14 +185,13 @@ internal object DeezerClient {
 
     private const val RELATED_LIMIT = 20
 
+    // Calls are spaced from the start of the one before, not its end: the limit counts calls, so waiting out each
+    // response as well held an artist's ~200 album lookups to about 5 a second instead of 8.
     private suspend fun pacedFetch(url: String): String? = gate.withLock {
         val wait = lastCallMs + GAP_MS - LibraryClock.nowEpochMs()
         if (wait > 0) delay(wait)
-        try {
-            fetch(url)
-        } finally {
-            lastCallMs = LibraryClock.nowEpochMs()
-        }
+        lastCallMs = LibraryClock.nowEpochMs()
+        fetch(url)
     }
 
     /**
@@ -199,26 +209,12 @@ internal object DeezerClient {
         return parseDeezerArtistSearch(related)
     }
 
-    suspend fun albumDetail(albumId: Long): DeezerAlbumDetail? = gate.withLock {
-        val wait = lastCallMs + GAP_MS - LibraryClock.nowEpochMs()
-        if (wait > 0) delay(wait)
-        try {
-            fetch("$BASE/album/$albumId")?.let(::parseDeezerAlbumDetail)
-        } finally {
-            lastCallMs = LibraryClock.nowEpochMs()
-        }
-    }
+    suspend fun albumDetail(albumId: Long): DeezerAlbumDetail? =
+        pacedFetch("$BASE/album/$albumId")?.let(::parseDeezerAlbumDetail)
 
     /** The artist's most played tracks (up to 100), each with the album it is on. Null when Deezer could not be reached; empty when it has none. */
-    suspend fun topTracks(artistId: Long): List<DeezerTopTrack>? = gate.withLock {
-        val wait = lastCallMs + GAP_MS - LibraryClock.nowEpochMs()
-        if (wait > 0) delay(wait)
-        try {
-            fetch("$BASE/artist/$artistId/top?limit=100")?.let(::parseDeezerTopTracks)
-        } finally {
-            lastCallMs = LibraryClock.nowEpochMs()
-        }
-    }
+    suspend fun topTracks(artistId: Long): List<DeezerTopTrack>? =
+        pacedFetch("$BASE/artist/$artistId/top?limit=100")?.let(::parseDeezerTopTracks)
 }
 
 /**

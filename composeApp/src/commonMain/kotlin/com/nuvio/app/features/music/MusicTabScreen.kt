@@ -108,6 +108,8 @@ import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.settings.settingsSkyBackground
 import kotlinx.coroutines.CancellationException
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Person
 import kotlinx.coroutines.delay
 
 private enum class MusicSearchKind { Albums, Artists }
@@ -150,15 +152,22 @@ fun MusicTopBarContent(onLeave: () -> Unit, modifier: Modifier = Modifier) {
         onDispose { MusicTabState.barHosted = false }
     }
     Row(
-        // The swap button sits centred in its segment (6 dp either side); the field's end padding does the same for its last button.
-        modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp),
+        modifier.fillMaxWidth().padding(end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // The swap button is centred on the pill's rounded end, not on the box from the edge to the divider: the curve
+        // takes area off the left of that box, so a box-centred icon read as sitting too far left.
         NuvioPosterHoverTooltip(title = "Back to the main bar") {
-            MusicFieldIconButton(icon = Icons.Rounded.SwapHoriz, description = "Back to the main bar", active = false, onClick = onLeave)
+            MusicFieldIconButton(
+                icon = Icons.Rounded.SwapHoriz,
+                description = "Back to the main bar",
+                active = false,
+                onClick = onLeave,
+                modifier = Modifier.padding(start = 10.dp, end = 4.dp),
+            )
         }
         MusicFieldDivider()
+        Spacer(Modifier.width(6.dp))
         MusicSearchBox(chromeless = true, modifier = Modifier.weight(1f))
     }
 }
@@ -368,8 +377,9 @@ fun MusicTabScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    MusicGlassPill("Albums", selected = kind == MusicSearchKind.Albums) { kind = MusicSearchKind.Albums }
-                    MusicGlassPill("Artists", selected = kind == MusicSearchKind.Artists) { kind = MusicSearchKind.Artists }
+                    // The kinds as icons, like the Library's views above them; the one in use is lit.
+                    BrowseFilterIconAction(Icons.Rounded.Album, "Albums", on = kind == MusicSearchKind.Albums) { kind = MusicSearchKind.Albums }
+                    BrowseFilterIconAction(Icons.Rounded.Person, "Artists", on = kind == MusicSearchKind.Artists) { kind = MusicSearchKind.Artists }
                     // fork:music - the first result's ladders, as short pills beside the kind
                     val offers = when (val shown = results) {
                         is MusicSearchResults.Albums -> {
@@ -648,10 +658,11 @@ private fun MusicFieldIconButton(
     active: Boolean,
     enabled: Boolean = true,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(32.dp)
             .clip(CircleShape)
             .background(if (active) tokens.colors.accent.copy(alpha = 0.22f) else Color.Transparent)

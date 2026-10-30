@@ -305,9 +305,9 @@ internal fun AlbumLinerNotes(
 ) {
     val colors = MaterialTheme.nuvio.colors
     if (notes.isEmpty) return
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (notes.genres.isNotEmpty() || notes.mood != null) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 notes.genres.forEach { genre ->
                     val shape = RoundedCornerShape(16.dp)
                     Text(
@@ -333,6 +333,7 @@ internal fun AlbumLinerNotes(
         notes.description?.let { text ->
             Column(
                 Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onToggleDescription).padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
@@ -341,6 +342,7 @@ internal fun AlbumLinerNotes(
                     color = colors.textSecondary,
                     maxLines = if (descriptionOpen) Int.MAX_VALUE else 4,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
                 Text(if (descriptionOpen) "Show less" else "Read more", style = MaterialTheme.typography.bodySmall, color = colors.accent)
             }

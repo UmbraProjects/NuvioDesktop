@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.runtime.key
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.alpha
+import com.nuvio.app.core.ui.NuvioAsyncImage
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -309,11 +313,12 @@ private fun ConstellationMap(
     val density = LocalDensity.current
     val padPx = with(density) { 24.dp.toPx() }
     val revealMarginPx = with(density) { 56.dp.toPx() }
+    val minStarPx = with(density) { MIN_STAR_RADIUS.toPx() }
     var canvasPx by remember { mutableStateOf(IntSize.Zero) }
     val width = canvasPx.width.toFloat()
     val height = canvasPx.height.toFloat()
     val frame = remember(width, height, padPx) { paddedFrame(width, height, padPx) }
-    val screen = ScreenMap(frame, camera)
+    val screen = ScreenMap(frame, camera, minStarPx)
     val points = model.layout.points
 
     // The pointer and key handlers outlive any one composition, so they read the latest values through these.
@@ -435,7 +440,7 @@ private fun ConstellationMap(
                                     val next = cameraNow.zoomedAt(change.position.x, change.position.y, ZOOM_PER_NOTCH.pow(-notches), w, h)
                                     onCameraNow(next)
                                     // The stars moved under a still pointer: find what is under it now.
-                                    onHoverNow(hitStar(pointsNow, ScreenMap(frameNow, next), change.position.x, change.position.y))
+                                    onHoverNow(hitStar(pointsNow, ScreenMap(frameNow, next, minStarPx), change.position.x, change.position.y))
                                     change.consume()
                                 }
                             }
@@ -517,6 +522,26 @@ private fun ConstellationMap(
             }
         }
 
+        // Each star is the artist's portrait, so the map says who is who without hovering. The canvas's disc stays
+        // underneath as the placeholder (and for an artist with no picture); the rings and glow sit outside it.
+        for (p in points) {
+            val thumb = byId[p.id]?.art?.thumb ?: continue
+            key(p.id) {
+                val r = screen.starRadius(p.radius)
+                val diameter = with(density) { (r * 2).toDp() }
+                NuvioAsyncImage(
+                    model = thumb,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .offset { IntOffset((screen.x(p.x) - r).roundToInt(), (screen.y(p.y) - r).roundToInt()) }
+                        .size(diameter)
+                        .alpha(if (lit(p.id)) 1f else 0.2f)
+                        .clip(CircleShape),
+                )
+            }
+        }
+
         // Hover: name and top three genres next to the star, flipped to its other side near the right edge.
         val hovered = hoverId?.let { id -> byId[id]?.let { artist -> pointById[id]?.let { artist to it } } }
         if (hovered != null) {
@@ -546,6 +571,9 @@ private fun ConstellationMap(
         }
     }
 }
+
+/** The smallest a star is drawn: big enough for the portrait inside it to be recognised. */
+private val MIN_STAR_RADIUS = 16.dp
 
 /** Air between the farthest star and its halo, in unit-box units. */
 private const val HALO_PAD = 0.01

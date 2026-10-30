@@ -347,35 +347,37 @@ private fun RoomBackdrop(artist: LibraryArtist, modifier: Modifier) {
                 Brush.verticalGradient(0f to Color.Transparent, 0.42f to Color.Transparent, 0.72f to dark.copy(alpha = 0.72f), 1f to dark),
             ),
         )
-        // No wide picture: the portrait, large and round, centred where the picture would show through on the right.
+        // No wide picture: the portrait, large and round, near the top of the right half and clear of the timeline that
+        // runs down the window's right edge (centred in the right half, it sat on the timeline's first entries).
         val portrait = artist.art.thumb
         if (portrait != null && (identity.hero == null || identity.hero.source == HeroSource.BlurredCover)) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // Never drawn bigger than the picture is, so it stays sharp.
                 val sourceLimit = with(LocalDensity.current) { PORTRAIT_SOURCE_PX.toDp() }
                 val size = minOf(maxHeight * 0.55f, PORTRAIT_MAX, sourceLimit)
-                Row(Modifier.fillMaxSize()) {
-                    Spacer(Modifier.weight(1f))
-                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        NuvioAsyncImage(
-                            model = enlargeYtThumbnail(portrait, PORTRAIT_SOURCE_PX) ?: portrait,
-                            contentDescription = artist.name,
-                            modifier = Modifier
-                                .size(size)
-                                .alpha(fade)
-                                .clip(CircleShape)
-                                .border(2.dp, NuvioGlass.EdgeColor, CircleShape),
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
+                val timeline = (maxWidth * TIMELINE_SHARE).coerceIn(TIMELINE_MIN_WIDTH, TIMELINE_MAX_WIDTH)
+                val regionStart = maxWidth * 0.5f
+                val regionEnd = (maxWidth - timeline).coerceAtLeast(regionStart + size)
+                Box(Modifier.offset(x = regionStart + (regionEnd - regionStart - size) / 2, y = PORTRAIT_TOP)) {
+                    NuvioAsyncImage(
+                        model = enlargeYtThumbnail(portrait, PORTRAIT_SOURCE_PX) ?: portrait,
+                        contentDescription = artist.name,
+                        modifier = Modifier
+                            .size(size)
+                            .alpha(fade)
+                            .clip(CircleShape)
+                            .border(2.dp, NuvioGlass.EdgeColor, CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
                 }
             }
         }
     }
 }
 
-/** The portrait fallback's largest size, and the pixel size asked of a resizable source. */
+/** The portrait fallback's largest size, its gap from the top of the page, and the pixel size asked of a resizable source. */
 private val PORTRAIT_MAX = 340.dp
+private val PORTRAIT_TOP = 56.dp
 private const val PORTRAIT_SOURCE_PX = 800
 
 /** The heading block, centred in the lane like the details page's: logo, facts, stat icons, genres, actions. */

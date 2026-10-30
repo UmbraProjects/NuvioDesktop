@@ -11,7 +11,9 @@ import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.MusicLibraryStorage
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -31,6 +33,26 @@ private val log = Logger.withTag("NebulaMusic")
 
 private const val MAX_CANDIDATES = 3
 private const val LINK_RETRY_DELAY_MS = 700L
+
+/**
+ * The most a stream request may take. The addon asks TorBox for the file, which can sit for a minute on an
+ * album nobody has fetched lately; past this the track is reported as not answering rather than left spinning.
+ */
+private const val STREAM_TIMEOUT_MS = 25_000L
+private const val STREAM_CONNECT_TIMEOUT_MS = 10_000L
+
+/** What the player is waiting on from the addon, or what went wrong with the last track it asked for. */
+internal sealed interface NebulaStreamStatus {
+    val trackTitle: String
+    data class Asking(override val trackTitle: String, val sinceMs: Long) : NebulaStreamStatus
+    data class Failed(override val trackTitle: String, val reason: String) : NebulaStreamStatus
+}
+
+/** One stream request: a link, or why there is none ([staleMatch] when the addon no longer knows the track). */
+private sealed interface StreamReply {
+    data class Ok(val stream: NebulaStream) : StreamReply
+    data class Refused(val reason: String, val staleMatch: Boolean, val worthRetry: Boolean) : StreamReply
+}
 
 /** Percent-encodes [text] for a query value. */
 internal fun urlEncodeQuery(text: String): String {
@@ -67,6 +89,10 @@ internal object NebulaMusicSource {
 
     fun qualityOf(videoId: String): String? = if (videoId.startsWith(ID_PREFIX)) qualities[videoId] else null
 
+    /** Snapshot state for the album page: the stream request in flight, or the last one that failed; null once a link arrived. */
+    var streamStatus by androidx.compose.runtime.mutableStateOf<NebulaStreamStatus?>(null)
+        private set
+
     /** The addon's base URL, or null when no link is set. */
     fun baseUrl(): String? {
         MusicLibraryRepository.ensureLoaded()
@@ -98,12 +124,14 @@ internal object NebulaMusicSource {
 
     private class AddonError(val reason: String) : Exception(reason)
 
-    private suspend fun get(base: String, path: String): Reply {
+    private suspend fun get(base: String, path: String, callTimeoutMs: Long = 0L, connectTimeoutMs: Long = 0L): Reply {
         val response = httpRequestRaw(
             method = "GET",
             url = base + path,
             headers = mapOf("Accept" to "application/json"),
             body = "",
+            callTimeoutMs = callTimeoutMs,
+            connectTimeoutMs = connectTimeoutMs,
         )
         return Reply(response.status, response.body)
     }
@@ -231,17 +259,24 @@ internal object NebulaMusicSource {
     suspend fun resolve(track: MusicTrack, album: MusicAlbum, mode: MusicPlayMode): MusicResolution {
         val base = baseUrl() ?: return MusicResolution.Failed(track, "The music addon link isn't set")
         val id = track.videoId.removePrefix(ID_PREFIX)
+        streamStatus = NebulaStreamStatus.Asking(track.title, LibraryClock.nowEpochMs())
         return try {
-            var stream = fetchStream(base, id)
-            if (stream == null) {
+            var reply = fetchStream(base, id)
+            if (reply is StreamReply.Refused && reply.worthRetry) {
                 delay(LINK_RETRY_DELAY_MS)
-                stream = fetchStream(base, id)
+                reply = fetchStream(base, id)
             }
-            if (stream == null) {
-                // The kept match may be stale (the addon's ids changed): search again next visit.
-                forget(album)
-                return MusicResolution.Failed(track, "The music addon has no link for this track")
+            val stream = when (reply) {
+                is StreamReply.Ok -> reply.stream
+                is StreamReply.Refused -> {
+                    // Only a "no such track" means the kept match is stale (the addon's ids changed): search again next
+                    // visit. A slow or broken addon says nothing about the match, so it is kept.
+                    if (reply.staleMatch) forget(album)
+                    streamStatus = NebulaStreamStatus.Failed(track.title, reply.reason)
+                    return MusicResolution.Failed(track, reply.reason)
+                }
             }
+            streamStatus = null
             nebulaQualityLabel(stream.format, stream.quality)?.let { qualities[track.videoId] = it }
             MusicResolution.Playable(
                 track = track,
@@ -253,19 +288,44 @@ internal object NebulaMusicSource {
                 lyricVideo = mode == MusicPlayMode.Video,
             )
         } catch (e: CancellationException) {
+            if ((streamStatus as? NebulaStreamStatus.Asking)?.trackTitle == track.title) streamStatus = null
             throw e
         } catch (e: Exception) {
-            MusicResolution.Failed(track, e.message ?: "The music addon failed")
+            val reason = e.message ?: "The music addon failed"
+            streamStatus = NebulaStreamStatus.Failed(track.title, reason)
+            MusicResolution.Failed(track, reason)
         }
     }
 
-    private suspend fun fetchStream(base: String, id: String): NebulaStream? = try {
-        val reply = get(base, "/stream/${urlEncodeQuery(id)}")
-        if (reply.status in 200..299) parseNebulaStream(reply.body) else null
+    private suspend fun fetchStream(base: String, id: String): StreamReply = try {
+        val reply = get(base, "/stream/${urlEncodeQuery(id)}", callTimeoutMs = STREAM_TIMEOUT_MS, connectTimeoutMs = STREAM_CONNECT_TIMEOUT_MS)
+        val stream = if (reply.status in 200..299) parseNebulaStream(reply.body) else null
+        when {
+            stream != null -> StreamReply.Ok(stream)
+            reply.status in 200..299 -> {
+                log.w { "Music addon stream answer had no link: ${reply.body.take(200)}" }
+                StreamReply.Refused("The music addon answered without a link for this track.", staleMatch = true, worthRetry = true)
+            }
+            else -> {
+                log.w { "Music addon stream answered HTTP ${reply.status}: ${reply.body.take(200)}" }
+                StreamReply.Refused(
+                    nebulaFailureReason(reply.status, parseNebulaDetail(reply.body)),
+                    staleMatch = reply.status == 404,
+                    worthRetry = reply.status >= 500,
+                )
+            }
+        }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         log.w(e) { "Music addon stream request failed" }
-        null
+        val timedOut = e.message.orEmpty().contains("timeout", ignoreCase = true) || e::class.simpleName.orEmpty().contains("Timeout")
+        StreamReply.Refused(
+            if (timedOut) "Your music addon didn't send a link within ${STREAM_TIMEOUT_MS / 1000} s. TorBox may still be fetching the album; try again in a minute."
+            else nebulaFailureReason(status = null, error = e.message),
+            staleMatch = false,
+            // Another 25 s wait on a timeout would only double the silence.
+            worthRetry = !timedOut,
+        )
     }
 }

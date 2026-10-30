@@ -79,13 +79,16 @@ internal data class Camera(val zoom: Float = 1f, val panX: Float = 0f, val panY:
     }
 }
 
-/** The fitted map seen through a camera: unit-box coordinates to canvas pixels. */
-internal class ScreenMap(val frame: MapFrame, val camera: Camera) {
+/**
+ * The fitted map seen through a camera: unit-box coordinates to canvas pixels. [minStarPx] keeps every star at least
+ * that big, so the artist's portrait in it can be made out.
+ */
+internal class ScreenMap(val frame: MapFrame, val camera: Camera, private val minStarPx: Float = 0f) {
     fun x(u: Double): Float = camera.x(frame.x(u))
     fun y(u: Double): Float = camera.y(frame.y(u))
 
     /** Star radius in pixels: grows with the square root of the zoom. */
-    fun starRadius(u: Double): Float = frame.radius(u) * sqrt(camera.zoom)
+    fun starRadius(u: Double): Float = maxOf(frame.radius(u) * sqrt(camera.zoom), minStarPx)
 
     /** Halo half-width and half-height: they follow the positions, so they scale with the full zoom. */
     fun haloRadiusX(u: Double): Float = (u * frame.width * camera.zoom).toFloat()

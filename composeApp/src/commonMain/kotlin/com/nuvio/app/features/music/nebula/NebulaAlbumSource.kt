@@ -11,10 +11,13 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicAlbum
@@ -25,6 +28,8 @@ import com.nuvio.app.features.music.library.MusicLibraryRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import com.nuvio.app.features.library.LibraryClock
 
 /** Where an album's audio comes from. */
 internal enum class MusicSource { YouTube, Addon }
@@ -62,6 +67,10 @@ internal class NebulaAlbumController(
     /** The album with its tracks pointed at the addon, once the addon has it. Its availability is the addon's. */
     val preparedAlbum: MusicAlbum?
         get() = (offer as? NebulaOffer.Available)?.let { NebulaMusicSource.prepare(album, it.match) }
+
+    /** True while the player holds this album's addon copy, whichever source the switch now shows. */
+    val playingFromAddon: Boolean
+        get() = player.state.value.let { s -> s.album?.browseId == album.browseId && s.track?.let(NebulaMusicSource::owns) == true }
 
     /** True when Play, Shuffle and track taps should use the addon. */
     val active: Boolean get() = chosen == MusicSource.Addon && offer is NebulaOffer.Available
@@ -112,7 +121,7 @@ internal fun rememberNebulaAlbumController(album: MusicAlbum, player: MusicPlaye
 @Composable
 internal fun NebulaSourceRow(controller: NebulaAlbumController, onRetry: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when (val offer = controller.offer) {
             NebulaOffer.Checking -> Text("Checking your music addon…", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
             NebulaOffer.NotFound -> Text("Not on your music addon.", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
@@ -120,23 +129,45 @@ internal fun NebulaSourceRow(controller: NebulaAlbumController, onRetry: () -> U
                 "Couldn't check your music addon: ${offer.reason} Tap to try again.",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.warning,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.clickable(onClick = onRetry),
             )
-            is NebulaOffer.Available -> {
-                MusicSegmented(
-                    options = listOf(MusicSource.YouTube to "YouTube Music", MusicSource.Addon to "Addon · lossless"),
-                    selected = controller.chosen,
-                    onSelect = controller::choose,
-                )
-                if (controller.chosen == MusicSource.Addon) {
+            // The source itself is a button in the album's action row; this only says what it will play.
+            is NebulaOffer.Available -> Text(
+                if (controller.chosen == MusicSource.Addon) "Playing from your addon, lossless (${offer.matched} tracks matched)."
+                else "Your addon has this album lossless (${offer.matched} tracks matched).",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+                textAlign = TextAlign.Center,
+            )
+        }
+        controller.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.warning, textAlign = TextAlign.Center) }
+        // What the player is waiting on from the addon, or why the last track it asked for didn't come: without this a slow
+        // addon was a silent spinner and a refusal only showed as a skip.
+        if (controller.active || controller.playingFromAddon) {
+            when (val status = NebulaMusicSource.streamStatus) {
+                is NebulaStreamStatus.Asking -> {
+                    val waited by produceState(0L, status) {
+                        while (true) {
+                            value = (LibraryClock.nowEpochMs() - status.sinceMs) / 1000
+                            delay(1_000)
+                        }
+                    }
                     Text(
-                        "Play uses your addon copy (${offer.matched} tracks matched).",
+                        "Asking your addon for \u201C${status.trackTitle}\u201D" + (if (waited >= 3) " (${waited} s)…" else "…"),
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textSecondary,
+                        textAlign = TextAlign.Center,
                     )
                 }
+                is NebulaStreamStatus.Failed -> Text(
+                    "Couldn't play \u201C${status.trackTitle}\u201D from your addon: ${status.reason}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.warning,
+                    textAlign = TextAlign.Center,
+                )
+                null -> Unit
             }
         }
-        controller.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.warning) }
     }
 }

@@ -213,17 +213,27 @@ internal object LastFmClient {
 }
 
 /**
- * The tag source the ladders and the Library use: Last.fm first when a key is set, MusicBrainz when
- * Last.fm is not set up or could not be reached.
+ * The tag source the ladders and the Library use. The offline MusicBrainz copy first when one is installed: a disk read,
+ * where Last.fm is a tag search plus a lookup per candidate over the network, and it was being asked first even with the
+ * copy on disk, which made every ladder wait on the web. Then Last.fm when a key is set, then the MusicBrainz web service.
  */
 internal object MusicTagSource {
     suspend fun searchByTag(tag: String): List<LadderCandidate>? {
+        MusicBrainzClient.searchByTagOffline(tag)?.takeIf { it.isNotEmpty() }?.let { return it }
         if (LastFmClient.isConfigured) LastFmClient.searchByTag(tag)?.takeIf { it.isNotEmpty() }?.let { return it }
         return MusicBrainzClient.searchByTag(tag)
     }
 
     suspend fun searchArtistWithTags(name: String): List<LadderCandidate>? {
+        MusicBrainzClient.searchArtistWithTagsOffline(name)?.takeIf { it.isNotEmpty() }?.let { return it }
         if (LastFmClient.isConfigured) LastFmClient.searchArtistWithTags(name)?.takeIf { it.isNotEmpty() }?.let { return it }
         return MusicBrainzClient.searchArtistWithTags(name)
+    }
+
+    /** Which source answers first right now, for the log. */
+    fun describe(): String = when {
+        MusicBrainzClient.hasOfflineCopy -> "MusicBrainz offline copy"
+        LastFmClient.isConfigured -> "Last.fm"
+        else -> "MusicBrainz web"
     }
 }

@@ -38,6 +38,16 @@ import com.nuvio.app.features.music.library.LibraryRelease
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
+import com.nuvio.app.features.details.components.DetailIconAction
+import com.nuvio.app.features.music.nebula.MusicSource
+import com.nuvio.app.features.music.nebula.NebulaOffer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +73,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioBackButton
-import com.nuvio.app.core.ui.NuvioPrimaryButton
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.LibraryAlbumInfo
 import com.nuvio.app.features.music.library.MusicLibraryRepository
@@ -173,73 +182,81 @@ private fun AlbumContent(
     val facts: @Composable () -> Unit = {
         AlbumFacts(album = album, info = info, onArtistClick = onArtistClick)
         info?.release?.let { release ->
-            // Liner notes: label and date, genre chips with the mood in the accent, the description.
+            // Liner notes: genre chips with the mood in the accent, and the description.
             AlbumLinerNotes(
                 notes = buildLinerNotes(release, album.year),
                 descriptionOpen = descriptionOpen,
                 onToggleDescription = { descriptionOpen = !descriptionOpen },
             )
-            // Where the library and YouTube Music disagree is worth a line: it explains a "missing" song.
-            val listed = release.trackCount
-            if (listed != null && listed != album.tracks.size) {
-                Text(
-                    "Your library lists $listed tracks for this release; YouTube Music has ${album.tracks.size}.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textMuted,
+        }
+        val canPlay = view.tracks.any { it.isAvailable }
+        val addonReady = nebula?.offer is NebulaOffer.Available
+        // The artist page's round buttons, each named by its tooltip: Play / Pause, Shuffle, Audio, Video and, when the
+        // addon has the album, the lossless addon copy as a toggle.
+        val actions = listOfNotNull(
+            AlbumAction(
+                label = when {
+                    startsFresh -> "Play"
+                    state.playWhenReady -> "Pause"
+                    else -> "Resume"
+                },
+                icon = if (!startsFresh && state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                active = !startsFresh && state.playWhenReady,
+                onClick = {
+                    if (!canPlay) Unit
+                    else if (!startsFresh) player.togglePlayback()
+                    else startAlbum(0, mode, shuffled = false)
+                },
+            ),
+            AlbumAction(
+                label = if (!startsFresh && state.shuffled) "Shuffle on" else "Shuffle",
+                icon = Icons.Rounded.Shuffle,
+                active = !startsFresh && state.shuffled,
+                onClick = {
+                    if (!canPlay) Unit
+                    else if (!startsFresh) player.setShuffled(!state.shuffled)
+                    else startAlbum(randomPlayableIndex(view), mode, shuffled = true)
+                },
+            ),
+            AlbumAction("Audio", Icons.Rounded.Headphones, active = mode == MusicPlayMode.Audio, onClick = {
+                chosenMode = MusicPlayMode.Audio
+                if (loaded) player.switchMode(MusicPlayMode.Audio)
+            }),
+            AlbumAction("Video", Icons.Rounded.Movie, active = mode == MusicPlayMode.Video, onClick = {
+                chosenMode = MusicPlayMode.Video
+                if (loaded) player.switchMode(MusicPlayMode.Video)
+            }),
+            nebula?.takeIf { addonReady }?.let { addon ->
+                val onAddon = addon.chosen == MusicSource.Addon
+                AlbumAction(
+                    label = if (onAddon) "Playing your addon's lossless copy (switch to YouTube Music)" else "Play your addon's lossless copy",
+                    icon = MusicIcons.Lossless,
+                    active = onAddon,
+                    onClick = { addon.choose(if (onAddon) MusicSource.YouTube else MusicSource.Addon) },
                 )
+            },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally), modifier = Modifier.fillMaxWidth()) {
+            actions.forEach { action ->
+                NuvioPosterHoverTooltip(title = action.label) {
+                    DetailIconAction(label = action.label, icon = action.icon, active = action.active, size = 56.dp, onClick = action.onClick)
+                }
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                itemVerticalAlignment = Alignment.CenterVertically,
-            ) {
-                NuvioPrimaryButton(
-                    text = when {
-                        startsFresh -> "Play"
-                        state.playWhenReady -> "Pause"
-                        else -> "Resume"
-                    },
-                    modifier = Modifier.width(ALBUM_BUTTON_WIDTH),
-                    height = ALBUM_BUTTON_HEIGHT,
-                    enabled = view.tracks.any { it.isAvailable },
-                    onClick = {
-                        if (!startsFresh) player.togglePlayback()
-                        else startAlbum(0, mode, shuffled = false)
-                    },
-                )
-                ShuffleButton(
-                    on = !startsFresh && state.shuffled,
-                    enabled = view.tracks.any { it.isAvailable },
-                    onClick = {
-                        if (!startsFresh) player.setShuffled(!state.shuffled)
-                        else startAlbum(randomPlayableIndex(view), mode, shuffled = true)
-                    },
-                )
-                MusicSegmented(
-                    options = listOf(MusicPlayMode.Audio to "Audio", MusicPlayMode.Video to "Video"),
-                    selected = mode,
-                    onSelect = { picked ->
-                        chosenMode = picked
-                        if (loaded) player.switchMode(picked)
-                    },
-                    height = ALBUM_BUTTON_HEIGHT,
-                )
-            }
-            nebula?.let { NebulaSourceRow(it, onRetry = { nebulaRetry++ }) } // fork:nebula
-            val note = when {
-                loaded && state.notice != null -> state.notice
-                mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
-                else -> null
-            }
-            if (note != null) {
-                Text(
-                    text = note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (loaded && state.notice != null) colors.warning else colors.textSecondary,
-                )
-            }
+        // The lines under the buttons say only what needs saying, centred like everything above them.
+        nebula?.let { NebulaSourceRow(it, onRetry = { nebulaRetry++ }) } // fork:nebula
+        val note = when {
+            loaded && state.notice != null -> state.notice
+            mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
+            else -> null
+        }
+        if (note != null) {
+            Text(
+                text = note,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (loaded && state.notice != null) colors.warning else colors.textSecondary,
+                textAlign = TextAlign.Center,
+            )
         }
         val unavailable = view.tracks.count { !it.isAvailable }
         if (unavailable > 0) {
@@ -247,6 +264,17 @@ private fun AlbumContent(
                 "$unavailable track${if (unavailable == 1) "" else "s"} unavailable${if (wantNebula) " on your addon" else " on YouTube Music"}.",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.textMuted,
+                textAlign = TextAlign.Center,
+            )
+        }
+        // Where the library and YouTube Music disagree is worth a line: it explains a "missing" song.
+        val listed = info?.release?.trackCount
+        if (listed != null && listed != album.tracks.size) {
+            Text(
+                "Your library lists $listed tracks for this release; YouTube Music has ${album.tracks.size}.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textMuted,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -279,16 +307,29 @@ private fun AlbumContent(
         if (maxWidth >= 840.dp) {
             Row(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.width(520.dp).fillMaxHeight().verticalScroll(rememberScrollState())
+                    Modifier.width(OBJECT_COLUMN_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState())
                         .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) { objectPanel(340.dp) }
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    contentPadding = PaddingValues(start = 12.dp, end = if (moreAside) 24.dp else 32.dp, top = 16.dp, bottom = 40.dp),
+                    // With More from beside it, the end padding makes up the difference between the two side columns, so
+                    // the record is centred on the window (level with the docked player) rather than between them.
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        end = if (moreAside) (OBJECT_COLUMN_WIDTH + 12.dp - MORE_COLUMN_WIDTH).coerceAtLeast(24.dp) else 32.dp,
+                        top = 16.dp,
+                        bottom = 40.dp,
+                    ),
+                    // The record sits centred between the object on the left and More from on the right.
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     item(key = "facts") {
-                        Column(Modifier.padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { facts() }
+                        Column(
+                            Modifier.widthIn(max = 720.dp).padding(bottom = 18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) { facts() }
                     }
                     pane()
                     if (!moreAside && more.isNotEmpty()) item(key = "more") { MoreFromRow(moreTitle, more, onAlbumClick) }
@@ -304,7 +345,11 @@ private fun AlbumContent(
                     Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { objectPanel(240.dp) }
                 }
                 item(key = "facts") {
-                    Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { facts() }
+                    Column(
+                        Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) { facts() }
                 }
                 pane()
                 if (more.isNotEmpty()) item(key = "more") { MoreFromRow(moreTitle, more, onAlbumClick) }
@@ -313,10 +358,15 @@ private fun AlbumContent(
     }
 }
 
-private val ALBUM_BUTTON_WIDTH = 128.dp
-private val ALBUM_BUTTON_HEIGHT = 44.dp
+/** Narrow enough that a song's length reads with its title, as on a record sleeve. */
+private val TRACK_ROW_MAX_WIDTH = 480.dp
+
+/** One round button in the album's action row. */
+private class AlbumAction(val label: String, val icon: ImageVector, val active: Boolean, val onClick: () -> Unit)
 private val MORE_TILE = 150.dp
 private val MORE_GAP = 16.dp
+private val MORE_COLUMN_WIDTH = MORE_TILE * 2 + MORE_GAP + 56.dp
+private val OBJECT_COLUMN_WIDTH = 520.dp
 
 /** More from the artist down the right of a wide window: two columns of covers, scrolling on their own. */
 @Composable
@@ -324,7 +374,7 @@ private fun MoreFromColumn(title: String, more: List<LibraryRelease>, onAlbumCli
     val colors = MaterialTheme.nuvio.colors
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        modifier = Modifier.width(MORE_TILE * 2 + MORE_GAP + 56.dp).fillMaxHeight(),
+        modifier = Modifier.width(MORE_COLUMN_WIDTH).fillMaxHeight(),
         contentPadding = PaddingValues(start = 24.dp, end = 32.dp, top = 24.dp, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(MORE_GAP),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -400,6 +450,8 @@ private fun AlbumObjectPanel(
                 "Cover, back and disc come from TheAudioDB and Fanart.tv. Missing art falls back to a drawn back and disc.",
             style = MaterialTheme.typography.bodySmall,
             color = colors.textMuted,
+            // As wide as the case, not the disc beside it, so the note stays clear of the record column.
+            modifier = Modifier.width(caseSize),
         )
     }
 }
@@ -418,7 +470,7 @@ private fun AlbumFacts(album: MusicAlbum, info: LibraryAlbumInfo?, onArtistClick
     ).joinToString(" · ").uppercase()
     val notes = buildLinerNotes(info?.release, album.year)
     val credit = listOfNotNull(notes.label, notes.date, "Explicit".takeIf { notes.explicit }).joinToString(" · ")
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = kicker,
             style = MaterialTheme.typography.labelLarge,
@@ -433,6 +485,7 @@ private fun AlbumFacts(album: MusicAlbum, info: LibraryAlbumInfo?, onArtistClick
             color = colors.textPrimary,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
         )
         if (album.artists.isNotEmpty()) {
             Row(
@@ -458,26 +511,6 @@ private fun AlbumFacts(album: MusicAlbum, info: LibraryAlbumInfo?, onArtistClick
 }
 
 @Composable
-private fun ShuffleButton(on: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(22.dp)
-    Row(
-        modifier = Modifier
-            .width(ALBUM_BUTTON_WIDTH)
-            .height(ALBUM_BUTTON_HEIGHT)
-            .clip(shape)
-            .border(1.dp, if (on) colors.accent else colors.borderDefault, shape)
-            .clickable(enabled = enabled, onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-    ) {
-        val tint = if (!enabled) colors.textDisabled else if (on) colors.accent else colors.textPrimary
-        Icon(Icons.Rounded.Shuffle, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        Text("Shuffle", style = MaterialTheme.typography.titleMedium, color = tint)
-    }
-}
-
-@Composable
 private fun TrackRow(
     album: MusicAlbum,
     track: MusicTrack,
@@ -491,7 +524,7 @@ private fun TrackRow(
     val credit = trackArtists.takeIf { it.isNotEmpty() && it != albumArtists }?.joinToString(", ")
     Row(
         modifier = Modifier
-            .widthIn(max = 720.dp) // the length stays near the title however wide the column gets
+            .widthIn(max = TRACK_ROW_MAX_WIDTH) // the length stays near the title however wide the column gets
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(if (current) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
