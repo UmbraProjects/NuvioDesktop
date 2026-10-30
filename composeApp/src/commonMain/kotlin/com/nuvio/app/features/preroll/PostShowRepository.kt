@@ -31,7 +31,7 @@ object PostShowRepository {
     private val log = Logger.withTag("PostShow")
 
     /** Generation runs here, not in the caller's scope, so leaving the player cannot waste a paid request. */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val workScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val inFlight = mutableMapOf<String, Deferred<Result<PostShowPack>>>()
     private val inFlightLock = Mutex()
@@ -64,7 +64,7 @@ object PostShowRepository {
     /** Fire-and-forget: starts generation if nothing is cached or in flight. Errors are logged only. */
     fun prefetchFor(type: String, metaId: String, scope: PostShowScope = PostShowScope.Film) {
         if (!isReady()) return
-        scope.launch {
+        workScope.launch {
             val meta = MetaDetailsRepository.peekAny(type, metaId)
                 ?: runCatching { MetaDetailsRepository.fetch(type, metaId) }.getOrNull()
                 ?: return@launch
@@ -107,7 +107,7 @@ object PostShowRepository {
             PostShowCache.get(key)?.pack?.takeUnless { it.isEmpty }?.let { return Result.success(it) }
         }
         val deferred = inFlightLock.withLock {
-            inFlight[key]?.takeIf { it.isActive } ?: scope.async {
+            inFlight[key]?.takeIf { it.isActive } ?: workScope.async {
                 try {
                     runCatching { generate(meta, source, key, scope) }.getOrElse { Result.failure(it) }
                 } finally {
