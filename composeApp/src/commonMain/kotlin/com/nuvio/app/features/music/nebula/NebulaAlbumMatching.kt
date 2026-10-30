@@ -12,6 +12,20 @@ private val EDITION_WORDS = setOf(
     "explicit", "ep", "single", "album", "the",
 )
 
+/**
+ * Words that make a different record of the same songs, not another edition of the album: a slowed and chopped copy, a
+ * live set, an instrumental or a remix album shares every core word with the original. They are read from the whole
+ * title, brackets included, and two titles are the same record only when they carry the same ones.
+ */
+private val VARIANT_WORDS = setOf(
+    "slowed", "chopped", "screwed", "reverb", "sped", "nightcore", "instrumental", "instrumentals", "karaoke",
+    "acoustic", "live", "remix", "remixed", "remixes", "demo", "demos", "tribute", "covers", "lofi", "orchestral",
+    "piano", "cappella", "unplugged", "stripped", "8d",
+)
+
+/** The [VARIANT_WORDS] a title carries, anywhere in it. */
+internal fun albumVariantWords(albumTitle: String): Set<String> = searchTokens(albumTitle).filter { it in VARIANT_WORDS }.toSet()
+
 internal fun isVariousArtists(artist: String): Boolean =
     artist.trim().lowercase().let { it == "various artists" || it == "various" || it == "va" }
 
@@ -83,9 +97,12 @@ internal fun scoreNebulaAlbums(
     if (wantTokens.isEmpty()) return emptyList()
     val wantArtist = if (isVariousArtists(artist)) emptySet() else searchTokens(artist).filter { it != "the" }.toSet()
     val wantYear = year?.trim()?.take(4)?.toIntOrNull()
+    val wantVariants = albumVariantWords(title)
     return candidates.mapNotNull { c ->
         val have = albumCoreTokens(c.title).toSet()
         if (have.isEmpty()) return@mapNotNull null
+        // "The Marshall Mathers LP (Slowed & Chopped)" is not "The Marshall Mathers LP", whatever the brackets hide.
+        if (albumVariantWords(c.title) != wantVariants) return@mapNotNull null
         val titleScore = when {
             have == wantTokens -> 50
             have.containsAll(wantTokens) || wantTokens.containsAll(have) -> 25
