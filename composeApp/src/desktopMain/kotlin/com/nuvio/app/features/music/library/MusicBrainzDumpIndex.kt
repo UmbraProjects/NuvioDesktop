@@ -805,10 +805,15 @@ internal class MusicBrainzIndexReader(val dir: Path) : MusicBrainzOfflineIndex, 
         }.toString()
     }
 
-    /** A search hit in the web service's shape, from a stored record. */
-    private fun hit(record: JsonObject, score: Int): JsonObject = buildJsonObject {
+    /**
+     * A search hit in the web service's shape, from a stored record. The record keeps no alias list, so a hit found
+     * through the name index's alias entries says which alias matched ([matchedAlias]), the way the web search lists
+     * aliases with each hit: [pickMbArtist] needs it to take an artist that is known by another name.
+     */
+    private fun hit(record: JsonObject, score: Int, matchedAlias: String? = null): JsonObject = buildJsonObject {
         for (key in listOf("id", "name", "sort-name", "type", "country", "disambiguation", "life-span")) record[key]?.let { put(key, it) }
         put("score", score)
+        matchedAlias?.let { alias -> put("aliases", JsonArray(listOf(buildJsonObject { put("name", alias) }))) }
         // The web search carries tag votes; genres are tags too, so both go in.
         val votes = ((record["tags"] as? JsonArray).orEmpty() + (record["genres"] as? JsonArray).orEmpty())
         if (votes.isNotEmpty()) put("tags", JsonArray(votes))
@@ -832,7 +837,14 @@ internal class MusicBrainzIndexReader(val dir: Path) : MusicBrainzOfflineIndex, 
             .sortedWith(compareBy<Triple<JsonObject, Boolean, Int>> { it.second }.thenByDescending { it.third })
             .take(limit)
         return buildJsonObject {
-            put("artists", JsonArray(ranked.mapIndexed { rank, (record, alias) -> hit(record, (if (alias) 90 else 100) - rank) }))
+            put(
+                "artists",
+                JsonArray(
+                    ranked.mapIndexed { rank, (record, alias) ->
+                        hit(record, (if (alias) 90 else 100) - rank, matchedAlias = name.takeIf { alias })
+                    },
+                ),
+            )
         }.toString()
     }
 

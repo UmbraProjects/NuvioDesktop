@@ -83,6 +83,19 @@ class MusicBrainzOfflineIndexTest {
     }
 
     @Test
+    fun anAliasHitNamesTheAliasSoTheArtistCanBePickedByIt() {
+        val index = build()
+        val byAlias = parseMbArtistSearch(assertNotNull(index.searchArtist("Churches", 6)))
+        assertEquals(listOf("Churches"), byAlias.single().aliases)
+        assertEquals(chvrches, pickMbArtist(byAlias, "Churches")?.id)
+        assertEquals(atc, pickMbArtist(parseMbArtistSearch(assertNotNull(index.searchArtist("ATC", 6))), "ATC")?.id)
+        // A hit found by the artist's own name has no alias to report; its name is what the picker uses.
+        val byName = parseMbArtistSearch(assertNotNull(index.searchArtist("CHVRCHES", 6)))
+        assertEquals(emptyList<String>(), byName.single().aliases)
+        assertEquals(chvrches, pickMbArtist(byName, "CHVRCHES")?.id)
+    }
+
+    @Test
     fun aTagSearchListsTheMostVotedFirstWithTheirVotes() {
         val index = build()
         val rock = parseMbTagSearch(index.searchByTag("Alternative Rock", 100))
