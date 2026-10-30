@@ -10,7 +10,8 @@ internal expect object PrerollSettingsStorage {
 }
 
 const val PREROLL_MAX_TRAILERS = 5
-const val PREROLL_DEFAULT_TRAILERS = 2
+// Off until chosen: the pre-show runs before every fresh playback, episodes included.
+const val PREROLL_DEFAULT_TRAILERS = 0
 
 /**
  * How many trailers play before a film starts. The trailers are the "More Like This" titles on

@@ -48,6 +48,11 @@ class NativeImageReflectionCheckTest {
             "Two copies: the macOS resolver never runs (Windows-only app); the Windows one calls getHWnd on " +
                 "the AWT peer, which the agent output registers and playback exercises on every start.",
         ),
+        Allowed(
+            "features/music/MusicStreamFallbacks.kt", "Class.forName(className).getField(\"INSTANCE\").get(null)",
+            "InnerTubeXFallback is compiled in only with -Pnuvio.innertubex=true, which the native build does not " +
+                "pass; without it the lookup throws ClassNotFoundException and music runs without the second resolver.",
+        ),
     )
 
     private val lookup = Regex("""\b(Class\.forName|getDeclaredField|getDeclaredMethod|getMethod|getField|getDeclaredConstructor)\s*\(""")

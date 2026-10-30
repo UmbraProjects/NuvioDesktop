@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.music.library.MusicBrainzOfflineState
 import com.nuvio.app.features.music.library.musicBrainzOfflineCopy
@@ -67,7 +68,10 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
             remember { MusicLibraryRepository.ensureLoaded() }
             val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
             val settings = state.settings
-            SettingsGroup(isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion"),
+            ) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_music_show_tab),
                     description = stringResource(Res.string.settings_music_show_tab_description),
@@ -98,7 +102,16 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
         ) {
             val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
             val settings = state.settings
-            SettingsGroup(isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsSearchAnchors(
+                    "music-fanart-key",
+                    "music-audiodb-key",
+                    "music-lastfm-key",
+                    "music-where-next",
+                    "music-mb-offline",
+                ),
+            ) {
                 SettingsTextInputRow(
                     title = stringResource(Res.string.settings_music_fanart_key),
                     description = stringResource(Res.string.settings_music_fanart_key_description),
@@ -172,7 +185,10 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
             isTablet = isTablet,
         ) {
             val keepAlive by PreshowSettings.musicKeepAudioAlive.collectAsStateWithLifecycle()
-            SettingsGroup(isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsSearchAnchors("music-keep-audio-alive"),
+            ) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_music_keep_audio_alive),
                     description = stringResource(Res.string.settings_music_keep_audio_alive_description),

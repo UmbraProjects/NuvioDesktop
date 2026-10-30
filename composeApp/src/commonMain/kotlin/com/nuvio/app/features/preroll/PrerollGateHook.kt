@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.player.PlayerAutoPlayMode
 import com.nuvio.app.features.player.PlayerLaunch
 
@@ -24,10 +25,13 @@ import com.nuvio.app.features.player.PlayerLaunch
  */
 @Composable
 fun prerollGateCleared(launchKey: String, launch: PlayerLaunch): Boolean {
-    // Fresh, tracked playback only: not a resume, trailer, rewatch or playlist.
+    // Fresh, tracked playback only: not a resume, trailer, rewatch or playlist. And only when some part
+    // of the pre-show is switched on; otherwise the gate would hold the film on a black screen while it
+    // looked up details and artwork for nothing.
     val eligible = launch.initialPositionMs <= 0L &&
         !launch.disableProgressTracking &&
-        launch.autoPlayMode != PlayerAutoPlayMode.Playlist
+        launch.autoPlayMode != PlayerAutoPlayMode.Playlist &&
+        preshowHasAnythingToShow()
     var cleared by remember(launchKey) { mutableStateOf(!eligible) }
     if (!cleared) {
         PrerollGate(
@@ -43,3 +47,9 @@ fun prerollGateCleared(launchKey: String, launch: PlayerLaunch): Boolean {
     }
     return cleared
 }
+
+/** Trailers, a clip slot or trivia is on. Theme songs only play behind trivia, so they do not count. */
+private fun preshowHasAnythingToShow(): Boolean =
+    PrerollSettings.trailerCount.value > 0 ||
+        PreshowSettings.enabledSlots.value.isNotEmpty() ||
+        DiscoverAiSettingsRepository.snapshot().triviaEnabled

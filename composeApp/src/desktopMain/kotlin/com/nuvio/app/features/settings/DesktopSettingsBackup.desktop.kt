@@ -43,6 +43,8 @@ private val CredentialStoreNames = setOf(
 
 private val SensitiveKeyFragments = listOf(
     "access_token",
+    // fork:music - the music settings JSON names TheAudioDB's key `audioDbKey`, which no other fragment catches.
+    "audiodbkey",
     "refreshtoken",
     "refresh_token",
     "api_key",

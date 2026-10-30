@@ -200,6 +200,8 @@ fun PrerollGate(
             }
             // Fanart is fetched alongside the pack, so by the time the trailers end both are ready.
             val artworkDeferred = async {
+                // Only the trivia cards use it.
+                if (!DiscoverAiSettingsRepository.snapshot().triviaEnabled) return@async TriviaArtwork()
                 withTimeoutOrNull(TRIVIA_ARTWORK_FETCH_MS) { TriviaArtworkRepository.forTitle(metaType, metaId) }
                     ?: TriviaArtwork()
             }
@@ -354,7 +356,13 @@ fun PrerollGate(
                     else -> if (slot in clipSlots) playClipSlot(slot)
                 }
             }
+            // coroutineScope waits for its children, so anything still fetching (a trivia pack that missed
+            // its slot, the Wikipedia fallback, artwork, the BBFC advisory) would hold the film back.
             themeDeferred.cancel()
+            packDeferred.cancel()
+            wikiDeferred.cancel()
+            artworkDeferred.cancel()
+            advisoryDeferred.cancel()
         }
         } finally {
             if (keepAudioAlive) PreshowAudioKeepAlive.stopAfter(KEEP_AUDIO_ALIVE_TAIL_MS)
