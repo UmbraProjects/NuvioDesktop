@@ -29,6 +29,16 @@ private suspend fun fetch(url: String, headers: Map<String, String> = emptyMap()
     }
 
 /**
+ * The MusicBrainz search query for an artist called [name]: the name as a phrase, in the artist's own name or in any
+ * of its aliases. The `artist:` field alone does not look at aliases, so a band that changed its name is not found
+ * by its new one. Not URL-encoded.
+ */
+internal fun mbArtistSearchQuery(name: String): String {
+    val phrase = "\"" + name.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    return "artist:$phrase OR alias:$phrase"
+}
+
+/**
  * https://musicbrainz.org: free, no key. The rules ask for one request a second and an identifying
  * User-Agent; [paced] keeps every call at least 1.1 s from the one before it, and lets background work (ladders built
  * before anyone asked, see [BackgroundWork]) wait behind searches and Library refreshes.
@@ -41,6 +51,9 @@ internal object MusicBrainzClient {
     private const val MAX_PAGES = 6
     private const val TAG_SEARCH_LIMIT = 100
     private const val ARTIST_SEARCH_LIMIT = 5
+
+    /** More room than [ARTIST_SEARCH_LIMIT]: searching aliases too brings in artists that only list the name as one. */
+    private const val ARTIST_NAME_SEARCH_LIMIT = 10
     private val pacer = BackgroundAwarePacer(GAP_MS)
 
     /**
@@ -100,10 +113,11 @@ internal object MusicBrainzClient {
             }
         }
 
+    /** Finds [name] by its own name or by an alias, so a renamed band or a romanised name is still found. See [mbArtistSearchQuery]. */
     suspend fun searchArtist(name: String): List<MbArtistHit> {
         offline { it.searchArtist(name, limit = 6) }?.let { return parseMbArtistSearch(it) }
-        val query = "artist:\"${name.replace("\"", "\\\"")}\"".encodeURLParameter()
-        return paced("$BASE/artist?query=$query&limit=6&fmt=json")?.let(::parseMbArtistSearch).orEmpty()
+        val query = mbArtistSearchQuery(name).encodeURLParameter()
+        return paced("$BASE/artist?query=$query&limit=$ARTIST_NAME_SEARCH_LIMIT&fmt=json")?.let(::parseMbArtistSearch).orEmpty()
     }
 
     /**

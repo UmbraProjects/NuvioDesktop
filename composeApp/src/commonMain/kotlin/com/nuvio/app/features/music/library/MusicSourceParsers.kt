@@ -43,6 +43,8 @@ internal data class MbArtistHit(
     val type: String?,
     val country: String?,
     val disambiguation: String?,
+    /** Other names MusicBrainz files the artist under (a former name, a romanisation); the search returns them with each hit. */
+    val aliases: List<String> = emptyList(),
 )
 
 internal data class MbArtist(
@@ -83,6 +85,7 @@ internal fun parseMbArtistSearch(body: String): List<MbArtistHit> =
             type = a.text("type"),
             country = a.text("country"),
             disambiguation = a.text("disambiguation"),
+            aliases = a.objects("aliases").mapNotNull { it.text("name") }.distinct(),
         )
     }
 
