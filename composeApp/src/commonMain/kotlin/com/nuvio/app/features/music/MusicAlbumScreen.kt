@@ -30,6 +30,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import com.nuvio.app.features.music.library.LibraryRelease
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Shuffle
@@ -65,7 +70,7 @@ import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.rememberLibraryAlbumInfo
 
 /**
- * An album: cover, a Play/Shuffle pair, the Audio/Video choice, and the track list.
+ * An album: cover, a Play/Shuffle pair, the Audio/Video choice, the track list, and more from the artist.
  *
  * This is where playback starts. Play and Shuffle hand the album to [player]; a tap on a track
  * jumps inside the queue when this album is already loaded, and starts the album at that track
@@ -162,7 +167,7 @@ private fun AlbumContent(
             reducedMotion = reducedMotion,
             caseSize = caseSize,
             onFlip = { flipped = !flipped },
-            onDisc = { discChoice = !discOut },
+            onDisc = { out -> discChoice = out },
         )
     }
     val facts: @Composable () -> Unit = {
@@ -196,8 +201,8 @@ private fun AlbumContent(
                         state.playWhenReady -> "Pause"
                         else -> "Resume"
                     },
-                    modifier = Modifier.width(140.dp),
-                    height = 44.dp,
+                    modifier = Modifier.width(ALBUM_BUTTON_WIDTH),
+                    height = ALBUM_BUTTON_HEIGHT,
                     enabled = view.tracks.any { it.isAvailable },
                     onClick = {
                         if (!startsFresh) player.togglePlayback()
@@ -219,6 +224,7 @@ private fun AlbumContent(
                         chosenMode = picked
                         if (loaded) player.switchMode(picked)
                     },
+                    height = ALBUM_BUTTON_HEIGHT,
                 )
             }
             nebula?.let { NebulaSourceRow(it, onRetry = { nebulaRetry++ }) } // fork:nebula
@@ -262,39 +268,14 @@ private fun AlbumContent(
                 },
             )
         }
-        val more = info?.more.orEmpty()
-        if (more.isNotEmpty()) {
-            item(key = "more") {
-                Column(Modifier.padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "More from ${info?.artist?.name ?: "this artist"}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.textPrimary,
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        items(more, key = { it.key }) { release ->
-                            Column(
-                                Modifier.width(124.dp).clip(RoundedCornerShape(10.dp)).clickable { release.ytBrowseId?.let(onAlbumClick) },
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                MusicCover(release.art.cover, release.title, size = 124.dp)
-                                Text(release.title, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    listOfNotNull(release.year, release.kind.label.takeIf { it != "Album" }).joinToString(" · "),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.textSecondary,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
+    val more = info?.more.orEmpty()
+    val moreTitle = "More from ${info?.artist?.name ?: "this artist"}"
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Wide enough for three columns: the object, the record and its songs, then More from down the right in two
+        // columns, always in the same place however long the track list is. Narrower, More from goes under the songs.
+        val moreAside = more.isNotEmpty() && maxWidth >= 1200.dp
         if (maxWidth >= 840.dp) {
             Row(Modifier.fillMaxSize()) {
                 Column(
@@ -304,13 +285,15 @@ private fun AlbumContent(
                 ) { objectPanel(340.dp) }
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    contentPadding = PaddingValues(start = 12.dp, end = 32.dp, top = 16.dp, bottom = 40.dp),
+                    contentPadding = PaddingValues(start = 12.dp, end = if (moreAside) 24.dp else 32.dp, top = 16.dp, bottom = 40.dp),
                 ) {
                     item(key = "facts") {
                         Column(Modifier.padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { facts() }
                     }
                     pane()
+                    if (!moreAside && more.isNotEmpty()) item(key = "more") { MoreFromRow(moreTitle, more, onAlbumClick) }
                 }
+                if (moreAside) MoreFromColumn(moreTitle, more, onAlbumClick)
             }
         } else {
             LazyColumn(
@@ -324,12 +307,66 @@ private fun AlbumContent(
                     Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { facts() }
                 }
                 pane()
+                if (more.isNotEmpty()) item(key = "more") { MoreFromRow(moreTitle, more, onAlbumClick) }
             }
         }
     }
 }
 
-/** The object itself and its two toggles, with a line saying where the art comes from. */
+private val ALBUM_BUTTON_WIDTH = 128.dp
+private val ALBUM_BUTTON_HEIGHT = 44.dp
+private val MORE_TILE = 150.dp
+private val MORE_GAP = 16.dp
+
+/** More from the artist down the right of a wide window: two columns of covers, scrolling on their own. */
+@Composable
+private fun MoreFromColumn(title: String, more: List<LibraryRelease>, onAlbumClick: (String) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier.width(MORE_TILE * 2 + MORE_GAP + 56.dp).fillMaxHeight(),
+        contentPadding = PaddingValues(start = 24.dp, end = 32.dp, top = 24.dp, bottom = 40.dp),
+        horizontalArrangement = Arrangement.spacedBy(MORE_GAP),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        item(key = "title", span = { GridItemSpan(maxLineSpan) }) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+        }
+        gridItems(more, key = { it.key }) { release -> MoreFromTile(release, MORE_TILE, onAlbumClick) }
+    }
+}
+
+/** More from the artist under the songs, on a narrower window: one sideways row. */
+@Composable
+private fun MoreFromRow(title: String, more: List<LibraryRelease>, onAlbumClick: (String) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    Column(Modifier.padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            items(more, key = { it.key }) { release -> MoreFromTile(release, 124.dp, onAlbumClick) }
+        }
+    }
+}
+
+@Composable
+private fun MoreFromTile(release: LibraryRelease, size: Dp, onAlbumClick: (String) -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    Column(
+        Modifier.width(size).clip(RoundedCornerShape(10.dp)).clickable { release.ytBrowseId?.let(onAlbumClick) },
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        MusicCover(release.art.cover, release.title, size = size)
+        Text(release.title, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+            listOfNotNull(release.year, release.kind.label.takeIf { it != "Album" }).joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textSecondary,
+            maxLines = 1,
+        )
+    }
+}
+
+/** The object itself (click to flip, drag to slide the disc), with a hint and a line saying where the art comes from. */
 @Composable
 private fun AlbumObjectPanel(
     album: MusicAlbum,
@@ -340,11 +377,12 @@ private fun AlbumObjectPanel(
     reducedMotion: Boolean,
     caseSize: Dp,
     onFlip: () -> Unit,
-    onDisc: () -> Unit,
+    onDisc: (out: Boolean) -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // The case turns to its back cover and the disc slides out of it; both snap under reduced motion.
+        // The case turns to its back cover (a click) and the disc slides out of it (a sideways drag); both snap
+        // under reduced motion.
         AlbumObject(
             album = album,
             release = info?.release,
@@ -354,13 +392,12 @@ private fun AlbumObjectPanel(
             reducedMotion = reducedMotion,
             size = caseSize,
             peek = 0.3f,
+            onFlip = onFlip,
+            onDisc = onDisc,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AlbumObjectButton(if (flipped) "Show front" else "Flip to back", onFlip, selected = flipped)
-            AlbumObjectButton(if (discOut) "Slide disc in" else "Slide disc out", onDisc, selected = discOut)
-        }
         Text(
-            "Cover, back and disc come from TheAudioDB and Fanart.tv. Missing art falls back to a drawn back and disc.",
+            "Click the cover to turn it over, drag sideways to slide the disc out or in. " +
+                "Cover, back and disc come from TheAudioDB and Fanart.tv. Missing art falls back to a drawn back and disc.",
             style = MaterialTheme.typography.bodySmall,
             color = colors.textMuted,
         )
@@ -426,13 +463,13 @@ private fun ShuffleButton(on: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(22.dp)
     Row(
         modifier = Modifier
-            .height(44.dp)
+            .width(ALBUM_BUTTON_WIDTH)
+            .height(ALBUM_BUTTON_HEIGHT)
             .clip(shape)
             .border(1.dp, if (on) colors.accent else colors.borderDefault, shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 18.dp),
+            .clickable(enabled = enabled, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
         val tint = if (!enabled) colors.textDisabled else if (on) colors.accent else colors.textPrimary
         Icon(Icons.Rounded.Shuffle, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
@@ -454,7 +491,7 @@ private fun TrackRow(
     val credit = trackArtists.takeIf { it.isNotEmpty() && it != albumArtists }?.joinToString(", ")
     Row(
         modifier = Modifier
-            .widthIn(max = 720.dp)
+            .widthIn(max = 720.dp) // the length stays near the title however wide the column gets
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(if (current) colors.accent.copy(alpha = 0.12f) else Color.Transparent)

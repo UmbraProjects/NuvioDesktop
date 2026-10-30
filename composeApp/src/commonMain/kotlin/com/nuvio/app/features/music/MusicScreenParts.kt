@@ -34,6 +34,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.nuvio
@@ -92,23 +94,27 @@ internal fun <T> MusicSegmented(
     selected: T,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
+    /** A fixed height (to sit level with buttons beside it); unset, the pills are as tall as their text. */
+    height: Dp = Dp.Unspecified,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val pill = RoundedCornerShape(20.dp)
-    Row(modifier = modifier.musicGlass(pill)) {
+    val pill = RoundedCornerShape(percent = 50)
+    val sized = height != Dp.Unspecified
+    Row(modifier = modifier.then(if (sized) Modifier.height(height) else Modifier).musicGlass(pill)) {
         options.forEach { (value, label) ->
             val on = value == selected
             Box(
                 modifier = Modifier
+                    .then(if (sized) Modifier.fillMaxHeight() else Modifier)
                     .clip(pill)
                     .background(if (on) colors.accent else Color.Transparent)
                     .clickable { onSelect(value) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = if (sized) 20.dp else 16.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = if (sized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
                     color = if (on) colors.onAccent else colors.textSecondary,
                 )
             }

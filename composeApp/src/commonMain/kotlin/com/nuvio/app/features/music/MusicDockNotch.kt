@@ -70,6 +70,9 @@ private const val FOLD_DELAY_MS = 350L
 
 private const val UP_NEXT_COUNT = 4
 
+/** Left / Right on the dock's seek bar move this far. */
+private const val DOCK_NUDGE_MS = 5_000L
+
 @Composable
 internal fun MusicDockNotch(
     state: MusicPlayerState,
@@ -132,7 +135,8 @@ private fun Notch(state: MusicPlayerState, onRestore: () -> Unit) {
             color = colors.textPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
+            // Fills the pill, so the arrow always sits at its right end whatever the title's length.
+            modifier = Modifier.weight(1f),
         )
         Icon(
             Icons.Rounded.KeyboardArrowUp,
@@ -213,11 +217,14 @@ private fun DockPanel(state: MusicPlayerState, player: MusicPlayer, onRestore: (
             DockButton(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
             DockButton(Icons.Rounded.KeyboardArrowUp, "Show the player") { onRestore() }
         }
-        // The progress as a thin line under the header.
-        val fraction = if (state.durationMs > 0L) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
-        Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.14f))) {
-            Box(Modifier.fillMaxWidth(fraction).height(3.dp).background(colors.accent))
-        }
+        // The progress under the header: the bar's own seek bar, so a click, drag or Left/Right moves the song.
+        SeekBar(
+            fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
+            onSeek = { fraction -> player.seekTo((fraction * state.durationMs).toLong()) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.durationMs > 0L,
+            onNudge = { direction -> player.seekTo((state.positionMs + direction * DOCK_NUDGE_MS).coerceIn(0L, state.durationMs)) },
+        )
     }
 }
 

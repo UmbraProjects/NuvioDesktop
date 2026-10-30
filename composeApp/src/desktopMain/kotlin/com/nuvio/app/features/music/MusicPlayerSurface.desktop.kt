@@ -197,6 +197,10 @@ actual fun MusicPlayerSurface(
     LaunchedEffect(controller, loadId, forbiddenRetries) {
         var endedReported = false
         var readyReported = false
+        // mpv's end-of-file flag outlives the file: the first polls of a new load can still read the previous
+        // track's "ended", which advanced the queue a second time and skipped every other track. A load only
+        // counts as ended once it has been seen not ended (a load stuck on that flag is the watchdog's to catch).
+        var seenUnended = false
         // A googlevideo stream can hang "reconnecting" with no error and no end of file, which held
         // the player on a frozen frame (or a spinner) for good. No progress for a while is treated as
         // a failed open, so the player tries the stream's fallback or moves on to the next track.
@@ -212,7 +216,8 @@ actual fun MusicPlayerSurface(
                 latestOnError.value(loadId)
             }
             latestOnSnapshot.value(loadId, snapshot)
-            if (snapshot.isEnded && !endedReported) {
+            if (!snapshot.isEnded) seenUnended = true
+            if (snapshot.isEnded && seenUnended && !endedReported) {
                 endedReported = true
                 latestOnEnded.value(loadId)
             }

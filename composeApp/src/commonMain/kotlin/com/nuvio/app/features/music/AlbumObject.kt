@@ -1,5 +1,10 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -62,7 +67,8 @@ import com.nuvio.app.features.music.library.LibraryRelease
  * means the drawn back, no CD art means the drawn disc (MusicCdSpinner). Reduced motion snaps the
  * flip and the slide and leaves the disc still.
  *
- * The composable is `size` high and `size * (1 + peek)` wide.
+ * The composable is `size` high and `size * (1 + peek)` wide. With [onFlip] a click on the case turns it; with
+ * [onDisc] a sideways drag across the object slides the disc out (to the right) or back in (to the left).
  */
 @Composable
 internal fun AlbumObject(
@@ -75,6 +81,8 @@ internal fun AlbumObject(
     modifier: Modifier = Modifier,
     size: Dp = 300.dp,
     peek: Float = 0.34f,
+    onFlip: (() -> Unit)? = null,
+    onDisc: ((out: Boolean) -> Unit)? = null,
 ) {
     val art = release?.art
     val cover = album.thumbnailUrl ?: art?.cover
@@ -105,7 +113,18 @@ internal fun AlbumObject(
         label = "albumDiscSlide",
     )
 
-    Box(modifier.width(size * (1f + peek)).height(size), contentAlignment = Alignment.CenterStart) {
+    val swipe = if (onDisc == null) Modifier else Modifier.pointerInput(onDisc) {
+        val threshold = SWIPE_THRESHOLD.toPx()
+        var travelled = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { travelled = 0f },
+            onDragEnd = { if (travelled > threshold) onDisc(true) else if (travelled < -threshold) onDisc(false) },
+        ) { change, amount ->
+            change.consume()
+            travelled += amount
+        }
+    }
+    Box(modifier.width(size * (1f + peek)).height(size).then(swipe), contentAlignment = Alignment.CenterStart) {
         MusicCdSpinner(
             coverUrl = cover,
             cdArtUrl = art?.cdArt,
@@ -119,7 +138,16 @@ internal fun AlbumObject(
                 .graphicsLayer {
                     rotationY = flip - restingTilt * (1f - flip / 180f)
                     cameraDistance = 18f * density
-                },
+                }
+                .then(
+                    if (onFlip == null) Modifier
+                    else Modifier.pointerHoverIcon(PointerIcon.Hand).clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClickLabel = if (flipped) "Show the front" else "Flip to the back",
+                        onClick = onFlip,
+                    ),
+                ),
         ) {
             if (!showBack) {
                 if (use3d) {
@@ -230,26 +258,6 @@ private fun Barcode(bars: List<Int>, color: Color, modifier: Modifier = Modifier
     }
 }
 
-/** A pill for the album object's two toggles ("Flip to back", "Slide disc out"); filled while [selected]. */
-@Composable
-internal fun AlbumObjectButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false) {
-    val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(22.dp)
-    Text(
-        text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = if (selected) colors.background else colors.textPrimary,
-        modifier = modifier
-            .height(44.dp)
-            .clip(shape)
-            .background(if (selected) colors.textPrimary else Color.Black.copy(alpha = 0.35f))
-            .border(1.dp, colors.borderDefault, shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 11.dp),
-    )
-}
-
 /** Three small bars for the track that is playing. Still, so it needs no reduced-motion rule. */
 @Composable
 internal fun MusicEqualiser(color: Color, modifier: Modifier = Modifier) {
@@ -339,3 +347,6 @@ internal fun AlbumLinerNotes(
         }
     }
 }
+
+/** How far a drag across the album must travel before the disc slides. */
+private val SWIPE_THRESHOLD = 48.dp

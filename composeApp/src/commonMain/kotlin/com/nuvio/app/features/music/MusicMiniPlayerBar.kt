@@ -685,7 +685,7 @@ internal fun MusicTextChip(text: String, onClick: () -> Unit) {
  * 0..1; [onNudge] gets -1 or +1 for Left and Right. Focused or dragged, the track grows and a handle appears.
  */
 @Composable
-private fun SeekBar(
+internal fun SeekBar(
     fraction: Float,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
