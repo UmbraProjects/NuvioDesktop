@@ -36,8 +36,19 @@ internal expect object PreshowSettingsStorage {
 
 const val AVID_BBFC_PAGE = "https://avid.wiki/BBFC"
 
-/** The bumper slot is a cinema sound-format trailer; THX's Deep Note is the default until another is set. */
-const val AVID_BUMPER_PAGE = "https://avid.wiki/THX"
+/**
+ * The bumper slot is a cinema sound-format trailer. Until another source is set it draws from six: three THX
+ * Deep Note trailers and three Dolby Atmos ones, all bare YouTube links so no page has to be fetched first.
+ */
+val AVID_BUMPER_LINKS = listOf(
+    "https://youtu.be/c4-VLk03lQk", // THX
+    "https://youtu.be/QYU8zydUqD8", // THX
+    "https://youtu.be/sPY3Y2qhyXk", // THX
+    "https://youtu.be/iTHtXgnhqfM", // Dolby Atmos
+    "https://youtu.be/pd_6WN9GVtQ", // Dolby Atmos
+    "https://youtu.be/HZS5a3cm7zU", // Dolby Atmos
+)
+private val AVID_BUMPER_DEFAULT = AVID_BUMPER_LINKS.joinToString(" ")
 
 // Declared before the object so its initialisers can read it.
 private val AVID_KEYS = listOf("cinema_intro", "bumper", "feature_presentation", "rating_bbfc", "rating_mpaa")
@@ -85,7 +96,7 @@ object PreshowSettings {
     private val _avidUrls = MutableStateFlow(
         AVID_KEYS.associateWith { storage.load("avid_$it").orEmpty() }
             .let { saved -> if (saved["rating_bbfc"].isNullOrBlank()) saved + ("rating_bbfc" to AVID_BBFC_PAGE) else saved }
-            .let { saved -> if (saved["bumper"].isNullOrBlank()) saved + ("bumper" to AVID_BUMPER_PAGE) else saved },
+            .let { saved -> if (saved["bumper"].isNullOrBlank()) saved + ("bumper" to AVID_BUMPER_DEFAULT) else saved },
     )
     val avidUrls: StateFlow<Map<String, String>> = _avidUrls.asStateFlow()
 

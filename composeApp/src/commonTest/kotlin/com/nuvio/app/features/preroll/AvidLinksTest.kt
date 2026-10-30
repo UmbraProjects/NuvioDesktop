@@ -31,7 +31,12 @@ class AvidLinksTest {
     }
 
     @Test
-    fun theBumperDefaultIsTheThxPage() {
-        assertEquals("https://avid.wiki/THX", AVID_BUMPER_PAGE)
+    fun theBumperDefaultIsSixDistinctYoutubeLinks() {
+        assertEquals(6, AVID_BUMPER_LINKS.size)
+        assertEquals(6, AVID_BUMPER_LINKS.distinct().size)
+        assertEquals(AVID_BUMPER_LINKS, splitAvidLinks(AVID_BUMPER_LINKS.joinToString(" ")))
+        AVID_BUMPER_LINKS.forEach { link ->
+            assertEquals(1, parseAvidClips(link).size, link)
+        }
     }
 }
