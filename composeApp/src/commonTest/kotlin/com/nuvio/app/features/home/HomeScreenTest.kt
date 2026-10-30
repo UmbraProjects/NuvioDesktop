@@ -11,6 +11,7 @@ import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingSortMode
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watched.WatchedItem
+import com.nuvio.app.features.watching.domain.WatchingCompletedEpisode
 import com.nuvio.app.features.tracking.ContinueWatchingSource
 import com.nuvio.app.features.tracking.TrackingProviderId
 import com.nuvio.app.features.trakt.TRAKT_CONTINUE_WATCHING_DAYS_CAP_ALL
@@ -379,6 +380,36 @@ class HomeScreenTest {
         assertEquals("show", result.single().content.id)
         assertEquals(4, result.single().seasonNumber)
         assertEquals(14, result.single().episodeNumber)
+    }
+
+    @Test
+    fun `home next up seed follows an active rewatch instead of the watched finale`() {
+        val finale = watchedItem(id = "show", season = 4, episode = 14, markedAtEpochMs = 1_000L)
+        val otherShow = watchedItem(id = "other", season = 1, episode = 3, markedAtEpochMs = 1_500L)
+        val rewatch = WatchingCompletedEpisode(seasonNumber = 1, episodeNumber = 2, markedAtEpochMs = 2_000L)
+
+        val duringRewatch = buildHomeNextUpSeedCandidates(
+            progressEntries = emptyList(),
+            watchedItems = listOf(finale, otherShow),
+            isTraktProgressActive = false,
+            preferFurthestEpisode = true,
+            nowEpochMs = 3_000L,
+            rewatchSeedFor = { contentId -> rewatch.takeIf { contentId == "show" } },
+        )
+        // Session completed or deleted: the lookup answers nothing and the history seeds again.
+        val afterRewatch = buildHomeNextUpSeedCandidates(
+            progressEntries = emptyList(),
+            watchedItems = listOf(finale, otherShow),
+            isTraktProgressActive = false,
+            preferFurthestEpisode = true,
+            nowEpochMs = 3_000L,
+        )
+
+        val show = duringRewatch.single { it.content.id == "show" }
+        assertEquals(1 to 2, show.seasonNumber to show.episodeNumber)
+        assertEquals(2_000L, show.markedAtEpochMs)
+        assertEquals(1 to 3, duringRewatch.single { it.content.id == "other" }.let { it.seasonNumber to it.episodeNumber })
+        assertEquals(4 to 14, afterRewatch.single { it.content.id == "show" }.let { it.seasonNumber to it.episodeNumber })
     }
 
     @Test

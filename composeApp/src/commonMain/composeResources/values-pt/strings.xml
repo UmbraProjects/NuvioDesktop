@@ -1251,7 +1251,7 @@
   <string name="settings_continue_watching_style_poster_description">Cartão de póster focado na imagem</string>
   <string name="settings_continue_watching_style_wide">Panorâmico</string>
   <string name="settings_continue_watching_style_wide_description">Cartão horizontal com mais informação</string>
-  <string name="settings_continue_watching_up_next_description">Ativa para voltar a ver.</string>
+  <string name="settings_continue_watching_up_next_description">Ativa para voltar a ver. Ao voltar a ver com o SIMKL, continua sempre a partir do último episódio dessa sessão.</string>
   <string name="settings_continue_watching_up_next_title">Seguinte a partir do mais avançado</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Preferir miniaturas dos episódios quando disponíveis.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">Preferir miniaturas de episódios no Continuar a Ver</string>

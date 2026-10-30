@@ -1251,7 +1251,7 @@
   <string name="settings_continue_watching_style_poster_description">Scheda focalizzata sulla locandina</string>
   <string name="settings_continue_watching_style_wide">Orizzontale</string>
   <string name="settings_continue_watching_style_wide_description">Scheda orizzontale ricca di informazioni</string>
-  <string name="settings_continue_watching_up_next_description">Abilita per le rivisioni.</string>
+  <string name="settings_continue_watching_up_next_description">Abilita per le rivisioni. Le rivisioni con SIMKL riprendono sempre dal loro ultimo episodio.</string>
   <string name="settings_continue_watching_up_next_title">Prossimo episodio dall'ultimo visto</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Prediligi le miniature dell'episodio quando disponibili.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">Prediligi miniature episodio in Continua a guardare</string>

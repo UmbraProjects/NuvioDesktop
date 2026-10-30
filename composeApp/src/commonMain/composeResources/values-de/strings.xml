@@ -514,7 +514,7 @@
     <string name="settings_continue_watching_style_poster_description">Posterkarte mit Artwork zuerst</string>
     <string name="settings_continue_watching_style_wide">Breit</string>
     <string name="settings_continue_watching_style_wide_description">Informationsdichte horizontale Karte</string>
-    <string name="settings_continue_watching_up_next_description">Für erneutes Ansehen aktivieren.</string>
+    <string name="settings_continue_watching_up_next_description">Für erneutes Ansehen aktivieren. Erneutes Ansehen mit SIMKL macht immer bei der zuletzt erreichten Folge weiter.</string>
     <string name="settings_continue_watching_up_next_title">„Als Nächstes“ ab letzter Episode</string>
     <string name="settings_content_discovery_section_home">START</string>
     <string name="settings_content_discovery_section_sources">QUELLEN</string>

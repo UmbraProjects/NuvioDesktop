@@ -1251,7 +1251,7 @@
   <string name="settings_continue_watching_style_poster_description">Kunst-først plakatkort</string>
   <string name="settings_continue_watching_style_wide">Bred</string>
   <string name="settings_continue_watching_style_wide_description">Info-tett horisontalt kort</string>
-  <string name="settings_continue_watching_up_next_description">Slå på for å se på nytt.</string>
+  <string name="settings_continue_watching_up_next_description">Slå på for å se på nytt. Når du ser på nytt med SIMKL, fortsetter det alltid fra siste episode i økten.</string>
   <string name="settings_continue_watching_up_next_title">Neste fra lengst sett episode</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Foretrekk episode-miniatyrer når tilgjengelig.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">Foretrekk episode-miniatyrer i Fortsett å se</string>

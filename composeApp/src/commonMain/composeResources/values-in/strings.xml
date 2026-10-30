@@ -1251,7 +1251,7 @@
   <string name="settings_continue_watching_style_poster_description">Kartu poster yang mengutamakan karya seni</string>
   <string name="settings_continue_watching_style_wide">Lebar</string>
   <string name="settings_continue_watching_style_wide_description">Kartu horizontal padat informasi</string>
-  <string name="settings_continue_watching_up_next_description">Tampilkan episode berikutnya berdasarkan episode yang paling jauh ditonton. Nonaktifkan untuk menonton ulang agar menggunakan episode yang paling baru ditonton.</string>
+  <string name="settings_continue_watching_up_next_description">Tampilkan episode berikutnya berdasarkan episode yang paling jauh ditonton. Nonaktifkan untuk menonton ulang agar menggunakan episode yang paling baru ditonton. Sesi tonton ulang SIMKL selalu dilanjutkan dari episode terakhirnya.</string>
   <string name="settings_continue_watching_up_next_title">Berikutnya dari Episode Terjauh</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Utamakan thumbnail episode jika tersedia.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">Utamakan Thumbnail Episode di Lanjutkan Menonton</string>

@@ -1251,7 +1251,7 @@
   <string name="settings_continue_watching_style_poster_description">Karta z grafiką na pierwszym planie</string>
   <string name="settings_continue_watching_style_wide">Szeroki</string>
   <string name="settings_continue_watching_style_wide_description">Pozioma karta z informacjami</string>
-  <string name="settings_continue_watching_up_next_description">Gdy włączone, Następny zawsze kontynuuje od najdalej obejrzanego odcinka. Gdy wyłączone, kontynuuje od ostatnio obejrzanego. Przydatne przy ponownym oglądaniu wcześniejszych odcinków.</string>
+  <string name="settings_continue_watching_up_next_description">Gdy włączone, Następny zawsze kontynuuje od najdalej obejrzanego odcinka. Gdy wyłączone, kontynuuje od ostatnio obejrzanego. Przydatne przy ponownym oglądaniu wcześniejszych odcinków. Ponowne oglądanie w SIMKL zawsze kontynuuje od swojego ostatniego odcinka.</string>
   <string name="settings_continue_watching_up_next_title">Następny od najdalszego odcinka</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Preferuj miniatury odcinków, gdy są dostępne.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">Preferuj miniatury odcinków w Kontynuuj oglądanie</string>

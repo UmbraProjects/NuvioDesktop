@@ -1251,7 +1251,7 @@
     <string name="settings_continue_watching_style_poster_description">Artwork-first poster card</string>
     <string name="settings_continue_watching_style_wide">Wide</string>
     <string name="settings_continue_watching_style_wide_description">Info-dense horizontal card</string>
-    <string name="settings_continue_watching_up_next_description">Enable for rewatches.</string>
+    <string name="settings_continue_watching_up_next_description">Enable for rewatches. A SIMKL rewatch always continues from its own latest episode.</string>
     <string name="settings_continue_watching_up_next_title">Up Next From Furthest Episode</string>
     <string name="settings_continue_watching_use_episode_thumbnails_description">Prefer episode thumbnails when available.</string>
     <string name="settings_continue_watching_use_episode_thumbnails_title">Prefer Episode Thumbnails in Continue Watching</string>

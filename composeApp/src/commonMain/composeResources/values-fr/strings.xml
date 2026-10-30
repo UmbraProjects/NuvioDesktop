@@ -591,7 +591,7 @@
     <string name="settings_continue_watching_style_poster_description">Carte d’affiche centrée sur la couverture</string>
     <string name="settings_continue_watching_style_wide">Large</string>
     <string name="settings_continue_watching_style_wide_description">Carte horizontale riche en informations</string>
-    <string name="settings_continue_watching_up_next_description">Quand activé, La suite reprend toujours depuis l’épisode le plus avancé vu. Quand désactivé, suit l’épisode le plus récemment visionné. Utile si tu revois des épisodes précédents.</string>
+    <string name="settings_continue_watching_up_next_description">Quand activé, La suite reprend toujours depuis l’épisode le plus avancé vu. Quand désactivé, suit l’épisode le plus récemment visionné. Utile si tu revois des épisodes précédents. Une session de revisionnage SIMKL reprend toujours depuis son dernier épisode.</string>
     <string name="settings_continue_watching_up_next_title">La suite depuis l’épisode le plus avancé</string>
     <string name="settings_continue_watching_use_episode_thumbnails_description">Préfère les vignettes d’épisode quand elles sont disponibles.</string>
     <string name="settings_continue_watching_use_episode_thumbnails_title">Préférer les vignettes d’épisode dans Continuer à regarder</string>

@@ -481,7 +481,7 @@
     <string name="settings_continue_watching_style_poster_description">Tarjeta de póster centrada en la portada</string>
     <string name="settings_continue_watching_style_wide">Panorámica</string>
     <string name="settings_continue_watching_style_wide_description">Tarjeta horizontal rica en información</string>
-    <string name="settings_continue_watching_up_next_description">Actívalo para volver a ver contenido.</string>
+    <string name="settings_continue_watching_up_next_description">Actívalo para volver a ver contenido. Al volver a ver con SIMKL, siempre se sigue desde el último episodio de esa sesión.</string>
     <string name="settings_continue_watching_up_next_title">Siguiente desde el episodio más avanzado</string>
     <string name="settings_content_discovery_section_home">INICIO</string>
     <string name="settings_content_discovery_section_sources">FUENTES</string>

@@ -32,6 +32,7 @@ import com.nuvio.app.features.tracking.resolveContinueWatchingSource
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.mdblist.WatchProgressSourceMdbList
 import com.nuvio.app.features.simkl.SimklProgressRepository
+import com.nuvio.app.features.simkl.SimklRewatchRepository
 import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.simkl.WatchProgressSourceSimkl
 import com.nuvio.app.features.trakt.TraktAuthRepository
@@ -1739,6 +1740,7 @@ object WatchProgressRepository {
                     )
                 }
                 return kept
+                    .withLocalRewatchProgress(cutoffMs, nowEpochMs)
                     .sortedByDescending { it.lastUpdatedEpochMs }
                     .withNuvioSyncEntries(cutoffMs, nowEpochMs)
             }
@@ -1776,6 +1778,30 @@ object WatchProgressRepository {
         }
 
         return entrySnapshot()
+    }
+
+    /**
+     * Adds this machine's partly watched episodes of titles in an active SIMKL rewatch.
+     *
+     * A rewatch sends SIMKL no playback session (see SimklScrobbleAdapter: a stray one matures into
+     * a watch on the original), so SIMKL never lists a half-watched rewatch episode and the card
+     * would otherwise exist only locally. Only progress made since the rewatch started; the
+     * original watch's leftovers stay out.
+     */
+    private fun List<WatchProgressEntry>.withLocalRewatchProgress(
+        cutoffMs: Long,
+        nowEpochMs: Long,
+    ): List<WatchProgressEntry> {
+        val remoteKeys = mapTo(mutableSetOf()) { it.videoId }
+        val extra = entrySnapshot().filter { entry ->
+            if (entry.videoId in remoteKeys) return@filter false
+            if (!entry.shouldTreatAsInProgressForContinueWatching()) return@filter false
+            val startedAtMs = SimklRewatchRepository.activeRewatchStartedAtFor(entry.parentMetaId)
+                ?: return@filter false
+            entry.lastUpdatedEpochMs >= startedAtMs &&
+                entry.isWithinContinueWatchingWindow(cutoffMs, nowEpochMs)
+        }
+        return if (extra.isEmpty()) this else this + extra
     }
 
     /**

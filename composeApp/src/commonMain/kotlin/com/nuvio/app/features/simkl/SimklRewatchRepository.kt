@@ -6,6 +6,7 @@ import com.nuvio.app.features.home.MetaPreview
 import com.nuvio.app.features.metadata.MediaIdResolver
 import com.nuvio.app.features.metadata.toSimklIds
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
+import com.nuvio.app.features.watching.domain.WatchingCompletedEpisode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -373,6 +374,14 @@ internal object SimklRewatchRepository {
                 "SIMKL rewatch #${session.rewatchId} (${session.title}): $episodeKey was not added (added=0); " +
                     "SIMKL ignores an episode already in the session or watched within the last 48h"
             }
+            // Still finished here, so the local session moves on: Up Next seeds from it, and a quick
+            // rewatch of something seen in the last 48 hours would otherwise never advance.
+            sessions[index] = session.copy(
+                lastWatchedAt = watchedAt,
+                watchedEpisodeKeys = session.watchedEpisodeKeys + episodeKey,
+            )
+            persist()
+            publish()
             return@withLock false
         }
         log.i {
@@ -381,6 +390,7 @@ internal object SimklRewatchRepository {
         }
         sessions[index] = session.copy(
             status = mutation?.rewatchStatus ?: session.status,
+            lastWatchedAt = watchedAt,
             watchedEpisodeKeys = session.watchedEpisodeKeys + episodeKey,
             watchedEpisodesCount = maxOf(session.watchedEpisodesCount + 1, response.added.episodes),
         )
@@ -388,6 +398,31 @@ internal object SimklRewatchRepository {
         publish()
         invalidateHistoryCaches()
         true
+    }
+
+    /**
+     * Where Up Next continues an active rewatch of [contentId]: the furthest episode the session
+     * holds. Null when no active session addresses the title, or it holds no episode yet — the user
+     * picks where a rewatch starts. Reads the cached sessions only; never asks SIMKL.
+     */
+    fun rewatchSeedFor(contentId: String): WatchingCompletedEpisode? {
+        ensureLoaded()
+        if (!rewatchRequestsAllowed()) return null
+        return _uiState.value.sessions
+            .firstOrNull { it.isActiveEpisodicRewatch() && it.mayAddress(contentId) }
+            ?.rewatchSeed()
+    }
+
+    /**
+     * When the active rewatch of [contentId] started (0 when SIMKL did not say), or null when there
+     * is none. Holds whether or not any episode is recorded in the session yet.
+     */
+    fun activeRewatchStartedAtFor(contentId: String): Long? {
+        ensureLoaded()
+        if (!rewatchRequestsAllowed()) return null
+        return _uiState.value.sessions
+            .firstOrNull { it.isActiveEpisodicRewatch() && it.mayAddress(contentId) }
+            ?.startedAtEpochMs
     }
 
     private fun List<SimklRewatchSession>.findActiveFor(item: SimklScrobbleItem.Episode): Int {
@@ -505,6 +540,38 @@ private fun SimklScrobbleRepository.SimklIds.matches(other: SimklScrobbleReposit
         (kitsu != null && kitsu == other.kitsu) ||
         (anilist != null && anilist == other.anilist) ||
         (anidb != null && anidb == other.anidb)
+
+private fun SimklRewatchSession.isActiveEpisodicRewatch(): Boolean =
+    kind != SimklRewatchKind.MOVIE && status.equals("active", ignoreCase = true)
+
+/**
+ * The furthest episode in this session, as the Up Next seed. A rewatch normally runs in order, so the
+ * furthest episode is the last one finished. Anime keys are absolute numbers and come back as season
+ * 1; Up Next already maps an absolute season-1 seed onto multi-season metadata.
+ */
+internal fun SimklRewatchSession.rewatchSeed(): WatchingCompletedEpisode? {
+    val furthest = watchedEpisodeKeys
+        .mapNotNull { key ->
+            val parts = key.split(':')
+            when (parts.size) {
+                1 -> parts[0].toIntOrNull()?.let { 1 to it }
+                2 -> {
+                    val season = parts[0].toIntOrNull()
+                    val episode = parts[1].toIntOrNull()
+                    if (season != null && episode != null) season to episode else null
+                }
+                else -> null
+            }
+        }
+        .filter { (season, _) -> season > 0 }
+        .maxWithOrNull(compareBy({ it.first }, { it.second }))
+        ?: return null
+    return WatchingCompletedEpisode(
+        seasonNumber = furthest.first,
+        episodeNumber = furthest.second,
+        markedAtEpochMs = lastWatchedAt?.let(::parseSimklTimestamp) ?: startedAtEpochMs,
+    )
+}
 
 private fun SimklRewatchSession.mayAddress(rawContentId: String): Boolean {
     if (contentId.equals(rawContentId, ignoreCase = true)) return true

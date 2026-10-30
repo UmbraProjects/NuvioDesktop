@@ -95,6 +95,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.nuvio.app.features.games.GameModeController
+import com.nuvio.app.features.simkl.SimklRewatchRepository
 import com.nuvio.app.features.streams.StreamPrefetchService
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.core.build.AppFeaturePolicy
@@ -753,12 +754,21 @@ fun MetaDetailsScreen(
                 val movieProgress = progressByVideoId[meta.id]
                     ?.takeUnless { it.isCompleted }
                 val cwPrefs by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
-                val seriesAction = remember(watchProgressUiState.entries, watchedUiState.items, meta, todayIsoDate, cwPrefs.upNextFromFurthestEpisode) {
+                val simklRewatchUiState by SimklRewatchRepository.uiState.collectAsStateWithLifecycle()
+                val seriesAction = remember(
+                    watchProgressUiState.entries,
+                    watchedUiState.items,
+                    meta,
+                    todayIsoDate,
+                    cwPrefs.upNextFromFurthestEpisode,
+                    simklRewatchUiState.sessions,
+                ) {
                     meta.seriesPrimaryAction(
                         entries = watchProgressUiState.entries,
                         watchedItems = watchedUiState.items,
                         todayIsoDate = todayIsoDate,
                         preferFurthestEpisode = cwPrefs.upNextFromFurthestEpisode,
+                        rewatchSeed = SimklRewatchRepository.rewatchSeedFor(meta.id),
                     ) ?: meta.seriesRestartAction(
                         entries = watchProgressUiState.entries,
                         watchedItems = watchedUiState.items,

@@ -184,6 +184,7 @@ internal fun MetaDetails.seriesPrimaryAction(
     todayIsoDate: String,
     preferFurthestEpisode: Boolean = true,
     showUnairedNextUp: Boolean = false,
+    rewatchSeed: WatchingCompletedEpisode? = null,
 ): SeriesPrimaryAction? =
     seriesPrimaryAction(
         content = WatchingContentRef(type = type, id = id),
@@ -192,6 +193,7 @@ internal fun MetaDetails.seriesPrimaryAction(
         todayIsoDate = todayIsoDate,
         preferFurthestEpisode = preferFurthestEpisode,
         showUnairedNextUp = showUnairedNextUp,
+        rewatchSeed = rewatchSeed,
     )
 
 internal fun MetaDetails.seriesPrimaryAction(
@@ -201,6 +203,7 @@ internal fun MetaDetails.seriesPrimaryAction(
     todayIsoDate: String,
     preferFurthestEpisode: Boolean = true,
     showUnairedNextUp: Boolean = false,
+    rewatchSeed: WatchingCompletedEpisode? = null,
 ): SeriesPrimaryAction? =
     decideSeriesPrimaryAction(
         content = content,
@@ -210,6 +213,7 @@ internal fun MetaDetails.seriesPrimaryAction(
         todayIsoDate = todayIsoDate,
         preferFurthestEpisode = preferFurthestEpisode,
         showUnairedNextUp = showUnairedNextUp,
+        rewatchSeed = rewatchSeed,
     )?.toLegacySeriesPrimaryAction()
 
 /**

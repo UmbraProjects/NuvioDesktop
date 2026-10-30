@@ -156,6 +156,35 @@ class SeriesContinuityTest {
     }
 
     @Test
+    fun decideSeriesPrimaryAction_continues_an_active_rewatch_after_a_watched_finale() {
+        // The original watch reached the finale; the rewatch has just finished S1E2.
+        val finaleWatched = listOf(
+            WatchingWatchedRecord(content = show, seasonNumber = 1, episodeNumber = 3, markedAtEpochMs = 100L),
+        )
+
+        val withoutRewatch = decideSeriesPrimaryAction(
+            content = show,
+            episodes = episodes,
+            progressRecords = emptyList(),
+            watchedRecords = finaleWatched,
+            todayIsoDate = "2026-03-30",
+        )
+        val duringRewatch = decideSeriesPrimaryAction(
+            content = show,
+            episodes = episodes,
+            progressRecords = emptyList(),
+            watchedRecords = finaleWatched,
+            todayIsoDate = "2026-03-30",
+            rewatchSeed = WatchingCompletedEpisode(seasonNumber = 1, episodeNumber = 2, markedAtEpochMs = 500L),
+        )
+
+        assertEquals(null, withoutRewatch)
+        assertNotNull(duringRewatch)
+        assertEquals("Up Next • S1E3", duringRewatch.label)
+        assertEquals("show:1:3", duringRewatch.videoId)
+    }
+
+    @Test
     fun decideSeriesPrimaryAction_skips_watched_episodes_after_rewatch() {
         val twoSeasons = listOf(
             WatchingReleasedEpisode(videoId = "ep1", seasonNumber = 1, episodeNumber = 1, title = "S1E1", releasedDate = "2026-01-01"),

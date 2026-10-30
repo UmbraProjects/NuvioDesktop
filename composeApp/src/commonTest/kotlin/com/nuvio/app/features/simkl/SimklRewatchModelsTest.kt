@@ -140,6 +140,25 @@ class SimklRewatchModelsTest {
         assertEquals(emptyList(), emptyList<SimklRewatchSession>().reconcileRewatchDeletions(noRewatchRows))
     }
 
+    @Test
+    fun `rewatch seed is the furthest episode in the session`() {
+        val show = session(rewatchId = 1, simkl = 1).copy(
+            watchedEpisodeKeys = setOf("1:2", "2:5", "1:9", "0:1"),
+            lastWatchedAt = "2026-10-28T12:00:00Z",
+        )
+        val anime = session(rewatchId = 2, simkl = 2).copy(
+            kind = SimklRewatchKind.ANIME,
+            watchedEpisodeKeys = setOf("3", "14", "7"),
+        )
+
+        val showSeed = show.rewatchSeed()
+        assertEquals(2 to 5, showSeed?.let { it.seasonNumber to it.episodeNumber })
+        assertEquals(parseSimklTimestamp("2026-10-28T12:00:00Z"), showSeed?.markedAtEpochMs)
+        assertEquals(1 to 14, anime.rewatchSeed()?.let { it.seasonNumber to it.episodeNumber })
+        // Nothing finished yet: no seed, so the user picks where the rewatch starts.
+        assertNull(session(rewatchId = 3, simkl = 3).rewatchSeed())
+    }
+
     private fun session(rewatchId: Int, simkl: Int) = SimklRewatchSession(
         rewatchId = rewatchId,
         kind = SimklRewatchKind.SHOW,

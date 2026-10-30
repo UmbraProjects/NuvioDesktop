@@ -1251,7 +1251,7 @@
   <string name="settings_continue_watching_style_poster_description">Κάρτα αφίσας με προτεραιότητα στο artwork</string>
   <string name="settings_continue_watching_style_wide">Πλατύ</string>
   <string name="settings_continue_watching_style_wide_description">Οριζόντια κάρτα με πλούσιες πληροφορίες</string>
-  <string name="settings_continue_watching_up_next_description">Ενεργοποιήστε το για επαναπαρακολουθήσεις.</string>
+  <string name="settings_continue_watching_up_next_description">Ενεργοποιήστε το για επαναπαρακολουθήσεις. Η επαναπαρακολούθηση μέσω SIMKL συνεχίζει πάντα από το πιο πρόσφατο επεισόδιό της.</string>
   <string name="settings_continue_watching_up_next_title">Up Next από το πιο απομακρυσμένο επεισόδιο</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Προτίμηση μικρογραφιών επεισοδίων όταν είναι διαθέσιμες.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">Προτίμηση μικρογραφιών επεισοδίων στη «Συνέχεια παρακολούθησης»</string>

@@ -97,12 +97,17 @@ fun decideSeriesPrimaryAction(
     todayIsoDate: String,
     preferFurthestEpisode: Boolean = true,
     showUnairedNextUp: Boolean = false,
+    /**
+     * The episode an active rewatch has reached. Replaces the history-derived seed, whose furthest
+     * episode is the original watch's finale and leaves a rewatched show with nothing after it.
+     */
+    rewatchSeed: WatchingCompletedEpisode? = null,
 ): WatchingSeriesPrimaryAction? {
     val resumeRecord = resumeProgressForSeries(
         content = content,
         progressRecords = progressRecords,
     )
-    val latestCompletedEpisode = latestCompletedSeriesEpisode(
+    val latestCompletedEpisode = rewatchSeed ?: latestCompletedSeriesEpisode(
         content = content,
         progressRecords = progressRecords,
         watchedRecords = watchedRecords,

@@ -1251,7 +1251,7 @@
   <string name="settings_continue_watching_style_poster_description">Karta plakátu zaměřená na grafiku</string>
   <string name="settings_continue_watching_style_wide">Široký</string>
   <string name="settings_continue_watching_style_wide_description">Horizontální karta s vysokou hustotou informací</string>
-  <string name="settings_continue_watching_up_next_description">Zapněte pro opakované sledování.</string>
+  <string name="settings_continue_watching_up_next_description">Zapněte pro opakované sledování. Opakované sledování přes SIMKL vždy pokračuje od svého posledního dílu.</string>
   <string name="settings_continue_watching_up_next_title">Další na řadě od nejdále zhlédnuté</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Upřednostňovat náhledy epizod, pokud jsou k dispozici.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">Upřednostňovat náhledy epizod v Pokračovat ve sledování</string>

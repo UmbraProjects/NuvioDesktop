@@ -1251,7 +1251,7 @@
   <string name="settings_continue_watching_style_poster_description">Görsel odaklı poster kartı</string>
   <string name="settings_continue_watching_style_wide">Geniş</string>
   <string name="settings_continue_watching_style_wide_description">Bilgi ağırlıklı yatay kart</string>
-  <string name="settings_continue_watching_up_next_description">Yeniden izlemeler için aç.</string>
+  <string name="settings_continue_watching_up_next_description">Yeniden izlemeler için aç. SIMKL ile yeniden izleme her zaman kendi son bölümünden devam eder.</string>
   <string name="settings_continue_watching_up_next_title">Sonraki en ileri bölümden başlasın</string>
   <string name="settings_continue_watching_use_episode_thumbnails_description">Varsa bölüm küçük resimlerini tercih et.</string>
   <string name="settings_continue_watching_use_episode_thumbnails_title">İzlemeye Devam Et Rafında Bölüm Küçük Resimlerini Tercih Et</string>

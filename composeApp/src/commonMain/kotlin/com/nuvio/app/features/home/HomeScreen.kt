@@ -178,6 +178,7 @@ import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.simkl.SimklAuthRepository
 import com.nuvio.app.features.simkl.simklContinueWatchingCutoffMs
 import com.nuvio.app.features.simkl.SimklLibraryRepository
+import com.nuvio.app.features.simkl.SimklRewatchRepository
 import com.nuvio.app.features.simkl.SimklSettingsRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktCalendarRepository
@@ -216,6 +217,7 @@ import com.nuvio.app.features.watchprogress.continueWatchingEntries
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watchprogress.toUpNextContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingState
+import com.nuvio.app.features.watching.domain.WatchingCompletedEpisode
 import com.nuvio.app.features.watching.domain.WatchingContentRef
 import com.nuvio.app.features.watching.domain.isReleasedBy
 import com.nuvio.app.features.collection.CollectionRepository
@@ -1350,6 +1352,7 @@ fun HomeScreen(
     // Read directly: the collected profile state is declared further down. Seeds from this profile's
     // last pass (see HomeContinueWatchingMemory), so a return from details starts where it left off.
     val seedMemoryProfileId = ProfileRepository.state.value.activeProfile?.profileIndex ?: 1
+    val simklRewatchUiState by SimklRewatchRepository.uiState.collectAsStateWithLifecycle()
     val nextUpSeedCandidatesOrNull by produceState<List<CompletedSeriesCandidate>?>(
         HomeContinueWatchingMemory.forProfile(seedMemoryProfileId).nextUpSeeds,
         watchProgressUiState.entries,
@@ -1360,6 +1363,7 @@ fun HomeScreen(
         continueWatchingPreferences.seedNextUpFromNuvioSync,
         continueWatchingRemoteSourceActive,
         continueWatchingSource,
+        simklRewatchUiState.sessions,
     ) {
         // Read on the UI thread, where the keys were, then handed to the background as plain values.
         val progressEntries = watchProgressUiState.entries
@@ -1408,6 +1412,7 @@ fun HomeScreen(
                 isTraktProgressActive = traktProgressActive,
                 preferFurthestEpisode = fromFurthestEpisode,
                 nowEpochMs = WatchProgressClock.nowEpochMs(),
+                rewatchSeedFor = SimklRewatchRepository::rewatchSeedFor,
             )
         }.also { seeds -> HomeContinueWatchingMemory.storeSeeds(seedMemoryProfileId, seeds) }
     }
@@ -5308,6 +5313,7 @@ internal fun buildHomeNextUpSeedCandidates(
     isTraktProgressActive: Boolean,
     preferFurthestEpisode: Boolean,
     nowEpochMs: Long,
+    rewatchSeedFor: (contentId: String) -> WatchingCompletedEpisode? = { null },
 ): List<CompletedSeriesCandidate> {
     PerfTelemetry.count("HomeScreen.buildHomeNextUpSeedCandidates")
     val progressSeeds = progressEntries
@@ -5346,6 +5352,16 @@ internal fun buildHomeNextUpSeedCandidates(
         if (!content.type.isSeriesTypeForContinueWatching()) return@mapNotNull null
         if (completed.seasonNumber == 0) return@mapNotNull null
         if (isMalformedNextUpSeedContentId(content.id)) return@mapNotNull null
+        // An active rewatch continues from its own furthest episode, whatever the history says:
+        // the original watch's furthest episode is the finale, which has nothing after it.
+        rewatchSeedFor(content.id)?.let { rewatch ->
+            return@mapNotNull CompletedSeriesCandidate(
+                content = content,
+                seasonNumber = rewatch.seasonNumber,
+                episodeNumber = rewatch.episodeNumber,
+                markedAtEpochMs = rewatch.markedAtEpochMs,
+            )
+        }
         CompletedSeriesCandidate(
             content = content,
             seasonNumber = completed.seasonNumber,
@@ -5444,6 +5460,7 @@ private suspend fun resolveHomeNextUpCandidate(
         todayIsoDate = todayIsoDate,
         preferFurthestEpisode = preferFurthestEpisode,
         showUnairedNextUp = showUnairedNextUp,
+        rewatchSeed = SimklRewatchRepository.rewatchSeedFor(contentId),
     )
     if (action == null) {
         // Covers the showUnairedNextUp preference: with it off, an unaired next episode yields no
