@@ -135,7 +135,9 @@ fun PostShowScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 when (shown) {
-                    is PreShowStage.Slide -> pack.cards.getOrNull(shown.index)?.let { CardBody(it, palette) }
+                    is PreShowStage.Slide -> pack.cards.getOrNull(shown.index)?.let {
+                        CardBody(it, palette, finale = PostShowController.isFinale)
+                    }
                     is PreShowStage.Question -> questions.getOrNull(shown.index)?.let {
                         QuestionBody(
                             question = it,
@@ -195,11 +197,11 @@ private fun optionKey(index: Int): PostShowKey = when (index) {
 }
 
 @Composable
-private fun CardBody(card: PostShowCard, palette: TriviaPalette) {
+private fun CardBody(card: PostShowCard, palette: TriviaPalette, finale: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.width(36.dp).height(3.dp).background(palette.accent, RoundedCornerShape(2.dp)))
         Text(
-            text = card.kind.heading(),
+            text = card.kind.heading(finale),
             style = MaterialTheme.typography.labelLarge,
             color = palette.accent,
             letterSpacing = 3.sp,
@@ -215,8 +217,8 @@ private fun CardBody(card: PostShowCard, palette: TriviaPalette) {
     )
 }
 
-internal fun PostShowCardKind.heading(): String = when (this) {
-    PostShowCardKind.Ending -> "THE ENDING"
+internal fun PostShowCardKind.heading(finale: Boolean = false): String = when (this) {
+    PostShowCardKind.Ending -> if (finale) "THE FINALE" else "THE ENDING"
     PostShowCardKind.EasterEgg -> "HIDDEN DETAIL"
     PostShowCardKind.WatchAgain -> "WATCH AGAIN"
     PostShowCardKind.Motivation -> "WHY THEY DID IT"

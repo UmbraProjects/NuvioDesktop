@@ -34,4 +34,32 @@ class PostShowPromptTest {
         listOf("ending", "easter_egg", "watch_again", "motivation", "connection", "behind_the_scenes")
             .forEach { assertTrue("\"$it\"" in p, it) }
     }
+
+    @Test
+    fun `a season finale is fenced to its season`() {
+        val p = buildPostShowPrompt(source, "en", PostShowScope.SeasonFinale(3, 10, "The End"))
+        assertTrue("SPOILER GATE" in p.system)
+        assertTrue("seasons 1 to 3" in p.system)
+        assertTrue("after season 3" in p.system)
+        assertTrue("finale of season 3" in p.system)
+        assertTrue("S3E10 \"The End\" (season finale)" in p.user)
+        assertTrue(p.user.startsWith("Series: Inception"))
+    }
+
+    @Test
+    fun `a series finale may use the whole show`() {
+        val p = buildPostShowPrompt(source, "en", PostShowScope.SeriesFinale(5, 8, null))
+        assertFalse("SPOILER GATE" in p.system)
+        assertTrue("whole series may be discussed" in p.system)
+        assertTrue("S5E8 (series finale)" in p.user)
+    }
+
+    @Test
+    fun `finale prompts keep the shared rules and card kinds`() {
+        val p = buildPostShowPrompt(source, "en", PostShowScope.SeasonFinale(1, 1, null)).system
+        assertTrue("Never invent" in p)
+        listOf("ending", "easter_egg", "watch_again", "motivation", "connection", "behind_the_scenes")
+            .forEach { assertTrue("\"$it\"" in p, it) }
+        assertFalse("watched the film" in p)
+    }
 }

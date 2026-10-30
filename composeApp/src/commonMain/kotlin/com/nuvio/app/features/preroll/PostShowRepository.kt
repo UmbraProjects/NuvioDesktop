@@ -40,11 +40,12 @@ object PostShowRepository {
     fun isReady(): Boolean =
         PreshowSettings.postShowEnabled.value && DiscoverAiSettingsRepository.snapshot().isConfigured
 
-    private fun keyFor(meta: MetaDetails): Pair<String, TriviaSource> {
+    private fun keyFor(meta: MetaDetails, scope: PostShowScope): Pair<String, TriviaSource> {
         val settings = DiscoverAiSettingsRepository.snapshot()
         val source = meta.toTriviaSource()
         val key = postShowCacheKey(
             metaId = meta.id,
+            scope = scope,
             model = settings.effectiveModel,
             languageTag = ThemeSettingsRepository.selectedAppLanguage.value.code,
             fingerprint = source.fingerprint(),
@@ -53,21 +54,21 @@ object PostShowRepository {
     }
 
     /** Cache-only lookup. Never makes a request. */
-    fun peek(meta: MetaDetails): PostShowPack? {
+    fun peek(meta: MetaDetails, scope: PostShowScope = PostShowScope.Film): PostShowPack? {
         if (!isReady()) return null
-        val (key, source) = keyFor(meta)
+        val (key, source) = keyFor(meta, scope)
         if (!source.isUsable) return null
         return PostShowCache.get(key)?.pack?.takeUnless { it.isEmpty }
     }
 
     /** Fire-and-forget: starts generation if nothing is cached or in flight. Errors are logged only. */
-    fun prefetchFor(type: String, metaId: String) {
+    fun prefetchFor(type: String, metaId: String, scope: PostShowScope = PostShowScope.Film) {
         if (!isReady()) return
         scope.launch {
             val meta = MetaDetailsRepository.peekAny(type, metaId)
                 ?: runCatching { MetaDetailsRepository.fetch(type, metaId) }.getOrNull()
                 ?: return@launch
-            if (peek(meta) == null) pack(meta)
+            if (peek(meta, scope) == null) pack(meta, scope)
         }
     }
 
@@ -75,21 +76,30 @@ object PostShowRepository {
      * The pack for the credits, waiting up to [waitMs] for one still being generated. Past that it
      * gives up (the credits are short) and the request still completes into the cache.
      */
-    suspend fun packFor(type: String, metaId: String, waitMs: Long = 8_000): Result<PostShowPack> {
+    suspend fun packFor(
+        type: String,
+        metaId: String,
+        scope: PostShowScope = PostShowScope.Film,
+        waitMs: Long = 8_000,
+    ): Result<PostShowPack> {
         if (!isReady()) return Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnabled))
         val meta = MetaDetailsRepository.peekAny(type, metaId)
             ?: withTimeoutOrNull(waitMs) {
                 runCatching { MetaDetailsRepository.fetch(type, metaId) }.getOrNull()
             }
             ?: return Result.failure(TriviaUnavailableException(TriviaUnavailable.MetadataNotFound))
-        peek(meta)?.let { return Result.success(it) }
-        return withTimeoutOrNull(waitMs) { pack(meta) }
+        peek(meta, scope)?.let { return Result.success(it) }
+        return withTimeoutOrNull(waitMs) { pack(meta, scope) }
             ?: Result.failure(TriviaUnavailableException(TriviaUnavailable.TimedOut))
     }
 
-    suspend fun pack(meta: MetaDetails, forceRefresh: Boolean = false): Result<PostShowPack> {
+    suspend fun pack(
+        meta: MetaDetails,
+        scope: PostShowScope = PostShowScope.Film,
+        forceRefresh: Boolean = false,
+    ): Result<PostShowPack> {
         if (!isReady()) return Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnabled))
-        val (key, source) = keyFor(meta)
+        val (key, source) = keyFor(meta, scope)
         if (!source.isUsable) {
             return Result.failure(TriviaUnavailableException(TriviaUnavailable.NotEnoughMetadata))
         }
@@ -99,7 +109,7 @@ object PostShowRepository {
         val deferred = inFlightLock.withLock {
             inFlight[key]?.takeIf { it.isActive } ?: scope.async {
                 try {
-                    runCatching { generate(meta, source, key) }.getOrElse { Result.failure(it) }
+                    runCatching { generate(meta, source, key, scope) }.getOrElse { Result.failure(it) }
                 } finally {
                     inFlightLock.withLock { if (inFlight[key] === coroutineContext[Job]) inFlight.remove(key) }
                 }
@@ -108,12 +118,17 @@ object PostShowRepository {
         return deferred.await()
     }
 
-    private suspend fun generate(meta: MetaDetails, source: TriviaSource, cacheKey: String): Result<PostShowPack> {
+    private suspend fun generate(
+        meta: MetaDetails,
+        source: TriviaSource,
+        cacheKey: String,
+        scope: PostShowScope,
+    ): Result<PostShowPack> {
         val settings = DiscoverAiSettingsRepository.snapshot()
         val languageTag = ThemeSettingsRepository.selectedAppLanguage.value.code
         log.i { "post-show ${meta.name}: requesting, model=${settings.effectiveModel}" }
 
-        val prompt = buildPostShowPrompt(source, languageTag)
+        val prompt = buildPostShowPrompt(source, languageTag, scope)
         var raw: String? = null
         var attempt = 0
         while (raw == null) {

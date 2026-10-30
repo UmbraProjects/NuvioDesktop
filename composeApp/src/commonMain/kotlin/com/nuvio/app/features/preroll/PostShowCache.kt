@@ -28,10 +28,11 @@ private const val MAX_ENTRIES = 100
 
 internal fun postShowCacheKey(
     metaId: String,
+    scope: PostShowScope,
     model: String,
     languageTag: String,
     fingerprint: String,
-): String = listOf("postshow", "p$POST_SHOW_PROMPT_VERSION", metaId, model, languageTag, fingerprint)
+): String = listOf("postshow", "p$POST_SHOW_PROMPT_VERSION", metaId, scope.cacheKey, model, languageTag, fingerprint)
     .joinToString("|")
 
 internal object PostShowCache {

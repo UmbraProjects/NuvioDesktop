@@ -13,6 +13,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.nuvio.app.features.preroll.PostShowController
+import com.nuvio.app.features.watched.WatchedRepository
+import com.nuvio.app.features.preroll.postShowScopeFor
+import com.nuvio.app.features.preroll.PostShowScope
+import com.nuvio.app.features.preroll.PostShowEpisode
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -75,15 +79,48 @@ import com.nuvio.app.core.i18n.localizedString
 @Composable
 internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val runtime = this
-    // Tells the post-show which film this is and where its credits are. Films only for now.
+    // Tells the post-show what is playing and where its credits are: a film, or the finale of a
+    // season or series that the viewer has watched their way to (see postShowScopeFor).
     val postShowTitle = title
-    LaunchedEffect(parentMetaType, parentMetaId, skipIntervals, postShowTitle) {
+    LaunchedEffect(
+        parentMetaType, parentMetaId, skipIntervals, postShowTitle,
+        activeSeasonNumber, activeEpisodeNumber, activeEpisodeTitle, playerMetaVideos,
+    ) {
+        val scope: PostShowScope? = when (parentMetaType) {
+            "movie" -> PostShowScope.Film
+            "series" -> {
+                val season = activeSeasonNumber
+                val episode = activeEpisodeNumber
+                if (season == null || episode == null) {
+                    null
+                } else {
+                    postShowScopeFor(
+                        status = MetaDetailsRepository.peekAny(parentMetaType, parentMetaId)?.status,
+                        episodes = playerMetaVideos.mapNotNull { video ->
+                            val s = video.playbackSeasonNumber()
+                            val e = video.playbackEpisodeNumber()
+                            if (s == null || e == null) {
+                                null
+                            } else {
+                                // Only this season's earlier episodes decide the gate, so only those are looked up.
+                                val needed = s == season && e < episode
+                                PostShowEpisode(
+                                    season = s,
+                                    episode = e,
+                                    watched = needed && WatchedRepository.isWatched(parentMetaId, parentMetaType, s, e),
+                                )
+                            }
+                        },
+                        currentSeason = season,
+                        currentEpisode = episode,
+                        episodeTitle = activeEpisodeTitle,
+                    )
+                }
+            }
+            else -> null
+        }
         PostShowController.setFilm(
-            if (parentMetaType == "movie") {
-                PostShowController.Film(parentMetaType, parentMetaId, postShowTitle, skipIntervals)
-            } else {
-                null
-            },
+            scope?.let { PostShowController.Film(parentMetaType, parentMetaId, postShowTitle, skipIntervals, it) },
         )
     }
     DisposableEffect(Unit) { onDispose { PostShowController.setFilm(null) } }
