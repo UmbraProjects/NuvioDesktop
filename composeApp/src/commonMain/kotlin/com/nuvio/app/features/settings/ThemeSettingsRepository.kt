@@ -30,6 +30,9 @@ data class CustomThemeSettings(
         )
 }
 
+const val DEFAULT_APP_FONT_SCALE_PERCENT = 100
+val APP_FONT_SCALE_PERCENT_RANGE = 70..130
+
 object ThemeSettingsRepository {
     private val _selectedTheme = MutableStateFlow(AppTheme.OCEAN)
     val selectedTheme: StateFlow<AppTheme> = _selectedTheme.asStateFlow()
@@ -83,6 +86,11 @@ object ThemeSettingsRepository {
     private val _appFontFamily = MutableStateFlow("")
     val appFontFamily: StateFlow<String> = _appFontFamily.asStateFlow()
 
+    // Text size for a swapped-in font, so one that runs wider or narrower than JetBrains Sans can
+    // be brought back to roughly the same footprint. Ignored while the bundled font is in use.
+    private val _appFontScalePercent = MutableStateFlow(DEFAULT_APP_FONT_SCALE_PERCENT)
+    val appFontScalePercent: StateFlow<Int> = _appFontScalePercent.asStateFlow()
+
     private val _selectedAppLanguage = MutableStateFlow(AppLanguage.ENGLISH)
     val selectedAppLanguage: StateFlow<AppLanguage> = _selectedAppLanguage.asStateFlow()
 
@@ -118,6 +126,7 @@ object ThemeSettingsRepository {
         NativeTabBridge.publishAccentColor(ThemeColors.Ocean.nativeAccentHex)
         NativeTabBridge.publishLiquidGlassEnabled(false)
         _appFontFamily.value = ""
+        _appFontScalePercent.value = DEFAULT_APP_FONT_SCALE_PERCENT
         _selectedAppLanguage.value = AppLanguage.ENGLISH
     }
 
@@ -180,6 +189,8 @@ object ThemeSettingsRepository {
         _desktopAppUiScaleAppliesToDetails.value =
             ThemeSettingsStorage.loadDesktopAppUiScaleAppliesToDetails() ?: true
         _appFontFamily.value = ThemeSettingsStorage.loadAppFontFamily()?.trim().orEmpty()
+        _appFontScalePercent.value = ThemeSettingsStorage.loadAppFontScalePercent()
+            ?.coerceIn(APP_FONT_SCALE_PERCENT_RANGE) ?: DEFAULT_APP_FONT_SCALE_PERCENT
         val appLanguage = AppLanguage.fromCode(ThemeSettingsStorage.loadSelectedAppLanguage())
         ThemeSettingsStorage.applySelectedAppLanguage(appLanguage.code)
         _selectedAppLanguage.value = appLanguage
@@ -361,6 +372,14 @@ object ThemeSettingsRepository {
         if (_appFontFamily.value == next) return
         _appFontFamily.value = next
         ThemeSettingsStorage.saveAppFontFamily(next)
+    }
+
+    fun setAppFontScalePercent(percent: Int) {
+        ensureLoaded()
+        val next = percent.coerceIn(APP_FONT_SCALE_PERCENT_RANGE)
+        if (_appFontScalePercent.value == next) return
+        _appFontScalePercent.value = next
+        ThemeSettingsStorage.saveAppFontScalePercent(next)
     }
 
     fun setAppLanguage(language: AppLanguage) {

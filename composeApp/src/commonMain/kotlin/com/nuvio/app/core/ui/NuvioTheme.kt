@@ -251,6 +251,8 @@ fun NuvioTheme(
     amoled: Boolean = false,
     accentGradientDirection: AccentGradientDirection = AccentGradientDirection.Default,
     appFontFamilyName: String = "",
+    /** Text size multiplier for [appFontFamilyName]; the bundled face always draws at 1. */
+    appFontScale: Float = 1f,
     content: @Composable () -> Unit,
 ) {
     val palette = if (appTheme == AppTheme.CUSTOM) {
@@ -278,11 +280,14 @@ fun NuvioTheme(
     val typography = remember(resolvedFontFamily) { nuvioTypography(resolvedFontFamily) }
     val typeScale = remember(resolvedFontFamily) { nuvioTypeTokens(resolvedFontFamily) }
 
+    // The system text-size setting is ignored (fontScale 1); only the font scaler, which exists to
+    // even out a swapped-in font's size against the bundled one, changes it.
+    val fontScale = if (resolvedFontFamily === bundledFontFamily) 1f else appFontScale
     val density = LocalDensity.current
     CompositionLocalProvider(
         LocalDensity provides Density(
             density = density.density,
-            fontScale = 1f,
+            fontScale = fontScale,
         ),
         LocalNuvioThemeTokens provides tokens,
         LocalNuvioTypeScale provides typeScale,

@@ -66,6 +66,48 @@ internal object DesktopStorage {
         stores.getOrPut(name) { Store(storeFile(name)) }
     }
 
+    /**
+     * Reads every store already on disk, off the UI thread, shortly after launch.
+     *
+     * Stores load lazily on first use, and that first use is often a composable. On this PC the
+     * file open alone has blocked for 3–7s while an on-access scanner held the file (2026-10-30:
+     * a 79-byte `nuvio_anime_filler_settings` took 7102ms in `CreateFile0` on AWT-EventQueue-0,
+     * earlier launches the same for music library and pre-show). Paying that on a pool thread at
+     * launch means the screen that needs the store later finds it in memory. A few threads, because
+     * one stuck open must not hold up the rest.
+     */
+    fun prewarmStoresAsync() {
+        Thread({
+            val files = runCatching {
+                listOf(accountDir, rootDir).distinct().flatMap { dir ->
+                    Files.list(dir).use { entries ->
+                        entries.filter { it.fileName.toString().endsWith(".properties") }.toList()
+                    }
+                }
+            }.getOrElse { error ->
+                log.w(error) { "store prewarm could not list the data directory" }
+                return@Thread
+            }
+            val names = files.map { it.fileName.toString().removeSuffix(".properties") }
+                // A same-named file in the other folder is not that store; storeFile decides.
+                .filter { name -> files.any { it == storeFile(name) } }
+                .distinct()
+            val startedAt = System.nanoTime()
+            val pool = Executors.newFixedThreadPool(PREWARM_THREADS) { runnable ->
+                Thread(runnable, "nuvio-storage-prewarm").apply {
+                    isDaemon = true
+                    priority = Thread.MIN_PRIORITY
+                }
+            }
+            names.forEach { name -> pool.execute { runCatching { store(name).contains("") } } }
+            pool.shutdown()
+            pool.awaitTermination(1, TimeUnit.MINUTES)
+            log.i { "store prewarm: ${names.size} stores in ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
+        }, "nuvio-storage-prewarm-main").apply { isDaemon = true }.start()
+    }
+
+    private const val PREWARM_THREADS = 4
+
     /** Where [name]'s file lives: the data directory for machine stores, else [accountDir]. */
     fun storeFile(name: String): Path =
         if (name in MACHINE_STORE_NAMES) rootDir.resolve("$name.properties") else accountDir.resolve("$name.properties")

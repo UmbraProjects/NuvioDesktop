@@ -1070,6 +1070,15 @@ private fun settingsSearchEntries(
             section = resolve(Res.string.settings_appearance_section_display),
             icon = Icons.Rounded.Palette,
         )
+        addRow(
+            page = SettingsPage.Appearance,
+            key = "app-font-scale",
+            title = resolve(Res.string.settings_appearance_app_font_scale),
+            description = resolve(Res.string.settings_appearance_app_font_scale_description),
+            pageLabel = layoutPage,
+            section = resolve(Res.string.settings_appearance_section_display),
+            icon = Icons.Rounded.Palette,
+        )
     }
     addRow(
         page = SettingsPage.Appearance,

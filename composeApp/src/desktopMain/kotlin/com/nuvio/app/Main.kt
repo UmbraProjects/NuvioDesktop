@@ -660,6 +660,7 @@ fun main(args: Array<String>) {
                         "Info: (DesktopStartup) Window side effect after " +
                             "${System.currentTimeMillis() - desktopStartupStartedAt}ms"
                     )
+                    com.nuvio.app.core.storage.DesktopStorage.prewarmStoresAsync()
                 }
                 window.background = NuvioDesktopNativeBackground
                 window.rootPane.background = NuvioDesktopNativeBackground

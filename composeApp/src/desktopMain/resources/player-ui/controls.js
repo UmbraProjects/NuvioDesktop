@@ -6461,6 +6461,12 @@ const showVolumePill = () => {
 
 const adjustLocalVolume = deltaPercent => {
   localVolume = Math.max(0, Math.min(200, localVolume + deltaPercent));
+  // As with the slider: a non-zero volume unmutes mpv (NativePlayerController.setVolume), so the
+  // wheel and the volume keys must clear the local flag too or the icon stays muted.
+  if (localMuted && localVolume > 0) {
+    localMuted = false;
+    refreshContextMenuIndicators();
+  }
   syncPlayerVolumeControl();
   showVolumePill();
 };

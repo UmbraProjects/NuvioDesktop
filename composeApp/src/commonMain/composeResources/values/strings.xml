@@ -1067,6 +1067,8 @@
     <string name="settings_appearance_app_font_none_installed">No installed fonts could be listed.</string>
     <string name="settings_appearance_app_font_no_matches">No installed font matches that name.</string>
     <string name="settings_appearance_app_font_preview">The quick brown fox jumps over the lazy dog</string>
+    <string name="settings_appearance_app_font_scale">App Font Size</string>
+    <string name="settings_appearance_app_font_scale_description">Resizes text in a chosen font so it takes up about as much room as the bundled one. Needs a font other than the default.</string>
     <string name="settings_appearance_app_font_player_note">Also restyles the player controls; open a video again to see it there.</string>
     <string name="settings_appearance_app_language">App Language</string>
     <string name="settings_appearance_app_language_sheet_title">Choose Language</string>

@@ -33,6 +33,7 @@ internal actual object ThemeSettingsStorage {
     private const val desktopAppUiScalePercentKey = "desktop_app_ui_scale_percent"
     private const val desktopAppUiScaleAppliesToDetailsKey = "desktop_app_ui_scale_applies_to_details"
     private const val appFontFamilyKey = "app_font_family"
+    private const val appFontScalePercentKey = "app_font_scale_percent"
     private const val selectedAppLanguageKey = "selected_app_language"
     // Desktop layout, scaling, navigation, and native-tab-bar flags remain device-local. The
     // custom colours travel twice: as our own per-key form (read back by other desktop-fork
@@ -204,6 +205,14 @@ internal actual object ThemeSettingsStorage {
 
     actual fun saveAppFontFamily(fontFamily: String) {
         store.putString(ProfileScopedKey.of(appFontFamilyKey), fontFamily)
+    }
+
+    // Device-local with the font it corrects.
+    actual fun loadAppFontScalePercent(): Int? =
+        store.getInt(ProfileScopedKey.of(appFontScalePercentKey))
+
+    actual fun saveAppFontScalePercent(percent: Int) {
+        store.putInt(ProfileScopedKey.of(appFontScalePercentKey), percent)
     }
 
     actual fun loadSelectedAppLanguage(): String? =

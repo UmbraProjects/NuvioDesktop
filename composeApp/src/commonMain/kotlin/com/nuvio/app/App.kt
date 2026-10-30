@@ -1078,12 +1078,14 @@ fun App() {
         ThemeSettingsRepository.accentGradientDirection
     }.collectAsStateWithLifecycle()
     val appFontFamily by remember { ThemeSettingsRepository.appFontFamily }.collectAsStateWithLifecycle()
+    val appFontScalePercent by remember { ThemeSettingsRepository.appFontScalePercent }.collectAsStateWithLifecycle()
     NuvioTheme(
         appTheme = selectedTheme,
         customThemePalette = customTheme.palette,
         amoled = amoledEnabled,
         accentGradientDirection = accentGradientDirection,
         appFontFamilyName = appFontFamily,
+        appFontScale = appFontScalePercent / 100f,
     ) {
         LaunchedEffect(Unit) {
             AuthRepository.initialize()

@@ -274,6 +274,26 @@ fun IptvScreen(
         if (keyboardActive && zone == IptvZone.Channels) channelState.keepVisible(channelIndex)
     }
 
+    // Back from the player, the highlight is on the channel last watched (clicked here or zapped
+    // to in the player), and stays there across restarts: the head of this playlist's recents.
+    val lastPlayedKey = remember(settings.recents, playlist.id) {
+        val prefix = IptvRepository.channelRef(playlist.id, "")
+        settings.recents.firstOrNull { it.startsWith(prefix) }?.removePrefix(prefix)
+    }
+    var restoredKey by rememberSaveable(playlist.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(lastPlayedKey, channels) {
+        if (lastPlayedKey == null || lastPlayedKey == restoredKey) return@LaunchedEffect
+        val at = channels.indexOfFirst { it.key == lastPlayedKey }
+        if (at < 0) return@LaunchedEffect
+        restoredKey = lastPlayedKey
+        channelIndex = at
+        zone = IptvZone.Channels
+        starFocused = false
+        if (channelState.layoutInfo.visibleItemsInfo.none { it.index == at }) {
+            channelState.scrollToItem((at - 2).coerceAtLeast(0))
+        }
+    }
+
     fun play(channel: IptvChannel) = IptvPlaybackRequests.play(playlist, channel, zapList = channels)
 
     fun closeSearch() {

@@ -41,6 +41,8 @@ internal expect object ThemeSettingsStorage {
     fun saveDesktopAppUiScaleAppliesToDetails(enabled: Boolean)
     fun loadAppFontFamily(): String?
     fun saveAppFontFamily(fontFamily: String)
+    fun loadAppFontScalePercent(): Int?
+    fun saveAppFontScalePercent(percent: Int)
     fun loadSelectedAppLanguage(): String?
     fun saveSelectedAppLanguage(languageCode: String)
     fun applySelectedAppLanguage(languageCode: String)
