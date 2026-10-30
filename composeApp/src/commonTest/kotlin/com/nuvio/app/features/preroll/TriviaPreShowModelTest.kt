@@ -69,6 +69,68 @@ class TriviaPreShowModelTest {
     }
 }
 
+class PreShowPacingTest {
+    private fun words(count: Int) = List(count) { "word" }.joinToString(" ")
+
+    @Test
+    fun shortSlidesKeepTheFloor() {
+        assertEquals(7_000L, slideReadingTimeMs("Filmed in 1979.", minMs = 7_000))
+        assertEquals(7_000L, slideReadingTimeMs("   ", minMs = 7_000))
+    }
+
+    @Test
+    fun longerSlidesStayLonger() {
+        // 1.5 s lead-in + 30 words at 330 ms.
+        assertEquals(11_400L, slideReadingTimeMs(words(30), minMs = 7_000))
+        assertTrue(slideReadingTimeMs(words(40), 7_000) > slideReadingTimeMs(words(30), 7_000))
+    }
+
+    @Test
+    fun readingTimeIsCapped() {
+        assertEquals(25_000L, slideReadingTimeMs(words(200), minMs = 7_000))
+    }
+
+    @Test
+    fun aFloorAboveTheCapIsStillRespected() {
+        assertEquals(30_000L, slideReadingTimeMs("A few words", minMs = 30_000))
+        assertEquals(30_000L, slideReadingTimeMs(words(200), minMs = 30_000))
+    }
+
+    @Test
+    fun wordsAreCountedAcrossAnyWhitespace() {
+        assertEquals(
+            slideReadingTimeMs(words(30), 0),
+            slideReadingTimeMs(List(30) { "word" }.joinToString("  \n\t "), 0),
+        )
+    }
+
+    @Test
+    fun backStepsThroughSlides() {
+        assertEquals(PreShowStage.Slide(1), PreShowStage.Slide(2).back(slideCount = 3))
+        assertEquals(PreShowStage.Slide(0), PreShowStage.Slide(0).back(slideCount = 3))
+    }
+
+    @Test
+    fun backFromTheFirstQuestionReturnsToTheLastSlide() {
+        assertEquals(PreShowStage.Slide(2), PreShowStage.Question(0, picked = null).back(slideCount = 3))
+    }
+
+    @Test
+    fun backNeverReopensAnAnsweredQuestion() {
+        val answered = PreShowStage.Question(0, picked = 1)
+        assertEquals(answered, answered.back(slideCount = 3))
+        val second = PreShowStage.Question(1, picked = null)
+        assertEquals(second, second.back(slideCount = 3))
+    }
+
+    @Test
+    fun backHasNowhereToGoWithoutSlides() {
+        val first = PreShowStage.Question(0, picked = null)
+        assertEquals(first, first.back(slideCount = 0))
+        assertEquals(PreShowStage.Finished, PreShowStage.Finished.back(slideCount = 3))
+    }
+}
+
 class AnswerCursorTest {
     @Test
     fun cursorStopsAtTheEndsInsteadOfWrapping() {
