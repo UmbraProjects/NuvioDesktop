@@ -224,19 +224,23 @@ fun PrerollGate(
                         val trailer: GateTrailer
                         if (index < candidates.size) {
                             val candidate = candidates[index++]
+                            // The logo lookup runs beside the trailer resolve, so it adds no wait.
+                            val logoLookup = async { runCatching { candidate.withMetadataLogo() }.getOrDefault(candidate) }
                             val source = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
                                 HeroTrailerMetadataService.resolve(candidate.type, candidate.id, sharpest = true)
                             }
                             if (source == null) {
+                                logoLookup.cancel()
                                 log.i { "no trailer for ${candidate.type}:${candidate.id}, trying the next" }
                                 continue
                             }
+                            val subject = logoLookup.await()
                             if ((!source.reliable || source.heightPx in 1 until MIN_PRESHOW_TRAILER_HEIGHT) && soft.size < MAX_SOFT_TRAILERS) {
                                 log.i { "trailer for ${candidate.type}:${candidate.id} is soft (${source.heightPx}p, reliable=${source.reliable}), holding it back" }
-                                soft += GateTrailer(candidate, source)
+                                soft += GateTrailer(subject, source)
                                 continue
                             }
-                            trailer = GateTrailer(candidate, source)
+                            trailer = GateTrailer(subject, source)
                         } else {
                             val best = soft.maxByOrNull { it.source.heightPx } ?: break
                             soft.remove(best)
