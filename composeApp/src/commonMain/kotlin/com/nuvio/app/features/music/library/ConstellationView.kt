@@ -2,6 +2,10 @@ package com.nuvio.app.features.music.library
 
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.LayoutDirection
+import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.core.ui.NuvioGlass
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.CircularProgressIndicator
@@ -233,7 +237,7 @@ internal fun ConstellationView(
             }
         }
         val waiting = m?.graph?.untagged?.mapNotNull { byId[it.id] }.orEmpty()
-        if (waiting.isNotEmpty()) NotPlacedTray(waiting, onArtistClick, onFetchTags = { MusicLibraryRepository.refresh(it) })
+        if (waiting.isNotEmpty()) NotPlacedTray(waiting, library = artists, onArtistClick = onArtistClick)
     }
 }
 
@@ -731,20 +735,22 @@ private fun LegendMark(glyph: LegendGlyph) {
 
 /**
  * Artists with no genres or tags yet: they have no place on the map until those arrive. Just their
- * portraits, wrapping so a long list still fits; clicking one fetches its tags again (a spinner
- * shows while it works) and the name shows on hover.
+ * portraits, wrapping so a long list still fits; the name shows on hover. Clicking one opens a picker ([GenrePickerPanel]):
+ * choose a genre from the map, type one, take a suggestion, or look the artist up again (a spinner shows while it works).
+ * An artist whose look-up found nothing is dimmed with a "?" and its retry waits 3, 7, then 14 days ([tagRetryDelayMs]).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) -> Unit, onFetchTags: (String) -> Unit) {
+private fun NotPlacedTray(artists: List<LibraryArtist>, library: List<LibraryArtist>, onArtistClick: (String) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    var pickerFor by remember { mutableStateOf<String?>(null) }
     Column(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            "Click an artist's portrait to add them to the map",
+            "Click an artist to choose a genre for them, or look them up again",
             style = MaterialTheme.typography.bodySmall,
             color = colors.textSecondary,
         )
@@ -754,6 +760,8 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
                 val hovered by source.collectIsHoveredAsState()
                 val focused by source.collectIsFocusedAsState()
                 val working = state.working[artist.id] != null
+                // A completed look-up found no genres: say so on the portrait instead of leaving a button that cannot help.
+                val noData = artist.tagMisses > 0 && !artist.hasLookedUpGenres()
                 // Where the pointer is over the portrait, so the name can follow it instead of covering the ring.
                 var pointer by remember { mutableStateOf<Offset?>(null) }
                 Box(contentAlignment = Alignment.Center) {
@@ -775,16 +783,47 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
                             .border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape)
                             .hoverable(source)
                             .focusable(interactionSource = source)
-                            .clickable(enabled = !working, interactionSource = source, indication = null) { onFetchTags(artist.id) },
+                            .clickable(interactionSource = source, indication = null) {
+                                pickerFor = if (pickerFor == artist.id) null else artist.id
+                            },
                     ) {
-                        MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true)
+                        MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true, modifier = Modifier.alpha(if (noData) 0.5f else 1f))
                         if (working) {
                             Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(Modifier.size(24.dp), color = colors.accent, strokeWidth = 2.dp)
                             }
+                        } else if (noData) {
+                            Text(
+                                "?",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = colors.textPrimary,
+                                modifier = Modifier.align(Alignment.Center),
+                            )
                         }
                     }
-                    if (hovered || focused) {
+                    if (pickerFor == artist.id) {
+                        Popup(
+                            popupPositionProvider = AbovePortrait,
+                            onDismissRequest = { pickerFor = null },
+                            properties = PopupProperties(focusable = true),
+                        ) {
+                            GenrePickerPanel(
+                                artist = artist,
+                                library = library,
+                                working = working,
+                                onApply = { genres ->
+                                    MusicLibraryRepository.setManualGenres(artist.id, genres)
+                                    pickerFor = null
+                                },
+                                onLookAgain = { MusicLibraryRepository.refreshTags(artist.id) },
+                                onOpen = {
+                                    pickerFor = null
+                                    onArtistClick(artist.id)
+                                },
+                            )
+                        }
+                    }
+                    if ((hovered || focused) && pickerFor != artist.id) {
                         val density = LocalDensity.current
                         // Just below and right of the pointer; with keyboard focus (no pointer), under the portrait.
                         val at = pointer?.takeIf { hovered }
@@ -793,20 +832,124 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
                             else IntOffset(0, 70.dp.roundToPx())
                         }
                         Popup(offset = offset, properties = PopupProperties(focusable = false)) {
-                            Text(
-                                artist.name,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.textPrimary,
-                                maxLines = 1,
-                                modifier = Modifier
+                            Column(
+                                Modifier
                                     .background(NuvioGlass.night(colors.background, colors.accent), RoundedCornerShape(8.dp))
                                     .musicGlass(RoundedCornerShape(8.dp))
                                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                            )
+                            ) {
+                                Text(artist.name, style = MaterialTheme.typography.labelMedium, color = colors.textPrimary, maxLines = 1)
+                                if (noData) {
+                                    Text("No genre data found online", style = MaterialTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1)
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/** Puts the picker above the portrait it belongs to (the tray sits at the bottom of the window), kept inside the window. */
+private val AbovePortrait = object : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val x = anchorBounds.left.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
+        val y = (anchorBounds.top - popupContentSize.height - 8).coerceAtLeast(0)
+        return IntOffset(x, y)
+    }
+}
+
+/**
+ * What the tray offers for one artist with no genres: why it is not placed, a one-tap suggestion ([suggestGenres], never
+ * applied on its own), the genres already on the map, a box to type one, and a retry that is withheld while a previous
+ * empty look-up is being waited out. Choosing a genre writes it as the artist's own ([LibraryArtist.manualGenres]).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GenrePickerPanel(
+    artist: LibraryArtist,
+    library: List<LibraryArtist>,
+    working: Boolean,
+    onApply: (List<String>) -> Unit,
+    onLookAgain: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val now = LibraryClock.nowEpochMs()
+    val suggestions = remember(artist, library) { suggestGenres(artist, library) }
+    val choices = remember(library) { genreChoices(library) }
+    val wait = artist.retryTagsInMs(now)
+    var typed by remember { mutableStateOf("") }
+    var rejected by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        Modifier
+            .width(360.dp)
+            .background(NuvioGlass.night(colors.background, colors.accent), shape)
+            .musicGlass(shape)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(artist.name, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            when {
+                working -> "Looking it up…"
+                artist.tagMisses > 0 && wait > 0L ->
+                    "No genre data found online. The next look-up is in ${retryWaitText(wait)}; until then pick one yourself."
+                artist.tagMisses > 0 -> "No genre data found online last time. You can look again, or pick one yourself."
+                else -> "No genre data yet."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textSecondary,
+        )
+        if (suggestions.isNotEmpty()) {
+            Text("Suggested", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+            suggestions.forEach { s ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BigChip(displayGenre(s.genre), selected = false) { onApply(withManualGenre(artist.manualGenres, s.genre)) }
+                    Text(s.reason, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        if (choices.isNotEmpty()) {
+            Text("On your map", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                choices.forEach { genre ->
+                    BigChip(displayGenre(genre), selected = false) { onApply(withManualGenre(artist.manualGenres, genre)) }
+                }
+            }
+        }
+        val apply: () -> Unit = {
+            val next = withManualGenres(artist.manualGenres, typed)
+            if (next == artist.manualGenres) {
+                rejected = true
+            } else {
+                onApply(next)
+            }
+        }
+        NuvioTextField(
+            value = typed,
+            onValueChange = {
+                typed = it
+                rejected = false
+            },
+            placeholder = "Or type one, like uk garage",
+            isError = rejected,
+            supportingText = if (rejected) "That is not a genre the map can use" else null,
+            onImeAction = apply,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (typed.isNotBlank()) BigChip("Add", selected = true) { apply() }
+            if (!working && wait == 0L) BigChip("Look again", selected = false, onClick = onLookAgain)
+            BigChip("Open artist room", selected = false, onClick = onOpen)
         }
     }
 }

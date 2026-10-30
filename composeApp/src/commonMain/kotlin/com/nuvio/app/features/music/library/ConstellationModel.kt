@@ -31,7 +31,7 @@ internal data class ConstellationKeyRow(
 
 internal fun constellationKey(artists: List<LibraryArtist>): List<ConstellationKeyRow> =
     artists.sortedBy { it.id }.map {
-        ConstellationKeyRow(it.id, it.genres, it.tags, it.style, it.mood, countReleaseCards(it.releases))
+        ConstellationKeyRow(it.id, it.manualGenres + it.genres, it.tags, it.style, it.mood, countReleaseCards(it.releases))
     }
 
 internal class ConstellationModel(

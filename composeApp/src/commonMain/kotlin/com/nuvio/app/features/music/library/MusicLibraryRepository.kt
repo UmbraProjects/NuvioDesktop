@@ -209,6 +209,10 @@ object MusicLibraryRepository {
                 favourite = old?.favourite ?: artist.favourite,
                 pinnedTopKeys = old?.pinnedTopKeys ?: artist.pinnedTopKeys,
                 foundVia = old?.foundVia ?: artist.foundVia ?: foundVia[artist.id],
+                // The person's own genres and the record of empty look-ups are the library's copy too.
+                manualGenres = old?.manualGenres ?: artist.manualGenres,
+                tagMisses = old?.tagMisses ?: artist.tagMisses,
+                tagsCheckedAtEpochMs = old?.tagsCheckedAtEpochMs ?: artist.tagsCheckedAtEpochMs,
                 topAlbumKeys = artist.topAlbumKeys.ifEmpty { old?.topAlbumKeys.orEmpty() },
                 topCheckedAtEpochMs = maxOf(artist.topCheckedAtEpochMs, old?.topCheckedAtEpochMs ?: 0L),
             ).keepingPalettesFrom(old)
@@ -266,6 +270,39 @@ object MusicLibraryRepository {
         ensureLoaded()
         if (!_state.value.contains(artistId)) return
         _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) it.copy(favourite = favourite) else it }) }
+        persist()
+    }
+
+    /**
+     * Gives a saved artist the genres the person chose (cleaned and capped, see [parseGenreInput]); an empty list clears
+     * them. The Constellation places the artist from them as soon as this is written.
+     */
+    fun setManualGenres(artistId: String, genres: List<String>) {
+        ensureLoaded()
+        if (!_state.value.contains(artistId)) return
+        val cleaned = parseGenreInput(genres.joinToString(","))
+        _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) it.copy(manualGenres = cleaned) else it }) }
+        persist()
+    }
+
+    /**
+     * The tray's "look again": a normal refresh, unless an earlier look-up found no genres and its wait (3, 7 or 14 days,
+     * [tagRetryDelayMs]) is not over. Returns false when nothing was started for that reason.
+     */
+    fun refreshTags(artistId: String, catalog: MusicCatalog = defaultMusicCatalog()): Boolean {
+        ensureLoaded()
+        val artist = _state.value.artist(artistId) ?: return false
+        if (!artist.canRetryTags(LibraryClock.nowEpochMs())) return false
+        startRefresh(artistId, catalog)
+        return true
+    }
+
+    /** Writes the outcome of a finished look-up into the saved artist: a miss to back off from, or the clearing of one. */
+    private fun recordTagCheck(artistId: String, reliable: Boolean) {
+        val artist = _state.value.artist(artistId) ?: return
+        val checked = artist.withTagCheck(LibraryClock.nowEpochMs(), reliable)
+        if (checked == artist) return
+        _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) checked else it }) }
         persist()
     }
 
@@ -529,6 +566,8 @@ object MusicLibraryRepository {
                 put(full.copy(releases = partial), onlyIfPresent = true)
             }
             put(full.copy(releases = detailed), onlyIfPresent = true)
+            // fork:music - remember a look-up that found no genres, so the tray stops offering a retry that cannot help.
+            if (!preview) recordTagCheck(artistId, reliable = built.lookupWasReliable())
             setProgress(artistId, "Finding the top albums")
             loadTopAlbums(artistId)
             completed.add(artistId)
