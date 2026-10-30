@@ -15,8 +15,14 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
-/** One timed line of a synced lyric. A blank [text] is an instrumental gap. */
-data class LyricLine(val timeMs: Long, val text: String)
+/** A word of a line with the stretch of the song it is sung over (absolute milliseconds). */
+data class TimedWord(val startMs: Long, val endMs: Long, val text: String)
+
+/**
+ * One timed line of a synced lyric. A blank [text] is an instrumental gap. [words] is filled only when the source
+ * timed each word (enhanced LRC, Netease YRC); it is empty for plain line timing, and the view then estimates.
+ */
+data class LyricLine(val timeMs: Long, val text: String, val words: List<TimedWord> = emptyList())
 
 sealed interface Lyrics {
     /**
@@ -44,12 +50,60 @@ sealed interface LyricsLookup {
 // region LRC
 
 private val TIME_STAMP = Regex("\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?\\]")
-private val WORD_STAMP = Regex("<\\d{1,3}:\\d{1,2}(?:[.:]\\d{1,3})?>")
+private val WORD_STAMP = Regex("<(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?>")
+
+private fun wordStampMs(mark: MatchResult): Long {
+    val fraction = mark.groupValues[3].padEnd(3, '0').take(3).toLongOrNull() ?: 0L
+    return mark.groupValues[1].toLong() * 60_000L + mark.groupValues[2].toLong() * 1_000L + fraction
+}
+
+/** Words of one enhanced-LRC line body (`<00:12.00>Hello <00:12.50>world`), or empty when it has no word stamps. */
+internal fun enhancedLrcWords(body: String): List<TimedWord> {
+    val marks = WORD_STAMP.findAll(body).toList()
+    if (marks.isEmpty()) return emptyList()
+    val pieces = ArrayList<TimedWord>()
+    for ((i, mark) in marks.withIndex()) {
+        val next = marks.getOrNull(i + 1)
+        val text = body.substring(mark.range.last + 1, next?.range?.first ?: body.length)
+        if (text.isBlank()) continue
+        val start = wordStampMs(mark)
+        // The last word has no closing stamp unless the file adds one; give it a length by its letters.
+        val end = next?.let(::wordStampMs) ?: (start + (text.trim().length * 95L).coerceAtLeast(300L))
+        pieces += TimedWord(start, end.coerceAtLeast(start), text)
+    }
+    return mergeTimedSyllables(pieces)
+}
+
+private fun isLatinWordChar(c: Char): Boolean = (c.isLetterOrDigit() && c.code < 0x2E80) || c == '\''
+
+/**
+ * Joins the pieces a source splits a word into ("beau" "ti" "ful") back into one word, so the highlight moves by
+ * word. A piece belongs to the one before it only when both touch with letters; anything with a space between,
+ * and every piece of a script written without spaces, stays its own word. Texts come back trimmed.
+ */
+internal fun mergeTimedSyllables(pieces: List<TimedWord>): List<TimedWord> {
+    val out = ArrayList<TimedWord>()
+    var current: TimedWord? = null
+    for (piece in pieces) {
+        if (piece.text.isEmpty()) continue
+        val joins = current != null && isLatinWordChar(current.text.last()) && isLatinWordChar(piece.text.first())
+        if (joins) {
+            current = current!!.copy(endMs = maxOf(current.endMs, piece.endMs), text = current.text + piece.text)
+        } else {
+            current?.let { out += it }
+            current = piece
+        }
+    }
+    current?.let { out += it }
+    return out
+        .map { it.copy(text = it.text.trim()) }
+        .filter { it.text.isNotEmpty() }
+}
 
 /**
  * Parses LRC text (`[01:23.45] words`). A line may carry several stamps (a repeated chorus); each
- * becomes its own line. Metadata tags (`[ar:..]`, `[ti:..]`) and word-level `<mm:ss.xx>` stamps are
- * dropped. The result is sorted by time.
+ * becomes its own line. Metadata tags (`[ar:..]`, `[ti:..]`) are dropped. Word-level `<mm:ss.xx>` stamps
+ * (enhanced LRC) are kept as the line's [LyricLine.words]. The result is sorted by time.
  */
 internal fun parseLrc(raw: String): List<LyricLine> {
     val out = ArrayList<LyricLine>()
@@ -67,8 +121,14 @@ internal fun parseLrc(raw: String): List<LyricLine> {
             cursor = match.range.last + 1
         }
         if (stamps.isEmpty()) continue
-        val text = line.substring(cursor).replace(WORD_STAMP, "").trim()
-        for (stamp in stamps) out += LyricLine(stamp, text)
+        val body = line.substring(cursor)
+        val text = body.replace(WORD_STAMP, "").trim()
+        val words = enhancedLrcWords(body)
+        for (stamp in stamps) {
+            // A repeated line sings the same words later: move them by the distance between its stamps.
+            val shift = stamp - stamps[0]
+            out += LyricLine(stamp, text, if (shift == 0L) words else words.map { it.copy(startMs = it.startMs + shift, endMs = it.endMs + shift) })
+        }
     }
     return out.sortedBy { it.timeMs }
 }
@@ -293,10 +353,16 @@ object LyricsRepository {
             if (found == LyricsLookup.Missing) reached = true
             result = if (reached) LyricsLookup.Missing else found
         }
-        return when (result) {
-            is LyricsLookup.Found -> result.lyrics.also { lock.withLock { cache[key] = it } }
-            LyricsLookup.Missing -> null.also { lock.withLock { cache[key] = null } }
-            LyricsLookup.Unreachable -> null
+        // Word-by-word timing from Netease replaces line timing when it has this very cut of the song; any failure
+        // there leaves LRCLIB's lines exactly as before.
+        val lrclib = (result as? LyricsLookup.Found)?.lyrics
+        val wordTimed = if (lrclib === Lyrics.Instrumental) null
+        else NeteaseLyricsClient.wordTimed(track.title, artistOf(track, album), track.durationSeconds)
+        val best: Lyrics? = wordTimed ?: lrclib
+        return when {
+            best != null -> best.also { lock.withLock { cache[key] = it } }
+            result == LyricsLookup.Missing -> null.also { lock.withLock { cache[key] = null } }
+            else -> null
         }
     }
 }

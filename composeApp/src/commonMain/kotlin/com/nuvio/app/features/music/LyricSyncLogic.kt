@@ -128,7 +128,14 @@ internal fun acceptLyricAlignment(alignment: LyricAlignment): Long? {
 
 /** The lyrics as they fall on the played stream: every line [offsetMs] later. */
 internal fun List<LyricLine>.shiftedBy(offsetMs: Long): List<LyricLine> =
-    if (offsetMs == 0L) this else map { it.copy(timeMs = (it.timeMs + offsetMs).coerceAtLeast(0L)) }
+    if (offsetMs == 0L) this else map { line ->
+        line.copy(
+            timeMs = (line.timeMs + offsetMs).coerceAtLeast(0L),
+            words = line.words.map { w ->
+                w.copy(startMs = (w.startMs + offsetMs).coerceAtLeast(0L), endMs = (w.endMs + offsetMs).coerceAtLeast(0L))
+            },
+        )
+    }
 
 /** "+12.4s" / "-0.5s", for the label. */
 internal fun formatLyricOffset(offsetMs: Long): String {
