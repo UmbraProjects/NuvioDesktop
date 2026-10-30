@@ -168,13 +168,17 @@ object MusicLibraryRepository {
     /**
      * fork:album-editions — points every release linked to the YouTube Music album [from] at [to]
      * instead: the edition the library's own track count describes. Saved artists are written to
-     * disk; previewed ones stay in memory.
+     * disk; previewed ones stay in memory. With [trackCount] the relinked releases record how many tracks
+     * that edition has, so opening it later finds the count already right and does not look again.
      */
-    fun relinkRelease(from: String, to: String) {
+    fun relinkRelease(from: String, to: String, trackCount: Int? = null) {
         if (from == to) return
         ensureLoaded()
-        fun LibraryArtist.relinked() =
-            copy(releases = releases.map { if (it.ytBrowseId == from) it.copy(ytBrowseId = to) else it })
+        fun LibraryArtist.relinked() = copy(
+            releases = releases.map {
+                if (it.ytBrowseId == from) it.copy(ytBrowseId = to, trackCount = trackCount?.takeIf { n -> n > 0 } ?: it.trackCount) else it
+            },
+        )
         var savedChanged = false
         _state.update { s ->
             savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == from } }
