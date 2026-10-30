@@ -42,6 +42,16 @@ internal val UNWANTED = setOf(
     "movie", "audiobook", "podcast", "commentary", "talks", "says",
 )
 
+/**
+ * Words that usually mean someone else is performing the title's music (a talk-show slot, a tribute act, an
+ * acoustic version) but can also sit in a real title. They cost [PERFORMANCE_PENALTY] points instead of removing
+ * the hit, so a genuine upload that carries one still wins when nothing better is there.
+ */
+internal val PERFORMANCE_WORDS = setOf("live", "performance", "performs", "sings", "acoustic", "tribute")
+
+/** Enough to drop a verified, much-viewed live clip below a plain upload of the original, once however many such words there are. */
+internal const val PERFORMANCE_PENALTY = 4
+
 /** At least one of these must be in the upload's title, or it is probably not the music at all. */
 private val MUSIC_WORDS = setOf(
     "theme", "soundtrack", "ost", "score", "opening", "intro", "music", "title", "credits",
@@ -65,6 +75,7 @@ private fun keywordScore(words: Set<String>): Int {
  * [THEME_MIN_SECONDS] and [THEME_MAX_SECONDS], and not be a cover, remix or reaction. Among those, an
  * official "Theme" upload from a verified channel or a YouTube Music "- Topic" channel wins, with
  * views as the tie-break. A different year in the upload's title costs points: it is another film.
+ * So does a word that points to a live or re-performed version ([PERFORMANCE_WORDS]).
  */
 internal fun rankThemeSongHits(
     hits: List<YouTubeSearchHit>,
@@ -91,6 +102,8 @@ internal fun rankThemeSongHits(
             if (hit.views > 0) score += (log10(hit.views.toDouble()) / 2.5).toInt().coerceIn(0, 3)
             val otherYear = YEAR.findAll(hit.title).map { it.value }.firstOrNull { it != year }
             if (otherYear != null) score -= 3
+            // A word that is part of the title itself ("Live and Let Die") is not a sign of someone else's performance.
+            if (words.any { it in PERFORMANCE_WORDS && it !in titleTokens }) score -= PERFORMANCE_PENALTY
             Triple(score, index, hit)
         }
         .sortedWith(compareByDescending<Triple<Int, Int, YouTubeSearchHit>> { it.first }.thenBy { it.second })

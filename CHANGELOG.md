@@ -57,6 +57,7 @@
 
 ### Fixed
 
+- **Theme Songs Prefer The Original Recording** - a live or re-performed version (a talk-show slot, a tribute act, an acoustic take) could be picked over the show's own theme, because it came from a verified channel with many views. Titles with "live", "performance", "performs", "sings", "acoustic" or "tribute" now lose points instead of being thrown out, so a real title that carries one of those words still wins when nothing better is found.
 - **SIMKL Rewatches In Up Next** - with "Up Next from furthest episode" on, a show being rewatched seeded Up Next from the original watch's finale, so finishing a rewatched episode never produced a card for the next one. Up Next and the details page's Play button now continue an active SIMKL rewatch from the furthest episode in its session, and with SIMKL as the Continue Watching source a half-watched rewatch episode shows up too. From Deigue.
 - **Stream Info In Hidden Player Buttons** - the player's Info button can now be hidden like the others; it was added after the Hidden Player Buttons list and was missing from it.
 - **Pre-show Skip Button** - the pre-show showed the old mute icon and X instead of the Skip button because the player's controls page kept being served from the browser cache: its stylesheet and script were named with a fixed version key that was not changed when they were. The key now comes from the files' content, so an edited page is always loaded, and the sound controls are also hidden by the page's script.

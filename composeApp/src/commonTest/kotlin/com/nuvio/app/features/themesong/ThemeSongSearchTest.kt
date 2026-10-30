@@ -100,6 +100,57 @@ class ThemeSongSearchTest {
     }
 
     @Test
+    fun aVerifiedLiveClipLosesToAPlainUploadOfTheOriginal() {
+        val ranked = rankThemeSongHits(
+            listOf(
+                hit("live", "Only Fools and Horses Theme - Live on The Jonathan Ross Show", channel = "ITV", verified = true, views = 5_000_000),
+                hit("original", "Only Fools and Horses Theme", channel = "Some Fan"),
+            ),
+            title = "Only Fools and Horses",
+            year = "1981",
+        )
+        assertEquals(listOf("original", "live"), ranked.map { it.videoId })
+    }
+
+    @Test
+    fun eachPerformanceWordCostsPointsButDoesNotRemoveTheHit() {
+        for (word in listOf("Live", "Performance", "Performs", "Sings", "Acoustic", "Tribute")) {
+            val ranked = rankThemeSongHits(
+                listOf(
+                    hit("odd", "Alien Theme $word"),
+                    hit("plain", "Alien Theme"),
+                ),
+                title = "Alien",
+                year = null,
+            )
+            assertEquals(listOf("plain", "odd"), ranked.map { it.videoId }, "word: $word")
+        }
+    }
+
+    @Test
+    fun aPerformanceWordStillWinsWhenItIsTheOnlyUpload() {
+        val ranked = rankThemeSongHits(
+            listOf(hit("live", "Alien Theme (Live)")),
+            title = "Alien",
+            year = null,
+        )
+        assertEquals(listOf("live"), ranked.map { it.videoId })
+    }
+
+    @Test
+    fun aPerformanceWordInTheFilmsOwnTitleIsNotPenalised() {
+        val ranked = rankThemeSongHits(
+            listOf(
+                hit("a", "Live and Let Die - Main Theme", channel = "Some Fan"),
+                hit("b", "Live and Let Die - Theme", channel = "Another Fan", views = 50_000),
+            ),
+            title = "Live and Let Die",
+            year = "1973",
+        )
+        assertEquals(listOf("a", "b"), ranked.map { it.videoId })
+    }
+
+    @Test
     fun fullTrackOutranksShortExcerpt() {
         val ranked = rankThemeSongHits(
             listOf(
