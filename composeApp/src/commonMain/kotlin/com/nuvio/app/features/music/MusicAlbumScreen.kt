@@ -107,7 +107,12 @@ fun MusicAlbumScreen(
 ) {
     val colors = MaterialTheme.nuvio.colors
     var attempt by remember { mutableStateOf(0) }
-    val load = rememberMusicLoad(browseId, attempt) { catalog.album(browseId)?.let { libraryEdition(catalog, it) } }
+    val load = rememberMusicLoad(browseId, attempt) {
+        // fork:nebula - an album only the music addon has is built from the addon's own track list, not looked up on YouTube Music.
+        val addonAlbum = com.nuvio.app.features.music.nebula.parseAddonAlbumId(browseId)
+        if (addonAlbum != null) NebulaMusicSource.openAddonAlbum(addonAlbum)
+        else catalog.album(browseId)?.let { libraryEdition(catalog, it) }
+    }
 
     Box(modifier.fillMaxSize().background(colors.background)) {
     // The cover, blurred, as the page's atmosphere (it does not move, so reduced motion needs nothing).

@@ -113,6 +113,8 @@ internal fun rememberNebulaAlbumController(album: MusicAlbum, player: MusicPlaye
     val scope = rememberCoroutineScope()
     val controller = remember(album.browseId, link) { NebulaAlbumController(album, player, scope) }
     if (nebulaBaseUrl(link) == null) return null
+    // An album only the addon has is already the addon's copy: no search, no YouTube Music / Addon switch.
+    if (parseAddonAlbumId(album.browseId) != null) return null
     LaunchedEffect(controller, retry) { controller.check() }
     return controller
 }

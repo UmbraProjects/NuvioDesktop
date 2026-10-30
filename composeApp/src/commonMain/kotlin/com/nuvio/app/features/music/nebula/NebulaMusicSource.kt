@@ -383,7 +383,11 @@ internal object NebulaMusicSource {
                 is StreamReply.Refused -> {
                     // Only a "no such track" means the kept match is stale (the addon's ids changed): search again next
                     // visit. A slow or broken addon says nothing about the match, so it is kept.
-                    if (reply.staleMatch) forget(album)
+                    if (reply.staleMatch) {
+                        forget(album)
+                        // fork:nebula - an addon-only album is remembered per release, not per YouTube Music album.
+                        parseAddonAlbumId(album.browseId)?.let { forgetRelease(addonCacheKey(it.artistId, it.releaseKey)) }
+                    }
                     streamStatus = NebulaStreamStatus.Failed(track.title, reply.reason)
                     return MusicResolution.Failed(track, reply.reason)
                 }
@@ -437,6 +441,35 @@ internal object NebulaMusicSource {
             log.w(e) { "Addon look-up for \"${track.title}\" failed; playing YouTube Music" }
             null
         }
+    }
+
+    /**
+     * The album page's album for a release the addon has and YouTube Music does not ([ref]): the addon's own track list
+     * (so nothing to match against), with the title, artist, year and cover the library knows for the release. Its tracks
+     * are `nebula:<id>`, so the player asks the addon for each link when it plays. Null when the addon cannot be asked or
+     * has no such album; a "no such album" also forgets the kept answer, so the artist page asks again next time.
+     */
+    suspend fun openAddonAlbum(ref: AddonAlbumRef): MusicAlbum? {
+        val base = baseUrl() ?: return null
+        val reply = try {
+            get(base, "/album/${urlEncodeQuery(ref.albumId)}")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.w(e) { "Music addon album request failed" }
+            return null
+        }
+        if (reply.status == 404) {
+            forgetRelease(addonCacheKey(ref.artistId, ref.releaseKey))
+            return null
+        }
+        if (reply.status !in 200..299) {
+            log.w { "Music addon album answered HTTP ${reply.status}: ${reply.body.take(200)}" }
+            return null
+        }
+        val detail = parseNebulaAlbum(reply.body) ?: return null
+        val artist = MusicLibraryRepository.state.value.artistOrPreview(ref.artistId)
+        return buildAddonAlbum(ref, detail, artist, artist?.releases?.firstOrNull { it.key == ref.releaseKey })
     }
 
     private suspend fun fetchStream(base: String, id: String): StreamReply = try {

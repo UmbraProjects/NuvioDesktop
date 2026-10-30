@@ -144,6 +144,15 @@ data class LibraryArtist(
 ) {
     fun releasesOf(kind: ReleaseKind): List<LibraryRelease> = releases.filter { it.kind == kind }
 
+    /**
+     * The release the album id [browseId] stands for: by its YouTube Music id, or, for an album only the music addon
+     * has, by the release key its id carries.
+     */
+    fun releaseOfAlbum(browseId: String): LibraryRelease? {
+        val addon = com.nuvio.app.features.music.nebula.parseAddonAlbumId(browseId)
+        return if (addon != null) releases.firstOrNull { it.key == addon.releaseKey } else releases.firstOrNull { it.ytBrowseId == browseId }
+    }
+
     /** The sections an artist page shows: only kinds that have releases, in [ReleaseKind] order. */
     val sections: List<Pair<ReleaseKind, List<LibraryRelease>>>
         get() = ReleaseKind.entries.mapNotNull { kind -> releasesOf(kind).takeIf { it.isNotEmpty() }?.let { kind to it } }

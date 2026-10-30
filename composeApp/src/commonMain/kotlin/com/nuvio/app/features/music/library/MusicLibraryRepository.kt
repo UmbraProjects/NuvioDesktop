@@ -77,10 +77,14 @@ data class MusicLibraryState(
     /** The saved artist, else the previewed copy. What an artist page reads, so both doors show the same thing. */
     fun artistOrPreview(id: String): LibraryArtist? = artist(id) ?: preview[id]
 
-    /** Library id of the artist (saved first, then previewed) that owns the YouTube Music album [browseId], if one does. */
+    /**
+     * The artist (saved first, then previewed) that owns the album [browseId], if one does: by the YouTube Music album id,
+     * or, for an album only the music addon has, by the artist id its own id carries.
+     */
     fun artistOfAlbum(browseId: String): LibraryArtist? =
-        (artists.asSequence() + preview.values.asSequence())
-            .firstOrNull { artist -> artist.releases.any { it.ytBrowseId == browseId } }
+        com.nuvio.app.features.music.nebula.parseAddonAlbumId(browseId)?.let { artistOrPreview(it.artistId) }
+            ?: (artists.asSequence() + preview.values.asSequence())
+                .firstOrNull { artist -> artist.releases.any { it.ytBrowseId == browseId } }
 }
 
 /** An artist whose top albums could not be ranked is asked about again after this long. */
