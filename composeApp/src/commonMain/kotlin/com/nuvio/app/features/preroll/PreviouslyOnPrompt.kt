@@ -37,7 +37,7 @@ private const val SYSTEM =
         "}\n" +
         "Be honest in \"confidence\": anything below 0.8 is discarded."
 
-fun buildPreviouslyOnPrompt(source: TriviaSource, target: PreviouslyOnTarget, languageTag: String): DiscoverAiPromptText {
+internal fun buildPreviouslyOnPrompt(source: TriviaSource, target: PreviouslyOnTarget, languageTag: String): DiscoverAiPromptText {
     val user = buildString {
         appendLine("Series: ${source.title}${source.year?.let { " ($it)" }.orEmpty()}")
         source.genres.takeIf { it.isNotEmpty() }?.let { appendLine("Genres: ${it.joinToString(", ")}") }
