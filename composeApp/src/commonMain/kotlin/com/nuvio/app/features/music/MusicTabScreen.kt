@@ -119,10 +119,14 @@ import com.nuvio.app.features.settings.settingsSkyBackground
 import kotlinx.coroutines.CancellationException
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.SmartDisplay
+import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.core.ui.secondaryClick
 import androidx.compose.material.icons.rounded.QueueMusic
 import kotlinx.coroutines.delay
 
-private enum class MusicSearchKind { Albums, Artists }
+/** fork:music-youtube - [YouTube] searches plain YouTube for the query as typed, for songs YouTube Music has no album for. */
+private enum class MusicSearchKind { Albums, Artists, YouTube }
 
 private enum class MusicSection { Search, Library }
 
@@ -312,6 +316,7 @@ private fun MusicSearchBox(chromeless: Boolean, modifier: Modifier = Modifier) {
 private fun MusicSearchResults.answers(kind: MusicSearchKind): Boolean = when (this) {
     is MusicSearchResults.Albums -> kind == MusicSearchKind.Albums
     is MusicSearchResults.Artists -> kind == MusicSearchKind.Artists
+    is MusicSearchResults.Videos -> kind == MusicSearchKind.YouTube
     else -> false
 }
 
@@ -322,6 +327,7 @@ private sealed interface MusicSearchResults {
     data object Failed : MusicSearchResults // the search itself could not run (offline, YouTube Music unreachable), as opposed to Empty
     data class Albums(val items: List<MusicAlbumSummary>) : MusicSearchResults
     data class Artists(val items: List<MusicArtistSummary>) : MusicSearchResults
+    data class Videos(val items: List<MusicTrack>) : MusicSearchResults // fork:music-youtube
 }
 
 private const val MIN_QUERY_LENGTH = 2
@@ -380,6 +386,9 @@ fun MusicTabScreen(
                 }
                 MusicSearchKind.Artists -> catalog.searchArtists(q).let {
                     if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Artists(it)
+                }
+                MusicSearchKind.YouTube -> catalog.searchYouTube(q).let {
+                    if (it.isEmpty()) MusicSearchResults.Empty else MusicSearchResults.Videos(it)
                 }
             }
         } catch (e: CancellationException) {
@@ -476,6 +485,9 @@ fun MusicTabScreen(
                         BrowseFilterIconAction(Icons.Rounded.Album, "Albums", on = kind == MusicSearchKind.Albums) { kind = MusicSearchKind.Albums }
                     }
                     BrowseFilterIconAction(Icons.Rounded.Person, "Artists", on = kind == MusicSearchKind.Artists) { kind = MusicSearchKind.Artists }
+                    BrowseFilterIconAction(Icons.Rounded.SmartDisplay, "YouTube: songs not on an album", on = kind == MusicSearchKind.YouTube) {
+                        kind = MusicSearchKind.YouTube
+                    }
                     // fork:music - the first result's ladders, as short pills beside the kind
                     val offers = when (val shown = results) {
                         is MusicSearchResults.Albums -> {
@@ -532,7 +544,7 @@ fun MusicTabScreen(
         }
 
         when (val shown = results) {
-            MusicSearchResults.Idle -> MusicMessage("Search for an album or an artist.")
+            MusicSearchResults.Idle -> MusicMessage("Search for an album, an artist, or a song on YouTube.")
             MusicSearchResults.Loading -> Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.accent)
             }
@@ -550,6 +562,11 @@ fun MusicTabScreen(
             is MusicSearchResults.Artists -> MusicResultGrid(Modifier.weight(1f)) {
                 items(shown.items, key = { it.browseId }) { artist ->
                     MusicArtistTile(artist, onClick = { onArtistClick(artist.browseId) })
+                }
+            }
+            is MusicSearchResults.Videos -> MusicResultGrid(Modifier.weight(1f)) {
+                items(shown.items, key = { it.videoId }) { track ->
+                    MusicVideoTile(track)
                 }
             }
         }
@@ -918,6 +935,20 @@ private fun MusicAlbumTile(album: MusicAlbumSummary, onClick: () -> Unit) {
     ) { MusicCoverFill(album.thumbnailUrl, album.title, circle = false) }
 }
 
+/** fork:music-youtube - a YouTube hit: a click plays it on its own, a right click puts it after what is queued. */
+@Composable
+private fun MusicVideoTile(track: MusicTrack) {
+    MusicTile(
+        title = track.title,
+        subtitle = track.artists.firstOrNull()?.name,
+        badge = youTubeLengthLabel(track.durationSeconds),
+        onClick = { MusicPlayback.player.play(youTubeSingleAlbum(track)) },
+        onSecondary = {
+            if (MusicPlayback.player.enqueue(youTubeSingleAlbum(track))) NuvioToastController.show("Queued ${track.title}")
+        },
+    ) { MusicCoverFill(track.coverUrl, track.title, circle = false) }
+}
+
 @Composable
 private fun MusicArtistTile(artist: MusicArtistSummary, onClick: () -> Unit) {
     MusicTile(title = artist.name, subtitle = null, badge = null, centred = true, onClick = onClick) {
@@ -935,6 +966,7 @@ private fun MusicTile(
     badge: String?,
     onClick: () -> Unit,
     centred: Boolean = false,
+    onSecondary: (() -> Unit)? = null,
     artwork: @Composable () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -947,6 +979,7 @@ private fun MusicTile(
         modifier = Modifier
             .fillMaxWidth()
             .hoverable(interaction)
+            .secondaryClick(onSecondary)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         horizontalAlignment = if (centred) Alignment.CenterHorizontally else Alignment.Start,
     ) {

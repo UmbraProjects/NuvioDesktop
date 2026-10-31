@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.trailer.TrailerPlaybackResolver
+
 private object MetadataClientCatalog : MusicCatalog {
     override suspend fun searchAlbums(query: String) = MusicMetadataClient.searchAlbums(query)
     override suspend fun searchArtists(query: String) = MusicMetadataClient.searchArtists(query)
@@ -9,6 +11,8 @@ private object MetadataClientCatalog : MusicCatalog {
     override suspend fun searchReleases(query: String) = MusicMetadataClient.searchReleases(query)
     override suspend fun searchSongs(query: String) = MusicMetadataClient.searchSongs(query)
     override suspend fun playlist(playlistId: String) = MusicMetadataClient.playlist(playlistId)
+    override suspend fun searchYouTube(query: String) =
+        TrailerPlaybackResolver.searchYouTube(query).map { it.toMusicTrack() }
 }
 
 actual fun defaultMusicCatalog(): MusicCatalog = MetadataClientCatalog

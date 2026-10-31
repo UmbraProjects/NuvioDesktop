@@ -29,6 +29,12 @@ interface MusicCatalog {
     suspend fun searchSongs(query: String): List<MusicTrack> = emptyList()
 
     /**
+     * fork:music-youtube - plain YouTube's videos for [query] as typed, in YouTube's order, as tracks: for songs YouTube
+     * Music has no album for. Empty on failure; the default is empty for test fakes.
+     */
+    suspend fun searchYouTube(query: String): List<MusicTrack> = emptyList()
+
+    /**
      * fork:music-playlists - a YouTube Music or YouTube playlist by id (`PL...`, `OLAK5uy...`, `RDCLAK...`; a leading
      * `VL` is allowed), every page of it up to a few thousand tracks. Null when it could not be read.
      */
