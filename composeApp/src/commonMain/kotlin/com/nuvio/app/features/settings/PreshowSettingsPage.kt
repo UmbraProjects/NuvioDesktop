@@ -75,7 +75,8 @@ private const val TRAILERS_WHEN_SWITCHED_ON = 2
  * (the "previously on" recap before an episode, post-show cards when the credits roll, theme songs).
  *
  * What plays, and in which order, is one list in one dialog: every part has its switch beside it. The sections
- * below it only hold each part's details (how many trailers, which rating system, where clips come from).
+ * below it only hold each part's details (how many trailers, which rating system). Clip sources come last: they
+ * are filled in already where it matters, and few people change them.
  */
 internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
     item {
@@ -197,44 +198,6 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
     }
 
     item {
-        SettingsSection(title = PRESHOW_SECTION_CLIP_SOURCES, isTablet = isTablet) {
-            val folder by PreshowSettings.localFolder.collectAsStateWithLifecycle()
-            val avid by PreshowSettings.avidUrls.collectAsStateWithLifecycle()
-            SettingsGroup(isTablet = isTablet) {
-                SettingsTextInputRow(
-                    title = "Local folder",
-                    description = "Your own clips for the cinema intro, bumper, rating card and feature presentation, in subfolders " +
-                        "named cinema-intro, bumper, rating-bbfc, rating-mpaa and feature-presentation. Name rating clips after " +
-                        "the rating, such as 12A.mp4 or PG-13.mp4. Leave blank for the default folder. A clip here is used before " +
-                        "any link below.",
-                    value = folder,
-                    placeholder = "Default folder",
-                    isTablet = isTablet,
-                    onSave = PreshowSettings::setLocalFolder,
-                )
-                listOf(
-                    "cinema_intro" to "Cinema intro clips",
-                    "bumper" to "Bumper clips",
-                    "rating_bbfc" to "BBFC rating clips",
-                    "rating_mpaa" to "MPA rating clips",
-                    "feature_presentation" to "Feature presentation clips",
-                ).forEach { (key, title) ->
-                    SettingsGroupDivider(isTablet)
-                    SettingsTextInputRow(
-                        title = title,
-                        description = "An avid.wiki page or YouTube link to take clips from when the local folder has none. " +
-                            "Separate several links with spaces or commas and one clip is picked from all of them.",
-                        value = avid[key].orEmpty(),
-                        placeholder = "https://avid.wiki/…",
-                        isTablet = isTablet,
-                        onSave = { PreshowSettings.setAvidUrl(key, it) },
-                    )
-                }
-            }
-        }
-    }
-
-    item {
         SettingsSection(title = PRESHOW_SECTION_PREVIOUSLY_ON, isTablet = isTablet) {
             val ai by DiscoverAiSettingsRepository.uiState.collectAsStateWithLifecycle()
             val enabled by PreshowSettings.previouslyOnEnabled.collectAsStateWithLifecycle()
@@ -344,6 +307,44 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
                     isTablet = isTablet,
                     onSelected = ThemeSongSettings::setVolume,
                 )
+            }
+        }
+    }
+
+    item {
+        SettingsSection(title = PRESHOW_SECTION_CLIP_SOURCES, isTablet = isTablet) {
+            val folder by PreshowSettings.localFolder.collectAsStateWithLifecycle()
+            val avid by PreshowSettings.avidUrls.collectAsStateWithLifecycle()
+            SettingsGroup(isTablet = isTablet) {
+                SettingsTextInputRow(
+                    title = "Local folder",
+                    description = "Your own clips for the cinema intro, bumper, rating card and feature presentation, in subfolders " +
+                        "named cinema-intro, bumper, rating-bbfc, rating-mpaa and feature-presentation. Name rating clips after " +
+                        "the rating, such as 12A.mp4 or PG-13.mp4. Leave blank for the default folder. A clip here is used before " +
+                        "any link below.",
+                    value = folder,
+                    placeholder = "Default folder",
+                    isTablet = isTablet,
+                    onSave = PreshowSettings::setLocalFolder,
+                )
+                listOf(
+                    "cinema_intro" to "Cinema intro clips",
+                    "bumper" to "Bumper clips",
+                    "rating_bbfc" to "BBFC rating clips",
+                    "rating_mpaa" to "MPA rating clips",
+                    "feature_presentation" to "Feature presentation clips",
+                ).forEach { (key, title) ->
+                    SettingsGroupDivider(isTablet)
+                    SettingsTextInputRow(
+                        title = title,
+                        description = "An avid.wiki page or YouTube link to take clips from when the local folder has none. " +
+                            "Separate several links with spaces or commas and one clip is picked from all of them.",
+                        value = avid[key].orEmpty(),
+                        placeholder = "https://avid.wiki/…",
+                        isTablet = isTablet,
+                        onSave = { PreshowSettings.setAvidUrl(key, it) },
+                    )
+                }
             }
         }
     }
