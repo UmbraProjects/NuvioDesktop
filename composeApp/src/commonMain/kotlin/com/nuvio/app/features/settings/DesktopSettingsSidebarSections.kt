@@ -160,8 +160,13 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.Music, Res.string.settings_music_section_playback),
         )
         SettingsPage.Preshow -> listOf(
+            sectionTitled(SettingsPage.Preshow, PRESHOW_SECTION_RUNNING_ORDER),
             section(SettingsPage.Preshow, Res.string.settings_preshow_section_trailers),
-            section(SettingsPage.Preshow, Res.string.settings_preshow_section_trivia),
+            sectionTitled(SettingsPage.Preshow, PRESHOW_SECTION_RATING_CARD),
+            sectionTitled(SettingsPage.Preshow, PRESHOW_SECTION_CLIP_SOURCES),
+            sectionTitled(SettingsPage.Preshow, PRESHOW_SECTION_PREVIOUSLY_ON),
+            sectionTitled(SettingsPage.Preshow, PRESHOW_SECTION_POST_SHOW),
+            section(SettingsPage.Preshow, Res.string.settings_theme_song_section),
         )
         SettingsPage.Games -> listOf(
             section(SettingsPage.Games, Res.string.settings_games_title),

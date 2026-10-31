@@ -2485,7 +2485,8 @@ private fun settingsSearchEntries(
         )
         listOf(
             PlaybackSearchRow("preshow-trailers", resolve(Res.string.settings_preroll_trailers), resolve(Res.string.settings_preroll_trailers_description), resolve(Res.string.settings_preshow_section_trailers)),
-            PlaybackSearchRow("ai-trivia-enabled", resolve(Res.string.settings_ai_trivia_enabled), resolve(Res.string.settings_ai_trivia_enabled_description), resolve(Res.string.settings_preshow_section_trivia)),
+            PlaybackSearchRow("ai-trivia-enabled", resolve(Res.string.settings_ai_trivia_enabled), resolve(Res.string.settings_ai_trivia_enabled_description), PRESHOW_SECTION_RUNNING_ORDER),
+            PlaybackSearchRow("preshow-lineup", "Pre-show running order", "Cinema intro, sound system trailer (bumper), trailers, trivia, rating card and feature presentation: switch each on or off and choose the order.", PRESHOW_SECTION_RUNNING_ORDER),
         ).forEach { row ->
             addRow(
                 page = SettingsPage.Preshow,
