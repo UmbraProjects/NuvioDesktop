@@ -7,7 +7,8 @@
   [![License][license-shield]][license-url]
 
   <p>
-    Nuvio HTPC (Home Theatre PC) is a feature rich Windows media client for either desk or couch.
+    Nuvio HTPC (Home Theatre PC) is a feature-rich desktop media client for either desk or couch.
+    <br>This fork supports Windows and Apple Silicon Macs (macOS arm64).<br>
     <br>To see it in action, click the image for a showcase video.<br/>
   </p> 
 </div>
@@ -17,6 +18,8 @@
 This fork is unaffiliated with the Nuvio team. Don't worry about the commit disparity, Nuvio's team makes many small commits while I bundle everything into a single release commit for simplicity as this is mostly a solo focused project. 
 
 If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamSlokker/NuvioDesktop-Linux) It supports appimage, flatpack or debian. It's based on the nightly releases of this project.
+
+The macOS build is for Apple Silicon (`arm64`) and uses the native macOS MPVKit player. Features that depend on Windows-only runtimes or APIs are intentionally not shown/enabled on macOS: bundled P2P engines/TorrServer, in-app self-updating, SVP/VapourSynth motion interpolation, and NVIDIA RTX Video. The rest of the desktop client is shared where supported by macOS.
 
 # Home Theatre features
 
@@ -42,6 +45,7 @@ If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamS
 * Local Library for movies and TV from PC folders, with automatic TMDB matching and manual fix-matching.
 * Auto-Downloads for monitored movies and series with configurable delays, schedules, limits, concurrency, and bandwidth controls.
 * Debrid library integration with TorBox and Premiumize, including season-pack inspection, episode selection, cached-source inspection, and cloud libraries.
+* Torrent/P2P playback via Nuvio Engine or TorrServer on supported Windows builds; it is unavailable on macOS at this time.
 
 # Desktop Playback
 
@@ -49,7 +53,7 @@ If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamS
 * Multiple playback UIs to choose from, with a extensive right click menu, cast display and clock.
 * Automatic stream failover, source affinity, binge mode, next-episode autoplay, and configurable buffering.
 * Three color profiles thanks to Stremio Kai (used with Permission), custom color profile for tinkering and three HDR modes.
-* Anime shaders (4K Anime, Stremio Kai, custom), SVP frame interpolation and NVIDIA RTX Video True HDR.
+* Anime shaders (4K Anime, Stremio Kai, custom); SVP frame interpolation and NVIDIA RTX Video True HDR are Windows-only.
 * Seek-bar thumbnails, chapters, SkipDB support, intro/outro skipping, dual subtitles, extensive subtitle styling, playback speed controls, and volume boost.
 * Desktop Picture-in-Picture, direct URL playback, local-file playback, and external-player integration.
 * Stream Scoring can rank or reject sources based on quality, resolution, HDR, audio, codec, language, release metadata, cache status, and file size.
@@ -183,13 +187,14 @@ Nuvio Desktop is a media client for browsing metadata, managing collections and 
 
 ## Upstream - Installation
 
-Download the latest desktop build from [GitHub Releases](https://github.com/NuvioMedia/NuvioDesktop/releases/latest).
+Download the latest build of this fork from [GitHub Releases](../../releases/latest).
 
-Release packages are provided for supported desktop platforms:
+Release packages for this fork:
 
 - Windows: MSI installer
-- macOS: DMG installer
-- Linux: DEB package, when available
+- macOS Apple Silicon (`arm64`): `Nuvio-macOS-arm64-<version>.dmg` installer
+
+The macOS DMG is built and attached automatically when a GitHub Release is published. Maintainers can rerun the `macOS Apple Silicon DMG` workflow to rebuild an installer for an existing release. To produce a signed and notarized installer, configure the repository secrets `NUVIO_MACOS_SIGNING_IDENTITY`, `NUVIO_MACOS_NOTARY_APPLE_ID`, `NUVIO_MACOS_NOTARY_TEAM_ID`, and `NUVIO_MACOS_NOTARY_PASSWORD`; otherwise the DMG is unsigned and macOS Gatekeeper may require a manual right-click → Open on first launch.
 
 ## Upstream - Development
 
@@ -222,8 +227,12 @@ Platform-specific packaging:
 # Windows
 ./gradlew :composeApp:packageReleaseMsi --rerun-tasks
 
-# macOS
-./scripts/build-macos-release-dmgs.sh --package-only
+# macOS Apple Silicon (build MPVKit and package the DMG)
+git submodule update --init -- MPVKit
+./scripts/build-macos-release-dmg.sh
+
+# Repackage when MPVKit/dist already contains arm64 libmpv artifacts
+./scripts/build-macos-release-dmg.sh --package-only
 
 # Linux
 ./gradlew :composeApp:packageReleaseDeb

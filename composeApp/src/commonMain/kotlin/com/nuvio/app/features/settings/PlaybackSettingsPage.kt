@@ -1535,25 +1535,30 @@ private fun PlaybackSettingsSection(
                                 modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSkipUltraHd),
                                 onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSkipUltraHdEnabled,
                             )
-                            SettingsGroupDivider(isTablet = isTablet)
-                            SettingsSwitchRow(
-                                title = stringResource(Res.string.settings_playback_desktop_anime_svp),
-                                description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
-                                checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
-                                isTablet = isTablet,
-                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
-                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
-                            )
-                            if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
+                            // SVP's VapourSynth runtime is only bundled/probed on Windows. The
+                            // shared preference can remain persisted, but don't advertise a toggle
+                            // that cannot take effect on macOS (or other desktop hosts).
+                            if (isWindows) {
                                 SettingsGroupDivider(isTablet = isTablet)
                                 SettingsSwitchRow(
-                                    title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
-                                    description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
-                                    checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
+                                    title = stringResource(Res.string.settings_playback_desktop_anime_svp),
+                                    description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
+                                    checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
                                     isTablet = isTablet,
-                                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
-                                    onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
+                                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
+                                    onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
                                 )
+                                if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
+                                    SettingsGroupDivider(isTablet = isTablet)
+                                    SettingsSwitchRow(
+                                        title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
+                                        description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
+                                        checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
+                                        isTablet = isTablet,
+                                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
+                                        onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
+                                    )
+                                }
                             }
                         }
                         SettingsGroupDivider(isTablet = isTablet)

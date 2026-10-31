@@ -1252,6 +1252,49 @@ if (isWindowsHost) {
     }
 }
 
+if (isMacHost) {
+    // The JNI bridge is a native library and cannot be loaded directly from the app JAR. Ship it
+    // inside the signed app bundle beside the JARs, then NativePlayerBridge resolves it from there
+    // using java.home. This also avoids extracting executable code into a user-writable temp dir.
+    mapOf(
+        "createDistributable" to "main/app/Nuvio.app/Contents/app",
+        "createReleaseDistributable" to "main-release/app/Nuvio.app/Contents/app",
+    ).forEach { (taskName, relativeAppContentsPath) ->
+        tasks.matching { it.name == taskName }.configureEach {
+            dependsOn(buildMacosPlayerBridge)
+            inputs.file(macosPlayerBridgeOutput)
+            doLast {
+                val appContentsDir = layout.buildDirectory
+                    .dir("compose/binaries/$relativeAppContentsPath")
+                    .get()
+                    .asFile
+                check(appContentsDir.isDirectory) {
+                    "macOS app image was not created at ${appContentsDir.parentFile.parentFile}"
+                }
+                copy {
+                    from(macosPlayerBridgeOutput)
+                    into(appContentsDir)
+                }
+                check(appContentsDir.resolve("libplayer_bridge.dylib").isFile) {
+                    "macOS app image is missing libplayer_bridge.dylib"
+                }
+                // Staging code after jpackage invalidates its app-bundle signature. Re-sign the
+                // completed bundle when a Developer ID is configured; the DMG/notarization task
+                // then receives a signature that includes the native player bridge.
+                if (macosSigningIdentity != null) {
+                    val appBundleDir = appContentsDir.parentFile.parentFile
+                    project.exec {
+                        commandLine(
+                            "codesign", "--force", "--deep", "--options", "runtime", "--timestamp",
+                            "--sign", macosSigningIdentity, appBundleDir.absolutePath,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 // material-icons-extended ships 11,105 icons (~36MB compressed) and the app references about 75
 // of them, so it was the second-largest thing in the download after the player runtime. ProGuard
 // would remove the rest, but buildTypes.release.proguard is off because shrinking a Compose app
@@ -1975,7 +2018,8 @@ compose.desktop {
             // that Compose draw probes cannot see.
             modules("java.net.http", "jdk.httpserver", "jdk.management", "jdk.jfr")
             macOS {
-                bundleID = "com.nuvio.media.desktop"
+                // Keep the fork side-by-side installable with the official Nuvio app.
+                bundleID = "com.umbra.projects.nuviohtpc"
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon.icns"))
                 if (macosSigningIdentity != null) {
                     signing {

@@ -15,9 +15,18 @@ internal fun findPackagedNativeRuntime(
     javaHome: File?,
     requiredFiles: List<String>,
 ): File? {
-    if (platform != DesktopHostOs.WINDOWS) return null
-    val installDir = javaHome?.parentFile?.takeIf { it.isDirectory } ?: return null
-    return installDir.takeIf { dir -> requiredFiles.all { dir.resolve(it).isFile } }
+    val runtimeDir = when (platform) {
+        DesktopHostOs.WINDOWS -> javaHome?.parentFile?.takeIf { it.isDirectory }
+        DesktopHostOs.MACOS -> {
+            // jpackage places the bundled JDK at Nuvio.app/Contents/runtime/Contents/Home;
+            // the native bridge is staged beside the app jars at Nuvio.app/Contents/app.
+            generateSequence(javaHome) { it.parentFile }
+                .firstOrNull { it.name == "Contents" && it.resolve("app").isDirectory }
+                ?.resolve("app")
+        }
+        else -> null
+    } ?: return null
+    return runtimeDir.takeIf { dir -> requiredFiles.all { dir.resolve(it).isFile } }
 }
 
 internal fun interface NativePlayerEventSink {

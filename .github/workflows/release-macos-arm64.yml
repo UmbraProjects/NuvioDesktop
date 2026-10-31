@@ -1,0 +1,66 @@
+name: macOS Apple Silicon DMG
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub release tag to build and attach a DMG to
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-dmg:
+    # macos-15 is the currently supported Apple Silicon image. The build script also checks uname
+    # and fails closed rather than publishing an Intel-only installer under an arm64 asset name.
+    runs-on: macos-15
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          # The repository also contains a legacy TorrServer gitlink without a .gitmodules entry.
+          # Initialize only the declared MPVKit submodule required by macOS playback.
+          submodules: false
+
+      - name: Initialize MPVKit
+        run: git submodule update --init -- MPVKit
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install MPVKit build tools
+        run: brew install cmake meson ninja nasm pkg-config yasm
+
+      - name: Test packaged macOS native-runtime lookup
+        run: ./gradlew :composeApp:desktopTest --tests 'com.nuvio.app.features.player.desktop.NativeRuntimeLayoutTest'
+
+      - name: Build Apple Silicon DMG
+        id: package
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          chmod +x scripts/build-macos-release-dmg.sh
+          NUVIO_DESKTOP_VERSION_NAME="$VERSION" NUVIO_DESKTOP_CHANNEL=stable ./scripts/build-macos-release-dmg.sh
+          DMG="$(find composeApp/build/compose/binaries -type f -name '*.dmg' -print | sort | tail -n 1)"
+          test -n "$DMG"
+          ASSET="$RUNNER_TEMP/Nuvio-macOS-arm64-${VERSION}.dmg"
+          cp "$DMG" "$ASSET"
+          echo "dmg_path=$ASSET" >> "$GITHUB_OUTPUT"
+        env:
+          NUVIO_MACOS_SIGNING_IDENTITY: ${{ secrets.NUVIO_MACOS_SIGNING_IDENTITY }}
+          NUVIO_MACOS_NOTARY_APPLE_ID: ${{ secrets.NUVIO_MACOS_NOTARY_APPLE_ID }}
+          NUVIO_MACOS_NOTARY_TEAM_ID: ${{ secrets.NUVIO_MACOS_NOTARY_TEAM_ID }}
+          NUVIO_MACOS_NOTARY_PASSWORD: ${{ secrets.NUVIO_MACOS_NOTARY_PASSWORD }}
+
+      - name: Attach installer to the GitHub release
+        run: gh release upload "$RELEASE_TAG" "${{ steps.package.outputs.dmg_path }}" --clobber
