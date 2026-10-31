@@ -25,6 +25,6 @@ class DiscoverAiTriviaGatingTest {
     fun groqUsesItsOwnHostAndDefaultModel() {
         val groq = DiscoverAiSettings(provider = DiscoverAiProvider.Groq)
         assertTrue(groq.effectiveBaseUrl == DISCOVER_AI_GROQ_BASE_URL)
-        assertTrue(groq.effectiveModel == "llama-3.3-70b-versatile")
+        assertTrue(groq.effectiveModel == "openai/gpt-oss-120b")
     }
 }

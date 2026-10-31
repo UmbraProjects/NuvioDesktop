@@ -141,8 +141,23 @@ data class LibraryArtist(
     val topCheckedAtEpochMs: Long = 0L,
     /** How the person found this artist when it was not by searching for it, for example "ladder: Into shoegaze". User state; a refresh keeps it. */
     val foundVia: String? = null,
+    /** Genres the person chose for this artist when no source has any. They lead the artist's profile. User state; a refresh keeps it. */
+    val manualGenres: List<String> = emptyList(),
+    /** How many completed look-ups found no genres or tags at all. Reset as soon as one finds some. See [tagRetryDelayMs]. */
+    val tagMisses: Int = 0,
+    /** When the last look-up that found no genres or tags finished; 0 when there is no such look-up to wait out. */
+    val tagsCheckedAtEpochMs: Long = 0L,
 ) {
     fun releasesOf(kind: ReleaseKind): List<LibraryRelease> = releases.filter { it.kind == kind }
+
+    /**
+     * The release the album id [browseId] stands for: by its YouTube Music id, or, for an album only the music addon
+     * has, by the release key its id carries.
+     */
+    fun releaseOfAlbum(browseId: String): LibraryRelease? {
+        val addon = com.nuvio.app.features.music.nebula.parseAddonAlbumId(browseId)
+        return if (addon != null) releases.firstOrNull { it.key == addon.releaseKey } else releases.firstOrNull { it.ytBrowseId == browseId }
+    }
 
     /** The sections an artist page shows: only kinds that have releases, in [ReleaseKind] order. */
     val sections: List<Pair<ReleaseKind, List<LibraryRelease>>>

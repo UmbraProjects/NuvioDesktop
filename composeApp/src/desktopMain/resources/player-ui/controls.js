@@ -6117,6 +6117,24 @@ if (isPreshowSurface) {
       '<span class="hero-trailer-skip-label">Skip</span>' +
       '<svg><use href="#icon-skip-next"></use></svg>';
   }
+  // "Add to library" pill beside Skip, same look. Kotlin supplies the label (empty hides it) and whether the
+  // title is already saved; a click tells Kotlin to save and the pill marks itself done straight away.
+  const addButton = document.createElement("button");
+  addButton.className = "hero-trailer-button";
+  addButton.type = "button";
+  addButton.id = "heroTrailerLibraryButton";
+  addButton.style.display = "none";
+  addButton.innerHTML =
+    '<span class="hero-trailer-skip-label"></span>' +
+    '<svg><use id="heroTrailerLibraryIcon" href="#icon-add"></use></svg>';
+  addButton.addEventListener("click", () => {
+    if (addButton.dataset.done === "1") return;
+    addButton.dataset.done = "1";
+    addButton.querySelector("use").setAttribute("href", "#icon-check");
+    addButton.querySelector(".hero-trailer-skip-label").textContent = "In library";
+    send("preshowAddToLibrary", 0);
+  });
+  heroTrailerChrome.insertBefore(addButton, skipButton || heroTrailerChrome.firstChild);
 }
 root.appendChild(heroTrailerChrome);
 
@@ -6240,6 +6258,20 @@ function applyHeroTrailerContent() {
   setHeroTrailerLine(heroTrailerTitle, useLogo ? "" : title);
   setHeroTrailerLine(heroTrailerMeta, state.heroTrailerMeta);
   setHeroTrailerLine(heroTrailerDescription, state.heroTrailerDescription);
+  const addButton = heroTrailerChrome.querySelector("#heroTrailerLibraryButton");
+  if (addButton) {
+    const label = String(state.heroTrailerLibraryLabel || "").trim();
+    // A new trailer pushes fresh state; only reset the pill when the title under it changed, so
+    // the "done" mark survives the other re-renders of the same trailer.
+    if (addButton.dataset.forTitle !== title) {
+      addButton.dataset.forTitle = title;
+      addButton.dataset.done = state.heroTrailerInLibrary ? "1" : "0";
+    }
+    const done = addButton.dataset.done === "1";
+    addButton.style.display = label ? "" : "none";
+    addButton.querySelector(".hero-trailer-skip-label").textContent = done ? "In library" : label;
+    addButton.querySelector("use").setAttribute("href", done ? "#icon-check" : "#icon-add");
+  }
 }
 
 const applyHeroTrailer = () => {
@@ -8052,6 +8084,21 @@ document.addEventListener("keydown", event => {
   // the full-screen player key logic below for this surface.
   if (isHeroTrailerSurface || state.heroTrailerMode) {
     return;
+  }
+  // Post-show cards are up and the video is in a corner box: the D-pad drives the cards, which Kotlin
+  // draws, so the keys they use are forwarded instead of seeking or showing the controls. Anything
+  // else (volume, fullscreen, ...) keeps working.
+  if (state.postShowInput) {
+    const postShowCodes = {
+      ArrowLeft: 1, ArrowRight: 2, ArrowUp: 3, ArrowDown: 4, Enter: 5, " ": 5,
+      Escape: 6, Backspace: 6, "1": 11, "2": 12, "3": 13, "4": 14,
+    };
+    const postShowCode = postShowCodes[event.key];
+    if (postShowCode) {
+      event.preventDefault();
+      send("postShowKey", postShowCode);
+      return;
+    }
   }
   // The hex prompt is its own layer rather than an activeModal, so the modal branches below would
   // otherwise close the panel underneath it and leave the prompt stranded.

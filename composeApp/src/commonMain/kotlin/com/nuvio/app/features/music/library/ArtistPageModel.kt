@@ -16,6 +16,15 @@ internal data class ReleaseGroup(
     val kind: ReleaseKind get() = primary.kind
 }
 
+/**
+ * True when this card has no YouTube Music version but the music addon is known to have one. [addonKeys] are
+ * [LibraryRelease.key]s (see AddonReleases); any version of the card counts, since the check asks about only one.
+ */
+internal fun ReleaseGroup.onAddon(addonKeys: Set<String>): Boolean = !isPlayable && versions.any { it.key in addonKeys }
+
+/** Playable on YouTube Music or from the music addon. The Playable-only filter and the playable counts use this. */
+internal fun ReleaseGroup.isPlayableWith(addonKeys: Set<String>): Boolean = isPlayable || onAddon(addonKeys)
+
 /** The kinds of release the type chips filter on. */
 internal enum class ReleaseFilter(val label: String) {
     All("All"),
@@ -106,6 +115,8 @@ internal fun buildDiscography(
     releases: List<LibraryRelease>,
     playableOnly: Boolean,
     filter: ReleaseFilter,
+    /** Keys of releases the music addon has that YouTube Music lacks: they count as playable, for the filter and the counts. */
+    addonKeys: Set<String> = emptySet(),
 ): ArtistDiscography {
     val (demoReleases, regularReleases) = releases.partition { it.isDemo() }
     val regular = fold(regularReleases)
@@ -120,7 +131,7 @@ internal fun buildDiscography(
         }
     }
 
-    fun List<ReleaseGroup>.visible() = if (playableOnly) filter { it.isPlayable } else this
+    fun List<ReleaseGroup>.visible() = if (playableOnly) filter { it.isPlayableWith(addonKeys) } else this
 
     val shownRegular = when (filter) {
         ReleaseFilter.Demos -> emptyList()
@@ -141,11 +152,22 @@ internal fun buildDiscography(
     return ArtistDiscography(
         eras = eras,
         demos = shownDemos.sortedByDescending { it.primary.sortDate() },
-        playableCount = (regular + demos).count { it.isPlayable },
+        playableCount = (regular + demos).count { it.isPlayableWith(addonKeys) },
         totalCount = regular.size + demos.size, // same rule as countReleaseCards
         filterCounts = filterCounts,
     )
 }
+
+/**
+ * The releases worth asking the music addon about, newest first: for each card that has no YouTube Music version,
+ * its primary release, when it is an album or an EP. Singles, live and compilation releases and demos are left
+ * out to keep the requests few (the addon has only a search per release).
+ */
+internal fun releasesToAskAddon(releases: List<LibraryRelease>): List<LibraryRelease> =
+    fold(releases.filterNot { it.isDemo() })
+        .filter { !it.isPlayable && (it.kind == ReleaseKind.Album || it.kind == ReleaseKind.EP) }
+        .sortedByDescending { it.primary.sortDate() }
+        .map { it.primary }
 
 /**
  * The release the page leads with: the newest non-demo one that can be played, else the newest

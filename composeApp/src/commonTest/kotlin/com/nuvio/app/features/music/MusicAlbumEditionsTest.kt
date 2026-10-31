@@ -1,10 +1,75 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.LibraryRelease
+import com.nuvio.app.features.music.library.ReleaseKind
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+class ExpectedEditionCountsTest {
+    private fun release(key: String, title: String, tracks: Int?, yt: String?) =
+        LibraryRelease(key = key, title = title, kind = ReleaseKind.EP, trackCount = tracks, ytBrowseId = yt)
+
+    @Test
+    fun theLinkedReleasesOwnCountComesFirst() {
+        val releases = listOf(release("a", "Vincent's Tale", 7, "short"))
+        assertEquals(listOf(7), expectedEditionCounts(releases, "short"))
+    }
+
+    @Test
+    fun aSiblingNotOnYouTubeMusicAddsItsCount() {
+        // The refresh left the linked release with no count; the unlinked sibling still knows 11.
+        val releases = listOf(
+            release("a", "Vincent's Tale", null, "short"),
+            release("b", "Vincent's Tale", 11, null),
+        )
+        assertEquals(listOf(11), expectedEditionCounts(releases, "short"))
+    }
+
+    @Test
+    fun bothCountsAreKeptWhenTheyDiffer() {
+        val releases = listOf(
+            release("a", "Vincent's Tale", 7, "short"),
+            release("b", "Vincent's Tale (Deluxe)", 11, null),
+        )
+        assertEquals(listOf(7, 11), expectedEditionCounts(releases, "short"))
+    }
+
+    @Test
+    fun otherTitlesAndYouTubeLinkedSiblingsAreIgnored() {
+        val releases = listOf(
+            release("a", "Vincent's Tale", 7, "short"),
+            release("b", "Sick Sick Soul", 14, null),
+            release("c", "Vincent's Tale", 11, "long"),
+            release("d", "Vincent's Tale", null, null),
+        )
+        assertEquals(listOf(7), expectedEditionCounts(releases, "short"))
+    }
+
+    @Test
+    fun anUnknownAlbumExpectsNothing() {
+        assertEquals(emptyList(), expectedEditionCounts(listOf(release("a", "X", 5, "x")), "missing"))
+    }
+}
+
 class MusicAlbumEditionsTest {
+    @Test
+    fun severalExpectedCountsFindTheLongerEdition() = runBlocking {
+        val short = album("short", 7, listOf("long"))
+        val long = album("long", 11)
+        // 7 is what the page already has; only 11 is looked for.
+        assertEquals("long", matchingEdition(short, listOf(7, 11)) { if (it == "long") long else null }.browseId)
+    }
+
+    @Test
+    fun countsTheAlbumAlreadyHasLookNowhere() = runBlocking {
+        val fetched = mutableListOf<String>()
+        val short = album("short", 7, listOf("long"))
+        val result = matchingEdition(short, listOf(7)) { fetched += it; null }
+        assertEquals("short", result.browseId)
+        assertEquals(emptyList(), fetched)
+    }
+
     private fun album(id: String, tracks: Int, others: List<String> = emptyList()) = MusicAlbum(
         browseId = id,
         title = "Vincent's Tale",

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.features.preroll.PostShowController
 import com.nuvio.app.features.details.filler.isSkippableFiller
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -1694,7 +1695,10 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         )
     }
 
+    // A finale's post-show cards are still to come: hold the card and autoplay until they close.
+    val postShowHolding = PostShowController.pending
     LaunchedEffect(
+        postShowHolding,
         playbackSnapshot.positionMs,
         playbackSnapshot.durationMs,
         playbackSnapshot.isEnded,
@@ -1708,7 +1712,8 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         playerSettingsUiState.nextEpisodeThresholdPercent,
         playerSettingsUiState.nextEpisodeThresholdMinutesBeforeEnd,
     ) {
-        val cardBlocked = isProviderDiagnosticVideoPlayback ||
+        val cardBlocked = postShowHolding ||
+            isProviderDiagnosticVideoPlayback ||
             playbackSourceFailureActive ||
             errorMessage != null ||
             nextEpisodeInfo == null ||

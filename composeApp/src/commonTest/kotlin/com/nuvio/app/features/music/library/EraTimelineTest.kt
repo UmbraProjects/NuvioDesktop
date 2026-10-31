@@ -107,6 +107,36 @@ class EraTimelineTest {
     }
 
     @Test
+    fun theSideTimelineFollowsOnlyThePlayableToggle() {
+        val releases = listOf(
+            r("a", "Playable album", year = "2020", yt = "yt-a"),
+            r("b", "Unplayable album", year = "2021"),
+            r("c", "Playable single", ReleaseKind.Single, "2022", yt = "yt-c"),
+            r("d", "Unplayable EP", ReleaseKind.EP, "2023"),
+        )
+        val groups = buildEraTimeline(releases).eras.flatMap { it.groups }
+        assertEquals(setOf("a", "b", "c", "d"), timelineEntries(groups, playableOnly = false).map { it.primary.key }.toSet())
+        assertEquals(setOf("a", "c"), timelineEntries(groups, playableOnly = true).map { it.primary.key }.toSet())
+    }
+
+    @Test
+    fun aPlayableVersionKeepsAGroupOnThePlayableTimeline() {
+        val groups = buildEraTimeline(
+            listOf(r("deluxe", "Album (Deluxe)", year = "2020"), r("std", "Album", year = "2020", yt = "yt-std")),
+        ).eras.flatMap { it.groups }
+        // Whether the two folded into one card or stayed apart, the playable one keeps its place.
+        assertTrue(timelineEntries(groups, playableOnly = true).isNotEmpty())
+        assertTrue(timelineEntries(groups, playableOnly = true).all { it.isPlayable })
+    }
+
+    @Test
+    fun nothingPlayableLeavesAnEmptyTimeline() {
+        val groups = buildEraTimeline(listOf(r("a", "A", year = "2020"), r("b", "B", year = "2022"))).eras.flatMap { it.groups }
+        assertTrue(timelineEntries(groups, playableOnly = true).isEmpty())
+        assertEquals(2, timelineEntries(groups, playableOnly = false).size)
+    }
+
+    @Test
     fun releaseYearOrNullOnlyAcceptsRealYears() {
         assertEquals(2014, releaseYearOrNull("2014"))
         assertEquals(1972, releaseYearOrNull("1972-06"))

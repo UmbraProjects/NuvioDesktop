@@ -8,7 +8,7 @@ private fun isTvSeriesType(type: String): Boolean =
         else -> false
     }
 
-private fun isEndedSeriesStatus(status: String?): Boolean {
+internal fun isEndedSeriesStatus(status: String?): Boolean {
     if (status.isNullOrBlank()) return false
     val s = status.trim().lowercase()
     if ("returning" in s || "in production" in s) return false

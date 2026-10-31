@@ -92,8 +92,11 @@ internal fun tagProfileFromVotes(
     return unitProfile(raw)
 }
 
-/** The profile of one saved artist, from the genres, tags, mood and style the library stores for it. */
-internal fun LibraryArtist.tagProfile(): TagProfile = tagProfile(genres, tags, mood, style)
+/**
+ * The profile of one saved artist, from the genres, tags, mood and style the library stores for it. Genres the person
+ * chose ([LibraryArtist.manualGenres]) lead, so an artist no source knows still gets a place.
+ */
+internal fun LibraryArtist.tagProfile(): TagProfile = tagProfile(manualGenres + genres, tags, mood, style)
 
 /**
  * What the listener's saved artists add up to: each artist's profile summed (a favourite counts

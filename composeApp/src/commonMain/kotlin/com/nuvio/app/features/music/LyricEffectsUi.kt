@@ -203,7 +203,7 @@ private fun LyricRow(
                 BreathingDots(progress = { gapProgress(lines, index, smooth.value) }, accent = accent, effects = effects)
 
             isActive -> ActiveLine(
-                text = line.text,
+                words = remember(lines, index) { lineWords(lines, index) },
                 progress = { lineProgress(lines, index, smooth.value) },
                 accent = accent,
                 isChorus = isChorus,
@@ -226,14 +226,13 @@ private fun LyricRow(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ActiveLine(
-    text: String,
+    words: List<LyricWord>,
     progress: () -> Float,
     accent: Color,
     isChorus: Boolean,
     emphasis: Boolean,
     effects: Boolean,
 ) {
-    val words = remember(text) { lyricWords(text) }
     val fontSize = if (emphasis) 40.sp else 30.sp
     val style = TextStyle(fontSize = fontSize, lineHeight = fontSize * 1.27f, fontWeight = FontWeight.Bold)
     val lit = if (isChorus && effects) lerp(Color.White, accent, 0.45f) else Color.White

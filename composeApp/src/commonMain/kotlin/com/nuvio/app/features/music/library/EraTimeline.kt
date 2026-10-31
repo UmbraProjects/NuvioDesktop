@@ -89,6 +89,14 @@ internal fun releasePosition(release: LibraryRelease): Double? {
 /** Dot diameter on the ruler, 10 for a single track up to about 32 for 26 or more (the mock's rule). */
 internal fun timelineDotSize(trackCount: Int?): Int = (10 + (trackCount ?: 1).coerceIn(1, 26) * 0.85).roundToInt()
 
+/**
+ * What the artist room's side timeline draws: every dated release, or with the Playable toggle on only
+ * the ones that can be played (here, or from the music addon: [addonKeys]). Only that toggle narrows it; the kind
+ * chips (Albums, EPs...) do not.
+ */
+internal fun timelineEntries(groups: List<ReleaseGroup>, playableOnly: Boolean, addonKeys: Set<String> = emptySet()): List<ReleaseGroup> =
+    if (playableOnly) groups.filter { it.isPlayableWith(addonKeys) } else groups
+
 /** Colour source for an era: its lead release's palette, else the artist's. Null means keep the app accent. */
 internal fun TimelineEra.palette(artistPalette: ArtworkPalette?): ArtworkPalette? = lead.primary.palette ?: artistPalette
 

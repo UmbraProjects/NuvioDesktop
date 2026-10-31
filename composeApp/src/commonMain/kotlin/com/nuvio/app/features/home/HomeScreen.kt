@@ -1733,6 +1733,19 @@ fun HomeScreen(
         )
     }
 
+    // "Previously on" cards for the episodes waiting in Continue Watching, so they are ready by the
+    // time one is played. Cache-only unless the break rule says the viewer would get one.
+    LaunchedEffect(nextUpRowItems, continueWatchingRowItems) {
+        com.nuvio.app.features.preroll.PreviouslyOnRepository.prefetchUpNext(
+            (nextUpRowItems + continueWatchingRowItems).mapNotNull { item ->
+                val season = item.seasonNumber ?: return@mapNotNull null
+                val episode = item.episodeNumber ?: return@mapNotNull null
+                if (!item.isNextUp || item.parentMetaType != "series" || item.resumePositionMs > 0L) return@mapNotNull null
+                com.nuvio.app.features.preroll.PreviouslyOnRequest(item.parentMetaType, item.parentMetaId, season, episode)
+            },
+        )
+    }
+
     // What "Add all to playlist" on a card's menu queues: the rows as drawn.
     LaunchedEffect(continueWatchingRowItems, nextUpRowItems, contentMode) {
         if (contentMode is HomeContentMode.Normal) {

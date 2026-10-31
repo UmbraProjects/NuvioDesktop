@@ -3,7 +3,10 @@ package com.nuvio.app.features.player
 import com.nuvio.app.core.i18n.localizedString
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.CompositionLocalProvider
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.desktop.NvidiaRtxDriverState
@@ -46,6 +51,9 @@ import com.nuvio.app.features.player.desktop.DesktopWindowGeometryDiagnostics
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.DesktopPlayerLaunchShield
 import com.nuvio.app.features.player.desktop.NativePlayerController
+import com.nuvio.app.features.preroll.PostShowController
+import com.nuvio.app.features.preroll.PostShowKey
+import com.nuvio.app.features.preroll.PostShowScreen
 import com.nuvio.app.features.input.GamepadContext
 import com.nuvio.app.features.screensaver.DesktopScreensaver
 import com.nuvio.app.features.player.desktop.NativePlayerHost
@@ -189,6 +197,24 @@ private fun NativePlayerSurface(
     val lastKnownPositionMs = remember { mutableStateOf(0L) }
     // Its duration, so a rate-limit reopen can refuse a resume target at the very end.
     val lastKnownDurationMs = remember { mutableStateOf(0L) }
+    // The post-show cards are up and the video belongs in the corner box. A derived value, so the
+    // position ticking every 500 ms does not recompose this surface; only the flip does.
+    val postShowBoxed by PostShowController.active
+    // 0 -> 1 as the post-show starts: the cards fade in under the video's corner box. The video
+    // itself cannot be animated (it is a native window), so it snaps.
+    val postShowProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (postShowBoxed) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = POST_SHOW_SHRINK_MS,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        ),
+        label = "postShowShrink",
+    )
+    // Keyed on the attempt, so closing the cards on one episode does not carry into the next.
+    DisposableEffect(playbackAttemptId) {
+        PostShowController.reset()
+        onDispose { PostShowController.reset() }
+    }
     val surfaceScope = rememberCoroutineScope()
     LaunchedEffect(playbackAttemptId, sourceUrl) {
         DesktopPlayerLaunchShield.showForActiveWindow()
@@ -366,6 +392,32 @@ private fun NativePlayerSurface(
             }
             val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
             if (focusOwner is JTextComponent) return@KeyEventDispatcher false
+            // Post-show cards are up: a pad's D-pad, A and B (replayed here as arrows, the play/pause key
+            // and Escape) and the number keys drive the cards. Anything else, including the skip key,
+            // carries on below.
+            if (PostShowController.active.value) {
+                val postShowKey = when (event.keyCode) {
+                    KeyEvent.VK_LEFT -> PostShowKey.Left
+                    KeyEvent.VK_RIGHT -> PostShowKey.Right
+                    KeyEvent.VK_UP -> PostShowKey.Up
+                    KeyEvent.VK_DOWN -> PostShowKey.Down
+                    KeyEvent.VK_1, KeyEvent.VK_NUMPAD1 -> PostShowKey.Option1
+                    KeyEvent.VK_2, KeyEvent.VK_NUMPAD2 -> PostShowKey.Option2
+                    KeyEvent.VK_3, KeyEvent.VK_NUMPAD3 -> PostShowKey.Option3
+                    KeyEvent.VK_4, KeyEvent.VK_NUMPAD4 -> PostShowKey.Option4
+                    AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) -> PostShowKey.Back
+                    AppShortcutsRepository.keyCode(AppShortcutAction.SelectFocused) -> PostShowKey.Select
+                    else -> when (PlayerShortcutsRepository.actionForKeyCode(event.keyCode)) {
+                        PlayerShortcutAction.PlayPause, PlayerShortcutAction.AlternatePlayPause -> PostShowKey.Select
+                        else -> null
+                    }
+                }
+                if (postShowKey != null) {
+                    PostShowController.press(postShowKey)
+                    event.consume()
+                    return@KeyEventDispatcher true
+                }
+            }
             // Media keys are deliberately NOT handled here. A KeyEventDispatcher only sees keys
             // routed to a focused Nuvio window, which defeats the point of a media key; they are
             // owned by the Windows media session in player_bridge.cpp and arrive as the
@@ -932,8 +984,33 @@ private fun NativePlayerSurface(
         controller.setResizeMode(resizeMode)
     }
 
-    LaunchedEffect(controller, playerControlsState) {
-        controller.updateControls(playerControlsState)
+    LaunchedEffect(controller, playerControlsState, postShowBoxed) {
+        controller.updateControls(
+            if (postShowBoxed) {
+                // The HUD lives inside the video's container, so it would be squashed into the box.
+                // Its keyboard focus stays, though, so it forwards the D-pad to the cards.
+                // The skip prompt is drawn by the cards screen instead (skipKeyAction stays, so the key works).
+                playerControlsState.copy(
+                    controlsVisible = false,
+                    mouseMoveRevealsControlsEnabled = false,
+                    skipPromptVisible = false,
+                    heroTrailer = playerControlsState.heroTrailer.copy(postShowInput = true),
+                )
+            } else {
+                playerControlsState
+            },
+        )
+    }
+
+    LaunchedEffect(controller) {
+        snapshotFlow { PostShowController.active.value }.drop(1).collect {
+            // mpv repaints a wid-embedded surface oddly after a size change (see forceVideoRedraw),
+            // so nudge it once the new size has settled, and again for a swapchain that lags.
+            delay(250L)
+            controller.forceVideoRedraw()
+            delay(750L)
+            controller.forceVideoRedraw()
+        }
     }
 
     LaunchedEffect(playbackAttemptId, sourceUrl) {
@@ -1192,6 +1269,7 @@ private fun NativePlayerSurface(
             if (!snapshot.isLoading && snapshot.positionMs > 0L && !snapshot.isEnded) {
                 lastKnownPositionMs.value = snapshot.positionMs
                 if (snapshot.durationMs > 0L) lastKnownDurationMs.value = snapshot.durationMs
+                PostShowController.onTick(snapshot.positionMs, lastKnownDurationMs.value)
             }
             latestOnSnapshot.value(snapshot)
             delay(500L)
@@ -1203,6 +1281,20 @@ private fun NativePlayerSurface(
             .fillMaxSize()
             .background(Color.Black),
     ) {
+        // Drawn first, so the SwingPanel's corner box sits on top of it.
+        if (postShowBoxed) {
+            val skipOffered = playerControlsState.skipPromptVisible &&
+                !playerControlsState.skipPromptDismissed &&
+                playerControlsState.skipKeyAction.isNotEmpty()
+            PostShowScreen(
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = postShowProgress },
+                skipLabel = if (skipOffered) playerControlsState.skipPromptLabel else null,
+                skipKeyLabel = playerShortcutKeyCodeLabel(
+                    PlayerShortcutsRepository.keyCode(PlayerShortcutAction.SkipInterval),
+                ),
+                onSkip = { controller.triggerSkipIntervalIfAvailable() },
+            )
+        }
         // SwingPanel positions/sizes the native mpv surface (a real OS window) using whatever
         // LocalDensity is ambient — but that surface must match real screen pixels, not the
         // app's (possibly artificially inflated, see NuvioDesktopViewportDensityScaler) UI
@@ -1213,7 +1305,15 @@ private fun NativePlayerSurface(
                 factory = {
                     host
                 },
-                modifier = if (hostFirstPaintComplete.value) {
+                modifier = if (hostFirstPaintComplete.value && postShowBoxed) {
+                    // One step, not an animation: resizing the native video window every frame
+                    // stuttered on the HTPC. The cards fade in underneath instead.
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = POST_SHOW_BOX_MARGIN_DP.dp, bottom = POST_SHOW_BOX_MARGIN_DP.dp)
+                        .fillMaxWidth(POST_SHOW_BOX_WIDTH)
+                        .aspectRatio(16f / 9f)
+                } else if (hostFirstPaintComplete.value) {
                     Modifier.fillMaxSize()
                 } else {
                     Modifier
@@ -1915,3 +2015,10 @@ private fun looksLikeExpiredPinnedLink(message: String): Boolean =
     EXPIRED_PINNED_LINK_STATUS.containsMatchIn(message)
 
 private const val PLAYER_BADGES_POLL_MS = 2_000L
+
+/** How long the post-show cards take to fade in. */
+private const val POST_SHOW_SHRINK_MS = 500
+
+/** The box's gap from the bottom and right edges, and its width as a share of the space left. */
+private const val POST_SHOW_BOX_MARGIN_DP = 64
+private const val POST_SHOW_BOX_WIDTH = 0.3f

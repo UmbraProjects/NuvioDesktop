@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -48,7 +50,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.nuvio
-import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_continue
 import nuvio.composeapp.generated.resources.action_next
@@ -58,6 +59,7 @@ import nuvio.composeapp.generated.resources.trivia_category_legacy
 import nuvio.composeapp.generated.resources.trivia_category_production
 import nuvio.composeapp.generated.resources.trivia_category_trivia
 import nuvio.composeapp.generated.resources.trivia_correct
+import nuvio.composeapp.generated.resources.trivia_held
 import nuvio.composeapp.generated.resources.trivia_hint_question
 import nuvio.composeapp.generated.resources.trivia_incorrect
 import nuvio.composeapp.generated.resources.trivia_not_right
@@ -69,7 +71,10 @@ import nuvio.composeapp.generated.resources.trivia_skip
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
-/** How long a slide stays before the next one, unless the viewer advances first. */
+/**
+ * The least time a slide stays before the next one, unless the viewer advances first. Longer slides
+ * stay longer: see [slideReadingTimeMs].
+ */
 const val TRIVIA_SLIDE_DURATION_MS = 7_000L
 
 /**
@@ -82,7 +87,9 @@ const val TRIVIA_SLIDE_DURATION_MS = 7_000L
  *
  * Keys: Enter / Space / Right / pad A advance a slide, or pick the highlighted answer on a question
  * (Up / Down move the highlight, 1-4 answer directly), and Enter / Space / Right / pad A go to the next
- * question once answered. Escape or pad B / Back skips the whole pre-show, like it does on a trailer.
+ * question once answered. Left goes back a slide. On a slide, Up / Down, P, play/pause or pad X hold it
+ * (the clock stops) and press again to release. Escape or pad B / Back skips the whole pre-show, like it
+ * does on a trailer.
  */
 @Composable
 fun TriviaPreShow(
@@ -126,13 +133,25 @@ fun TriviaPreShow(
         if (stage == PreShowStage.Finished) finish()
     }
     LaunchedEffect(stage is PreShowStage.Question) { reportQuestionActive(stage is PreShowStage.Question) }
-    // Slides advance by themselves; questions never do, since the viewer is mid-thought.
-    LaunchedEffect(stage) {
+    // How long the current slide has been on screen. One clock drives both the auto-advance and the
+    // progress bar, so they cannot drift apart, and holding a slide just stops the clock.
+    var elapsedMs by remember(stage) { mutableStateOf(0L) }
+    var held by remember(stage) { mutableStateOf(false) }
+    val currentSlideMs = (stage as? PreShowStage.Slide)?.let { shown ->
+        slides.getOrNull(shown.index)?.let { slideReadingTimeMs(it.text, slideDurationMs) }
+    } ?: slideDurationMs
+    // Slides advance by themselves, at a pace that follows their length; questions never do, since
+    // the viewer is mid-thought.
+    LaunchedEffect(stage, held) {
         val current = stage
-        if (current is PreShowStage.Slide) {
-            delay(slideDurationMs)
-            stage = current.advance(slides.size, questions.size)
+        if (current !is PreShowStage.Slide || held) return@LaunchedEffect
+        var last = withFrameMillis { it }
+        while (elapsedMs < currentSlideMs) {
+            val now = withFrameMillis { it }
+            elapsedMs += now - last
+            last = now
         }
+        stage = current.advance(slides.size, questions.size)
     }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
@@ -150,8 +169,20 @@ fun TriviaPreShow(
                 val unanswered = current is PreShowStage.Question && current.picked == null
                 when (event.key) {
                     Key.Escape, Key.ButtonB, Key.Back -> { skipAll(); true }
-                    Key.DirectionUp -> if (unanswered) { cursor = moveAnswerCursor(cursor, -1, optionCount); true } else false
-                    Key.DirectionDown -> if (unanswered) { cursor = moveAnswerCursor(cursor, 1, optionCount); true } else false
+                    // On a question these move the answer cursor; on a slide they hold or release it.
+                    Key.DirectionUp -> when {
+                        unanswered -> { cursor = moveAnswerCursor(cursor, -1, optionCount); true }
+                        current is PreShowStage.Slide -> { held = !held; true }
+                        else -> false
+                    }
+                    Key.DirectionDown -> when {
+                        unanswered -> { cursor = moveAnswerCursor(cursor, 1, optionCount); true }
+                        current is PreShowStage.Slide -> { held = !held; true }
+                        else -> false
+                    }
+                    Key.P, Key.MediaPlayPause, Key.ButtonX ->
+                        { if (current is PreShowStage.Slide) held = !held; true }
+                    Key.DirectionLeft -> { stage = stage.back(slides.size); true }
                     Key.Enter, Key.NumPadEnter, Key.Spacebar, Key.ButtonA ->
                         { if (unanswered) stage = stage.answer(cursor) else next(); true }
                     Key.DirectionRight -> { next(); true }
@@ -230,6 +261,14 @@ fun TriviaPreShow(
             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (held) {
+                Text(
+                    text = stringResource(Res.string.trivia_held),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.accent,
+                    modifier = Modifier.padding(end = 12.dp),
+                )
+            }
             // Where the facts came from, on every slide and question.
             Text(
                 text = stringResource(pack.origin.label()),
@@ -249,6 +288,10 @@ fun TriviaPreShow(
         ProgressBars(
             total = slides.size + questions.size,
             current = imageIndex,
+            // Only a slide fills over time; a question's segment is simply full while it is on screen.
+            currentFraction = {
+                if (stage is PreShowStage.Slide) (elapsedMs.toFloat() / currentSlideMs).coerceIn(0f, 1f) else 1f
+            },
             palette = palette,
             modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 56.dp, vertical = 40.dp),
         )
@@ -256,19 +299,38 @@ fun TriviaPreShow(
 }
 
 @Composable
-private fun ProgressBars(total: Int, current: Int, palette: TriviaPalette, modifier: Modifier = Modifier) {
+internal fun ProgressBars(
+    total: Int,
+    current: Int,
+    currentFraction: () -> Float,
+    palette: TriviaPalette,
+    modifier: Modifier = Modifier,
+) {
     if (total <= 1) return
+    // Read here, not in the caller, so the per-frame fill only recomposes this bar row.
+    val fraction = currentFraction()
     Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         repeat(total) { i ->
             Box(
                 Modifier
                     .weight(1f)
                     .height(3.dp)
-                    .background(
-                        if (i <= current) palette.accent else Color.White.copy(alpha = 0.22f),
-                        RoundedCornerShape(2.dp),
-                    ),
-            )
+                    .background(Color.White.copy(alpha = 0.22f), RoundedCornerShape(2.dp)),
+            ) {
+                val fill = when {
+                    i < current -> 1f
+                    i == current -> fraction
+                    else -> 0f
+                }
+                if (fill > 0f) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fill)
+                            .background(palette.accent, RoundedCornerShape(2.dp)),
+                    )
+                }
+            }
         }
     }
 }
@@ -278,7 +340,7 @@ private fun SlideBody(slide: TriviaSlide, palette: TriviaPalette) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.width(36.dp).height(3.dp).background(palette.accent, RoundedCornerShape(2.dp)))
         Text(
-            text = stringResource(slide.category.label()).uppercase(),
+            text = slide.heading ?: stringResource(slide.category.label()).uppercase(),
             style = MaterialTheme.typography.labelLarge,
             color = palette.accent,
             letterSpacing = 3.sp,
@@ -295,7 +357,7 @@ private fun SlideBody(slide: TriviaSlide, palette: TriviaPalette) {
 }
 
 @Composable
-private fun QuestionBody(
+internal fun QuestionBody(
     question: ShuffledQuestion,
     number: Int,
     total: Int,

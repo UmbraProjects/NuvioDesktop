@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -78,14 +79,25 @@ data class MusicLibraryState(
     /** The saved artist, else the previewed copy. What an artist page reads, so both doors show the same thing. */
     fun artistOrPreview(id: String): LibraryArtist? = artist(id) ?: preview[id]
 
-    /** Library id of the artist (saved first, then previewed) that owns the YouTube Music album [browseId], if one does. */
+    /**
+     * The artist (saved first, then previewed) that owns the album [browseId], if one does: by the YouTube Music album id,
+     * or, for an album only the music addon has, by the artist id its own id carries.
+     */
     fun artistOfAlbum(browseId: String): LibraryArtist? =
-        (artists.asSequence() + preview.values.asSequence())
-            .firstOrNull { artist -> artist.releases.any { it.ytBrowseId == browseId } }
+        com.nuvio.app.features.music.nebula.parseAddonAlbumId(browseId)?.let { artistOrPreview(it.artistId) }
+            ?: (artists.asSequence() + preview.values.asSequence())
+                .firstOrNull { artist -> artist.releases.any { it.ytBrowseId == browseId } }
 }
 
 /** An artist whose top albums could not be ranked is asked about again after this long. */
 private const val TOP_RECHECK_MS = 7L * 24 * 60 * 60 * 1000
+
+/** How many artists a Library refresh looks up together; the next group starts when the whole group is done. */
+internal const val REFRESH_STAGE_SIZE = 5
+
+/** [ids] split into stages of [size], in order. Pure, so the staging rule is tested without the repository. */
+internal fun refreshStages(ids: List<String>, size: Int = REFRESH_STAGE_SIZE): List<List<String>> =
+    ids.chunked(size.coerceAtLeast(1))
 
 /** How many unsaved artists are kept for this session before the least recently touched is dropped. */
 internal const val MAX_PREVIEWS = 12
@@ -162,13 +174,17 @@ object MusicLibraryRepository {
     /**
      * fork:album-editions — points every release linked to the YouTube Music album [from] at [to]
      * instead: the edition the library's own track count describes. Saved artists are written to
-     * disk; previewed ones stay in memory.
+     * disk; previewed ones stay in memory. With [trackCount] the relinked releases record how many tracks
+     * that edition has, so opening it later finds the count already right and does not look again.
      */
-    fun relinkRelease(from: String, to: String) {
+    fun relinkRelease(from: String, to: String, trackCount: Int? = null) {
         if (from == to) return
         ensureLoaded()
-        fun LibraryArtist.relinked() =
-            copy(releases = releases.map { if (it.ytBrowseId == from) it.copy(ytBrowseId = to) else it })
+        fun LibraryArtist.relinked() = copy(
+            releases = releases.map {
+                if (it.ytBrowseId == from) it.copy(ytBrowseId = to, trackCount = trackCount?.takeIf { n -> n > 0 } ?: it.trackCount) else it
+            },
+        )
         var savedChanged = false
         _state.update { s ->
             savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == from } }
@@ -195,6 +211,10 @@ object MusicLibraryRepository {
                 favourite = old?.favourite ?: artist.favourite,
                 pinnedTopKeys = old?.pinnedTopKeys ?: artist.pinnedTopKeys,
                 foundVia = old?.foundVia ?: artist.foundVia ?: foundVia[artist.id],
+                // The person's own genres and the record of empty look-ups are the library's copy too.
+                manualGenres = old?.manualGenres ?: artist.manualGenres,
+                tagMisses = old?.tagMisses ?: artist.tagMisses,
+                tagsCheckedAtEpochMs = old?.tagsCheckedAtEpochMs ?: artist.tagsCheckedAtEpochMs,
                 topAlbumKeys = artist.topAlbumKeys.ifEmpty { old?.topAlbumKeys.orEmpty() },
                 topCheckedAtEpochMs = maxOf(artist.topCheckedAtEpochMs, old?.topCheckedAtEpochMs ?: 0L),
             ).keepingPalettesFrom(old)
@@ -252,6 +272,39 @@ object MusicLibraryRepository {
         ensureLoaded()
         if (!_state.value.contains(artistId)) return
         _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) it.copy(favourite = favourite) else it }) }
+        persist()
+    }
+
+    /**
+     * Gives a saved artist the genres the person chose (cleaned and capped, see [parseGenreInput]); an empty list clears
+     * them. The Constellation places the artist from them as soon as this is written.
+     */
+    fun setManualGenres(artistId: String, genres: List<String>) {
+        ensureLoaded()
+        if (!_state.value.contains(artistId)) return
+        val cleaned = parseGenreInput(genres.joinToString(","))
+        _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) it.copy(manualGenres = cleaned) else it }) }
+        persist()
+    }
+
+    /**
+     * The tray's "look again": a normal refresh, unless an earlier look-up found no genres and its wait (3, 7 or 14 days,
+     * [tagRetryDelayMs]) is not over. Returns false when nothing was started for that reason.
+     */
+    fun refreshTags(artistId: String, catalog: MusicCatalog = defaultMusicCatalog()): Boolean {
+        ensureLoaded()
+        val artist = _state.value.artist(artistId) ?: return false
+        if (!artist.canRetryTags(LibraryClock.nowEpochMs())) return false
+        startRefresh(artistId, catalog)
+        return true
+    }
+
+    /** Writes the outcome of a finished look-up into the saved artist: a miss to back off from, or the clearing of one. */
+    private fun recordTagCheck(artistId: String, reliable: Boolean) {
+        val artist = _state.value.artist(artistId) ?: return
+        val checked = artist.withTagCheck(LibraryClock.nowEpochMs(), reliable)
+        if (checked == artist) return
+        _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) checked else it }) }
         persist()
     }
 
@@ -399,14 +452,40 @@ object MusicLibraryRepository {
     /** Looks the artist up again, keeping the old data where the sources now say nothing. */
     fun refresh(artistId: String, catalog: MusicCatalog = defaultMusicCatalog()) {
         ensureLoaded()
-        val existing = _state.value.artist(artistId) ?: return
-        if (jobs[artistId]?.isActive == true) return
-        jobs[artistId] = scope.launch { fillIn(artistId, catalog, existing, preview = false) }
+        startRefresh(artistId, catalog)
     }
 
+    /**
+     * Starts looking a saved artist up again and returns the running job, or null when the artist is not
+     * in the library. A look-up already under way is returned as it is, not started a second time.
+     */
+    private fun startRefresh(artistId: String, catalog: MusicCatalog): Job? {
+        val existing = _state.value.artist(artistId) ?: return null
+        jobs[artistId]?.takeIf { it.isActive }?.let { return it }
+        return scope.launch { fillIn(artistId, catalog, existing, preview = false) }
+            .also { jobs[artistId] = it }
+    }
+
+    /** The staged pass started by [refreshAll], while it runs. */
+    private var refreshAllJob: Job? = null
+
+    /**
+     * Looks every saved artist up again in stages of [REFRESH_STAGE_SIZE]: a stage's artists run together,
+     * and the next stage starts only when the whole stage has finished. A big library therefore never has
+     * more than one stage in flight, instead of a look-up for every artist at once, which swamped the app.
+     * Pressing it again while a pass is running does nothing.
+     */
     fun refreshAll(catalog: MusicCatalog = defaultMusicCatalog()) {
         ensureLoaded()
-        _state.value.artists.forEach { refresh(it.id, catalog) }
+        if (refreshAllJob?.isActive == true) return
+        val ids = _state.value.artists.map { it.id }
+        // Runs on the main thread, like every other caller of startRefresh, so the jobs map is never
+        // touched from two threads. It only starts and waits: the look-ups themselves run on [scope].
+        refreshAllJob = scope.launch(Dispatchers.Main) {
+            for (stage in refreshStages(ids)) {
+                stage.mapNotNull { startRefresh(it, catalog) }.joinAll()
+            }
+        }
     }
 
     /**
@@ -489,6 +568,8 @@ object MusicLibraryRepository {
                 put(full.copy(releases = partial), onlyIfPresent = true)
             }
             put(full.copy(releases = detailed), onlyIfPresent = true)
+            // fork:music - remember a look-up that found no genres, so the tray stops offering a retry that cannot help.
+            if (!preview) recordTagCheck(artistId, reliable = built.lookupWasReliable())
             setProgress(artistId, "Finding the top albums")
             loadTopAlbums(artistId)
             completed.add(artistId)

@@ -100,6 +100,25 @@ internal object TriviaWikipedia {
      * year check on the article's lead is what keeps it from picking the wrong film.
      */
     private suspend fun fetch(source: TriviaSource, isSeries: Boolean): TriviaPack? {
+        val (title, text) = findArticle(source, isSeries) { buildWikipediaSlides(it).size >= 3 } ?: return null
+        val slides = buildWikipediaSlides(text)
+        log.i { "wikipedia trivia: ${slides.size} slides from \"$title\"" }
+        return TriviaPack(
+            slides = slides + TriviaSlide(ATTRIBUTION, TriviaCategory.Trivia),
+            questions = buildMetadataQuestions(source),
+            origin = TriviaOrigin.Wikipedia,
+        ).withFallbackTheme(source.genres)
+    }
+
+    /**
+     * The first search hit that really is this film or series and that [accept] likes, as its
+     * title and plain text. Shared with the post-show, which reads other sections of the same article.
+     */
+    internal suspend fun findArticle(
+        source: TriviaSource,
+        isSeries: Boolean,
+        accept: (String) -> Boolean,
+    ): Pair<String, String>? {
         val wanted = alternateTitles(source)
         for (searchTitle in wanted) {
             val search = buildString {
@@ -118,14 +137,8 @@ internal object TriviaWikipedia {
                     withTimeoutOrNull(REQUEST_TIMEOUT_MS) { httpGetTextWithHeaders(article, headers) } ?: continue,
                 ) ?: continue
                 if (!looksLikeTheTitle(text, source)) continue
-                val slides = buildWikipediaSlides(text)
-                if (slides.size < 3) continue
-                log.i { "wikipedia trivia: ${slides.size} slides from \"$title\"" }
-                return TriviaPack(
-                    slides = slides + TriviaSlide(ATTRIBUTION, TriviaCategory.Trivia),
-                    questions = buildMetadataQuestions(source),
-                    origin = TriviaOrigin.Wikipedia,
-                ).withFallbackTheme(source.genres)
+                if (!accept(text)) continue
+                return title to text
             }
         }
         return null

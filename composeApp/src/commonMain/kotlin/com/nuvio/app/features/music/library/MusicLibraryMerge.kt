@@ -153,11 +153,17 @@ internal fun kindFromLabel(label: String?): ReleaseKind? = when (label?.trim()?.
 
 /**
  * The MusicBrainz artist that is [name], or null when none is clearly it. A hit must carry the same
- * name and a search score of at least 85; among those the best score wins. Guessing a different
- * artist would file the wrong discography, so "no match" is the safe answer.
+ * name and a search score of at least 85; among those the best score wins. A hit whose own name differs
+ * but which lists [name] as an alias (a band that changed its name, "Masayoshi Takanaka" for 高中正義)
+ * counts only when no hit is called [name] outright. Guessing a different artist would file the wrong
+ * discography, so "no match" is the safe answer; the channel check in the enricher catches a namesake
+ * that slips through on an alias.
  */
-internal fun pickMbArtist(hits: List<MbArtistHit>, name: String): MbArtistHit? =
-    hits.filter { it.score >= 85 && sameArtistName(it.name, name) }.maxByOrNull { it.score }
+internal fun pickMbArtist(hits: List<MbArtistHit>, name: String): MbArtistHit? {
+    val strong = hits.filter { it.score >= 85 }
+    return strong.filter { sameArtistName(it.name, name) }.maxByOrNull { it.score }
+        ?: strong.filter { hit -> hit.aliases.any { sameArtistName(it, name) } }.maxByOrNull { it.score }
+}
 
 /** The Deezer artist that is [name]; with namesakes, the one with the most fans. */
 internal fun pickDeezerArtist(hits: List<DeezerArtistHit>, name: String): DeezerArtistHit? =

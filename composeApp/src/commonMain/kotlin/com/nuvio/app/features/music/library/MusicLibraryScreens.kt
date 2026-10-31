@@ -1,6 +1,10 @@
 package com.nuvio.app.features.music.library
 
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.features.music.MusicAlbum
+import com.nuvio.app.features.music.nebula.AddonAlbumRef
+import com.nuvio.app.features.music.nebula.NebulaMusicSource
+import com.nuvio.app.features.music.nebula.addonAlbumId
 import com.nuvio.app.core.ui.secondaryClick
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -326,22 +330,48 @@ fun MusicArtistScreen(
 
     val working = state.working[artist.id]
     val filter = ReleaseFilter.entries.firstOrNull { it.name == filterName } ?: ReleaseFilter.All
-    val discography = remember(artist.releases, playableOnly, filter) {
-        buildDiscography(artist.releases, playableOnly, filter)
+    // fork:nebula - releases YouTube Music lacks that the music addon has: not dimmed, and kept by Playable. Empty without an addon link.
+    val addon = com.nuvio.app.features.music.nebula.rememberAddonReleases(artist)
+    val addonKeys = addon.keys
+    val discography = remember(artist.releases, playableOnly, filter, addonKeys) {
+        buildDiscography(artist.releases, playableOnly, filter, addonKeys)
     }
     val latest = remember(artist.releases) { latestRelease(artist.releases) }
     val uriHandler = LocalUriHandler.current
 
-    /** Opens [release] on YouTube Music and starts it. The player takes over from there. */
+    /**
+     * fork:nebula - the music addon's copy of [release], when YouTube Music has none and the addon is known to have the record.
+     * The addon was asked about one listing of a record, so any listing of it stands for the same album.
+     */
+    fun addonRefOf(release: LibraryRelease?): AddonAlbumRef? {
+        if (release == null || release.ytBrowseId != null) return null
+        return artist.releases.firstNotNullOfOrNull { r ->
+            if (r.ytBrowseId != null || r.dedupeKey() != release.dedupeKey()) null
+            else addon.albumIdOf(r.key)?.let { AddonAlbumRef(it, artist.id, r.key) }
+        }
+    }
+
+    /** The id the album page opens for [release]: its YouTube Music id, else the music addon's. Null when neither has it. */
+    fun albumPageIdOf(release: LibraryRelease?): String? =
+        release?.ytBrowseId ?: addonRefOf(release)?.let { addonAlbumId(it) }
+
+    /** The album to play or queue for [release]: from YouTube Music by its id, else from the music addon. Null when it cannot be opened. */
+    suspend fun albumOf(release: LibraryRelease): MusicAlbum? {
+        val id = release.ytBrowseId
+        if (id != null) return runCatching { catalog.album(id) }.getOrNull()
+        val ref = addonRefOf(release) ?: return null
+        return runCatching { NebulaMusicSource.openAddonAlbum(ref) }.getOrNull()
+    }
+
+    /** Opens [release] (on YouTube Music, else on the music addon) and starts it. The player takes over from there. */
     fun startPlayback(release: LibraryRelease?, shuffled: Boolean) {
-        val id = release?.ytBrowseId
-        if (release == null || id == null) {
+        if (release == null || albumPageIdOf(release) == null) {
             playNotice = "Nothing here is on YouTube Music yet."
             return
         }
         playNotice = null
         scope.launch {
-            val album = runCatching { catalog.album(id) }.getOrNull()
+            val album = albumOf(release)
             if (album == null) {
                 playNotice = "Couldn't open ${release.title}."
             } else {
@@ -362,7 +392,7 @@ fun MusicArtistScreen(
     }
 
     val playTarget = latest?.takeIf { it.isPlayable }
-    val shuffleTarget = artist.releases.filter { it.isPlayable && !it.isDemo() }.randomOrNull()
+    val shuffleTarget = artist.releases.filter { (it.isPlayable || addon.albumIdOf(it.key) != null) && !it.isDemo() }.randomOrNull()
 
     ArtistRoom(
         artist = artist,
@@ -394,7 +424,9 @@ fun MusicArtistScreen(
         onRemove = { confirmRemove = true },
         onOpen = { release ->
             val id = release.ytBrowseId
+            val addonId = albumPageIdOf(release)
             when {
+                id == null && addonId != null -> onAlbumClick(addonId)
                 id == null -> selectedKey = release.key
                 release.playsOnClick() -> startPlayback(release, shuffled = false)
                 else -> onAlbumClick(id)
@@ -404,6 +436,7 @@ fun MusicArtistScreen(
         onPlayableOnly = { playableOnly = it },
         onFilter = { filterName = it.name },
         onToggleDemos = { demosOpen = !demosOpen },
+        addonKeys = addonKeys,
         modifier = modifier.fillMaxSize(),
     )
 
@@ -413,24 +446,25 @@ fun MusicArtistScreen(
                 artist = artist,
                 release = release,
                 versions = artist.releases.filter { it.dedupeKey() == release.dedupeKey() },
+                addonKeys = addonKeys,
                 onPickVersion = { selectedKey = it },
-                onOpen = release.ytBrowseId?.let { id ->
+                onOpen = albumPageIdOf(release)?.let { id ->
                     {
                         selectedKey = null
                         onAlbumClick(id)
                     }
                 },
-                onPlay = release.ytBrowseId?.let {
+                onPlay = albumPageIdOf(release)?.let {
                     {
                         selectedKey = null
                         startPlayback(release, shuffled = false)
                     }
                 },
-                onQueue = release.ytBrowseId?.let { id ->
+                onQueue = albumPageIdOf(release)?.let {
                     {
                         selectedKey = null
                         scope.launch {
-                            val album = runCatching { catalog.album(id) }.getOrNull()
+                            val album = albumOf(release)
                             playNotice = when {
                                 album == null -> "Couldn't open ${release.title}."
                                 MusicPlayback.player.enqueue(album) -> "${release.title} is up next."
@@ -533,9 +567,12 @@ internal fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: ()
 /** A single (or any one-track release) plays on a click; anything longer opens its album page. */
 internal fun LibraryRelease.playsOnClick(): Boolean = kind == ReleaseKind.Single || trackCount == 1
 
-/** A release as a card. Releases YouTube Music does not have are dimmed instead of stamped. */
+/**
+ * A release as a card. Releases YouTube Music does not have are dimmed instead of stamped, unless [addon]: the music
+ * addon has it, so it is drawn in full and says so.
+ */
 @Composable
-internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null) {
+internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null, addon: Boolean = false) {
     val colors = MaterialTheme.nuvio.colors
     val release = group.primary
     Column(
@@ -544,7 +581,7 @@ internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: 
             .clip(RoundedCornerShape(10.dp))
             .secondaryClick(onSecondary)
             .musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable(onClick = onClick)
-            .alpha(if (group.isPlayable) 1f else 0.5f),
+            .alpha(if (group.isPlayable || addon) 1f else 0.5f),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
@@ -571,6 +608,10 @@ internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: 
         ).joinToString(" · ")
         if (sub.isNotEmpty()) {
             Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (addon) {
+            // fork:nebula - the same wording as the badge on a YouTube Music album row.
+            Text("Lossless on your addon", style = MaterialTheme.typography.labelSmall, color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -786,6 +827,8 @@ private fun ReleaseDialog(
     artist: LibraryArtist,
     release: LibraryRelease,
     versions: List<LibraryRelease>,
+    /** Keys of the releases the music addon has that YouTube Music lacks. */
+    addonKeys: Set<String> = emptySet(),
     onPickVersion: (key: String) -> Unit,
     onOpen: (() -> Unit)?,
     onPlay: (() -> Unit)?,
@@ -841,7 +884,11 @@ private fun ReleaseDialog(
                         versions.forEach { v ->
                             val label = listOfNotNull(
                                 v.trackCount?.let { "$it track${if (it == 1) "" else "s"}" },
-                                if (v.isPlayable) "YouTube Music" else "not on YouTube Music",
+                                when {
+                                    v.isPlayable -> "YouTube Music"
+                                    v.key in addonKeys -> "your music addon"
+                                    else -> "not on YouTube Music"
+                                },
                             ).joinToString(" · ")
                             ActionPill(label, selected = v.key == release.key) { onPickVersion(v.key) }
                         }
@@ -850,6 +897,13 @@ private fun ReleaseDialog(
                 if (onOpen == null) {
                     Text(
                         "YouTube Music has no matching release, so it can't be played from here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textMuted,
+                    )
+                } else if (release.ytBrowseId == null) {
+                    // fork:nebula - a release YouTube Music lacks that the music addon has.
+                    Text(
+                        "Not on YouTube Music. It plays from your music addon, lossless.",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textMuted,
                     )
@@ -883,7 +937,7 @@ fun rememberCdArtFor(albumBrowseId: String?): String? {
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
     return remember(albumBrowseId, state.artists, state.preview) {
         albumBrowseId?.let { id ->
-            state.artistOfAlbum(id)?.releases?.firstOrNull { it.ytBrowseId == id }?.art?.cdArt
+            state.artistOfAlbum(id)?.releaseOfAlbum(id)?.art?.cdArt
         }
     }
 }
@@ -911,7 +965,7 @@ fun rememberLibraryAlbumInfo(albumBrowseId: String?): LibraryAlbumInfo? {
     return remember(albumBrowseId, state.artists, state.preview) {
         albumBrowseId?.let { id ->
             state.artistOfAlbum(id)?.let { artist ->
-                artist.releases.firstOrNull { it.ytBrowseId == id }?.let { LibraryAlbumInfo(artist, it) }
+                artist.releaseOfAlbum(id)?.let { LibraryAlbumInfo(artist, it) }
             }
         }
     }

@@ -21,6 +21,11 @@ internal fun sungEndMs(lines: List<LyricLine>, index: Int): Long {
     val line = lines[index]
     val nextStart = lines.getOrNull(index + 1)?.timeMs ?: (line.timeMs + LAST_LINE_MS)
     if (line.text.isBlank()) return nextStart
+    // The source timed every word: the line is finished when its last word is, not after a guess from its length.
+    if (line.words.isNotEmpty()) {
+        val last = line.words.last().endMs
+        return minOf(if (lines.getOrNull(index + 1) != null) nextStart else Long.MAX_VALUE, last).coerceAtLeast(line.timeMs + 1)
+    }
     val estimate = (line.text.length * MS_PER_CHAR + 400L).coerceIn(MIN_SUNG_MS, MAX_SUNG_MS)
     // Never past the next line, and never so short the sweep is a blink.
     return minOf(nextStart, line.timeMs + estimate).coerceAtLeast(line.timeMs + 1)
@@ -62,6 +67,23 @@ internal fun lyricWords(text: String): List<LyricWord> {
         val from = cursor
         cursor += weights[i] / total
         LyricWord(word, from, if (i == words.lastIndex) 1f else cursor)
+    }
+}
+
+/**
+ * The words of line [index] with the share of the line's sweep each occupies: the times the source gave for each word
+ * when it has them (so a held word holds the highlight and a rest between words is a rest), otherwise [lyricWords]'s
+ * estimate from word length.
+ */
+internal fun lineWords(lines: List<LyricLine>, index: Int): List<LyricWord> {
+    val line = lines.getOrNull(index) ?: return emptyList()
+    if (line.words.isEmpty()) return lyricWords(line.text)
+    val start = line.timeMs
+    val span = (sungEndMs(lines, index) - start).coerceAtLeast(1L).toFloat()
+    return line.words.map { word ->
+        val from = ((word.startMs - start) / span).coerceIn(0f, 1f)
+        val to = ((word.endMs - start) / span).coerceIn(from, 1f)
+        LyricWord(word.text, from, to)
     }
 }
 

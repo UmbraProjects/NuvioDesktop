@@ -34,6 +34,68 @@ class MusicSourceParsersTest {
     }
 
     @Test
+    fun musicBrainzSearchHitsKeepTheirAliases() {
+        val body = """
+        {"artists":[
+          {"id":"a1","name":"Me First and the Gimme Gimmes","score":100,
+           "aliases":[{"name":"Spike and the Gimme Gimmes","sort-name":"Spike and the Gimme Gimmes"},
+                      {"name":"Spike and the Gimme Gimmes","sort-name":"Gimme Gimmes, Spike and the"},
+                      {"sort-name":"no name here"}]},
+          {"id":"a2","name":"No Aliases Band","score":90}
+        ]}"""
+        val hits = parseMbArtistSearch(body)
+        assertEquals(listOf("Spike and the Gimme Gimmes"), hits[0].aliases)
+        assertEquals(emptyList<String>(), hits[1].aliases)
+    }
+
+    @Test
+    fun musicBrainzFindsARenamedBandByItsAlias() {
+        val hits = parseMbArtistSearch(
+            """{"artists":[{"id":"a1","name":"Me First and the Gimme Gimmes","score":100,
+                "aliases":[{"name":"Spike and the Gimme Gimmes"}]}]}""",
+        )
+        assertEquals("a1", pickMbArtist(hits, "Spike and the Gimme Gimmes")?.id)
+        assertEquals("a1", pickMbArtist(hits, "spike and the gimme gimmes")?.id)
+    }
+
+    @Test
+    fun musicBrainzFindsANativeScriptNameByItsRomanisedAlias() {
+        val hits = parseMbArtistSearch(
+            """{"artists":[{"id":"t1","name":"高中正義","sort-name":"Takanaka, Masayoshi","score":100,
+                "aliases":[{"name":"Masayoshi Takanaka"}]}]}""",
+        )
+        assertEquals("t1", pickMbArtist(hits, "Masayoshi Takanaka")?.id)
+        // Only a whole alias counts; a part of one is not enough to say it is the same artist.
+        assertNull(pickMbArtist(hits, "Takanaka"))
+    }
+
+    @Test
+    fun anArtistCalledTheNameOutrightBeatsOneThatOnlyListsItAsAnAlias() {
+        val hits = parseMbArtistSearch(
+            """{"artists":[
+                {"id":"alias","name":"Somebody Else","score":100,"aliases":[{"name":"Foo"}]},
+                {"id":"named","name":"Foo","score":88}
+            ]}""",
+        )
+        assertEquals("named", pickMbArtist(hits, "Foo")?.id)
+    }
+
+    @Test
+    fun anAliasMatchStillNeedsAHighScore() {
+        val hits = parseMbArtistSearch(
+            """{"artists":[{"id":"a1","name":"Somebody Else","score":60,"aliases":[{"name":"Foo"}]}]}""",
+        )
+        assertNull(pickMbArtist(hits, "Foo"))
+    }
+
+    @Test
+    fun musicBrainzArtistQuerySearchesNameAndAliasAsAPhrase() {
+        assertEquals("artist:\"Run DMC\" OR alias:\"Run DMC\"", mbArtistSearchQuery("Run DMC"))
+        val phrase = "\"A\\\"B\\\\C\""
+        assertEquals("artist:$phrase OR alias:$phrase", mbArtistSearchQuery("A\"B\\C"))
+    }
+
+    @Test
     fun musicBrainzArtistKeepsFactsGenresAndLabelledLinks() {
         val body = """
         {"id":"mb1","name":"Radiohead","sort-name":"Radiohead","type":"Group","country":"GB",

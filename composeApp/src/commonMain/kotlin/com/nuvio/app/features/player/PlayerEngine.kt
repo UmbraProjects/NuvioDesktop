@@ -472,6 +472,10 @@ data class PlayerHeroTrailerState(
     val muted: Boolean = true,
     /** Hero-trailer volume (0..100) reflected by the overlay volume slider. */
     val volume: Int = 0,
+    /** Pre-show only: the label of the "add to library" pill beside Skip. Empty hides the pill. */
+    val libraryLabel: String = "",
+    /** Pre-show only: the title is already in the library, so the pill starts out as done. */
+    val inLibrary: Boolean = false,
     /**
      * Which screen edge holds the navigation chrome while a home hero trailer plays ("top" for the
      * floating top bar, "left" for the sidebar, "none" to disable). The heavyweight native video
@@ -486,6 +490,12 @@ data class PlayerHeroTrailerState(
      * moving onto the strip at all trips the dismiss.
      */
     val navDismissBandFraction: Float = 0.22f,
+    /**
+     * Post-show cards are up and the video is in a corner box: the controls page forwards the D-pad
+     * keys to Kotlin instead of using them. Lives here rather than on [PlayerControlsState] itself,
+     * which is at the JVM's method-signature limit.
+     */
+    val postShowInput: Boolean = false,
 )
 
 /**

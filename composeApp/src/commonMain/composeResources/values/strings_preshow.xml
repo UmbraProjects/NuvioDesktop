@@ -7,6 +7,7 @@
     <string name="preshow_starting_hint">Esc to skip</string>
     <string name="trivia_skip">Skip</string>
     <string name="trivia_hint_question">Up / Down to choose · Enter to answer · Esc to skip the pre-show</string>
+    <string name="trivia_held">Held · Up / Down to resume</string>
     <string name="trivia_not_right">Not right?</string>
     <string name="trivia_origin_ai">Written by AI</string>
     <string name="trivia_origin_wikipedia">From Wikipedia</string>

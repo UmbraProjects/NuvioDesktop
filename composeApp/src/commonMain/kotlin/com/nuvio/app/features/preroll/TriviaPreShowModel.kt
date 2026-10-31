@@ -66,6 +66,37 @@ fun PreShowStage.advance(slideCount: Int, questionCount: Int): PreShowStage = wh
     PreShowStage.Finished -> this
 }
 
+/**
+ * Steps back one slide. From the first question it returns to the last slide (the quiz starts over
+ * when the viewer comes back to it), but never into a question already answered or past the first
+ * slide: answers stay locked, and there is nothing before slide 0 to go back to.
+ */
+fun PreShowStage.back(slideCount: Int): PreShowStage = when (this) {
+    is PreShowStage.Slide -> if (index > 0) PreShowStage.Slide(index - 1) else this
+    is PreShowStage.Question ->
+        if (index == 0 && picked == null && slideCount > 0) PreShowStage.Slide(slideCount - 1) else this
+    PreShowStage.Finished -> this
+}
+
+/** Time allowed for a slide's lead-in, before the words start to count. */
+private const val SLIDE_LEAD_IN_MS = 1_500L
+
+/** Roughly three words a second, comfortable for reading large text from a sofa. */
+private const val SLIDE_MS_PER_WORD = 330L
+
+/** A slide never holds longer than this on its own; the viewer can still hold it by hand. */
+private const val SLIDE_MAX_MS = 25_000L
+
+/**
+ * How long [text] stays on screen before the next slide: a short lead-in plus time per word, never
+ * less than [minMs] (so short facts keep the old fixed pace) and never more than [SLIDE_MAX_MS].
+ */
+fun slideReadingTimeMs(text: String, minMs: Long): Long {
+    val words = text.split(Regex("\\s+")).count { it.isNotEmpty() }
+    val wanted = SLIDE_LEAD_IN_MS + words * SLIDE_MS_PER_WORD
+    return wanted.coerceAtLeast(minMs).coerceAtMost(maxOf(minMs, SLIDE_MAX_MS))
+}
+
 /** The first stage for a pack with these counts. */
 fun initialPreShowStage(slideCount: Int, questionCount: Int): PreShowStage = when {
     slideCount > 0 -> PreShowStage.Slide(0)

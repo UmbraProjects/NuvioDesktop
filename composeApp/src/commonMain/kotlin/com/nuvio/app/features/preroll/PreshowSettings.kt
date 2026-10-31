@@ -36,6 +36,20 @@ internal expect object PreshowSettingsStorage {
 
 const val AVID_BBFC_PAGE = "https://avid.wiki/BBFC"
 
+/**
+ * The bumper slot is a cinema sound-format trailer. Until another source is set it draws from six: three THX
+ * Deep Note trailers and three Dolby Atmos ones, all bare YouTube links so no page has to be fetched first.
+ */
+val AVID_BUMPER_LINKS = listOf(
+    "https://youtu.be/c4-VLk03lQk", // THX
+    "https://youtu.be/QYU8zydUqD8", // THX
+    "https://youtu.be/sPY3Y2qhyXk", // THX
+    "https://youtu.be/iTHtXgnhqfM", // Dolby Atmos
+    "https://youtu.be/pd_6WN9GVtQ", // Dolby Atmos
+    "https://youtu.be/HZS5a3cm7zU", // Dolby Atmos
+)
+private val AVID_BUMPER_DEFAULT = AVID_BUMPER_LINKS.joinToString(" ")
+
 // Declared before the object so its initialisers can read it.
 private val AVID_KEYS = listOf("cinema_intro", "bumper", "feature_presentation", "rating_bbfc", "rating_mpaa")
 
@@ -75,13 +89,34 @@ object PreshowSettings {
      */
     val musicKeepAudioAlive: StateFlow<Boolean> = _musicKeepAudioAlive.asStateFlow()
 
+    private val _postShowEnabled = MutableStateFlow(storage.load("postshow_enabled") == "true")
+    /**
+     * Cards after the film's credits start, with the video shrunk into a corner. Its own switch,
+     * off until chosen: it spends requests on the viewer's own AI key.
+     */
+    val postShowEnabled: StateFlow<Boolean> = _postShowEnabled.asStateFlow()
+
+    private val _previouslyOnEnabled = MutableStateFlow(storage.load("previously_on_enabled") == "true")
+    /** "Previously on" cards before an episode. Its own switch, off until chosen: it can spend requests on the viewer's AI key. */
+    val previouslyOnEnabled: StateFlow<Boolean> = _previouslyOnEnabled.asStateFlow()
+
+    private val _previouslyOnBreakOnly = MutableStateFlow(storage.load("previously_on_break_only") != "false")
+    /** On: the recap shows only after a break of [previouslyOnBreakHours]. Off: before every episode that has one. */
+    val previouslyOnBreakOnly: StateFlow<Boolean> = _previouslyOnBreakOnly.asStateFlow()
+
+    private val _previouslyOnBreakHours = MutableStateFlow(
+        storage.load("previously_on_break_hours")?.toIntOrNull()?.takeIf { it in PREVIOUSLY_ON_BREAK_CHOICES } ?: DEFAULT_PREVIOUSLY_ON_BREAK_HOURS,
+    )
+    val previouslyOnBreakHours: StateFlow<Int> = _previouslyOnBreakHours.asStateFlow()
+
     private val _localFolder = MutableStateFlow(storage.load("local_folder").orEmpty())
     /** Blank means the default folder inside the app's data directory. */
     val localFolder: StateFlow<String> = _localFolder.asStateFlow()
 
     private val _avidUrls = MutableStateFlow(
         AVID_KEYS.associateWith { storage.load("avid_$it").orEmpty() }
-            .let { saved -> if (saved["rating_bbfc"].isNullOrBlank()) saved + ("rating_bbfc" to AVID_BBFC_PAGE) else saved },
+            .let { saved -> if (saved["rating_bbfc"].isNullOrBlank()) saved + ("rating_bbfc" to AVID_BBFC_PAGE) else saved }
+            .let { saved -> if (saved["bumper"].isNullOrBlank()) saved + ("bumper" to AVID_BUMPER_DEFAULT) else saved },
     )
     val avidUrls: StateFlow<Map<String, String>> = _avidUrls.asStateFlow()
 
@@ -120,6 +155,30 @@ object PreshowSettings {
         storage.save("music_keep_audio_alive", if (enabled) "true" else null)
     }
 
+    fun setPostShowEnabled(enabled: Boolean) {
+        if (_postShowEnabled.value == enabled) return
+        _postShowEnabled.value = enabled
+        storage.save("postshow_enabled", if (enabled) "true" else null)
+    }
+
+    fun setPreviouslyOnEnabled(enabled: Boolean) {
+        if (_previouslyOnEnabled.value == enabled) return
+        _previouslyOnEnabled.value = enabled
+        storage.save("previously_on_enabled", if (enabled) "true" else null)
+    }
+
+    fun setPreviouslyOnBreakOnly(breakOnly: Boolean) {
+        if (_previouslyOnBreakOnly.value == breakOnly) return
+        _previouslyOnBreakOnly.value = breakOnly
+        storage.save("previously_on_break_only", if (breakOnly) null else "false")
+    }
+
+    fun setPreviouslyOnBreakHours(hours: Int) {
+        val clean = hours.takeIf { it in PREVIOUSLY_ON_BREAK_CHOICES } ?: return
+        _previouslyOnBreakHours.value = clean
+        storage.save("previously_on_break_hours", clean.toString())
+    }
+
     fun setLocalFolder(path: String) {
         val clean = path.trim()
         _localFolder.value = clean
@@ -155,3 +214,7 @@ object PreshowSettings {
             .filter { it.isClipSlot }
             .toSet()
 }
+
+/** How long a break must be before the recap shows: a day, three days, a week, two weeks. */
+val PREVIOUSLY_ON_BREAK_CHOICES = listOf(24, 72, 168, 336)
+const val DEFAULT_PREVIOUSLY_ON_BREAK_HOURS = 72

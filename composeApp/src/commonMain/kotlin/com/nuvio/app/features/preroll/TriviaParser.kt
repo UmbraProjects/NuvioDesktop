@@ -74,7 +74,7 @@ private fun JsonObject.toTheme(): TriviaTheme? {
  * Finds the JSON object in [raw] whatever it is wrapped in: first `{` to last `}`. Enumerating the
  * wrappers only works until a model invents another one.
  */
-private fun extractJsonObject(raw: String): JsonObject? {
+internal fun extractJsonObject(raw: String): JsonObject? {
     val text = raw.trim()
     if (text.isEmpty()) return null
     val start = text.indexOf('{')
@@ -93,7 +93,10 @@ private fun JsonObject.toSlide(): TriviaSlide? {
     return TriviaSlide(text = text, category = TriviaCategory.from(string("category")))
 }
 
-private fun JsonObject.toQuestion(): TriviaQuestion? {
+internal fun JsonObject.toQuestion(
+    minConfidence: Double = MIN_CONFIDENCE,
+    allowSpoilers: Boolean = false,
+): TriviaQuestion? {
     val question = (string("q") ?: string("question"))?.trim()
         ?.takeIf { it.isNotEmpty() && it.length <= MAX_QUESTION_CHARS }
         ?: return null
@@ -103,7 +106,7 @@ private fun JsonObject.toQuestion(): TriviaQuestion? {
     if (options.size !in 3..4 || options.any { it.length > MAX_OPTION_CHARS }) return null
     if (options.map { it.lowercase() }.toSet().size != options.size) return null
     val answerIndex = answerIndex(options) ?: return null
-    if (isSpoilerRisky() || isLowConfidence()) return null
+    if ((!allowSpoilers && isSpoilerRisky()) || isLowConfidence(minConfidence)) return null
     return TriviaQuestion(
         question = question,
         options = options,
@@ -129,7 +132,7 @@ private fun JsonObject.answerIndex(options: List<String>): Int? {
     return primitive.intOrNull?.takeIf { it in options.indices }
 }
 
-private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+internal fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
 private fun JsonObject.isSpoilerRisky(): Boolean =
     when (string("spoiler_risk")?.trim()?.lowercase()) {
@@ -137,8 +140,8 @@ private fun JsonObject.isSpoilerRisky(): Boolean =
         else -> false
     }
 
-private fun JsonObject.isLowConfidence(): Boolean {
+internal fun JsonObject.isLowConfidence(minConfidence: Double = MIN_CONFIDENCE): Boolean {
     val primitive = this["confidence"] as? JsonPrimitive
     val value = primitive?.doubleOrNull ?: primitive?.contentOrNull?.toDoubleOrNull() ?: DEFAULT_CONFIDENCE
-    return value < MIN_CONFIDENCE
+    return value < minConfidence
 }

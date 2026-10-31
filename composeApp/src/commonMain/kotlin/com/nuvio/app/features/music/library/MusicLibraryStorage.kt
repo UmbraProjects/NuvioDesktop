@@ -26,6 +26,10 @@ internal expect object MusicLibraryStorage {
     fun loadNebulaLookups(profileId: Int): String?
     fun saveNebulaLookups(profileId: Int, payload: String)
 
+    /** Whether the music addon has releases YouTube Music lacks, one JSON payload per profile (see NebulaAvailability). */
+    fun loadNebulaAvailability(profileId: Int): String?
+    fun saveNebulaAvailability(profileId: Int, payload: String)
+
     /** fork:music-playlists - the profile's music playlists, one JSON payload per profile. */
     fun loadPlaylists(profileId: Int): String?
     fun savePlaylists(profileId: Int, payload: String)
