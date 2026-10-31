@@ -369,8 +369,10 @@ private fun PreshowRunningOrderDialog(
     val hapticFeedback = LocalHapticFeedback.current
     val listState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
-        val slot = order.getOrNull(from.index) ?: return@rememberReorderableLazyListState
-        if (to.index !in order.indices) return@rememberReorderableLazyListState
+        // The saved order, not [order]: one drag can move several rows before the dialog redraws.
+        val current = PreshowSettings.order.value
+        val slot = current.getOrNull(from.index) ?: return@rememberReorderableLazyListState
+        if (to.index !in current.indices) return@rememberReorderableLazyListState
         PreshowSettings.moveTo(slot, to.index + 1)
         hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
     }

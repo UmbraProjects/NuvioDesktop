@@ -12,7 +12,7 @@ private object MetadataClientCatalog : MusicCatalog {
     override suspend fun searchSongs(query: String) = MusicMetadataClient.searchSongs(query)
     override suspend fun playlist(playlistId: String) = MusicMetadataClient.playlist(playlistId)
     override suspend fun searchYouTube(query: String) =
-        TrailerPlaybackResolver.searchYouTube(query).map { it.toMusicTrack() }
+        TrailerPlaybackResolver.searchYouTube(query).distinctBy { it.videoId }.map { it.toMusicTrack() }
 }
 
 actual fun defaultMusicCatalog(): MusicCatalog = MetadataClientCatalog
