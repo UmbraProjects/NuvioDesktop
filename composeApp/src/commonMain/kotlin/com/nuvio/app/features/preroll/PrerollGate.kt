@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -141,6 +142,14 @@ fun PrerollGate(
     val themeVolume by ThemeSongSettings.volume.collectAsState()
     val control = remember(launchKey) { GateControl() }
     val focus = remember { FocusRequester() }
+    // The trivia owns the keys while it is up (its Up/Down and 1-4 live there, not here). A native trailer or clip
+    // surface hands focus back when it closes, sometimes after the trivia has claimed it; reclaiming to the gate's
+    // own box then would strand the trivia without keys, so every reclaim goes to whichever is showing.
+    val triviaFocus = remember { FocusRequester() }
+    var triviaFocused by remember(launchKey) { mutableStateOf(false) }
+    fun reclaimFocus() {
+        runCatching { if (triviaPack != null) triviaFocus.requestFocus() else focus.requestFocus() }
+    }
 
     LaunchedEffect(launchKey) {
         val order = PreshowSettings.order.value
@@ -379,7 +388,7 @@ fun PrerollGate(
         finished = true
     }
 
-    LaunchedEffect(shown?.source?.videoUrl) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(shown?.source?.videoUrl) { reclaimFocus() }
 
     val activeTrailer = shown
     val activePack = triviaPack
@@ -402,7 +411,13 @@ fun PrerollGate(
             .focusRequester(focus)
             .focusable()
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown || activePack != null) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (activePack != null) {
+                    // Focus is on the gate rather than inside the trivia, so this key would go nowhere; move it
+                    // in, so the next one lands.
+                    if (!triviaFocused) reclaimFocus()
+                    return@onPreviewKeyEvent false
+                }
                 when (event.key) {
                     Key.Escape, Key.ButtonB, Key.Back -> { control.skipEverything(); true }
                     Key.DirectionRight, Key.Enter, Key.NumPadEnter, Key.ButtonA -> { control.finishCurrent(); true }
@@ -461,7 +476,7 @@ fun PrerollGate(
                     }
                 },
                 // The native panel can leave OS focus behind; take it back so Escape still works.
-                onSurfaceDisposed = { runCatching { focus.requestFocus() } },
+                onSurfaceDisposed = { reclaimFocus() },
                 // Everything in the pre-show is levelled the same way, clips and trailers alike, so
                 // one item is not louder than the next. The surface's one-second fade-in hides the
                 // normaliser ramping up from unity gain at the start of a clip.
@@ -511,8 +526,9 @@ fun PrerollGate(
                 pack = activePack,
                 title = title,
                 onFinished = { control.finishCurrent() },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().onFocusChanged { triviaFocused = it.hasFocus },
                 artwork = triviaArtwork,
+                focusRequester = triviaFocus,
                 onQuestionActive = { themeDucked = it },
                 onSkipAll = { control.skipEverything() },
                 onNotRight = {

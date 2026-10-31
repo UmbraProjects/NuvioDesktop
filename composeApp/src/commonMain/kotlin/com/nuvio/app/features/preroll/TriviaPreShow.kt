@@ -111,6 +111,8 @@ fun TriviaPreShow(
      * same thing as they do over a trailer; null falls back to ending just the trivia.
      */
     onSkipAll: (() -> Unit)? = null,
+    /** Lets a caller that also reclaims focus (the pre-show gate, after a native surface) aim it here. */
+    focusRequester: FocusRequester? = null,
 ) {
     val questions = remember(pack) { pack.askableQuestions() }
     val slides = pack.slides
@@ -122,7 +124,7 @@ fun TriviaPreShow(
     // The answer under the d-pad cursor; starts at the top for each question.
     var cursor by remember(stage) { mutableStateOf(0) }
     val reportQuestionActive by rememberUpdatedState(onQuestionActive)
-    val focus = remember { FocusRequester() }
+    val focus = remember(focusRequester) { focusRequester ?: FocusRequester() }
     val palette = remember(pack) { pack.theme.toPalette() }
 
     fun next() {
