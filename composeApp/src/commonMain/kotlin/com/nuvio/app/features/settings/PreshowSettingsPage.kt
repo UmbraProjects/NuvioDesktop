@@ -7,13 +7,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
@@ -47,9 +45,6 @@ import com.nuvio.app.features.preroll.RatingRegion
 import com.nuvio.app.features.themesong.ThemeSongSettings
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_done
-import nuvio.composeapp.generated.resources.settings_preroll_trailers
-import nuvio.composeapp.generated.resources.settings_preroll_trailers_description
-import nuvio.composeapp.generated.resources.settings_preroll_trailers_off
 import nuvio.composeapp.generated.resources.settings_preshow_keep_audio_alive
 import nuvio.composeapp.generated.resources.settings_preshow_keep_audio_alive_description
 import nuvio.composeapp.generated.resources.settings_preshow_section_trailers
@@ -89,6 +84,7 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
             val enabled by PreshowSettings.enabledSlots.collectAsStateWithLifecycle()
             val trailerCount by PrerollSettings.trailerCount.collectAsStateWithLifecycle()
             val ai by DiscoverAiSettingsRepository.uiState.collectAsStateWithLifecycle()
+            val keepAudioAlive by PreshowSettings.keepAudioAlive.collectAsStateWithLifecycle()
             var editing by remember { mutableStateOf(false) }
             var consentPromptFor by remember { mutableStateOf<AiConsentTarget?>(null) }
             val on = order.filter { it.isOn(enabled, trailerCount, ai.triviaEnabled) }
@@ -112,6 +108,15 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
                         )
                     },
                     onClick = { editing = true },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_preshow_keep_audio_alive),
+                    description = stringResource(Res.string.settings_preshow_keep_audio_alive_description),
+                    checked = keepAudioAlive,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsSearchAnchors("preshow-keep-audio"),
+                    onCheckedChange = PreshowSettings::setKeepAudioAlive,
                 )
             }
             if (editing) {
@@ -148,31 +153,25 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
             isTablet = isTablet,
         ) {
             val trailerCount by PrerollSettings.trailerCount.collectAsStateWithLifecycle()
-            val keepAudioAlive by PreshowSettings.keepAudioAlive.collectAsStateWithLifecycle()
+            // On and off is the running order's switch; this is only how many. Greyed out (showing the count a
+            // switch-on restores) rather than hidden while off, so the page and its sidebar links stay put.
+            val trailersOn = trailerCount > 0
             SettingsGroup(
                 isTablet = isTablet,
                 modifier = Modifier.settingsSearchAnchors("preshow-trailers"),
             ) {
                 SettingsChoiceRow(
-                    title = stringResource(Res.string.settings_preroll_trailers),
-                    description = stringResource(Res.string.settings_preroll_trailers_description),
-                    options = (0..PREROLL_MAX_TRAILERS).map { count ->
-                        SettingsChoiceOption(
-                            count,
-                            if (count == 0) stringResource(Res.string.settings_preroll_trailers_off) else count.toString(),
-                        )
+                    title = "Number of trailers",
+                    description = if (trailersOn) {
+                        "How many trailers of similar titles (from More Like This) play. Escape skips them all."
+                    } else {
+                        "Trailers are off. Switch them on under Running order."
                     },
-                    selectedValue = trailerCount,
+                    options = (1..PREROLL_MAX_TRAILERS).map { SettingsChoiceOption(it, it.toString()) },
+                    selectedValue = if (trailersOn) trailerCount else TRAILERS_WHEN_SWITCHED_ON,
+                    enabled = trailersOn,
                     isTablet = isTablet,
                     onSelected = PrerollSettings::setTrailerCount,
-                )
-                SettingsGroupDivider(isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_preshow_keep_audio_alive),
-                    description = stringResource(Res.string.settings_preshow_keep_audio_alive_description),
-                    checked = keepAudioAlive,
-                    isTablet = isTablet,
-                    onCheckedChange = PreshowSettings::setKeepAudioAlive,
                 )
             }
         }
@@ -377,7 +376,7 @@ private fun PreshowRunningOrderDialog(
     NuvioModalDialog(
         onDismissRequest = onDismiss,
         title = "Pre-show running order",
-        subtitle = "Plays top to bottom after you press play, then the film starts. Drag a row or use the arrows to move it; " +
+        subtitle = "Plays top to bottom after you press play, then the film starts. Drag a row, or use its arrows, to move it; " +
             "the switch turns it on or off. Escape skips the whole pre-show.",
         maxWidth = 680.dp,
         actions = {
@@ -393,6 +392,13 @@ private fun PreshowRunningOrderDialog(
                     val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
                     val on = isOn(slot)
                     Surface(
+                        // The whole row drags (a mouse never scrolls by dragging, so it needs no handle); the arrows
+                        // and switch inside it still take plain clicks.
+                        modifier = with(this@ReorderableItem) {
+                            Modifier.draggableHandle(
+                                onDragStarted = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress) },
+                            )
+                        },
                         shadowElevation = elevation,
                         // Clear so the rows sit on the dialog's glass; the row being dragged takes the glass night
                         // as an opaque base so it reads above the rows it passes.
@@ -401,22 +407,9 @@ private fun PreshowRunningOrderDialog(
                         Column {
                             if (index > 0) SettingsGroupDivider(isTablet = false)
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.DragIndicator,
-                                    contentDescription = null,
-                                    tint = colors.textMuted,
-                                    modifier = with(this@ReorderableItem) {
-                                        Modifier
-                                            .draggableHandle(
-                                                onDragStarted = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress) },
-                                            )
-                                            .padding(end = 8.dp)
-                                            .size(20.dp)
-                                    },
-                                )
                                 Column(
                                     modifier = Modifier.weight(1f).padding(end = 12.dp),
                                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -477,7 +470,7 @@ private fun PreshowSlot.description(triviaNeedsAi: Boolean): String = when (this
         "A short demo of a cinema sound system, like THX's Deep Note or Dolby Atmos. Comes with three THX and three " +
             "Dolby Atmos trailers; set your own under Clip sources."
     PreshowSlot.Trailers ->
-        "Trailers for similar titles, from More Like This. Choose how many under Trailers."
+        "Trailers for similar titles, from More Like This. Choose how many under Trailers; Escape skips them all."
     PreshowSlot.Trivia ->
         "Facts about the film over its artwork, then a short quiz." + if (triviaNeedsAi) {
             " No AI provider is set up, so the facts come from Wikipedia and there is no quiz; set one under Discover, then AI."

@@ -2484,7 +2484,8 @@ private fun settingsSearchEntries(
             icon = Icons.Rounded.Theaters,
         )
         listOf(
-            PlaybackSearchRow("preshow-trailers", resolve(Res.string.settings_preroll_trailers), resolve(Res.string.settings_preroll_trailers_description), resolve(Res.string.settings_preshow_section_trailers)),
+            PlaybackSearchRow("preshow-trailers", "Number of trailers", "How many trailers of similar titles play before a film. Switch trailers on or off under Running order.", resolve(Res.string.settings_preshow_section_trailers)),
+            PlaybackSearchRow("preshow-keep-audio", resolve(Res.string.settings_preshow_keep_audio_alive), resolve(Res.string.settings_preshow_keep_audio_alive_description), PRESHOW_SECTION_RUNNING_ORDER),
             PlaybackSearchRow("ai-trivia-enabled", resolve(Res.string.settings_ai_trivia_enabled), resolve(Res.string.settings_ai_trivia_enabled_description), PRESHOW_SECTION_RUNNING_ORDER),
             PlaybackSearchRow("preshow-lineup", "Pre-show running order", "Cinema intro, sound system trailer (bumper), trailers, trivia, rating card and feature presentation: switch each on or off and choose the order.", PRESHOW_SECTION_RUNNING_ORDER),
         ).forEach { row ->
