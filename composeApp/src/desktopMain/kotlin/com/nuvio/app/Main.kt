@@ -632,6 +632,12 @@ fun main(args: Array<String>) {
             title = if (smokePlayerUrl == null) "Nuvio HTPC" else "Nuvio Player Smoke",
             state = windowState,
             icon = painterResource(NuvioDesktopIconPath),
+            // An arrow no control took, often because the control holding focus left the screen: on a music page,
+            // focus goes back onto the page (see MusicKeyboard). Window-level so it also runs with nothing focused.
+            onKeyEvent = { event ->
+                com.nuvio.app.core.ui.arrowFocusDirection(event) != null &&
+                    com.nuvio.app.features.music.MusicKeyboard.onUnhandledArrow()
+            },
         ) {
             remember {
                 System.out.println(
@@ -837,6 +843,17 @@ fun main(args: Array<String>) {
                         DesktopNavigationGestureBridge.requestBack(DesktopBackRequestSource.Mouse)
                     }
                 }
+                // Keyboard or mouse: focus rings show only while navigation keys (a pad sends these too) are what is
+                // being used; moving, clicking or scrolling the mouse hides them again (see KeyboardInputMode).
+                val inputModeListener = AWTEventListener { event ->
+                    when (event.id) {
+                        KeyEvent.KEY_PRESSED -> if ((event as KeyEvent).keyCode in KEYBOARD_NAVIGATION_KEYS) {
+                            com.nuvio.app.core.ui.KeyboardInputMode.active = true
+                        }
+                        MouseEvent.MOUSE_MOVED, MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_DRAGGED, MouseEvent.MOUSE_WHEEL ->
+                            com.nuvio.app.core.ui.KeyboardInputMode.active = false
+                    }
+                }
                 val mouseFiveShiftEventQueue = MouseFiveShiftEventQueue()
                 // Diagnostic: minimize/restore fires on the AWT thread regardless of Compose's
                 // render state, so these timestamps can be lined up against the BingeAdvance logs to
@@ -882,6 +899,11 @@ fun main(args: Array<String>) {
                     mouseBackButtonListener,
                     AWTEvent.MOUSE_EVENT_MASK,
                 )
+                Toolkit.getDefaultToolkit().addAWTEventListener(
+                    inputModeListener,
+                    AWTEvent.KEY_EVENT_MASK or AWTEvent.MOUSE_EVENT_MASK or AWTEvent.MOUSE_MOTION_EVENT_MASK or
+                        AWTEvent.MOUSE_WHEEL_EVENT_MASK,
+                )
                 onDispose {
                     uninstallScreensaver()
                     GamepadInput.stop()
@@ -892,6 +914,7 @@ fun main(args: Array<String>) {
                     window.removeWindowStateListener(windowStateListener)
                     KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(backNavigationDispatcher)
                     Toolkit.getDefaultToolkit().removeAWTEventListener(mouseBackButtonListener)
+                    Toolkit.getDefaultToolkit().removeAWTEventListener(inputModeListener)
                     mouseFiveShiftEventQueue.uninstall()
                     uninstallFullscreenShortcuts()
                     unregisterFullscreenToggle()
@@ -1052,6 +1075,7 @@ fun main(args: Array<String>) {
                                 AppShortcutAction.OpenDiscover,
                                 AppShortcutAction.OpenCalendar,
                                 AppShortcutAction.OpenLiveTv,
+                                AppShortcutAction.OpenMusic,
                                 // Routed through App so it inherits the same guard the other
                                 // navigation shortcuts get: nothing fires while the player is up.
                                 AppShortcutAction.ToggleGameMode -> {
@@ -1062,6 +1086,13 @@ fun main(args: Array<String>) {
                                     toggleDesktopAppFullscreen(window)
                                     true
                                 }
+                                AppShortcutAction.FocusMusicPlayer ->
+                                    com.nuvio.app.features.music.MusicKeyboard.togglePlayerFocus()
+                                // Home takes the trailer key itself; reaching here on a music page it has no trailer to
+                                // toggle, so it (a pad's Y) moves to and from the player instead.
+                                AppShortcutAction.ToggleTrailer ->
+                                    com.nuvio.app.features.music.MusicKeyboard.pageShowing() &&
+                                        com.nuvio.app.features.music.MusicKeyboard.togglePlayerFocus()
                                 AppShortcutAction.GoBack -> {
                                     DesktopNavigationGestureBridge.requestBack()
                                     true
@@ -1228,3 +1259,9 @@ private fun swallowHeldSelectKey(event: KeyEvent): Boolean {
         else -> false
     }
 }
+
+/** The keys that mean "moving around with the keyboard" (or a pad's D-pad and A, which arrive as these). */
+private val KEYBOARD_NAVIGATION_KEYS = setOf(
+    KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT,
+    KeyEvent.VK_TAB, KeyEvent.VK_ENTER, KeyEvent.VK_PAGE_UP, KeyEvent.VK_PAGE_DOWN, KeyEvent.VK_HOME, KeyEvent.VK_END,
+)

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -58,6 +60,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import com.nuvio.app.core.ui.navigationKey
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -149,8 +168,16 @@ internal fun MusicLibraryShelf(
                     yearAgo = yearAgo?.let { pick -> { YearAgoStrip(pick, state.artists.size, totalReleases) } },
                 )
             } else {
+                val shelfListState = rememberLazyListState()
+                val shelfScope = rememberCoroutineScope()
+                val coverNavigator = remember(shelfListState) { ShelfCoverNavigator(shelfListState, shelfScope) }
+                val pendingCount = state.working.keys.count { id -> state.artists.none { it.id == id } }
+                // Where the first artist's row sits in the list: under the cards, the count and any artist still being added.
+                coverNavigator.firstArtistItem = (if (cards.isNotEmpty()) 1 else 0) + 1 + pendingCount
+                coverNavigator.artistCount = ordered.size
                 LazyColumn(
                     Modifier.weight(1f).fillMaxWidth(),
+                    state = shelfListState,
                     contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 8.dp, bottom = 24.dp), // 5% safe area for the TV
                 ) {
                     // No gaps between the items under the cards: each draws its own stretch of the column divider.
@@ -175,9 +202,11 @@ internal fun MusicLibraryShelf(
                             Text("Adding… ${progress.status}", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
                         }
                     }
-                    items(ordered, key = { it.id }) { artist ->
+                    itemsIndexed(ordered, key = { _, artist -> artist.id }) { index, artist ->
                         ShelfArtistRow(
                             artist = artist,
+                            index = index,
+                            navigator = coverNavigator,
                             status = state.working[artist.id]?.status,
                             reducedMotion = state.settings.reducedMotion,
                             onOpenArtist = { onArtistClick(artist.id) },
@@ -270,7 +299,7 @@ private fun ShelfCardRow(
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             cards.forEach { card ->
                 val source = remember { MutableInteractionSource() }
-                val focused by source.collectIsFocusedAsState()
+                val focused by source.collectIsKeyboardFocusedAsState()
                 val hovered by source.collectIsHoveredAsState()
                 val shape = RoundedCornerShape(16.dp)
                 Row(
@@ -279,7 +308,6 @@ private fun ShelfCardRow(
                         .fillMaxHeight()
                         .musicGlass(shape, raised = hovered || focused, keyFocused = focused)
                         .hoverable(source)
-                        .focusable(interactionSource = source)
                         .clickable(interactionSource = source, indication = null) {
                             val ladder = card.ladder
                             val browseId = card.release?.ytBrowseId
@@ -363,6 +391,8 @@ private fun ShelfColumnLayout(
 @Composable
 private fun ShelfArtistRow(
     artist: LibraryArtist,
+    index: Int,
+    navigator: ShelfCoverNavigator,
     status: String?,
     reducedMotion: Boolean,
     onOpenArtist: () -> Unit,
@@ -391,8 +421,52 @@ private fun ShelfArtistRow(
         scope.launch { playTopAlbums(catalog, row.top.map { it.release }, shuffled) }
     }
 
+    // The covers by column for the keyboard: the top albums, the rest (the divider between them is no column), then
+    // "All". Up and Down from a cover land on the same column of the row above or below (see ShelfCoverNavigator).
+    val columnCount = if (row.tiles.isEmpty()) 1 else row.top.size + row.rest.size + 1
+    val columnRequesters = remember(columnCount) { List(columnCount) { FocusRequester() } }
+    var focusedColumn by remember { mutableIntStateOf(-1) }
+    val rowListState = rememberLazyListState()
+    val dividerShown = row.top.isNotEmpty() && row.rest.isNotEmpty()
+    fun lazyIndexOf(column: Int) = if (column < row.top.size || !dividerShown) column else column + 1
+    DisposableEffect(index, navigator, columnRequesters) {
+        val focusColumn: (Int) -> Unit = { wanted ->
+            val column = wanted.coerceIn(0, columnCount - 1)
+            scope.launch {
+                val target = lazyIndexOf(column)
+                if (row.tiles.isNotEmpty() && rowListState.layoutInfo.visibleItemsInfo.none { it.index == target }) {
+                    rowListState.scrollToItem(target)
+                    withFrameNanos { }
+                }
+                runCatching { columnRequesters[column].requestFocus() }
+            }
+        }
+        navigator.rows[index] = focusColumn
+        onDispose { if (navigator.rows[index] === focusColumn) navigator.rows.remove(index) }
+    }
+    val coverKeys = Modifier
+        .onFocusChanged { if (!it.hasFocus) focusedColumn = -1 }
+        .onKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown || focusedColumn < 0) return@onKeyEvent false
+            when (event.navigationKey()) {
+                Key.DirectionDown -> navigator.move(index, 1, focusedColumn)
+                Key.DirectionUp -> navigator.move(index, -1, focusedColumn)
+                else -> false
+            }
+        }
+    fun Modifier.coverColumn(column: Int) = this
+        .focusRequester(columnRequesters[column])
+        .onFocusChanged { if (it.hasFocus) focusedColumn = column }
+
+    // The whole row comes into view when anything in it takes focus: a cover alone would leave the artist's buttons,
+    // which reach further down, cut off at the bottom of the window.
+    val rowInView = remember { BringIntoViewRequester() }
     ShelfColumnLayout(
-        Modifier.hoverable(source).padding(vertical = 18.dp),
+        Modifier
+            .bringIntoViewRequester(rowInView)
+            .onFocusChanged { if (it.hasFocus) scope.launch { rowInView.bringIntoView() } }
+            .hoverable(source)
+            .padding(vertical = 18.dp),
         left = {
             // The artist on top, their name and count under it, then three round buttons: their hits (the top five),
             // a shuffle of them, and the favourite star, which floats the artist to the top of the shelf.
@@ -400,20 +474,32 @@ private fun ShelfArtistRow(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(Modifier.clip(CircleShape).clickable(onClick = onOpenArtist)) {
-                    Box(Modifier.border(2.dp, if (hovered) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
+                // The picture and the name are one control: both open the room, so the keyboard stops on them once.
+                val artistSource = remember { MutableInteractionSource() }
+                val artistFocused by artistSource.collectIsKeyboardFocusedAsState()
+                Column(
+                    Modifier.clickable(interactionSource = artistSource, indication = null, onClick = onOpenArtist),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val ring = when {
+                        artistFocused -> colors.borderFocus
+                        hovered -> colors.accent
+                        else -> NuvioGlass.EdgeColor
+                    }
+                    Box(Modifier.smoothBorder(if (artistFocused) 3.dp else 2.dp, ring, CircleShape).padding(3.dp)) {
                         MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true)
                     }
+                    Text(
+                        artist.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
-                Text(
-                    artist.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenArtist),
-                )
                 val subtitle = when {
                     status != null -> status
                     row.playableReleases == row.totalReleases -> "${row.totalReleases} release${if (row.totalReleases == 1) "" else "s"}"
@@ -450,39 +536,46 @@ private fun ShelfArtistRow(
                 if (status != null) "Reading releases…" else "Nothing here is on YouTube Music yet. Open the room to see every release.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.textMuted,
-                modifier = Modifier.weight(1f).clickable(onClick = onOpenArtist),
+                modifier = Modifier.weight(1f).then(coverKeys).coverColumn(0).clickable(onClick = onOpenArtist),
             )
         } else {
             // Every cover is one size: the top albums lead, then a thin line, then every other release.
             LazyRow(
-                Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(wash),
+                Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(wash).then(coverKeys),
+                state = rowListState,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(row.top, key = { it.release.key }) { tile ->
-                    CoverTile(
-                        tile = tile,
-                        reducedMotion = reducedMotion,
-                        onClick = { onOpenRelease(tile.release) },
-                        onTogglePin = { MusicLibraryRepository.toggleTopPin(artist.id, tile.release.key) },
-                    )
+                itemsIndexed(row.top, key = { _, tile -> tile.release.key }) { column, tile ->
+                    Box(Modifier.coverColumn(column)) {
+                        CoverTile(
+                            tile = tile,
+                            reducedMotion = reducedMotion,
+                            onClick = { onOpenRelease(tile.release) },
+                            onTogglePin = { MusicLibraryRepository.toggleTopPin(artist.id, tile.release.key) },
+                        )
+                    }
                 }
                 if (row.top.isNotEmpty() && row.rest.isNotEmpty()) {
                     item(key = "divider") {
                         Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(TILE_SIZE).background(Color.White.copy(alpha = 0.14f)))
                     }
                 }
-                items(row.rest, key = { it.release.key }) { tile ->
-                    CoverTile(
-                        tile = tile,
-                        reducedMotion = reducedMotion,
-                        onClick = { onOpenRelease(tile.release) },
-                        onTogglePin = { MusicLibraryRepository.toggleTopPin(artist.id, tile.release.key) },
-                    )
+                itemsIndexed(row.rest, key = { _, tile -> tile.release.key }) { restIndex, tile ->
+                    Box(Modifier.coverColumn(row.top.size + restIndex)) {
+                        CoverTile(
+                            tile = tile,
+                            reducedMotion = reducedMotion,
+                            onClick = { onOpenRelease(tile.release) },
+                            onTogglePin = { MusicLibraryRepository.toggleTopPin(artist.id, tile.release.key) },
+                        )
+                    }
                 }
                 item(key = "all") {
                     Box(
-                        Modifier.size(TILE_SIZE).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.06f)).clickable(onClick = onOpenArtist),
+                        Modifier.coverColumn(columnCount - 1).size(TILE_SIZE).clip(RoundedCornerShape(8.dp))
+                            .background(Color.White.copy(alpha = 0.06f))
+                            .musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(onClick = onOpenArtist),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -498,6 +591,46 @@ private fun ShelfArtistRow(
     }
 }
 
+/**
+ * Up and Down between the shelf's cover rows, keeping the column, as a TV grid does. Compose's own search would pick
+ * whatever is nearest below (the artist's buttons, beside the covers) rather than the cover underneath. A row out of
+ * view is scrolled to first, so it is composed and can take focus.
+ */
+private class ShelfCoverNavigator(
+    private val listState: LazyListState,
+    private val scope: kotlinx.coroutines.CoroutineScope,
+) {
+    /** Each composed artist row (by its place on the shelf) focuses one of its columns. */
+    val rows = mutableMapOf<Int, (Int) -> Unit>()
+    var firstArtistItem = 0
+    var artistCount = 0
+
+    /**
+     * Moves from row [from] by [delta] to [column]. Up from the first row carries on as usual (to the cards and the view
+     * icons above); Down from the last goes nowhere, rather than sideways onto the artist's buttons.
+     */
+    fun move(from: Int, delta: Int, column: Int): Boolean {
+        val target = from + delta
+        if (target < 0) return false
+        if (target >= artistCount) return true
+        scope.launch {
+            // A row not on screen (it may be composed ahead, but cannot take focus off screen) is brought on by about
+            // one row's height, not a jump that puts it at the top; once focused it scrolls itself fully into view.
+            val info = listState.layoutInfo
+            val itemIndex = firstArtistItem + target
+            if (info.visibleItemsInfo.none { it.index == itemIndex }) {
+                val step = info.visibleItemsInfo.firstOrNull { it.index == firstArtistItem + from }?.size
+                    ?: (info.viewportEndOffset - info.viewportStartOffset) / 2
+                listState.scrollBy(delta * step.toFloat())
+                withFrameNanos { }
+            }
+            rows[target]?.invoke(column)
+        }
+        return true
+    }
+
+}
+
 /** A round glass button under an artist's name. [tint] overrides the icon colour (the gold of a favourite). */
 @Composable
 private fun ShelfRoundButton(
@@ -509,7 +642,7 @@ private fun ShelfRoundButton(
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     Box(
         Modifier
             .size(40.dp)

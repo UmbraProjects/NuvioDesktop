@@ -162,6 +162,10 @@ class GamepadInputTest {
                 // Every browsing button is taken. Live TV is a tab, which the D-pad already reaches
                 // in the top bar, and it only exists once a playlist has been added.
                 AppShortcutAction.OpenLiveTv,
+                // The same: Music is a top-bar tab the D-pad reaches, and only there while it is turned on.
+                AppShortcutAction.OpenMusic,
+                // On a music page the pad's Y (the trailer key) does this; elsewhere the player is a D-pad stop away.
+                AppShortcutAction.FocusMusicPlayer,
             ),
             AppShortcutAction.entries.toSet() - boundApp,
             "app actions with no button",

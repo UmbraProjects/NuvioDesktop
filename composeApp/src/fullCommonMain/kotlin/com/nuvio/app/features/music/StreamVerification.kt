@@ -189,6 +189,9 @@ internal fun urlsToVerify(source: TrailerPlaybackSource, needsVideo: Boolean): L
  *   is now accepted when the probe proves bytes arrive from where the player will read, and marked
  *   reliable. That is BitChord's rule: probe, don't guess from the client's name.
  */
+/** Whether this candidate is the extractor's own answer (the split streams), not one of the fallbacks it links. */
+private fun TrailerPlaybackSource.isFirstRung(source: TrailerPlaybackSource): Boolean = this === source
+
 internal suspend fun verifiedSource(
     source: TrailerPlaybackSource,
     needsVideo: Boolean,
@@ -205,7 +208,8 @@ internal suspend fun verifiedSource(
             else -> ProbeVerdict.Unreachable
         }
         when {
-            verdict == ProbeVerdict.Ok -> return candidate.copy(reliable = true)
+            // A restricted client's source the probe proved still cannot be opened from the middle (see openableMidway).
+            verdict == ProbeVerdict.Ok -> return candidate.copy(reliable = true, openableMidway = trusted || !candidate.isFirstRung(source))
             verdict == ProbeVerdict.Unreachable && trusted -> return candidate
         }
         verifyLog.i { "source not fit to play ($verdict); trying its fallback" }

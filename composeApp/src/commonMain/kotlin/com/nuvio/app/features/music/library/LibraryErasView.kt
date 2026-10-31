@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -92,18 +93,21 @@ internal fun LibraryErasView(
     var failed by remember(selected) { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    // The ruler's keys belong to the view itself; once focus is on a pill or an artist inside it, the arrows move focus.
+    var rulerFocused by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
             .focusRequester(focusRequester)
+            .onFocusChanged { rulerFocused = it.isFocused }
             .focusable()
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyDown || !rulerFocused) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.DirectionLeft, Key.DirectionUp, Key.DirectionRight, Key.DirectionDown -> {
+                    // Left and Right step the eras; Up and Down leave the ruler (to the view pills, or into the era).
+                    Key.DirectionLeft, Key.DirectionRight -> {
                         if (eras.eras.isEmpty()) return@onPreviewKeyEvent false
-                        val back = event.key == Key.DirectionLeft || event.key == Key.DirectionUp
+                        val back = event.key == Key.DirectionLeft
                         chosen = stepEra(eras.eras, selected, if (back) -1 else 1).takeIf { it >= 0 }
                         true
                     }
@@ -112,6 +116,8 @@ internal fun LibraryErasView(
                         chosen = null
                         had
                     }
+                    // Kept here: unhandled, desktop Compose treats Enter as "focus the first thing inside".
+                    Key.Enter, Key.NumPadEnter -> true
                     else -> false
                 }
             },

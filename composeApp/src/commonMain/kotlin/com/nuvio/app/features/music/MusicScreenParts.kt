@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import com.nuvio.app.features.music.library.musicGlass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -108,7 +109,7 @@ internal fun <T> MusicSegmented(
                     .then(if (sized) Modifier.fillMaxHeight() else Modifier)
                     .clip(pill)
                     .background(if (on) colors.accent else Color.Transparent)
-                    .clickable { onSelect(value) }
+                    .musicKeyFocusRing(pill).clickable { onSelect(value) }
                     .padding(horizontal = if (sized) 20.dp else 16.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -149,7 +150,7 @@ internal fun MusicMessage(
                 color = colors.accent,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onAction)
+                    .musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(onClick = onAction)
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
@@ -226,7 +227,7 @@ private fun MusicListRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,

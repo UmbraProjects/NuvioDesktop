@@ -12,6 +12,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.rememberUpdatedState
 import co.touchlab.kermit.Logger
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.layout
@@ -101,6 +103,10 @@ fun KeptAliveLayer(
     val currentlyVisible by rememberUpdatedState(visible)
     Box(
         modifier = modifier
+            // Arrow-key focus search would otherwise find controls on the covered screen (it is placed off to the
+            // left, not removed) and hand focus to something that is released at once below.
+            .focusProperties { onEnter = { if (!currentlyVisible) cancelFocusChange() } }
+            .focusGroup()
             .onFocusChanged { state ->
                 layerHasFocus = state.hasFocus
                 // Something inside asked for focus while covered (its own requests should check

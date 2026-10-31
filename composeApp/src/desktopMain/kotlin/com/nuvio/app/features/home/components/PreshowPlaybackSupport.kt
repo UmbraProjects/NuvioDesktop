@@ -36,6 +36,21 @@ internal const val TRAILER_START_STALL_MS = 20_000L
 private val FORBIDDEN_STREAM_RETRY_DELAYS_MS = longArrayOf(1_500L, 4_000L)
 
 /** The wait before re-opening after [message], or null when it is not a 403 or the retries are spent. */
+/**
+ * YouTube's streams fetched in bounded 4 MiB ranges instead of one open-ended request for the whole file. With the
+ * open-ended request, the bundled libmpv's FFmpeg HTTP seek (opening part way in, resuming, any jump) issued no new
+ * request until the old response had been read out: on a 120 MB music video that outlasted the stall watchdog and
+ * playback fell back to 360p. Reproduced and fixed against the bundled libmpv (2026-10-31), and played on across the
+ * range boundaries without a gap. It replaces the bridge's own stream-lavf-o, so the reconnect options are repeated.
+ * Empty for anything not served by googlevideo.
+ */
+internal fun youtubeStreamMpvOptions(sourceUrl: String): List<String> =
+    if ("googlevideo.com" in sourceUrl) {
+        listOf("stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5,request_size=4194304")
+    } else {
+        emptyList()
+    }
+
 internal fun forbiddenStreamRetryDelayMs(message: String?, retriesSoFar: Int): Long? =
     if (message?.contains("403") == true) FORBIDDEN_STREAM_RETRY_DELAYS_MS.getOrNull(retriesSoFar) else null
 

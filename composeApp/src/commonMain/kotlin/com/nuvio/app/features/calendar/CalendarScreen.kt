@@ -1,5 +1,6 @@
 package com.nuvio.app.features.calendar
 
+import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.appShortcutMatches
 
@@ -649,7 +650,7 @@ private fun DayCell(
     // than adding a heavy solid frame. Drawn on the outer box, outside the content clip: a clip is
     // not anti-aliased here, and an edge drawn inside one stair-steps round the corners.
     val edge = when {
-        isFocused -> Modifier.border(2.dp, Color.White.copy(alpha = 0.92f), shape)
+        isFocused -> Modifier.smoothBorder(2.dp, Color.White.copy(alpha = 0.92f), shape)
         isToday -> Modifier.border(1.5.dp, tokens.colors.accentFill(0.95f), shape)
         hovered -> Modifier.border(1.dp, CalendarGlassEdgeHover, shape)
         else -> Modifier.border(1.dp, NuvioGlass.Edge, shape)

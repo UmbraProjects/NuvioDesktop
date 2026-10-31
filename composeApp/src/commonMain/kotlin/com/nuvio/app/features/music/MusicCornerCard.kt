@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.KeyboardInputMode
 import androidx.compose.foundation.layout.offset
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.ui.NuvioGlass
@@ -168,7 +169,7 @@ internal fun MusicCornerCard(
                         .background(NuvioGlass.night(colors.background, colors.accent))
                         .ditheredBackground(NuvioGlass.Fill, shape)
                         .border(
-                            if (cardFocused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, NuvioGlass.EdgeColor),
+                            if (cardFocused && KeyboardInputMode.active) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, NuvioGlass.EdgeColor),
                             shape,
                         )
                         // With the card itself focused, Enter opens the full Now Playing view; its buttons keep their own keys.

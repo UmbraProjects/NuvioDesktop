@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,7 +64,7 @@ internal fun SectionHeader(text: String, modifier: Modifier = Modifier) {
 internal fun LadderOfferCard(offer: LadderOffer, onPick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val shape = RoundedCornerShape(14.dp)
     Text(
         text = offer.label,
@@ -75,8 +77,7 @@ internal fun LadderOfferCard(offer: LadderOffer, onPick: () -> Unit, modifier: M
             .padding(horizontal = 8.dp, vertical = 4.dp)
             .clip(shape)
             .background(colors.accent)
-            .then(if (focused) Modifier.border(3.dp, colors.textPrimary, shape) else Modifier)
-            .focusable(interactionSource = source)
+            .then(if (focused) Modifier.smoothBorder(3.dp, colors.textPrimary, shape) else Modifier)
             .clickable(interactionSource = source, indication = null, onClick = onPick)
             .padding(horizontal = 20.dp, vertical = 16.dp),
     )
@@ -87,7 +88,7 @@ internal fun LadderOfferCard(offer: LadderOffer, onPick: () -> Unit, modifier: M
 internal fun SeeAllRow(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val shape = RoundedCornerShape(10.dp)
     Text(
         text = text,
@@ -97,8 +98,7 @@ internal fun SeeAllRow(text: String, onClick: () -> Unit, modifier: Modifier = M
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
             .clip(shape)
-            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
-            .focusable(interactionSource = source)
+            .then(if (focused) Modifier.smoothBorder(3.dp, colors.accent, shape) else Modifier)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     )
@@ -108,7 +108,7 @@ internal fun SeeAllRow(text: String, onClick: () -> Unit, modifier: Modifier = M
 private fun FocusPill(text: String, selected: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val shape = RoundedCornerShape(22.dp)
     Text(
         text = text,
@@ -117,8 +117,7 @@ private fun FocusPill(text: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(shape)
             .background(if (selected) colors.accent else colors.surfaceCard)
-            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
-            .focusable(interactionSource = source)
+            .then(if (focused) Modifier.smoothBorder(3.dp, colors.accent, shape) else Modifier)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 10.dp),
     )

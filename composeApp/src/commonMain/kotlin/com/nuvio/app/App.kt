@@ -102,6 +102,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1731,7 +1732,23 @@ private fun MainAppContent(
     LaunchedEffect(navController) {
         AppShortcutBridge.events.collect { action ->
             if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
+            // fork:music - on the Music tab the search key goes to the Music search box, not the video search.
+            if (action == AppShortcutAction.OpenSearch && selectedTab == AppScreenTab.Music &&
+                navController.currentDestination?.hasRoute<TabsRoute>() == true
+            ) {
+                com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
+                return@collect
+            }
             when (action) {
+                AppShortcutAction.OpenMusic -> {
+                    // Like Live TV: the key does nothing while the Music tab is turned off.
+                    if (!com.nuvio.app.features.music.library.MusicLibraryRepository.state.value.settings.tabEnabled) return@collect
+                    navController.navigate(TabsRoute) {
+                        popUpTo<TabsRoute> { inclusive = false }
+                        launchSingleTop = true
+                    }
+                    latestRootTabClick.value(if (selectedTab == AppScreenTab.Music) AppScreenTab.Home else AppScreenTab.Music)
+                }
                 AppShortcutAction.GoHome,
                 AppShortcutAction.OpenSearch,
                 AppShortcutAction.OpenDiscover,
@@ -6349,7 +6366,13 @@ private fun TabletFloatingTopBar(
         visibleHistory.map(::SearchPickerEntry)
     }
     val pickerItemCount = pickerEntries.size
-    val pickerVisible = isSearchActive && searchBarHasFocus && visibleHistory.isNotEmpty()
+    // fork:music-navbar - the Music box on the bar offers its recent searches through the same attached panel. The
+    // last ones shown are kept so the panel fades out on them rather than switching to the video history.
+    val musicSuggestions = com.nuvio.app.features.music.MusicTopBarSearch.suggestions.takeIf { musicBarActive }
+    var lastMusicSuggestions by remember { mutableStateOf<com.nuvio.app.features.music.MusicBarSuggestions?>(null) }
+    SideEffect { if (musicSuggestions != null) lastMusicSuggestions = musicSuggestions }
+    val panelMusic = musicSuggestions ?: lastMusicSuggestions.takeIf { !isSearchActive }
+    val pickerVisible = (isSearchActive && searchBarHasFocus && visibleHistory.isNotEmpty()) || musicSuggestions != null
     var historyShapeVisible by remember { mutableStateOf(false) }
     val attachedPanelVisible = historyShapeVisible || libraryMenuVisible
 
@@ -6721,6 +6744,9 @@ private fun TabletFloatingTopBar(
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, dividerColor),
                     modifier = Modifier.width(topBarWidth).offset(y = (-0.5).dp),
                 ) {
+                    val shownEntries = panelMusic?.let { music -> remember(music.items) { music.items.map(::SearchPickerEntry) } }
+                        ?: pickerEntries
+                    val shownSelectedIndex = panelMusic?.picked ?: pickerSelectedIndex
                     Column(modifier = Modifier.fillMaxWidth()) {
                         LazyColumn(
                             state = pickerListState,
@@ -6732,16 +6758,18 @@ private fun TabletFloatingTopBar(
                                 .padding(vertical = 8.dp),
                         ) {
                             items(
-                                items = pickerEntries,
+                                items = shownEntries,
                                 key = SearchPickerEntry::key,
                             ) { entry ->
-                                val index = pickerEntries.indexOf(entry)
-                                val isSelected = index == pickerSelectedIndex
+                                val index = shownEntries.indexOf(entry)
+                                val isSelected = index == shownSelectedIndex
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(if (isSelected) Color.White.copy(alpha = 0.1f) else Color.Transparent)
-                                        .clickable { activatePickerItem(entry) }
+                                        .clickable {
+                                            if (panelMusic != null) panelMusic.onPick(entry.query) else activatePickerItem(entry)
+                                        }
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -6779,8 +6807,12 @@ private fun TabletFloatingTopBar(
                                 color = Color.White.copy(alpha = 0.55f),
                                 modifier = Modifier
                                     .clickable {
-                                        com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
-                                        pickerSelectedIndex = -1
+                                        if (panelMusic != null) {
+                                            com.nuvio.app.features.music.library.MusicSearchHistory.clear()
+                                        } else {
+                                            com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
+                                            pickerSelectedIndex = -1
+                                        }
                                     }
                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                             )

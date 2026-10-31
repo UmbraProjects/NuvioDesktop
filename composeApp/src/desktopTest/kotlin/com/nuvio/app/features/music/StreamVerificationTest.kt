@@ -136,6 +136,13 @@ class StreamVerificationTest {
         val proven = verifiedSource(cutOffClient, needsVideo = false, probe = probing("https://a" to ProbeVerdict.Ok))
         assertEquals("https://a", proven?.videoUrl)
         assertTrue(proven!!.reliable, "a source the probe proved is marked reliable")
+        assertFalse(proven.openableMidway, "but its URLs still refuse a range from the middle")
+
+        // Its fallback, from the same lookup but a single stream, opens anywhere.
+        val withFallback = source("https://a", reliable = false, fallback = source("https://b"))
+        val fellBack = verifiedSource(withFallback, needsVideo = false, probe = probing("https://a" to ProbeVerdict.Refused, "https://b" to ProbeVerdict.Ok))
+        assertEquals("https://b", fellBack?.videoUrl)
+        assertTrue(fellBack!!.openableMidway)
 
         // No answer is not proof: an untrusted source is dropped, as it was before the probe existed.
         assertNull(verifiedSource(cutOffClient, needsVideo = false, probe = probing("https://a" to ProbeVerdict.Unreachable)))

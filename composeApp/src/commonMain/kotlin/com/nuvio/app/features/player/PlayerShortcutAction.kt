@@ -59,6 +59,8 @@ enum class AppShortcutAction(val id: String, val displayNameRes: StringResource)
     OpenDiscover("open_discover", Res.string.shortcut_app_open_discover),
     OpenCalendar("open_calendar", Res.string.shortcut_app_open_calendar),
     OpenLiveTv("open_live_tv", Res.string.shortcut_app_open_live_tv),
+    OpenMusic("open_music", Res.string.shortcut_app_open_music),
+    FocusMusicPlayer("focus_music_player", Res.string.shortcut_app_focus_music_player),
     ToggleTrailer("toggle_trailer", Res.string.shortcut_app_toggle_trailer),
     ToggleTrailerMute("toggle_trailer_mute", Res.string.shortcut_app_toggle_trailer_mute),
     TogglePeoplePanel("toggle_people_panel", Res.string.shortcut_app_toggle_people_panel),

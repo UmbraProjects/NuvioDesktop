@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -305,7 +306,7 @@ fun NuvioBackButton(
                         .background(Color.Black.copy(alpha = 0.28f), shape)
                         .ditheredBackground(NuvioGlass.Fill, shape)
                         .background(if (hovered || focused) Color.White.copy(alpha = 0.08f) else Color.Transparent, shape)
-                        .border(
+                        .smoothBorder(
                             width = if (focused) 2.dp else 1.dp,
                             color = if (focused) MaterialTheme.nuvio.colors.borderFocus else NuvioGlass.EdgeColor,
                             shape = shape,

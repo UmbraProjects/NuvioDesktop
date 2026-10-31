@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -141,7 +142,7 @@ internal fun AlbumObject(
                 }
                 .then(
                     if (onFlip == null) Modifier
-                    else Modifier.pointerHoverIcon(PointerIcon.Hand).clickable(
+                    else Modifier.pointerHoverIcon(PointerIcon.Hand).musicKeyFocusRing().clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClickLabel = if (flipped) "Show the front" else "Flip to the back",
@@ -332,7 +333,7 @@ internal fun AlbumLinerNotes(
         }
         notes.description?.let { text ->
             Column(
-                Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onToggleDescription).padding(vertical = 4.dp),
+                Modifier.clip(RoundedCornerShape(10.dp)).musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable(onClick = onToggleDescription).padding(vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {

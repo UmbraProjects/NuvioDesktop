@@ -8,6 +8,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
+import co.touchlab.kermit.Logger
+import com.nuvio.app.features.music.library.MusicLibraryRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,12 +59,22 @@ data class MusicPlayerState(
     val videoCutPlaying: Boolean = false,
     /** A short line for the bar ("No video for this track"). Cleared by the next track change. */
     val notice: String? = null,
+    /** The YouTube id behind [source]: the song's audio, or its video in Video mode. Its SponsorBlock segments are skipped. */
+    val videoId: String? = null,
 ) {
     val isActive: Boolean get() = track != null
     val isPlaying: Boolean get() = isActive && playWhenReady && !isLoading
 }
 
 private const val RESTART_THRESHOLD_MS = 3_000L
+
+private val log = Logger.withTag("MusicPlayer")
+
+/** Before a deferred start's jump, positions this far short of where it is going are still the muted run-up. */
+private const val DEFERRED_START_SLACK_MS = 2_000L
+
+/** How long resolving a track waits for its SponsorBlock segments before opening it without them. */
+private const val SEGMENT_LOOKUP_WAIT_MS = 400L
 
 /** How long the volume must stay put before it is saved. */
 private const val VOLUME_SAVE_DELAY_MS = 600L
@@ -248,7 +261,8 @@ class MusicPlayer(
                     _state.update {
                         it.copy(
                             mode = newMode,
-                            source = result.playable.source,
+                            source = result.playable.source.forOpeningAt(result.startPositionMs),
+                            videoId = result.playable.videoId,
                             startPositionMs = result.startPositionMs,
                             loadId = ++loadCounter,
                             isLoading = true,
@@ -258,6 +272,7 @@ class MusicPlayer(
                         )
                     }
                     prefetchNext(q)
+                    loadSkipSegments(result.playable.videoId)
                 }
                 MusicModeSwitch.Unavailable -> _state.update {
                     it.copy(
@@ -317,6 +332,34 @@ class MusicPlayer(
         return (own + later) to q.orderedPosition
     }
 
+    /**
+     * Plays [track] picked from [upNext]: a later track of what is playing, or one in an album queued after it, in which
+     * case the albums queued before that one are dropped, as if Next had been pressed until it came up.
+     */
+    fun playUpNext(track: MusicTrack) {
+        val q = queue ?: return
+        if (q.upNext.any { it.videoId == track.videoId }) {
+            jumpTo(q.album.tracks.indexOfFirst { it.videoId == track.videoId })
+            return
+        }
+        val at = following.indexOfFirst { album -> album.tracks.any { it.videoId == track.videoId } }
+        if (at < 0) return
+        launchRequest {
+            _state.update { it.copy(isLoading = true, playWhenReady = true) }
+            val album = following[at]
+            val index = album.tracks.indexOfFirst { it.videoId == track.videoId }
+            val fresh = MusicQueue(album, q.mode, q.shuffled, seed = now(), startIndex = index)
+            val found = fresh.jumpTo(index) { candidate -> resolve(candidate, album, fresh.mode) }
+            if (found == null) {
+                _state.update { it.copy(isLoading = false, notice = "Couldn't play that track") }
+                return@launchRequest
+            }
+            following = following.drop(at + 1)
+            queue = fresh
+            show(fresh, found, startPositionMs = 0L, skipped = found.skipped.size)
+        }
+    }
+
     /** The next [limit] tracks in the queue that can be played, then the queued albums', for the Up next cards. */
     fun upNext(limit: Int): List<MusicTrack> =
         (queue?.upNext.orEmpty() + following.flatMap { it.tracks }).filter { it.isAvailable }.take(limit)
@@ -370,7 +413,60 @@ class MusicPlayer(
                 isLoading = current.isLoading && !snapshot.isPlaying && (current.playWhenReady || snapshot.isLoading),
             )
         }
+        if (snapshot.isPlaying) skipNonMusic(snapshot.positionMs)
     }
+
+    /**
+     * The source to open at [startMs]. One from a restricted client cannot be opened part way in (its URLs refuse a
+     * range request from the middle and mpv waits on the seek until the stall watchdog gives up), so it goes straight
+     * to its fallback, past the slow HLS rung when there is one after it, as [onSurfaceError] would after the stall.
+     */
+    private fun TrailerPlaybackSource.forOpeningAt(startMs: Long): TrailerPlaybackSource {
+        val fallback = fallback
+        if (startMs <= 0L || openableMidway || fallback == null) return this
+        val chosen = fallback.fallback?.takeIf { "/manifest/" in fallback.videoUrl } ?: fallback
+        log.i { "opening at ${startMs}ms on a restricted client's streams: using the single stream instead" }
+        return chosen
+    }
+
+    // region SponsorBlock
+
+    /** The non-music segments of [skipSegmentsFor], and the ones already skipped this play of it. */
+    private var skipSegments: List<MusicSkipSegment> = emptyList()
+    private var skipSegmentsFor: String? = null
+    private val skippedSegments = mutableSetOf<MusicSkipSegment>()
+    private var skipLookup: Job? = null
+
+    /** Fetches [videoId]'s non-music segments, when skipping them is on. */
+    private fun loadSkipSegments(videoId: String) {
+        skipSegmentsFor = videoId
+        skipSegments = emptyList()
+        skippedSegments.clear()
+        skipLookup?.cancel()
+        if (!MusicLibraryRepository.state.value.settings.skipNonMusic) return
+        skipLookup = scope.launch {
+            val found = MusicSponsorBlock.segments(videoId)
+            if (skipSegmentsFor == videoId) skipSegments = found
+        }
+    }
+
+    /**
+     * Jumps past a non-music segment the song has played into. Each segment is skipped once per play, so seeking back
+     * into one (to hear it after all) is left alone. A deferred start plays from 0:00 muted before its jump to
+     * [MusicPlayerState.startPositionMs]; positions before that are not the song's yet.
+     */
+    private fun skipNonMusic(positionMs: Long) {
+        val current = _state.value
+        if (skipSegments.isEmpty() || current.videoId != skipSegmentsFor) return
+        if (!MusicLibraryRepository.state.value.settings.skipNonMusic) return
+        if (current.startPositionMs > 0L && positionMs < current.startPositionMs - DEFERRED_START_SLACK_MS) return
+        val segment = musicSkipTarget(positionMs, skipSegments)?.takeIf { it !in skippedSegments } ?: return
+        skippedSegments += segment
+        log.i { "skipping non-music ${segment.startMs}-${segment.endMs}ms of ${current.videoId}" }
+        seekTo(segment.endMs)
+    }
+
+    // endregion
 
     /** The track reached its end, or the stream stopped serving partway. */
     fun onSurfaceEnded() {
@@ -453,6 +549,15 @@ class MusicPlayer(
 
     private fun show(q: MusicQueue, found: NextPlayable, startPositionMs: Long, skipped: Int, notice: String? = null) {
         val track = found.playable.track
+        // A non-music intro already known for this video: open the song where the music starts.
+        val intro = if (startPositionMs == 0L && MusicLibraryRepository.state.value.settings.skipNonMusic) {
+            MusicSponsorBlock.cached(found.playable.videoId)?.let { musicIntroSegment(it, track.durationSeconds * 1000L) }
+        } else {
+            null
+        }
+        @Suppress("NAME_SHADOWING")
+        val startPositionMs = intro?.endMs ?: startPositionMs
+        val source = found.playable.source.forOpeningAt(startPositionMs)
         _state.update {
             it.copy(
                 album = q.album,
@@ -460,7 +565,8 @@ class MusicPlayer(
                 trackIndex = found.index,
                 mode = q.mode,
                 shuffled = q.shuffled,
-                source = found.playable.source,
+                source = source,
+                videoId = found.playable.videoId,
                 startPositionMs = startPositionMs,
                 loadId = ++loadCounter,
                 isLoading = true,
@@ -473,6 +579,12 @@ class MusicPlayer(
             )
         }
         prefetchNext(q)
+        // Every play of a track skips afresh; the segments themselves are cached by MusicSponsorBlock.
+        loadSkipSegments(found.playable.videoId)
+        intro?.let {
+            skippedSegments += it
+            log.i { "opening ${found.playable.videoId} past its non-music intro at ${it.endMs}ms" }
+        }
     }
 
     private fun cacheKey(track: MusicTrack, mode: MusicPlayMode) = "${track.videoId}|$mode"
@@ -501,7 +613,13 @@ class MusicPlayer(
         val entry = hit ?: Cached(
             scope.async {
                 try {
-                    resolver(track, album, mode)
+                    resolver(track, album, mode).also { result ->
+                        // With Skip non-music on, the video's segments are looked up with it (briefly, and once: they are
+                        // cached), so a non-music intro can be opened past rather than played and then seeked over.
+                        if (result is MusicResolution.Playable && MusicLibraryRepository.state.value.settings.skipNonMusic) {
+                            withTimeoutOrNull(SEGMENT_LOOKUP_WAIT_MS) { MusicSponsorBlock.segments(result.videoId) }
+                        }
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Throwable) {

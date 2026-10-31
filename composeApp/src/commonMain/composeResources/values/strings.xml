@@ -4142,6 +4142,8 @@
     <string name="shortcut_app_open_discover">Open Discover (toggle back to Home)</string>
     <string name="shortcut_app_open_calendar">Open Calendar</string>
     <string name="shortcut_app_open_live_tv">Open Live TV (toggle back to Home)</string>
+    <string name="shortcut_app_open_music">Open Music (toggle back to Home)</string>
+    <string name="shortcut_app_focus_music_player">Focus the music player (again to go back)</string>
     <string name="shortcut_app_toggle_trailer">Play / dismiss focused trailer</string>
     <string name="shortcut_app_toggle_trailer_mute">Toggle trailer mute</string>
     <string name="shortcut_app_toggle_people_panel">Swap Starring / Production in hero</string>

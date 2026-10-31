@@ -234,7 +234,8 @@ actual fun HomeHeroTrailerSurface(
             // Tells the controls page it is a passive hero surface from the very first script
             // run, so it never grabs keyboard focus (which would break TV navigation).
             controlsPageUrlSuffix = if (preshow) "?heroTrailer=1&preshow=1" else "?heroTrailer=1", // fork:preshow
-            initMpvOptions = heroTrailerAudioInitOptions(effectiveMuted, effectiveVolume, normalizeAudio, preshow), // fork:preshow
+            initMpvOptions = heroTrailerAudioInitOptions(effectiveMuted, effectiveVolume, normalizeAudio, preshow) + // fork:preshow
+                youtubeStreamMpvOptions(sourceUrl),
         )
     }
 

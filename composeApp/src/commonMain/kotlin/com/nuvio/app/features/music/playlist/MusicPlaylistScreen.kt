@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.playlist
 
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -44,6 +45,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.nuvio.app.core.ui.KeyboardInputMode
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -91,6 +98,15 @@ fun MusicPlaylistScreen(
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var chosenMode by rememberSaveable(playlistId) { mutableStateOf(player.state.value.mode) }
+    // The keyboard starts on the first song (on Play while there are none), not on the back button in the corner.
+    val entryFocus = remember(playlistId) { FocusRequester() }
+    LaunchedEffect(playlistId, playlist == null) {
+        if (playlist == null) return@LaunchedEffect
+        repeat(10) {
+            delay(80)
+            if (runCatching { entryFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+        }
+    }
 
     Box(modifier.fillMaxSize().background(colors.background).settingsSkyBackground(colors.background, colors.accent)) {
         if (playlist == null) {
@@ -132,7 +148,11 @@ fun MusicPlaylistScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
                         val playing = loaded && state.playWhenReady
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally), modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                            modifier = Modifier.fillMaxWidth()
+                                .then(if (playlist.tracks.isEmpty()) Modifier.focusRequester(entryFocus) else Modifier),
+                        ) {
                             RoundAction(if (!loaded) "Play" else if (playing) "Pause" else "Resume", if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, playing) {
                                 if (loaded) player.togglePlayback() else start(0, shuffled = false)
                             }
@@ -163,6 +183,7 @@ fun MusicPlaylistScreen(
                 }
                 itemsIndexed(playlist.tracks, key = { _, t -> t.videoId }) { index, track ->
                     PlaylistTrackRow(
+                        modifier = if (index == 0) Modifier.focusRequester(entryFocus) else Modifier,
                         track = track,
                         number = index + 1,
                         current = loaded && state.track?.videoId == track.videoId,
@@ -207,6 +228,7 @@ private fun RoundAction(label: String, icon: ImageVector, active: Boolean, onCli
 
 @Composable
 private fun PlaylistTrackRow(
+    modifier: Modifier = Modifier,
     track: PlaylistTrack,
     number: Int,
     current: Boolean,
@@ -222,14 +244,18 @@ private fun PlaylistTrackRow(
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
+    // The row's move and remove buttons show on hover, and while the keyboard is anywhere in the row (Right reaches them).
+    var focusWithin by remember { mutableStateOf(false) }
     Row(
         Modifier
+            .onFocusChanged { focusWithin = it.hasFocus }
+            .then(modifier)
             .widthIn(max = 720.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(if (current) colors.accent.copy(alpha = 0.12f) else if (hovered) Color.White.copy(alpha = 0.05f) else Color.Transparent)
             .hoverable(source)
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -256,7 +282,7 @@ private fun PlaylistTrackRow(
                         color = colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false).then(if (onArtist != null) Modifier.clickable(onClick = onArtist) else Modifier),
+                        modifier = Modifier.weight(1f, fill = false).then(if (onArtist != null) Modifier.musicKeyFocusRing().clickable(onClick = onArtist) else Modifier),
                     )
                 }
                 track.albumTitle?.let { album ->
@@ -272,7 +298,7 @@ private fun PlaylistTrackRow(
                 }
             }
         }
-        if (hovered) {
+        if (hovered || (focusWithin && KeyboardInputMode.active)) {
             if (!first) SmallAction(Icons.Rounded.KeyboardArrowUp, "Move up", onUp)
             if (!last) SmallAction(Icons.Rounded.KeyboardArrowDown, "Move down", onDown)
             SmallAction(Icons.Rounded.Close, "Remove from the playlist", onRemove)
@@ -290,7 +316,7 @@ private fun PlaylistTrackRow(
 private fun SmallAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     NuvioPosterHoverTooltip(title = label) {
-        Box(Modifier.size(30.dp).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(30.dp).clip(CircleShape).musicKeyFocusRing(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = label, tint = colors.textSecondary, modifier = Modifier.size(18.dp))
         }
     }

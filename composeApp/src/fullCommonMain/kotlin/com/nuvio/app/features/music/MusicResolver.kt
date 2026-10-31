@@ -5,6 +5,7 @@ import com.nuvio.app.features.trailer.TrailerPlaybackResolver
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import com.nuvio.app.features.trailer.sourceOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
 private val log = Logger.withTag("MusicResolver")
@@ -145,7 +146,17 @@ object MusicResolver {
      */
     private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
         repeat(OPEN_ATTEMPTS) { attempt ->
-            val resolved = resolveSource(videoId) ?: return fallbackSource(videoId, needsVideo)
+            var resolved = resolveSource(videoId) ?: return fallbackSource(videoId, needsVideo)
+            // A restricted client answered (usually throttling during a burst of lookups): its URLs are cut off and
+            // cannot be opened part way in. Asked once more after a pause, as the trailer resolver does.
+            if (!resolved.reliable) {
+                log.i { "$videoId came back through a restricted client; asking again" }
+                delay(RESTRICTED_RETRY_DELAY_MS)
+                resolveSource(videoId)?.takeIf { it.reliable }?.let {
+                    log.i { "$videoId: the unrestricted client answered on the second ask" }
+                    resolved = it
+                }
+            }
             verifiedSource(resolved, needsVideo)?.let { return it }
             if (attempt < OPEN_ATTEMPTS - 1) {
                 log.w { "every stream for $videoId was refused; retrying with a fresh session" }
@@ -181,6 +192,7 @@ object MusicResolver {
     }
 
     private const val OPEN_ATTEMPTS = 2
+    private const val RESTRICTED_RETRY_DELAY_MS = 600L
 
     private suspend fun resolveSource(videoId: String): TrailerPlaybackSource? =
         try {

@@ -163,6 +163,8 @@ object AppShortcutsRepository {
         AppShortcutAction.OpenDiscover to KeyEvent.VK_D,
         AppShortcutAction.OpenCalendar to KeyEvent.VK_C,
         AppShortcutAction.OpenLiveTv to KeyEvent.VK_V,
+        AppShortcutAction.OpenMusic to KeyEvent.VK_U,
+        AppShortcutAction.FocusMusicPlayer to KeyEvent.VK_B,
         AppShortcutAction.ToggleTrailer to KeyEvent.VK_T,
         AppShortcutAction.ToggleTrailerMute to KeyEvent.VK_M,
         AppShortcutAction.TogglePeoplePanel to KeyEvent.VK_P,

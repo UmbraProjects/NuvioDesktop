@@ -189,6 +189,9 @@ fun MusicPlayerHost(
     val big = videoVisible && view == MusicVideoView.Fullscreen
     var hostOrigin by remember { mutableStateOf(Offset.Zero) }
     val keys = remember { FocusRequester() }
+    // The player shortcut reads the focused control through the window's focus manager (see MusicKeyboard).
+    val windowFocus = androidx.compose.ui.platform.LocalFocusManager.current
+    androidx.compose.runtime.SideEffect { MusicKeyboard.focusManager = windowFocus }
     LaunchedEffect(big) {
         if (big) runCatching { keys.requestFocus() }
     }
@@ -205,8 +208,9 @@ fun MusicPlayerHost(
                 },
             )
             .onGloballyPositioned { hostOrigin = it.positionInRoot() }
+            // The bar, dock or card is reached with the arrows from the page; the big video's strip takes focus itself.
+            .musicKeyboardRoot(takeFocus = false, isPlayer = true)
             .focusRequester(keys)
-            .focusable()
             .onPreviewKeyEvent { event ->
                 if (!big || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
@@ -315,7 +319,12 @@ fun MusicPlayerHost(
             // and its content is moved down by however much taller than the notch it is, so the notch's top edge stays
             // put and the panel grows below it. Done in layout, so it follows the resize frame by frame.
             val dockOpensDown = dockOpensDown(windowHeight, dockPlacement)
-            val notchPx = with(LocalDensity.current) { DockNotchHeight.roundToPx() }
+            val density = LocalDensity.current
+            val notchPx = with(density) { DockNotchHeight.roundToPx() }
+            // The dock's measured height (the open panel's while it is open), for keeping it under the cursor below, and
+            // the folded notch's width, which is all the drag has to keep inside the window.
+            val dockHeightPx = remember { intArrayOf(0) }
+            val notchWidthPx = remember { intArrayOf(0) }
             AnimatedVisibility(
                 visible = ((collapsed && !realVideo) || docked) && !hidden && !big && !nowPlayingOpen,
                 modifier = Modifier
@@ -324,11 +333,29 @@ fun MusicPlayerHost(
                     .padding(bottom = DockEdgeGap)
                     .layout { measurable, constraints ->
                         val placeable = measurable.measure(constraints)
+                        dockHeightPx[0] = placeable.height
+                        if (placeable.height <= notchPx + 2) notchWidthPx[0] = placeable.width
+                        // The notch can sit in a corner; opening, the wider panel is pushed back inside the window, so it
+                        // grows away from the edge it is docked to rather than the notch being kept off that edge.
+                        val areaPx = areaWidth.roundToPx()
+                        val gapPx = DockEdgeGap.roundToPx()
+                        val left = (areaPx - placeable.width) / 2 + dockPlacement.dx.roundToPx()
+                        val inside = if (areaPx - placeable.width >= gapPx * 2) {
+                            left.coerceIn(gapPx, areaPx - placeable.width - gapPx)
+                        } else {
+                            (areaPx - placeable.width) / 2
+                        }
                         layout(placeable.width, placeable.height) {
-                            placeable.place(0, if (dockOpensDown) (placeable.height - notchPx).coerceAtLeast(0) else 0)
+                            placeable.place(inside - left, if (dockOpensDown) (placeable.height - notchPx).coerceAtLeast(0) else 0)
                         }
                     }
-                    .musicPlayerDrag(MusicPlayback.dockPlacement) { clampDockPlacement(areaWidth, windowHeight, it) },
+                    .musicPlayerDrag(MusicPlayback.dockPlacement) { moved ->
+                        // Keeps the open panel under the cursor when the drag crosses the middle (see dockDragStep).
+                        val extra = with(density) { (dockHeightPx[0] - notchPx).coerceAtLeast(0).toDp() }
+                        val kept = dockDragStep(windowHeight, MusicPlayback.dockPlacement.value, moved, extra)
+                        val notchWidth = with(density) { notchWidthPx[0].toDp() }.takeIf { it > 0.dp } ?: DockNotchMaxWidth
+                        clampDockPlacement(areaWidth, windowHeight, kept, notchWidth)
+                    },
                 enter = if (reduced) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(260)) { if (dockOpensDown) -it / 2 else it / 2 },
                 exit = if (reduced) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(200)) { if (dockOpensDown) -it / 2 else it / 2 },
             ) {
@@ -341,7 +368,9 @@ fun MusicPlayerHost(
                         if (collapsed) MusicPlayback.barCollapsed.value = false
                         else MusicPlayback.nowPlayingOpen.value = !MusicPlayback.nowPlayingOpen.value
                     },
-                    onExpandVideo = if (realVideo && !inline) ({ MusicPlayback.showVideo() }) else null,
+                    // Only while minimised: as the player itself the arrow already opens Now Playing, which is where
+                    // the video shows, so a second button doing the same was just noise.
+                    onExpandVideo = if (collapsed && realVideo && !inline) ({ MusicPlayback.showVideo() }) else null,
                     opensDown = dockOpensDown,
                 )
             }

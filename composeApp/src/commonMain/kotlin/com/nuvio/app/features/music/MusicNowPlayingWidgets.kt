@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.rounded.PlaylistAdd
@@ -105,7 +106,7 @@ internal fun NowPlayingWidgets(
                             )
                             .hoverable(source)
                             .then(
-                                if (entry.inAlbum && !playing) Modifier.clickable(interactionSource = source, indication = null) { player.jumpTo(entry.albumIndex) }
+                                if (entry.inAlbum && !playing) Modifier.musicKeyFocusRing().clickable(interactionSource = source, indication = null) { player.jumpTo(entry.albumIndex) }
                                 else Modifier,
                             )
                             .padding(8.dp),
@@ -151,6 +152,9 @@ private fun MiniLadder(artist: LibraryArtist) {
     }
 }
 
+/** One white for every control and one softer shade for the texts either side (where in the album, the time). */
+private val CONTROLS_SIDE_TEXT = Color.White.copy(alpha = 0.7f)
+
 /** The least height the queue's scrolling box keeps (about two rows). */
 private val UP_NEXT_MIN_HEIGHT = 112.dp
 
@@ -168,8 +172,8 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
             if (total > 1 && state.trackIndex >= 0) {
                 Text(
                     "Track ${state.trackIndex + 1} of $total",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 14.sp,
+                    color = CONTROLS_SIDE_TEXT,
+                    fontSize = 15.sp,
                     maxLines = 1,
                     modifier = Modifier.align(Alignment.CenterStart),
                 )
@@ -192,9 +196,8 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
             }
             Text(
                 "${formatMusicTime(state.positionMs)}/${formatMusicTime(state.durationMs)}",
-                color = Color.White,
+                color = CONTROLS_SIDE_TEXT,
                 fontSize = 15.sp,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 maxLines = 1,
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
@@ -220,11 +223,11 @@ private fun ControlIcon(
     onClick: () -> Unit,
 ) {
     com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = label) {
-        Box(Modifier.size(if (large) 44.dp else 38.dp).clip(CircleShape).clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(if (large) 44.dp else 38.dp).clip(CircleShape).musicKeyFocusRing(CircleShape).clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
             Icon(
                 icon,
                 contentDescription = label,
-                tint = if (large) Color.White else Color.White.copy(alpha = if (enabled) 0.9f else 0.3f),
+                tint = if (enabled) Color.White else Color.White.copy(alpha = 0.3f),
                 modifier = Modifier.size(if (large) 30.dp else 22.dp),
             )
         }

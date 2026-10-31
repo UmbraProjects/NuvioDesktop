@@ -91,20 +91,25 @@ internal fun clampCornerPlacement(areaWidth: Dp, areaHeight: Dp, cardHeight: Dp,
     return placement.copy(dx = f.left - musicBarSideMargin(areaWidth), dy = f.dy)
 }
 
-/** The open dock's width and height: the drag keeps the whole open panel inside the window, not just the notch. */
-private val DockOpenWidth = 440.dp
-private val DockOpenHeight = 340.dp
+/** The widest the folded notch gets (a long title); the drag keeps the notch, not the open panel, inside the window. */
+internal val DockNotchMaxWidth = 320.dp
 
 /** The folded notch's height, and the gap the host leaves between it and the window's bottom edge. */
 internal val DockNotchHeight = 40.dp
 internal val DockEdgeGap = 10.dp
 
 /**
- * The dock's placement (an offset from bottom centre) pulled inside the area. The notch may go all the way to the
- * top; there it opens downwards ([dockOpensDown]), so the room the open panel needs is on whichever side it opens to.
+ * The dock's placement (an offset from bottom centre) pulled inside the area. The folded notch ([notchWidth] wide) may go
+ * into any corner, one edge gap from the sides; there it opens downwards in the top half ([dockOpensDown]) and the
+ * host pushes the wider open panel back inside the window, so it grows away from the edges it is docked to.
  */
-internal fun clampDockPlacement(areaWidth: Dp, areaHeight: Dp, placement: MusicPlayerPlacement): MusicPlayerPlacement {
-    val side = ((areaWidth - DockOpenWidth) / 2).coerceAtLeast(0.dp)
+internal fun clampDockPlacement(
+    areaWidth: Dp,
+    areaHeight: Dp,
+    placement: MusicPlayerPlacement,
+    notchWidth: Dp = DockNotchMaxWidth,
+): MusicPlayerPlacement {
+    val side = ((areaWidth - notchWidth) / 2 - DockEdgeGap).coerceAtLeast(0.dp)
     val dx = if (areaWidth == Dp.Unspecified || areaWidth == Dp.Infinity) placement.dx else placement.dx.coerceIn(-side, side)
     val dy = when {
         placement.dy > 0.dp -> 0.dp
@@ -119,6 +124,22 @@ internal fun dockOpensDown(areaHeight: Dp, placement: MusicPlayerPlacement): Boo
     if (areaHeight == Dp.Unspecified || areaHeight == Dp.Infinity) return false
     val notchMiddleFromTop = areaHeight + placement.dy - DockEdgeGap - DockNotchHeight / 2
     return notchMiddleFromTop < areaHeight / 2
+}
+
+/**
+ * A drag step of the dock from [from] to [moved], with the panel open [extra] taller than the notch. Dragged across the
+ * middle, the open panel would swap to growing the other way and jump by [extra], off the cursor, folding and reopening
+ * as the pointer left and found it again. The notch moves to the panel's other end instead, so the panel stays where it
+ * is under the cursor; that also puts the notch well past the middle, so the swap does not flicker back.
+ */
+internal fun dockDragStep(areaHeight: Dp, from: MusicPlayerPlacement, moved: MusicPlayerPlacement, extra: Dp): MusicPlayerPlacement {
+    val wasDown = dockOpensDown(areaHeight, from)
+    val nowDown = dockOpensDown(areaHeight, moved)
+    return when {
+        wasDown == nowDown || extra <= 0.dp -> moved
+        nowDown -> moved.copy(dy = moved.dy - extra)
+        else -> moved.copy(dy = moved.dy + extra)
+    }
 }
 
 /** A lift between the bottom edge (0) and the top of the area; unbounded while the area's height is unknown. */

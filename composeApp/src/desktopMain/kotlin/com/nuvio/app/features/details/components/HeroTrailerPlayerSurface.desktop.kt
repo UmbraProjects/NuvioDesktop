@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.home.components.forbiddenStreamRetryDelayMs
+import com.nuvio.app.features.home.components.youtubeStreamMpvOptions
 import com.nuvio.app.features.player.PlayerControlsAction
 import com.nuvio.app.features.player.PlayerControlsState
 import com.nuvio.app.features.player.PlayerHeroTrailerState
@@ -203,6 +204,7 @@ actual fun HeroTrailerPlayerSurface(
                 }
             },
             controlsPageUrlSuffix = "?heroTrailer=1",
+            initMpvOptions = youtubeStreamMpvOptions(sourceUrl),
         )
     }
 

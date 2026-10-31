@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import com.nuvio.app.features.music.nebula.NebulaMusicSource
 import com.nuvio.app.features.music.nebula.NebulaSourceRow
 import com.nuvio.app.features.music.nebula.rememberNebulaAlbumController
@@ -62,6 +63,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +72,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.nuvio.app.core.ui.arrowFocusDirection
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -165,6 +179,17 @@ private fun AlbumContent(
     val startsFresh = !loaded || playingNebula != wantNebula
     // Which tracks can play depends on the source: a track YouTube Music greys out may exist on the addon, and the reverse.
     val view = if (wantNebula) nebula?.preparedAlbum ?: album else album
+    // The keyboard starts on the first song that plays, not on the object (turning the sleeve is for fun, not the reason
+    // the page was opened). Asked a few times: the page root's own first-control request lands first.
+    val firstTrackFocus = remember(album.browseId) { FocusRequester() }
+    val firstPlayable = view.tracks.indexOfFirst { it.isAvailable }
+    LaunchedEffect(album.browseId, firstPlayable >= 0) {
+        if (firstPlayable < 0) return@LaunchedEffect
+        repeat(10) {
+            delay(80)
+            if (runCatching { firstTrackFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+        }
+    }
     fun startAlbum(trackIndex: Int, mode: MusicPlayMode, shuffled: Boolean) {
         if (wantNebula) nebula?.play(trackIndex, mode, shuffled)
         else player.play(album, trackIndex = trackIndex, mode = mode, shuffled = shuffled)
@@ -298,6 +323,7 @@ private fun AlbumContent(
                 album = album,
                 track = track,
                 current = loaded && state.trackIndex == index,
+                modifier = if (index == firstPlayable) Modifier.focusRequester(firstTrackFocus) else Modifier,
                 onAddToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
                 onClick = {
                     if (loaded && startsFresh) {
@@ -378,6 +404,7 @@ private val TRACK_ROW_MAX_WIDTH = 480.dp
 /** One round button in the album's action row. */
 private class AlbumAction(val label: String, val icon: ImageVector, val active: Boolean, val onClick: () -> Unit)
 private val MORE_TILE = 150.dp
+private const val TOP_ROW_SCROLL_DELAY_MS = 180L
 private val MORE_GAP = 16.dp
 private val MORE_COLUMN_WIDTH = MORE_TILE * 2 + MORE_GAP + 56.dp
 private val OBJECT_COLUMN_WIDTH = 520.dp
@@ -386,8 +413,11 @@ private val OBJECT_COLUMN_WIDTH = 520.dp
 @Composable
 private fun MoreFromColumn(title: String, more: List<LibraryRelease>, onAlbumClick: (String) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
+    val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
+        state = gridState,
         modifier = Modifier.width(MORE_COLUMN_WIDTH).fillMaxHeight(),
         contentPadding = PaddingValues(start = 24.dp, end = 32.dp, top = 24.dp, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(MORE_GAP),
@@ -396,7 +426,23 @@ private fun MoreFromColumn(title: String, more: List<LibraryRelease>, onAlbumCli
         item(key = "title", span = { GridItemSpan(maxLineSpan) }) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
         }
-        gridItems(more, key = { it.key }) { release -> MoreFromTile(release, MORE_TILE, onAlbumClick) }
+        gridItemsIndexed(more, key = { _, release -> release.key }) { index, release ->
+            val topRow = index < 2
+            Box(
+                Modifier
+                    // Arriving on the top row scrolls back to the title, so the column is seen from its start again. After the
+                    // focused tile's own scroll into view, which starts on the same frame and would cancel this one.
+                    .onFocusChanged {
+                        if (it.hasFocus && topRow) scope.launch {
+                            delay(TOP_ROW_SCROLL_DELAY_MS)
+                            gridState.animateScrollToItem(0)
+                        }
+                    }
+                    .onKeyEvent { event ->
+                        topRow && event.type == KeyEventType.KeyDown && arrowFocusDirection(event) == FocusDirection.Up
+                    },
+            ) { MoreFromTile(release, MORE_TILE, onAlbumClick) }
+        }
     }
 }
 
@@ -416,7 +462,7 @@ private fun MoreFromRow(title: String, more: List<LibraryRelease>, onAlbumClick:
 private fun MoreFromTile(release: LibraryRelease, size: Dp, onAlbumClick: (String) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     Column(
-        Modifier.width(size).clip(RoundedCornerShape(10.dp)).clickable { release.ytBrowseId?.let(onAlbumClick) },
+        Modifier.width(size).clip(RoundedCornerShape(10.dp)).musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable { release.ytBrowseId?.let(onAlbumClick) },
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         MusicCover(release.art.cover, release.title, size = size)
@@ -505,7 +551,7 @@ private fun AlbumFacts(album: MusicAlbum, info: LibraryAlbumInfo?, onArtistClick
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = if (artistId != null) Modifier.clip(RoundedCornerShape(8.dp)).clickable { onArtistClick(artistId) } else Modifier,
+                modifier = if (artistId != null) Modifier.clip(RoundedCornerShape(8.dp)).musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable { onArtistClick(artistId) } else Modifier,
             ) {
                 info?.artist?.art?.thumb?.let { MusicCover(it, description = null, size = 30.dp, circle = true) }
                 Text(
@@ -532,6 +578,7 @@ private fun TrackRow(
     onClick: () -> Unit,
     /** fork:music-playlists - shown as a + on hover. */
     onAddToPlaylist: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val hoverSource = remember { MutableInteractionSource() }
     val hovered by hoverSource.collectIsHoveredAsState()
@@ -541,13 +588,13 @@ private fun TrackRow(
     // Only when the song has someone the album does not (a feature), not on every row.
     val credit = trackArtists.takeIf { it.isNotEmpty() && it != albumArtists }?.joinToString(", ")
     Row(
-        modifier = Modifier
+        modifier = modifier
             .widthIn(max = TRACK_ROW_MAX_WIDTH) // the length stays near the title however wide the column gets
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(if (current) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
             .hoverable(hoverSource)
-            .clickable(enabled = track.isAvailable, onClick = onClick)
+            .musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(enabled = track.isAvailable, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -591,9 +638,13 @@ private fun TrackRow(
         }
         if (onAddToPlaylist != null && track.isAvailable) {
             // Always laid out (only shown on hover), so the length does not jump when the pointer arrives.
+            // Shown on hover, or while the keyboard is on it (Right from the track row).
+            var addFocused by remember { mutableStateOf(false) }
             NuvioPosterHoverTooltip(title = "Add to playlist") {
                 Box(
-                    Modifier.size(28.dp).alpha(if (hovered) 1f else 0f).clip(CircleShape).clickable(enabled = hovered, onClick = onAddToPlaylist),
+                    Modifier.size(28.dp).alpha(if (hovered || addFocused) 1f else 0f)
+                        .onFocusChanged { addFocused = it.hasFocus }
+                        .clip(CircleShape).musicKeyFocusRing(CircleShape).clickable(onClick = onAddToPlaylist),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = "Add to playlist", tint = colors.textSecondary, modifier = Modifier.size(18.dp))

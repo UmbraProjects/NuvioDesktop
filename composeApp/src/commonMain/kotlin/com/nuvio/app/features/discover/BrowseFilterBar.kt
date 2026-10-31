@@ -1,5 +1,7 @@
 package com.nuvio.app.features.discover
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.LocalScreenCovered
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
@@ -10,6 +12,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +42,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +54,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -66,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.arrowKeyFocusNavigation
 import com.nuvio.app.core.ui.nuvio
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -108,6 +117,20 @@ fun browseFilterSummary(label: String, picked: List<String>): String = when {
 }
 
 /**
+ * How a page that keeps keyboard focus on itself (Home, Discover, Library) hands it to a filter bar: [requester]
+ * focuses the bar's first filter, and [onFocusChanged] reports whether focus is anywhere in the bar.
+ */
+class BrowseFilterStripFocus(
+    val requester: FocusRequester,
+    val onFocusChanged: (Boolean) -> Unit,
+)
+
+val LocalBrowseFilterStripFocus = compositionLocalOf<BrowseFilterStripFocus?> { null }
+
+/** Set inside an open filter menu that was opened from the keyboard, so its first choice takes focus. */
+private val LocalBrowseMenuKeyboardOpened = compositionLocalOf { false }
+
+/**
  * The bar itself: one line of small icons that scrolls sideways — drag it, or rest the pointer near
  * an end, as a poster row does — rather than wrapping, so it never pushes the shelf down or runs
  * into whatever sits beside it.
@@ -118,8 +141,18 @@ fun BrowseFilterStrip(
     content: @Composable RowScope.() -> Unit,
 ) {
     val scroll = rememberScrollState()
+    val stripFocus = LocalBrowseFilterStripFocus.current
     Row(
         modifier = modifier
+            .then(
+                if (stripFocus != null) {
+                    Modifier
+                        .focusRequester(stripFocus.requester)
+                        .onFocusChanged { stripFocus.onFocusChanged(it.hasFocus) }
+                } else {
+                    Modifier
+                },
+            )
             .browseStripEdgeScroll(scroll)
             .browseStripDragScroll(scroll)
             .horizontalScroll(scroll),
@@ -170,7 +203,7 @@ fun BrowseFilterCaption(text: String) {
 @Composable
 fun BrowseFilterIconAction(icon: ImageVector, label: String, on: Boolean = false, onClick: () -> Unit) {
     NuvioPosterHoverTooltip(title = label) {
-        BrowseFilterIconButton(icon = icon, label = label, on = on, open = false, dot = false, onPress = { onClick() })
+        BrowseFilterIconButton(icon = icon, label = label, on = on, open = false, dot = false, onPress = { _, _ -> onClick() })
     }
 }
 
@@ -190,6 +223,7 @@ fun BrowseFilterMenu(
     content: @Composable ColumnScope.(close: () -> Unit) -> Unit,
 ) {
     var openAt by remember { mutableStateOf<IntOffset?>(null) }
+    var openedByKeyboard by remember { mutableStateOf(false) }
     val setOpenAt: (IntOffset?) -> Unit = { value ->
         val was = openAt != null
         openAt = value
@@ -208,7 +242,11 @@ fun BrowseFilterMenu(
                 label = label,
                 on = on,
                 open = openAt != null,
-                onPress = { cursor -> setOpenAt(if (openAt == null) cursor else null) },
+                onPress = { cursor, byKeyboard ->
+                    openedByKeyboard = byKeyboard
+                    setOpenAt(if (openAt == null) cursor else null)
+                },
+                refocusAfterMenu = openAt == null && openedByKeyboard,
             )
         }
         openAt?.takeIf { !LocalScreenCovered.current }?.let { cursor ->
@@ -223,15 +261,21 @@ fun BrowseFilterMenu(
                 onDismissRequest = { setOpenAt(null) },
                 properties = PopupProperties(focusable = true),
             ) {
-                BrowseFilterMenuSurface(maxHeight = maxHeight) {
-                    content { setOpenAt(null) }
+                CompositionLocalProvider(LocalBrowseMenuKeyboardOpened provides openedByKeyboard) {
+                    BrowseFilterMenuSurface(maxHeight = maxHeight) {
+                        content { setOpenAt(null) }
+                    }
                 }
             }
         }
     }
 }
 
-/** The icon button: [onPress] gets the cursor's window position, to open a menu there. */
+/**
+ * The icon button: [onPress] gets the cursor's window position, to open a menu there, and whether the press came from
+ * the keyboard (Enter, or a pad's A), in which case the position is under the button. [refocusAfterMenu] takes focus
+ * back once a menu opened from the keyboard has closed: a focusable menu leaves nothing focused behind it.
+ */
 @Composable
 private fun BrowseFilterIconButton(
     icon: ImageVector,
@@ -240,18 +284,38 @@ private fun BrowseFilterIconButton(
     open: Boolean,
     /** The accent dot that marks an [on] filter; a plain choice is shown by the tint alone. */
     dot: Boolean = true,
-    onPress: (IntOffset) -> Unit,
+    onPress: (cursor: IntOffset, byKeyboard: Boolean) -> Unit,
+    refocusAfterMenu: Boolean = false,
 ) {
     val tokens = MaterialTheme.nuvio
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val focused by interaction.collectIsKeyboardFocusedAsState()
+    val focusRequester = remember { FocusRequester() }
     var windowOrigin by remember { mutableStateOf(Offset.Zero) }
-    var lastPress by remember { mutableStateOf(Offset.Zero) }
-    val cursor = { IntOffset((windowOrigin.x + lastPress.x).roundToInt(), (windowOrigin.y + lastPress.y).roundToInt()) }
+    var buttonWidthPx by remember { mutableStateOf(0) }
+    var buttonHeightPx by remember { mutableStateOf(0) }
+    // Where the pointer pressed, cleared once used: a click without one came from the keyboard.
+    var lastPress by remember { mutableStateOf<Offset?>(null) }
+    val press = {
+        val at = lastPress
+        lastPress = null
+        val local = at ?: Offset(buttonWidthPx / 2f, buttonHeightPx.toFloat())
+        onPress(IntOffset((windowOrigin.x + local.x).roundToInt(), (windowOrigin.y + local.y).roundToInt()), at == null)
+    }
+    LaunchedEffect(refocusAfterMenu) {
+        if (!refocusAfterMenu) return@LaunchedEffect
+        delay(16)
+        runCatching { focusRequester.requestFocus() }
+    }
     Box(
         modifier = Modifier
             .size(IconButtonSize)
-            .onGloballyPositioned { windowOrigin = it.positionInWindow() }
+            .onGloballyPositioned {
+                windowOrigin = it.positionInWindow()
+                buttonWidthPx = it.size.width
+                buttonHeightPx = it.size.height
+            }
             .pointerInput(Unit) {
                 // Where the press landed, read before the click fires so the menu opens under it.
                 awaitPointerEventScope {
@@ -266,21 +330,26 @@ private fun BrowseFilterIconButton(
             .clip(CircleShape)
             .background(
                 when {
-                    open -> Color.White.copy(alpha = 0.16f)
+                    open || focused -> Color.White.copy(alpha = 0.16f)
                     hovered -> Color.White.copy(alpha = 0.10f)
                     else -> Color.Transparent
                 },
             )
+            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, CircleShape) else Modifier)
             .hoverable(interaction)
-            .clickable(interactionSource = interaction, indication = null, onClickLabel = label) { onPress(cursor()) }
-            .secondaryClick { onPress(ContextMenuInvocation.consume() ?: cursor()) },
+            .focusRequester(focusRequester)
+            .clickable(interactionSource = interaction, indication = null, onClickLabel = label) { press() }
+            .secondaryClick {
+                val invoked = ContextMenuInvocation.consume()
+                if (invoked != null) onPress(invoked, false) else press()
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
             modifier = Modifier.size(IconSize),
-            tint = if (on) tokens.colors.accent else Color.White.copy(alpha = if (hovered || open) 1f else 0.82f),
+            tint = if (on) tokens.colors.accent else Color.White.copy(alpha = if (hovered || open || focused) 1f else 0.82f),
         )
         if (on && dot) {
             Box(
@@ -298,12 +367,24 @@ private fun BrowseFilterIconButton(
 /** The right-click menu's panel, holding a filter's choices. */
 @Composable
 private fun BrowseFilterMenuSurface(maxHeight: Dp, content: @Composable ColumnScope.() -> Unit) {
+    // Opened from the keyboard, the first choice takes focus so the arrows walk the menu straight away.
+    val firstChoice = remember { FocusRequester() }
+    if (LocalBrowseMenuKeyboardOpened.current) {
+        LaunchedEffect(Unit) {
+            delay(16)
+            runCatching { firstChoice.requestFocus() }
+        }
+    }
     NuvioGlassMenuSurface(
         modifier = Modifier.widthIn(min = MenuMinWidth, max = MenuMaxWidth),
         shape = MenuShape,
     ) {
         Column(
             modifier = Modifier
+                .focusRequester(firstChoice)
+                // The menu is its own window: the arrows (and a pad's D-pad) walk its choices, which Compose Desktop
+                // does not do by itself.
+                .arrowKeyFocusNavigation()
                 .heightIn(max = maxHeight)
                 .verticalScroll(rememberScrollState())
                 .padding(6.dp),
@@ -389,12 +470,14 @@ private fun BrowseMenuOption(
     val tokens = MaterialTheme.nuvio
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val focused by interaction.collectIsKeyboardFocusedAsState()
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = ContextMenuRowHeight)
             .clip(OptionShape)
-            .background(if (hovered) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .background(if (hovered || focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, OptionShape) else Modifier)
             .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 11.dp),
@@ -453,13 +536,23 @@ private fun CheckMark(selected: Boolean) {
 @Composable
 fun BrowseMenuChip(text: String, on: Boolean, onClick: () -> Unit) {
     val tokens = MaterialTheme.nuvio
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsKeyboardFocusedAsState()
     Text(
         text = text,
         modifier = Modifier
             .clip(CircleShape)
             .background(if (on) tokens.colors.accent.copy(alpha = 0.22f) else Color.Transparent)
-            .border(1.dp, if (on) tokens.colors.accent.copy(alpha = 0.6f) else tokens.colors.borderStrong, CircleShape)
-            .clickable(onClick = onClick)
+            .border(
+                if (focused) 2.dp else 1.dp,
+                when {
+                    focused -> tokens.colors.borderFocus
+                    on -> tokens.colors.accent.copy(alpha = 0.6f)
+                    else -> tokens.colors.borderStrong
+                },
+                CircleShape,
+            )
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),
         style = MaterialTheme.typography.bodyMedium,
         color = tokens.colors.textPrimary,

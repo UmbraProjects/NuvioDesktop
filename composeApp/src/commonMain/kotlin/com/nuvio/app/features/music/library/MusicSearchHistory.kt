@@ -39,6 +39,13 @@ object MusicSearchHistory {
         loadedProfileId?.let { MusicLibraryStorage.saveSearchHistory(it, json.encodeToString(updated)) }
     }
 
+    fun clear() {
+        ensureLoaded()
+        if (_recent.value.isEmpty()) return
+        _recent.value = emptyList()
+        loadedProfileId?.let { MusicLibraryStorage.saveSearchHistory(it, json.encodeToString(emptyList<String>())) }
+    }
+
     private fun ensureLoaded() {
         val profileId = ProfileRepository.activeProfileId
         if (loadedProfileId == profileId) return

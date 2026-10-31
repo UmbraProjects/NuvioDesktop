@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -14,6 +15,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import com.nuvio.app.core.ui.NuvioGlass
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -141,6 +143,10 @@ internal fun MusicLadderScreen(
     fun mark(rung: LadderRung, feedback: RungFeedback) {
         progress = applyFeedback(progress, rung, feedback).also { LadderProgressStore.put(request, it) }
     }
+    // Clears the marks and the dial; nothing to do on a ladder not yet touched.
+    fun startOver() {
+        if (!progress.isFresh) progress = LadderProgress().also { LadderProgressStore.put(request, it) }
+    }
     PlatformBackHandler(enabled = true, onBack = onBack)
     // Desktop: Escape and the mouse's back button close the ladder, like the artist page, instead of leaving the tab.
     TabBackHandler(onBack = onBack)
@@ -262,11 +268,25 @@ internal fun MusicLadderScreen(
                     // Enter, a pad's A (it injects Enter) and a click play the hook; a second press stops it.
                     Key.Enter, Key.NumPadEnter, Key.ButtonA -> {
                         current?.let { pressRung(it) }
-                        current != null
+                        true
                     }
-                    // L and S on a keyboard; X and Y on a pad, which has no letter keys.
+                    // L and S on a keyboard. A pad sends its buttons' app shortcut keys: LB is L (Library) and X is S
+                    // (Search), so they land here as Love and Skip.
                     Key.L, Key.ButtonX -> current?.let { mark(it, RungFeedback.Love) }.let { current != null }
                     Key.S, Key.ButtonY -> current?.let { mark(it, RungFeedback.Skip) }.let { current != null }
+                    // P plays an album; a pad's Y sends T (the trailer key), unused here.
+                    Key.P, Key.T -> current?.let { playAlbum(it) }.let { current != null }
+                    // + saves the artist to the Library; a pad's RB sends D (the Discover key), unused here.
+                    // R starts over; a pad's Start sends H (the Home key), unused here.
+                    Key.R, Key.H -> {
+                        startOver()
+                        true
+                    }
+                    Key.Plus, Key.Equals, Key.NumPadAdd, Key.D -> {
+                        val title = (shown as? LadderState.Ready)?.view?.title
+                        if (current != null && title != null) save(current, title)
+                        current != null && title != null
+                    }
                     else -> false
                 }
             },
@@ -295,11 +315,6 @@ internal fun MusicLadderScreen(
                     )
                     view?.subtitle?.let {
                         Text(text = it, style = ladderText(LadderType.Legend), color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                if (!progress.isFresh) {
-                    LadderIcon("Start over", Icons.Rounded.RestartAlt) {
-                        progress = LadderProgress().also { LadderProgressStore.put(request, it) }
                     }
                 }
             }
@@ -361,7 +376,9 @@ internal fun MusicLadderScreen(
                             onFeedback = { mark(rung, it) },
                             onPlayAlbum = { playAlbum(rung) },
                             onSave = { save(rung, shown.view.title) },
+                            onStartOver = if (progress.isFresh) null else ::startOver,
                         )
+                        LadderKeyLegend()
                         if (rung.step == rungs.size) {
                             LadderSummary(
                                 rungs = rungs,
@@ -421,7 +438,7 @@ private fun LadderRungCard(rung: LadderRung, width: Dp, focused: Boolean, playin
             .width(width)
             .graphicsLayer { this.alpha = alpha }
             .musicGlass(shape, raised = focused || hovered)
-            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
+            .then(if (focused) Modifier.smoothBorder(3.dp, colors.accent, shape) else Modifier)
             .hoverable(source)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(12.dp),
@@ -504,6 +521,8 @@ private fun LadderDetailPanel(
     onFeedback: (RungFeedback) -> Unit,
     onPlayAlbum: () -> Unit,
     onSave: () -> Unit,
+    /** Shown once the ladder has been marked or dialled. */
+    onStartOver: (() -> Unit)?,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Column(
@@ -533,10 +552,11 @@ private fun LadderDetailPanel(
             )
             LadderIcon("Closer to my taste (▼)", Icons.Rounded.ArrowDownward, active = rung.mark == RungFeedback.TooFar) { onFeedback(RungFeedback.TooFar) }
             LadderIcon("Further out (▲)", Icons.Rounded.ArrowUpward, active = rung.mark == RungFeedback.TooClose) { onFeedback(RungFeedback.TooClose) }
-            LadderIcon("Skip (S / Y)", Icons.Rounded.SkipNext) { onFeedback(RungFeedback.Skip) }
-            LadderIcon("Love (L / X)", Icons.Rounded.Favorite, active = rung.mark == RungFeedback.Love) { onFeedback(RungFeedback.Love) }
-            LadderIcon("Save to your Library", Icons.Rounded.LibraryAdd, onClick = onSave)
-            LadderIcon("Play an album", Icons.Rounded.Album, onClick = onPlayAlbum)
+            LadderIcon("Skip (S / X)", Icons.Rounded.SkipNext) { onFeedback(RungFeedback.Skip) }
+            LadderIcon("Love (L / LB)", Icons.Rounded.Favorite, active = rung.mark == RungFeedback.Love) { onFeedback(RungFeedback.Love) }
+            LadderIcon("Save to your Library (+ / RB)", Icons.Rounded.LibraryAdd, onClick = onSave)
+            LadderIcon("Play an album (P / Y)", Icons.Rounded.Album, onClick = onPlayAlbum)
+            onStartOver?.let { LadderIcon("Start over (R / Start)", Icons.Rounded.RestartAlt, onClick = it) }
         }
         Text(rung.why, style = ladderText(LadderType.Legend), color = colors.textSecondary)
         if (!rung.candidate.playable) {
@@ -575,6 +595,42 @@ private fun LadderDetailPanel(
         }
 
         if (note != null) Text(note, style = ladderText(LadderType.Legend), color = colors.textSecondary)
+    }
+}
+
+/** The keys under the detail panel: one quiet line, each key cap with its pad button and what it does. */
+@Composable
+private fun LadderKeyLegend() {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LadderKeyHint("◀ ▶", "Browse")
+        LadderKeyHint("Enter · A", "Preview")
+        LadderKeyHint("▲ ▼", "Dial")
+        LadderKeyHint("L · LB", "Love")
+        LadderKeyHint("S · X", "Skip")
+        LadderKeyHint("+ · RB", "Save")
+        LadderKeyHint("P · Y", "Play album")
+        LadderKeyHint("R · Start", "Start over")
+    }
+}
+
+@Composable
+private fun LadderKeyHint(keys: String, label: String) {
+    val colors = MaterialTheme.nuvio.colors
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            keys,
+            style = ladderText(LadderType.Legend),
+            color = colors.textSecondary,
+            maxLines = 1,
+            modifier = Modifier
+                .border(1.dp, NuvioGlass.EdgeColor, RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+        Text(label, style = ladderText(LadderType.Legend), color = colors.textMuted, maxLines = 1)
     }
 }
 

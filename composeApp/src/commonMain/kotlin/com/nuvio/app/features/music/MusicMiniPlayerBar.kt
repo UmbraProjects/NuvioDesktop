@@ -1,5 +1,9 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.KeyboardInputMode
+import com.nuvio.app.core.ui.smoothBorder
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.offset
@@ -224,7 +228,7 @@ fun MusicMiniPlayerBar(
                         .background(NuvioGlass.night(colors.background, colors.accent))
                         .ditheredBackground(NuvioGlass.Fill, shape)
                         .border(
-                            if (cardFocused) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, NuvioGlass.EdgeColor),
+                            if (cardFocused && KeyboardInputMode.active) BorderStroke(3.dp, colors.focusRing) else BorderStroke(1.dp, NuvioGlass.EdgeColor),
                             shape,
                         )
                         // The card itself can take focus; with it focused, Enter opens the full Now Playing view.
@@ -250,7 +254,7 @@ fun MusicMiniPlayerBar(
                             Modifier.width(if (video && videoView == MusicVideoView.Bar) VideoWidth else if (video) 12.dp else CoverSize)
                                 .fillMaxHeight()
                                 .clip(RoundedCornerShape(16.dp))
-                                .clickable(enabled = !video, onClick = onOpenNowPlaying),
+                                .musicKeyFocusRing(RoundedCornerShape(16.dp)).clickable(enabled = !video, onClick = onOpenNowPlaying),
                         ) {
                             if (!video) {
                                 Crossfade(targetState = cover, animationSpec = fade, modifier = Modifier.fillMaxSize()) { url ->
@@ -275,7 +279,7 @@ fun MusicMiniPlayerBar(
                             val line = BarLine(state.track?.title.orEmpty(), notice ?: subtitle(state), notice != null)
                             AnimatedContent(
                                 targetState = line,
-                                modifier = Modifier.clickable(onClick = onOpenNowPlaying),
+                                modifier = Modifier.musicKeyFocusRing().clickable(onClick = onOpenNowPlaying),
                                 transitionSpec = {
                                     if (reduced) EnterTransition.None togetherWith ExitTransition.None
                                     else fadeIn(tween(300, delayMillis = 100)) togetherWith fadeOut(tween(200))
@@ -374,7 +378,7 @@ internal data class BarLine(val title: String, val subtitle: String, val notice:
 private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, player: MusicPlayer, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val shape = RoundedCornerShape(50)
     val cover = state.coverUrl
     val fraction = if (state.durationMs > 0L) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
@@ -420,7 +424,7 @@ private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, play
             )
         }
         Box(
-            Modifier.size(52.dp).clip(CircleShape).clickable { player.togglePlayback() },
+            Modifier.size(52.dp).clip(CircleShape).musicKeyFocusRing(CircleShape).clickable { player.togglePlayback() },
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxSize()) {
@@ -467,7 +471,7 @@ private fun Transport(state: MusicPlayerState, player: MusicPlayer) {
             .size(68.dp)
             .clip(CircleShape)
             .background(colors.accentFill)
-            .clickable { player.togglePlayback() },
+            .musicKeyFocusRing(CircleShape).clickable { player.togglePlayback() },
         contentAlignment = Alignment.Center,
     ) {
         if (state.isLoading && state.playWhenReady) {
@@ -499,14 +503,14 @@ private fun Transport(state: MusicPlayerState, player: MusicPlayer) {
 internal fun MoreButton(open: Boolean, onToggle: () -> Unit, panel: @Composable () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     Box {
         Box(
             modifier = Modifier
                 .size(56.dp)
                 .clip(CircleShape)
                 .background(if (focused || open) Color.White.copy(alpha = 0.14f) else Color.Transparent)
-                .then(if (focused) Modifier.border(BorderStroke(2.dp, colors.accent), CircleShape) else Modifier)
+                .then(if (focused) Modifier.smoothBorder(BorderStroke(2.dp, colors.accent), CircleShape) else Modifier)
                 .clickable(interactionSource = source, indication = null, onClick = onToggle),
             contentAlignment = Alignment.Center,
         ) {
@@ -635,7 +639,7 @@ private fun PanelRow(
 ) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = modifier
@@ -643,7 +647,7 @@ private fun PanelRow(
             .height(56.dp)
             .clip(shape)
             .background(if (focused) Color.White.copy(alpha = 0.12f) else Color.Transparent)
-            .then(if (focused) Modifier.border(BorderStroke(2.dp, colors.accent), shape) else Modifier)
+            .then(if (focused) Modifier.smoothBorder(BorderStroke(2.dp, colors.accent), shape) else Modifier)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -688,7 +692,7 @@ internal fun MusicTextChip(text: String, onClick: () -> Unit) {
         maxLines = 1,
         modifier = Modifier
             .clip(CircleShape)
-            .clickable(onClick = onClick)
+            .musicKeyFocusRing(CircleShape).clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     )
 }
@@ -712,7 +716,7 @@ internal fun SeekBar(
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = (dragging ?: fraction).coerceIn(0f, 1f)
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val active = focused || dragging != null
     val trackHeight by animateDpAsState(if (active) 10.dp else 6.dp)
     val track = RoundedCornerShape(50)

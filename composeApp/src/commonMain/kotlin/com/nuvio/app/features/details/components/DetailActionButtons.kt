@@ -1,5 +1,6 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -41,11 +42,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -132,10 +133,16 @@ fun DetailActionButtons(
     val activeFocusedActionIndex = focusedActionIndex.takeUnless { searchActive }
     // Kept small: this button is wide, so even a few percent of scale would push its edge into
     // the secondary buttons beside it.
-    val playFocused = activeFocusedActionIndex == 0
+    // Real keyboard focus counts too: Details drives the row itself, but a page of ordinary focusable controls (the
+    // music artist page) moves focus onto the buttons and needs them to show it.
+    val playSource = remember { MutableInteractionSource() }
+    val playKeyFocused by playSource.collectIsKeyboardFocusedAsState()
+    val playFocused = activeFocusedActionIndex == 0 || (playKeyFocused && !searchActive)
     val playScale by animateFloatAsState(targetValue = if (playFocused) 1.02f else 1f)
-    val focusRingAlpha by animateFloatAsState(targetValue = if (playFocused) 1f else 0f)
-    val focusRingColor = MaterialTheme.colorScheme.primary
+    // Focus tints the glass toward the accent rather than outlining it: a stronger wash than the
+    // circles' "on" tint, so a focused Play never reads as a toggled state.
+    val focusTintAlpha by animateFloatAsState(targetValue = if (playFocused) 1f else 0f)
+    val focusTint = MaterialTheme.colorScheme.primary.copy(alpha = PlayFocusTintAlpha * focusTintAlpha)
     val hasSecondaryActions = secondaryActions.isNotEmpty()
 
     Box(
@@ -159,25 +166,10 @@ fun DetailActionButtons(
                         scaleX = playScale
                         scaleY = playScale
                     }
-                    // Focus ring: an accent-coloured outline drawn just inside the button edge
-                    // (on top of the fill), so it doesn't overlap the buttons beside it while
-                    // still clearly showing keyboard focus.
-                    .drawWithContent {
-                        drawContent()
-                        if (focusRingAlpha <= 0f) return@drawWithContent
-                        val stroke = 3.dp.toPx()
-                        val inset = stroke / 2f
-                        drawRoundRect(
-                            color = focusRingColor.copy(alpha = focusRingColor.alpha * focusRingAlpha),
-                            topLeft = Offset(inset, inset),
-                            size = Size(size.width - inset * 2f, size.height - inset * 2f),
-                            cornerRadius = CornerRadius((12.dp.toPx() - inset).coerceAtLeast(0f)),
-                            style = Stroke(width = stroke),
-                        )
-                    }
                     // The same smoked glass as the circle buttons beside it, so the row reads as one
                     // set; Play stands out by its width and label rather than by a different fill.
                     .background(DetailActionGlassBase, playShape)
+                    .then(if (focusTintAlpha > 0f) Modifier.background(focusTint, playShape) else Modifier)
                     .background(DetailActionGlassSheen, playShape)
                     .border(1.dp, DetailActionGlassEdge, playShape),
                 shape = playShape,
@@ -199,6 +191,8 @@ fun DetailActionButtons(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .combinedClickable(
+                                    interactionSource = playSource,
+                                    indication = LocalIndication.current,
                                     onClick = {
                                         onPlayClick()
                                     },
@@ -365,8 +359,10 @@ internal fun DetailIconAction(
     focused: Boolean = false,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val source = remember { MutableInteractionSource() }
+    val keyFocused by source.collectIsKeyboardFocusedAsState()
     // Matches the Play button's ring so a focus move along the row reads as one continuous control.
-    val focusRingAlpha by animateFloatAsState(targetValue = if (focused) 1f else 0f)
+    val focusRingAlpha by animateFloatAsState(targetValue = if (focused || keyFocused) 1f else 0f)
     val focusRingColor = MaterialTheme.colorScheme.primary
     val activeTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
     // Circles, so the secondary actions read as a set of toggles beside the one wide Play button.
@@ -396,6 +392,8 @@ internal fun DetailIconAction(
                 .background(DetailActionGlassSheen, CircleShape)
                 .border(1.dp, DetailActionGlassEdge, CircleShape)
                 .combinedClickable(
+                    interactionSource = source,
+                    indication = LocalIndication.current,
                     onClick = onClick,
                     onLongClick = onLongClick,
                     role = Role.Button,
@@ -420,6 +418,9 @@ private val DetailActionGlassSheen = Brush.verticalGradient(
     0f to Color.White.copy(alpha = 0.16f),
     1f to Color.White.copy(alpha = 0.06f),
 )
+
+/** How far a focused Play button's glass is tinted toward the accent. */
+private const val PlayFocusTintAlpha = 0.62f
 
 /** Hairline rim, faint enough not to read as the focus ring. */
 private val DetailActionGlassEdge = Color.White.copy(alpha = 0.12f)

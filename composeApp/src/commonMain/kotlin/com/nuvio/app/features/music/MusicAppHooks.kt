@@ -66,7 +66,9 @@ fun MusicTabHost(
         onAlbumClick = { navigate(MusicAlbumRoute(it)) },
         onArtistClick = { navigate(MusicArtistRoute(it)) },
         onPlaylistClick = { navigate(MusicPlaylistRoute(it)) },
-        modifier = modifier.fillMaxSize(),
+        // The keyboard arrives on the page (the shelf, the start screen, the results), never in the search box: a focused
+        // box takes the letter shortcuts and Backspace for typing.
+        modifier = modifier.fillMaxSize().musicKeyboardRoot(entry = musicTabBodyFocus()),
         topChromePadding = topChromePadding ?: 0.dp,
     )
 }
@@ -155,7 +157,7 @@ fun NavGraphBuilder.musicRoutes(
                 onBack = guardedBack(backStackEntry),
                 onArtistClick = { navigate(MusicArtistRoute(it)) },
                 onAlbumClick = { navigate(MusicAlbumRoute(it)) },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().musicKeyboardRoot(),
             )
         }
     }
@@ -167,7 +169,7 @@ fun NavGraphBuilder.musicRoutes(
                 onBack = guardedBack(backStackEntry),
                 onAlbumClick = { navigate(MusicAlbumRoute(it)) },
                 onArtistClick = { navigate(MusicArtistRoute(it)) },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().musicKeyboardRoot(),
             )
         }
     }
@@ -179,7 +181,7 @@ fun NavGraphBuilder.musicRoutes(
                 onBack = guardedBack(backStackEntry),
                 onAlbumClick = { navigate(MusicAlbumRoute(it)) },
                 onArtistClick = { navigate(MusicArtistRoute(it)) },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().musicKeyboardRoot(),
             )
         }
     }

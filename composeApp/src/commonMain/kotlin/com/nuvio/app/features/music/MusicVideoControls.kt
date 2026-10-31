@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,7 +82,7 @@ internal fun MusicVideoControlStrip(
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 StripButton(Icons.Rounded.SkipPrevious, "Previous") { player.previous() }
                 Box(
-                    Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.12f)).clickable { player.togglePlayback() },
+                    Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.12f)).musicKeyFocusRing(CircleShape).clickable { player.togglePlayback() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -160,7 +161,7 @@ private fun StripButton(icon: ImageVector, label: String, enabled: Boolean = tru
     // the pointer and took the clicks meant for the button.
     NuvioPosterHoverTooltip(title = label, aboveControl = true) {
         Box(
-            Modifier.size(40.dp).clip(RoundedCornerShape(50)).clickable(enabled = enabled, onClick = onClick),
+            Modifier.size(40.dp).clip(RoundedCornerShape(50)).musicKeyFocusRing(RoundedCornerShape(50)).clickable(enabled = enabled, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Icon(

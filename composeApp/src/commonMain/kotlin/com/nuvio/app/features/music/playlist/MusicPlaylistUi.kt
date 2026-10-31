@@ -1,10 +1,13 @@
 package com.nuvio.app.features.music.playlist
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +42,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.nuvio.app.core.ui.arrowFocusDirection
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -105,9 +116,10 @@ internal fun PlaylistsView(onOpenPlaylist: (String) -> Unit, modifier: Modifier 
         items(playlists, key = { it.id }) { playlist ->
             val source = remember { MutableInteractionSource() }
             val hovered by source.collectIsHoveredAsState()
+            val focused by source.collectIsKeyboardFocusedAsState()
             Column(
                 Modifier
-                    .musicGlass(RoundedCornerShape(16.dp), raised = hovered)
+                    .musicGlass(RoundedCornerShape(16.dp), raised = hovered || focused, keyFocused = focused)
                     .hoverable(source)
                     .clickable(interactionSource = source, indication = null) { onOpenPlaylist(playlist.id) }
                     .padding(12.dp),
@@ -130,9 +142,10 @@ private fun ActionTile(icon: androidx.compose.ui.graphics.vector.ImageVector, ti
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     Column(
         Modifier
-            .musicGlass(RoundedCornerShape(16.dp), raised = hovered)
+            .musicGlass(RoundedCornerShape(16.dp), raised = hovered || focused, keyFocused = focused)
             .hoverable(source)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(12.dp),
@@ -167,6 +180,15 @@ internal fun AddToPlaylistDialog(tracks: List<PlaylistTrack>, onDismiss: () -> U
     val colors = MaterialTheme.nuvio.colors
     val playlists by MusicPlaylistRepository.playlists.collectAsStateWithLifecycle()
     var newName by remember { mutableStateOf("") }
+    // Opens with the keyboard on the first playlist (or the name box when there is none), so it can be used at once.
+    val firstChoice = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        repeat(10) {
+            delay(40)
+            if (runCatching { firstChoice.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+        }
+    }
+    val dialogFocus = LocalFocusManager.current
     fun addTo(id: String, name: String) {
         val added = MusicPlaylistRepository.add(id, tracks)
         onDone(
@@ -184,7 +206,10 @@ internal fun AddToPlaylistDialog(tracks: List<PlaylistTrack>, onDismiss: () -> U
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (playlists.isNotEmpty()) {
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LazyColumn(
+                        Modifier.fillMaxWidth().heightIn(max = 320.dp).focusRequester(firstChoice),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
                         items(playlists, key = { it.id }) { playlist ->
                             val source = remember { MutableInteractionSource() }
                             val hovered by source.collectIsHoveredAsState()
@@ -194,7 +219,7 @@ internal fun AddToPlaylistDialog(tracks: List<PlaylistTrack>, onDismiss: () -> U
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(if (hovered) colors.surfaceElevated else androidx.compose.ui.graphics.Color.Transparent)
                                     .hoverable(source)
-                                    .clickable(interactionSource = source, indication = null) { addTo(playlist.id, playlist.name) }
+                                    .musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable(interactionSource = source, indication = null) { addTo(playlist.id, playlist.name) }
                                     .padding(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -212,7 +237,19 @@ internal fun AddToPlaylistDialog(tracks: List<PlaylistTrack>, onDismiss: () -> U
                 NuvioTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    // A one-line box takes Up and Down as cursor moves: here they leave it, to the playlists or the buttons.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (playlists.isEmpty()) Modifier.focusRequester(firstChoice) else Modifier)
+                        .onPreviewKeyEvent { event ->
+                            val direction = arrowFocusDirection(event)
+                            if (direction == FocusDirection.Up || direction == FocusDirection.Down) {
+                                dialogFocus.moveFocus(direction)
+                                true
+                            } else {
+                                false
+                            }
+                        },
                     placeholder = freshPlaylistName(playlists),
                 )
             }

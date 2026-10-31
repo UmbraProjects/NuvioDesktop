@@ -25,6 +25,12 @@ data class TrailerPlaybackSource(
      */
     val reliable: Boolean = true,
     /**
+     * fork:music - false for a source from a restricted client ([reliable] false when it was resolved) that a probe
+     * then showed plays from the start. Its URLs still refuse a range request from the middle, so it cannot be opened
+     * part way in: mpv waits on that seek for good. Kept apart from [reliable], which the probe sets.
+     */
+    val openableMidway: Boolean = true,
+    /**
      * How long the upload is, when the caller knows it (the theme-song search does), else 0. Lets a
      * looping player tell a stream that was cut off early from one that played to its real end.
      */

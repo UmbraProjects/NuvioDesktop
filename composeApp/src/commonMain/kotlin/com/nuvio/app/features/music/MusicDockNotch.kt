@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -8,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import com.nuvio.app.features.music.library.MusicGlassRaised
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
@@ -47,6 +49,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -97,10 +108,22 @@ internal fun MusicDockNotch(
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val focused by source.collectIsFocusedAsState()
+    // Focus anywhere in the dock (the notch itself or one of the open panel's buttons) keeps it open.
+    var focusWithin by remember { mutableStateOf(false) }
+    // Reaching the dock with the keyboard goes straight on to the open panel's play button, so the arrows and Enter
+    // work on its controls; the dock itself, a box around them, has nothing to press.
+    val panelEntry = remember { FocusRequester() }
+    LaunchedEffect(focused) {
+        if (!focused) return@LaunchedEffect
+        repeat(6) {
+            delay(32)
+            if (runCatching { panelEntry.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+        }
+    }
     // Opens at once on hover or focus; folds back a moment after both are gone.
     var open by remember { mutableStateOf(false) }
-    LaunchedEffect(hovered, focused) {
-        if (hovered || focused) {
+    LaunchedEffect(hovered, focusWithin) {
+        if (hovered || focusWithin) {
             open = true
         } else {
             delay(FOLD_DELAY_MS)
@@ -116,7 +139,16 @@ internal fun MusicDockNotch(
             .background(NuvioGlass.night(colors.background, colors.accent))
             .musicGlass(shape, keyFocused = focused)
             .hoverable(source)
-            .focusable(interactionSource = source),
+            .onFocusChanged { focusWithin = it.hasFocus }
+            // The dock's one focus stop (the folded notch's own click is mouse-only): focusing it opens the panel, the
+            // arrows go on into the panel's buttons, and Enter on the dock itself brings the full player back.
+            .focusable(interactionSource = source)
+            .onKeyEvent { event ->
+                val enter = event.key == Key.Enter || event.key == Key.NumPadEnter
+                if (!focused || !enter) return@onKeyEvent false
+                if (event.type == KeyEventType.KeyUp) onRestore()
+                true
+            },
     ) {
         // A short eased resize rather than the default spring, which took ~0.4s to settle and read as lag; the
         // old content is gone before the box has moved much, and the new one fades in as it lands.
@@ -131,7 +163,7 @@ internal fun MusicDockNotch(
             contentAlignment = if (opensDown) Alignment.TopCenter else Alignment.BottomCenter,
             label = "dockNotch",
         ) { expanded ->
-            if (expanded) DockPanel(state, player, onRestore, onExpandVideo, opensDown) else Notch(state, onRestore)
+            if (expanded) DockPanel(state, player, onRestore, onExpandVideo, opensDown, panelEntry) else Notch(state, onRestore)
         }
     }
 }
@@ -144,6 +176,7 @@ private fun Notch(state: MusicPlayerState, onRestore: () -> Unit) {
         Modifier
             .height(40.dp)
             .widthIn(min = 180.dp, max = 320.dp)
+            .focusProperties { canFocus = false }
             .clickable(onClick = onRestore)
             // The round cover sits inside the pill's curve with the same gap all round, clear of the edge.
             .padding(start = 7.dp, end = 14.dp),
@@ -180,16 +213,17 @@ private fun DockPanel(
     onRestore: () -> Unit,
     onExpandVideo: (() -> Unit)?,
     opensDown: Boolean,
+    entry: FocusRequester,
 ) {
     Column(Modifier.width(440.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (opensDown) {
-            DockNowPlaying(state, player, onRestore, onExpandVideo)
+            DockNowPlaying(state, player, onRestore, onExpandVideo, entry)
             DockDivider()
             DockUpNext(state, player)
         } else {
             DockUpNext(state, player)
             DockDivider()
-            DockNowPlaying(state, player, onRestore, onExpandVideo)
+            DockNowPlaying(state, player, onRestore, onExpandVideo, entry)
         }
     }
 }
@@ -212,7 +246,21 @@ private fun DockUpNext(state: MusicPlayerState, player: MusicPlayer) {
         )
     }
     upNext.forEach { track ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // A click skips straight to the track.
+        val rowSource = remember { MutableInteractionSource() }
+        val rowHovered by rowSource.collectIsHoveredAsState()
+        val rowShape = RoundedCornerShape(8.dp)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(rowShape)
+                .background(if (rowHovered) MusicGlassRaised else Color.Transparent)
+                .hoverable(rowSource)
+                .musicKeyFocusRing(rowShape)
+                .clickable(interactionSource = rowSource, indication = null) { player.playUpNext(track) }
+                .padding(horizontal = 6.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 track.title,
                 style = MaterialTheme.typography.bodyMedium,
@@ -234,7 +282,13 @@ private fun DockUpNext(state: MusicPlayerState, player: MusicPlayer) {
 
 /** The track, the time and the transport, with the seek bar under them. */
 @Composable
-private fun DockNowPlaying(state: MusicPlayerState, player: MusicPlayer, onRestore: () -> Unit, onExpandVideo: (() -> Unit)?) {
+private fun DockNowPlaying(
+    state: MusicPlayerState,
+    player: MusicPlayer,
+    onRestore: () -> Unit,
+    onExpandVideo: (() -> Unit)?,
+    entry: FocusRequester,
+) {
     val colors = MaterialTheme.nuvio.colors
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Cover(state.coverUrl, size = 56)
@@ -265,6 +319,7 @@ private fun DockNowPlaying(state: MusicPlayerState, player: MusicPlayer, onResto
             icon = if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
             description = if (state.playWhenReady) "Pause" else "Play",
             filled = true,
+            modifier = Modifier.focusRequester(entry),
         ) { player.togglePlayback() }
         DockButton(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
         onExpandVideo?.let { DockButton(Icons.Rounded.OpenInFull, "Expand video", onClick = it) }
@@ -308,15 +363,16 @@ private fun DockButton(
     description: String,
     filled: Boolean = false,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Box(
-        Modifier
+        modifier
             .size(36.dp)
             .clip(CircleShape)
             .then(if (filled) Modifier.background(colors.accentFill) else Modifier)
-            .clickable(enabled = enabled, onClick = onClick),
+            .musicKeyFocusRing(CircleShape).clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(

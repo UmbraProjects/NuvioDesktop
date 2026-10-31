@@ -1,5 +1,6 @@
 package com.nuvio.app.features.iptv
 
+import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.NuvioGlass
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.ScrollState
@@ -171,7 +172,7 @@ private fun GuideRow(
                 .iptvGlass(NuvioGlass.Shape, raised = keyboardFocused)
                 // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
                 .clip(NuvioGlass.Shape)
-                .then(if (keyboardFocused) Modifier.border(1.5.dp, tokens.colors.borderFocus, RoundedCornerShape(10.dp)) else Modifier)
+                .then(if (keyboardFocused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, RoundedCornerShape(10.dp)) else Modifier)
                 .clickable(onClick = onPlay)
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -268,7 +269,7 @@ private fun GuideCell(
             )
             // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
-            .then(if (focused) Modifier.border(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
+            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp)
             // A programme that began left of the visible area keeps its title in view: the text

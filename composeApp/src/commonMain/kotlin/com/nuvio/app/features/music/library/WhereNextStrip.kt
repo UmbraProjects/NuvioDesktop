@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.NuvioGlass
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.CircleShape
@@ -268,18 +270,17 @@ internal fun WhereNextStrip(artist: LibraryArtist, onOpenArtist: (String) -> Uni
 private fun SimilarPortrait(artist: LibraryArtist, onOpen: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val hovered by source.collectIsHoveredAsState()
     Column(
         Modifier
             .width(140.dp)
             .hoverable(source)
-            .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onOpen),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(Modifier.border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
+        Box(Modifier.smoothBorder(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp)) {
             MusicCover(artist.art.thumb, artist.name, size = 120.dp, circle = true)
         }
         Text(
@@ -298,7 +299,7 @@ private fun SimilarPortrait(artist: LibraryArtist, onOpen: () -> Unit) {
 private fun FocusPill(text: String, selected: Boolean, onActivate: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(24.dp)
     Text(
@@ -310,7 +311,6 @@ private fun FocusPill(text: String, selected: Boolean, onActivate: () -> Unit) {
         modifier = Modifier
             .musicGlass(shape, raised = hovered, selected = selected, keyFocused = focused)
             .hoverable(source)
-            .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onActivate)
             .padding(horizontal = 18.dp, vertical = 8.dp),
     )
@@ -323,7 +323,7 @@ private fun WhereNextCard(rung: LadderRung, chosen: Boolean, onActivate: () -> U
     val colors = MaterialTheme.nuvio.colors
     val picture by produceState<String?>(null, rung.candidate.name) { value = LadderArtwork.picture(rung.candidate.name) }
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(14.dp)
     Column(
@@ -331,7 +331,6 @@ private fun WhereNextCard(rung: LadderRung, chosen: Boolean, onActivate: () -> U
             .width(CARD_WIDTH)
             .musicGlass(shape, raised = hovered || chosen, keyFocused = focused || chosen)
             .hoverable(source)
-            .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onActivate)
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),

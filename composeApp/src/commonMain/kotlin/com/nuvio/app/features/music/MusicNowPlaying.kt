@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.wrapContentWidth
 import com.nuvio.app.features.music.library.musicGlass
 import androidx.compose.material.icons.rounded.Sync
@@ -257,6 +258,7 @@ private fun MusicNowPlayingScreen(
     Box(
         modifier
             .background(Color.Black)
+            .musicKeyboardRoot(trapFocus = true)
             .onPreviewKeyEvent { inputTick++; false }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
@@ -458,7 +460,7 @@ private fun StageTopBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
-            Modifier.height(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)).clickable(onClick = onClose)
+            Modifier.height(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)).musicKeyFocusRing(CircleShape).clickable(onClick = onClose)
                 .padding(start = 12.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -809,7 +811,7 @@ private fun SyncedLyrics(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) }
+                    .musicKeyFocusRing(RoundedCornerShape(12.dp)).clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) }
                     .padding(horizontal = 12.dp, vertical = 10.dp)
                     .graphicsLayer {
                         scaleX = scale
@@ -889,7 +891,7 @@ private fun CompactSyncedLyrics(
                     .fillMaxWidth()
                     .height(if (offset == 0) 72.dp else 40.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .then(if (line != null) Modifier.clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) } else Modifier)
+                    .then(if (line != null) Modifier.musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) } else Modifier)
                     .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -914,7 +916,7 @@ private fun CompactSyncedLyrics(
 private fun SyncIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
     val accent = MaterialTheme.nuvio.colors.accent
     com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = label) {
-        Box(Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(34.dp).clip(CircleShape).musicKeyFocusRing(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = label, tint = if (active) accent else Color.White.copy(alpha = 0.55f), modifier = Modifier.size(18.dp))
         }
     }

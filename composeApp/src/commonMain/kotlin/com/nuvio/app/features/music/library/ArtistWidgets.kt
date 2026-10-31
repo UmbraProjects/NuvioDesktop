@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.hoverable
 import androidx.compose.animation.core.animateFloatAsState
@@ -27,6 +29,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
@@ -84,6 +90,8 @@ internal fun ArtistWidgets(
     modifier: Modifier = Modifier,
     /** False where the page shows the biography itself (the artist room's lane). */
     showBio: Boolean = true,
+    /** The page opens with the keyboard on the first top album (the artist room), rather than on its back button. */
+    takeEntryFocus: Boolean = false,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val top = remember(artist.topAlbumKeys, artist.releases) { artistTopReleases(artist) }
@@ -92,22 +100,32 @@ internal fun ArtistWidgets(
     if (top.isEmpty() && bio.isEmpty() && artist.foundVia == null) return
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (top.isNotEmpty()) {
+            val entry = remember { FocusRequester() }
+            if (takeEntryFocus) {
+                // Asked a few times: the page root's own first-control request lands first.
+                LaunchedEffect(artist.id) {
+                    repeat(10) {
+                        delay(80)
+                        if (runCatching { entry.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+                    }
+                }
+            }
             Text("Top albums", fontSize = 28.sp, color = colors.textPrimary)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp, horizontal = 6.dp)) {
+            LazyRow(
+                modifier = Modifier.focusRequester(entry),horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp, horizontal = 6.dp)) {
                 items(top, key = { it.key }) { release -> TopAlbumCard(release, onOpen = { onOpen(release) }) }
             }
         }
         if (bio.isNotEmpty()) {
             val source = remember { MutableInteractionSource() }
-            val focused by source.collectIsFocusedAsState()
+            val focused by source.collectIsKeyboardFocusedAsState()
             val shape = RoundedCornerShape(14.dp)
             Column(
                 Modifier
                     .fillMaxWidth()
                     .clip(shape)
                     .background(colors.surfaceCard)
-                    .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
-                    .focusable(interactionSource = source)
+                    .then(if (focused) Modifier.smoothBorder(3.dp, colors.accent, shape) else Modifier)
                     .clickable(interactionSource = source, indication = null) { bioOpen = !bioOpen }
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -131,7 +149,7 @@ internal fun ArtistWidgets(
 private fun TopAlbumCard(release: LibraryRelease, onOpen: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(14.dp)
     Column(
@@ -139,7 +157,6 @@ private fun TopAlbumCard(release: LibraryRelease, onOpen: () -> Unit) {
             .width(170.dp)
             .musicGlass(shape, raised = hovered, keyFocused = focused)
             .hoverable(source)
-            .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onOpen)
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),

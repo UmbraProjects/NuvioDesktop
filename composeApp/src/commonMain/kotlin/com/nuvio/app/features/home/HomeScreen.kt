@@ -45,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.SideEffect
 import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -114,6 +116,8 @@ import com.nuvio.app.features.discover.DISCOVER_PLACEHOLDER_KEY_PREFIX
 import com.nuvio.app.features.discover.DiscoverRecommendationsRepository
 import com.nuvio.app.features.discover.DiscoverRowBody
 import com.nuvio.app.features.discover.DiscoverRowHeader
+import com.nuvio.app.features.discover.BrowseFilterStripFocus
+import com.nuvio.app.features.discover.LocalBrowseFilterStripFocus
 import com.nuvio.app.features.discover.DiscoverRowBodyMessage
 import com.nuvio.app.features.library.LibraryFilterBar
 import com.nuvio.app.features.library.LibraryTitleFactsRepository
@@ -2382,6 +2386,12 @@ fun HomeScreen(
         runCatching { tvFocusRequester.requestFocus() }
     }
     var homeRootHasFocus by remember { mutableStateOf(false) }
+    // A filter bar in a row's header (Discover's browser row, Library's first row) takes real focus, unlike the cards:
+    // Up from its row's cards moves into it, and while it has focus the arrows walk its filters and Enter opens one.
+    val filterStripFocusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    var filterStripHasFocus by remember { mutableStateOf(false) }
+    val filterStripFocus = remember { BrowseFilterStripFocus(filterStripFocusRequester) { filterStripHasFocus = it } }
     var lastStateDrivenSearchQuery by remember { mutableStateOf<String?>(null) }
     // Uncovered without being rebuilt (back from the Settings tab, where Home now stays composed):
     // a rebuilt Home took focus in its first-composition effect; a kept one has to ask here, or
@@ -2421,6 +2431,8 @@ fun HomeScreen(
         if (!closed || contentMode is HomeContentMode.Search) return@LaunchedEffect
         repeat(12) { attempt ->
             delay(if (attempt == 0) 50 else 48)
+            // A menu opened from the keyboard hands focus back to its filter, which is inside this root.
+            if (homeRootHasFocus) return@LaunchedEffect
             requestHomeFocus()
             if (homeRootHasFocus) return@LaunchedEffect
         }
@@ -2748,6 +2760,8 @@ fun HomeScreen(
                             } else {
                                 null
                             },
+                            hasFilterStrip = section.key == DISCOVER_BROWSER_ROW_KEY ||
+                                (displayMode is HomeContentMode.Library && section.key == effectiveSections.firstOrNull()?.key),
                         ),
                     )
                 }
@@ -3805,6 +3819,41 @@ fun HomeScreen(
                             },
                         )
                         .onPreviewKeyEvent { event ->
+                            if (filterStripHasFocus) {
+                                // Enter and the arrows along the bar are the focused filter's own; Down
+                                // (or back) returns to the row's cards, Up goes on to the row above.
+                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                return@onPreviewKeyEvent when (event.navigationKey()) {
+                                    Key.DirectionLeft -> {
+                                        focusManager.moveFocus(FocusDirection.Left)
+                                        true
+                                    }
+                                    Key.DirectionRight -> {
+                                        focusManager.moveFocus(FocusDirection.Right)
+                                        true
+                                    }
+                                    Key.DirectionDown, Key.Escape, Key.Back, Key.Backspace -> {
+                                        mouseActivity.onKeyboardNavigation()
+                                        requestHomeFocus()
+                                        true
+                                    }
+                                    Key.DirectionUp -> {
+                                        mouseActivity.onKeyboardNavigation()
+                                        requestHomeFocus()
+                                        withCarriedTvItemIndex {
+                                            if (tvModeEnabled) {
+                                                setImmersiveRowIndex((getImmersiveRowIndex() - 1).coerceAtLeast(0))
+                                                tvFocus.sectionIndex = getImmersiveRowIndex() + if (heroFocusable) 1 else 0
+                                            } else {
+                                                tvFocus.moveSection(-1, tvSectionCount)
+                                            }
+                                        }
+                                        if (!tvModeEnabled) scrollToFocusedTvSection()
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            }
                             val selectKey = event.navigationKey()
                             if (selectKey == Key.Enter || selectKey == Key.NumPadEnter) {
                                 // Resolved on the press: the release must act on the item that
@@ -3859,6 +3908,12 @@ fun HomeScreen(
                                 }
                                 Key.DirectionUp -> {
                                     mouseActivity.onKeyboardNavigation()
+                                    val onFilteredRow = tvRows.getOrNull(tvRowIndexForSection(tvFocus.sectionIndex))?.hasFilterStrip == true &&
+                                        !(heroFocusable && tvFocus.sectionIndex == 0)
+                                    if (onFilteredRow) {
+                                        runCatching { filterStripFocusRequester.requestFocus() }
+                                        if (filterStripHasFocus) return@onPreviewKeyEvent true
+                                    }
                                     withCarriedTvItemIndex {
                                         if (tvModeEnabled) {
                                             setImmersiveRowIndex((getImmersiveRowIndex() - 1).coerceAtLeast(0))
@@ -3920,11 +3975,13 @@ fun HomeScreen(
         // Defined once and handed to both the plain list and the TV immersive shelf, which render
         // the Discover row through separate call sites.
         val discoverRowTitleContent: @Composable () -> Unit = {
-            DiscoverRowHeader(
-                state = discoverUiState,
-                allFiltersLabel = discoverAllFiltersLabel,
-                onMenuOpenChange = { browseFilterMenuOpen = it },
-            )
+            CompositionLocalProvider(LocalBrowseFilterStripFocus provides filterStripFocus) {
+                DiscoverRowHeader(
+                    state = discoverUiState,
+                    allFiltersLabel = discoverAllFiltersLabel,
+                    onMenuOpenChange = { browseFilterMenuOpen = it },
+                )
+            }
         }
 
         // The header a Discover row draws: the catalog/genre segments for row 1, a title-plus-badge
@@ -3937,14 +3994,16 @@ fun HomeScreen(
                 displayMode is HomeContentMode.Library &&
                     (tvModeEnabled || section.key == firstLibraryRowKey) -> {
                     {
-                        LibraryFilterBar(
-                            rowTitle = section.title.takeUnless { section.key == LIBRARY_FILTER_EMPTY_ROW_KEY },
-                            settings = libraryDisplaySettings,
-                            sourceMode = libraryUiState.sourceMode,
-                            shownCount = libraryShownCount,
-                            factsLoading = libraryTitleFactsLoading,
-                            onMenuOpenChange = { browseFilterMenuOpen = it },
-                        )
+                        CompositionLocalProvider(LocalBrowseFilterStripFocus provides filterStripFocus) {
+                            LibraryFilterBar(
+                                rowTitle = section.title.takeUnless { section.key == LIBRARY_FILTER_EMPTY_ROW_KEY },
+                                settings = libraryDisplaySettings,
+                                sourceMode = libraryUiState.sourceMode,
+                                shownCount = libraryShownCount,
+                                factsLoading = libraryTitleFactsLoading,
+                                onMenuOpenChange = { browseFilterMenuOpen = it },
+                            )
+                        }
                     }
                 }
                 displayMode !is HomeContentMode.Discover -> null

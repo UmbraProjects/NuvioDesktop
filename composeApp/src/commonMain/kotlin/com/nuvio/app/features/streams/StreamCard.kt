@@ -1,5 +1,6 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -34,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -73,6 +75,20 @@ internal enum class StreamCardStyle {
 }
 
 internal val LocalStreamCardStyle = staticCompositionLocalOf { StreamCardStyle.Solid }
+
+/** The picker's controls after the addon chips, reached with Right from the last chip. */
+internal enum class StreamPickerHeaderControl { Sort, Layout, Refresh, Close }
+
+/**
+ * Which header control the keyboard (or pad) is on, and a counter bumped to open the sort menu. The picker keeps
+ * keyboard focus on itself and draws its own highlights, so the header controls are told rather than focused.
+ */
+internal data class StreamPickerHeaderFocus(
+    val control: StreamPickerHeaderControl? = null,
+    val openSortTick: Int = 0,
+)
+
+internal val LocalStreamPickerHeaderFocus = compositionLocalOf { StreamPickerHeaderFocus() }
 
 /**
  * The glass surface levels, shared by the cards and everything around them in the docked picker
@@ -201,13 +217,13 @@ internal fun StreamCard(
             .then(
                 if (focused && glass) {
                     // The episode cards' focus treatment rather than the accent ring.
-                    Modifier.border(
+                    Modifier.smoothBorder(
                         width = 1.5.dp,
                         color = StreamGlass.Edge,
                         shape = cardShape,
                     )
                 } else if (focused) {
-                    Modifier.border(
+                    Modifier.smoothBorder(
                         width = 2.dp,
                         color = MaterialTheme.colorScheme.primary,
                         shape = cardShape,

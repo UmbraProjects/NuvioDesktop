@@ -48,6 +48,8 @@ data class MusicLibrarySettings(
     val nebulaSecretLink: String = "",
     /** An album the addon has opens on the addon (lossless) rather than YouTube Music. The album page's switch still overrides it. */
     val preferAddon: Boolean = false,
+    /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
+    val skipNonMusic: Boolean = false,
 )
 
 /** What is happening to one artist while it is added or refreshed. */

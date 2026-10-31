@@ -15,6 +15,8 @@
     <string name="settings_music_audiodb_key_description">Biographies, logos and backgrounds. Without a key the shared test key is used, which is rate limited. Applies the next time an artist is added or refreshed.</string>
     <string name="settings_music_where_next">Build "Where next?" automatically</string>
     <string name="settings_music_where_next_description">On an artist page, finds where to go next without being asked. Turn off on a slow connection; the page then waits for a button.</string>
+    <string name="settings_music_skip_non_music">Skip non-music parts</string>
+    <string name="settings_music_skip_non_music_description">Skips the spoken intros, skits and outros in music videos, as marked by SponsorBlock users. Videos are looked up by a short hash prefix, so SponsorBlock never learns what you play.</string>
     <string name="settings_music_nebula_link">Music addon link (Nebula)</string>
     <string name="settings_music_nebula_link_description">With a link, an album page can play a lossless copy from your addon instead of YouTube Music. Paste your addon's manifest link. It is private to you and is not included in settings backups.</string>
     <string name="settings_music_prefer_addon">Prefer the addon when it has the album</string>

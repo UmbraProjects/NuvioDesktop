@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -246,7 +248,7 @@ private fun StripArrow(icon: ImageVector, description: String, enabled: Boolean,
             .size(STRIP_ARROW)
             .alpha(if (enabled) 1f else 0.25f)
             .clip(CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .musicKeyFocusRing(CircleShape).clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = description, tint = colors.textSecondary, modifier = Modifier.size(28.dp))
@@ -261,18 +263,17 @@ private fun TastePortrait(name: String, picture: String?, busy: Boolean, onOpen:
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     Column(
         Modifier
             .width(PORTRAIT_WIDTH)
             .hoverable(source)
-            .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onOpen),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(
-            Modifier.border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp),
+            Modifier.smoothBorder(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape).padding(3.dp),
             contentAlignment = Alignment.Center,
         ) {
             MusicCover(picture, name, size = PORTRAIT, circle = true)

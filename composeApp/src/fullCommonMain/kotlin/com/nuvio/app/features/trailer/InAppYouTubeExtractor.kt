@@ -40,6 +40,9 @@ private const val WATCH_CONFIG_TTL_MS = 3L * 60L * 60L * 1000L
 internal const val WATCH_PAGE_BACKOFF_MS = 10L * 60L * 1000L
 private const val PREFERRED_SEPARATE_CLIENT = "visionos"
 
+/** YouTube Premium's enhanced-bitrate formats (356 adaptive VP9 1080p; 616 the HLS one), unplayable without Premium. */
+private val PREMIUM_ITAGS = setOf(356, 616)
+
 private val VIDEO_ID_REGEX = Regex("^[a-zA-Z0-9_-]{11}$")
 private val API_KEY_REGEX = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"")
 private val VISITOR_DATA_REGEX = Regex("\"VISITOR_DATA\":\"([^\"]+)\"")
@@ -491,6 +494,13 @@ class InAppYouTubeExtractor internal constructor(
 
                 for (format in streamingData.listObjectValue("adaptiveFormats")) {
                     val url = format.stringValue("url") ?: continue
+                    // YouTube Premium's enhanced-bitrate 1080p is listed to everyone and scores highest on bitrate, but
+                    // without Premium its URL serves the start and then refuses the rest (a seek, or playing on): the
+                    // video hung at the same point every time while others opened at once (2026-10-31).
+                    if (isPremiumFormat(format)) {
+                        log.i { "skipping Premium format itag=${format.numberValue("itag")?.toInt()} for $videoId (${client.key})" }
+                        continue
+                    }
                     val mimeType = format.stringValue("mimeType").orEmpty()
                     val hasVideo = mimeType.contains("video/")
                     val hasAudio = mimeType.contains("audio/") || mimeType.startsWith("audio/")
@@ -598,7 +608,8 @@ class InAppYouTubeExtractor internal constructor(
         log.i {
             "Selected trailer streams adaptive=${bestVideo?.height ?: 0}p/${bestVideo?.fps ?: 0}fps " +
                 "progressive=${bestProgressive?.height ?: 0}p manifest=${bestManifest?.height ?: 0}p " +
-                "separateAudio=${bestAudio != null}"
+                "separateAudio=${bestAudio != null} videoClient=${bestVideo?.client} audioClient=${bestAudio?.client} " +
+                "manifestClient=${bestManifest?.client}"
         }
 
         val source = TrailerExtractionPlatform.buildPlaybackSource(
@@ -854,6 +865,11 @@ class InAppYouTubeExtractor internal constructor(
         val height = parts[1].toIntOrNull() ?: 0
         return width to height
     }
+
+    /** YouTube Premium's enhanced-bitrate formats: itag 356 (VP9 1080p) and anything labelled Premium. */
+    private fun isPremiumFormat(format: JsonObject): Boolean =
+        format.numberValue("itag")?.toInt() in PREMIUM_ITAGS ||
+            format.stringValue("qualityLabel")?.contains("premium", ignoreCase = true) == true
 
     private fun parseQualityLabel(label: String?): Int? {
         if (label.isNullOrBlank()) return null

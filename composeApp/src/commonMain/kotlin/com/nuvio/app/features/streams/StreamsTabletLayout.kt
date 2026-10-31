@@ -1,8 +1,10 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -561,20 +563,24 @@ internal fun PanelStreamsLayout(
             showHtpcChip = showHtpcChip,
             trailing = {
                 // Shows the layout a click switches to.
+                val keyFocus = LocalStreamPickerHeaderFocus.current.control
                 if (twoColumnsFit) PanelHeaderIconButton(
                     icon = if (twoColumns) Icons.Rounded.ViewAgenda else Icons.Rounded.GridView,
                     contentDescription = if (twoColumns) stringResource(Res.string.streams_single_column) else stringResource(Res.string.streams_two_columns),
                     onClick = { StreamBadgeSettingsRepository.setListTwoColumns(!twoColumns) },
+                    focused = keyFocus == StreamPickerHeaderControl.Layout,
                 )
                 PanelHeaderIconButton(
                     icon = Icons.Rounded.Refresh,
                     contentDescription = stringResource(Res.string.streams_refresh),
                     onClick = onRefresh,
+                    focused = keyFocus == StreamPickerHeaderControl.Refresh,
                 )
                 PanelHeaderIconButton(
                     icon = Icons.Rounded.Close,
                     contentDescription = stringResource(Res.string.action_close),
                     onClick = onClose,
+                    focused = keyFocus == StreamPickerHeaderControl.Close,
                 )
             },
         )
@@ -646,16 +652,26 @@ private fun PanelHeaderIconButton(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
+    focused: Boolean = false,
 ) {
+    val glass = LocalStreamCardStyle.current == StreamCardStyle.Glass
     Box(
         modifier = Modifier
             .size(36.dp)
             .clip(CircleShape)
             .background(
-                if (LocalStreamCardStyle.current == StreamCardStyle.Glass) {
-                    StreamGlass.Rest
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                when {
+                    glass && focused -> StreamGlass.Raised
+                    glass -> StreamGlass.Rest
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                },
+            )
+            // Same focus marks as the stream cards: the glass edge docked, the accent ring otherwise.
+            .then(
+                when {
+                    focused && glass -> Modifier.smoothBorder(1.5.dp, StreamGlass.Edge, CircleShape)
+                    focused -> Modifier.smoothBorder(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                    else -> Modifier
                 },
             )
             .clickable(onClick = onClick),

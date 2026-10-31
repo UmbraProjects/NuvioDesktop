@@ -41,6 +41,8 @@ import nuvio.composeapp.generated.resources.settings_music_mb_offline_retry
 import nuvio.composeapp.generated.resources.settings_music_mb_offline_update
 import nuvio.composeapp.generated.resources.settings_music_lastfm_key_description
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive_description
+import nuvio.composeapp.generated.resources.settings_music_skip_non_music
+import nuvio.composeapp.generated.resources.settings_music_skip_non_music_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
 import nuvio.composeapp.generated.resources.settings_music_section_general
@@ -195,6 +197,21 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     checked = keepAlive,
                     isTablet = isTablet,
                     onCheckedChange = PreshowSettings::setMusicKeepAudioAlive,
+                )
+            }
+            val musicSettings by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsSearchAnchors("music-skip-non-music"),
+            ) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_skip_non_music),
+                    description = stringResource(Res.string.settings_music_skip_non_music_description),
+                    checked = musicSettings.settings.skipNonMusic,
+                    isTablet = isTablet,
+                    onCheckedChange = {
+                        MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(skipNonMusic = it))
+                    },
                 )
             }
         }

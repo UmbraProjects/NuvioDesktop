@@ -1,0 +1,13 @@
+{
+  "reflection": [
+    {
+      "type": "androidx.compose.ui.focus.FocusOwnerImpl",
+      "methods": [
+        {
+          "name": "getActiveFocusTargetNode",
+          "parameterTypes": []
+        }
+      ]
+    }
+  ]
+}

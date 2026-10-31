@@ -45,6 +45,7 @@ entries, nothing changed in the split):
 | `clipboard/` | 39 | 1 |
 | `native-bridges/` | 9 | |
 | `skiko/` | 1 | |
+| `compose-focus/` | 1 | |
 | `resources/` | | 10 |
 
 Added from the step-3 QA build (2026-10-17): `quickjs/` (LinkedHashMap JNI: every plugin was

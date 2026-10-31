@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -234,15 +236,14 @@ private const val PREVIEW_TRACK_LIMIT = 12
 private fun PreviewLine(title: String, detail: String, art: String?, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier
             .fillMaxWidth()
             .clip(shape)
             .background(if (focused) colors.surfaceElevated else colors.surfaceCard)
-            .then(if (focused) Modifier.border(3.dp, colors.accent, shape) else Modifier)
-            .focusable(interactionSource = source)
+            .then(if (focused) Modifier.smoothBorder(3.dp, colors.accent, shape) else Modifier)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,

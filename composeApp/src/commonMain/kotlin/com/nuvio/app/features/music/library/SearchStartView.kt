@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -197,7 +199,7 @@ private fun StartSection(title: String, note: String, cards: @Composable () -> U
 private fun RecentChip(text: String, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val hovered by source.collectIsHoveredAsState()
     val scale by animateFloatAsState(if (focused) 1.06f else 1f)
     val shape = RoundedCornerShape(50)
@@ -236,7 +238,7 @@ private fun PosterCard(
 ) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val scale by animateFloatAsState(if (focused) StartType.FOCUS_SCALE else 1f)
     val shape = RoundedCornerShape(20.dp)
     val looked by produceState(emptyList<String>(), lookUp) {
@@ -256,7 +258,7 @@ private fun PosterCard(
             .aspectRatio(StartType.CARD_ASPECT)
             .clip(shape)
             .background(ground)
-            .border(if (focused) BorderStroke(4.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)), shape)
+            .smoothBorder(if (focused) BorderStroke(4.dp, colors.focusRing) else BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)), shape)
             .clickable(interactionSource = source, indication = null, onClick = onClick),
     ) {
         Collage(pictures, title, tint)

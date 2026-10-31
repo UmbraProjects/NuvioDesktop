@@ -26,6 +26,9 @@ internal class HomeTvRow(
     // For non-paginating catalog rows: pressing Right on the last item opens the full grid. Null when
     // the row paginates (it just keeps loading more) or can't be opened.
     val onRightAtEnd: (() -> Unit)? = null,
+    // The row's header is a filter bar (Discover's browser row, Library's first row): Up from its
+    // cards goes into the bar.
+    val hasFilterStrip: Boolean = false,
 )
 
 /**

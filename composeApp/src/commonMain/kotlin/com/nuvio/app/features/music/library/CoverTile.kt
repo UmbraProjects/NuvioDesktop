@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Icon
@@ -86,7 +87,7 @@ internal fun CoverTile(
                     modifier = Modifier.align(Alignment.CenterStart).offset(x = size + peek - diameter),
                 )
             }
-            ReleaseCover(release, Modifier.size(size).clickable(onClick = onClick))
+            ReleaseCover(release, Modifier.size(size).musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(onClick = onClick))
             tile.rank?.let { rank ->
                 Box(
                     Modifier.align(Alignment.TopStart).padding(6.dp).size(22.dp).clip(CircleShape).background(GOLD),

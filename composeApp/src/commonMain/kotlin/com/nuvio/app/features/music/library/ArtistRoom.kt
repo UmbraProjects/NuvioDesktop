@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.features.details.components.DetailIconAction
@@ -209,7 +210,7 @@ internal fun ArtistRoom(
                         onRefresh = onRefresh,
                         onOpenArtist = onOpenArtist,
                     )
-                    ArtistWidgets(artist, onOpen, Modifier.padding(horizontal = ROOM_LANE_START), showBio = false) // fork:music - HTPC phase 8
+                    ArtistWidgets(artist, onOpen, Modifier.padding(horizontal = ROOM_LANE_START), showBio = false, takeEntryFocus = true) // fork:music - HTPC phase 8
                 }
 
                 // From Similar Taste down: the releases on the left and, on a wide window, the timeline beside them from the top.
@@ -532,7 +533,7 @@ private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, 
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val lit = hovered || focused
     val label: @Composable (Alignment.Horizontal) -> Unit = { align ->
         val release = group.primary
@@ -559,7 +560,7 @@ private fun TimelineRow(group: ReleaseGroup, leftSide: Boolean, first: Boolean, 
             .height(TIMELINE_ROW)
             .hoverable(source)
             .secondaryClick(onInfo)
-            .clickable(interactionSource = source, indication = null, onClick = onOpen),
+            .musicKeyFocusRing().clickable(interactionSource = source, indication = null, onClick = onOpen),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { if (leftSide) label(Alignment.End) }

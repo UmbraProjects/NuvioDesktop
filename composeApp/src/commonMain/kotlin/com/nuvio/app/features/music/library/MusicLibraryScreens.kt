@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.secondaryClick
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -171,7 +172,7 @@ private fun LibraryTileFrame(onClick: (() -> Unit)?, content: @Composable androi
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.musicKeyFocusRing(RoundedCornerShape(12.dp)).clickable(onClick = onClick) else Modifier)
             .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -191,7 +192,7 @@ internal fun LibraryIconAction(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .musicKeyFocusRing(CircleShape).clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = description, tint = if (enabled) colors.textSecondary else colors.textDisabled, modifier = Modifier.size(22.dp))
@@ -229,7 +230,7 @@ fun MusicAddToLibraryButton(
                 if (inLibrary) Modifier.border(1.dp, colors.accent, shape)
                 else Modifier.background(colors.accent),
             )
-            .clickable(enabled = !inLibrary || (onSavedClick != null && !adding)) {
+            .musicKeyFocusRing(shape).clickable(enabled = !inLibrary || (onSavedClick != null && !adding)) {
                 if (inLibrary) onSavedClick?.invoke() else MusicLibraryRepository.add(artistId)
             }
             .padding(horizontal = 18.dp),
@@ -491,7 +492,7 @@ internal fun OutlinedAction(icon: ImageVector, text: String, enabled: Boolean = 
         modifier = Modifier
             .height(44.dp)
             .musicGlass(shape)
-            .clickable(enabled = enabled, onClick = onClick)
+            .musicKeyFocusRing(shape).clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -513,7 +514,7 @@ internal fun DemosArchive(demos: List<ReleaseGroup>, open: Boolean, onToggle: ()
     val colors = MaterialTheme.nuvio.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onToggle).padding(vertical = 8.dp),
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable(onClick = onToggle).padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -542,7 +543,7 @@ internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: 
             .width(150.dp)
             .clip(RoundedCornerShape(10.dp))
             .secondaryClick(onSecondary)
-            .clickable(onClick = onClick)
+            .musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable(onClick = onClick)
             .alpha(if (group.isPlayable) 1f else 0.5f),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -584,7 +585,7 @@ internal fun ReleaseRow(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .secondaryClick(onSecondary)
-            .clickable(onClick = onClick)
+            .musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
             .alpha(if (group.isPlayable) 1f else 0.5f)
             .padding(horizontal = 4.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -619,7 +620,7 @@ internal fun SegmentedPair(left: String, right: String, rightSelected: Boolean, 
                 modifier = Modifier
                     .clip(shape)
                     .background(if (selected) colors.accent else Color.Transparent)
-                    .clickable { onSelect(isRight) }
+                    .musicKeyFocusRing(shape).clickable { onSelect(isRight) }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             )
         }
@@ -687,7 +688,7 @@ private fun LinksDialog(links: List<ArtistLink>, onOpen: (String) -> Unit, onDis
                     Text(group.label, style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
                     items.forEach { link ->
                         Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOpen(link.url) }.padding(horizontal = 6.dp, vertical = 6.dp),
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable { onOpen(link.url) }.padding(horizontal = 6.dp, vertical = 6.dp),
                         ) {
                             Text(link.label, style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary)
                             Text(
@@ -722,7 +723,7 @@ internal fun ActionPill(text: String, selected: Boolean = false, enabled: Boolea
     val shape = RoundedCornerShape(20.dp)
     val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
-    val keyFocused by source.collectIsFocusedAsState()
+    val keyFocused by source.collectIsKeyboardFocusedAsState()
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,

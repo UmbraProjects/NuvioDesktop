@@ -164,7 +164,9 @@ fun NuvioAlertDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth), shape = shape) {
-            Column {
+            // A dialog is its own window: the arrows (and a pad's D-pad) move between its controls and buttons, which
+            // desktop Compose leaves to Tab otherwise.
+            Column(Modifier.arrowKeyFocusNavigation()) {
                 title?.let {
                     Column(
                         modifier = Modifier

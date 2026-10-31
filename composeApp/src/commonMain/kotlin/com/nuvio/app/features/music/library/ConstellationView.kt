@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.Popup
 import com.nuvio.app.core.ui.NuvioGlass
@@ -334,7 +336,6 @@ private fun ConstellationMap(
     val onHoverNow by rememberUpdatedState(onHover)
     val onOpenNow by rememberUpdatedState(onOpen)
 
-    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
 
     // Selecting a star (click, key, or a neighbour in the panel) brings it into view if it is near or past an edge.
     LaunchedEffect(selectedId) {
@@ -377,18 +378,23 @@ private fun ConstellationMap(
                     else -> null
                 }
                 when {
+                    // No star that way: the arrow is let go, so focus can leave the map (up to the view pills, say).
                     direction != null -> {
-                        stepStar(pointsNow, selectedNow, direction, focusNow)?.let { onSelectNow(it) }
-                        true
+                        val next = stepStar(pointsNow, selectedNow, direction, focusNow)
+                        next?.let { onSelectNow(it) }
+                        next != null
                     }
                     event.key == Key.Tab -> {
                         cycleStar(pointsNow, selectedNow, if (event.isShiftPressed) -1 else 1, focusNow)?.let { onSelectNow(it) }
                         true
                     }
+                    // With no star selected Enter selects one rather than going unhandled, which desktop Compose takes as
+                    // "focus the first thing inside the map" (focus seemed to drop to the panel below).
                     event.key == Key.Enter || event.key == Key.NumPadEnter -> {
                         val id = selectedNow
                         if (id != null) onOpenNow(id)
-                        id != null
+                        else cycleStar(pointsNow, null, 1, focusNow)?.let { onSelectNow(it) }
+                        true
                     }
                     event.key == Key.Plus || event.key == Key.Equals || event.key == Key.NumPadAdd -> {
                         onCameraNow(cameraNow.zoomedAt(w / 2, h / 2, ZOOM_PER_NOTCH, w, h))
@@ -752,7 +758,7 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
             artists.forEach { artist ->
                 val source = remember { MutableInteractionSource() }
                 val hovered by source.collectIsHoveredAsState()
-                val focused by source.collectIsFocusedAsState()
+                val focused by source.collectIsKeyboardFocusedAsState()
                 val working = state.working[artist.id] != null
                 // Where the pointer is over the portrait, so the name can follow it instead of covering the ring.
                 var pointer by remember { mutableStateOf<Offset?>(null) }
@@ -772,9 +778,8 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
                                 }
                             }
                             .clip(CircleShape)
-                            .border(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape)
+                            .smoothBorder(2.dp, if (hovered || focused) colors.accent else NuvioGlass.EdgeColor, CircleShape)
                             .hoverable(source)
-                            .focusable(interactionSource = source)
                             .clickable(enabled = !working, interactionSource = source, indication = null) { onFetchTags(artist.id) },
                     ) {
                         MusicCover(artist.art.thumb, artist.name, size = 64.dp, circle = true)
@@ -820,7 +825,7 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, onArtistClick: (String) 
 private fun BigChip(text: String, selected: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
+    val focused by source.collectIsKeyboardFocusedAsState()
     val hovered by source.collectIsHoveredAsState()
     val shape = RoundedCornerShape(20.dp)
     Text(
@@ -832,7 +837,6 @@ private fun BigChip(text: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .musicGlass(shape, raised = hovered, selected = selected, keyFocused = focused)
             .hoverable(source)
-            .focusable(interactionSource = source)
             .clickable(interactionSource = source, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp),
     )

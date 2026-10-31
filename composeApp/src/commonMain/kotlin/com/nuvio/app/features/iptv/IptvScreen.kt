@@ -1,5 +1,6 @@
 package com.nuvio.app.features.iptv
 
+import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.features.settings.settingsSkyBackground
@@ -634,7 +635,7 @@ private fun IptvSidebarEntry(
                     else -> Color.Transparent
                 },
             )
-            .then(if (keyboardFocused) Modifier.border(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
+            .then(if (keyboardFocused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -703,7 +704,7 @@ private fun IptvHeader(
                             .width(280.dp)
                             .onFocusChanged { onSearchFocusChanged(it.hasFocus) }
                             .onGloballyPositioned { onSearchBounds(it.boundsInWindow()) }
-                            .then(if (focused) Modifier.border(1.5.dp, tokens.colors.borderFocus, RoundedCornerShape(12.dp)) else Modifier),
+                            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, RoundedCornerShape(12.dp)) else Modifier),
                         placeholder = filterLabel,
                         focusRequester = searchFocus,
                         leadingContent = {
@@ -785,7 +786,7 @@ private fun IptvHeaderButton(
                     else -> Color.Transparent
                 },
             )
-            .then(if (focused) Modifier.border(1.5.dp, tokens.colors.borderFocus, CircleShape) else Modifier)
+            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, CircleShape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
@@ -868,7 +869,7 @@ private fun IptvRegionChip(
             .iptvGlass(shape, selected = selected, raised = focused || hovered, selectedTint = tokens.colors.accent.copy(alpha = 0.22f))
             // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
-            .then(if (focused) Modifier.border(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
+            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -949,7 +950,7 @@ private fun IptvChannelRow(
             .iptvGlass(shape, raised = keyboardFocused || starKeyboardFocused || hovered)
             // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
             .clip(shape)
-            .then(if (keyboardFocused) Modifier.border(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
+            .then(if (keyboardFocused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onPlay)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
