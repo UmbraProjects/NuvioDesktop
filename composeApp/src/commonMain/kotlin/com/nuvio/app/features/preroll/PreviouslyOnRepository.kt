@@ -2,6 +2,8 @@ package com.nuvio.app.features.preroll
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetails
+import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.features.discover.DiscoverAiClient
 import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.settings.ThemeSettingsRepository
@@ -12,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -32,6 +35,8 @@ internal object PreviouslyOnRepository {
     private val inFlightLock = Mutex()
 
     private const val MAX_RETRIES = 3
+    private const val MAX_PREFETCH = 4
+    private const val PREFETCH_WAIT_MS = 120_000L
 
     private fun cacheKey(meta: MetaDetails, target: PreviouslyOnTarget, source: TriviaSource): String {
         val settings = DiscoverAiSettingsRepository.snapshot()
@@ -39,6 +44,34 @@ internal object PreviouslyOnRepository {
             "previouslyon", "v$PREVIOUSLY_ON_PROMPT_VERSION", meta.id, "s${target.season}e${target.episode}",
             settings.effectiveModel, ThemeSettingsRepository.selectedAppLanguage.value.code, target.fingerprint(source),
         ).joinToString("|")
+    }
+
+    /** Episodes already looked at this session, so scrolling Home never asks twice. */
+    private val seen = mutableSetOf<String>()
+
+    /**
+     * Writes the cards ahead of time for the episodes waiting in Continue Watching. Does nothing
+     * without the switch and an AI key (the no-key cards cost nothing to build on the spot), and
+     * only for an episode whose break has already passed, so a viewer bingeing a show is never
+     * billed for recaps they would not see. At most [MAX_PREFETCH] new requests per call, one
+     * after another; each is cached, so a repeat costs nothing.
+     */
+    fun prefetchUpNext(requests: List<PreviouslyOnRequest>) {
+        if (!PreshowSettings.previouslyOnEnabled.value) return
+        if (!DiscoverAiSettingsRepository.snapshot().isConfigured) return
+        val fresh = requests.distinct().filter { synchronized(seen) { seen.add(it.key) } }.take(MAX_PREFETCH)
+        if (fresh.isEmpty()) return
+        workScope.launch {
+            for (request in fresh) {
+                // Details not loaded yet: forget it, so a later Home refresh can try again.
+                val meta = MetaDetailsRepository.peekAny(request.type, request.id)
+                    ?: run { synchronized(seen) { seen.remove(request.key) }; continue }
+                val target = previouslyOnTargetForEpisode(
+                    meta, request.id, request.type, request.season, request.episode, LibraryClock.nowEpochMs(),
+                ) ?: continue
+                runCatching { packFor(meta, target, PREFETCH_WAIT_MS) }
+            }
+        }
     }
 
     suspend fun packFor(meta: MetaDetails, target: PreviouslyOnTarget, waitMs: Long): TriviaPack? {
@@ -87,4 +120,9 @@ internal object PreviouslyOnRepository {
         )
         return pack
     }
+}
+
+/** An episode the viewer is about to be offered, as the prefetch is told about it. */
+internal data class PreviouslyOnRequest(val type: String, val id: String, val season: Int, val episode: Int) {
+    val key: String get() = "$type|$id|$season|$episode"
 }

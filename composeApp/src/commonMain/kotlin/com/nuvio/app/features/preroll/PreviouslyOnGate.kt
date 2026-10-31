@@ -63,6 +63,18 @@ internal fun previouslyOnEligible(launch: PlayerLaunch): Boolean =
 internal fun previouslyOnTargetForLaunch(meta: MetaDetails, launch: PlayerLaunch, nowMs: Long): PreviouslyOnTarget? {
     val season = launch.seasonNumber ?: return null
     val episode = launch.episodeNumber ?: return null
+    return previouslyOnTargetForEpisode(meta, launch.parentMetaId, launch.parentMetaType, season, episode, nowMs)
+}
+
+/** The same for an episode named directly, which is how the prefetch asks. */
+internal fun previouslyOnTargetForEpisode(
+    meta: MetaDetails,
+    metaId: String,
+    metaType: String,
+    season: Int,
+    episode: Int,
+    nowMs: Long,
+): PreviouslyOnTarget? {
     val episodes = meta.videos.mapNotNull { video ->
         val s = video.playbackSeasonNumber() ?: return@mapNotNull null
         val e = video.playbackEpisodeNumber() ?: return@mapNotNull null
@@ -71,7 +83,7 @@ internal fun previouslyOnTargetForLaunch(meta: MetaDetails, launch: PlayerLaunch
             episode = e,
             title = video.title,
             overview = video.overview,
-            watchedAtMs = WatchedRepository.watchedAtEpochMs(launch.parentMetaId, launch.parentMetaType, s, e),
+            watchedAtMs = WatchedRepository.watchedAtEpochMs(metaId, metaType, s, e),
         )
     }
     val target = previouslyOnTargetFor(episodes, season, episode) ?: return null
