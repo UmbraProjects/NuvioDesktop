@@ -340,7 +340,7 @@ private fun SlideBody(slide: TriviaSlide, palette: TriviaPalette) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.width(36.dp).height(3.dp).background(palette.accent, RoundedCornerShape(2.dp)))
         Text(
-            text = stringResource(slide.category.label()).uppercase(),
+            text = slide.heading ?: stringResource(slide.category.label()).uppercase(),
             style = MaterialTheme.typography.labelLarge,
             color = palette.accent,
             letterSpacing = 3.sp,

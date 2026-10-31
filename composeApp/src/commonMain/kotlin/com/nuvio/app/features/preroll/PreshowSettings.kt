@@ -96,6 +96,19 @@ object PreshowSettings {
      */
     val postShowEnabled: StateFlow<Boolean> = _postShowEnabled.asStateFlow()
 
+    private val _previouslyOnEnabled = MutableStateFlow(storage.load("previously_on_enabled") == "true")
+    /** "Previously on" cards before an episode. Its own switch, off until chosen: it can spend requests on the viewer's AI key. */
+    val previouslyOnEnabled: StateFlow<Boolean> = _previouslyOnEnabled.asStateFlow()
+
+    private val _previouslyOnBreakOnly = MutableStateFlow(storage.load("previously_on_break_only") != "false")
+    /** On: the recap shows only after a break of [previouslyOnBreakHours]. Off: before every episode that has one. */
+    val previouslyOnBreakOnly: StateFlow<Boolean> = _previouslyOnBreakOnly.asStateFlow()
+
+    private val _previouslyOnBreakHours = MutableStateFlow(
+        storage.load("previously_on_break_hours")?.toIntOrNull()?.takeIf { it in PREVIOUSLY_ON_BREAK_CHOICES } ?: DEFAULT_PREVIOUSLY_ON_BREAK_HOURS,
+    )
+    val previouslyOnBreakHours: StateFlow<Int> = _previouslyOnBreakHours.asStateFlow()
+
     private val _localFolder = MutableStateFlow(storage.load("local_folder").orEmpty())
     /** Blank means the default folder inside the app's data directory. */
     val localFolder: StateFlow<String> = _localFolder.asStateFlow()
@@ -148,6 +161,24 @@ object PreshowSettings {
         storage.save("postshow_enabled", if (enabled) "true" else null)
     }
 
+    fun setPreviouslyOnEnabled(enabled: Boolean) {
+        if (_previouslyOnEnabled.value == enabled) return
+        _previouslyOnEnabled.value = enabled
+        storage.save("previously_on_enabled", if (enabled) "true" else null)
+    }
+
+    fun setPreviouslyOnBreakOnly(breakOnly: Boolean) {
+        if (_previouslyOnBreakOnly.value == breakOnly) return
+        _previouslyOnBreakOnly.value = breakOnly
+        storage.save("previously_on_break_only", if (breakOnly) null else "false")
+    }
+
+    fun setPreviouslyOnBreakHours(hours: Int) {
+        val clean = hours.takeIf { it in PREVIOUSLY_ON_BREAK_CHOICES } ?: return
+        _previouslyOnBreakHours.value = clean
+        storage.save("previously_on_break_hours", clean.toString())
+    }
+
     fun setLocalFolder(path: String) {
         val clean = path.trim()
         _localFolder.value = clean
@@ -183,3 +214,7 @@ object PreshowSettings {
             .filter { it.isClipSlot }
             .toSet()
 }
+
+/** How long a break must be before the recap shows: a day, three days, a week, two weeks. */
+val PREVIOUSLY_ON_BREAK_CHOICES = listOf(24, 72, 168, 336)
+const val DEFAULT_PREVIOUSLY_ON_BREAK_HOURS = 72

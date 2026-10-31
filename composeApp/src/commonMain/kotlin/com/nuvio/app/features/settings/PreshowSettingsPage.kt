@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.preroll.PREROLL_MAX_TRAILERS
+import com.nuvio.app.features.preroll.PREVIOUSLY_ON_BREAK_CHOICES
 import com.nuvio.app.features.preroll.PrerollSettings
 import com.nuvio.app.features.preroll.PreshowSettings
 import com.nuvio.app.features.preroll.PreshowSlot
@@ -234,6 +235,54 @@ internal fun LazyListScope.preshowSettingsContent(isTablet: Boolean) {
     }
 
     item {
+        SettingsSection(title = "Previously on", isTablet = isTablet) {
+            val ai by DiscoverAiSettingsRepository.uiState.collectAsStateWithLifecycle()
+            val enabled by PreshowSettings.previouslyOnEnabled.collectAsStateWithLifecycle()
+            val breakOnly by PreshowSettings.previouslyOnBreakOnly.collectAsStateWithLifecycle()
+            val breakHours by PreshowSettings.previouslyOnBreakHours.collectAsStateWithLifecycle()
+            var consentPromptFor by remember { mutableStateOf<AiConsentTarget?>(null) }
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Previously on cards",
+                    description = "Before an episode, cards recap the last episode you watched, then a short quiz. " +
+                        "With your AI key they are written from the episode's overview; without one you get the overview itself, with no quiz.",
+                    checked = enabled,
+                    isTablet = isTablet,
+                    onCheckedChange = { wanted ->
+                        when {
+                            !wanted -> PreshowSettings.setPreviouslyOnEnabled(false)
+                            ai.apiKey.isNotBlank() && !ai.consentGiven -> consentPromptFor = AiConsentTarget.PreviouslyOn
+                            else -> PreshowSettings.setPreviouslyOnEnabled(true)
+                        }
+                    },
+                )
+                if (enabled) {
+                    SettingsGroupDivider(isTablet)
+                    SettingsSwitchRow(
+                        title = "Only after a break",
+                        description = "Skip the cards when you watched the last episode recently, such as when binging.",
+                        checked = breakOnly,
+                        isTablet = isTablet,
+                        onCheckedChange = PreshowSettings::setPreviouslyOnBreakOnly,
+                    )
+                    if (breakOnly) {
+                        SettingsGroupDivider(isTablet)
+                        SettingsChoiceRow(
+                            title = "Break length",
+                            description = "Show the cards when it has been at least this long since you watched the last episode.",
+                            options = PREVIOUSLY_ON_BREAK_CHOICES.map { SettingsChoiceOption(it, breakLabel(it)) },
+                            selectedValue = breakHours,
+                            isTablet = isTablet,
+                            onSelected = PreshowSettings::setPreviouslyOnBreakHours,
+                        )
+                    }
+                }
+            }
+            AiConsentDialog(target = consentPromptFor, onDismiss = { consentPromptFor = null })
+        }
+    }
+
+    item {
         SettingsSection(
             title = stringResource(Res.string.settings_theme_song_section),
             isTablet = isTablet,
@@ -276,4 +325,12 @@ private fun PreshowSlot.label(): String = when (this) {
     PreshowSlot.Trivia -> "Trivia"
     PreshowSlot.RatingCard -> "Rating card"
     PreshowSlot.FeaturePresentation -> "Feature presentation"
+}
+
+private fun breakLabel(hours: Int): String = when (hours) {
+    24 -> "1 day"
+    72 -> "3 days"
+    168 -> "1 week"
+    336 -> "2 weeks"
+    else -> "$hours hours"
 }

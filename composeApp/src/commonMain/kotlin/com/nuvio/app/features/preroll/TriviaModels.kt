@@ -77,6 +77,8 @@ enum class TriviaAtmosphere {
 data class TriviaSlide(
     val text: String,
     val category: TriviaCategory = TriviaCategory.Trivia,
+    /** Replaces the category's label on the card ("LAST TIME"); null keeps the category's own. */
+    val heading: String? = null,
 )
 
 @Serializable

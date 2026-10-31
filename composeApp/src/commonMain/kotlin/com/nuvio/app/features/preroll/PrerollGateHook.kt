@@ -45,7 +45,8 @@ fun prerollGateCleared(launchKey: String, launch: PlayerLaunch): Boolean {
             SideEffect { cleared = true }
         }
     }
-    return cleared
+    // The "previously on" cards come after the pre-show, so the viewer sees trailers and then the recap.
+    return cleared && previouslyOnGateCleared(launchKey, launch)
 }
 
 /** Trailers, a clip slot or trivia is on. Theme songs only play behind trivia, so they do not count. */

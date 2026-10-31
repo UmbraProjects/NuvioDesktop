@@ -630,6 +630,7 @@ internal fun AiConsentDialog(target: AiConsentTarget?, onDismiss: () -> Unit) {
                         AiConsentTarget.Recap -> DiscoverAiSettingsRepository.setRecapEnabled(true)
                         AiConsentTarget.Trivia -> DiscoverAiSettingsRepository.setTriviaEnabled(true)
                         AiConsentTarget.PostShow -> PreshowSettings.setPostShowEnabled(true)
+                        AiConsentTarget.PreviouslyOn -> PreshowSettings.setPreviouslyOnEnabled(true)
                     }
                 },
             ) { Text(stringResource(Res.string.settings_discover_ai_consent_accept)) }
@@ -653,7 +654,7 @@ internal fun AiConsentDialog(target: AiConsentTarget?, onDismiss: () -> Unit) {
 }
 
 /** Which switch opened the shared consent dialog. */
-internal enum class AiConsentTarget { Rows, Recap, Trivia, PostShow }
+internal enum class AiConsentTarget { Rows, Recap, Trivia, PostShow, PreviouslyOn }
 
 /** Each failure says what to do about it — they need different things from the user. */
 internal suspend fun discoverAiErrorMessage(error: Throwable): String =
