@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.CompositionLocalProvider
 import com.nuvio.app.core.ui.LocalNuvioBaseDensity
 import com.nuvio.app.features.player.desktop.NvidiaRtxDriverState
@@ -198,6 +200,16 @@ private fun NativePlayerSurface(
     // The post-show cards are up and the video belongs in the corner box. A derived value, so the
     // position ticking every 500 ms does not recompose this surface; only the flip does.
     val postShowBoxed by PostShowController.active
+    // 0 = the video fills the screen, 1 = it sits in the corner box. Eased, so the shrink glides
+    // instead of snapping; the cards fade in with it.
+    val postShowProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (postShowBoxed) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = POST_SHOW_SHRINK_MS,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        ),
+        label = "postShowShrink",
+    )
     // Keyed on the attempt, so closing the cards on one episode does not carry into the next.
     DisposableEffect(playbackAttemptId) {
         PostShowController.reset()
@@ -994,7 +1006,7 @@ private fun NativePlayerSurface(
         snapshotFlow { PostShowController.active.value }.drop(1).collect {
             // mpv repaints a wid-embedded surface oddly after a size change (see forceVideoRedraw),
             // so nudge it once the new size has settled, and again for a swapchain that lags.
-            delay(250L)
+            delay(POST_SHOW_SHRINK_MS + 100L)
             controller.forceVideoRedraw()
             delay(750L)
             controller.forceVideoRedraw()
@@ -1275,7 +1287,7 @@ private fun NativePlayerSurface(
                 !playerControlsState.skipPromptDismissed &&
                 playerControlsState.skipKeyAction.isNotEmpty()
             PostShowScreen(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = postShowProgress },
                 skipLabel = if (skipOffered) playerControlsState.skipPromptLabel else null,
                 skipKeyLabel = playerShortcutKeyCodeLabel(
                     PlayerShortcutsRepository.keyCode(PlayerShortcutAction.SkipInterval),
@@ -1293,12 +1305,22 @@ private fun NativePlayerSurface(
                 factory = {
                     host
                 },
-                modifier = if (hostFirstPaintComplete.value && postShowBoxed) {
-                    Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 64.dp, bottom = 64.dp)
-                        .fillMaxWidth(0.3f)
-                        .aspectRatio(16f / 9f)
+                modifier = if (hostFirstPaintComplete.value && (postShowBoxed || postShowProgress > 0f)) {
+                    // Between full screen and the corner box. The native window is resized every frame.
+                    Modifier.layout { measurable, constraints ->
+                        val margin = POST_SHOW_BOX_MARGIN_DP.dp.roundToPx()
+                        val boxW = ((constraints.maxWidth - margin) * POST_SHOW_BOX_WIDTH).toInt()
+                        val boxH = (boxW * 9f / 16f).toInt()
+                        val boxX = constraints.maxWidth - margin - boxW
+                        val boxY = constraints.maxHeight - margin - boxH
+                        val t = postShowProgress
+                        val w = androidx.compose.ui.util.lerp(constraints.maxWidth, boxW, t).coerceAtLeast(1)
+                        val h = androidx.compose.ui.util.lerp(constraints.maxHeight, boxH, t).coerceAtLeast(1)
+                        val x = androidx.compose.ui.util.lerp(0, boxX, t)
+                        val y = androidx.compose.ui.util.lerp(0, boxY, t)
+                        val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(w, h))
+                        layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(x, y) }
+                    }
                 } else if (hostFirstPaintComplete.value) {
                     Modifier.fillMaxSize()
                 } else {
@@ -2001,3 +2023,10 @@ private fun looksLikeExpiredPinnedLink(message: String): Boolean =
     EXPIRED_PINNED_LINK_STATUS.containsMatchIn(message)
 
 private const val PLAYER_BADGES_POLL_MS = 2_000L
+
+/** How long the video takes to shrink into the post-show's corner box, and back. */
+private const val POST_SHOW_SHRINK_MS = 500
+
+/** The box's gap from the bottom and right edges, and its width as a share of the space left. */
+private const val POST_SHOW_BOX_MARGIN_DP = 64
+private const val POST_SHOW_BOX_WIDTH = 0.3f
