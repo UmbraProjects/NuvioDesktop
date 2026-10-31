@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpOffset
@@ -22,6 +23,7 @@ actual fun NuvioPosterHoverTooltip(
     title: String,
     modifier: Modifier,
     subtitle: String,
+    aboveControl: Boolean,
     content: @Composable () -> Unit,
 ) {
     if (title.isBlank() && subtitle.isBlank()) {
@@ -64,7 +66,16 @@ actual fun NuvioPosterHoverTooltip(
         },
         modifier = modifier,
         delayMillis = 500,
-        tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(0.dp, 18.dp)),
+        tooltipPlacement = if (aboveControl) {
+            // The card's bottom edge 8dp above the control's top, so it never lies under the pointer.
+            TooltipPlacement.ComponentRect(
+                anchor = Alignment.TopCenter,
+                alignment = Alignment.TopCenter,
+                offset = DpOffset(0.dp, (-8).dp),
+            )
+        } else {
+            TooltipPlacement.CursorPoint(offset = DpOffset(0.dp, 18.dp))
+        },
         content = content,
     )
 }

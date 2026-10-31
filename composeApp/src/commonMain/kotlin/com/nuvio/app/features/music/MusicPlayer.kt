@@ -396,7 +396,12 @@ class MusicPlayer(
     fun onSurfaceError() {
         val current = _state.value
         val q = queue ?: return
-        val fallback = current.source?.fallback
+        // YouTube's chain is separate streams -> HLS manifest -> progressive. The HLS rung is passed over when there is a
+        // rung after it: it opens every variant playlist before playing (about 8s on its own) and never got going in the
+        // music player (every try on 2026-10-30 stalled the full 20s), so it only delayed the progressive stream.
+        val fallback = current.source?.fallback?.let { next ->
+            next.fallback?.takeIf { "/manifest/" in next.videoUrl } ?: next
+        }
         if (fallback != null) {
             _state.update {
                 it.copy(source = fallback, startPositionMs = it.positionMs, loadId = ++loadCounter, isLoading = true)

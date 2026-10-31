@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -53,15 +51,13 @@ import com.nuvio.app.features.music.playlist.PlaylistPicker
 /**
  * fork:music - the controls of the expanded and fullscreen video. Compose cannot draw over the native video surface,
  * so the bar used to sit under the picture, full size; this is a slim strip in its place, the video ending just above
- * it: a seek line along the top, transport and time on the left, what is playing in the middle, and on the right Add
- * to playlist, volume, shuffle, fullscreen and collapse.
+ * it: a seek line along the top, transport and time on the left, what is playing in the middle, and on the right
+ * volume, Add to playlist, shuffle and collapse.
  */
 @Composable
 internal fun MusicVideoControlStrip(
     state: MusicPlayerState,
     player: MusicPlayer,
-    fullscreen: Boolean,
-    onFullscreen: () -> Unit,
     onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -123,15 +119,12 @@ internal fun MusicVideoControlStrip(
                     Text(subtitle(state), color = Color.White.copy(alpha = 0.65f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            // Right: add to playlist, volume, shuffle, fullscreen, collapse.
+            // Right: volume, add to playlist, shuffle, and the arrow back to the player (which also leaves fullscreen).
             Row(
                 Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
             ) {
-                state.track?.let { track ->
-                    StripButton(Icons.Rounded.PlaylistAdd, "Add to playlist") { PlaylistPicker.request(listOf(track.forPlaylist(state.album))) }
-                }
                 val muted = state.volume == 0
                 StripButton(if (muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp, if (muted) "Unmute" else "Mute") {
                     if (muted) player.setVolume(unmutedVolume) else { unmutedVolume = state.volume; player.setVolume(0) }
@@ -142,10 +135,13 @@ internal fun MusicVideoControlStrip(
                     modifier = Modifier.width(96.dp),
                     onNudge = { d -> player.setVolume((state.volume + d * 5).coerceIn(0, 100)) },
                 )
+                // Grouped with shuffle: the two buttons about the queue, after the volume.
+                state.track?.let { track ->
+                    StripButton(Icons.Rounded.PlaylistAdd, "Add to playlist") { PlaylistPicker.request(listOf(track.forPlaylist(state.album))) }
+                }
                 StripButton(Icons.Rounded.Shuffle, if (state.shuffled) "Shuffle on" else "Shuffle", active = state.shuffled) {
                     player.setShuffled(!state.shuffled)
                 }
-                StripButton(if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen, if (fullscreen) "Exit fullscreen" else "Fullscreen", onClick = onFullscreen)
                 StripButton(Icons.Rounded.KeyboardArrowDown, "Back to the player", onClick = onCollapse)
             }
         }
@@ -160,7 +156,9 @@ private val VIDEO_STRIP_GROUND = Color(0xFF0F0F10)
 @Composable
 private fun StripButton(icon: ImageVector, label: String, enabled: Boolean = true, active: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
-    NuvioPosterHoverTooltip(title = label) {
+    // Above the button: the strip is at the bottom of the window, where a card under the cursor was pushed up over
+    // the pointer and took the clicks meant for the button.
+    NuvioPosterHoverTooltip(title = label, aboveControl = true) {
         Box(
             Modifier.size(40.dp).clip(RoundedCornerShape(50)).clickable(enabled = enabled, onClick = onClick),
             contentAlignment = Alignment.Center,

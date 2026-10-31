@@ -95,16 +95,30 @@ internal fun clampCornerPlacement(areaWidth: Dp, areaHeight: Dp, cardHeight: Dp,
 private val DockOpenWidth = 440.dp
 private val DockOpenHeight = 340.dp
 
-/** The dock's placement (an offset from bottom centre) pulled inside the area, with room for it to open upwards. */
+/** The folded notch's height, and the gap the host leaves between it and the window's bottom edge. */
+internal val DockNotchHeight = 40.dp
+internal val DockEdgeGap = 10.dp
+
+/**
+ * The dock's placement (an offset from bottom centre) pulled inside the area. The notch may go all the way to the
+ * top; there it opens downwards ([dockOpensDown]), so the room the open panel needs is on whichever side it opens to.
+ */
 internal fun clampDockPlacement(areaWidth: Dp, areaHeight: Dp, placement: MusicPlayerPlacement): MusicPlayerPlacement {
     val side = ((areaWidth - DockOpenWidth) / 2).coerceAtLeast(0.dp)
     val dx = if (areaWidth == Dp.Unspecified || areaWidth == Dp.Infinity) placement.dx else placement.dx.coerceIn(-side, side)
     val dy = when {
         placement.dy > 0.dp -> 0.dp
         areaHeight == Dp.Unspecified || areaHeight == Dp.Infinity -> placement.dy
-        else -> placement.dy.coerceAtLeast(-(areaHeight - DockOpenHeight - MusicBarBottomMargin).coerceAtLeast(0.dp))
+        else -> placement.dy.coerceAtLeast(-(areaHeight - DockNotchHeight - DockEdgeGap * 2).coerceAtLeast(0.dp))
     }
     return placement.copy(dx = dx, dy = dy)
+}
+
+/** Whether the notch's middle is in the top half of the area, where the open panel would not fit above it. */
+internal fun dockOpensDown(areaHeight: Dp, placement: MusicPlayerPlacement): Boolean {
+    if (areaHeight == Dp.Unspecified || areaHeight == Dp.Infinity) return false
+    val notchMiddleFromTop = areaHeight + placement.dy - DockEdgeGap - DockNotchHeight / 2
+    return notchMiddleFromTop < areaHeight / 2
 }
 
 /** A lift between the bottom edge (0) and the top of the area; unbounded while the area's height is unknown. */

@@ -20,5 +20,10 @@ expect fun NuvioPosterHoverTooltip(
     modifier: Modifier = Modifier,
     /** Optional dimmer second line under [title]; the card shows when either is non-blank. */
     subtitle: String = "",
+    /**
+     * Shows the card centred above the wrapped control instead of under the cursor. For controls at the bottom
+     * of the window, where the cursor-anchored card is pushed back up over the pointer and catches its clicks.
+     */
+    aboveControl: Boolean = false,
     content: @Composable () -> Unit,
 )

@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -301,8 +302,6 @@ fun MusicPlayerHost(
                 MusicVideoControlStrip(
                     state = state,
                     player = player,
-                    fullscreen = view == MusicVideoView.Fullscreen,
-                    onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Bar) },
                     onCollapse = { MusicPlayback.setVideoView(MusicVideoView.Bar) },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
@@ -311,14 +310,27 @@ fun MusicPlayerHost(
             // anywhere (a double-click puts it back) and still opens on hover.
             val dockPlacement by MusicPlayback.dockPlacement.collectAsStateWithLifecycle()
             val areaWidth = maxWidth
+            // In the top half the dock opens downwards. It stays anchored to the bottom like the rest of the host (which
+            // is only as tall as its content in this style: anchoring it to the host's top put it below the window),
+            // and its content is moved down by however much taller than the notch it is, so the notch's top edge stays
+            // put and the panel grows below it. Done in layout, so it follows the resize frame by frame.
+            val dockOpensDown = dockOpensDown(windowHeight, dockPlacement)
+            val notchPx = with(LocalDensity.current) { DockNotchHeight.roundToPx() }
             AnimatedVisibility(
                 visible = ((collapsed && !realVideo) || docked) && !hidden && !big && !nowPlayingOpen,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .offset(x = dockPlacement.dx, y = dockPlacement.dy)
+                    .padding(bottom = DockEdgeGap)
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        layout(placeable.width, placeable.height) {
+                            placeable.place(0, if (dockOpensDown) (placeable.height - notchPx).coerceAtLeast(0) else 0)
+                        }
+                    }
                     .musicPlayerDrag(MusicPlayback.dockPlacement) { clampDockPlacement(areaWidth, windowHeight, it) },
-                enter = if (reduced) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 2 },
-                exit = if (reduced) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 2 },
+                enter = if (reduced) EnterTransition.None else fadeIn(tween(220)) + slideInVertically(tween(260)) { if (dockOpensDown) -it / 2 else it / 2 },
+                exit = if (reduced) ExitTransition.None else fadeOut(tween(160)) + slideOutVertically(tween(200)) { if (dockOpensDown) -it / 2 else it / 2 },
             ) {
                 MusicDockNotch(
                     state = state,
@@ -330,7 +342,7 @@ fun MusicPlayerHost(
                         else MusicPlayback.nowPlayingOpen.value = !MusicPlayback.nowPlayingOpen.value
                     },
                     onExpandVideo = if (realVideo && !inline) ({ MusicPlayback.showVideo() }) else null,
-                    modifier = Modifier.padding(bottom = 10.dp),
+                    opensDown = dockOpensDown,
                 )
             }
         }

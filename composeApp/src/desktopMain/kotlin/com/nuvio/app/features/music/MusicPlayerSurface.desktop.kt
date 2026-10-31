@@ -173,10 +173,13 @@ actual fun MusicPlayerSurface(
             initMpvOptions = buildList {
                 add("volume=${volume.coerceIn(0, 100)}")
                 if (source.evenOutLoudness) add("af=$ALTERNATE_UPLOAD_LOUDNESS_FILTER")
+                // A deferred start plays from 0:00 until the jump; it must not be heard. Set on the new instance
+                // itself: attach swaps the native player on a worker thread, so a setMuted made right after it
+                // reached the outgoing player and the song was heard restarting.
+                if (deferStartMs > 0L) add("mute=yes")
             },
         )
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")
-        if (deferStartMs > 0L) controller.setMuted(true)
     }
 
     // A thumbnail fills its frame (cropped); a big view shows the whole picture.
@@ -220,7 +223,10 @@ actual fun MusicPlayerSurface(
         // A googlevideo stream can hang "reconnecting" with no error and no end of file, which held
         // the player on a frozen frame (or a spinner) for good. No progress for a while is treated as
         // a failed open, so the player tries the stream's fallback or moves on to the next track.
-        val stallWatchdog = TrailerStallWatchdog()
+        var stallWatchdog = TrailerStallWatchdog()
+        // When the deferred jump was made, so its landing (or not) can be logged.
+        var jumpedAt = 0L
+        var jumpLoggedAt = 0L
         while (true) {
             val snapshot = controller.snapshotOffUiThread()
             if (snapshot.isPlaying && snapshot.positionMs >= 150L) {
@@ -234,10 +240,31 @@ actual fun MusicPlayerSurface(
             if (snapshot.isLoading || snapshot.positionMs < FRESH_START_MS) freshStartSeen = true
             val ownPlayback = freshStartSeen && snapshot.isPlaying && snapshot.positionMs >= 150L &&
                 System.currentTimeMillis() - attachedAt >= MIN_JUMP_DELAY_MS
+            if (jumpedAt > 0L) {
+                val sinceJump = System.currentTimeMillis() - jumpedAt
+                // A keyframe seek lands a few seconds short of the target; a poll still reading 0:00 has not landed.
+                if (snapshot.isPlaying && snapshot.positionMs != deferStartMs && snapshot.positionMs > deferStartMs - JUMP_LANDING_SLACK_MS) {
+                    log.i { "load $loadId: jump landed at ${snapshot.positionMs}ms after ${sinceJump}ms" }
+                    jumpedAt = 0L
+                } else if (sinceJump - jumpLoggedAt >= JUMP_LOG_EVERY_MS) {
+                    jumpLoggedAt = sinceJump
+                    log.i {
+                        "load $loadId: jump pending ${sinceJump}ms pos=${snapshot.positionMs} " +
+                            "loading=${snapshot.isLoading} playing=${snapshot.isPlaying} buffered=${snapshot.bufferedPositionMs}"
+                    }
+                }
+            }
             if (pendingStartMs > 0L && ownPlayback) {
-                log.i { "load $loadId: playing, jumping to ${pendingStartMs}ms" }
+                log.i { "load $loadId: playing at ${snapshot.positionMs}ms, jumping to ${pendingStartMs}ms" }
                 controller.seekTo(pendingStartMs)
                 pendingStartMs = 0L
+                jumpedAt = System.currentTimeMillis()
+                jumpLoggedAt = 0L
+                // The jump is a fresh start on a new part of the stream (a new range request on both the video and
+                // the audio), so it gets the start-up allowance, not the ten seconds a playing stream gets before it
+                // counts as stalled; that cut a slow jump off and fell back to the HLS stream.
+                stallWatchdog = TrailerStallWatchdog()
+                readyReported = false
                 delay(350)
                 controller.setMuted(false)
             }
@@ -270,3 +297,7 @@ actual fun MusicPlayerSurface(
 /** A deferred start only jumps once its load was seen this near its own beginning, and no sooner than this after attaching. */
 private const val FRESH_START_MS = 1_000L
 private const val MIN_JUMP_DELAY_MS = 400L
+
+/** While a deferred jump has not landed, how often its state is logged. */
+private const val JUMP_LOG_EVERY_MS = 2_000L
+private const val JUMP_LANDING_SLACK_MS = 30_000L

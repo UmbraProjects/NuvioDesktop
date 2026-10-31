@@ -1,6 +1,8 @@
 package com.nuvio.app.features.music
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -64,13 +66,19 @@ import kotlinx.coroutines.delay
  * The minimised player: a small glass notch at the bottom of the window, so the rest of the app can
  * be used while the music plays. Hovering it (or giving it keyboard focus) opens it into a docked
  * panel with what is playing, the time, play / pause and skip, and the next four tracks. Clicking
- * the notch, or the panel's restore button, brings the full player back.
+ * the notch, or the panel's restore button, brings the full player back. Dragged into the top half
+ * of the window it opens downwards instead, the controls staying where the notch was.
  */
 
 /** How long the pointer may leave the panel before it folds back, so a brush past its edge does not shut it. */
 private const val FOLD_DELAY_MS = 350L
 
 private const val UP_NEXT_COUNT = 4
+
+private const val DOCK_RESIZE_MS = 170
+private const val DOCK_FADE_IN_MS = 120
+private const val DOCK_FADE_IN_DELAY_MS = 50
+private const val DOCK_FADE_OUT_MS = 70
 
 /** Left / Right on the dock's seek bar move this far. */
 private const val DOCK_NUDGE_MS = 5_000L
@@ -83,6 +91,8 @@ internal fun MusicDockNotch(
     modifier: Modifier = Modifier,
     /** Set while a real video plays: the open dock offers to show it. */
     onExpandVideo: (() -> Unit)? = null,
+    /** The notch sits in the top half: the panel grows down from it rather than up. */
+    opensDown: Boolean = false,
 ) {
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
@@ -108,12 +118,20 @@ internal fun MusicDockNotch(
             .hoverable(source)
             .focusable(interactionSource = source),
     ) {
+        // A short eased resize rather than the default spring, which took ~0.4s to settle and read as lag; the
+        // old content is gone before the box has moved much, and the new one fades in as it lands.
         AnimatedContent(
             targetState = open,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            transitionSpec = {
+                fadeIn(tween(DOCK_FADE_IN_MS, delayMillis = DOCK_FADE_IN_DELAY_MS)) togetherWith
+                    fadeOut(tween(DOCK_FADE_OUT_MS)) using
+                    SizeTransform(clip = true) { _, _ -> tween(DOCK_RESIZE_MS, easing = FastOutSlowInEasing) }
+            },
+            // Pinned to the notch's edge, so the panel unfolds away from it.
+            contentAlignment = if (opensDown) Alignment.TopCenter else Alignment.BottomCenter,
             label = "dockNotch",
         ) { expanded ->
-            if (expanded) DockPanel(state, player, onRestore, onExpandVideo) else Notch(state, onRestore)
+            if (expanded) DockPanel(state, player, onRestore, onExpandVideo, opensDown) else Notch(state, onRestore)
         }
     }
 }
@@ -152,92 +170,121 @@ private fun Notch(state: MusicPlayerState, onRestore: () -> Unit) {
 }
 
 /**
- * Open: what is coming up on top (the panel grows upwards from the notch, so the list sits above
- * it), then the track, the time and the controls at the bottom, where the notch was.
+ * Open: what is coming up, then the track, the time and the controls. The controls sit where the notch was, so
+ * the list is on top when the panel grows upwards and below them when it grows down from the top of the window.
  */
 @Composable
-private fun DockPanel(state: MusicPlayerState, player: MusicPlayer, onRestore: () -> Unit, onExpandVideo: (() -> Unit)?) {
+private fun DockPanel(
+    state: MusicPlayerState,
+    player: MusicPlayer,
+    onRestore: () -> Unit,
+    onExpandVideo: (() -> Unit)?,
+    opensDown: Boolean,
+) {
+    Column(Modifier.width(440.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (opensDown) {
+            DockNowPlaying(state, player, onRestore, onExpandVideo)
+            DockDivider()
+            DockUpNext(state, player)
+        } else {
+            DockUpNext(state, player)
+            DockDivider()
+            DockNowPlaying(state, player, onRestore, onExpandVideo)
+        }
+    }
+}
+
+@Composable
+private fun DockDivider() {
+    Box(Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(NuvioGlass.EdgeColor))
+}
+
+/** The next few tracks, unlabelled: in a panel this small the list speaks for itself. */
+@Composable
+private fun DockUpNext(state: MusicPlayerState, player: MusicPlayer) {
     val colors = MaterialTheme.nuvio.colors
     val upNext = remember(state.track, state.trackIndex, state.shuffled) { player.upNext(UP_NEXT_COUNT) }
-    Column(Modifier.width(440.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Up next", style = MaterialTheme.typography.labelMedium, color = colors.textMuted)
-        if (upNext.isEmpty()) {
-            Text(
-                if (state.hasNext) "The next album starts after this one" else "Nothing after this track",
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.textSecondary,
-            )
-        }
-        upNext.forEach { track ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    track.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    formatMusicTime(track.durationSeconds * 1000L),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.textMuted,
-                    maxLines = 1,
-                )
-            }
-        }
-        Box(Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(NuvioGlass.EdgeColor))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Cover(state.coverUrl, size = 56)
-            Column(Modifier.weight(1f)) {
-                Text(
-                    state.track?.title.orEmpty().ifBlank { "Now playing" },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    subtitle(state),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "${formatMusicTime(state.positionMs)} / ${formatMusicTime(state.durationMs)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.textMuted,
-                    maxLines = 1,
-                )
-            }
-            DockButton(
-                icon = if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                description = if (state.playWhenReady) "Pause" else "Play",
-                filled = true,
-            ) { player.togglePlayback() }
-            DockButton(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
-            onExpandVideo?.let { DockButton(Icons.Rounded.OpenInFull, "Expand video", onClick = it) }
-            state.track?.let { track ->
-                DockButton(Icons.Rounded.PlaylistAdd, "Add to playlist") {
-                    com.nuvio.app.features.music.playlist.PlaylistPicker.request(
-                        listOf(with(com.nuvio.app.features.music.playlist.MusicPlaylistTracks) { track.forPlaylist(state.album) }),
-                    )
-                }
-            }
-            DockButton(Icons.Rounded.KeyboardArrowUp, "Show the player") { onRestore() }
-        }
-        // The progress under the header: the bar's own seek bar, so a click, drag or Left/Right moves the song.
-        SeekBar(
-            fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
-            onSeek = { fraction -> player.seekTo((fraction * state.durationMs).toLong()) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = state.durationMs > 0L,
-            onNudge = { direction -> player.seekTo((state.positionMs + direction * DOCK_NUDGE_MS).coerceIn(0L, state.durationMs)) },
+    if (upNext.isEmpty()) {
+        Text(
+            if (state.hasNext) "The next album starts after this one" else "Nothing after this track",
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textSecondary,
         )
     }
+    upNext.forEach { track ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                track.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                formatMusicTime(track.durationSeconds * 1000L),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** The track, the time and the transport, with the seek bar under them. */
+@Composable
+private fun DockNowPlaying(state: MusicPlayerState, player: MusicPlayer, onRestore: () -> Unit, onExpandVideo: (() -> Unit)?) {
+    val colors = MaterialTheme.nuvio.colors
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Cover(state.coverUrl, size = 56)
+        Column(Modifier.weight(1f)) {
+            Text(
+                state.track?.title.orEmpty().ifBlank { "Now playing" },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                subtitle(state),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "${formatMusicTime(state.positionMs)} / ${formatMusicTime(state.durationMs)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+        }
+        DockButton(
+            icon = if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+            description = if (state.playWhenReady) "Pause" else "Play",
+            filled = true,
+        ) { player.togglePlayback() }
+        DockButton(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
+        onExpandVideo?.let { DockButton(Icons.Rounded.OpenInFull, "Expand video", onClick = it) }
+        state.track?.let { track ->
+            DockButton(Icons.Rounded.PlaylistAdd, "Add to playlist") {
+                com.nuvio.app.features.music.playlist.PlaylistPicker.request(
+                    listOf(with(com.nuvio.app.features.music.playlist.MusicPlaylistTracks) { track.forPlaylist(state.album) }),
+                )
+            }
+        }
+        DockButton(Icons.Rounded.KeyboardArrowUp, "Show the player") { onRestore() }
+    }
+    // The progress under the header: the bar's own seek bar, so a click, drag or Left/Right moves the song.
+    SeekBar(
+        fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
+        onSeek = { fraction -> player.seekTo((fraction * state.durationMs).toLong()) },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = state.durationMs > 0L,
+        onNudge = { direction -> player.seekTo((state.positionMs + direction * DOCK_NUDGE_MS).coerceIn(0L, state.durationMs)) },
+    )
 }
 
 @Composable
