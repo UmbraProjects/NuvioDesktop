@@ -4,6 +4,11 @@ import com.nuvio.app.features.preroll.StreamLoudnessBook
 import com.nuvio.app.features.preroll.streamUrls
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.features.music.MusicRateLimit
+import com.nuvio.app.features.music.mayAskYouTube
+import com.nuvio.app.features.music.playerClientsToTry
+import com.nuvio.app.features.music.youTubeCaller
+import com.nuvio.app.features.music.youTubeCallerLabel
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -271,6 +276,12 @@ class InAppYouTubeExtractor internal constructor(
 
     private suspend fun extract(youtubeUrl: String, singleUrl: Boolean): TrailerResolution = withContext(Dispatchers.Default) {
         if (youtubeUrl.isBlank()) return@withContext TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+        // fork:youtube-pause - while YouTube is refusing this address, only a lookup someone waits on goes out.
+        val caller = youTubeCaller()
+        if (!mayAskYouTube(paused = MusicRateLimit.isBlocked(), urgent = caller?.urgent == true)) {
+            log.d { "[${caller?.label ?: "other"}] skipped $youtubeUrl: paused for ${MusicRateLimit.secondsLeft()}s after a refusal" }
+            return@withContext TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+        }
 
         val hadCachedConfig = configMutex.withLock { cachedConfig != null }
         val first = attemptExtraction(youtubeUrl, forceRefreshConfig = false, singleUrl = singleUrl)
@@ -281,7 +292,7 @@ class InAppYouTubeExtractor internal constructor(
         // already fetched a config, and when YouTube gave a definitive reason a new session
         // cannot change, so the common failure paths still cost a single pass.
         val anonymous =
-            if (first is TrailerResolution.Available || !hadCachedConfig || !first.warrantsFreshConfig()) {
+            if (first is TrailerResolution.Available || !hadCachedConfig || !first.warrantsFreshConfig() || MusicRateLimit.isBlocked()) {
                 first
             } else {
                 log.i { "Retrying extraction with a fresh watch config" }
@@ -293,7 +304,7 @@ class InAppYouTubeExtractor internal constructor(
         // default so the account's cookies only ever leave the machine for videos that need them.
         val needsAccount = anonymous is TrailerResolution.Unavailable &&
             anonymous.reason == TrailerUnavailableReason.AGE_RESTRICTED
-        if (needsAccount && accountHeaders(YOUTUBE_ORIGIN).isNotEmpty()) {
+        if (needsAccount && !MusicRateLimit.isBlocked() && accountHeaders(YOUTUBE_ORIGIN).isNotEmpty()) {
             log.i { "Retrying login-gated video as the signed-in account" }
             return@withContext attemptExtraction(youtubeUrl, forceRefreshConfig = false, singleUrl = singleUrl, useAccount = true)
         }
@@ -321,7 +332,7 @@ class InAppYouTubeExtractor internal constructor(
                 extractPlaybackSourceInternal(youtubeUrl, forceRefreshConfig, singleUrl, useAccount)
             }
         }.onFailure {
-            log.w { "Trailer extractor failed for $youtubeUrl: ${it.message}" }
+            log.w { "[${youTubeCallerLabel()}] extractor failed for $youtubeUrl: ${it.message}" }
         }.getOrNull() ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
 
     private fun TrailerResolution.warrantsFreshConfig(): Boolean =
@@ -441,7 +452,14 @@ class InAppYouTubeExtractor internal constructor(
         // fork:loudness - the video's overall loudness from the player config, for a stream with no per-format figure.
         var playerLoudnessDb: Double? = null
 
-        for (client in if (useAccount) ACCOUNT_CLIENTS else CLIENTS) {
+        val callerLabel = youTubeCallerLabel()
+        val clients = if (useAccount) ACCOUNT_CLIENTS else CLIENTS
+        for ((clientIndex, client) in clients.withIndex()) {
+            // fork:youtube-pause - once YouTube is refusing this address the remaining clients would only lengthen the block.
+            if (clientIndex >= playerClientsToTry(MusicRateLimit.isBlocked(), clients.size)) {
+                log.i { "[$callerLabel] YouTube is refusing requests; not trying player client ${client.key} for $videoId" }
+                break
+            }
             runCatching {
                 val playerResponse = fetchPlayerResponse(
                     apiKey = apiKey,
@@ -562,13 +580,13 @@ class InAppYouTubeExtractor internal constructor(
                 }
             }.onFailure { error ->
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                log.i { "Player client ${client.key} failed for $videoId (account=$useAccount): ${error.message}" }
+                log.i { "[$callerLabel] player client ${client.key} failed for $videoId (account=$useAccount): ${error.message}" }
             }
         }
 
         if (manifestUrls.isEmpty() && progressive.isEmpty() && adaptiveVideo.isEmpty() && adaptiveAudio.isEmpty()) {
             val reason = classifyUnavailability(lastPlayabilityStatus)
-            log.i { "No streams for $videoId: playabilityStatus=$lastPlayabilityStatus reason=$reason" }
+            log.i { "[$callerLabel] no streams for $videoId: playabilityStatus=$lastPlayabilityStatus reason=$reason" }
             return TrailerResolution.Unavailable(reason)
         }
 
@@ -732,6 +750,7 @@ class InAppYouTubeExtractor internal constructor(
         }
 
         if (!response.ok) {
+            MusicRateLimit.noteRefusal(response.status, response.body) // fork:youtube-pause
             val preview = response.body.take(200)
             throw IllegalStateException("player API ${client.key} failed (${response.status}): $preview")
         }

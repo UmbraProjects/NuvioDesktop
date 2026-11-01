@@ -28,4 +28,18 @@ class MusicRateLimitTest {
         assertFalse(MusicRateLimit.isBlocked(now = farFuture))
         assertEquals(0, MusicRateLimit.secondsLeft(now = farFuture))
     }
+
+    @Test
+    fun aPausedYouTubeOnlyAnswersALookupSomeoneWaitsOn() {
+        assertTrue(mayAskYouTube(paused = false, urgent = false))
+        assertFalse(mayAskYouTube(paused = true, urgent = false))
+        assertTrue(mayAskYouTube(paused = true, urgent = true))
+    }
+
+    @Test
+    fun aPausedLookupTriesOnlyTheFirstPlayerClient() {
+        assertEquals(6, playerClientsToTry(paused = false, total = 6))
+        assertEquals(1, playerClientsToTry(paused = true, total = 6))
+        assertEquals(0, playerClientsToTry(paused = true, total = 0))
+    }
 }

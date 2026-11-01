@@ -92,7 +92,11 @@ object HeroTrailerMetadataService {
             if (sharpest) {
                 SharpestTrailerResolver.resolve(meta?.name, meta?.releaseInfo, ranked.map { it.key })
             } else {
-                candidate?.let { TrailerPlaybackResolver.resolveFromYouTubeUrl(it.youtubePlaybackUrl()).sourceOrNull() }
+                candidate?.let {
+                    kotlinx.coroutines.withContext(com.nuvio.app.features.music.YouTubeCaller("hero trailer")) {
+                        TrailerPlaybackResolver.resolveFromYouTubeUrl(it.youtubePlaybackUrl()).sourceOrNull()
+                    }
+                }
             }
                 .also { log.i { "resolve $type/$id playbackSource=${it != null} height=${it?.heightPx}" } }
         } catch (error: CancellationException) {
