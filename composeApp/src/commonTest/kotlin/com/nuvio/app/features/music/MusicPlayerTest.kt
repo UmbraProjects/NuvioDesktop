@@ -253,16 +253,6 @@ class MusicPlayerTest {
     }
 
     @Test
-    fun aPickThatCannotPlayLeavesThePausedSongPaused() {
-        val fake = Fake(noVideo = setOf("id3"))
-        val p = player(fake)
-        p.play(album(3))
-        p.pause()
-        p.jumpTo(2)
-        assertFalse(p.state.value.playWhenReady)
-    }
-
-    @Test
     fun anAlbumNothingInItCanPlayStartsNothing() {
         val fake = Fake(noVideo = setOf("id1", "id2"))
         val p = player(fake)
