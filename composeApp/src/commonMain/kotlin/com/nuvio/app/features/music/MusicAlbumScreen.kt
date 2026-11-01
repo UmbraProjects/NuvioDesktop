@@ -139,7 +139,11 @@ fun MusicAlbumScreen(
                 CircularProgressIndicator(color = colors.accent)
             }
             MusicLoad.Failed -> MusicMessage(
-                text = "Couldn't load this album.",
+                text = if (MusicRateLimit.isBlocked()) {
+                    "YouTube Music is limiting requests right now. Try again in about ${MusicRateLimit.secondsLeft().coerceAtLeast(15)} seconds."
+                } else {
+                    "Couldn't load this album."
+                },
                 actionLabel = "Try again",
                 onAction = { attempt++ },
             )

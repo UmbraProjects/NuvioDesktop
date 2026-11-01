@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.features.music.booklet.bookletNorm
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -464,5 +465,48 @@ internal fun parseWikipediaSummary(body: String): String? {
     if (root.text("type") == "disambiguation") return null
     return root.text("extract")?.takeIf { it.length > 40 }
 }
+
+/**
+ * fork:booklet - the plain-text extract of the English Wikipedia page for an album, from a `generator=search` answer
+ * (`formatversion=2`), or null when no page looks like it. The page title must hold the album's name (a page that is a
+ * song, single, film or series of that name is passed over) and its text must name the artist, so a band or book of the
+ * same name is not taken for the album.
+ */
+internal data class WikipediaPick(val title: String, val extract: String)
+
+private val RELEASE_WORDS = Regex("""\b(album|ep|mixtape|soundtrack|compilation|lp)\b""")
+
+/**
+ * The page in a search answer that is the album: titled with the album's name, not a song, film or band of that name,
+ * opening by calling itself an album (or EP, mixtape...) and naming [artist]. Best-ranked first.
+ */
+internal fun pickWikipediaAlbum(body: String, album: String, artist: String): WikipediaPick? {
+    val pages = parse(body).obj()?.get("query").obj()?.get("pages").arr()?.mapNotNull { it.obj() } ?: return null
+    val wantedAlbum = bookletNorm(album.substringBefore(" (").substringBefore(" - "))
+    val wantedArtist = bookletNorm(artist)
+    if (wantedAlbum.isEmpty() || wantedArtist.isEmpty()) return null
+    val notAnAlbum = listOf(" song", " single", " film", " tv series", " novel", " band")
+    return pages
+        .sortedBy { it.int("index") ?: Int.MAX_VALUE }
+        .firstNotNullOfOrNull { page ->
+            val rawTitle = page.text("title").orEmpty()
+            val title = bookletNorm(rawTitle)
+            val extract = page.text("extract").orEmpty()
+            val ok = title.contains(wantedAlbum) &&
+                notAnAlbum.none { title.endsWith(it) } &&
+                extract.length > 200 &&
+                RELEASE_WORDS.containsMatchIn(bookletNorm(extract.take(400))) &&
+                bookletNorm(extract).contains(wantedArtist)
+            if (ok) WikipediaPick(rawTitle, extract.trim()) else null
+        }
+}
+
+/** The text of the album page in a search answer (see [pickWikipediaAlbum]), or null. */
+internal fun parseWikipediaAlbumSearch(body: String, album: String, artist: String): String? =
+    pickWikipediaAlbum(body, album, artist)?.extract
+
+/** The extract of the one page in a `titles=` answer, or null when it has none. */
+internal fun parseWikipediaPageExtract(body: String): String? =
+    parse(body).obj()?.get("query").obj()?.get("pages").arr()?.firstNotNullOfOrNull { it.obj()?.text("extract") }?.trim()?.takeIf { it.isNotEmpty() }
 
 // endregion

@@ -30,7 +30,7 @@ class AddonAlbumIdTest {
     fun anythingElseIsNotAnAddonId() {
         assertNull(parseAddonAlbumId("MPREb_abc"))
         assertNull(parseAddonAlbumId("addon:a:b"))
-        assertNull(parseAddonAlbumId("addon:a:b:c:d"))
+        assertNull(parseAddonAlbumId("addon:a:b:c:d:e"))
         assertNull(parseAddonAlbumId("addon:a::c"))
         assertNull(parseAddonAlbumId("addon:a:b:%zz"))
         assertNull(parseAddonAlbumId("addon:a:b:%4"))

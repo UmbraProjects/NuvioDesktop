@@ -132,6 +132,19 @@ internal object NativePlayerBridge {
      */
     external fun decodeSpeechSpot(handle: Long, startSeconds: Double, durationSeconds: Double, outputPath: String): Int
 
+    /**
+     * [decodeSpeechSpot] with a chosen format: raw float32 PCM at [sampleRate] Hz, interleaved, [channelCount] 1 or 2.
+     * Not present in the macOS bridge: calling it there throws UnsatisfiedLinkError (the loudness measurement catches it).
+     */
+    external fun decodeAudioSpot(
+        handle: Long,
+        startSeconds: Double,
+        durationSeconds: Double,
+        sampleRate: Int,
+        channelCount: Int,
+        outputPath: String,
+    ): Int
+
     /** The playing source's size over its duration; negative when unknown. */
     external fun speechSourceBytesPerSecond(handle: Long): Double
 
@@ -158,6 +171,20 @@ internal object NativePlayerBridge {
         fontName: String,
     )
     external fun setMpvProperty(handle: Long, key: String, value: String)
+
+    /** fork:music-stage - cut the video window to rounded corners of [radiusPx] pixels; 0 makes it square again. */
+    external fun setCornerRadius(handle: Long, radiusPx: Int)
+
+    /**
+     * fork:music-stage - the glass bezel over the Now Playing video: a click-through window of [width] x [height] pixels showing
+     * [argb] (premultiplied ARGB) with the video host's rectangle [marginPx] in from each edge. Process-wide, and every call
+     * is made on the AWT event thread. A library without these leaves the video as it was.
+     */
+    external fun bezelShow(hostViewPtr: Long, argb: IntArray, width: Int, height: Int, marginPx: Int)
+
+    /** Moves the bezel to follow the host window (the app window moved). */
+    external fun bezelMove(hostViewPtr: Long)
+    external fun bezelHide()
     external fun toggleStatsOverlay(handle: Long)
     external fun forceVideoRedraw(handle: Long)
 

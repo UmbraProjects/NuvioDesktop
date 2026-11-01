@@ -38,10 +38,13 @@ object MusicMetadataClient {
     private val cache = HashMap<String, Entry>()
 
     @Suppress("UNCHECKED_CAST")
-    private suspend fun <T> cached(key: String, load: suspend () -> T?): T? {
+    private suspend fun <T> cached(key: String, keepMiss: () -> Boolean = { true }, load: suspend () -> T?): T? {
         val now = LibraryClock.nowEpochMs()
         mutex.withLock { cache[key]?.takeIf { it.expiresAtMs > now } }?.let { return it.value as T? }
         val value = load()
+        // A miss is remembered so a page that is not there is not asked for again and again; but a request that never got an answer
+        // is not a miss, and is not kept (it would make "Try again" repeat the failure for three minutes).
+        if (value == null && !keepMiss()) return null
         mutex.withLock {
             cache[key] = Entry(value, LibraryClock.nowEpochMs() + if (value == null) MISSING_TTL_MS else FOUND_TTL_MS)
         }
@@ -139,9 +142,11 @@ object MusicMetadataClient {
     }
 
     suspend fun album(browseId: String): MusicAlbum? {
-        if (!browseId.startsWith("MPREb_")) return null
-        return cached("album:$browseId") {
+        if (!browseId.startsWith("MPREb_")) return null.also { log.w { "album $browseId: not a YouTube Music album id" } }
+        var unanswered = false
+        return cached("album:$browseId", keepMiss = { !unanswered }) {
             val body = TrailerPlaybackResolver.musicRequest("browse", mapOf("browseId" to browseId))
+            if (body == null) { unanswered = true; log.w { "album $browseId: YouTube Music gave no answer" } }
             body?.let { parseAlbum(it, browseId) }
                 .also { if (body != null && it == null) log.w { "album $browseId: response did not parse" } }
         }
@@ -149,8 +154,10 @@ object MusicMetadataClient {
 
     suspend fun artist(browseId: String): MusicArtist? {
         if (!browseId.startsWith("UC")) return null
-        return cached("artist:$browseId") {
+        var unanswered = false
+        return cached("artist:$browseId", keepMiss = { !unanswered }) {
             val body = TrailerPlaybackResolver.musicRequest("browse", mapOf("browseId" to browseId))
+            if (body == null) { unanswered = true; log.w { "artist $browseId: YouTube Music gave no answer" } }
             body?.let { parseArtist(it, browseId) }
                 .also { if (body != null && it == null) log.w { "artist $browseId: response did not parse" } }
         }

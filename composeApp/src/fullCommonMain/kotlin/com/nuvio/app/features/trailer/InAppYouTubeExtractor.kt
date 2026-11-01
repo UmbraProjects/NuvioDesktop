@@ -1,7 +1,14 @@
 package com.nuvio.app.features.trailer
 
+import com.nuvio.app.features.preroll.StreamLoudnessBook
+import com.nuvio.app.features.preroll.streamUrls
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.features.music.MusicRateLimit
+import com.nuvio.app.features.music.mayAskYouTube
+import com.nuvio.app.features.music.playerClientsToTry
+import com.nuvio.app.features.music.youTubeCaller
+import com.nuvio.app.features.music.youTubeCallerLabel
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -79,6 +86,8 @@ internal data class StreamCandidate(
      * `audioTrack` (a single-language video, where every audio format is the original).
      */
     val isOriginalAudio: Boolean? = null,
+    /** Audio only: YouTube's `loudnessDb` for this format (how far above its reference it is), when it sent one. */
+    val loudnessDb: Double? = null,
 )
 
 private data class ManifestBestVariant(
@@ -267,6 +276,12 @@ class InAppYouTubeExtractor internal constructor(
 
     private suspend fun extract(youtubeUrl: String, singleUrl: Boolean): TrailerResolution = withContext(Dispatchers.Default) {
         if (youtubeUrl.isBlank()) return@withContext TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+        // fork:youtube-pause - while YouTube is refusing this address, only a lookup someone waits on goes out.
+        val caller = youTubeCaller()
+        if (!mayAskYouTube(paused = MusicRateLimit.isBlocked(), urgent = caller?.urgent == true)) {
+            log.d { "[${caller?.label ?: "other"}] skipped $youtubeUrl: paused for ${MusicRateLimit.secondsLeft()}s after a refusal" }
+            return@withContext TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+        }
 
         val hadCachedConfig = configMutex.withLock { cachedConfig != null }
         val first = attemptExtraction(youtubeUrl, forceRefreshConfig = false, singleUrl = singleUrl)
@@ -277,7 +292,7 @@ class InAppYouTubeExtractor internal constructor(
         // already fetched a config, and when YouTube gave a definitive reason a new session
         // cannot change, so the common failure paths still cost a single pass.
         val anonymous =
-            if (first is TrailerResolution.Available || !hadCachedConfig || !first.warrantsFreshConfig()) {
+            if (first is TrailerResolution.Available || !hadCachedConfig || !first.warrantsFreshConfig() || MusicRateLimit.isBlocked()) {
                 first
             } else {
                 log.i { "Retrying extraction with a fresh watch config" }
@@ -289,7 +304,7 @@ class InAppYouTubeExtractor internal constructor(
         // default so the account's cookies only ever leave the machine for videos that need them.
         val needsAccount = anonymous is TrailerResolution.Unavailable &&
             anonymous.reason == TrailerUnavailableReason.AGE_RESTRICTED
-        if (needsAccount && accountHeaders(YOUTUBE_ORIGIN).isNotEmpty()) {
+        if (needsAccount && !MusicRateLimit.isBlocked() && accountHeaders(YOUTUBE_ORIGIN).isNotEmpty()) {
             log.i { "Retrying login-gated video as the signed-in account" }
             return@withContext attemptExtraction(youtubeUrl, forceRefreshConfig = false, singleUrl = singleUrl, useAccount = true)
         }
@@ -317,7 +332,7 @@ class InAppYouTubeExtractor internal constructor(
                 extractPlaybackSourceInternal(youtubeUrl, forceRefreshConfig, singleUrl, useAccount)
             }
         }.onFailure {
-            log.w { "Trailer extractor failed for $youtubeUrl: ${it.message}" }
+            log.w { "[${youTubeCallerLabel()}] extractor failed for $youtubeUrl: ${it.message}" }
         }.getOrNull() ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
 
     private fun TrailerResolution.warrantsFreshConfig(): Boolean =
@@ -434,8 +449,17 @@ class InAppYouTubeExtractor internal constructor(
         // YouTube's own explanation (region block, age gate, removed video, ...), read from
         // whichever client responded last.
         var lastPlayabilityStatus: JsonObject? = null
+        // fork:loudness - the video's overall loudness from the player config, for a stream with no per-format figure.
+        var playerLoudnessDb: Double? = null
 
-        for (client in if (useAccount) ACCOUNT_CLIENTS else CLIENTS) {
+        val callerLabel = youTubeCallerLabel()
+        val clients = if (useAccount) ACCOUNT_CLIENTS else CLIENTS
+        for ((clientIndex, client) in clients.withIndex()) {
+            // fork:youtube-pause - once YouTube is refusing this address the remaining clients would only lengthen the block.
+            if (clientIndex >= playerClientsToTry(MusicRateLimit.isBlocked(), clients.size)) {
+                log.i { "[$callerLabel] YouTube is refusing requests; not trying player client ${client.key} for $videoId" }
+                break
+            }
             runCatching {
                 val playerResponse = fetchPlayerResponse(
                     apiKey = apiKey,
@@ -457,6 +481,11 @@ class InAppYouTubeExtractor internal constructor(
                     lastPlayabilityStatus = playerResponse.objectValue("playabilityStatus")
                         ?: lastPlayabilityStatus
                     return@runCatching
+                }
+                if (playerLoudnessDb == null) {
+                    playerLoudnessDb = playerResponse.objectValue("playerConfig")
+                        ?.objectValue("audioConfig")
+                        ?.numberValue("loudnessDb")
                 }
                 val hlsManifestUrl = streamingData.stringValue("hlsManifestUrl")
                 if (!hlsManifestUrl.isNullOrBlank()) {
@@ -545,18 +574,19 @@ class InAppYouTubeExtractor internal constructor(
                             bitrate = bitrate,
                             ext = if (mimeType.contains("webm")) "webm" else "m4a",
                             isOriginalAudio = format.isOriginalAudioTrack(url),
+                            loudnessDb = format.numberValue("loudnessDb"),
                         )
                     }
                 }
             }.onFailure { error ->
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                log.i { "Player client ${client.key} failed for $videoId (account=$useAccount): ${error.message}" }
+                log.i { "[$callerLabel] player client ${client.key} failed for $videoId (account=$useAccount): ${error.message}" }
             }
         }
 
         if (manifestUrls.isEmpty() && progressive.isEmpty() && adaptiveVideo.isEmpty() && adaptiveAudio.isEmpty()) {
             val reason = classifyUnavailability(lastPlayabilityStatus)
-            log.i { "No streams for $videoId: playabilityStatus=$lastPlayabilityStatus reason=$reason" }
+            log.i { "[$callerLabel] no streams for $videoId: playabilityStatus=$lastPlayabilityStatus reason=$reason" }
             return TrailerResolution.Unavailable(reason)
         }
 
@@ -589,8 +619,11 @@ class InAppYouTubeExtractor internal constructor(
             // audio as a rendition only the master links.
             val single = bestManifest?.manifestUrl?.takeIf { it.isNotBlank() } ?: bestProgressive?.url
             log.i { "Selected single-url stream manifest=${bestManifest != null} progressive=${bestProgressive?.height ?: 0}p" }
-            return single?.let { TrailerResolution.Available(TrailerPlaybackSource(videoUrl = it)) }
-                ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+            return single?.let {
+                val singleSource = TrailerPlaybackSource(videoUrl = it)
+                StreamLoudnessBook.record(singleSource.streamUrls(), playerLoudnessDb)
+                TrailerResolution.Available(singleSource)
+            } ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
         }
         val bestVideo = pickBestVideoForClient(
             items = adaptiveVideo,
@@ -631,7 +664,12 @@ class InAppYouTubeExtractor internal constructor(
         val sharpest = dimensions.maxOfOrNull { (w, h) -> if (w > 0) minOf(w, h) else h } ?: 0
         val portrait = dimensions.any { (w, h) -> w in 1 until h }
         val reliable = bestVideo?.client == PREFERRED_SEPARATE_CLIENT || bestManifest?.client == PREFERRED_SEPARATE_CLIENT
-        return source?.let { TrailerResolution.Available(it.copy(heightPx = sharpest, reliable = reliable, portrait = portrait)) }
+        return source?.let {
+            val finished = it.copy(heightPx = sharpest, reliable = reliable, portrait = portrait)
+            // fork:loudness - what YouTube says the audio's loudness is, kept for the player to plan its gain from.
+            StreamLoudnessBook.record(finished.streamUrls(), bestAudio?.loudnessDb ?: playerLoudnessDb)
+            TrailerResolution.Available(finished)
+        }
             ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
     }
 
@@ -712,6 +750,7 @@ class InAppYouTubeExtractor internal constructor(
         }
 
         if (!response.ok) {
+            MusicRateLimit.noteRefusal(response.status, response.body) // fork:youtube-pause
             val preview = response.body.take(200)
             throw IllegalStateException("player API ${client.key} failed (${response.status}): $preview")
         }

@@ -26,6 +26,10 @@ internal data class StoredLookup(
     val albumTitle: String = "",
     /** Per track of our album, in order: the addon's track id, or null when it has none. */
     val trackIds: List<String?> = emptyList(),
+    /** The addon that has the album ([nebulaAddonKey]); null in an entry kept before there were several addons (the first one). */
+    val addon: String? = null,
+    /** For a "not found": the addons that were asked, as their keys joined with ','. A different set of links asks again. */
+    val asked: String = "",
 )
 
 @Serializable
@@ -47,6 +51,14 @@ internal fun StoredLookup.isFresh(nowMs: Long): Boolean {
     if (age < 0) return false // a clock that went backwards: ask again rather than trust it
     return age < if (albumId == null) NEBULA_NONE_TTL_MS else NEBULA_FOUND_TTL_MS
 }
+
+/**
+ * True while this entry still fits the links that are set now: a match needs the addon that had it to still be set, and a
+ * "not found" is only believed for the same set of addons (a newly added one has not been asked).
+ */
+internal fun StoredLookup.fitsAddons(addons: List<NebulaAddon>): Boolean =
+    if (albumId == null) asked == addons.joinToString(",") { it.key }
+    else addon == null || addons.any { it.key == addon }
 
 internal fun NebulaLookupBook.withLookup(key: String, entry: StoredLookup): NebulaLookupBook {
     val next = lookups + (key to entry)

@@ -51,6 +51,12 @@ private val innerTubeLog = Logger.withTag(TRAILER_EXTRACTOR_TAG)
 internal suspend fun InAppYouTubeExtractor.searchVideos(query: String): List<YouTubeSearchHit> =
     withContext(Dispatchers.Default) {
         runCatching {
+            // fork:youtube-pause - a search is only worth sending while YouTube is answering us, or when someone waits on it.
+            val caller = com.nuvio.app.features.music.youTubeCaller()
+            if (!com.nuvio.app.features.music.mayAskYouTube(com.nuvio.app.features.music.MusicRateLimit.isBlocked(), caller?.urgent == true)) {
+                innerTubeLog.d { "[${caller?.label ?: "other"}] YouTube search \"$query\" skipped: paused after a refusal" }
+                return@runCatching emptyList<YouTubeSearchHit>()
+            }
             withTimeout(INNERTUBE_TIMEOUT_MS) {
                 val session = innerTubeSession()
                 val headers = buildMap {
@@ -78,6 +84,7 @@ internal suspend fun InAppYouTubeExtractor.searchVideos(query: String): List<You
                     timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
                 )
                 if (!response.ok) {
+                    com.nuvio.app.features.music.MusicRateLimit.noteRefusal(response.status, response.body)
                     innerTubeLog.w { "YouTube search failed (${response.status}) for \"$query\": ${response.body.take(160)}" }
                     return@withTimeout emptyList()
                 }
@@ -97,6 +104,9 @@ internal suspend fun InAppYouTubeExtractor.searchVideos(query: String): List<You
 internal suspend fun InAppYouTubeExtractor.musicRequest(endpoint: String, params: Map<String, Any?>): String? =
     withContext(Dispatchers.Default) {
         runCatching {
+            if (com.nuvio.app.features.music.MusicRateLimit.isBlocked()) {
+                return@runCatching null.also { innerTubeLog.d { "YouTube Music $endpoint skipped: paused after a refusal" } }
+            }
             withTimeout(INNERTUBE_TIMEOUT_MS) {
                 val session = innerTubeSession()
                 val headers = buildMap {
@@ -122,6 +132,9 @@ internal suspend fun InAppYouTubeExtractor.musicRequest(endpoint: String, params
                 )
                 if (!response.ok) {
                     innerTubeLog.w { "YouTube Music $endpoint failed (${response.status}): ${response.body.take(160)}" }
+                    if (com.nuvio.app.features.music.MusicRateLimit.noteRefusal(response.status, response.body)) {
+                        innerTubeLog.w { "YouTube Music is limiting requests: pausing them for a short while" }
+                    }
                     return@withTimeout null
                 }
                 response.body

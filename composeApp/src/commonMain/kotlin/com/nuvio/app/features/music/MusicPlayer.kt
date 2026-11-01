@@ -158,10 +158,25 @@ class MusicPlayer(
     ) {
         launchRequest {
             val requested = trackIndex.coerceIn(0, album.tracks.size - 1)
-            val fresh = MusicQueue(album, mode, shuffled, seed, requested)
-            _state.update { it.copy(isLoading = true, playWhenReady = true, notice = null) }
-            val found = fresh.jumpTo(fresh.currentIndex ?: 0) { track -> resolve(track, album, fresh.mode) }
+            var fresh = MusicQueue(album, mode, shuffled, seed, requested)
+            // fork:player - play starts with the new track (see startOnShow), not now: the old one is still on the surface.
+            startOnShow = true
+            _state.update { it.copy(isLoading = true, notice = null) }
+            var found = fresh.jumpTo(fresh.currentIndex ?: 0) { track -> resolve(track, album, fresh.mode) }
+            var fellBackToAudio = false
+            if (found == null && mode == MusicPlayMode.Video) {
+                // fork:player - nothing opened as a video (YouTube refusing, or no video for any track): play the album as audio
+                // rather than leaving the old song going as if Play did nothing. The mode carried over from the old song, so the
+                // person never chose video for this album; it only played the old one.
+                val audio = MusicQueue(album, MusicPlayMode.Audio, shuffled, seed, requested)
+                found = audio.jumpTo(audio.currentIndex ?: 0) { track -> resolve(track, album, MusicPlayMode.Audio) }
+                if (found != null) {
+                    fresh = audio
+                    fellBackToAudio = true
+                }
+            }
             if (found == null) {
+                startOnShow = false
                 // Nothing in the album opened. Leave whatever was playing before alone if it still is.
                 _state.update {
                     if (queue == null) MusicPlayerState(volume = it.volume, notice = "Couldn't play this album")
@@ -171,7 +186,10 @@ class MusicPlayer(
             }
             queue = fresh
             val start = if (found.index == requested) startPositionMs.coerceAtLeast(0L) else 0L
-            show(fresh, found, startPositionMs = start, skipped = found.skipped.size)
+            show(
+                fresh, found, startPositionMs = start, skipped = found.skipped.size,
+                notice = if (fellBackToAudio) "No music video would open, playing the audio" else null,
+            )
         }
     }
 
@@ -220,10 +238,12 @@ class MusicPlayer(
     fun jumpTo(trackIndex: Int) {
         val q = queue ?: return
         launchRequest {
-            _state.update { it.copy(isLoading = true, playWhenReady = true) }
+            startOnShow = true
+            _state.update { it.copy(isLoading = true) }
             val album = q.album
             val found = q.jumpTo(trackIndex) { track -> resolve(track, album, q.mode) }
             if (found == null) {
+                startOnShow = false
                 _state.update { it.copy(isLoading = false, notice = "Couldn't play that track") }
                 return@launchRequest
             }
@@ -345,12 +365,14 @@ class MusicPlayer(
         val at = following.indexOfFirst { album -> album.tracks.any { it.videoId == track.videoId } }
         if (at < 0) return
         launchRequest {
-            _state.update { it.copy(isLoading = true, playWhenReady = true) }
+            startOnShow = true
+            _state.update { it.copy(isLoading = true) }
             val album = following[at]
             val index = album.tracks.indexOfFirst { it.videoId == track.videoId }
             val fresh = MusicQueue(album, q.mode, q.shuffled, seed = now(), startIndex = index)
             val found = fresh.jumpTo(index) { candidate -> resolve(candidate, album, fresh.mode) }
             if (found == null) {
+                startOnShow = false
                 _state.update { it.copy(isLoading = false, notice = "Couldn't play that track") }
                 return@launchRequest
             }
@@ -517,6 +539,12 @@ class MusicPlayer(
 
     // region internals
 
+    /**
+     * fork:player - set when a track was picked: the new track starts playing as it is shown. Setting playWhenReady when the
+     * pick was made instead resumed the old, paused song on the surface for the seconds the new one took to resolve.
+     */
+    private var startOnShow = false
+
     private fun launchRequest(block: suspend () -> Unit) {
         request?.cancel()
         request = scope.launch { block() }
@@ -558,8 +586,11 @@ class MusicPlayer(
         @Suppress("NAME_SHADOWING")
         val startPositionMs = intro?.endMs ?: startPositionMs
         val source = found.playable.source.forOpeningAt(startPositionMs)
+        val start = startOnShow
+        startOnShow = false
         _state.update {
             it.copy(
+                playWhenReady = it.playWhenReady || start,
                 album = q.album,
                 track = track,
                 trackIndex = found.index,

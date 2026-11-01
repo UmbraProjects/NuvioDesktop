@@ -40,6 +40,10 @@ data class MusicLibrarySettings(
     val barStyleChosen: Boolean = false,
     /** The lyric view's queue (and its Where next) fades out after a few idle seconds; off keeps it on screen. */
     val fadeQueue: Boolean = true,
+    /** fork:booklet - the album's sleeve notes in a glass panel beside the lyrics on a wide Stage. */
+    val booklet: Boolean = true,
+    /** fork:stage - the lyrics on the Now Playing stage; off leaves the middle of the Stage to the artist's art. */
+    val lyricsOn: Boolean = true,
     /** How the lyric view sets its lyrics: the scrolling list, one calm marker-pen line, or loud stacked chunks. */
     val lyricStyle: com.nuvio.app.features.music.LyricStyle = com.nuvio.app.features.music.LyricStyle.Scroll,
     /** The artist page's "Where next?" ladder builds by itself (lazily, behind other MusicBrainz calls). Off for a slow connection: it then waits for a button. */
@@ -50,6 +54,9 @@ data class MusicLibrarySettings(
     val lastFmApiKey: String = "",
     /** The person's own music addon link (Nebula / Eclipse Music). Named "secret" so credential-free backups drop it, as they do the API keys. Empty hides the album source toggle. */
     val nebulaSecretLink: String = "",
+    /** The second and third music addon links, asked after the first (see [addonLinks]). Named "secret" for the same reason. */
+    val nebulaSecretLink2: String = "",
+    val nebulaSecretLink3: String = "",
     /** An album the addon has opens on the addon (lossless) rather than YouTube Music. The album page's switch still overrides it. */
     val preferAddon: Boolean = false,
     /** Word-by-word lyrics from Unison, the community lyrics database (Better Lyrics). A lookup sends the song's title and artist to it. */
@@ -65,6 +72,9 @@ data class MusicLibrarySettings(
     /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
     val skipNonMusic: Boolean = false,
 )
+
+/** The music addon links that are set, in the order they are asked (first, second, third); blanks included. */
+fun MusicLibrarySettings.addonLinks(): List<String> = listOf(nebulaSecretLink, nebulaSecretLink2, nebulaSecretLink3)
 
 /** What is happening to one artist while it is added or refreshed. */
 data class MusicLibraryProgress(val status: String)
@@ -238,6 +248,27 @@ object MusicLibraryRepository {
             s.copy(
                 artists = s.artists.map { a -> if (a.releases.any { it.ytBrowseId == from }) a.relinked() else a },
                 preview = s.preview.mapValues { (_, a) -> if (a.releases.any { it.ytBrowseId == from }) a.relinked() else a },
+            )
+        }
+        if (savedChanged) persist()
+    }
+
+    /**
+     * Records that the YouTube Music album [ytBrowseId] really has [trackCount] tracks, when the metadata sources said another
+     * number and no other edition of it could be found. The artist page's version chips then say what opening it will show.
+     */
+    fun recordTrackCount(ytBrowseId: String, trackCount: Int) {
+        if (trackCount <= 0) return
+        ensureLoaded()
+        fun LibraryArtist.recorded() = copy(
+            releases = releases.map { if (it.ytBrowseId == ytBrowseId) it.copy(trackCount = trackCount) else it },
+        )
+        var savedChanged = false
+        _state.update { s ->
+            savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == ytBrowseId && it.trackCount != trackCount } }
+            s.copy(
+                artists = s.artists.map { a -> if (a.releases.any { it.ytBrowseId == ytBrowseId }) a.recorded() else a },
+                preview = s.preview.mapValues { (_, a) -> if (a.releases.any { it.ytBrowseId == ytBrowseId }) a.recorded() else a },
             )
         }
         if (savedChanged) persist()

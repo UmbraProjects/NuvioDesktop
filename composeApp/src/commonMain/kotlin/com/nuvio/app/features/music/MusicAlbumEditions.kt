@@ -52,6 +52,41 @@ internal suspend fun matchingEdition(
 }
 
 /**
+ * fork:album-editions - the fuller edition is not always under "Other versions": YouTube Music can list it as an album of its
+ * own (Ren's "Vincent's Tale", 11 tracks, beside the 7-track one). Looks through [candidates] (a search for the album's title
+ * and artist) for another album of the same artist and title with one of the [wanted] track counts, fetched with [fetch];
+ * [album] itself when none is.
+ */
+internal suspend fun searchedEdition(
+    album: MusicAlbum,
+    wanted: List<Int>,
+    candidates: List<MusicAlbumSummary>,
+    fetch: suspend (browseId: String) -> MusicAlbum?,
+): MusicAlbum {
+    val targets = wanted.filter { it > 0 && it != album.tracks.size }.toSet()
+    if (targets.isEmpty()) return album
+    val title = baseTitleKey(album.title)
+    val artist = album.artists.firstOrNull()?.name?.trim()?.lowercase()
+    val tried = candidates
+        .filter { it.browseId != album.browseId && it.browseId !in album.otherVersionIds }
+        .filter { baseTitleKey(it.title) == title }
+        .filter { c -> artist == null || c.artists.any { it.name.trim().lowercase() == artist } }
+        .distinctBy { it.browseId }
+        .take(MAX_EDITIONS_CHECKED)
+    for (candidate in tried) {
+        val other = try {
+            fetch(candidate.browseId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            null
+        } ?: continue
+        if (other.tracks.size in targets) return other
+    }
+    return album
+}
+
+/**
  * The track counts the library expects for the release linked to the YouTube Music album [ytBrowseId]: its
  * own, and those of its sibling versions that are not on YouTube Music. A sibling of the same title that
  * YouTube Music has no page for is usually the longer edition that only "Other versions" leads to, and it
@@ -72,13 +107,28 @@ internal fun expectedEditionCounts(releases: List<LibraryRelease>, ytBrowseId: S
 internal suspend fun libraryEdition(catalog: MusicCatalog, album: MusicAlbum): MusicAlbum {
     val releases = MusicLibraryRepository.state.value.artistOfAlbum(album.browseId)?.releases.orEmpty()
     val expected = expectedEditionCounts(releases, album.browseId)
-    val edition = matchingEdition(album, expected) { catalog.album(it) }
+    var edition = matchingEdition(album, expected) { catalog.album(it) }
+    if (edition.browseId == album.browseId && expected.any { it > 0 && it != album.tracks.size }) {
+        val query = (album.artists.firstOrNull()?.name.orEmpty() + " " + album.title).trim()
+        val found = try {
+            catalog.searchReleases(query).ifEmpty { catalog.searchAlbums(query) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            emptyList()
+        }
+        edition = searchedEdition(album, expected, found) { catalog.album(it) }
+    }
     log.i {
         "album ${album.browseId} has ${album.tracks.size} tracks, the library expects $expected, " +
             "${album.otherVersionIds.size} other versions listed -> ${edition.browseId} (${edition.tracks.size} tracks)"
     }
     if (edition.browseId != album.browseId) {
         MusicLibraryRepository.relinkRelease(album.browseId, edition.browseId, edition.tracks.size)
+    } else if (expected.isNotEmpty() && album.tracks.isNotEmpty() && album.tracks.size !in expected) {
+        // No edition with the expected count exists on YouTube Music: say so, rather than let the artist page's version chip
+        // keep promising the metadata sources' number ("11 tracks · YouTube Music" for a 7-track album).
+        MusicLibraryRepository.recordTrackCount(album.browseId, album.tracks.size)
     }
     return edition
 }

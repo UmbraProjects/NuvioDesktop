@@ -6,6 +6,7 @@ import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import com.nuvio.app.features.trailer.sourceOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 private val log = Logger.withTag("MusicResolver")
@@ -26,10 +27,19 @@ private const val VIDEO_LOOKUP_TIMEOUT_MS = 15_000L
  */
 object MusicResolver {
     suspend fun resolve(track: MusicTrack, album: MusicAlbum, mode: MusicPlayMode): MusicResolution =
-        when (mode) {
-            MusicPlayMode.Audio -> audio(track, album)
-            MusicPlayMode.Video -> video(track, album)
+        // fork:youtube-pause - a track the person chose: it still tries while YouTube is refusing us, but only once (see paused()).
+        withContext(YouTubeCaller("music", urgent = true)) {
+            when (mode) {
+                MusicPlayMode.Audio -> audio(track, album)
+                MusicPlayMode.Video -> video(track, album)
+            }
         }
+
+    /** True while YouTube is refusing this address: no retries, no hunt for replacement videos, no second client. */
+    private fun paused(): Boolean = MusicRateLimit.isBlocked()
+
+    private fun failedReason(): String =
+        if (paused()) "YouTube is limiting requests; try again in ${MusicRateLimit.secondsLeft()}s" else "the audio track would not open"
 
     private suspend fun audio(track: MusicTrack, album: MusicAlbum): MusicResolution {
         val audioId = albumAudioId(track)
@@ -39,7 +49,7 @@ object MusicResolver {
         alternateUpload(track, album, tried = setOf(audioId, track.videoId))?.let { (id, source) ->
             return MusicResolution.Playable(track, MusicPlayMode.Audio, id, source, viaCounterpart = false)
         }
-        return MusicResolution.Failed(track, "the audio track would not open")
+        return MusicResolution.Failed(track, failedReason())
     }
 
     /**
@@ -52,6 +62,10 @@ object MusicResolver {
         album: MusicAlbum,
         tried: Set<String>,
     ): Pair<String, TrailerPlaybackSource>? {
+        if (paused()) {
+            log.i { "\"${track.title}\": YouTube is refusing requests; not searching for another upload" }
+            return null
+        }
         val artist = (track.artists.firstOrNull() ?: album.artists.firstOrNull())?.name.orEmpty()
         val hits = try {
             TrailerPlaybackResolver.searchYouTube("$artist ${coreTrackTitle(track.title)}")
@@ -100,7 +114,7 @@ object MusicResolver {
         log.i { "no official video for \"${track.title}\"; playing it as a lyric video" }
         val audioId = albumAudioId(track)
         val source = openAudio(track, audioId)
-            ?: return MusicResolution.Failed(track, "the audio track would not open")
+            ?: return MusicResolution.Failed(track, failedReason())
         return MusicResolution.Playable(
             track, MusicPlayMode.Video, audioId, source, viaCounterpart = false, lyricVideo = true,
         )
@@ -112,6 +126,10 @@ object MusicResolver {
         if (linked != null) {
             open(linked.videoId, needsVideo = true)?.let {
                 return MusicResolution.Playable(track, MusicPlayMode.Video, linked.videoId, it, viaCounterpart = true)
+            }
+            if (paused()) {
+                log.w { "linked video ${linked.videoId} for \"${track.title}\" would not open; YouTube is refusing requests, so not searching" }
+                return null
             }
             log.w { "linked video ${linked.videoId} for \"${track.title}\" would not open; searching" }
         }
@@ -144,9 +162,17 @@ object MusicResolver {
      * of URLs that look fine and serve nothing. [needsVideo] is whether the picture will be shown;
      * the audio-only surface only reads the audio URL, so only that one has to be good.
      */
-    private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
+    private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? =
+        // fork:loudness - kept under the video's id, which outlives the stream's URL.
+        openStream(videoId, needsVideo)?.copy(loudnessKey = "yt:$videoId")
+
+    private suspend fun openStream(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
         repeat(OPEN_ATTEMPTS) { attempt ->
             var resolved = resolveSource(videoId) ?: return fallbackSource(videoId, needsVideo)
+            if (paused()) {
+                // YouTube is refusing us: a second ask or another client would only lengthen the block.
+                return verifiedSource(resolved, needsVideo)
+            }
             // A restricted client answered (usually throttling during a burst of lookups): its URLs are cut off and
             // cannot be opened part way in. Asked once more after a pause, as the trailer resolver does.
             if (!resolved.reliable) {
@@ -180,6 +206,7 @@ object MusicResolver {
      */
     private suspend fun fallbackSource(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
         if (needsVideo) return null
+        if (paused()) return null // the fallback resolver asks YouTube too
         val fallback = MusicStreamFallbacks.active ?: return null
         return try {
             fallback.resolve(videoId)?.also { log.i { "$videoId opened through ${fallback.name}" } }

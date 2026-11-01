@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -30,25 +31,106 @@ import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
-import com.nuvio.app.features.preroll.MUSIC_LOUDNESS_RANGE_LU
-import com.nuvio.app.features.preroll.loudnessFilterExpression
-import com.nuvio.app.features.preroll.mpvAudioFilterValue
+import com.nuvio.app.features.preroll.LoudnessClass
+import com.nuvio.app.features.preroll.StreamLoudnessBook
+import com.nuvio.app.features.preroll.formatDb
+import com.nuvio.app.features.preroll.gainCorrectionDb
+import com.nuvio.app.features.preroll.loudnessAfValue
+import com.nuvio.app.features.preroll.planGainDb
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val log = Logger.withTag("MusicPlayerSurface")
 
 private const val POLL_MS = 250L
 
 /**
- * All music, album audio and alternate uploads alike, is brought to the shared loudness (LoudnessTarget.kt), the
- * level a film's dialogue sits at, so a track neither blasts after a film nor needs the remote to hear. Album
- * masters are far louder than that, so this mostly turns them down; a quiet upload (fork:alternate-upload) is
- * brought up to the same place, which replaces its old fixed -14 LUFS plus 6 dB boost. The wider range keeps more
- * of a track's own dynamics than the trailer setting does.
+ * fork:loudness - all music (album audio, alternate uploads, the music addon's lossless files) is brought to one level, the
+ * film's (LoudnessTarget.kt), by a fixed gain chosen before the first sample, then a gentle compressor and a limiter (see
+ * LoudnessPlan.kt). The gain comes from the track's own measurement when one was kept, else from YouTube's loudness figure
+ * for the stream, else from what album masters usually are. A track that has not been measured is measured in the
+ * background while it plays (a second, headless decode of the same stream); when the answer differs the gain is eased to
+ * it over a few seconds, and the measurement is kept for next time.
  */
-private val MUSIC_LOUDNESS_FILTER: String = mpvAudioFilterValue(loudnessFilterExpression(MUSIC_LOUDNESS_RANGE_LU))
+private class MusicGainPlan(
+    /** Stable identity for the loudness cache; null for a source that has none. */
+    val key: String?,
+    /** What the gain was planned from: a kept measurement, else YouTube's figure, else null (the class's assumption). */
+    val lufs: Double?,
+    /** YouTube's figure alone, for the log. */
+    val youTubeLufs: Double?,
+    val gainDb: Double,
+    /** True when [lufs] is a kept measurement, so there is nothing left to measure. */
+    val measured: Boolean,
+)
+
+private fun musicGainPlan(source: TrailerPlaybackSource): MusicGainPlan {
+    val key = source.loudnessKey
+    val kept = key?.let { TrackLoudnessBook.get(it) }
+    val youTube = StreamLoudnessBook.lufsFor(source.audioUrl, source.videoUrl)
+    val lufs = kept ?: youTube
+    return MusicGainPlan(key, lufs, youTube, planGainDb(lufs, LoudnessClass.Music), measured = kept != null)
+}
+
+/** The decode the measurement reads: stereo at 24 kHz, a minute at a time (the native side stops a call after 90 s). */
+private const val MEASURE_SAMPLE_RATE = 24_000
+private const val MEASURE_WINDOW_SECONDS = 60.0
+
+/** A track longer than this is measured over its first quarter of an hour. */
+private const val MEASURE_MAX_SECONDS = 900.0
+
+/** A track shorter than this is not worth measuring. */
+private const val MEASURE_MIN_SECONDS = 15.0
+
+/** Playback gets this long to settle before the second connection opens. */
+private const val MEASURE_START_DELAY_MS = 1_500L
+
+/** How long to wait for the stream to start playing before giving up on measuring it. */
+private const val MEASURE_WAIT_LIMIT_MS = 60_000L
+
+/**
+ * The integrated loudness of the track [controller] is playing, from a headless decode of the same stream, or null when
+ * it could not be read (a refused connection, or a build whose native bridge has no such decode).
+ */
+private suspend fun measureTrackLoudness(controller: NativePlayerController, durationMs: Long): Double? {
+    val total = (durationMs / 1_000.0).coerceAtMost(MEASURE_MAX_SECONDS)
+    if (total < MEASURE_MIN_SECONDS) return null
+    val meter = LoudnessMeter(MEASURE_SAMPLE_RATE, channels = 2)
+    var at = 0.0
+    try {
+        while (at < total) {
+            currentCoroutineContext().ensureActive()
+            val length = minOf(MEASURE_WINDOW_SECONDS, total - at)
+            val pcm = withContext(Dispatchers.IO) {
+                controller.decodeAudioWindow(at, length, MEASURE_SAMPLE_RATE, 2)
+            } ?: return null
+            meter.add(pcm)
+            at += length
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        // UnsatisfiedLinkError on a native bridge without the decode, or anything the decode itself raised.
+        log.w { "loudness measurement failed: ${error.message}" }
+        return null
+    }
+    return meter.integratedLufs()
+}
+
+/** Eases mpv's `volume-gain` by [deltaDb] over about three seconds, so a correction is not a step. */
+private suspend fun easeVolumeGain(controller: NativePlayerController, deltaDb: Double) {
+    val steps = 20
+    for (step in 1..steps) {
+        controller.setMpvProperty("volume-gain", formatDb(deltaDb * step / steps))
+        delay(150L)
+    }
+}
 
 @Composable
 actual fun MusicPlayerSurface(
@@ -61,6 +143,7 @@ actual fun MusicPlayerSurface(
     seekRequestId: Long,
     seekRequestMs: Long,
     letterbox: Boolean,
+    framed: Boolean,
     modifier: Modifier,
     onSnapshot: (loadId: Long, snapshot: PlayerPlaybackSnapshot) -> Unit,
     onEnded: (loadId: Long) -> Unit,
@@ -91,6 +174,8 @@ actual fun MusicPlayerSurface(
     }
     val controller = remember(host) { NativePlayerController(host) }
     var revealed by remember { mutableStateOf(false) }
+    // fork:loudness - the gain this load starts at (see MusicGainPlan).
+    val gainPlan = remember(loadId, source) { musicGainPlan(source) }
 
     DisposableEffect(host) {
         host.onFirstPaint = { }
@@ -178,7 +263,7 @@ actual fun MusicPlayerSurface(
             // goes to the shared loudness, set as an init option so the first audio frame already has it.
             initMpvOptions = buildList {
                 add("volume=${volume.coerceIn(0, 100)}")
-                add("af=$MUSIC_LOUDNESS_FILTER")
+                add("af=${loudnessAfValue(LoudnessClass.Music, gainPlan.gainDb)}")
                 // Set on the new instance itself (attach swaps the native player on a worker thread), so it applies to
                 // this load's open and nothing else.
                 if (openAtMs > 0L) add("start=${formatMpvSeconds(openAtMs)}")
@@ -194,9 +279,82 @@ actual fun MusicPlayerSurface(
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")
     }
 
+    // fork:music-stage - the Now Playing picture wears the glass panels' corners, and its side bars the Stage's tone.
+    // The window is re-cut when it is resized (the surface moves between the lyric view and the bar).
+    val density = LocalDensity.current.density
+    val cornerPx = if (framed) (FRAMED_CORNER_DP * density).toInt() else 0
+    DisposableEffect(host, controller, cornerPx) {
+        val listener = object : java.awt.event.ComponentAdapter() {
+            override fun componentResized(e: java.awt.event.ComponentEvent) = controller.setCornerRadius(cornerPx)
+        }
+        host.addComponentListener(listener)
+        onDispose { host.removeComponentListener(listener) }
+    }
+    LaunchedEffect(controller, cornerPx, revealed, loadId) { controller.setCornerRadius(cornerPx) }
+    // fork:music-stage - the glass bezel laid over the picture (NowPlayingBezel): it covers the square corners the rounded cut
+    // leaves, and follows the picture as it resizes and as the app window moves.
+    val bezelUp = framed && videoVisible && revealed
+    DisposableEffect(host, bezelUp, density) {
+        if (!bezelUp) return@DisposableEffect onDispose { NowPlayingBezel.release(host) }
+        fun fit() {
+            val scale = host.graphicsConfiguration?.defaultTransform?.scaleX ?: density.toDouble()
+            NowPlayingBezel.show(host, scale, density)
+        }
+        val listener = object : java.awt.event.ComponentAdapter() {
+            override fun componentResized(e: java.awt.event.ComponentEvent) = fit()
+            override fun componentMoved(e: java.awt.event.ComponentEvent) = NowPlayingBezel.follow(host)
+        }
+        host.addComponentListener(listener)
+        val window = javax.swing.SwingUtilities.getWindowAncestor(host)
+        window?.addComponentListener(listener)
+        fit()
+        onDispose {
+            host.removeComponentListener(listener)
+            window?.removeComponentListener(listener)
+            NowPlayingBezel.release(host)
+        }
+    }
+    // The corners the rounded picture leaves show the host window. mpv's own "black" reaches the screen as about (8, 8, 8), so
+    // a pure black host made a faint rounded shape inside a darker square; the host takes mpv's black instead.
+    SideEffect { host.background = if (framed) java.awt.Color(8, 8, 8) else java.awt.Color.BLACK }
+    LaunchedEffect(controller, framed) {
+        // Newer mpv builds call it background-color, older ones background; the one it does not know is ignored.
+        val bars = if (framed) FRAMED_BARS_COLOR else "#000000"
+        controller.setMpvProperty("background-color", bars)
+        controller.setMpvProperty("background", bars)
+    }
+
     LaunchedEffect(controller, loadId, forbiddenRetries, volume) {
         controller.setMpvProperty("volume", volume.coerceIn(0, 100).toString())
         controller.setHeroTrailerVolume(volume.coerceIn(0, 100))
+    }
+
+    // fork:loudness - measure a track that has no kept measurement while it plays, keep the answer, and ease the gain to it.
+    LaunchedEffect(controller, loadId, forbiddenRetries) {
+        val key = gainPlan.key ?: return@LaunchedEffect
+        if (gainPlan.measured) return@LaunchedEffect
+        var durationMs = 0L
+        var waitedMs = 0L
+        while (durationMs <= 0L) {
+            delay(500L)
+            waitedMs += 500L
+            if (waitedMs > MEASURE_WAIT_LIMIT_MS) return@LaunchedEffect
+            val snapshot = controller.snapshotOffUiThread()
+            if (snapshot.isPlaying) durationMs = snapshot.durationMs
+        }
+        delay(MEASURE_START_DELAY_MS)
+        val measured = measureTrackLoudness(controller, durationMs) ?: return@LaunchedEffect
+        val lufs = measured + MEASURED_LOUDNESS_COMPENSATION_LU
+        TrackLoudnessBook.put(key, lufs)
+        log.i {
+            "loudness $key: measured ${formatDb(lufs)} LUFS; started from " +
+                "${gainPlan.lufs?.let(::formatDb) ?: "the class assumption"} (YouTube said ${gainPlan.youTubeLufs?.let(::formatDb) ?: "nothing"})"
+        }
+        val wanted = planGainDb(lufs, LoudnessClass.Music)
+        gainCorrectionDb(gainPlan.gainDb, wanted)?.let { delta ->
+            log.i { "loudness $key: easing the gain by ${formatDb(delta)} dB" }
+            easeVolumeGain(controller, delta)
+        }
     }
 
     LaunchedEffect(controller, playWhenReady) {
@@ -264,11 +422,20 @@ actual fun MusicPlayerSurface(
                     // Parked: a one-pixel panel keeps the native player alive without painting over the app.
                     Modifier.align(Alignment.BottomEnd).requiredSize(1.dp)
                 },
-                background = Color.Black,
+                background = if (framed) Color(8, 8, 8) else Color.Black,
             )
         }
     }
 }
+
+/** The corner of the Now Playing picture, as the Stage's glass panels. */
+private const val FRAMED_CORNER_DP = 16f
+
+/**
+ * The bars beside a picture that is not 16:9. Black, like the host window behind the rounded picture: mpv drew a Stage-toned
+ * "#101018" lighter than asked (about #1E1E2A on screen), which showed as a navy band inside the host's black corners.
+ */
+private const val FRAMED_BARS_COLOR = "#000000"
 
 /** An open part way in can land a few seconds short of its time (on a keyframe); that still counts as there. */
 private const val OPEN_AT_SLACK_MS = 10_000L

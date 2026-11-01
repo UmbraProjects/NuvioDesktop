@@ -27,6 +27,8 @@ expect fun MusicPlayerSurface(
     seekRequestMs: Long,
     /** Fit the whole picture inside [modifier] (bars at the sides) instead of filling it and cropping. */
     letterbox: Boolean,
+    /** The Now Playing picture: rounded corners and side bars in the Stage's dark tone, as the glass panels. */
+    framed: Boolean,
     modifier: Modifier,
     onSnapshot: (loadId: Long, snapshot: PlayerPlaybackSnapshot) -> Unit,
     onEnded: (loadId: Long) -> Unit,

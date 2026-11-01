@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -18,6 +19,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -107,45 +113,82 @@ internal fun PosterLyrics(
     val next = lines.getOrNull(if (shown < 0) 0 else shown + 1)
     fun pick(line: LyricLine) { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) }
 
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        ContextLine(previous?.text, reduced) { previous?.let(::pick) }
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (current != null && current.text.isNotBlank()) {
-                val words = remember(lines, shown) { lineWords(lines, shown) }
-                val durationMs = remember(lines, shown) { sungEndMs(lines, shown) - current.timeMs }
-                val size = posterFontSizeSp(current.text.length)
-                val style = TextStyle(fontFamily = marker, fontSize = size.sp, lineHeight = (size * 1.18f).sp, textAlign = TextAlign.Center)
-                val isChorus = shown in chorus
-                val lit = if (isChorus) lerp(Color.White, accent, 0.45f) else Color.White
-                FlowRow(
-                    // Not clipped: words drop in from above and swell as they land, so they reach past the box.
-                    Modifier.fillMaxWidth().musicKeyFocusRing(RoundedCornerShape(12.dp)).clickable { pick(current) }.padding(vertical = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(size.dp * 0.28f, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    words.forEachIndexed { i, word ->
-                        PosterWord(
-                            word = word,
-                            style = style,
-                            lit = lit,
-                            accent = accent,
-                            tilt = posterTiltDegrees(shown, i),
-                            reduced = reduced,
-                            arrival = { posterWordArrival(word, lineProgress(lines, shown, smooth.value), durationMs) },
-                        )
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+
+    // fork:stage - the pane is whatever the Stage gives it, so the line is measured at the pane's own width and height and
+    // set as large as fits (never above its usual size); only a line that will not fit even small is cut, with an ellipsis.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val widthPx = with(density) { (maxWidth - 24.dp).toPx() }
+        // Room left for the sung line: the pane less the two context lines, the gaps around them and the line's own padding.
+        val heightPx = with(density) { (maxHeight - POSTER_CONTEXT_RESERVE).coerceAtLeast(80.dp).toPx() }
+        val paneScale = (maxWidth.value / POSTER_REFERENCE_WIDTH_DP).coerceIn(0.55f, 1f)
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ContextLine(previous?.text, reduced) { previous?.let(::pick) }
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (current != null && current.text.isNotBlank()) {
+                    val allWords = remember(lines, shown) { lineWords(lines, shown) }
+                    val durationMs = remember(lines, shown) { sungEndMs(lines, shown) - current.timeMs }
+                    val ideal = posterFontSizeSp(current.text.length) * paneScale
+                    fun heightOf(wordCount: Int, sizeSp: Float): Float {
+                        val text = allWords.take(wordCount).joinToString(" ") { it.text }
+                        val style = TextStyle(fontFamily = marker, fontSize = sizeSp.sp, lineHeight = (sizeSp * 1.18f).sp)
+                        // A little narrower than the pane: the words are set as separate pieces with their own gaps.
+                        val width = (widthPx / 1.08f).toInt().coerceAtLeast(1)
+                        return measurer.measure(AnnotatedString(text), style, constraints = Constraints(maxWidth = width)).size.height.toFloat()
                     }
+                    val size = remember(allWords, widthPx, heightPx, ideal) {
+                        fitFontSizeSp(ideal, POSTER_MIN_SP, 2f) { heightOf(allWords.size, it) <= heightPx }
+                    }
+                    val keep = remember(allWords, widthPx, heightPx, size) {
+                        fitWordCount(allWords.size) { heightOf(it, size) <= heightPx }
+                    }
+                    val words = remember(allWords, keep) {
+                        if (keep >= allWords.size) allWords
+                        else allWords.take(keep).let { kept -> kept.dropLast(1) + kept.last().copy(text = withEllipsis(kept.last().text)) }
+                    }
+                    val style = TextStyle(fontFamily = marker, fontSize = size.sp, lineHeight = (size * 1.18f).sp, textAlign = TextAlign.Center)
+                    val isChorus = shown in chorus
+                    val lit = if (isChorus) lerp(Color.White, accent, 0.45f) else Color.White
+                    FlowRow(
+                        // Not clipped: words drop in from above and swell as they land, so they reach past the box.
+                        Modifier.fillMaxWidth().musicKeyFocusRing(RoundedCornerShape(12.dp)).clickable { pick(current) }.padding(vertical = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(size.dp * 0.28f, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        words.forEachIndexed { i, word ->
+                            PosterWord(
+                                word = word,
+                                style = style,
+                                lit = lit,
+                                accent = accent,
+                                tilt = posterTiltDegrees(shown, i),
+                                reduced = reduced,
+                                arrival = { posterWordArrival(word, lineProgress(lines, shown, smooth.value), durationMs) },
+                            )
+                        }
+                    }
+                } else if (current != null) {
+                    Text("♪", color = Color.White.copy(alpha = 0.35f), style = TextStyle(fontFamily = marker, fontSize = 54.sp))
                 }
-            } else if (current != null) {
-                Text("♪", color = Color.White.copy(alpha = 0.35f), style = TextStyle(fontFamily = marker, fontSize = 54.sp))
             }
+            ContextLine(next?.text, reduced) { next?.let(::pick) }
         }
-        ContextLine(next?.text, reduced) { next?.let(::pick) }
     }
 }
+
+/** Width the usual sizes were chosen for (the old lyric column); a narrower pane scales them down towards 55%. */
+private const val POSTER_REFERENCE_WIDTH_DP = 900f
+
+/** The smallest the sung line is set before words are cut. */
+private const val POSTER_MIN_SP = 28f
+
+/** Height the two context lines, the gaps and the line's own padding take, so the rest is the sung line's. */
+private val POSTER_CONTEXT_RESERVE = 160.dp
 
 /** The line before or after the sung one: small, dim, and a click away from a seek. */
 @Composable
@@ -158,7 +201,8 @@ private fun ContextLine(text: String?, reduced: Boolean, onClick: () -> Unit) {
         lineHeight = 30.sp,
         fontWeight = FontWeight.SemiBold,
         textAlign = TextAlign.Center,
-        maxLines = 2,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = !text.isNullOrBlank(), onClick = onClick).padding(vertical = 4.dp),
     )
 }

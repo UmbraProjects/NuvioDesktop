@@ -610,6 +610,12 @@ internal class NativePlayerController(
         }
     }
 
+    /** fork:music-stage - rounded corners for the video window (see NativePlayerBridge.setCornerRadius); a library without it stays square. */
+    fun setCornerRadius(radiusPx: Int) {
+        val current = handle.takeIf { it != 0L } ?: return
+        runCatching { NativePlayerBridge.setCornerRadius(current, radiusPx) }
+    }
+
     fun setMpvProperty(key: String, value: String) {
         if (key == "vf") mayHostVapourSynth = true
         videoProfileBatch.get()?.let { it.properties[key] = value; return }
@@ -1821,6 +1827,25 @@ internal class NativePlayerController(
             val result = NativePlayerBridge.decodeSpeechSpot(current, startSeconds, durationSeconds, file.absolutePath)
             if (result != 0 || file.length() < 4) return null
             // ao=pcm with audio-format=float writes raw little-endian float32 samples.
+            val samples = ByteBuffer.wrap(file.readBytes()).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+            FloatArray(samples.remaining()).also(samples::get)
+        } finally {
+            file.delete()
+        }
+    }
+
+    /**
+     * A stretch of the playing audio as interleaved float32 PCM at [sampleRate] Hz with [channels] channels (1 or 2),
+     * decoded by a throwaway headless mpv like [decodeSpeechSpot]; null when it could not be read. Blocks. Used to
+     * measure a track's loudness (see MusicLoudness).
+     */
+    fun decodeAudioWindow(startSeconds: Double, durationSeconds: Double, sampleRate: Int, channels: Int): FloatArray? {
+        val current = handle.takeIf { it != 0L } ?: return null
+        val directory = File(System.getProperty("java.io.tmpdir"), "nuvio-autosync").apply { mkdirs() }
+        val file = File.createTempFile("loudness-", ".f32", directory)
+        return try {
+            val result = NativePlayerBridge.decodeAudioSpot(current, startSeconds, durationSeconds, sampleRate, channels, file.absolutePath)
+            if (result != 0 || file.length() < 4) return null
             val samples = ByteBuffer.wrap(file.readBytes()).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
             FloatArray(samples.remaining()).also(samples::get)
         } finally {

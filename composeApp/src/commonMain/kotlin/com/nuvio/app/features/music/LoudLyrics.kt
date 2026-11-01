@@ -149,9 +149,16 @@ internal fun LoudLyrics(
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val widthPx = with(density) { (maxWidth * 0.9f - 48.dp).toPx() }
-        val heightPx = with(density) { (maxHeight - 70.dp).toPx() }
+        // fork:stage - room kept for the next line under the words and the sync strip at the foot, so neither is overprinted.
+        val nextText = next?.text?.takeIf { it.isNotBlank() }
+        val heightPx = with(density) { loudStackHeightDp(maxHeight.value, nextText != null).dp.toPx() }
         val stageScale = (maxWidth.value / 1000f).coerceIn(0.4f, 1f)
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // The stack and the next line are one centred group, lifted by half the strip band so the group sits above it.
+        Column(
+            Modifier.fillMaxSize().padding(bottom = (LOUD_STRIP_BAND_DP / 2f).dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
             if (current != null && current.text.isNotBlank()) {
                 val words = remember(lines, shown) { lineWords(lines, shown) }
                 val durationMs = remember(lines, shown) { sungEndMs(lines, shown) - current.timeMs }
@@ -170,9 +177,14 @@ internal fun LoudLyrics(
                             .size.width * loudFaceWidthFactor(face) * 1.14f
                         min(130f * density.density * stageScale * 1.25f, 100f * widthPx / measured.coerceAtLeast(1f))
                     }
-                    val fit = min(1f, heightPx / raw.sumOf { (it * 0.98f).toDouble() }.toFloat().coerceAtLeast(1f))
-                    raw.map { it * fit }
+                    // fork:stage - a stack that would have to shrink below the readable minimum loses its last rows instead.
+                    val keep = fitRowCount(raw, heightPx, minPx = LOUD_MIN_SP * density.density * stageScale)
+                    val kept = raw.take(keep)
+                    val fit = min(1f, heightPx / kept.sumOf { (it * 0.98f).toDouble() }.toFloat().coerceAtLeast(1f))
+                    kept.map { it * fit }
                 }
+                val shownChunks = chunks.take(sizesPx.size)
+                val cut = shownChunks.size < chunks.size
 
                 Column(
                     Modifier
@@ -186,10 +198,11 @@ internal fun LoudLyrics(
                         .padding(vertical = 14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    chunks.forEachIndexed { ci, chunk ->
+                    shownChunks.forEachIndexed { ci, chunk ->
                         val sizePx = sizesPx.getOrElse(ci) { 40f }
                         val sizeSp = with(density) { sizePx.toSp() }
-                        val shift = if (entrance == LoudEntrance.Diagonal) (ci - 1) * sizePx * 0.35f else 0f
+                        // Spread about the middle row, so the diagonal stack stays centred on the pane whatever its length.
+                        val shift = if (entrance == LoudEntrance.Diagonal) (ci - (shownChunks.size - 1) / 2f) * sizePx * 0.35f else 0f
                         val tilt = loudRowTilt(shown, ci)
                         Row(
                             Modifier.graphicsLayer {
@@ -198,9 +211,9 @@ internal fun LoudLyrics(
                             },
                             horizontalArrangement = Arrangement.spacedBy(with(density) { (sizePx * 0.22f).toDp() }),
                         ) {
-                            chunk.forEach { wi ->
+                            chunk.forEachIndexed { at, wi ->
                                 LoudWord(
-                                    text = texts[wi],
+                                    text = if (cut && ci == shownChunks.lastIndex && at == chunk.lastIndex) withEllipsis(texts[wi]) else texts[wi],
                                     sizeSp = sizeSp,
                                     face = faces[face],
                                     colour = colour,
@@ -214,7 +227,7 @@ internal fun LoudLyrics(
                     }
                 }
             }
-            next?.text?.takeIf { it.isNotBlank() }?.let {
+            nextText?.let {
                 Text(
                     it,
                     color = Color.White.copy(alpha = 0.35f),
@@ -222,7 +235,8 @@ internal fun LoudLyrics(
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp),
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 14.dp),
                 )
             }
         }
@@ -271,3 +285,6 @@ private fun LoudWord(
         )
     }
 }
+
+/** Smallest a row of Loud lyrics is set (at full stage scale) before the last rows are dropped for an ellipsis. */
+private const val LOUD_MIN_SP = 30f

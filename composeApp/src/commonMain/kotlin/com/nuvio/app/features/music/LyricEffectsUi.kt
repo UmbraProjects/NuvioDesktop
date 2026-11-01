@@ -258,14 +258,18 @@ internal fun ActiveLine(
     emphasis: Boolean,
     effects: Boolean,
     entrance: LineEntrance? = null,
+    /** fork:stage - overrides the size (the Stage fits it to its pane); null keeps the usual 30 sp / 40 sp. */
+    fontSize: androidx.compose.ui.unit.TextUnit? = null,
+    /** fork:stage - rows centred in the width they are given, for the Stage's centred lyric panel. */
+    centred: Boolean = false,
 ) {
     // 0 to 1 once, when the line takes the stage; read only inside the draw layers, so it costs no recomposition.
     val enter = remember { Animatable(if (entrance == null || !effects) 1f else 0f) }
     if (entrance != null && effects) {
         LaunchedEffect(Unit) { enter.animateTo(1f, tween(LINE_ENTRANCE_MS, easing = LinearEasing)) }
     }
-    val fontSize = if (emphasis) 40.sp else 30.sp
-    val style = TextStyle(fontSize = fontSize, lineHeight = fontSize * 1.27f, fontWeight = FontWeight.Bold)
+    val size = fontSize ?: if (emphasis) 40.sp else 30.sp
+    val style = TextStyle(fontSize = size, lineHeight = size * 1.27f, fontWeight = FontWeight.Bold)
     val lit = if (isChorus && effects) lerp(Color.White, accent, 0.45f) else Color.White
     val glow = when {
         !effects -> 0f
@@ -273,7 +277,7 @@ internal fun ActiveLine(
         else -> 0.6f
     }
     FlowRow(
-        modifier = Modifier.graphicsLayer {
+        modifier = (if (centred) Modifier.fillMaxWidth() else Modifier).graphicsLayer {
             // A held note swells for as long as it is held.
             if (effects && emphasis) {
                 val s = 1f + 0.05f * progress()
@@ -282,7 +286,7 @@ internal fun ActiveLine(
                 transformOrigin = TransformOrigin(0f, 0.5f)
             }
         },
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = if (centred) Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(10.dp),
     ) {
         words.forEachIndexed { i, word ->
             SungWord(word, progress, style, lit, accent, glow, effects, entrance) {

@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.music.MusicPlayback
 import com.nuvio.app.features.music.library.MusicLibraryRepository
+import com.nuvio.app.features.music.library.addonLinks
 import com.nuvio.app.features.preroll.PreshowSettings
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_music_audiodb_key
@@ -25,6 +26,9 @@ import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive
 import nuvio.composeapp.generated.resources.settings_music_lastfm_key
 import nuvio.composeapp.generated.resources.settings_music_mb_offline
 import nuvio.composeapp.generated.resources.settings_music_nebula_link
+import nuvio.composeapp.generated.resources.settings_music_nebula_link_2
+import nuvio.composeapp.generated.resources.settings_music_nebula_link_3
+import nuvio.composeapp.generated.resources.settings_music_nebula_link_extra_description
 import nuvio.composeapp.generated.resources.settings_music_nebula_link_description
 import nuvio.composeapp.generated.resources.settings_music_prefer_addon
 import nuvio.composeapp.generated.resources.settings_music_prefer_addon_description
@@ -168,7 +172,29 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     summarizeAsConfigured = true,
                     onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(nebulaSecretLink = it.trim())) },
                 )
-                if (settings.nebulaSecretLink.isNotBlank()) {
+                SettingsGroupDivider(isTablet)
+                SettingsTextInputRow(
+                    title = stringResource(Res.string.settings_music_nebula_link_2),
+                    description = stringResource(Res.string.settings_music_nebula_link_extra_description),
+                    value = settings.nebulaSecretLink2,
+                    placeholder = "Optional",
+                    isTablet = isTablet,
+                    secret = true,
+                    summarizeAsConfigured = true,
+                    onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(nebulaSecretLink2 = it.trim())) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsTextInputRow(
+                    title = stringResource(Res.string.settings_music_nebula_link_3),
+                    description = stringResource(Res.string.settings_music_nebula_link_extra_description),
+                    value = settings.nebulaSecretLink3,
+                    placeholder = "Optional",
+                    isTablet = isTablet,
+                    secret = true,
+                    summarizeAsConfigured = true,
+                    onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(nebulaSecretLink3 = it.trim())) },
+                )
+                if (settings.addonLinks().any { it.isNotBlank() }) {
                     SettingsGroupDivider(isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_music_prefer_addon),

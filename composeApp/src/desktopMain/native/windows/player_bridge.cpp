@@ -1648,6 +1648,12 @@ public:
         stopMpvCalls();
     }
 
+    // fork:music-stage - public entry for the rounded video corners (the members behind it are private).
+    void setCornerRadius(int radiusPx) {
+        cornerRadiusPx.store(radiusPx);
+        applyCornerRegion();
+    }
+
     void shutdown() {
         if (shuttingDown.exchange(true)) {
             return;
@@ -4981,6 +4987,43 @@ private:
         nuvioBridgeLog("mpv start complete");
     }
 
+    // fork:music-stage - rounded corners for the Now Playing video: the player's own container window is cut to a rounded
+    // rectangle, so the host window behind it (which the app paints black) shows in the corners. Cutting the host itself
+    // instead exposed the app's surface, which Compose does not paint under a video panel, as pale grey. Zero leaves it
+    // square. Called on a radius change (any thread) and after every layout (the UI thread).
+    std::atomic<int> cornerRadiusPx{0};
+    LONG lastRegionWidth = -1;
+    LONG lastRegionHeight = -1;
+    int lastRegionRadius = -1;
+
+    void applyCornerRegion() {
+        if (!containerHwnd || !IsWindow(containerHwnd)) return;
+        RECT bounds = {};
+        GetClientRect(containerHwnd, &bounds);
+        LONG width = bounds.right - bounds.left;
+        LONG height = bounds.bottom - bounds.top;
+        int radius = cornerRadiusPx.load();
+        if (radius <= 0 || width <= 1 || height <= 1) {
+            if (lastRegionRadius != 0) {
+                SetWindowRgn(containerHwnd, nullptr, TRUE);
+                lastRegionRadius = 0;
+                lastRegionWidth = lastRegionHeight = -1;
+            }
+            return;
+        }
+        int clamped = std::min<int>(radius, static_cast<int>(std::min(width, height) / 2));
+        if (width == lastRegionWidth && height == lastRegionHeight && clamped == lastRegionRadius) return;
+        HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, clamped * 2, clamped * 2);
+        if (!region) return;
+        if (SetWindowRgn(containerHwnd, region, TRUE)) {
+            lastRegionWidth = width;
+            lastRegionHeight = height;
+            lastRegionRadius = clamped;
+        } else {
+            DeleteObject(region);
+        }
+    }
+
     // Last geometry applied by layoutNativeSubviews, so the 500 ms timer can skip the z-order
     // change and WebView2 relayout when nothing moved.
     LONG lastLayoutWidth = -1;
@@ -5010,6 +5053,7 @@ private:
         }
         if (containerHwnd) {
             SetWindowPos(containerHwnd, HWND_TOP, 0, 0, width, height, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+            applyCornerRegion();
         }
         if (controller) {
             // Normalize to the HUD's 192-DPI baseline, then apply the saved UI setting as actual
@@ -6207,6 +6251,14 @@ public:
     }
 
     int decodeSpeechSpot(double startSeconds, double durationSeconds, const std::string &outputPath) {
+        return decodeAudioSpot(startSeconds, durationSeconds, outputPath, 16000, 1);
+    }
+
+    // The same throwaway decode with a chosen output format: raw little-endian float32 PCM at sampleRate Hz with 1
+    // (mono) or 2 (stereo) interleaved channels. The loudness measurement uses 24 kHz stereo: a mono mix cannot tell
+    // a wide mix from a narrow one, which is 1 to 4 LU of error.
+    int decodeAudioSpot(double startSeconds, double durationSeconds, const std::string &outputPath,
+                        int sampleRate, int channelCount) {
         // A separate audio stream (YouTube video plus its own audio) is the audio being heard, and it
         // is a complete file on its own, so that is what gets decoded; the video URL has no sound.
         const bool separateAudio = !externalAudioUrl.empty();
@@ -6230,6 +6282,11 @@ public:
             api.setOptionString(probe, name, value);
         }
         api.setOptionString(probe, "ao-pcm-file", outputPath.c_str());
+        {
+            const std::string rateText = std::to_string(sampleRate > 0 ? sampleRate : 16000);
+            api.setOptionString(probe, "audio-samplerate", rateText.c_str());
+            api.setOptionString(probe, "audio-channels", channelCount >= 2 ? "stereo" : "mono");
+        }
         api.setOptionString(probe, "start", start.c_str());
         api.setOptionString(probe, "end", end.c_str());
         if (numericAid) api.setOptionString(probe, "aid", aid.c_str());
@@ -7283,6 +7340,103 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_addSubtitleUrl(JNI
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setCornerRadius(JNIEnv *, jobject, jlong handle, jint radiusPx) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->setCornerRadius(radiusPx);
+}
+
+// fork:music-stage - the glass bezel laid over the Now Playing video. Nothing the app draws can go over a native video window,
+// so the bezel is a window of its own: layered (per-pixel alpha, the image comes from the app), click-through, never activated,
+// and owned by the app's top-level window, which keeps it above that window and the video inside it. It is process-wide, not
+// the player's: each track opens a new player, and the bezel stays put across them. Every call is made on the AWT event
+// thread, which is also the thread that creates and destroys the window and pumps its messages.
+namespace {
+HWND gBezelHwnd = nullptr;
+int gBezelMargin = 0;
+
+void bezelHide() {
+    if (gBezelHwnd && IsWindow(gBezelHwnd)) ShowWindow(gBezelHwnd, SW_HIDE);
+}
+
+// Puts the bezel round [host]'s on-screen rectangle, or hides it when that is not on screen.
+void bezelPlace(HWND host) {
+    if (!gBezelHwnd || !IsWindow(gBezelHwnd)) return;
+    RECT rect = {};
+    HWND top = host && IsWindow(host) ? GetAncestor(host, GA_ROOT) : nullptr;
+    if (!top || !IsWindowVisible(host) || !IsWindowVisible(top) || IsIconic(top) || !GetWindowRect(host, &rect)) {
+        bezelHide();
+        return;
+    }
+    SetWindowPos(
+        gBezelHwnd, nullptr, rect.left - gBezelMargin, rect.top - gBezelMargin, 0, 0,
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+}  // namespace
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelShow(
+    JNIEnv *env, jobject, jlong hostViewPtr, jintArray argb, jint width, jint height, jint marginPx) {
+    HWND host = (HWND)(intptr_t)hostViewPtr;
+    if (!argb || width <= 0 || height <= 0 || !host || !IsWindow(host)) return;
+    if (env->GetArrayLength(argb) < static_cast<jsize>(width) * height) return;
+    HWND top = GetAncestor(host, GA_ROOT);
+    if (!top) return;
+    if (!gBezelHwnd || !IsWindow(gBezelHwnd) || GetWindow(gBezelHwnd, GW_OWNER) != top) {
+        if (gBezelHwnd && IsWindow(gBezelHwnd)) DestroyWindow(gBezelHwnd);
+        // The predefined STATIC class needs no registration of ours; a layered window never paints itself.
+        gBezelHwnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            L"STATIC", L"", WS_POPUP, 0, 0, width, height, top, nullptr, GetModuleHandleW(nullptr), nullptr);
+        if (!gBezelHwnd) return;
+    }
+    gBezelMargin = marginPx;
+    RECT rect = {};
+    if (!GetWindowRect(host, &rect)) return;
+
+    HDC screen = GetDC(nullptr);
+    HDC memory = screen ? CreateCompatibleDC(screen) : nullptr;
+    if (!memory) {
+        if (screen) ReleaseDC(nullptr, screen);
+        return;
+    }
+    BITMAPINFO info = {};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;  // top-down
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void *bits = nullptr;
+    HBITMAP dib = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (dib && bits) {
+        // Java's premultiplied ARGB ints are B, G, R, A in memory: the layout the DIB wants.
+        env->GetIntArrayRegion(argb, 0, static_cast<jsize>(width) * height, static_cast<jint *>(bits));
+        HGDIOBJ previous = SelectObject(memory, dib);
+        POINT position = {rect.left - marginPx, rect.top - marginPx};
+        SIZE size = {width, height};
+        POINT source = {0, 0};
+        BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+        UpdateLayeredWindow(gBezelHwnd, screen, &position, &size, memory, &source, 0, &blend, ULW_ALPHA);
+        SelectObject(memory, previous);
+    }
+    if (dib) DeleteObject(dib);
+    DeleteDC(memory);
+    ReleaseDC(nullptr, screen);
+    SetWindowPos(gBezelHwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelMove(JNIEnv *, jobject, jlong hostViewPtr) {
+    bezelPlace((HWND)(intptr_t)hostViewPtr);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelHide(JNIEnv *, jobject) {
+    bezelHide();
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_clearExternalSubtitles(JNIEnv *, jobject, jlong handle) {
     auto player = playerFromHandle(handle);
     if (player) player->postMpvCall([p = player.get()]() { p->removeExternalSubtitles(); });
@@ -7436,6 +7590,22 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeSpeechSpot(
     auto player = playerFromHandle(handle);
     if (!player) return -1;
     return player->decodeSpeechSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeAudioSpot(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jdouble startSeconds,
+    jdouble durationSeconds,
+    jint sampleRate,
+    jint channelCount,
+    jstring outputPath
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return -1;
+    return player->decodeAudioSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath), sampleRate, channelCount);
 }
 
 extern "C" JNIEXPORT void JNICALL

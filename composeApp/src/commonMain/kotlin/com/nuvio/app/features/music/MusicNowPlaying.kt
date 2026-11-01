@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.features.music.booklet.isBookletAlbum
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.wrapContentWidth
 import com.nuvio.app.features.music.library.musicGlass
@@ -75,6 +76,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -88,6 +90,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -285,6 +292,10 @@ private fun MusicNowPlayingScreen(
     var widgetsVisible by remember { mutableStateOf(true) }
     val fadeQueue = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.fadeQueue
     val lyricStyle = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricStyle
+    val lyricsOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricsOn
+    // fork:booklet - the album's sleeve notes for the third panel of a wide Stage.
+    val bookletOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.booklet
+    val bookletUi = rememberBookletUi(album, bookletOn, libraryArtist)
     LaunchedEffect(inputTick, track?.videoId) {
         widgetsVisible = true
         delay(WIDGET_IDLE_MS)
@@ -316,8 +327,16 @@ private fun MusicNowPlayingScreen(
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 860.dp
             val cutout = identity?.cutoutUrl.takeIf { wide }
+            // fork:stage - three panels (player, lyrics, booklet over the artist) when there is room; each keeps to its own.
+            val threePanels = wide && stageUsesThreePanels(maxWidth.value)
+            // fork:stage - the right panel's glass runs from the top of the album case to the progress bar, so the three columns share
+            // two lines (symmetry is a rule of this page). Measured in the window's pixels; null until the first layout.
+            var caseTopPx by remember { mutableStateOf<Float?>(null) }
+            var barLinePx by remember { mutableStateOf<Float?>(null) }
+            var rightTopPx by remember { mutableStateOf<Float?>(null) }
+            val stageDensity = LocalDensity.current
             // Small in a corner while a video plays, so it stays clear of the video and the lyric sync controls.
-            if (cutout != null) {
+            if (cutout != null && !threePanels) {
                 StageCutout(
                     cutout,
                     if (realVideo) Modifier.align(Alignment.BottomEnd).fillMaxHeight(0.28f).widthIn(max = 180.dp)
@@ -344,7 +363,8 @@ private fun MusicNowPlayingScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .wrapContentWidth(Alignment.Start, unbounded = true)
-                                .padding(start = (STAGE_COLUMN_WIDTH - STAGE_CASE_SIZE) / 2),
+                                .padding(start = (STAGE_COLUMN_WIDTH - STAGE_CASE_SIZE) / 2)
+                                .onGloballyPositioned { caseTopPx = it.positionInRoot().y },
                             coverUrl = state.coverUrl,
                             cdArtUrl = cdArt,
                             spinning = state.isPlaying && spec.discSpins,
@@ -411,7 +431,11 @@ private fun MusicNowPlayingScreen(
                             }
                         }
                         Spacer(Modifier.height(16.dp))
-                        NowPlayingControls(state, player)
+                        NowPlayingControls(
+                            state, player,
+                            // The seek box is 28 dp high with its line in the middle: the panel ends on the line's lower edge.
+                            barModifier = Modifier.onGloballyPositioned { barLinePx = it.positionInRoot().y + it.size.height / 2f + with(stageDensity) { 2.dp.toPx() } },
+                        )
                         Spacer(Modifier.height(16.dp))
                         NowPlayingWidgets(
                             state = state,
@@ -426,9 +450,9 @@ private fun MusicNowPlayingScreen(
                     Column(
                         // Under a video nothing is held back for the cut-out (it is small, in the corner), so the picture is centred on the
                         // area right of the sidebar column rather than shifted left of it.
-                        Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null && !realVideo) CUTOUT_CLEARANCE else 0.dp),
+                        Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null && !realVideo && !threePanels) CUTOUT_CLEARANCE else 0.dp),
                         // Under a video the column is centred: the picture, then the lyric strip beneath it.
-                        horizontalAlignment = if (realVideo) Alignment.CenterHorizontally else Alignment.Start,
+                        horizontalAlignment = if (realVideo || threePanels) Alignment.CenterHorizontally else Alignment.Start,
                     ) {
                     // With a video: as large as the column allows, and four lines of lyrics under it.
                     if (realVideo) InlineVideoSlot()
@@ -441,7 +465,48 @@ private fun MusicNowPlayingScreen(
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
                         onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
+                        centredSync = threePanels,
+                        visible = lyricsOn,
                     )
+                    }
+                    if (threePanels) {
+                        // The right panel: the booklet in glass, and under it the artist, so the cut-out cannot reach the lyrics.
+                        val showBooklet = album != null && bookletUi !is BookletUi.None
+                        val caseTop = caseTopPx
+                        val barLine = barLinePx
+                        val rightTop = rightTopPx
+                        // The gap above the glass (down to the case's top) and the height of the glass itself, once all three are known.
+                        val glassTop = if (caseTop != null && rightTop != null) with(stageDensity) { (caseTop - rightTop).coerceAtLeast(0f).toDp() } else null
+                        val glassHeight = if (caseTop != null && barLine != null && barLine > caseTop) with(stageDensity) { (barLine - caseTop).toDp() } else null
+                        Column(
+                            Modifier.width(STAGE_COLUMN_WIDTH).fillMaxHeight().onGloballyPositioned { rightTopPx = it.positionInRoot().y },
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            if (showBooklet && album != null && glassTop != null && glassHeight != null) {
+                                NowPlayingBooklet(
+                                    ui = bookletUi,
+                                    album = album,
+                                    playingVideoId = track?.videoId,
+                                    reduced = reduced,
+                                    onJumpToTrack = { index -> player.jumpTo(index) },
+                                    onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
+                                    modifier = Modifier.padding(top = glassTop).height(glassHeight).fillMaxWidth(),
+                                )
+                            } else if (showBooklet && album != null) {
+                                NowPlayingBooklet(
+                                    ui = bookletUi,
+                                    album = album,
+                                    playingVideoId = track?.videoId,
+                                    reduced = reduced,
+                                    onJumpToTrack = { index -> player.jumpTo(index) },
+                                    onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
+                                    modifier = Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth(),
+                                )
+                            }
+                            if (cutout != null) {
+                                StageCutout(cutout, Modifier.weight(1f).fillMaxWidth())
+                            }
+                        }
                     }
                 }
             } else {
@@ -466,6 +531,7 @@ private fun MusicNowPlayingScreen(
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
                         onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
+                        visible = lyricsOn,
                     )
                 }
             }
@@ -489,6 +555,11 @@ private fun MusicNowPlayingScreen(
             },
             onToggleMotion = { setMusicReducedMotion(!reduced) },
             lyricStyle = lyricStyle,
+            lyricsOn = lyricsOn,
+            onToggleLyrics = {
+                val settings = MusicLibraryRepository.state.value.settings
+                MusicLibraryRepository.updateSettings(settings.copy(lyricsOn = !settings.lyricsOn))
+            },
             onCycleLyricStyle = {
                 val settings = MusicLibraryRepository.state.value.settings
                 MusicLibraryRepository.updateSettings(settings.copy(lyricStyle = settings.lyricStyle.next()))
@@ -499,6 +570,11 @@ private fun MusicNowPlayingScreen(
                 MusicLibraryRepository.updateSettings(settings.copy(fadeQueue = !settings.fadeQueue))
             },
             onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Fullscreen) },
+            booklet = bookletOn.takeIf { album != null && isBookletAlbum(album.browseId) },
+            onToggleBooklet = {
+                val settings = MusicLibraryRepository.state.value.settings
+                MusicLibraryRepository.updateSettings(settings.copy(booklet = !settings.booklet))
+            },
             modifier = Modifier.align(Alignment.TopStart),
         )
         state.notice?.let { note ->
@@ -512,7 +588,7 @@ private fun MusicNowPlayingScreen(
     }
 }
 
-/** Collapse, the album, the Stage / Video switch, the motion switch and Fullscreen (when there is a real video). */
+/** Collapse, the album, the Stage / Video switch, Fullscreen (when there is a real video) and the Options menu at the far right. */
 @Composable
 private fun StageTopBar(
     title: String,
@@ -528,6 +604,11 @@ private fun StageTopBar(
     onToggleFadeQueue: () -> Unit = {},
     lyricStyle: LyricStyle = LyricStyle.Scroll,
     onCycleLyricStyle: () -> Unit = {},
+    lyricsOn: Boolean = true,
+    onToggleLyrics: () -> Unit = {},
+    /** fork:booklet - null hides the chip (no booklet panel at this width or in this view). */
+    booklet: Boolean? = null,
+    onToggleBooklet: () -> Unit = {},
 ) {
     Row(
         modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -556,10 +637,19 @@ private fun StageTopBar(
             selected = view,
             onSelect = onView,
         )
-        MusicTextChip("Lyrics: ${lyricStyle.label}", onCycleLyricStyle)
-        MusicTextChip(if (fadeQueue) "Fade queue: on" else "Fade queue: off", onToggleFadeQueue)
-        MusicTextChip(if (reduced) "Motion: reduced" else "Motion: full", onToggleMotion)
         if (canFullscreen) MusicTextChip("Fullscreen", onFullscreen)
+        StageOptionsMenu(
+            lyricsOn = lyricsOn,
+            lyricStyle = lyricStyle,
+            fadeQueue = fadeQueue,
+            booklet = booklet,
+            reduced = reduced,
+            onToggleLyrics = onToggleLyrics,
+            onCycleLyricStyle = onCycleLyricStyle,
+            onToggleFadeQueue = onToggleFadeQueue,
+            onToggleBooklet = onToggleBooklet,
+            onToggleMotion = onToggleMotion,
+        )
     }
 }
 
@@ -772,9 +862,17 @@ private fun LyricsPane(
     compact: Boolean = false,
     /** How the Stage sets the lyrics (the compact strip under a video ignores it). */
     style: LyricStyle = LyricStyle.Scroll,
+    /** fork:stage - the sync strip centred under the lyrics (the three-panel Stage) instead of at the bottom-left. */
+    centredSync: Boolean = false,
+    /** fork:stage - the Options menu's lyrics switch: off shows nothing here. */
+    visible: Boolean = true,
 ) {
     // Tap to sync: the next line tapped is the one being heard, not a seek.
     var tapping by remember { mutableStateOf(false) }
+    if (!visible) {
+        Box(modifier)
+        return
+    }
     if (compact) {
         Column(modifier.height(COMPACT_LYRICS_HEIGHT)) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -816,19 +914,44 @@ private fun LyricsPane(
                     when (style) {
                         LyricStyle.Calm -> PosterLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap)
                         LyricStyle.Loud -> LoudLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap)
-                        LyricStyle.Scroll -> SyncedLyrics(lyrics.lines, positionMs, playing, onSeek, reduced, tapping = tapping, onTapLine = onTap)
+                        // The list stops above the source note and sync buttons at the pane's foot and fades out into that edge,
+                        // so the last visible line is never printed over them.
+                        LyricStyle.Scroll -> Box(Modifier.fillMaxSize().padding(bottom = SCROLL_SYNC_BAND).fadeBottomEdge(SCROLL_FADE)) {
+                            SyncedLyrics(lyrics.lines, positionMs, playing, onSeek, reduced, tapping = tapping, onTapLine = onTap)
+                        }
                     }
                     LyricSyncStrip(
                         syncState, tapping, { tapping = !tapping }, onNudge, onResetSync,
-                        // Down at the pane's foot, apart from the lines, so it does not read as one of them.
-                        Modifier.align(Alignment.BottomEnd).offset(y = 36.dp),
+                        // Down at the pane's foot, apart from the lines, so it does not read as one of them. On the left, under
+                        // where the lines start: the right-hand corner is the artist's cut-out and logo, which swallowed it.
+                        if (centredSync) Modifier.align(Alignment.BottomCenter).offset(y = 36.dp)
+                        else Modifier.align(Alignment.BottomStart).offset(x = 12.dp, y = 36.dp),
                         note = lyrics.sourceNote(),
+                        horizontalAlignment = if (centredSync) Alignment.CenterHorizontally else Alignment.Start,
                     )
                 }
             }
         }
     }
 }
+
+/** Room kept under the scrolling lyrics for the source note and the sync buttons. */
+private val SCROLL_SYNC_BAND = 96.dp
+
+/** How far up from the list's lower edge the lines fade out. */
+private val SCROLL_FADE = 56.dp
+
+/** Fades what is drawn to nothing over the last [fade] of its height. */
+private fun Modifier.fadeBottomEdge(fade: Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val h = fade.toPx().coerceAtMost(size.height)
+        drawRect(
+            Brush.verticalGradient(listOf(Color.Black, Color.Transparent), startY = size.height - h, endY = size.height),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 
 /** What the lyric timing is doing, with a nudge for when the automatic answer is off or missing. */
 @Composable
@@ -841,6 +964,8 @@ private fun LyricSyncStrip(
     modifier: Modifier = Modifier,
     /** How the lyrics are timed and by whom ("Word-synced \u00B7 Unison"), shown when there is no sync status to show instead. */
     note: String? = null,
+    /** Centred under a video; left-aligned with the lines on the Stage. */
+    horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
 ) {
     val offset = state.offsetMs()
     // A word or two above the buttons: the offset itself, or what is going on.
@@ -851,8 +976,8 @@ private fun LyricSyncStrip(
         offset != 0L -> formatLyricOffset(offset)
         else -> note
     }
-    Column(modifier.padding(bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label.orEmpty(), color = Color.White.copy(alpha = if (tapping) 0.85f else 0.5f), fontSize = 12.sp, maxLines = 1)
+    Column(modifier.padding(bottom = 4.dp), horizontalAlignment = horizontalAlignment, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label.orEmpty(), color = Color.White.copy(alpha = if (tapping) 0.9f else 0.7f), fontSize = 12.sp, maxLines = 1)
         // Grouped in one glass pill, as icons, so the controls read as a set apart from the lyrics.
         Row(Modifier.musicGlass(RoundedCornerShape(percent = 50)).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             SyncIcon(
@@ -913,57 +1038,91 @@ private fun SyncedLyrics(
             else listState.animateScrollToItem(active, scrollOffset = -(height / 3))
         }
     }
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 220.dp),
-    ) {
-        itemsIndexed(lines) { index, line ->
-            val target = when {
-                active < 0 -> 0.55f
-                index == active -> 1f
-                kotlin.math.abs(index - active) == 1 -> 0.6f
-                else -> 0.35f
-            }
-            val alpha by animateFloatAsState(target, tween(if (reduced) 0 else 350), label = "lineAlpha")
-            val scale by animateFloatAsState(if (index == active && !reduced) 1.1f else 1f, tween(if (reduced) 0 else 300), label = "lineScale")
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .musicKeyFocusRing(RoundedCornerShape(12.dp)).clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) }
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        transformOrigin = TransformOrigin(0f, 0.5f)
-                    },
-            ) {
-                if (index == active && line.text.isNotBlank()) {
-                    // The sung line: each word is lit as it is sung, using the source's own word times when it
-                    // has them (Netease, Unison, AMLL, LRCMux) and an estimate from word length when it has not.
-                    ActiveLine(
-                        words = remember(lines, index) { lineWords(lines, index) },
-                        progress = { lineProgress(lines, index, smooth.value) },
-                        accent = accent,
-                        isChorus = index in chorus,
-                        emphasis = false,
-                        effects = !reduced,
-                        entrance = lineEntranceFor(index),
-                    )
-                } else {
-                    Text(
-                        text = line.text.ifBlank { "♪" },
-                        color = Color.White.copy(alpha = alpha),
-                        fontSize = 30.sp,
-                        lineHeight = 38.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
+    // fork:stage - centred, and each line set as large as fits the pane in two rows (32 sp down to 22 sp); only a line that
+    // still will not fit is cut, with an ellipsis. Measured at the pane's own width, so it follows a resized window.
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The sung line grows by a tenth, and the words sit in a flow with gaps: measure a little narrower than the pane.
+        val widthPx = with(density) { ((maxWidth - 24.dp) / 1.12f).toPx() }
+        fun rowsAt(text: String, sizeSp: Float): Int =
+            measurer.measure(
+                AnnotatedString(text),
+                TextStyle(fontSize = sizeSp.sp, lineHeight = (sizeSp * 1.27f).sp, fontWeight = FontWeight.Bold),
+                constraints = Constraints(maxWidth = widthPx.toInt().coerceAtLeast(1)),
+            ).lineCount
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(vertical = 220.dp),
+        ) {
+            itemsIndexed(lines) { index, line ->
+                val target = when {
+                    active < 0 -> 0.55f
+                    index == active -> 1f
+                    kotlin.math.abs(index - active) == 1 -> 0.6f
+                    else -> 0.35f
+                }
+                val alpha by animateFloatAsState(target, tween(if (reduced) 0 else 350), label = "lineAlpha")
+                val scale by animateFloatAsState(if (index == active && !reduced) 1.1f else 1f, tween(if (reduced) 0 else 300), label = "lineScale")
+                val shownText = line.text.ifBlank { "\u266A" }
+                val sizeSp = remember(shownText, widthPx) { fitFontSizeSp(SCROLL_LYRIC_SP, SCROLL_LYRIC_MIN_SP, 2f) { rowsAt(shownText, it) <= 2 } }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .musicKeyFocusRing(RoundedCornerShape(12.dp)).clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            transformOrigin = TransformOrigin(0.5f, 0.5f)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (index == active && line.text.isNotBlank()) {
+                        // The sung line: each word is lit as it is sung, using the source's own word times when it
+                        // has them (Netease, Unison, AMLL, LRCMux) and an estimate from word length when it has not.
+                        val allWords = remember(lines, index) { lineWords(lines, index) }
+                        val keep = remember(allWords, sizeSp, widthPx) {
+                            fitWordCount(allWords.size) { rowsAt(allWords.take(it).joinToString(" ") { w -> w.text }, sizeSp) <= 2 }
+                        }
+                        val words = remember(allWords, keep) {
+                            if (keep >= allWords.size) allWords
+                            else allWords.take(keep).let { kept -> kept.dropLast(1) + kept.last().copy(text = withEllipsis(kept.last().text)) }
+                        }
+                        ActiveLine(
+                            words = words,
+                            progress = { lineProgress(lines, index, smooth.value) },
+                            accent = accent,
+                            isChorus = index in chorus,
+                            emphasis = false,
+                            effects = !reduced,
+                            entrance = lineEntranceFor(index),
+                            fontSize = sizeSp.sp,
+                            centred = true,
+                        )
+                    } else {
+                        Text(
+                            text = shownText,
+                            color = Color.White.copy(alpha = alpha),
+                            fontSize = sizeSp.sp,
+                            lineHeight = (sizeSp * 1.27f).sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+/** Ideal and smallest size of a line in the scrolling list; each line is fitted between them (two rows at most). */
+private const val SCROLL_LYRIC_SP = 32f
+private const val SCROLL_LYRIC_MIN_SP = 22f
 
 /** How long the Stage widgets stay up after the last input. */
 private const val WIDGET_IDLE_MS = 6_000L
@@ -975,12 +1134,41 @@ private const val WIDGET_IDLE_MS = 6_000L
  */
 @Composable
 private fun ColumnScope.InlineVideoSlot() {
+    // With the player's own bezel over the picture the rim drawn here would show through it.
+    val bezel by MusicPlayback.inlineBezel.collectAsStateWithLifecycle()
     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-        val width = minOf(maxWidth, maxHeight * (16f / 9f))
+        // Room is kept all round for the glass rim that frames the picture (see below).
+        val width = minOf(maxWidth - VIDEO_RIM * 2, (maxHeight - VIDEO_RIM * 2) * (16f / 9f)).coerceAtLeast(1.dp)
         Box(
             Modifier
                 .width(width)
                 .height(width * (9f / 16f))
+                // fork:music-stage - the native picture is cut to 16 dp corners by the player; behind it this draws the glass
+                // rim (a soft halo, a pane, a hairline) that stands a few dp outside it, as the panels' borders do.
+                .drawBehind {
+                    if (bezel) return@drawBehind
+                    val rim = VIDEO_RIM.toPx()
+                    val corner = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx() + rim)
+                    drawRoundRect(
+                        Color.Black.copy(alpha = 0.25f),
+                        topLeft = androidx.compose.ui.geometry.Offset(-rim - 6.dp.toPx(), -rim - 2.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(size.width + (rim + 6.dp.toPx()) * 2, size.height + (rim + 6.dp.toPx()) * 2),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx() + rim + 6.dp.toPx()),
+                    )
+                    drawRoundRect(
+                        Color.White.copy(alpha = 0.08f),
+                        topLeft = androidx.compose.ui.geometry.Offset(-rim, -rim),
+                        size = androidx.compose.ui.geometry.Size(size.width + rim * 2, size.height + rim * 2),
+                        cornerRadius = corner,
+                    )
+                    drawRoundRect(
+                        Color.White.copy(alpha = 0.22f),
+                        topLeft = androidx.compose.ui.geometry.Offset(-rim, -rim),
+                        size = androidx.compose.ui.geometry.Size(size.width + rim * 2, size.height + rim * 2),
+                        cornerRadius = corner,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                    )
+                }
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)
                 .onGloballyPositioned { c ->
@@ -993,6 +1181,12 @@ private fun ColumnScope.InlineVideoSlot() {
     DisposableEffect(Unit) { onDispose { MusicPlayback.inlineVideoFrame.value = null } }
     Spacer(Modifier.height(16.dp))
 }
+
+/**
+ * The glass rim round the Now Playing picture. Wide enough that the square corners of the player's window, which the rounded
+ * picture leaves dark, sit inside the rim's rounded corners instead of poking through them (16 dp + this, times 0.29, is less than this).
+ */
+private val VIDEO_RIM = 9.dp
 
 /** The lyric strip under a video: four line slots and the sync controls. */
 private val COMPACT_LYRICS_HEIGHT = 284.dp

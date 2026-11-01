@@ -19,20 +19,20 @@ internal const val ADDON_ALBUM_PREFIX = "addon:"
  * What an addon-only album's id carries: the addon's album, and the library release it stands for (the artist's id and
  * the release's key). The release is how the page finds the cover, the artist's colours and the details panel.
  */
-internal data class AddonAlbumRef(val albumId: String, val artistId: String, val releaseKey: String)
+internal data class AddonAlbumRef(val albumId: String, val artistId: String, val releaseKey: String, val addon: String? = null)
 
 /** The id the album page opens for [ref]: `addon:` and the three parts percent-encoded and joined with ':'. */
 internal fun addonAlbumId(ref: AddonAlbumRef): String =
-    ADDON_ALBUM_PREFIX + listOf(ref.albumId, ref.artistId, ref.releaseKey).joinToString(":") { urlEncodeQuery(it) }
+    ADDON_ALBUM_PREFIX + listOfNotNull(ref.albumId, ref.artistId, ref.releaseKey, ref.addon).joinToString(":") { urlEncodeQuery(it) }
 
 /** The [AddonAlbumRef] an album id carries, or null when it is not an addon-only album's id (or is damaged). */
 internal fun parseAddonAlbumId(id: String): AddonAlbumRef? {
     if (!id.startsWith(ADDON_ALBUM_PREFIX)) return null
     val parts = id.removePrefix(ADDON_ALBUM_PREFIX).split(':')
-    if (parts.size != 3) return null
+    if (parts.size != 3 && parts.size != 4) return null
     val decoded = parts.map { urlDecodeQuery(it) ?: return null }
     if (decoded.any { it.isEmpty() }) return null
-    return AddonAlbumRef(albumId = decoded[0], artistId = decoded[1], releaseKey = decoded[2])
+    return AddonAlbumRef(albumId = decoded[0], artistId = decoded[1], releaseKey = decoded[2], addon = decoded.getOrNull(3))
 }
 
 /** The reverse of [urlEncodeQuery]: percent-escapes back to UTF-8 text. Null for a bad escape or a character the encoder never leaves bare. */
@@ -81,7 +81,7 @@ internal fun buildAddonAlbum(
         thumbnailUrl = release?.art?.cover,
         tracks = detail.tracks.mapIndexed { index, track ->
             MusicTrack(
-                videoId = NebulaMusicSource.ID_PREFIX + track.id,
+                videoId = nebulaTrackVideoId(ref.addon, track.id),
                 title = track.title,
                 artists = listOf(
                     if (track.artist.isBlank() || track.artist.equals(artistName, ignoreCase = true)) albumArtist

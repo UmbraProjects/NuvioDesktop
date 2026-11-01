@@ -35,6 +35,8 @@ internal data class AddonAvailability(
     val trackCount: Int? = null,
     /** Searches in a row that found nothing; sets how long the miss is trusted. */
     val misses: Int = 0,
+    /** The addon that has the release ([nebulaAddonKey]); null in an entry kept before there were several addons (the first). */
+    val addon: String? = null,
 ) {
     val has: Boolean get() = albumId != null
 }
@@ -80,12 +82,20 @@ internal fun AddonAvailability.isFresh(nowMs: Long): Boolean {
 }
 
 /** The entry for a search that found [album]. */
-internal fun addonFound(nowMs: Long, album: NebulaAlbumSummary): AddonAvailability =
-    AddonAvailability(savedAt = nowMs, albumId = album.id, albumTitle = album.title, trackCount = album.trackCount)
+internal fun addonFound(nowMs: Long, album: NebulaAlbumSummary, addonKey: String? = null): AddonAvailability =
+    AddonAvailability(savedAt = nowMs, albumId = album.id, albumTitle = album.title, trackCount = album.trackCount, addon = addonKey)
 
 /** The entry for a search that found nothing: one more miss than [previous] had, unless [previous] was a match. */
-internal fun addonMissed(nowMs: Long, previous: AddonAvailability?): AddonAvailability =
-    AddonAvailability(savedAt = nowMs, misses = (previous?.takeIf { it.albumId == null }?.misses ?: 0) + 1)
+internal fun addonMissed(nowMs: Long, previous: AddonAvailability?, askedKeys: String? = null): AddonAvailability =
+    AddonAvailability(savedAt = nowMs, misses = (previous?.takeIf { it.albumId == null }?.misses ?: 0) + 1, addon = askedKeys)
+
+/**
+ * True while this entry still fits the links that are set now: a match needs the addon that had it to still be set, and a
+ * miss (which keeps the keys of the addons asked, joined with ',') is only believed for that same set of addons.
+ */
+internal fun AddonAvailability.fitsAddons(addons: List<NebulaAddon>): Boolean =
+    if (albumId == null) addon == addons.joinToString(",") { it.key }
+    else addon == null || addons.any { it.key == addon }
 
 internal fun AddonAvailabilityBook.withEntry(key: String, entry: AddonAvailability): AddonAvailabilityBook {
     val next = entries + (key to entry)

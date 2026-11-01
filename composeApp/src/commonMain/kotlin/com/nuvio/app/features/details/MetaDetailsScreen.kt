@@ -925,7 +925,9 @@ fun MetaDetailsScreen(
                         return@LaunchedEffect
                     }
                     val resolvedSource = runCatching {
-                        TrailerPlaybackResolver.resolveFromYouTubeUrl(heroTrailerCandidate.youtubePlaybackUrl())
+                        kotlinx.coroutines.withContext(com.nuvio.app.features.music.YouTubeCaller("hero trailer")) {
+                            TrailerPlaybackResolver.resolveFromYouTubeUrl(heroTrailerCandidate.youtubePlaybackUrl())
+                        }
                     }.getOrNull()?.sourceOrNull()
                     if (resolvedSource == null) {
                         heroTrailerFinished = true
@@ -982,7 +984,9 @@ fun MetaDetailsScreen(
                     HeroTrailerAudioState.setMuted(false)
                     trailerScope.launch {
                         val resolution = runCatching {
-                            TrailerPlaybackResolver.resolveFromYouTubeUrl(youtubeUrl)
+                            kotlinx.coroutines.withContext(com.nuvio.app.features.music.YouTubeCaller("hero trailer", urgent = true)) {
+                                TrailerPlaybackResolver.resolveFromYouTubeUrl(youtubeUrl)
+                            }
                         }.getOrNull()
                         if (currentRequestToken != trailerRequestToken) {
                             return@launch
@@ -1021,7 +1025,9 @@ fun MetaDetailsScreen(
                             val currentRequestToken = trailerRequestToken
                             trailerScope.launch {
                                 val resolution = runCatching {
-                                    TrailerPlaybackResolver.resolveFromYouTubeUrl(youtubeUrl)
+                                    kotlinx.coroutines.withContext(com.nuvio.app.features.music.YouTubeCaller("hero trailer", urgent = true)) {
+                                        TrailerPlaybackResolver.resolveFromYouTubeUrl(youtubeUrl)
+                                    }
                                 }.getOrNull()
                                 if (currentRequestToken != trailerRequestToken) {
                                     return@launch
