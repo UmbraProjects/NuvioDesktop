@@ -2141,6 +2141,7 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("meta-episode-ratings", resolve(Res.string.settings_meta_episode_ratings), resolve(Res.string.settings_meta_episode_ratings_description)),
         PlaybackSearchRow("meta-overall-ratings", resolve(Res.string.settings_meta_overall_ratings), resolve(Res.string.settings_meta_overall_ratings_description)),
         PlaybackSearchRow("meta-same-cast-label", SAME_CAST_LABEL_TITLE, SAME_CAST_LABEL_DESCRIPTION),
+        PlaybackSearchRow("meta-cast-episode-counts", resolve(Res.string.settings_meta_cast_episode_counts), resolve(Res.string.settings_meta_cast_episode_counts_description)),
         PlaybackSearchRow("meta-actions", resolve(Res.string.settings_meta_actions), resolve(Res.string.settings_meta_actions_description)),
         PlaybackSearchRow("meta-overview", resolve(Res.string.settings_meta_overview), resolve(Res.string.settings_meta_overview_description)),
         PlaybackSearchRow("meta-production", resolve(Res.string.settings_meta_production), resolve(Res.string.settings_meta_production_description)),

@@ -4926,6 +4926,11 @@
     <string name="settings_meta_same_cast_label">Same Cast Label</string>
     <string name="settings_meta_same_cast_label_description">Where Same Cast cards say who from the cast is in them. Auto puts it below the card when the art comes from a poster service, which often has its own badges there, and on the card otherwise.</string>
     <string name="details_same_cast_tab">Same Cast</string>
+    <string name="settings_meta_cast_episode_counts">Cast Episode Counts</string>
+    <string name="settings_meta_cast_episode_counts_description">How many episodes each cast member is in. On reality and competition shows that can give away who reaches the final.</string>
+    <string name="settings_meta_cast_episode_counts_show">Show</string>
+    <string name="settings_meta_cast_episode_counts_hide_reality">Hide on Reality</string>
+    <string name="settings_meta_cast_episode_counts_hide">Hide</string>
     <string name="trakt_auth_code_expired">The Trakt code expired. Please try connecting again.</string>
     <string name="simkl_remove_plan_to_watch_blocked">%1$s has watch history on SIMKL. Removing it from Plan to Watch here would erase that history, so Nuvio won't do it — remove it on simkl.com instead.</string>
     <string name="simkl_this_title">This title</string>

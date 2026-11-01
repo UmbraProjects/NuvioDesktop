@@ -55,6 +55,7 @@ import com.nuvio.app.features.details.MetaScreenSectionItem
 import com.nuvio.app.features.details.MetaScreenBackgroundMode
 import com.nuvio.app.features.details.MetaScreenSectionKey
 import com.nuvio.app.features.details.EpisodeRatingsVisibility
+import com.nuvio.app.features.details.CastEpisodeCountVisibility
 import com.nuvio.app.features.details.SameCastLabelPlacement
 import com.nuvio.app.features.details.MetaScreenSettingsRepository
 import com.nuvio.app.features.details.MetaScreenSettingsUiState
@@ -120,6 +121,11 @@ import nuvio.composeapp.generated.resources.settings_meta_episode_ratings
 import nuvio.composeapp.generated.resources.settings_meta_episode_ratings_description
 import nuvio.composeapp.generated.resources.settings_meta_episode_ratings_hide
 import nuvio.composeapp.generated.resources.settings_meta_episode_ratings_hide_unwatched
+import nuvio.composeapp.generated.resources.settings_meta_cast_episode_counts
+import nuvio.composeapp.generated.resources.settings_meta_cast_episode_counts_description
+import nuvio.composeapp.generated.resources.settings_meta_cast_episode_counts_show
+import nuvio.composeapp.generated.resources.settings_meta_cast_episode_counts_hide_reality
+import nuvio.composeapp.generated.resources.settings_meta_cast_episode_counts_hide
 import nuvio.composeapp.generated.resources.settings_meta_episode_ratings_show
 import nuvio.composeapp.generated.resources.settings_meta_overall_ratings
 import nuvio.composeapp.generated.resources.settings_meta_overall_ratings_description
@@ -315,6 +321,29 @@ internal fun LazyListScope.metaScreenSettingsContent(
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-same-cast-label")),
                     onSelected = MetaScreenSettingsRepository::setSameCastLabelPlacement,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsChoiceRow(
+                    title = stringResource(Res.string.settings_meta_cast_episode_counts),
+                    description = stringResource(Res.string.settings_meta_cast_episode_counts_description),
+                    options = listOf(
+                        SettingsChoiceOption(
+                            CastEpisodeCountVisibility.SHOW,
+                            stringResource(Res.string.settings_meta_cast_episode_counts_show),
+                        ),
+                        SettingsChoiceOption(
+                            CastEpisodeCountVisibility.HIDE_REALITY,
+                            stringResource(Res.string.settings_meta_cast_episode_counts_hide_reality),
+                        ),
+                        SettingsChoiceOption(
+                            CastEpisodeCountVisibility.HIDE,
+                            stringResource(Res.string.settings_meta_cast_episode_counts_hide),
+                        ),
+                    ),
+                    selectedValue = uiState.castEpisodeCountVisibility,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("meta-cast-episode-counts")),
+                    onSelected = MetaScreenSettingsRepository::setCastEpisodeCountVisibility,
                 )
             }
         }
