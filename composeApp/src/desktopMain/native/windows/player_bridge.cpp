@@ -1648,6 +1648,12 @@ public:
         stopMpvCalls();
     }
 
+    // fork:music-stage - public entry for the rounded video corners (the members behind it are private).
+    void setCornerRadius(int radiusPx) {
+        cornerRadiusPx.store(radiusPx);
+        applyCornerRegion();
+    }
+
     void shutdown() {
         if (shuttingDown.exchange(true)) {
             return;
@@ -7334,8 +7340,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setCornerRadius(JNIEnv *, jobject, jlong handle, jint radiusPx) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->cornerRadiusPx.store(radiusPx);
-    player->applyCornerRegion();
+    player->setCornerRadius(radiusPx);
 }
 
 extern "C" JNIEXPORT void JNICALL
