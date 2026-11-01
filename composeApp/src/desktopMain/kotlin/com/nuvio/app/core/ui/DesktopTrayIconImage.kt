@@ -20,7 +20,7 @@ private val TrayIconVariantSizes = intArrayOf(16, 20, 24, 32, 40, 48)
 
 // What a window gets asked for: ICON_SMALL (16px) and ICON_BIG (32px) at 100-300%, which is what
 // the taskbar and Alt-Tab draw from, plus the larger ones Task View and the shell's jump lists use.
-private val WindowIconVariantSizes = intArrayOf(16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
+private val WindowIconVariantSizes = intArrayOf(16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256)
 
 /**
  * Loads the app icon as a tray image.

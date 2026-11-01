@@ -103,7 +103,7 @@ class DesktopTrayIconImageTest {
      */
     @Test
     fun everyShellSizeHasItsOwnDrawnCopy() {
-        for (size in intArrayOf(16, 20, 24, 32, 40, 48, 64, 96, 128, 256)) {
+        for (size in intArrayOf(16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256)) {
             assertNotNull(
                 Thread.currentThread().contextClassLoader.getResource("icons/sizes/nuvio-app-icon-$size.png"),
                 "no drawn ${size}px icon; that size would be resampled",
