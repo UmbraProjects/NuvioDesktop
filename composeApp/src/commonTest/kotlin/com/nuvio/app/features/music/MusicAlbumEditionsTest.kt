@@ -118,4 +118,32 @@ class MusicAlbumEditionsTest {
         val result = matchingEdition(short, 11) { id -> if (id == "long") error("down") else null }
         assertEquals("short", result.browseId)
     }
+
+    private fun hit(id: String, title: String, artist: String = "Ren") =
+        MusicAlbumSummary(id, title, listOf(MusicArtistRef(artist)), "2026", "Album", null)
+
+    @Test
+    fun aSearchFindsTheFullerEditionListedAsAnAlbumOfItsOwn() = runBlocking {
+        val alone = album("short", 7)
+        val candidates = listOf(hit("short", "Vincent's Tale"), hit("elsewhere", "Vincent's Tale", "Someone Else"), hit("long", "Vincent's Tale"))
+        val result = searchedEdition(alone, listOf(11), candidates) { mapOf("long" to long, "elsewhere" to album("elsewhere", 11))[it] }
+        assertEquals("long", result.browseId)
+    }
+
+    @Test
+    fun aSearchIgnoresOtherTitlesAndOtherArtists() = runBlocking {
+        val alone = album("short", 7).copy(artists = listOf(MusicArtistRef("Ren")))
+        val fetchedIds = mutableListOf<String>()
+        val candidates = listOf(hit("x", "Sick Sick Soul"), hit("y", "Vincent's Tale", "Someone Else"))
+        val result = searchedEdition(alone, listOf(11), candidates) { fetchedIds += it; long }
+        assertEquals("short", result.browseId)
+        assertEquals(emptyList(), fetchedIds)
+    }
+
+    @Test
+    fun aSearchWithNoMatchingCountKeepsTheAlbum() = runBlocking {
+        val alone = album("short", 7)
+        val result = searchedEdition(alone, listOf(11), listOf(hit("other", "Vincent's Tale"))) { album("other", 9) }
+        assertEquals("short", result.browseId)
+    }
 }
