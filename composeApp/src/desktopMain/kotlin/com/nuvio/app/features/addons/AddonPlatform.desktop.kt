@@ -190,7 +190,12 @@ private suspend fun executeTextRequest(
     desktopHttpClient.newCall(buildDesktopRequest(method, url, headers, body)).execute().use { response ->
         val payload = readResponseBody(response.body)
         if (!response.isSuccessful) {
-            error(runBlocking { getString(Res.string.network_request_failed_http, response.code) })
+            // Same message as before, now carrying the status and Retry-After so a 429 can be waited out (RateLimitGate).
+            throw com.nuvio.app.core.network.HttpStatusException(
+                status = response.code,
+                retryAfterSeconds = com.nuvio.app.core.network.parseRetryAfterSeconds(response.header("Retry-After")),
+                message = runBlocking { getString(Res.string.network_request_failed_http, response.code) },
+            )
         }
         if (payload.isBlank()) {
             throw IllegalStateException(runBlocking { getString(Res.string.network_empty_response_body) })

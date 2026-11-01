@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -363,6 +364,14 @@ fun MusicTabScreen(
     var attempt by remember { mutableStateOf(0) } // bumped by "Try again" to rerun the same search
     var ladder by remember { mutableStateOf<LadderRequest?>(null) } // fork:music - the open ladder, if any
     var libraryView by rememberSaveable { mutableStateOf(LibraryView.Shelf) }
+    // A ladder asked for from the Stage (a genre chip): open it over a cleared search.
+    val pendingLadder by MusicPlayback.pendingLadder.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingLadder) {
+        val wanted = pendingLadder ?: return@LaunchedEffect
+        MusicTabState.query = ""
+        ladder = wanted
+        MusicPlayback.pendingLadder.value = null
+    }
     // A search typed into the top bar while a ladder is open is meant to be seen.
     LaunchedEffect(query) {
         if (query.isNotBlank()) ladder = null else MusicTabState.focusResultsWhenReady = false

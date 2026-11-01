@@ -914,6 +914,7 @@ object MetaDetailsRepository {
 
     private const val FETCH_TIMEOUT_MS = 12_000L
     private const val HTTP_NOT_FOUND = 404
+    private const val HTTP_TOO_MANY_REQUESTS = 429
     private const val META_NOT_FOUND_CACHE_LIMIT = 5_000
     private const val TMDB_ENRICH_TIMEOUT_MS = 5_000L
     private const val TVDB_AIR_TIME_TIMEOUT_MS = 4_000L
@@ -1041,13 +1042,26 @@ object MetaDetailsRepository {
         return withContext(Dispatchers.Default) { try {
             TmdbSettingsRepository.ensureLoaded()
             log.d { "Fetching meta from: ${com.nuvio.app.core.network.redactAddonUrl(url)} [origin=$origin]" }
-            val response = httpRequestRaw(
-                method = "GET",
-                url = url,
-                headers = mapOf("Accept" to "application/json"),
-                body = "",
-                allowLargeResponse = true,
-            )
+            // A host that says 429 is waited out and asked again (RateLimitGate) instead of being sent the rest of the burst.
+            val response = com.nuvio.app.core.network.RateLimitGate.shared.run(url) {
+                httpRequestRaw(
+                    method = "GET",
+                    url = url,
+                    headers = mapOf("Accept" to "application/json"),
+                    body = "",
+                    allowLargeResponse = true,
+                ).also { raw ->
+                    if (raw.status == HTTP_TOO_MANY_REQUESTS) {
+                        throw com.nuvio.app.core.network.HttpStatusException(
+                            status = raw.status,
+                            retryAfterSeconds = com.nuvio.app.core.network.parseRetryAfterSeconds(
+                                raw.headers.entries.firstOrNull { it.key.equals("Retry-After", ignoreCase = true) }?.value,
+                            ),
+                            message = getString(Res.string.network_request_failed_http, raw.status),
+                        )
+                    }
+                }
+            }
             if (response.status == HTTP_NOT_FOUND) {
                 // The addon declares meta for this id prefix but doesn't have this title: an
                 // answer, not a failure. Addons such as provider catalogues claim every `tt` id,
@@ -1075,6 +1089,11 @@ object MetaDetailsRepository {
                 // long. Still rethrown — cancellation must propagate.
                 log.d { "Meta fetch cancelled after payload for ${com.nuvio.app.core.network.redactAddonUrl(url)} [origin=$origin]" }
                 throw e
+            }
+            if (e is com.nuvio.app.core.network.HttpStatusException && e.status == HTTP_TOO_MANY_REQUESTS) {
+                // One line, no stack: a rate-limited sweep used to write thousands of these.
+                log.w { "Meta for $type/$id rate limited (HTTP 429) by ${com.nuvio.app.core.network.redactAddonUrl(manifest.transportUrl)}; skipped for now" }
+                return@withContext null
             }
             log.e(e) { "Failed to fetch/parse meta from ${com.nuvio.app.core.network.redactAddonUrl(url)} (manifest=${com.nuvio.app.core.network.redactAddonUrl(manifest.transportUrl)})" }
             null

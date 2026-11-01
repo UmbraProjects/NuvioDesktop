@@ -35,4 +35,15 @@
     <string name="settings_music_mb_offline_cancel">Cancel</string>
     <string name="settings_music_mb_offline_delete">Delete</string>
     <string name="settings_music_mb_offline_retry">Try again</string>
+    <string name="settings_music_section_lyrics">Word-by-word lyrics</string>
+    <string name="settings_music_lyrics_unison">Unison</string>
+    <string name="settings_music_lyrics_unison_description">Community-submitted lyrics timed to the syllable (the database behind Better Lyrics). A lookup sends the song\'s title and artist to unison.betterlyrics.org. Turned on, lyrics are asked for when a track first plays and remembered on this computer.</string>
+    <string name="settings_music_lyrics_amll">AMLL TTML DB</string>
+    <string name="settings_music_lyrics_amll_description">An open collection of community-timed lyrics in the style of Apple Music. A lookup sends the song\'s title and artist to api.amll.dev.</string>
+    <string name="settings_music_lyrics_netease">Netease Cloud Music</string>
+    <string name="settings_music_lyrics_netease_description">Word-timed lyrics from Netease\'s unofficial interface; it may not answer outside China. A lookup sends the song\'s title and artist to music.163.com.</string>
+    <string name="settings_music_lyrics_lrcmux">LRCMux</string>
+    <string name="settings_music_lyrics_lrcmux_description">The widest reach: a third-party service that relays other catalogues\' lyrics and does not state its terms, so it is off until you turn it on. A lookup sends the song\'s title, artist and length to api.lrcmux.dev.</string>
+    <string name="settings_music_lyrics_lyricsplus">LyricsPlus</string>
+    <string name="settings_music_lyrics_lyricsplus_description">Syllable-timed lyrics from Apple Music, fetched through a third-party service that does not state its terms, so it is off until you turn it on. A lookup sends the song\'s title, artist and length to lyricsplus.binimum.org.</string>
 </resources>

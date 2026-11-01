@@ -30,6 +30,9 @@ import com.nuvio.app.features.player.PlayerPlaybackSnapshot
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.NativePlayerHost
+import com.nuvio.app.features.preroll.MUSIC_LOUDNESS_RANGE_LU
+import com.nuvio.app.features.preroll.loudnessFilterExpression
+import com.nuvio.app.features.preroll.mpvAudioFilterValue
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -39,11 +42,13 @@ private val log = Logger.withTag("MusicPlayerSurface")
 private const val POLL_MS = 250L
 
 /**
- * fork:alternate-upload — brings a quiet upload up to the level album audio plays at. `loudnorm` first aims at a
- * fixed target (-14 LUFS) however quiet the source is; album masters sit well above that, so a further 6 dB follows,
- * and `alimiter` holds the peaks under full scale so the extra gain cannot clip.
+ * All music, album audio and alternate uploads alike, is brought to the shared loudness (LoudnessTarget.kt), the
+ * level a film's dialogue sits at, so a track neither blasts after a film nor needs the remote to hear. Album
+ * masters are far louder than that, so this mostly turns them down; a quiet upload (fork:alternate-upload) is
+ * brought up to the same place, which replaces its old fixed -14 LUFS plus 6 dB boost. The wider range keeps more
+ * of a track's own dynamics than the trailer setting does.
  */
-private const val ALTERNATE_UPLOAD_LOUDNESS_FILTER = "lavfi=[loudnorm=I=-14:LRA=11:TP=-1.5,volume=6dB,alimiter=limit=0.97]"
+private val MUSIC_LOUDNESS_FILTER: String = mpvAudioFilterValue(loudnessFilterExpression(MUSIC_LOUDNESS_RANGE_LU))
 
 @Composable
 actual fun MusicPlayerSurface(
@@ -169,10 +174,11 @@ actual fun MusicPlayerSurface(
                 }
             },
             controlsPageUrlSuffix = "?heroTrailer=1&chromeless=1",
-            // fork:alternate-upload — an upload standing in for album audio is quieter; even its level out.
+            // fork:alternate-upload — an upload standing in for album audio is quieter; it and everything else
+            // goes to the shared loudness, set as an init option so the first audio frame already has it.
             initMpvOptions = buildList {
                 add("volume=${volume.coerceIn(0, 100)}")
-                if (source.evenOutLoudness) add("af=$ALTERNATE_UPLOAD_LOUDNESS_FILTER")
+                add("af=$MUSIC_LOUDNESS_FILTER")
                 // Set on the new instance itself (attach swaps the native player on a worker thread), so it applies to
                 // this load's open and nothing else.
                 if (openAtMs > 0L) add("start=${formatMpvSeconds(openAtMs)}")

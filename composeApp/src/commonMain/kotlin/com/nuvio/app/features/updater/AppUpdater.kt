@@ -127,6 +127,8 @@ data class AppUpdaterUiState(
     val showDialog: Boolean = false,
     val showUnknownSourcesDialog: Boolean = false,
     val errorMessage: String? = null,
+    /** What the offered update will really download (just the changed files), when that is less than the whole archive. */
+    val downloadEstimateBytes: Long? = null,
 )
 
 @Serializable
@@ -481,6 +483,7 @@ class AppUpdaterController internal constructor(
                     state.copy(
                         isChecking = false,
                         update = update.takeIf { remoteNewer },
+                        downloadEstimateBytes = null,
                         isUpdateAvailable = remoteNewer,
                         isChannelSwitch = remoteNewer &&
                             UpdateAvailability.isChannelSwitch(update, installedNightlyId, runningBuild),
@@ -491,6 +494,15 @@ class AppUpdaterController internal constructor(
                         showUnknownSourcesDialog = false,
                         errorMessage = null,
                     )
+                }
+
+                if (remoteNewer) {
+                    scope.launch {
+                        val estimate = AppUpdaterPlatform.estimateDownloadBytes(update.assetUrl)
+                        _uiState.update { state ->
+                            if (state.update?.assetUrl == update.assetUrl) state.copy(downloadEstimateBytes = estimate) else state
+                        }
+                    }
                 }
 
                 if (showNoUpdateFeedback && !remoteNewer) {
@@ -879,6 +891,7 @@ fun AppUpdaterHost(
                     UpdateTargetCard(
                         update = state.update?.takeIf { state.isUpdateAvailable },
                         isChecking = state.isChecking,
+                        downloadEstimateBytes = state.downloadEstimateBytes,
                     )
 
                     state.update?.let { update ->
@@ -1034,6 +1047,7 @@ fun AppUpdaterHost(
 private fun UpdateTargetCard(
     update: AppUpdate?,
     isChecking: Boolean,
+    downloadEstimateBytes: Long? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     Row(
@@ -1058,7 +1072,13 @@ private fun UpdateTargetCard(
             return@Row
         }
         val published = utcInstantOrNull(update.publishedAt)?.let(::shortUtcLabel)
-        val size = update.assetSizeBytes?.let(::formatFileSize)
+        val size = update.assetSizeBytes?.let { full ->
+            if (downloadEstimateBytes != null && downloadEstimateBytes < full) {
+                stringResource(Res.string.updates_download_size_delta, formatFileSize(downloadEstimateBytes), formatFileSize(full))
+            } else {
+                formatFileSize(full)
+            }
+        }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = when (update.channel) {

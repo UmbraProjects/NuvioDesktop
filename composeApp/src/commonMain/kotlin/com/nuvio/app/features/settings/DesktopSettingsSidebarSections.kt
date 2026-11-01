@@ -157,6 +157,7 @@ internal fun desktopSettingsSidebarSubItems(
         SettingsPage.Music -> listOf( // fork:music
             section(SettingsPage.Music, Res.string.settings_music_section_general),
             section(SettingsPage.Music, Res.string.settings_music_section_sources),
+            section(SettingsPage.Music, Res.string.settings_music_section_lyrics),
             section(SettingsPage.Music, Res.string.settings_music_section_playback),
         )
         SettingsPage.Preshow -> listOf(

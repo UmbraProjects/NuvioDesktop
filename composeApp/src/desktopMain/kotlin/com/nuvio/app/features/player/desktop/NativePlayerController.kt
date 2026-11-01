@@ -2,6 +2,7 @@ package com.nuvio.app.features.player.desktop
 
 import com.nuvio.app.features.preroll.PostShowController
 import com.nuvio.app.features.preroll.PostShowKey
+import com.nuvio.app.features.preroll.loudnessFilterExpression
 import com.nuvio.app.core.i18n.localizedString
 import androidx.compose.ui.graphics.Color
 import co.touchlab.kermit.Logger
@@ -92,15 +93,19 @@ import kotlin.math.floor
 import nuvio.composeapp.generated.resources.*
 
 /**
- * mpv audio-filter chain applied to trailer playback (hero previews, fullscreen trailers, and
- * manual trailer clicks — anything using [NativePlayerController] outside the main player).
+ * mpv audio-filter expression applied to trailer playback (hero previews, fullscreen trailers, the
+ * pre-show, theme songs: anything using [NativePlayerController] outside the main player).
  * Trailer loudness varies wildly between uploads with no consistent mastering, unlike a film's
- * own audio track; `dynaudnorm` continuously adjusts gain toward a target loudness in real
- * time (no pre-analysis pass needed, so it works on a streamed URL), smoothing out the
- * silent-then-jump-scare swings. `f=150` (a 150ms analysis frame, shorter than the 500ms
- * default) reacts fast enough to catch a sudden loud spike rather than only the next one.
+ * own audio track. `loudnorm` (EBU R128) steers each one to the same integrated loudness a film's
+ * dialogue sits at (see LoudnessTarget.kt) and holds the true peak under a ceiling, so a trailer
+ * is neither louder than the film that follows nor spiky. It works on a streamed URL (single
+ * pass, no pre-analysis). This is the bare expression; wrap it with [mpvAudioFilterValue].
+ *
+ * It replaced `dynaudnorm=f=150:g=15`, which evened trailers out against each other but pulled
+ * their peaks up to full scale, well above a film. The "Loudness normalise" choice in the player's
+ * audio menu still uses `dynaudnorm`, unchanged.
  */
-internal const val TRAILER_AUDIO_NORMALIZATION_FILTER = "dynaudnorm=f=150:g=15"
+internal val TRAILER_AUDIO_NORMALIZATION_FILTER: String = loudnessFilterExpression()
 
 internal class NativePlayerController(
     private val host: NativePlayerHost,

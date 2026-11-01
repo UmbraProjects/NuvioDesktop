@@ -2519,6 +2519,11 @@ private fun settingsSearchEntries(
             PlaybackSearchRow("music-audiodb-key", resolve(Res.string.settings_music_audiodb_key), resolve(Res.string.settings_music_audiodb_key_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-where-next", resolve(Res.string.settings_music_where_next), resolve(Res.string.settings_music_where_next_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-mb-offline", resolve(Res.string.settings_music_mb_offline), resolve(Res.string.settings_music_mb_offline_absent), resolve(Res.string.settings_music_section_sources)),
+            PlaybackSearchRow("music-lyrics-unison", resolve(Res.string.settings_music_lyrics_unison), resolve(Res.string.settings_music_lyrics_unison_description), resolve(Res.string.settings_music_section_lyrics)),
+            PlaybackSearchRow("music-lyrics-amll", resolve(Res.string.settings_music_lyrics_amll), resolve(Res.string.settings_music_lyrics_amll_description), resolve(Res.string.settings_music_section_lyrics)),
+            PlaybackSearchRow("music-lyrics-netease", resolve(Res.string.settings_music_lyrics_netease), resolve(Res.string.settings_music_lyrics_netease_description), resolve(Res.string.settings_music_section_lyrics)),
+            PlaybackSearchRow("music-lyrics-lrcmux", resolve(Res.string.settings_music_lyrics_lrcmux), resolve(Res.string.settings_music_lyrics_lrcmux_description), resolve(Res.string.settings_music_section_lyrics)),
+            PlaybackSearchRow("music-lyrics-lyricsplus", resolve(Res.string.settings_music_lyrics_lyricsplus), resolve(Res.string.settings_music_lyrics_lyricsplus_description), resolve(Res.string.settings_music_section_lyrics)),
             PlaybackSearchRow("music-keep-audio-alive", resolve(Res.string.settings_music_keep_audio_alive), resolve(Res.string.settings_music_keep_audio_alive_description), resolve(Res.string.settings_music_section_playback)),
             PlaybackSearchRow("music-skip-non-music", resolve(Res.string.settings_music_skip_non_music), resolve(Res.string.settings_music_skip_non_music_description), resolve(Res.string.settings_music_section_playback)),
         ).forEach { row ->

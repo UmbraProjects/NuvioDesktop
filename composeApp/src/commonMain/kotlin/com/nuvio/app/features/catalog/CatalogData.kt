@@ -43,7 +43,7 @@ private suspend fun deduplicatedHttpGetText(url: String): String {
             inflightRequests[url] = created
             inflightRequestScope.launch {
                 try {
-                    created.complete(httpGetText(url))
+                    created.complete(com.nuvio.app.core.network.RateLimitGate.shared.run(url) { httpGetText(url) })
                 } catch (error: Throwable) {
                     created.completeExceptionally(error)
                 } finally {

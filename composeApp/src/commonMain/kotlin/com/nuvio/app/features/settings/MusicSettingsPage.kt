@@ -46,6 +46,17 @@ import nuvio.composeapp.generated.resources.settings_music_skip_non_music_descri
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
 import nuvio.composeapp.generated.resources.settings_music_section_general
+import nuvio.composeapp.generated.resources.settings_music_lyrics_amll
+import nuvio.composeapp.generated.resources.settings_music_lyrics_amll_description
+import nuvio.composeapp.generated.resources.settings_music_lyrics_lrcmux
+import nuvio.composeapp.generated.resources.settings_music_lyrics_lrcmux_description
+import nuvio.composeapp.generated.resources.settings_music_lyrics_lyricsplus
+import nuvio.composeapp.generated.resources.settings_music_lyrics_lyricsplus_description
+import nuvio.composeapp.generated.resources.settings_music_lyrics_netease
+import nuvio.composeapp.generated.resources.settings_music_lyrics_netease_description
+import nuvio.composeapp.generated.resources.settings_music_lyrics_unison
+import nuvio.composeapp.generated.resources.settings_music_lyrics_unison_description
+import nuvio.composeapp.generated.resources.settings_music_section_lyrics
 import nuvio.composeapp.generated.resources.settings_music_section_playback
 import nuvio.composeapp.generated.resources.settings_music_section_sources
 import nuvio.composeapp.generated.resources.settings_music_show_tab
@@ -177,6 +188,65 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                 )
                 SettingsGroupDivider(isTablet)
                 MusicBrainzOfflineRow(isTablet)
+            }
+        }
+    }
+
+    item {
+        SettingsSection(
+            title = stringResource(Res.string.settings_music_section_lyrics),
+            isTablet = isTablet,
+        ) {
+            val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+            val settings = state.settings
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsSearchAnchors(
+                    "music-lyrics-unison",
+                    "music-lyrics-amll",
+                    "music-lyrics-netease",
+                    "music-lyrics-lrcmux",
+                ),
+            ) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_lyrics_unison),
+                    description = stringResource(Res.string.settings_music_lyrics_unison_description),
+                    checked = settings.unisonLyrics,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(unisonLyrics = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_lyrics_amll),
+                    description = stringResource(Res.string.settings_music_lyrics_amll_description),
+                    checked = settings.amllLyrics,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(amllLyrics = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_lyrics_netease),
+                    description = stringResource(Res.string.settings_music_lyrics_netease_description),
+                    checked = settings.neteaseLyrics,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(neteaseLyrics = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_lyrics_lrcmux),
+                    description = stringResource(Res.string.settings_music_lyrics_lrcmux_description),
+                    checked = settings.lrcMuxLyrics,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(lrcMuxLyrics = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_lyrics_lyricsplus),
+                    description = stringResource(Res.string.settings_music_lyrics_lyricsplus_description),
+                    checked = settings.lyricsPlusLyrics,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(lyricsPlusLyrics = it)) },
+                )
             }
         }
     }

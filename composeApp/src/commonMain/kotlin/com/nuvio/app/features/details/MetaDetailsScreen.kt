@@ -188,6 +188,7 @@ import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
+import com.nuvio.app.features.tracking.RatingPromptRepository
 import com.nuvio.app.features.tracking.TrackingProviderRegistry
 import com.nuvio.app.features.tracking.buildTrackingMediaReference
 import com.nuvio.app.features.tracking.trackingRatingProviderDisplayName
@@ -1863,7 +1864,11 @@ fun MetaDetailsScreen(
                 // over the incoming page for several frames. Back is covered by isLeavingDetails.
                 val detailsLifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
                 val detailsCovered = !detailsLifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+                // The after-playback rating prompt is drawn by a host above every screen, so this screen only
+                // learns of it through the shared flag.
+                val ratingPromptShowing by RatingPromptRepository.isShowing.collectAsStateWithLifecycle()
                 val heroTrailerModalVisible = detailsCovered ||
+                    ratingPromptShowing ||
                     showLibraryListPicker ||
                     showRatingDialog ||
                     showMonitorDialog ||

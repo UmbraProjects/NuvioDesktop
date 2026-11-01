@@ -198,6 +198,7 @@ import com.nuvio.app.features.tmdb.TmdbSettings
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesUiState
+import com.nuvio.app.features.whatsnew.WhatsNewController
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.*
@@ -480,6 +481,7 @@ fun SettingsScreen(
         LaunchedEffect(currentPage) {
             perfSettingsPage = currentPage
             PerfTelemetry.markScreen("Settings/$currentPage")
+            WhatsNewController.onSettingsPage(currentPage) // fork:whatsnew
         }
         var selectedDownloadsShowId by rememberSaveable { mutableStateOf<String?>(null) }
         var pendingDownloadsDelete by remember { mutableStateOf<DownloadsSettingsDeleteTarget?>(null) }

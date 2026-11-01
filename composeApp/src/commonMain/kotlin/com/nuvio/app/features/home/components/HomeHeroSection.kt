@@ -72,6 +72,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
+import com.nuvio.app.features.tracking.RatingPromptRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.settings.DesktopNavigationLayout
 import com.nuvio.app.features.settings.ThemeSettingsRepository
@@ -1419,8 +1420,11 @@ private fun DesktopHomeHeroFrame(
     // Covered by a pushed screen (Home stays composed under it): the trailer's heavyweight surface
     // would paint over that screen, and the gate's reset below only lands a frame later.
     val heroTrailerCovered = LocalScreenCovered.current
+    // The after-playback rating prompt is drawn above every screen, so Home only hears of it through this flag.
+    val ratingPromptShowing by RatingPromptRepository.isShowing.collectAsState()
     val heroTrailerMounted = tvHeroActive &&
         !heroTrailerCovered &&
+        !ratingPromptShowing &&
         heroTrailerSource != null &&
         !heroTrailerFinished
     val heroTrailerVisible = heroTrailerMounted && heroTrailerPlaybackRequested

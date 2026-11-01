@@ -1,6 +1,7 @@
 package com.nuvio.app.features.tracking
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +63,12 @@ fun RatingPromptHost(isSuppressed: Boolean) {
         },
         providerName,
     )
+
+    // Tells the screen underneath, so it can park a playing trailer (see RatingPromptRepository.isShowing).
+    DisposableEffect(Unit) {
+        RatingPromptRepository.setShowing(true)
+        onDispose { RatingPromptRepository.setShowing(false) }
+    }
 
     TrackingRatingDialog(
         visible = true,

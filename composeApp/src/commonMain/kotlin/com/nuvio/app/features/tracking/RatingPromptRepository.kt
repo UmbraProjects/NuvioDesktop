@@ -48,6 +48,19 @@ object RatingPromptRepository {
     private val _pendingRequest = MutableStateFlow<RatingPromptRequest?>(null)
     val pendingRequest: StateFlow<RatingPromptRequest?> = _pendingRequest.asStateFlow()
 
+    private val _isShowing = MutableStateFlow(false)
+
+    /**
+     * True while [RatingPromptHost] has the prompt on screen. The host sits above every screen, so a screen
+     * under it cannot tell the prompt is up; and a trailer plays on a native window that always paints over
+     * Compose. Screens with a trailer read this and park it, as they do for their own dialogs.
+     */
+    val isShowing: StateFlow<Boolean> = _isShowing.asStateFlow()
+
+    internal fun setShowing(showing: Boolean) {
+        _isShowing.value = showing
+    }
+
     private val _isEnabled = MutableStateFlow(DEFAULT_ENABLED)
     val isEnabled: StateFlow<Boolean> = _isEnabled.asStateFlow()
 

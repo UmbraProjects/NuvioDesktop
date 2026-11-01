@@ -33,11 +33,35 @@ import javax.swing.RootPaneContainer
  */
 internal object DesktopWindowGeometryDiagnostics {
 
+    // What the last dump of each reason saw. The player surface paints once per player, and a hero trailer is a
+    // player: one session logged this 20-line dump 242 times (0.7 MB) with identical geometry every time. A dump
+    // that would repeat the last one for the same reason says nothing new, so it is skipped.
+    private val lastSignature = HashMap<String, String>()
+
     fun log(window: Window, reason: String) {
-        runCatching { dump(window, reason) }
+        runCatching {
+            val signature = signatureOf(window)
+            val repeated = synchronized(lastSignature) {
+                (lastSignature.put(reason, signature) == signature)
+            }
+            if (!repeated) dump(window, reason)
+        }
             .onFailure { error ->
                 System.err.println("Error: (WindowGeometry) dump failed for '$reason': $error")
             }
+    }
+
+    /** Everything the dump is about, in one line: size and place of the window, its screen, scale, state and insets. */
+    private fun signatureOf(window: Window): String {
+        val configuration = window.graphicsConfiguration
+        return listOf(
+            window.bounds,
+            configuration?.bounds,
+            configuration?.defaultTransform?.scaleX,
+            configuration?.defaultTransform?.scaleY,
+            (window as? Frame)?.extendedState,
+            runCatching { window.insets }.getOrNull(),
+        ).joinToString("|")
     }
 
     private fun dump(window: Window, reason: String) {

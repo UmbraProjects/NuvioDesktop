@@ -2712,6 +2712,7 @@
     <string name="updates_title_status">Update status</string>
     <string name="updates_github_link">GitHub</string>
     <string name="updates_target_published">Published %1$s UTC</string>
+    <string name="updates_download_size_delta">%1$s to download (%2$s full)</string>
     <string name="updates_target_version">Version %1$s</string>
     <string name="updates_update_asset_missing">No compatible Windows portable ZIP was found in the release.</string>
     <string name="updates_open_download">Open download</string>

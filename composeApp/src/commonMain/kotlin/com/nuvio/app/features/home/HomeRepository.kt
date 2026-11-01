@@ -285,7 +285,12 @@ object HomeRepository {
                 result.getOrNull()?.let { section -> loadedSections[section.key] = section }
                 result.exceptionOrNull()?.let { error ->
                     val request = pendingRequests[index]
-                    log.w(error) { "Catalog fetch failed: ${request.addonName} / ${request.catalogId}" }
+                    if (error is com.nuvio.app.core.network.HttpStatusException) {
+                        // An answer, not a crash: one line without the stack (a rate-limited Home wrote hundreds of them).
+                        log.w { "Catalog fetch failed: ${request.addonName} / ${request.catalogId} (HTTP ${error.status})" }
+                    } else {
+                        log.w(error) { "Catalog fetch failed: ${request.addonName} / ${request.catalogId}" }
+                    }
                     if (firstErrorMessage == null) firstErrorMessage = error.message
                 }
                 mergeBatchIntoCache(loadedSections)

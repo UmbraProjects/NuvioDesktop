@@ -62,6 +62,12 @@ expect object AppUpdaterPlatform {
 
     fun setInPlaceUpdateEnabled(enabled: Boolean)
 
+    /**
+     * How many bytes an in-place update of this install would actually download (only what changed), or null when it would take
+     * the whole archive or that can't be worked out. Cheap: reads the zip's index, not the zip.
+     */
+    suspend fun estimateDownloadBytes(assetUrl: String): Long?
+
     suspend fun downloadApk(
         assetUrl: String,
         assetName: String,

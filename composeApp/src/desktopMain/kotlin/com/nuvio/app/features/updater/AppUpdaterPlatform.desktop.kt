@@ -126,6 +126,17 @@ actual object AppUpdaterPlatform {
         store.putString(inPlaceApplyKey, if (enabled) "on" else "off")
     }
 
+    actual suspend fun estimateDownloadBytes(assetUrl: String): Long? = withContext(Dispatchers.IO) {
+        if (deltaDisabledThisSession || !isInPlaceUpdateEnabled()) return@withContext null
+        val target = inPlaceTarget() ?: return@withContext null
+        runCatching {
+            val source = HttpZipRangeSource(updaterHttpClient, assetUrl)
+            val index = ZipDelta.readIndex(source)
+            val plan = ZipDelta.plan(index.entries, target.installRoot, launcherExeName) ?: return@runCatching null
+            plan.changedCompressedBytes.takeIf { it <= source.length * deltaMaxShare }
+        }.getOrNull()
+    }
+
     actual suspend fun downloadApk(
         assetUrl: String,
         assetName: String,

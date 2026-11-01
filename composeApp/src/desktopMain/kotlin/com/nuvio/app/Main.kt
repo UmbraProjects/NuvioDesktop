@@ -1184,6 +1184,8 @@ fun main(args: Array<String>) {
     // Home settings are encoded off the UI thread now; a change made just before exit is written
     // here, before the stores flush below.
     runCatching { com.nuvio.app.features.home.HomeCatalogSettingsRepository.flushPendingPersist() }
+    // fork:music-library - library writes are gathered for a moment; one made just before exit is written here.
+    runCatching { com.nuvio.app.features.music.library.MusicLibraryRepository.flushPendingPersist() }
     // Every store coalesces its writes (DesktopStorage.flushAll), including the two caches just
     // flushed above. A shutdown hook does the same for exit paths that skip this function.
     runCatching { com.nuvio.app.core.storage.DesktopStorage.flushAll() }

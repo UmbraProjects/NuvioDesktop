@@ -60,6 +60,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -90,6 +91,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.nuvio
@@ -105,7 +111,7 @@ import com.nuvio.app.features.music.library.rememberCdArtFor
 import kotlinx.coroutines.delay
 
 /** Lines light up this long before their stamp, so the eye is on the line as it is sung. */
-private const val NOW_PLAYING_LYRIC_LEAD_MS = 250L
+internal const val NOW_PLAYING_LYRIC_LEAD_MS = 250L
 
 /** Tries at starting the lyric sync (the stream may not be readable the moment it opens), and the wait between. */
 private const val LYRIC_SYNC_ATTEMPTS = 3
@@ -118,6 +124,9 @@ private sealed interface LyricsUi {
     data object Loading : LyricsUi
     data class Ready(val lyrics: Lyrics) : LyricsUi
     data object Missing : LyricsUi
+
+    /** The lyric services could not be reached (so "none" is not known); the lookup is repeated on its own. */
+    data object Unreachable : LyricsUi
 }
 
 private enum class StageView { Stage, Video }
@@ -136,6 +145,9 @@ fun MusicNowPlayingHost(
     hidden: Boolean,
     modifier: Modifier = Modifier,
     player: MusicPlayer = MusicPlayback.player,
+    onOpenArtist: (String) -> Unit = {},
+    onOpenAlbum: (String) -> Unit = {},
+    onOpenMusicTab: () -> Unit = {},
 ) {
     val state by player.state.collectAsStateWithLifecycle()
     val open by MusicPlayback.nowPlayingOpen.collectAsStateWithLifecycle()
@@ -156,6 +168,9 @@ fun MusicNowPlayingHost(
                 player = player,
                 onSeek = player::seekTo,
                 onClose = { MusicPlayback.nowPlayingOpen.value = false },
+                onOpenArtist = onOpenArtist,
+                onOpenAlbum = onOpenAlbum,
+                onOpenMusicTab = onOpenMusicTab,
                 modifier = Modifier.fillMaxSize(), // takes the whole window; the content clears the bar itself
             )
         }
@@ -169,9 +184,14 @@ private fun MusicNowPlayingScreen(
     player: MusicPlayer,
     onSeek: (Long) -> Unit,
     onClose: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+    onOpenMusicTab: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
+    val scope = rememberCoroutineScope()
+    val catalog = remember { defaultMusicCatalog() }
     val track = state.track
     val album = state.album
     val artist = (track?.artists?.takeIf { it.isNotEmpty() } ?: album?.artists.orEmpty())
@@ -180,8 +200,23 @@ private fun MusicNowPlayingScreen(
 
     val baseLyrics by produceState<LyricsUi>(LyricsUi.Loading, track?.videoId) {
         value = LyricsUi.Loading
-        val found = track?.let { LyricsRepository.forTrack(it, album) }
-        value = if (found != null) LyricsUi.Ready(found) else LyricsUi.Missing
+        if (track == null) {
+            value = LyricsUi.Missing
+            return@produceState
+        }
+        // An outage is not "no lyrics": say so, and keep asking (20 s, 40 s, then every minute) until the track
+        // changes, so lyrics appear on their own once a service is back.
+        var attempt = 0
+        while (true) {
+            when (val answer = LyricsRepository.lookup(track, album)) {
+                is LyricsLookup.Found -> { value = LyricsUi.Ready(answer.lyrics); return@produceState }
+                LyricsLookup.Missing -> { value = LyricsUi.Missing; return@produceState }
+                LyricsLookup.Unreachable -> {
+                    value = LyricsUi.Unreachable
+                    delay(lyricsRetryDelayMs(attempt++))
+                }
+            }
+        }
     }
     val cdArt = rememberCdArtFor(album?.browseId)
 
@@ -249,6 +284,7 @@ private fun MusicNowPlayingScreen(
     var inputTick by remember { mutableIntStateOf(0) }
     var widgetsVisible by remember { mutableStateOf(true) }
     val fadeQueue = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.fadeQueue
+    val lyricStyle = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricStyle
     LaunchedEffect(inputTick, track?.videoId) {
         widgetsVisible = true
         delay(WIDGET_IDLE_MS)
@@ -330,19 +366,48 @@ private fun MusicNowPlayingScreen(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            listOfNotNull(artist.takeIf { it.isNotBlank() }, state.albumTitle, album?.year).joinToString(" · "),
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 16.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
+                        val artistRefs = (track?.artists?.takeIf { it.isNotEmpty() } ?: album?.artists.orEmpty())
+                        val albumId = track?.albumBrowseId ?: album?.browseId
+                        // Each part leads somewhere: an artist to their page, the album to its page, a genre to a ladder.
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(0.dp, Alignment.CenterHorizontally),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            artistRefs.forEachIndexed { i, ref ->
+                                StageLink(ref.name + if (i < artistRefs.lastIndex) ", " else "", enabled = true) {
+                                    scope.launch {
+                                        val id = ref.browseId ?: com.nuvio.app.features.music.library.rungArtist(catalog, ref.name)?.browseId
+                                        if (id != null) { onClose(); onOpenArtist(id) }
+                                    }
+                                }
+                            }
+                            val albumName = state.albumTitle
+                            if (!albumName.isNullOrBlank()) {
+                                StageLinkText(if (artistRefs.isNotEmpty()) " · " else "")
+                                StageLink(albumName, enabled = !albumId.isNullOrBlank()) { albumId?.let { onClose(); onOpenAlbum(it) } }
+                            }
+                            state.album?.year?.let { StageLinkText(" · $it") }
+                        }
                         val chips = listOfNotNull(libraryArtist?.mood) + libraryArtist?.genres.orEmpty().take(2)
                         if (chips.isNotEmpty()) {
                             Spacer(Modifier.height(12.dp))
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                chips.forEachIndexed { i, chip -> StageChip(chip, accented = i == 0 && libraryArtist?.mood != null) }
+                                chips.forEachIndexed { i, chip ->
+                                    val isMood = i == 0 && libraryArtist?.mood != null
+                                    // A genre starts a ladder into it (in the Music tab); the mood is only a label.
+                                    val genre = if (isMood) null else com.nuvio.app.features.music.library.canonicalGenre(chip)
+                                    StageChip(
+                                        chip,
+                                        accented = isMood,
+                                        onClick = genre?.let { g ->
+                                            {
+                                                MusicPlayback.pendingLadder.value = com.nuvio.app.features.music.library.LadderRequest.Genre(g)
+                                                onClose()
+                                                onOpenMusicTab()
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                         Spacer(Modifier.height(16.dp))
@@ -355,21 +420,23 @@ private fun MusicNowPlayingScreen(
                             lyricsMissing = lyrics is LyricsUi.Missing,
                             visible = widgetsVisible || !fadeQueue,
                             modifier = Modifier.weight(1f, fill = false),
+                            onOpenArtist = onOpenArtist,
                         )
                     }
                     Column(
                         // Under a video nothing is held back for the cut-out (it is small, in the corner), so the picture is centred on the
                         // area right of the sidebar column rather than shifted left of it.
-                        Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null && !realVideo) 200.dp else 0.dp),
+                        Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null && !realVideo) CUTOUT_CLEARANCE else 0.dp),
                         // Under a video the column is centred: the picture, then the lyric strip beneath it.
                         horizontalAlignment = if (realVideo) Alignment.CenterHorizontally else Alignment.Start,
                     ) {
                     // With a video: as large as the column allows, and four lines of lyrics under it.
                     if (realVideo) InlineVideoSlot()
                     LyricsPane(
-                        shownLyrics, state.positionMs, onSeek, reduced,
+                        shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
                         if (realVideo) Modifier.fillMaxWidth() else Modifier.weight(1f).fillMaxWidth(),
                         compact = realVideo,
+                        style = lyricStyle,
                         syncState = syncState,
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
@@ -391,9 +458,10 @@ private fun MusicNowPlayingScreen(
                     Spacer(Modifier.height(12.dp))
                     if (realVideo) InlineVideoSlot()
                     LyricsPane(
-                        shownLyrics, state.positionMs, onSeek, reduced,
+                        shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
                         if (realVideo) Modifier.fillMaxWidth() else Modifier.weight(1f).fillMaxWidth(),
                         compact = realVideo,
+                        style = lyricStyle,
                         syncState = syncState,
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
@@ -420,6 +488,11 @@ private fun MusicNowPlayingScreen(
                 }
             },
             onToggleMotion = { setMusicReducedMotion(!reduced) },
+            lyricStyle = lyricStyle,
+            onCycleLyricStyle = {
+                val settings = MusicLibraryRepository.state.value.settings
+                MusicLibraryRepository.updateSettings(settings.copy(lyricStyle = settings.lyricStyle.next()))
+            },
             fadeQueue = fadeQueue,
             onToggleFadeQueue = {
                 val settings = MusicLibraryRepository.state.value.settings
@@ -453,6 +526,8 @@ private fun StageTopBar(
     modifier: Modifier = Modifier,
     fadeQueue: Boolean = true,
     onToggleFadeQueue: () -> Unit = {},
+    lyricStyle: LyricStyle = LyricStyle.Scroll,
+    onCycleLyricStyle: () -> Unit = {},
 ) {
     Row(
         modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -481,6 +556,7 @@ private fun StageTopBar(
             selected = view,
             onSelect = onView,
         )
+        MusicTextChip("Lyrics: ${lyricStyle.label}", onCycleLyricStyle)
         MusicTextChip(if (fadeQueue) "Fade queue: on" else "Fade queue: off", onToggleFadeQueue)
         MusicTextChip(if (reduced) "Motion: reduced" else "Motion: full", onToggleMotion)
         if (canFullscreen) MusicTextChip("Fullscreen", onFullscreen)
@@ -488,7 +564,7 @@ private fun StageTopBar(
 }
 
 @Composable
-private fun StageChip(text: String, accented: Boolean) {
+private fun StageChip(text: String, accented: Boolean, onClick: (() -> Unit)? = null) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(14.dp)
     Text(
@@ -502,7 +578,36 @@ private fun StageChip(text: String, accented: Boolean) {
                 if (accented) Modifier.background(colors.accent)
                 else Modifier.border(1.dp, Color.White.copy(alpha = 0.3f), shape),
             )
+            .then(if (onClick != null) Modifier.musicKeyFocusRing(shape).clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 14.dp, vertical = 6.dp),
+    )
+}
+
+private val StageLinkStyle = 16.sp
+
+/** The plain separators and year beside the links in the line under the title. */
+@Composable
+private fun StageLinkText(text: String) {
+    Text(text, color = Color.White.copy(alpha = 0.8f), fontSize = StageLinkStyle)
+}
+
+/** A name in the line under the title that opens its page; underlined on hover would need more, so it is brighter and focusable. */
+@Composable
+private fun StageLink(text: String, enabled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(6.dp)
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    Text(
+        text,
+        color = Color.White.copy(alpha = if (enabled && hovered) 1f else 0.8f),
+        fontSize = StageLinkStyle,
+        textDecoration = if (enabled && hovered) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+        modifier = Modifier
+            .clip(shape)
+            .then(
+                if (enabled) Modifier.hoverable(source).musicKeyFocusRing(shape).clickable(interactionSource = source, indication = null, onClick = onClick)
+                else Modifier,
+            ),
     )
 }
 
@@ -523,6 +628,12 @@ private fun StageLogo(url: String?, name: String, maxHeight: Dp = 72.dp, maxWidt
         Text(name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
+
+/**
+ * Room kept free of lyrics on the right when the artist's cut-out stands there. The cut-out is up to 460.dp wide and fades in over its
+ * left third, so what is solid starts about 300.dp in; the lyrics (and the sync status under them) stop short of it.
+ */
+private val CUTOUT_CLEARANCE = 300.dp
 
 /** The artist cut out on nothing, standing in front of the backdrop and fading into it on the left. */
 @Composable
@@ -649,6 +760,7 @@ private fun FanartBackdrop(images: List<String>, coverUrl: String?, spec: StageM
 private fun LyricsPane(
     ui: LyricsUi,
     positionMs: Long,
+    playing: Boolean,
     onSeek: (Long) -> Unit,
     reduced: Boolean,
     modifier: Modifier,
@@ -658,6 +770,8 @@ private fun LyricsPane(
     onTapSync: (shownLineTimeMs: Long, positionMs: Long) -> Unit = { _, _ -> },
     /** Under a video: four lines (the one before, the sung one, the next two) and the sync strip, at a fixed height. */
     compact: Boolean = false,
+    /** How the Stage sets the lyrics (the compact strip under a video ignores it). */
+    style: LyricStyle = LyricStyle.Scroll,
 ) {
     // Tap to sync: the next line tapped is the one being heard, not a seek.
     var tapping by remember { mutableStateOf(false) }
@@ -667,6 +781,7 @@ private fun LyricsPane(
                 when (ui) {
                     LyricsUi.Loading -> Unit
                     LyricsUi.Missing -> Message("No lyrics found for this track")
+                    LyricsUi.Unreachable -> Message("Can't reach the lyrics services. Trying again…")
                     is LyricsUi.Ready -> when (val lyrics = ui.lyrics) {
                         Lyrics.Instrumental -> Message("Instrumental")
                         is Lyrics.Plain -> PlainLyrics(lyrics.lines)
@@ -677,9 +792,10 @@ private fun LyricsPane(
                     }
                 }
             }
-            if ((ui as? LyricsUi.Ready)?.lyrics is Lyrics.Synced) {
+            val compactSynced = (ui as? LyricsUi.Ready)?.lyrics as? Lyrics.Synced
+            if (compactSynced != null) {
                 Spacer(Modifier.height(26.dp))
-                LyricSyncStrip(syncState, tapping, { tapping = !tapping }, onNudge, onResetSync, Modifier.align(Alignment.CenterHorizontally))
+                LyricSyncStrip(syncState, tapping, { tapping = !tapping }, onNudge, onResetSync, Modifier.align(Alignment.CenterHorizontally), note = compactSynced.sourceNote())
             }
         }
         return
@@ -688,22 +804,25 @@ private fun LyricsPane(
         when (ui) {
             LyricsUi.Loading -> Unit
             LyricsUi.Missing -> Message("No lyrics found for this track")
+            LyricsUi.Unreachable -> Message("Can't reach the lyrics services. Trying again…")
             is LyricsUi.Ready -> when (val lyrics = ui.lyrics) {
                 Lyrics.Instrumental -> Message("Instrumental")
                 is Lyrics.Plain -> PlainLyrics(lyrics.lines)
                 is Lyrics.Synced -> {
-                    SyncedLyrics(
-                        lyrics.lines, positionMs, onSeek, reduced,
-                        tapping = tapping,
-                        onTapLine = { lineTimeMs, tappedAtMs ->
-                            onTapSync(lineTimeMs, tappedAtMs)
-                            tapping = false
-                        },
-                    )
+                    val onTap: (Long, Long) -> Unit = { lineTimeMs, tappedAtMs ->
+                        onTapSync(lineTimeMs, tappedAtMs)
+                        tapping = false
+                    }
+                    when (style) {
+                        LyricStyle.Calm -> PosterLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap)
+                        LyricStyle.Loud -> LoudLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap)
+                        LyricStyle.Scroll -> SyncedLyrics(lyrics.lines, positionMs, playing, onSeek, reduced, tapping = tapping, onTapLine = onTap)
+                    }
                     LyricSyncStrip(
                         syncState, tapping, { tapping = !tapping }, onNudge, onResetSync,
                         // Down at the pane's foot, apart from the lines, so it does not read as one of them.
                         Modifier.align(Alignment.BottomEnd).offset(y = 36.dp),
+                        note = lyrics.sourceNote(),
                     )
                 }
             }
@@ -720,6 +839,8 @@ private fun LyricSyncStrip(
     onNudge: (Long) -> Unit,
     onReset: () -> Unit,
     modifier: Modifier = Modifier,
+    /** How the lyrics are timed and by whom ("Word-synced \u00B7 Unison"), shown when there is no sync status to show instead. */
+    note: String? = null,
 ) {
     val offset = state.offsetMs()
     // A word or two above the buttons: the offset itself, or what is going on.
@@ -728,7 +849,7 @@ private fun LyricSyncStrip(
         state is LyricSyncState.Checking -> "Syncing\u2026"
         state is LyricSyncState.Unsure -> "Couldn't auto-sync"
         offset != 0L -> formatLyricOffset(offset)
-        else -> null
+        else -> note
     }
     Column(modifier.padding(bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label.orEmpty(), color = Color.White.copy(alpha = if (tapping) 0.85f else 0.5f), fontSize = 12.sp, maxLines = 1)
@@ -771,13 +892,18 @@ private fun PlainLyrics(lines: List<String>) {
 private fun SyncedLyrics(
     lines: List<LyricLine>,
     positionMs: Long,
+    playing: Boolean,
     onSeek: (Long) -> Unit,
     reduced: Boolean,
     tapping: Boolean = false,
     onTapLine: (lineTimeMs: Long, positionMs: Long) -> Unit = { _, _ -> },
 ) {
     val accent = MaterialTheme.nuvio.colors.accent
-    val active = activeLyricIndex(lines, positionMs + NOW_PLAYING_LYRIC_LEAD_MS)
+    // The player reports its position a few times a second; the smooth clock carries it between reports
+    // so the word sweep moves every frame (see rememberSmoothPositionMs).
+    val smooth = rememberSmoothPositionMs(positionMs, playing)
+    val active by remember(lines) { derivedStateOf { activeLyricIndex(lines, smooth.value + NOW_PLAYING_LYRIC_LEAD_MS) } }
+    val chorus = remember(lines) { chorusLineIndices(lines) }
     val listState = rememberLazyListState()
     // Keep the sung line a third of the way down: far enough from the top to see what is coming.
     LaunchedEffect(active, lines) {
@@ -801,14 +927,8 @@ private fun SyncedLyrics(
             }
             val alpha by animateFloatAsState(target, tween(if (reduced) 0 else 350), label = "lineAlpha")
             val scale by animateFloatAsState(if (index == active && !reduced) 1.1f else 1f, tween(if (reduced) 0 else 300), label = "lineScale")
-            Text(
-                text = line.text.ifBlank { "♪" },
-                // The line being sung is lit in the artist's accent.
-                color = (if (index == active) accent else Color.White).copy(alpha = alpha),
-                fontSize = 30.sp,
-                lineHeight = 38.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
+            Box(
+                Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .musicKeyFocusRing(RoundedCornerShape(12.dp)).clickable { if (tapping) onTapLine(line.timeMs, positionMs) else onSeek(line.timeMs) }
@@ -818,7 +938,29 @@ private fun SyncedLyrics(
                         scaleY = scale
                         transformOrigin = TransformOrigin(0f, 0.5f)
                     },
-            )
+            ) {
+                if (index == active && line.text.isNotBlank()) {
+                    // The sung line: each word is lit as it is sung, using the source's own word times when it
+                    // has them (Netease, Unison, AMLL, LRCMux) and an estimate from word length when it has not.
+                    ActiveLine(
+                        words = remember(lines, index) { lineWords(lines, index) },
+                        progress = { lineProgress(lines, index, smooth.value) },
+                        accent = accent,
+                        isChorus = index in chorus,
+                        emphasis = false,
+                        effects = !reduced,
+                        entrance = lineEntranceFor(index),
+                    )
+                } else {
+                    Text(
+                        text = line.text.ifBlank { "♪" },
+                        color = Color.White.copy(alpha = alpha),
+                        fontSize = 30.sp,
+                        lineHeight = 38.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
         }
     }
 }

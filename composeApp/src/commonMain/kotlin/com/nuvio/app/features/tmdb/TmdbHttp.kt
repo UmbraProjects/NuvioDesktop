@@ -116,6 +116,7 @@ internal object TmdbHttp {
      * nothing away, and the sharing removes far more traffic than the abandonment leaves behind.
      */
     suspend fun getText(url: String): String {
+        recentBody(url)?.let { return it }
         // Read here, in the caller's context: the shared job runs in [scope] and would otherwise
         // see no lane at all. First caller wins for a URL two lanes want at once, which is the
         // right way round — it is already queued, and the second caller wanted the answer, not the
@@ -125,7 +126,7 @@ internal object TmdbHttp {
             inFlight.getOrPut(url) {
                 scope.async {
                     try {
-                        fetchThroughGate(url, lane)
+                        fetchThroughGate(url, lane).also { rememberBody(url, it) }
                     } finally {
                         // A failed request must not leave its Deferred behind for later callers to
                         // await forever, so the removal has to survive cancellation too.
@@ -180,6 +181,28 @@ internal object TmdbHttp {
         }
     }
 
+    // Answers from the last minute or so. A caller that leaves its screen abandons the wait but the trip still
+    // finishes (see [getText]); without this its answer was dropped and the next visit asked TMDB again.
+    private val recent = object : LinkedHashMap<String, Pair<Long, String>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, String>>?): Boolean =
+            size > RECENT_MAX_ENTRIES
+    }
+
+    private fun recentBody(url: String): String? = synchronized(recent) {
+        val entry = recent[url] ?: return null
+        if (WatchProgressClock.nowEpochMs() - entry.first > RECENT_TTL_MS) {
+            recent.remove(url)
+            null
+        } else {
+            entry.second
+        }
+    }
+
+    private fun rememberBody(url: String, body: String) {
+        if (body.length > RECENT_MAX_BODY_CHARS) return
+        synchronized(recent) { recent[url] = WatchProgressClock.nowEpochMs() to body }
+    }
+
     private fun gateFor(lane: TmdbRequestLane): Semaphore = when (lane) {
         TmdbRequestLane.Interactive -> interactiveGate
         TmdbRequestLane.Background -> backgroundGate
@@ -222,6 +245,10 @@ internal object TmdbHttp {
     }
 
     private const val HTTP_TOO_MANY_REQUESTS = 429
+
+    private const val RECENT_TTL_MS = 60_000L
+    private const val RECENT_MAX_ENTRIES = 64
+    private const val RECENT_MAX_BODY_CHARS = 200_000
 
     private const val MAX_RETRIES = 3
 }

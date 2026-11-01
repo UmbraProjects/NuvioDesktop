@@ -587,6 +587,9 @@ object TmdbService {
         return runCatching {
             json.decodeFromString<T>(TmdbHttp.getText(url))
         }.onFailure { error ->
+            // A screen that was left cancels its requests; that is not a failure, and swallowing it here would
+            // also keep the cancelled caller running. 480 of these were logged as warnings in one session.
+            if (error is kotlinx.coroutines.CancellationException) throw error
             log.w { "TMDB request failed for $endpoint: ${error.message}" }
         }.getOrNull()
     }

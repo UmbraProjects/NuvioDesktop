@@ -229,7 +229,13 @@ fun PrerollGate(
 
             suspend fun playTrailers() {
                 if (trailerCount > 0) {
-                    val candidates = details()?.prerollTrailerCandidates().orEmpty()
+                    val film = details()
+                    val named = film?.prerollTrailerCandidates().orEmpty()
+                    // Names and collections miss "The Dark Knight" vs "The Batman"; the user's AI key, when on,
+                    // knows they are the same property, and also suggests films like it from other franchises
+                    // (other DC characters for Batman). Then what has already played goes to the back.
+                    val known = if (film != null) runCatching { buildTrailerLineup(film, named) }.getOrDefault(named) else named
+                    val candidates = orderByHistory(known, TrailerHistory.snapshot())
                     if (candidates.isEmpty()) log.i { "no trailer candidates for $metaType:$metaId" }
                     var index = 0
                     // Trailers whose best upload is soft (an old film, a direct-to-DVD title) are held
@@ -273,7 +279,10 @@ fun PrerollGate(
                         surfaceReady = false
                         shown = trailer
                         withTimeoutOrNull(MAX_TRAILER_MS) { done.await() }
-                        if (control.becameReady) { played++; trailersPlayed++ }
+                        if (control.becameReady) {
+                            played++; trailersPlayed++
+                            trailer.subject?.let { TrailerHistory.record(it.type, it.id) }
+                        }
                         else trailer.subject?.let { HeroTrailerMetadataService.invalidate(it.type, it.id) }
                         control.current = null
                     }

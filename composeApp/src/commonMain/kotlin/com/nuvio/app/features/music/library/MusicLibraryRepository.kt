@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,8 @@ data class MusicLibrarySettings(
     val barStyleChosen: Boolean = false,
     /** The lyric view's queue (and its Where next) fades out after a few idle seconds; off keeps it on screen. */
     val fadeQueue: Boolean = true,
+    /** How the lyric view sets its lyrics: the scrolling list, one calm marker-pen line, or loud stacked chunks. */
+    val lyricStyle: com.nuvio.app.features.music.LyricStyle = com.nuvio.app.features.music.LyricStyle.Scroll,
     /** The artist page's "Where next?" ladder builds by itself (lazily, behind other MusicBrainz calls). Off for a slow connection: it then waits for a button. */
     val autoWhereNext: Boolean = true,
     /** The Music tab in the navigation bar. Off hides it everywhere; the library and these settings are kept. */
@@ -49,6 +52,16 @@ data class MusicLibrarySettings(
     val nebulaSecretLink: String = "",
     /** An album the addon has opens on the addon (lossless) rather than YouTube Music. The album page's switch still overrides it. */
     val preferAddon: Boolean = false,
+    /** Word-by-word lyrics from Unison, the community lyrics database (Better Lyrics). A lookup sends the song's title and artist to it. */
+    val unisonLyrics: Boolean = true,
+    /** Word-by-word lyrics from AMLL TTML DB, an open collection of community-timed lyrics. */
+    val amllLyrics: Boolean = true,
+    /** Word-by-word lyrics from Netease Cloud Music (an unofficial interface; it may refuse requests outside China). */
+    val neteaseLyrics: Boolean = true,
+    /** Word-by-word lyrics from LRCMux, a third-party service that relays other catalogues' lyrics. Off until chosen. */
+    val lrcMuxLyrics: Boolean = false,
+    /** Word-by-word lyrics from LyricsPlus, a third-party service that relays Apple Music's lyrics. Off until chosen. */
+    val lyricsPlusLyrics: Boolean = false,
     /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
     val skipNonMusic: Boolean = false,
 )
@@ -88,6 +101,9 @@ data class MusicLibraryState(
             ?: (artists.asSequence() + preview.values.asSequence())
                 .firstOrNull { artist -> artist.releases.any { it.ytBrowseId == browseId } }
 }
+
+/** How long a burst of library writes (a fill-in, palettes) is gathered into one save. */
+internal const val LIBRARY_PERSIST_DELAY_MS = 1_500L
 
 /** An artist whose top albums could not be ranked is asked about again after this long. */
 private const val TOP_RECHECK_MS = 7L * 24 * 60 * 60 * 1000
@@ -144,6 +160,8 @@ object MusicLibraryRepository {
     fun ensureLoaded() {
         val profileId = ProfileRepository.activeProfileId
         if (loadedProfileId == profileId) return
+        // The outgoing profile's last change lands before its artists are swapped out.
+        if (loadedProfileId != null) flushPendingPersist()
         loadedProfileId = profileId
         val artists = MusicLibraryStorage.loadLibrary(profileId)
             ?.let { runCatching { json.decodeFromString<StoredMusicLibrary>(it).artists }.getOrNull() }
@@ -155,10 +173,39 @@ object MusicLibraryRepository {
         _state.value = MusicLibraryState(artists = sorted(artists.map { it.withSaneDates() }), settings = settings)
     }
 
+    // The key is built once per artist, not once per comparison: a refresh sorts the whole library on every write.
     private fun sorted(artists: List<LibraryArtist>) =
-        artists.sortedBy { (it.sortName ?: it.name).lowercase() }
+        artists.map { (it.sortName ?: it.name).lowercase() to it }.sortedBy { it.first }.map { it.second }
+
+    /**
+     * Saves the library a moment from now instead of at once. A fill-in writes the artist several times as it grows
+     * (and five run together), and every save encodes the whole library, so writes that arrive within
+     * [LIBRARY_PERSIST_DELAY_MS] of each other become one. Used where the writes come in bursts; what the person does
+     * (star, remove, genres) still saves immediately. Exit and a profile switch write whatever is pending.
+     */
+    private fun persistSoon() {
+        if (loadedProfileId == null) return
+        if (persistPending.compareAndSet(false, true)) {
+            persistScope.launch {
+                delay(LIBRARY_PERSIST_DELAY_MS)
+                flushPendingPersist()
+            }
+        }
+    }
+
+    private val persistPending = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+
+    /** Writes a pending save now, on the caller. For the exit path and a profile switch. */
+    internal fun flushPendingPersist() {
+        if (persistPending.getAndSet(false)) persist()
+    }
 
     private fun persist() {
+        // A save made now covers anything still waiting.
+        persistPending.set(false)
         val profileId = loadedProfileId ?: return
         runCatching {
             MusicLibraryStorage.saveLibrary(profileId, json.encodeToString(StoredMusicLibrary(_state.value.artists)))
@@ -220,7 +267,7 @@ object MusicLibraryRepository {
             ).keepingPalettesFrom(old)
             state.copy(artists = sorted(without + kept))
         }
-        persist()
+        persistSoon()
     }
 
     /**
@@ -235,7 +282,7 @@ object MusicLibraryRepository {
                 _state.update { s ->
                     s.copy(artists = s.artists.map { if (it.id == artistId) it.copy(palette = palette) else it })
                 }
-                persist()
+                persistSoon()
             }
             state.preview.containsKey(artistId) -> {
                 _state.update { s ->
@@ -256,7 +303,7 @@ object MusicLibraryRepository {
         when {
             state.contains(artistId) -> {
                 _state.update { s -> s.copy(artists = s.artists.map { if (it.id == artistId) it.withPalettes() else it }) }
-                persist()
+                persistSoon()
             }
             state.preview.containsKey(artistId) -> {
                 _state.update { s ->

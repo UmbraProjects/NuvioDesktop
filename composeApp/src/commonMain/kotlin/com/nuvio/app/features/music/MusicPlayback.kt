@@ -21,6 +21,9 @@ data class MusicInlineVideoFrame(val left: Float, val top: Float, val width: Flo
  * [MusicPlayerHost] at the app root plays it and draws the mini-player.
  */
 object MusicPlayback {
+    /** A ladder asked for from outside the Music tab (a genre chip on the Stage); the tab opens it and clears it. */
+    internal val pendingLadder = MutableStateFlow<com.nuvio.app.features.music.library.LadderRequest?>(null)
+
     /** Whether the full-window lyric view is open. [MusicNowPlayingHost] draws it. */
     val nowPlayingOpen = MutableStateFlow(false)
 

@@ -2,6 +2,7 @@ package com.nuvio.app.features.home.components
 
 import com.nuvio.app.features.player.desktop.NativePlayerController
 import com.nuvio.app.features.player.desktop.TRAILER_AUDIO_NORMALIZATION_FILTER
+import com.nuvio.app.features.preroll.mpvAudioFilterValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -76,11 +77,9 @@ internal fun heroTrailerAudioInitOptions(
         if (normalizeAudio) add(TRAILER_AUDIO_NORMALIZATION_FILTER)
         if (preshow) add("afade=t=in:st=0:d=${PRESHOW_FADE_IN_MS / 1000.0}")
     }
-    when (chain.size) {
-        0 -> Unit
-        1 -> add("af=${chain.single()}")
-        else -> add("af=lavfi=[${chain.joinToString(",")}]")
-    }
+    // Always one libavfilter chain: `loudnorm` takes colon-separated options, which a bare mpv filter spec
+    // would not parse the same way.
+    if (chain.isNotEmpty()) add("af=${mpvAudioFilterValue(*chain.toTypedArray())}")
 }
 
 /**

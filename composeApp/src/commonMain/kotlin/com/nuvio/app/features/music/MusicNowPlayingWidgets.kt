@@ -39,6 +39,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
+import com.nuvio.app.features.music.library.rungArtist
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -70,6 +75,7 @@ internal fun NowPlayingWidgets(
     lyricsMissing: Boolean,
     visible: Boolean,
     modifier: Modifier = Modifier,
+    onOpenArtist: (String) -> Unit = {},
 ) {
     val alpha by animateFloatAsState(if (visible) 1f else 0f, tween(600))
     val album = state.album
@@ -122,13 +128,17 @@ internal fun NowPlayingWidgets(
                 }
             }
         }
-        if (lyricsMissing && state.isPlaying && libraryArtist != null) MiniLadder(libraryArtist)
+        if (lyricsMissing && state.isPlaying && libraryArtist != null) MiniLadder(libraryArtist, onOpenArtist)
     }
 }
 
 @Composable
-private fun MiniLadder(artist: LibraryArtist) {
+private fun MiniLadder(artist: LibraryArtist, onOpenArtist: (String) -> Unit) {
     val auto = rememberAutoWhereNext()
+    val scope = rememberCoroutineScope()
+    val catalog = remember { defaultMusicCatalog() }
+    // What the last click is doing ("Opening…") or why it went nowhere; clears on the next click.
+    var note by remember(artist.id) { mutableStateOf<String?>(null) }
     // A ladder kept in memory or on disk shows at once. Otherwise it is built behind other MusicBrainz calls, and only
     // when "Build Where next automatically" is on, so the Stage view never spends calls the person turned off.
     val outcome by produceState<ArtistLadderOutcome.Ready?>(WhereNextLadders.peek(artist.id, null), artist.id, auto) {
@@ -140,16 +150,37 @@ private fun MiniLadder(artist: LibraryArtist) {
     Text("WHERE NEXT FROM ${artist.name.uppercase()}?", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         rungs.forEach { rung ->
+            val shape = RoundedCornerShape(16.dp)
             Text(
                 rung.candidate.name,
                 color = Color.White,
                 fontSize = 15.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.1f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .clip(shape)
+                    .musicKeyFocusRing(shape)
+                    // A click opens that artist's page: the rung is only a name, so the artist is found on YouTube Music first.
+                    .clickable {
+                        scope.launch {
+                            note = "Opening ${rung.candidate.name}…"
+                            val found = rungArtist(catalog, rung.candidate.name)
+                            if (found == null) {
+                                note = "${rung.candidate.name} isn't on YouTube Music"
+                            } else {
+                                note = null
+                                MusicPlayback.nowPlayingOpen.value = false
+                                onOpenArtist(found.browseId)
+                            }
+                        }
+                    }
+                    .background(Color.White.copy(alpha = 0.1f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
     }
+    note?.let { Text(it, color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
 /** One white for every control and one softer shade for the texts either side (where in the album, the time). */

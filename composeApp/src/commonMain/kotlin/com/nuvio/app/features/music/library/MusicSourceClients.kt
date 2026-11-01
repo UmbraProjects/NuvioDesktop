@@ -1,7 +1,7 @@
 package com.nuvio.app.features.music.library
 
 import co.touchlab.kermit.Logger
-import com.nuvio.app.features.addons.httpGetTextWithHeaders
+import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.library.LibraryClock
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
@@ -17,10 +17,31 @@ private val log = Logger.withTag("MusicSources")
 
 private const val USER_AGENT = "NuvioDesktop/1.0 (https://github.com/UmbraProjects/NuvioDesktop)"
 
+/** Whole-call ceiling for these artwork and metadata lookups; they are never worth a minute of waiting. */
+private const val CALL_BUDGET_MS = 15_000L
+private const val CONNECT_BUDGET_MS = 5_000L
+
+/** A GET with a ceiling on the whole call, so a host that holds the connection open cannot hang a screen for 60 s. */
+private suspend fun getWithBudget(url: String, headers: Map<String, String> = emptyMap()) =
+    httpRequestRaw(
+        method = "GET",
+        url = url,
+        headers = mapOf("User-Agent" to USER_AGENT) + headers,
+        body = "",
+        callTimeoutMs = CALL_BUDGET_MS,
+        connectTimeoutMs = CONNECT_BUDGET_MS,
+    )
+
 /** One GET, or null on any failure (a 404 for an unknown id is normal, not an error). Cancellation passes through. */
 private suspend fun fetch(url: String, headers: Map<String, String> = emptyMap()): String? =
     try {
-        httpGetTextWithHeaders(url, mapOf("User-Agent" to USER_AGENT) + headers)
+        val response = getWithBudget(url, headers)
+        if (response.status in 200..299 && response.body.isNotBlank()) {
+            response.body
+        } else {
+            log.d { "GET ${url.substringBefore('?')} answered ${response.status}" }
+            null
+        }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Throwable) {
@@ -100,17 +121,20 @@ internal object MusicBrainzClient {
 
     private suspend fun fetchMb(url: String): MbResult =
         try {
-            MbResult.Ok(httpGetTextWithHeaders(url, mapOf("User-Agent" to USER_AGENT)))
+            val response = getWithBudget(url)
+            when {
+                response.status == 503 || response.status == 429 -> MbResult.Throttled
+                response.status in 200..299 && response.body.isNotBlank() -> MbResult.Ok(response.body)
+                else -> {
+                    log.d { "GET ${url.substringBefore('?')} answered ${response.status}" }
+                    MbResult.Failed
+                }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            val message = error.message.orEmpty()
-            if ("503" in message || "429" in message) {
-                MbResult.Throttled
-            } else {
-                log.d { "GET ${url.substringBefore('?')} failed: $message" }
-                MbResult.Failed
-            }
+            log.d { "GET ${url.substringBefore('?')} failed: ${error.message}" }
+            MbResult.Failed
         }
 
     /** Finds [name] by its own name or by an alias, so a renamed band or a romanised name is still found. See [mbArtistSearchQuery]. */

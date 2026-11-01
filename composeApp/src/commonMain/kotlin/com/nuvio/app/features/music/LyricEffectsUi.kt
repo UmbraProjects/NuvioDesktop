@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -222,17 +223,47 @@ private fun LyricRow(
     }
 }
 
+/** How a line arrives on the Stage. They take turns, line by line, so no two neighbours enter alike. */
+internal enum class LineEntrance { Drop, FromRight, Zoom, FromLeft }
+
+/** The entrance of line [index]: a fixed rotation, so a line always arrives the same way. */
+internal fun lineEntranceFor(index: Int): LineEntrance =
+    LineEntrance.entries[index.mod(LineEntrance.entries.size)]
+
+/** The share of the entrance spent staggering the words: the last word starts this late. */
+private const val ENTRANCE_STAGGER = 0.4f
+
+/** How long the whole entrance takes, the last word included. */
+internal const val LINE_ENTRANCE_MS = 520
+
+/**
+ * How far word [wordIndex] of [wordCount] has arrived (0 to 1, eased out) when the line as a whole is [enter] (0 to 1)
+ * through its entrance: each word starts a little after the one before it.
+ */
+internal fun wordEntranceProgress(enter: Float, wordIndex: Int, wordCount: Int): Float {
+    val lag = ENTRANCE_STAGGER * wordIndex / wordCount.coerceAtLeast(1)
+    val t = ((enter - lag) / (1f - ENTRANCE_STAGGER)).coerceIn(0f, 1f)
+    val inv = 1f - t
+    return 1f - inv * inv * inv
+}
+
 /** The line being sung: its words sweep, hop and glow in turn. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActiveLine(
+internal fun ActiveLine(
     words: List<LyricWord>,
     progress: () -> Float,
     accent: Color,
     isChorus: Boolean,
     emphasis: Boolean,
     effects: Boolean,
+    entrance: LineEntrance? = null,
 ) {
+    // 0 to 1 once, when the line takes the stage; read only inside the draw layers, so it costs no recomposition.
+    val enter = remember { Animatable(if (entrance == null || !effects) 1f else 0f) }
+    if (entrance != null && effects) {
+        LaunchedEffect(Unit) { enter.animateTo(1f, tween(LINE_ENTRANCE_MS, easing = LinearEasing)) }
+    }
     val fontSize = if (emphasis) 40.sp else 30.sp
     val style = TextStyle(fontSize = fontSize, lineHeight = fontSize * 1.27f, fontWeight = FontWeight.Bold)
     val lit = if (isChorus && effects) lerp(Color.White, accent, 0.45f) else Color.White
@@ -253,8 +284,10 @@ private fun ActiveLine(
         },
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        words.forEach { word ->
-            SungWord(word, progress, style, lit, accent, glow, effects)
+        words.forEachIndexed { i, word ->
+            SungWord(word, progress, style, lit, accent, glow, effects, entrance) {
+                wordEntranceProgress(enter.value, i, words.size)
+            }
         }
     }
 }
@@ -268,6 +301,8 @@ private fun SungWord(
     accent: Color,
     glow: Float,
     effects: Boolean,
+    entrance: LineEntrance?,
+    arrived: () -> Float,
 ) {
     Box(
         Modifier.graphicsLayer {
@@ -275,7 +310,18 @@ private fun SungWord(
                 val p = wordProgress(word, lineProgress())
                 val bell = sin(PI.toFloat() * p)
                 translationY = -7.dp.toPx() * bell
-                val s = 1f + 0.09f * bell
+                var s = 1f + 0.09f * bell
+                if (entrance != null) {
+                    val a = arrived()
+                    val away = 1f - a
+                    alpha = a
+                    when (entrance) {
+                        LineEntrance.Drop -> translationY += -56.dp.toPx() * away
+                        LineEntrance.FromRight -> translationX = 120.dp.toPx() * away
+                        LineEntrance.FromLeft -> translationX = -120.dp.toPx() * away
+                        LineEntrance.Zoom -> s *= 0.3f + 0.7f * a
+                    }
+                }
                 scaleX = s
                 scaleY = s
             }
