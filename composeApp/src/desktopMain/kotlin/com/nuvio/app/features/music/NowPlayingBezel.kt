@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.player.desktop.AwtNativeViewResolver
 import com.nuvio.app.features.player.desktop.NativePlayerBridge
 import com.nuvio.app.features.player.desktop.NativePlayerHost
+import java.awt.AlphaComposite
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.GradientPaint
@@ -70,6 +71,11 @@ internal fun renderBezel(spec: BezelSpec): IntArray {
             g.color = Color(0, 0, 0, layerAlpha)
             for (k in spec.halo downTo 1) g.fill(outer(k.toFloat()))
         }
+        // The shadow layers cover the whole outer shape, the opening too: clear it, so the picture is not dimmed.
+        val drawing = g.composite
+        g.composite = AlphaComposite.Clear
+        g.fill(opening)
+        g.composite = drawing
 
         val ring = Area(outer(0f)).apply { subtract(Area(opening)) }
         // Silver, a little see-through, lighter at the top as the panels' glass is.
