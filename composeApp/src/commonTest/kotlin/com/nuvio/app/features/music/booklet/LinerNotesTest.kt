@@ -82,7 +82,7 @@ class LinerNotesTest {
 
     @Test
     fun cacheKeysMovedOnToTheNewVersion() {
-        assertTrue(bookletKey(request, "wiki").startsWith("v2|"))
+        assertTrue(bookletKey(request, "wiki").startsWith("v3|"))
     }
 
     @Test
