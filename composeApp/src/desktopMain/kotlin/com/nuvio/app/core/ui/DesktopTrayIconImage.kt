@@ -6,6 +6,7 @@ import java.awt.RenderingHints
 import java.awt.image.BaseMultiResolutionImage
 import java.awt.image.BufferedImage
 import java.lang.ref.WeakReference
+import java.net.URI
 import java.net.URL
 import javax.imageio.ImageIO
 
@@ -25,20 +26,20 @@ private val WindowIconVariantSizes = intArrayOf(16, 20, 24, 32, 40, 48, 64, 96, 
  * Loads the app icon as a tray image.
  *
  * `TrayIcon.setImageAutoSize(true)` scales with the AWT toolkit's nearest-neighbour path, which is
- * what makes the shipped icon look chewed at 16px. This renders the variants itself — cropped,
- * then stepped down by halves with bicubic resampling — and hands them over as a
+ * what makes the shipped icon look chewed at 16px. This supplies the variants itself (see
+ * [iconVariant]) and hands them over as a
  * [BaseMultiResolutionImage] so a HiDPI shell can pick a sharper one.
  *
  * Returns null when the resource cannot be decoded; the caller keeps whatever fallback it had.
  */
 internal fun loadDesktopTrayIconImage(url: URL, trayIconSize: Dimension): Image? {
-    val cropped = loadCroppedIconMaster(url) ?: return null
     val baseSize = trayIconSize.width.takeIf { it > 0 }?.coerceIn(16, 64) ?: 16
     val sizes = (intArrayOf(baseSize) + TrayIconVariantSizes)
         .filter { it >= baseSize }
         .distinct()
         .sorted()
-    val variants = sizes.map { size -> resampleTo(cropped, size) }.toTypedArray<Image>()
+    val variants = sizes.mapNotNull { size -> iconVariant(url, size) }.toTypedArray<Image>()
+    if (variants.isEmpty()) return null
     return runCatching { BaseMultiResolutionImage(0, *variants) }
         .getOrElse { variants.firstOrNull() }
 }
@@ -53,9 +54,24 @@ internal fun loadDesktopTrayIconImage(url: URL, trayIconSize: Dimension): Image?
  *
  * Empty when the resource cannot be decoded; the caller then keeps Compose's icon.
  */
-internal fun loadDesktopWindowIconImages(url: URL): List<Image> {
-    val cropped = loadCroppedIconMaster(url) ?: return emptyList()
-    return WindowIconVariantSizes.map { size -> resampleTo(cropped, size) }
+internal fun loadDesktopWindowIconImages(url: URL): List<Image> =
+    WindowIconVariantSizes.asList().mapNotNull { size -> iconVariant(url, size) }
+
+/**
+ * The icon at [size]: the copy drawn for that size when the resources have one, else the master
+ * cropped and stepped down here. Java2D's bicubic steps work on straight (not premultiplied)
+ * alpha and stair-step the glyph's round corners, and the glass rim, under a pixel wide at 32px,
+ * breaks into specks; the drawn copies are area-averaged with the rim one pixel wide at their
+ * size. They sit beside the master as `sizes/<name>-<size>.png`.
+ */
+private fun iconVariant(url: URL, size: Int): BufferedImage? =
+    loadPrerenderedVariant(url, size) ?: loadCroppedIconMaster(url)?.let { resampleTo(it, size) }
+
+private fun loadPrerenderedVariant(url: URL, size: Int): BufferedImage? {
+    val name = url.path.substringAfterLast('/').substringBeforeLast('.')
+    // ImageIO.read throws for a missing resource; a size without its own copy is resampled instead.
+    val sibling = url.toString().substringBeforeLast('/') + "/sizes/$name-$size.png"
+    return runCatching { ImageIO.read(URI.create(sibling).toURL()) }.getOrNull()
 }
 
 // The tray and the window both start from the same decode + crop, which is the expensive part;
