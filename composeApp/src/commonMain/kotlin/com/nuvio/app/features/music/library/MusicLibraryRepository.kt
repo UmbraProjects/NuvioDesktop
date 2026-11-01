@@ -54,6 +54,9 @@ data class MusicLibrarySettings(
     val lastFmApiKey: String = "",
     /** The person's own music addon link (Nebula / Eclipse Music). Named "secret" so credential-free backups drop it, as they do the API keys. Empty hides the album source toggle. */
     val nebulaSecretLink: String = "",
+    /** The second and third music addon links, asked after the first (see [addonLinks]). Named "secret" for the same reason. */
+    val nebulaSecretLink2: String = "",
+    val nebulaSecretLink3: String = "",
     /** An album the addon has opens on the addon (lossless) rather than YouTube Music. The album page's switch still overrides it. */
     val preferAddon: Boolean = false,
     /** Word-by-word lyrics from Unison, the community lyrics database (Better Lyrics). A lookup sends the song's title and artist to it. */
@@ -69,6 +72,9 @@ data class MusicLibrarySettings(
     /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
     val skipNonMusic: Boolean = false,
 )
+
+/** The music addon links that are set, in the order they are asked (first, second, third); blanks included. */
+fun MusicLibrarySettings.addonLinks(): List<String> = listOf(nebulaSecretLink, nebulaSecretLink2, nebulaSecretLink3)
 
 /** What is happening to one artist while it is added or refreshed. */
 data class MusicLibraryProgress(val status: String)

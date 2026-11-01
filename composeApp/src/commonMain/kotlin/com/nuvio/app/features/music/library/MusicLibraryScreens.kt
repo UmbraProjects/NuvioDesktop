@@ -347,7 +347,7 @@ fun MusicArtistScreen(
         if (release == null || release.ytBrowseId != null) return null
         return artist.releases.firstNotNullOfOrNull { r ->
             if (r.ytBrowseId != null || r.dedupeKey() != release.dedupeKey()) null
-            else addon.albumIdOf(r.key)?.let { AddonAlbumRef(it, artist.id, r.key) }
+            else addon.albumIdOf(r.key)?.let { AddonAlbumRef(it, artist.id, r.key, addon.addonKeyOf(r.key)) }
         }
     }
 

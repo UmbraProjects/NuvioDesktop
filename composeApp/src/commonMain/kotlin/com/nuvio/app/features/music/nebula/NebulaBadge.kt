@@ -13,6 +13,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.library.MusicLibraryRepository
+import com.nuvio.app.features.music.library.addonLinks
 
 /**
  * A small "On your addon" note for an album in a list. Nothing at all without an addon link. The check
@@ -22,10 +23,10 @@ import com.nuvio.app.features.music.library.MusicLibraryRepository
 @Composable
 internal fun AddonBadge(album: MusicAlbumSummary) {
     remember { MusicLibraryRepository.ensureLoaded() }
-    val link = MusicLibraryRepository.state.collectAsState().value.settings.nebulaSecretLink
-    if (nebulaBaseUrl(link) == null) return
-    var has by remember(album.browseId, link) { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(album.browseId, link) { has = NebulaMusicSource.probablyHas(album) }
+    val links = MusicLibraryRepository.state.collectAsState().value.settings.addonLinks()
+    if (nebulaAddons(links).isEmpty()) return
+    var has by remember(album.browseId, links) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(album.browseId, links) { has = NebulaMusicSource.probablyHas(album) }
     if (has == true) {
         Text(
             text = "Lossless on your addon",

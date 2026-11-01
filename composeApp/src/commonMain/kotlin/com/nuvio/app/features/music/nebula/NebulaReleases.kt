@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import com.nuvio.app.features.music.library.LibraryArtist
 import com.nuvio.app.features.music.library.LibraryRelease
 import com.nuvio.app.features.music.library.MusicLibraryRepository
+import com.nuvio.app.features.music.library.addonLinks
 import com.nuvio.app.features.music.library.releasesToAskAddon
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -45,6 +46,9 @@ internal class AddonReleases {
     /** The addon's album id for a release it has, or null. */
     fun albumIdOf(releaseKey: String): String? = answers[releaseKey]?.albumId
 
+    /** The key of the addon that has a release ([nebulaAddonKey]), or null (also for an answer kept before there were several addons). */
+    fun addonKeyOf(releaseKey: String): String? = answers[releaseKey]?.addon
+
     /**
      * Fills [answers] for [releases]: answers already kept first (no request, so a revisit shows its badges at once),
      * then the addon is asked about the rest, newest first, at most [ADDON_CHECKS_PER_VISIT] of them. Leaving the page
@@ -68,13 +72,13 @@ internal class AddonReleases {
 @Composable
 internal fun rememberAddonReleases(artist: LibraryArtist): AddonReleases {
     remember { MusicLibraryRepository.ensureLoaded() }
-    val link = MusicLibraryRepository.state.collectAsState().value.settings.nebulaSecretLink
-    val holder = remember(artist.id, link) { AddonReleases() }
+    val links = MusicLibraryRepository.state.collectAsState().value.settings.addonLinks()
+    val holder = remember(artist.id, links) { AddonReleases() }
     val toAsk = remember(artist.releases) { releasesToAskAddon(artist.releases) }
     // Keyed by the release keys, not the releases: their art and palettes fill in while the page loads, and that must not restart the asking.
     val askKeys = remember(toAsk) { toAsk.map { it.key } }
     LaunchedEffect(holder, askKeys) {
-        if (nebulaBaseUrl(link) != null) holder.load(artist, toAsk)
+        if (nebulaAddons(links).isNotEmpty()) holder.load(artist, toAsk)
     }
     return holder
 }

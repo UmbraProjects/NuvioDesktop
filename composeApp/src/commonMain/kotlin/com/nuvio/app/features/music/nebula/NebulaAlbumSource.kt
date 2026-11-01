@@ -25,6 +25,7 @@ import com.nuvio.app.features.music.MusicPlayMode
 import com.nuvio.app.features.music.MusicPlayer
 import com.nuvio.app.features.music.MusicSegmented
 import com.nuvio.app.features.music.library.MusicLibraryRepository
+import com.nuvio.app.features.music.library.addonLinks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -109,10 +110,10 @@ internal class NebulaAlbumController(
 @Composable
 internal fun rememberNebulaAlbumController(album: MusicAlbum, player: MusicPlayer, retry: Int): NebulaAlbumController? {
     remember { MusicLibraryRepository.ensureLoaded() }
-    val link = MusicLibraryRepository.state.collectAsState().value.settings.nebulaSecretLink.trim()
+    val links = MusicLibraryRepository.state.collectAsState().value.settings.addonLinks()
     val scope = rememberCoroutineScope()
-    val controller = remember(album.browseId, link) { NebulaAlbumController(album, player, scope) }
-    if (nebulaBaseUrl(link) == null) return null
+    val controller = remember(album.browseId, links) { NebulaAlbumController(album, player, scope) }
+    if (nebulaAddons(links).isEmpty()) return null
     // An album only the addon has is already the addon's copy: no search, no YouTube Music / Addon switch.
     if (parseAddonAlbumId(album.browseId) != null) return null
     LaunchedEffect(controller, retry) { controller.check() }

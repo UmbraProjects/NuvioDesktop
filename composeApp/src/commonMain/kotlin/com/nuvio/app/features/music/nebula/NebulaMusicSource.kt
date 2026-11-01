@@ -8,6 +8,7 @@ import com.nuvio.app.features.music.MusicPlayMode
 import com.nuvio.app.features.music.MusicResolution
 import com.nuvio.app.features.music.MusicTrack
 import com.nuvio.app.features.music.library.MusicLibraryRepository
+import com.nuvio.app.features.music.library.addonLinks
 import com.nuvio.app.features.music.library.MusicLibraryStorage
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
@@ -28,6 +29,15 @@ internal sealed interface NebulaAlbumLookup {
     /** The addon could not be asked (offline, bad link, down). Not remembered, so a retry asks again. */
     data class Failed(val reason: String) : NebulaAlbumLookup
 }
+
+/**
+ * What several addons' answers for one album come to, asked in order: the first that has the album wins; "not found" only
+ * when every addon said so; and when none has it but one could not be asked, that failure (so it is retried, not remembered).
+ */
+internal fun firstAddonAnswer(answers: List<NebulaAlbumLookup>): NebulaAlbumLookup =
+    answers.firstOrNull { it is NebulaAlbumLookup.Found }
+        ?: answers.firstOrNull { it is NebulaAlbumLookup.Failed }
+        ?: NebulaAlbumLookup.NotFound
 
 private val log = Logger.withTag("NebulaMusic")
 
@@ -79,6 +89,7 @@ internal object NebulaMusicSource {
 
     private val lock = Mutex()
     private val memory = HashMap<String, NebulaAlbumLookup>()
+    private var memoryAddons = ""
     private var book = NebulaLookupBook()
     private var bookProfile: Int? = null
 
@@ -93,11 +104,23 @@ internal object NebulaMusicSource {
     var streamStatus by androidx.compose.runtime.mutableStateOf<NebulaStreamStatus?>(null)
         private set
 
-    /** The addon's base URL, or null when no link is set. */
-    fun baseUrl(): String? {
+    /** The addons that have a link, in the order they are asked. */
+    fun addons(): List<NebulaAddon> {
         MusicLibraryRepository.ensureLoaded()
-        return nebulaBaseUrl(MusicLibraryRepository.state.value.settings.nebulaSecretLink)
+        return nebulaAddons(MusicLibraryRepository.state.value.settings.addonLinks())
     }
+
+    /** The first addon's base URL, or null when no link is set. */
+    fun baseUrl(): String? = addons().firstOrNull()?.base
+
+    /** The addon a track or album belongs to: the one with [key], or the first for an id made before there were several. */
+    private fun addonFor(key: String?): NebulaAddon? {
+        val list = addons()
+        return if (key == null) list.firstOrNull() else list.firstOrNull { it.key == key }
+    }
+
+    /** The links that are set, as one string; it changes when a link is added, removed or moved. */
+    private fun addonSet(addons: List<NebulaAddon>): String = addons.joinToString(",") { it.key }
 
     private fun loadBook(): NebulaLookupBook {
         val profile = ProfileRepository.activeProfileId
@@ -145,52 +168,66 @@ internal object NebulaMusicSource {
     }
 
     suspend fun find(album: MusicAlbum): NebulaAlbumLookup {
-        val base = baseUrl() ?: return NebulaAlbumLookup.NotFound
+        val addons = addons()
+        if (addons.isEmpty()) return NebulaAlbumLookup.NotFound
+        val set = addonSet(addons)
         lock.withLock {
             loadBook()
+            // What was found for another set of links is not believed for this one.
+            if (memoryAddons != set) {
+                memory.clear()
+                memoryAddons = set
+            }
             memory[album.browseId]?.let { return it }
-            book.lookups[album.browseId]?.takeIf { it.isFresh(LibraryClock.nowEpochMs()) }?.let { stored ->
+            book.lookups[album.browseId]?.takeIf { it.isFresh(LibraryClock.nowEpochMs()) && it.fitsAddons(addons) }?.let { stored ->
                 val answer = if (stored.albumId == null) NebulaAlbumLookup.NotFound
                 else NebulaAlbumLookup.Found(stored, fromCache = true)
                 memory[album.browseId] = answer
                 return answer
             }
         }
-        val answer = try {
-            search(base, album)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: AddonError) {
-            NebulaAlbumLookup.Failed(e.reason)
-        } catch (e: Exception) {
-            log.w(e) { "Music addon search failed" }
-            NebulaAlbumLookup.Failed(nebulaFailureReason(status = null, error = e.message))
+        // Each addon in turn; the first that has the album is the one that plays it.
+        val answers = ArrayList<NebulaAlbumLookup>()
+        for (addon in addons) {
+            val one = try {
+                search(addon, album)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: AddonError) {
+                NebulaAlbumLookup.Failed(e.reason)
+            } catch (e: Exception) {
+                log.w(e) { "Music addon search failed" }
+                NebulaAlbumLookup.Failed(nebulaFailureReason(status = null, error = e.message))
+            }
+            answers += one
+            if (one is NebulaAlbumLookup.Found) break
         }
+        val answer = firstAddonAnswer(answers)
         if (answer !is NebulaAlbumLookup.Failed) lock.withLock {
             loadBook()
-            val entry = (answer as? NebulaAlbumLookup.Found)?.match ?: StoredLookup(savedAt = LibraryClock.nowEpochMs())
+            val entry = (answer as? NebulaAlbumLookup.Found)?.match ?: StoredLookup(savedAt = LibraryClock.nowEpochMs(), asked = set)
             memory[album.browseId] = answer
             saveBook(book.withLookup(album.browseId, entry))
         }
         return answer
     }
 
-    private suspend fun search(base: String, album: MusicAlbum): NebulaAlbumLookup {
+    private suspend fun search(addon: NebulaAddon, album: MusicAlbum): NebulaAlbumLookup {
         val artist = album.artists.firstOrNull()?.name.orEmpty()
         val queries = nebulaSearchQueries(album.title, artist)
         if (queries.isEmpty()) return NebulaAlbumLookup.NotFound
         val wanted = album.tracks.mapIndexed { i, t -> NebulaTrackKey(i, t.trackNumber.takeIf { it > 0 } ?: (i + 1), t.title, t.durationSeconds) }
         val tried = HashSet<String>()
         for (query in queries) {
-            val body = get(base, "/search?q=${urlEncodeQuery(query)}").requireOk()
+            val body = get(addon.base, "/search?q=${urlEncodeQuery(query)}").requireOk()
             val ranked = rankNebulaAlbums(parseNebulaSearchAlbums(body), album.title, artist, album.year, album.tracks.size)
                 .filter { tried.add(it.id) }
                 .take(MAX_CANDIDATES)
             for (candidate in ranked) {
-                val detail = parseNebulaAlbum(get(base, "/album/${urlEncodeQuery(candidate.id)}").requireOk()) ?: continue
+                val detail = parseNebulaAlbum(get(addon.base, "/album/${urlEncodeQuery(candidate.id)}").requireOk()) ?: continue
                 val mapped = mapNebulaTracks(detail.tracks, wanted) ?: continue
                 return NebulaAlbumLookup.Found(
-                    StoredLookup(LibraryClock.nowEpochMs(), detail.summary.id, detail.summary.title, mapped),
+                    StoredLookup(LibraryClock.nowEpochMs(), detail.summary.id, detail.summary.title, mapped, addon = addon.key),
                     fromCache = false,
                 )
             }
@@ -212,26 +249,40 @@ internal object NebulaMusicSource {
      * asked (no link, offline, or paused after repeated failures), so the row shows nothing.
      */
     suspend fun probablyHas(album: com.nuvio.app.features.music.MusicAlbumSummary): Boolean? {
-        val base = baseUrl() ?: return null
+        val addons = addons()
+        if (addons.isEmpty()) return null
+        val memoKey = addonSet(addons) + "|" + album.browseId
         lock.withLock {
             loadBook()
-            listChecks[album.browseId]?.let { return it }
-            book.lookups[album.browseId]?.takeIf { it.isFresh(LibraryClock.nowEpochMs()) }?.let { return it.albumId != null }
+            listChecks[memoKey]?.let { return it }
+            book.lookups[album.browseId]?.takeIf { it.isFresh(LibraryClock.nowEpochMs()) && it.fitsAddons(addons) }?.let { return it.albumId != null }
         }
         if (LibraryClock.nowEpochMs() < listPausedUntil) return null
         return listGate.withPermit {
             try {
                 val artist = album.artists.firstOrNull()?.name.orEmpty()
                 var found = false
-                for (query in nebulaSearchQueries(album.title, artist)) {
-                    val body = get(base, "/search?q=${urlEncodeQuery(query)}").requireOk()
-                    if (rankNebulaAlbums(parseNebulaSearchAlbums(body), album.title, artist, album.year, 0).isNotEmpty()) {
-                        found = true
-                        break
+                var failed = false
+                for (addon in addons) {
+                    try {
+                        for (query in nebulaSearchQueries(album.title, artist)) {
+                            val body = get(addon.base, "/search?q=${urlEncodeQuery(query)}").requireOk()
+                            if (rankNebulaAlbums(parseNebulaSearchAlbums(body), album.title, artist, album.year, 0).isNotEmpty()) {
+                                found = true
+                                break
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        failed = true
                     }
+                    if (found) break
                 }
+                // Not found, and an addon that could not be asked: not an answer, so nothing is remembered.
+                if (!found && failed) throw AddonError("no addon could be asked")
                 listFailures = 0
-                lock.withLock { listChecks[album.browseId] = found }
+                lock.withLock { listChecks[memoKey] = found }
                 found
             } catch (e: CancellationException) {
                 throw e
@@ -271,9 +322,12 @@ internal object NebulaMusicSource {
     }
 
     /** What was kept for [cacheKey] while it is still fresh, else null. Memory and disk only: no request is made. */
-    suspend fun cachedAvailability(cacheKey: String): AddonAvailability? = lock.withLock {
-        loadAvail()
-        avail.entries[cacheKey]?.takeIf { it.isFresh(LibraryClock.nowEpochMs()) }
+    suspend fun cachedAvailability(cacheKey: String): AddonAvailability? {
+        val addons = addons()
+        return lock.withLock {
+            loadAvail()
+            avail.entries[cacheKey]?.takeIf { it.isFresh(LibraryClock.nowEpochMs()) && it.fitsAddons(addons) }
+        }
     }
 
     /** Drops what was kept for [cacheKey], so the next check asks the addon again (a stream that said "no such track"). */
@@ -294,17 +348,18 @@ internal object NebulaMusicSource {
      * down) is returned as it was rather than dropped.
      */
     suspend fun availabilityOf(query: AddonReleaseQuery): AddonAvailability? {
-        val base = baseUrl() ?: return null
+        val addons = addons()
+        if (addons.isEmpty()) return null
         cachedAvailability(query.cacheKey)?.let { return it }
         if (LibraryClock.nowEpochMs() < availPausedUntil) return null
         return availGate.withPermit {
             cachedAvailability(query.cacheKey)?.let { return@withPermit it }
             val previous = lock.withLock { avail.entries[query.cacheKey] }
             try {
-                val match = searchRelease(base, query)
+                val match = searchRelease(addons, query)
                 availFailures = 0
                 val now = LibraryClock.nowEpochMs()
-                val entry = if (match != null) addonFound(now, match) else addonMissed(now, previous)
+                val entry = if (match != null) addonFound(now, match.second, match.first.key) else addonMissed(now, previous, addonSet(addons))
                 lock.withLock {
                     loadAvail()
                     saveAvail(avail.withEntry(query.cacheKey, entry))
@@ -324,13 +379,27 @@ internal object NebulaMusicSource {
         }
     }
 
-    /** The addon's album for [query] from /search alone: artist and title first, then the title alone. */
-    private suspend fun searchRelease(base: String, query: AddonReleaseQuery): NebulaAlbumSummary? {
-        for (text in nebulaSearchQueries(query.title, query.artist)) {
-            val body = get(base, "/search?q=${urlEncodeQuery(text)}").requireOk()
-            val match = strictNebulaMatch(parseNebulaSearchAlbums(body), query.title, query.artist, query.year, query.trackCount ?: 0)
-            if (match != null) return match
+    /**
+     * The addon album for [query] from /search alone (artist and title first, then the title alone), asking each addon in
+     * turn: the first that has it, with that addon. When none has it but one could not be asked, that failure is thrown, so
+     * the miss is not remembered.
+     */
+    private suspend fun searchRelease(addons: List<NebulaAddon>, query: AddonReleaseQuery): Pair<NebulaAddon, NebulaAlbumSummary>? {
+        var failure: Exception? = null
+        for (addon in addons) {
+            try {
+                for (text in nebulaSearchQueries(query.title, query.artist)) {
+                    val body = get(addon.base, "/search?q=${urlEncodeQuery(text)}").requireOk()
+                    val match = strictNebulaMatch(parseNebulaSearchAlbums(body), query.title, query.artist, query.year, query.trackCount ?: 0)
+                    if (match != null) return addon to match
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (failure == null) failure = e
+            }
         }
+        failure?.let { throw it }
         return null
     }
 
@@ -344,8 +413,9 @@ internal object NebulaMusicSource {
                 track.copy(isAvailable = false)
             } else {
                 // Kept so Video mode can still find the song's YouTube video (the addon has audio only).
-                youTubeTracks[ID_PREFIX + id] = track to album
-                track.copy(videoId = ID_PREFIX + id, isAvailable = true)
+                val videoId = nebulaTrackVideoId(match.addon, id)
+                youTubeTracks[videoId] = track to album
+                track.copy(videoId = videoId, isAvailable = true)
             }
         },
     )
@@ -369,8 +439,13 @@ internal object NebulaMusicSource {
                 if (video is MusicResolution.Playable && !video.lyricVideo) return video.copy(track = track)
             }
         }
-        val base = baseUrl() ?: return MusicResolution.Failed(track, "The music addon link isn't set")
-        val id = track.videoId.removePrefix(ID_PREFIX)
+        val ref = nebulaTrackRef(track.videoId) ?: return MusicResolution.Failed(track, "That isn't a music addon track")
+        val addon = addonFor(ref.addonKey) ?: return MusicResolution.Failed(
+            track,
+            if (addons().isEmpty()) "The music addon link isn't set" else "That music addon's link was removed from Music settings.",
+        )
+        val base = addon.base
+        val id = ref.id
         streamStatus = NebulaStreamStatus.Asking(track.title, LibraryClock.nowEpochMs())
         return try {
             var reply = fetchStream(base, id)
@@ -430,8 +505,9 @@ internal object NebulaMusicSource {
                 ?: return null
             val match = (find(album) as? NebulaAlbumLookup.Found)?.match ?: return null
             val addonId = match.trackIds.getOrNull(index) ?: return null
-            val playable = resolve(track.copy(videoId = ID_PREFIX + addonId), album, mode) as? MusicResolution.Playable ?: return null
-            qualities[ID_PREFIX + addonId]?.let { qualities[track.videoId] = it }
+            val addonVideoId = nebulaTrackVideoId(match.addon, addonId)
+            val playable = resolve(track.copy(videoId = addonVideoId), album, mode) as? MusicResolution.Playable ?: return null
+            qualities[addonVideoId]?.let { qualities[track.videoId] = it }
             log.i { "\"${track.title}\" plays from the addon's copy of \"${album.title}\"" }
             // The playlist's own track stays the one playing (its cover, its place in the list); only the stream is the addon's.
             playable.copy(track = track, videoId = track.videoId)
@@ -450,7 +526,7 @@ internal object NebulaMusicSource {
      * has no such album; a "no such album" also forgets the kept answer, so the artist page asks again next time.
      */
     suspend fun openAddonAlbum(ref: AddonAlbumRef): MusicAlbum? {
-        val base = baseUrl() ?: return null
+        val base = addonFor(ref.addon)?.base ?: return null
         val reply = try {
             get(base, "/album/${urlEncodeQuery(ref.albumId)}")
         } catch (e: CancellationException) {

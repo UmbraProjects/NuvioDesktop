@@ -111,6 +111,63 @@ internal fun nebulaBaseUrl(pasted: String): String? {
     return base.takeIf { it.substringAfter("://").isNotEmpty() }
 }
 
+/** One music addon the person set a link for: [base] is its address, [key] a short stable name for it (see [nebulaAddonKey]). */
+internal data class NebulaAddon(val key: String, val base: String)
+
+/** The most addon links that can be set. */
+internal const val NEBULA_MAX_ADDONS = 3
+
+/**
+ * A short, stable name for an addon from its address (FNV-1a, six hex digits), kept inside the ids of its tracks so
+ * that moving or removing another link never points a saved track at the wrong addon.
+ */
+internal fun nebulaAddonKey(base: String): String {
+    var hash = 0x811C9DC5L
+    for (b in base.encodeToByteArray()) {
+        hash = (hash xor (b.toLong() and 0xFF)) * 0x01000193L and 0xFFFFFFFFL
+    }
+    return hash.toString(16).padStart(8, '0').takeLast(6)
+}
+
+/**
+ * The addons for the links a person pasted, in the order they were given (the order they are asked in). A blank or
+ * invalid link and a repeat of an earlier one are dropped; at most [NEBULA_MAX_ADDONS] are kept.
+ */
+internal fun nebulaAddons(links: List<String>): List<NebulaAddon> {
+    val seen = HashSet<String>()
+    val out = ArrayList<NebulaAddon>()
+    for (link in links) {
+        val base = nebulaBaseUrl(link) ?: continue
+        if (!seen.add(base)) continue
+        out += NebulaAddon(nebulaAddonKey(base), base)
+        if (out.size == NEBULA_MAX_ADDONS) break
+    }
+    return out
+}
+
+/** The id prefix of a track that comes from a music addon. */
+internal const val NEBULA_TRACK_PREFIX = "nebula:"
+
+/** A track id of the addon's own ([id]), and the addon it belongs to ([addonKey]; null for ids made before there were several addons, which mean the first). */
+internal data class NebulaTrackRef(val addonKey: String?, val id: String)
+
+private val ADDON_KEY_SHAPE = Regex("[0-9a-f]{6}")
+
+/** The video id a player track gets for the addon's track [id]: `nebula:<id>`, or `nebula:<key>~<id>` when [addonKey] is set. */
+internal fun nebulaTrackVideoId(addonKey: String?, id: String): String =
+    if (addonKey == null) NEBULA_TRACK_PREFIX + id else "$NEBULA_TRACK_PREFIX$addonKey~$id"
+
+/** What a player track's video id carries, or null when it is not an addon track's. */
+internal fun nebulaTrackRef(videoId: String): NebulaTrackRef? {
+    if (!videoId.startsWith(NEBULA_TRACK_PREFIX)) return null
+    val rest = videoId.removePrefix(NEBULA_TRACK_PREFIX)
+    val tilde = rest.indexOf('~')
+    if (tilde == 6 && ADDON_KEY_SHAPE.matches(rest.substring(0, 6)) && rest.length > 7) {
+        return NebulaTrackRef(rest.substring(0, 6), rest.substring(7))
+    }
+    return NebulaTrackRef(null, rest)
+}
+
 /** A short plain reason an addon call failed, for the album page and the log. Never includes the addon's address. */
 internal fun nebulaFailureReason(status: Int?, detail: String? = null, error: String? = null): String {
     val extra = detail?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
