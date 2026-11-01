@@ -69,7 +69,9 @@ import com.nuvio.app.features.music.booklet.FactKind
 import com.nuvio.app.features.music.booklet.LinerPage
 import com.nuvio.app.features.music.booklet.bookletTrackNumber
 import com.nuvio.app.features.music.booklet.coverStats
-import com.nuvio.app.features.music.booklet.deckStep
+import com.nuvio.app.features.music.booklet.cursorStep
+import com.nuvio.app.features.music.booklet.deckTurn
+import com.nuvio.app.features.music.booklet.nextHiddenFact
 import com.nuvio.app.features.music.booklet.guestTrack
 import com.nuvio.app.features.music.booklet.isBookletAlbum
 import com.nuvio.app.features.music.booklet.linerPages
@@ -210,16 +212,25 @@ private fun BookletDeck(
     /** Turns toward [direction]; false when the deck is already at that end, so the key can move focus on instead. */
     fun turn(direction: Int): Boolean {
         val from = DeckPosition(page, position.cursor)
-        val next = deckStep(from, pages.size, cursorCount(pages[page]), direction)
+        val next = deckTurn(from, pages.size, direction)
         if (next == from) return false
         forward = direction > 0
-        position = if (next.page != page) DeckPosition(next.page, initialCursor(pages[next.page])) else next
+        position = DeckPosition(next.page, initialCursor(pages[next.page]))
+        return true
+    }
+
+    /** Up or Down through the entries of a guest or timeline page; false elsewhere or at either end, so focus can move on. */
+    fun walk(direction: Int): Boolean {
+        val from = DeckPosition(page, position.cursor)
+        val next = cursorStep(from, cursorCount(pages[page]), direction)
+        if (next == from) return false
+        position = next
         return true
     }
 
     fun select() {
         when (val current = pages[page]) {
-            is LinerPage.Fact -> revealed = revealed + current.number
+            is LinerPage.Facts -> nextHiddenFact(current.startIndex, current.facts.size, revealed)?.let { revealed = revealed + it }
             is LinerPage.Guests -> current.guests.getOrNull(position.cursor)?.let { guestTrack(it, album.tracks.size) }?.let { onJumpToTrack(it - 1) }
             is LinerPage.Timeline -> current.timeline.entries.getOrNull(position.cursor)?.browseId?.let(onOpenAlbum)
             else -> Unit
@@ -238,6 +249,8 @@ private fun BookletDeck(
                     when (event.key) {
                         Key.DirectionLeft -> turn(-1)
                         Key.DirectionRight -> turn(1)
+                        Key.DirectionUp -> walk(-1)
+                        Key.DirectionDown -> walk(1)
                         Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar -> {
                             select()
                             true
@@ -260,7 +273,7 @@ private fun BookletDeck(
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 when (shown) {
                     LinerPage.Cover -> CoverPage(album, request, booklet.intro, accent)
-                    is LinerPage.Fact -> FactPage(shown, shown.number in revealed, accent) { revealed = revealed + shown.number }
+                    is LinerPage.Facts -> FactsPage(shown, revealed, accent) { index -> revealed = revealed + index }
                     is LinerPage.Guests -> GuestsPage(shown, position.cursor, album.tracks.size, accent) { at ->
                         position = position.copy(cursor = at)
                         shown.guests.getOrNull(at)?.let { guestTrack(it, album.tracks.size) }?.let { onJumpToTrack(it - 1) }
@@ -283,7 +296,12 @@ private fun BookletDeck(
             NavPill("›", page < pages.lastIndex) { turn(1) }
         }
         Text(
-            "Left and Right turn the page · Select reveals",
+            when (pages[page]) {
+                is LinerPage.Facts -> "Left and Right turn the page · Select reveals"
+                is LinerPage.Guests -> "Up and Down choose · Select plays · Left and Right turn"
+                is LinerPage.Timeline -> "Up and Down choose · Select opens · Left and Right turn"
+                else -> "Left and Right turn the page"
+            },
             color = Color.White.copy(alpha = 0.45f),
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 6.dp).fillMaxWidth(),
@@ -292,7 +310,7 @@ private fun BookletDeck(
         )
         Text(
             when (booklet.source) {
-                BookletSource.Ai -> "Written by AI from Wikipedia"
+                BookletSource.Ai -> "Written by AI · may contain mistakes"
                 BookletSource.Wikipedia -> "Text from Wikipedia, CC BY-SA 4.0"
             },
             color = Color.White.copy(alpha = 0.35f),
@@ -350,27 +368,31 @@ private fun CoverPage(album: MusicAlbum, request: BookletRequest, intro: String,
 }
 
 @Composable
-private fun FactPage(page: LinerPage.Fact, revealed: Boolean, accent: Color, onReveal: () -> Unit) {
-    val tag = if (page.fact.kind == FactKind.Artist) "ARTIST" else "ALBUM"
-    PageLabel("DID YOU KNOW? · ${page.number} OF ${page.total} · $tag", accent)
+private fun FactsPage(page: LinerPage.Facts, revealed: Set<Int>, accent: Color, onReveal: (Int) -> Unit) {
+    PageLabel("DID YOU KNOW? · ${page.number} OF ${page.total}", accent)
     val shape = RoundedCornerShape(14.dp)
-    Column(
-        Modifier
-            .padding(top = 12.dp)
-            .fillMaxWidth()
-            .clip(shape)
-            .background(accent.copy(alpha = 0.14f))
-            .border(0.5.dp, accent.copy(alpha = 0.5f), shape)
-            .onTap(onReveal)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text(page.fact.question, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 22.sp, lineHeight = 28.sp)
-        if (revealed) {
-            Text(page.fact.answer, color = Color.White.copy(alpha = 0.92f), fontSize = 16.sp, lineHeight = 24.sp)
-        } else {
-            Box(Modifier.clip(CircleShape).background(accent).padding(horizontal = 16.dp, vertical = 6.dp)) {
-                Text("Reveal", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    val next = nextHiddenFact(page.startIndex, page.facts.size, revealed)
+    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        page.facts.forEachIndexed { i, fact ->
+            val index = page.startIndex + i
+            val open = index in revealed
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .background(accent.copy(alpha = if (open) 0.14f else 0.08f))
+                    .border(0.5.dp, accent.copy(alpha = if (index == next) 0.8f else 0.35f), shape)
+                    .onTap { onReveal(index) }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(if (fact.kind == FactKind.Artist) "ARTIST" else "ALBUM", color = accent, fontSize = 11.sp, letterSpacing = 1.2.sp)
+                Text(fact.question, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 18.sp, lineHeight = 23.sp)
+                if (open) {
+                    Text(fact.answer, color = Color.White.copy(alpha = 0.92f), fontSize = 15.sp, lineHeight = 21.sp)
+                } else {
+                    Text("Select to reveal", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
+                }
             }
         }
     }

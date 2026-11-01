@@ -90,7 +90,7 @@ class LinerNotesTest {
         val prompt = bookletPrompt(request, "Album text.", "Artist text here.")
         assertTrue("Artist text here." in prompt)
         assertTrue("Artist albums: Off the Wall (1979)" in prompt)
-        assertTrue("\"facts\"" in prompt)
+        assertFalse("\"facts\"" in prompt) // the trivia is its own request
         assertTrue("\"guests\"" in prompt)
     }
 
@@ -136,10 +136,10 @@ class LinerNotesTest {
         val facts = fallbackFacts(request, "Dangerous is the eighth studio album by Michael Jackson. It was released in 1991. It was recorded across several studios in Los Angeles. Riley produced many tracks.", artistText = null)
         val questions = facts.map { it.question }
         assertTrue(questions.any { it.startsWith("Who is Michael Jackson") })
-        assertTrue(questions.any { it.startsWith("When were Michael Jackson born") })
         assertTrue(questions.any { it.startsWith("Which album came before Dangerous") })
         assertTrue(facts.first { it.question.startsWith("Which album came before") }.answer.contains("Bad (1987)"))
-        assertTrue(facts.size <= 8)
+        assertEquals(3, facts.size)
+        assertTrue(facts.any { it.kind == FactKind.Artist } && facts.any { it.kind == FactKind.Album })
     }
 
     @Test
@@ -160,7 +160,7 @@ class LinerNotesTest {
         val booklet = parseAiBooklet(factsReply, 3)!!.copy(trackNotes = mapOf(2 to "A note about the second song."))
         val pages = linerPages(booklet, request, playing = 2)
         assertEquals(LinerPage.Cover, pages.first())
-        assertEquals(2, pages.count { it is LinerPage.Fact })
+        assertEquals(1, pages.count { it is LinerPage.Facts })
         assertTrue(pages.any { it is LinerPage.Guests })
         assertTrue(pages.any { it is LinerPage.Timeline })
         assertEquals(2, (pages.last() as LinerPage.Track).number)
@@ -191,24 +191,91 @@ class LinerNotesTest {
     }
 
     @Test
-    fun leftAndRightTurnPagesAndWalkLists() {
-        val start = DeckPosition(page = 1, cursor = 0)
-        assertEquals(DeckPosition(2, 0), deckStep(start, pageCount = 5, cursorCount = 0, direction = 1))
-        assertEquals(DeckPosition(0, 0), deckStep(start, 5, 0, -1))
-        // On a list page the keys walk the entries first, then turn the page at either end.
+    fun leftAndRightOnlyTurnPages() {
+        val onList = DeckPosition(page = 2, cursor = 1)
+        assertEquals(DeckPosition(3, 0), deckTurn(onList, pageCount = 5, direction = 1))
+        assertEquals(DeckPosition(1, 0), deckTurn(onList, 5, -1))
+    }
+
+    @Test
+    fun upAndDownWalkTheEntriesAndStopAtTheEnds() {
         val list = DeckPosition(page = 2, cursor = 1)
-        assertEquals(DeckPosition(2, 2), deckStep(list, 5, 3, 1))
-        assertEquals(DeckPosition(3, 0), deckStep(DeckPosition(2, 2), 5, 3, 1))
-        assertEquals(DeckPosition(1, 0), deckStep(DeckPosition(2, 0), 5, 3, -1))
+        assertEquals(DeckPosition(2, 2), cursorStep(list, cursorCount = 3, direction = 1))
+        assertEquals(DeckPosition(2, 0), cursorStep(list, 3, -1))
+        assertEquals(DeckPosition(2, 2), cursorStep(DeckPosition(2, 2), 3, 1))
+        assertEquals(DeckPosition(2, 0), cursorStep(DeckPosition(2, 0), 3, -1))
+        assertEquals(DeckPosition(2, 0), cursorStep(DeckPosition(2, 0), 0, 1))
     }
 
     @Test
     fun theDeckStopsAtItsEnds() {
-        val first = DeckPosition(0, 0)
-        val last = DeckPosition(4, 0)
-        assertEquals(first, deckStep(first, 5, 0, -1))
-        assertEquals(last, deckStep(last, 5, 0, 1))
-        assertFalse(deckStep(last, 5, 0, 1) != last)
-        assertNotNull(deckStep(first, 1, 0, 1))
+        assertEquals(DeckPosition(0, 0), deckTurn(DeckPosition(0, 0), 5, -1))
+        assertEquals(DeckPosition(4, 0), deckTurn(DeckPosition(4, 0), 5, 1))
+    }
+
+    private val triviaReply = """
+        {"known":true,"facts":[
+          {"kind":"album","q":"Which producer did he bring in for new jack swing?","a":"Teddy Riley, who co-wrote and produced many tracks.","confidence":"high"},
+          {"kind":"album","q":"Where was much of it recorded?","a":"Several studios in Los Angeles.","confidence":"medium"},
+          {"kind":"album","q":"Which guess should be dropped?","a":"Something unsure indeed.","confidence":"low"},
+          {"kind":"artist","q":"What did he start as a child?","a":"He fronted the Jackson 5 from a young age.","confidence":"high"}
+        ]}
+    """.trimIndent()
+
+    @Test
+    fun triviaDropsWhatTheModelIsUnsureOf() {
+        val facts = parseAiFacts(triviaReply)!!
+        assertEquals(3, facts.size)
+        assertFalse(facts.any { it.question.contains("dropped") })
+        assertEquals(FactKind.Artist, facts.last().kind)
+    }
+
+    @Test
+    fun triviaCapsAtFive() {
+        val many = (1..9).joinToString(",") { """{"kind":"album","q":"Question number $it here?","a":"Answer $it"}""" }
+        assertEquals(5, parseAiFacts("{\"facts\":[$many]}")!!.size)
+    }
+
+    @Test
+    fun anAlbumTheModelDoesNotKnowGivesNoCards() {
+        assertEquals(emptyList(), parseAiFacts("{\"known\": false, \"facts\": []}"))
+        assertNull(parseAiFacts("I am not sure."))
+    }
+
+    @Test
+    fun triviaPromptTellsTheModelWhatIsAlreadyShown() {
+        val prompt = factsPrompt(request, "The eighth studio album, released in 1991.", null)
+        assertTrue("The eighth studio album, released in 1991." in prompt)
+        assertTrue("Give 5 facts: 3 about the album" in prompt)
+        assertTrue("\"known\": false" in prompt)
+        assertTrue("Dangerous" in prompt && "Michael Jackson" in prompt && "1991" in prompt)
+    }
+
+    @Test
+    fun cardsThatRepeatTheIntroAreDropped() {
+        val intro = "Dangerous was recorded in Los Angeles with Teddy Riley producing many tracks."
+        val facts = listOf(
+            BookletFact(FactKind.Album, "Where was it made?", "It was recorded in Los Angeles with Teddy Riley producing many tracks."),
+            BookletFact(FactKind.Album, "Who sang the opening?", "A choir of schoolchildren opened the final track."),
+        )
+        assertEquals(listOf("Who sang the opening?"), dropRepeats(facts, intro).map { it.question })
+    }
+
+    @Test
+    fun fiveCardsMakeTwoPagesOfThreeAndTwo() {
+        val cards = (1..5).map { BookletFact(FactKind.Album, "Question $it of five?", "Answer $it") }
+        val booklet = AlbumBooklet("An intro that is long enough.", emptyList(), emptyMap(), BookletSource.Ai, cards)
+        val pages = linerPages(booklet, request.copy(artistInfo = null), playing = null).filterIsInstance<LinerPage.Facts>()
+        assertEquals(listOf(3, 2), pages.map { it.facts.size })
+        assertEquals(listOf(0, 3), pages.map { it.startIndex })
+        assertEquals(listOf(1, 2), pages.map { it.number })
+    }
+
+    @Test
+    fun selectRevealsTheNextHiddenCardInOrder() {
+        assertEquals(0, nextHiddenFact(0, 3, emptySet()))
+        assertEquals(1, nextHiddenFact(0, 3, setOf(0)))
+        assertEquals(3, nextHiddenFact(3, 2, setOf(0, 1, 2)))
+        assertNull(nextHiddenFact(0, 3, setOf(0, 1, 2)))
     }
 }

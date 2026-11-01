@@ -21,9 +21,6 @@ import kotlin.time.Clock
  * Billing discipline as for the post-show cards: a request is made only for the album being played, once, and its answer
  * (or its failure, for two hours) is kept. Without a key, or when the AI fails, the Wikipedia opening stands in.
  */
-private const val MIN_AI_FACTS = 4
-private const val MAX_FACT_CARDS = 8
-
 internal object AlbumBookletRepository {
     private val log = Logger.withTag("AlbumBooklet")
 
@@ -130,11 +127,12 @@ internal object AlbumBookletRepository {
             write(aiKey, null)
             return wiki
         }
-        // Too few cards from the AI: top up with the plain ones (questions already asked are not repeated).
-        val ai = if (parsed.facts.size >= MIN_AI_FACTS) parsed else {
-            val asked = parsed.facts.map { bookletNorm(it.question) }.toSet()
-            parsed.copy(facts = (parsed.facts + wiki.facts.filter { bookletNorm(it.question) !in asked }).take(MAX_FACT_CARDS))
-        }
+        // The trivia is its own request, written to be new to the reader (the intro is told to it as already shown). A
+        // failure or an album the model does not know leaves the three plain cards, so the deck is never empty.
+        val cards = DiscoverAiClient.complete(settings, DiscoverAiPromptText(FACTS_SYSTEM_PROMPT, factsPrompt(request, parsed.intro, text)))
+            .getOrNull()?.let(::parseAiFacts).orEmpty()
+        val facts = dropRepeats(cards, parsed.intro).ifEmpty { wiki.facts }
+        val ai = parsed.copy(facts = facts)
         write(aiKey, ai)
         log.i { "notes for ${request.album}: ${ai.credits.size} credits, ${ai.facts.size} cards, ${ai.trackNotes.size} track notes" }
         return ai

@@ -70,7 +70,10 @@ internal data class BookletRequest(
 private const val MAX_INTRO_CHARS = 700
 private const val MAX_NOTE_CHARS = 260
 private const val MAX_CREDITS = 8
-private const val MAX_FACTS = 8
+private const val MAX_FACTS = 5
+private const val MAX_PLAIN_FACTS = 3
+/** Trivia cards per page of the deck. */
+internal const val FACTS_PER_PAGE = 3
 private const val MAX_GUESTS = 8
 private const val MAX_QUESTION_CHARS = 140
 private const val MAX_ANSWER_CHARS = 320
@@ -148,41 +151,38 @@ private fun beginVerb(type: String?): String = when (type?.lowercase()) {
  * stated fact. Cards that need data that is missing are left out.
  */
 internal fun fallbackFacts(request: BookletRequest, albumLead: String?, artistText: String?): List<BookletFact> {
-    val out = ArrayList<BookletFact>()
     val artist = request.artist
     val info = request.artistInfo
     val artistSentences = (artistText ?: info?.biography)?.let(::bookletSentences).orEmpty()
-    artistSentences.firstOrNull()?.takeIf { it.length >= 30 }?.let {
-        out += BookletFact(FactKind.Artist, "Who is $artist?", cutAtSentence(it, MAX_ANSWER_CHARS))
+    val who = artistSentences.firstOrNull()?.takeIf { it.length >= 30 }?.let {
+        BookletFact(FactKind.Artist, "Who is $artist?", cutAtSentence(it, MAX_ANSWER_CHARS))
     }
-    info?.beginYear?.takeIf { it.isNotBlank() }?.let { year ->
+    val began = info?.beginYear?.takeIf { it.isNotBlank() }?.let { year ->
         val where = info.country?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
-        out += BookletFact(FactKind.Artist, "When were $artist ${beginVerb(info.type)}?", "$year$where")
+        BookletFact(FactKind.Artist, "When were $artist ${beginVerb(info.type)}?", "$year$where")
     }
-    info?.genres?.filter { it.isNotBlank() }?.take(3)?.takeIf { it.isNotEmpty() }?.let {
-        out += BookletFact(FactKind.Artist, "What sound is $artist known for?", it.joinToString(", "))
+    val sound = info?.genres?.filter { it.isNotBlank() }?.take(3)?.takeIf { it.isNotEmpty() }?.let {
+        BookletFact(FactKind.Artist, "What sound is $artist known for?", it.joinToString(", "))
     }
     val timeline = timelineFor(info, request.album, request.year)
-    if (timeline != null) {
-        timeline.entries.getOrNull(timeline.currentIndex - 1)?.let {
-            out += BookletFact(FactKind.Album, "Which album came before ${request.album}?", "${it.title} (${it.year})")
-        }
-        timeline.entries.getOrNull(timeline.currentIndex + 1)?.let {
-            out += BookletFact(FactKind.Album, "And which came after it?", "${it.title} (${it.year})")
-        }
+    val before = timeline?.entries?.getOrNull(timeline.currentIndex - 1)?.let {
+        BookletFact(FactKind.Album, "Which album came before ${request.album}?", "${it.title} (${it.year})")
     }
-    if (request.tracks.size >= 2) {
+    val after = timeline?.entries?.getOrNull(timeline.currentIndex + 1)?.let {
+        BookletFact(FactKind.Album, "And which came after it?", "${it.title} (${it.year})")
+    }
+    val length = if (request.tracks.size >= 2) {
         val seconds = request.tracks.sumOf { it.durationSeconds }
-        val length = if (seconds >= 60) ", about ${(seconds + 30) / 60} minutes long" else ""
-        out += BookletFact(FactKind.Album, "How many tracks are on ${request.album}?", "${request.tracks.size} tracks$length.")
+        val about = if (seconds >= 60) ", about ${(seconds + 30) / 60} minutes long" else ""
+        BookletFact(FactKind.Album, "How many tracks are on ${request.album}?", "${request.tracks.size} tracks$about.")
+    } else {
+        null
     }
-    albumLead?.let(::bookletSentences)?.drop(2)?.take(2)?.joinToString(" ")?.takeIf { it.length >= 40 }?.let {
-        out += BookletFact(FactKind.Album, "What is the story behind ${request.album}?", cutAtSentence(it, MAX_ANSWER_CHARS))
+    val story = albumLead?.let(::bookletSentences)?.drop(2)?.take(2)?.joinToString(" ")?.takeIf { it.length >= 40 }?.let {
+        BookletFact(FactKind.Album, "What is the story behind ${request.album}?", cutAtSentence(it, MAX_ANSWER_CHARS))
     }
-    artistSentences.drop(1).take(2).joinToString(" ").takeIf { it.length >= 40 }?.let {
-        out += BookletFact(FactKind.Artist, "What else should you know about $artist?", cutAtSentence(it, MAX_ANSWER_CHARS))
-    }
-    return out.take(MAX_FACTS)
+    // Without the AI there are three cards, picked to mix the artist and the album.
+    return listOfNotNull(who, before, story, began, sound, after, length).take(MAX_PLAIN_FACTS)
 }
 
 /** The artist's albums in order with the one playing marked, for the timeline page. */
@@ -225,7 +225,8 @@ internal fun coverStats(request: BookletRequest, released: String?): List<Pair<S
 /** One page of the deck. */
 internal sealed interface LinerPage {
     data object Cover : LinerPage
-    data class Fact(val number: Int, val total: Int, val fact: BookletFact) : LinerPage
+    /** [facts] are cards [startIndex] onward of the booklet's list; this is page [number] of [total] of trivia. */
+    data class Facts(val number: Int, val total: Int, val startIndex: Int, val facts: List<BookletFact>) : LinerPage
     data class Guests(val guests: List<BookletGuest>) : LinerPage
     data class Timeline(val timeline: BookletTimeline) : LinerPage
     data class Track(val number: Int, val title: String, val note: String) : LinerPage
@@ -235,7 +236,8 @@ internal sealed interface LinerPage {
 internal fun linerPages(booklet: AlbumBooklet, request: BookletRequest, playing: Int?): List<LinerPage> {
     val pages = ArrayList<LinerPage>()
     pages += LinerPage.Cover
-    booklet.facts.forEachIndexed { i, fact -> pages += LinerPage.Fact(i + 1, booklet.facts.size, fact) }
+    val groups = booklet.facts.chunked(FACTS_PER_PAGE)
+    groups.forEachIndexed { g, group -> pages += LinerPage.Facts(g + 1, groups.size, g * FACTS_PER_PAGE, group) }
     if (booklet.guests.isNotEmpty()) pages += LinerPage.Guests(booklet.guests)
     timelineFor(request.artistInfo, request.album, request.year)?.let { pages += LinerPage.Timeline(it) }
     val note = playing?.let { booklet.trackNotes[it] }
@@ -280,13 +282,9 @@ internal fun bookletPrompt(request: BookletRequest, wikipediaText: String, artis
     append("\nReturn JSON of this shape:\n")
     append("{\"intro\": \"2 to 4 sentences about the album: when and where it was made, its sound, how it was received\",\n")
     append(" \"credits\": [{\"role\": \"Producer\", \"names\": \"...\"}],\n")
-    append(" \"facts\": [{\"kind\": \"album\", \"q\": \"a short, friendly question\", \"a\": \"the answer, one or two sentences\"}],\n")
     append(" \"guests\": [{\"name\": \"a guest or featured artist\", \"track\": 3}],\n")
     append(" \"tracks\": {\"1\": \"one sentence about track 1, only if the text says something about it\"}}\n")
-    append("Write 6 to 8 facts, a mix of kind \"album\" and kind \"artist\", each a fun or nostalgic detail a fan would enjoy, ")
-    append("such as who made it, where, what came before, a famous guest or a surprising origin. ")
-    append("Each question must be answerable by its answer, and every answer must be stated in the texts above. ")
-    append("Leave out any credit, guest, fact or track note the texts do not support. Track keys and guest tracks are the numbers in the track list.")
+    append("Leave out any credit, guest or track note the texts do not support. Track keys and guest tracks are the numbers in the track list.")
 }
 
 private val BOOKLET_JSON = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -435,13 +433,80 @@ internal fun isBookletAlbum(browseId: String?): Boolean = browseId?.startsWith("
 /** Where the deck is: the page and, on a page that walks a list (guests, the timeline), the entry under the cursor. */
 internal data class DeckPosition(val page: Int, val cursor: Int)
 
-/**
- * One step ([direction] -1 or 1) of Left or Right. On a page with [cursorCount] entries the step walks them until the
- * last; past that, or on any other page, it turns the page. At the first or last page the position is returned unchanged.
- */
-internal fun deckStep(position: DeckPosition, pageCount: Int, cursorCount: Int, direction: Int): DeckPosition {
-    val cursor = position.cursor + direction
-    if (cursorCount > 1 && cursor in 0 until cursorCount) return position.copy(cursor = cursor)
+/** Left or Right ([direction] -1 or 1): the next or previous page. Unchanged at the first or last page. */
+internal fun deckTurn(position: DeckPosition, pageCount: Int, direction: Int): DeckPosition {
     val page = (position.page + direction).coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     return if (page == position.page) position else DeckPosition(page, 0)
 }
+
+/** Up or Down on a page with [cursorCount] entries (guests, the timeline): the next entry. Unchanged at either end. */
+internal fun cursorStep(position: DeckPosition, cursorCount: Int, direction: Int): DeckPosition {
+    val cursor = position.cursor + direction
+    return if (cursorCount > 1 && cursor in 0 until cursorCount) position.copy(cursor = cursor) else position
+}
+
+/** The first card on a page of [count] cards starting at [startIndex] that is not in [revealed], or null when all are. */
+internal fun nextHiddenFact(startIndex: Int, count: Int, revealed: Set<Int>): Int? =
+    (startIndex until startIndex + count).firstOrNull { it !in revealed }
+
+private fun words(text: String): Set<String> = bookletNorm(text).split(' ').filter { it.length > 3 }.toSet()
+
+/** [facts] without the cards whose answer mostly repeats what [shown] (the intro on the cover) already says. */
+internal fun dropRepeats(facts: List<BookletFact>, shown: String): List<BookletFact> {
+    val seen = words(shown)
+    return facts.filter { fact ->
+        val answer = words(fact.answer)
+        answer.isEmpty() || answer.count { it in seen } * 10 < answer.size * 6
+    }
+}
+
+// region AI trivia
+
+internal const val FACTS_SYSTEM_PROMPT =
+    "You write trivia cards for a music fan's liner notes. Only state facts you are sure are true about this exact album " +
+        "and artist: never invent names, dates, places, chart positions, sales or quotes. If you do not know the album, " +
+        "say so rather than guess. Plain text, no markdown. Reply with one JSON object and nothing else."
+
+/** The user message for the trivia request: five facts, not repeating [shown] (the intro already on the cover). */
+internal fun factsPrompt(request: BookletRequest, shown: String, wikipediaText: String?): String = buildString {
+    append("Album: ").append(request.album).append('\n')
+    append("Artist: ").append(request.artist).append('\n')
+    request.year?.let { append("Year: ").append(it).append('\n') }
+    if (request.tracks.isNotEmpty()) {
+        append("Tracks: ").append(request.tracks.take(30).mapIndexed { i, t -> "${i + 1}. ${t.title}" }.joinToString("; ")).append('\n')
+    }
+    append("\nAlready shown to the reader, so do not repeat it:\n").append(shown.take(700)).append('\n')
+    wikipediaText?.takeIf { it.isNotBlank() }?.let { append("\nBackground you may use if it helps:\n<<<\n").append(it.take(2_500)).append("\n>>>\n") }
+    append("\nGive 5 facts: 3 about the album \"").append(request.album).append("\" and 2 about the artist \"").append(request.artist).append("\". ")
+    append("Pick surprising, specific and nostalgic details a fan would love: how it was made, who nearly played on it, ")
+    append("a story behind a song, where it was recorded, a record it broke, a famous guest. Not a general career summary.\n")
+    append("Return JSON of this shape:\n")
+    append("{\"known\": true, \"facts\": [{\"kind\": \"album\", \"q\": \"a short, friendly question\", ")
+    append("\"a\": \"the answer in one or two sentences\", \"confidence\": \"high\"}]}\n")
+    append("Each question must be answerable by its answer. Use confidence \"high\", \"medium\" or \"low\", and leave out anything you would mark low. ")
+    append("If you do not recognise this exact album by this artist, return {\"known\": false, \"facts\": []}.")
+}
+
+/**
+ * The cards in a trivia reply: empty when the model did not know the album or gave nothing usable, null when the reply
+ * cannot be read at all. Cards it marked low, repeated questions and cards too short to be real are dropped.
+ */
+internal fun parseAiFacts(reply: String): List<BookletFact>? {
+    val start = reply.indexOf('{')
+    val end = reply.lastIndexOf('}')
+    if (start < 0 || end <= start) return null
+    val root = runCatching { BOOKLET_JSON.parseToJsonElement(reply.substring(start, end + 1)) }.getOrNull() as? JsonObject ?: return null
+    if ((root["known"] as? JsonPrimitive)?.content == "false") return emptyList()
+    val seen = HashSet<String>()
+    return (root["facts"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val q = obj["q"].text() ?: obj["question"].text() ?: return@mapNotNull null
+        val a = obj["a"].text() ?: obj["answer"].text() ?: return@mapNotNull null
+        if (obj["confidence"].text()?.lowercase() == "low") return@mapNotNull null
+        if (q.length < 8 || a.length < 3 || !seen.add(bookletNorm(q))) return@mapNotNull null
+        val kind = if (obj["kind"].text()?.lowercase() == "artist") FactKind.Artist else FactKind.Album
+        BookletFact(kind, cutAtSentence(q, MAX_QUESTION_CHARS), cutAtSentence(a, MAX_ANSWER_CHARS))
+    }.take(MAX_FACTS)
+}
+
+// endregion
