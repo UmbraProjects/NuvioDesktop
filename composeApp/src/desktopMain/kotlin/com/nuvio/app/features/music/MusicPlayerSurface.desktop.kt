@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -290,6 +291,9 @@ actual fun MusicPlayerSurface(
         onDispose { host.removeComponentListener(listener) }
     }
     LaunchedEffect(controller, cornerPx, revealed, loadId) { controller.setCornerRadius(cornerPx) }
+    // The corners the rounded picture leaves show the host window. mpv's own "black" reaches the screen as about (8, 8, 8), so
+    // a pure black host made a faint rounded shape inside a darker square; the host takes mpv's black instead.
+    SideEffect { host.background = if (framed) java.awt.Color(8, 8, 8) else java.awt.Color.BLACK }
     LaunchedEffect(controller, framed) {
         // Newer mpv builds call it background-color, older ones background; the one it does not know is ignored.
         val bars = if (framed) FRAMED_BARS_COLOR else "#000000"
@@ -395,7 +399,7 @@ actual fun MusicPlayerSurface(
                     // Parked: a one-pixel panel keeps the native player alive without painting over the app.
                     Modifier.align(Alignment.BottomEnd).requiredSize(1.dp)
                 },
-                background = Color.Black,
+                background = if (framed) Color(8, 8, 8) else Color.Black,
             )
         }
     }

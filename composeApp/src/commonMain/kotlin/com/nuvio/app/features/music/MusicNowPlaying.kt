@@ -1152,8 +1152,11 @@ private fun ColumnScope.InlineVideoSlot() {
     Spacer(Modifier.height(16.dp))
 }
 
-/** The glass rim round the Now Playing picture. */
-private val VIDEO_RIM = 5.dp
+/**
+ * The glass rim round the Now Playing picture. Wide enough that the square corners of the player's window, which the rounded
+ * picture leaves dark, sit inside the rim's rounded corners instead of poking through them (16 dp + this, times 0.29, is less than this).
+ */
+private val VIDEO_RIM = 9.dp
 
 /** The lyric strip under a video: four line slots and the sync controls. */
 private val COMPACT_LYRICS_HEIGHT = 284.dp
