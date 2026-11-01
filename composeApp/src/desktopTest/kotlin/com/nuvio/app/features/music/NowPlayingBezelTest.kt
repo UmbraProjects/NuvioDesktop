@@ -5,15 +5,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class NowPlayingBezelTest {
-    private val spec = BezelSpec(innerWidth = 400, innerHeight = 225, rim = 9, halo = 8, lip = 3, radius = 16)
+    private val spec = BezelSpec(innerWidth = 400, innerHeight = 225, rim = 6, halo = 8, lip = 3, radius = 16)
     private val pixels = renderBezel(spec)
 
     private fun alphaAt(x: Int, y: Int): Int = pixels[y * spec.width + x] ushr 24
 
     @Test
     fun theImageIsTheVideoPlusTheMarginOnEverySide() {
-        assertEquals(400 + 2 * 17, spec.width)
-        assertEquals(225 + 2 * 17, spec.height)
+        assertEquals(400 + 2 * 14, spec.width)
+        assertEquals(225 + 2 * 14, spec.height)
         assertEquals(spec.width * spec.height, pixels.size)
     }
 
@@ -33,7 +33,7 @@ class NowPlayingBezelTest {
 
     @Test
     fun theRingReachesOutsideTheVideoAndTheShadowFadesOut() {
-        assertTrue(alphaAt(spec.width / 2, spec.margin - spec.rim / 2) > 200)
+        assertTrue(alphaAt(spec.width / 2, spec.margin - spec.rim / 2) > 90)
         assertEquals(0, alphaAt(0, 0))
         assertTrue(alphaAt(spec.width / 2, spec.halo / 2) < alphaAt(spec.width / 2, spec.margin - 1))
     }

@@ -329,6 +329,12 @@ private fun MusicNowPlayingScreen(
             val cutout = identity?.cutoutUrl.takeIf { wide }
             // fork:stage - three panels (player, lyrics, booklet over the artist) when there is room; each keeps to its own.
             val threePanels = wide && stageUsesThreePanels(maxWidth.value)
+            // fork:stage - the right panel's glass runs from the top of the album case to the progress bar, so the three columns share
+            // two lines (symmetry is a rule of this page). Measured in the window's pixels; null until the first layout.
+            var caseTopPx by remember { mutableStateOf<Float?>(null) }
+            var barLinePx by remember { mutableStateOf<Float?>(null) }
+            var rightTopPx by remember { mutableStateOf<Float?>(null) }
+            val stageDensity = LocalDensity.current
             // Small in a corner while a video plays, so it stays clear of the video and the lyric sync controls.
             if (cutout != null && !threePanels) {
                 StageCutout(
@@ -357,7 +363,8 @@ private fun MusicNowPlayingScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .wrapContentWidth(Alignment.Start, unbounded = true)
-                                .padding(start = (STAGE_COLUMN_WIDTH - STAGE_CASE_SIZE) / 2),
+                                .padding(start = (STAGE_COLUMN_WIDTH - STAGE_CASE_SIZE) / 2)
+                                .onGloballyPositioned { caseTopPx = it.positionInRoot().y },
                             coverUrl = state.coverUrl,
                             cdArtUrl = cdArt,
                             spinning = state.isPlaying && spec.discSpins,
@@ -424,7 +431,11 @@ private fun MusicNowPlayingScreen(
                             }
                         }
                         Spacer(Modifier.height(16.dp))
-                        NowPlayingControls(state, player)
+                        NowPlayingControls(
+                            state, player,
+                            // The seek box is 28 dp high with its line in the middle: the panel ends on the line's lower edge.
+                            barModifier = Modifier.onGloballyPositioned { barLinePx = it.positionInRoot().y + it.size.height / 2f + with(stageDensity) { 2.dp.toPx() } },
+                        )
                         Spacer(Modifier.height(16.dp))
                         NowPlayingWidgets(
                             state = state,
@@ -461,11 +472,27 @@ private fun MusicNowPlayingScreen(
                     if (threePanels) {
                         // The right panel: the booklet in glass, and under it the artist, so the cut-out cannot reach the lyrics.
                         val showBooklet = album != null && bookletUi !is BookletUi.None
+                        val caseTop = caseTopPx
+                        val barLine = barLinePx
+                        val rightTop = rightTopPx
+                        // The gap above the glass (down to the case's top) and the height of the glass itself, once all three are known.
+                        val glassTop = if (caseTop != null && rightTop != null) with(stageDensity) { (caseTop - rightTop).coerceAtLeast(0f).toDp() } else null
+                        val glassHeight = if (caseTop != null && barLine != null && barLine > caseTop) with(stageDensity) { (barLine - caseTop).toDp() } else null
                         Column(
-                            Modifier.width(STAGE_COLUMN_WIDTH).fillMaxHeight(),
+                            Modifier.width(STAGE_COLUMN_WIDTH).fillMaxHeight().onGloballyPositioned { rightTopPx = it.positionInRoot().y },
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            if (showBooklet && album != null) {
+                            if (showBooklet && album != null && glassTop != null && glassHeight != null) {
+                                NowPlayingBooklet(
+                                    ui = bookletUi,
+                                    album = album,
+                                    playingVideoId = track?.videoId,
+                                    reduced = reduced,
+                                    onJumpToTrack = { index -> player.jumpTo(index) },
+                                    onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
+                                    modifier = Modifier.padding(top = glassTop).height(glassHeight).fillMaxWidth(),
+                                )
+                            } else if (showBooklet && album != null) {
                                 NowPlayingBooklet(
                                     ui = bookletUi,
                                     album = album,
@@ -477,7 +504,7 @@ private fun MusicNowPlayingScreen(
                                 )
                             }
                             if (cutout != null) {
-                                StageCutout(cutout, Modifier.weight(if (showBooklet) 0.38f else 1f).fillMaxWidth())
+                                StageCutout(cutout, Modifier.weight(1f).fillMaxWidth())
                             }
                         }
                     }

@@ -309,7 +309,7 @@ private val CONTROLS_SIDE_TEXT = Color.White.copy(alpha = 0.7f)
  * it never moves as the texts either side change width.
  */
 @Composable
-internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, modifier: Modifier = Modifier) {
+internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, modifier: Modifier = Modifier, barModifier: Modifier = Modifier) {
     val total = state.album?.tracks?.size ?: 0
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(Modifier.fillMaxWidth().height(44.dp)) {
@@ -349,7 +349,7 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
         SeekBar(
             fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
             onSeek = { player.seekTo((it * state.durationMs).toLong()) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(barModifier),
             enabled = state.durationMs > 0L,
             onNudge = { d -> player.seekTo((state.positionMs + d * 5_000L).coerceIn(0L, state.durationMs)) },
             glass = true,

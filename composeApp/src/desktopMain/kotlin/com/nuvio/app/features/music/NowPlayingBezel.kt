@@ -78,18 +78,24 @@ internal fun renderBezel(spec: BezelSpec): IntArray {
         g.composite = drawing
 
         val ring = Area(outer(0f)).apply { subtract(Area(opening)) }
-        // Silver, a little see-through, lighter at the top as the panels' glass is.
-        g.paint = GradientPaint(0f, m - rim, Color(206, 209, 219, 236), 0f, h - (m - rim), Color(96, 100, 112, 236))
-        g.fill(ring)
-        // A sheen across the upper left.
+        val window = Area(java.awt.Rectangle(spec.margin, spec.margin, spec.innerWidth, spec.innerHeight))
+        // Over the video (its lip and square corners) the glass has to hide what is under it, so it is solid; outside the video it is
+        // see-through like the page's panels, so the backdrop's colour shows in it.
+        val overVideo = Area(ring).apply { intersect(window) }
+        val besideVideo = Area(ring).apply { subtract(window) }
+        g.paint = GradientPaint(0f, m - rim, Color(58, 62, 76), 0f, h - (m - rim), Color(30, 32, 42))
+        g.fill(overVideo)
+        g.paint = GradientPaint(0f, m - rim, Color(218, 222, 236, 150), 0f, h - (m - rim), Color(120, 124, 142, 120))
+        g.fill(besideVideo)
+        // A soft highlight across the top, as the panels' glass has.
         g.clip = ring
-        g.paint = GradientPaint(m - rim, m - rim, Color(255, 255, 255, 96), w * 0.62f, h * 0.62f, Color(255, 255, 255, 0))
+        g.paint = GradientPaint(m - rim, m - rim, Color(255, 255, 255, 70), w * 0.62f, h * 0.62f, Color(255, 255, 255, 0))
         g.fill(ring)
         g.clip = null
 
         // The hairlines the panels have: light on the outer edge, a dark line where the picture begins.
         g.stroke = BasicStroke(1f)
-        g.color = Color(255, 255, 255, 170)
+        g.color = Color(255, 255, 255, 200)
         g.draw(outer(-0.5f))
         g.stroke = BasicStroke(2f)
         g.color = Color(0, 0, 0, 150)
@@ -179,7 +185,7 @@ internal object NowPlayingBezel {
     }
 }
 
-private const val BEZEL_RIM_DP = 9f
+private const val BEZEL_RIM_DP = 6f
 private const val BEZEL_HALO_DP = 8f
 private const val BEZEL_LIP_DP = 3f
 private const val BEZEL_RADIUS_DP = 16f
