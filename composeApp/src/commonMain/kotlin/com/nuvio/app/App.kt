@@ -3940,6 +3940,7 @@ private fun MainAppContent(
                                             onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
                                             onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
                                             onNavigateToLiveTv = { handleRootTabClick(AppScreenTab.LiveTv) },
+                                            onNavigateToMusic = { handleRootTabClick(AppScreenTab.Music) }, // fork:music
                                             onLiveTvSettingsClick = {
                                                 requestedSettingsPageName = "Iptv"
                                                 handleRootTabClick(AppScreenTab.Settings)
@@ -5757,6 +5758,7 @@ private fun AppTabHost(
     onNavigateToHome: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
     onNavigateToLiveTv: (() -> Unit)? = null,
+    onNavigateToMusic: (() -> Unit)? = null,
     onLiveTvSettingsClick: () -> Unit = {},
     onMusicNavigate: (Any) -> Unit = {}, // fork:music
 ) {
@@ -5915,6 +5917,7 @@ private fun AppTabHost(
                         onNavigateToDiscover = onNavigateToDiscover,
                         onNavigateToCalendar = onNavigateToCalendar,
                         onNavigateToLiveTv = onNavigateToLiveTv,
+                        onNavigateToMusic = onNavigateToMusic,
                     )
                 }
             }
