@@ -132,6 +132,19 @@ internal object NativePlayerBridge {
      */
     external fun decodeSpeechSpot(handle: Long, startSeconds: Double, durationSeconds: Double, outputPath: String): Int
 
+    /**
+     * [decodeSpeechSpot] with a chosen format: raw float32 PCM at [sampleRate] Hz, interleaved, [channelCount] 1 or 2.
+     * Not present in the macOS bridge: calling it there throws UnsatisfiedLinkError (the loudness measurement catches it).
+     */
+    external fun decodeAudioSpot(
+        handle: Long,
+        startSeconds: Double,
+        durationSeconds: Double,
+        sampleRate: Int,
+        channelCount: Int,
+        outputPath: String,
+    ): Int
+
     /** The playing source's size over its duration; negative when unknown. */
     external fun speechSourceBytesPerSecond(handle: Long): Double
 

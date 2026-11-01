@@ -46,4 +46,9 @@ data class TrailerPlaybackSource(
      * not mastered to the album's level and play noticeably quieter, so the player evens the level out.
      */
     val evenOutLoudness: Boolean = false,
+    /**
+     * fork:loudness - a stable identity for the track behind this stream ("yt:<video id>", "addon:<track id>"), since the
+     * URL itself expires. Music keeps the loudness it measured under it, so the next play starts at the right level.
+     */
+    val loudnessKey: String? = null,
 )

@@ -144,7 +144,11 @@ object MusicResolver {
      * of URLs that look fine and serve nothing. [needsVideo] is whether the picture will be shown;
      * the audio-only surface only reads the audio URL, so only that one has to be good.
      */
-    private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
+    private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? =
+        // fork:loudness - kept under the video's id, which outlives the stream's URL.
+        openStream(videoId, needsVideo)?.copy(loudnessKey = "yt:$videoId")
+
+    private suspend fun openStream(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
         repeat(OPEN_ATTEMPTS) { attempt ->
             var resolved = resolveSource(videoId) ?: return fallbackSource(videoId, needsVideo)
             // A restricted client answered (usually throttling during a burst of lookups): its URLs are cut off and

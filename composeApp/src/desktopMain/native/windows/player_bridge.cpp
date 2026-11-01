@@ -6207,6 +6207,14 @@ public:
     }
 
     int decodeSpeechSpot(double startSeconds, double durationSeconds, const std::string &outputPath) {
+        return decodeAudioSpot(startSeconds, durationSeconds, outputPath, 16000, 1);
+    }
+
+    // The same throwaway decode with a chosen output format: raw little-endian float32 PCM at sampleRate Hz with 1
+    // (mono) or 2 (stereo) interleaved channels. The loudness measurement uses 24 kHz stereo: a mono mix cannot tell
+    // a wide mix from a narrow one, which is 1 to 4 LU of error.
+    int decodeAudioSpot(double startSeconds, double durationSeconds, const std::string &outputPath,
+                        int sampleRate, int channelCount) {
         // A separate audio stream (YouTube video plus its own audio) is the audio being heard, and it
         // is a complete file on its own, so that is what gets decoded; the video URL has no sound.
         const bool separateAudio = !externalAudioUrl.empty();
@@ -6230,6 +6238,11 @@ public:
             api.setOptionString(probe, name, value);
         }
         api.setOptionString(probe, "ao-pcm-file", outputPath.c_str());
+        {
+            const std::string rateText = std::to_string(sampleRate > 0 ? sampleRate : 16000);
+            api.setOptionString(probe, "audio-samplerate", rateText.c_str());
+            api.setOptionString(probe, "audio-channels", channelCount >= 2 ? "stereo" : "mono");
+        }
         api.setOptionString(probe, "start", start.c_str());
         api.setOptionString(probe, "end", end.c_str());
         if (numericAid) api.setOptionString(probe, "aid", aid.c_str());
@@ -7436,6 +7449,22 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeSpeechSpot(
     auto player = playerFromHandle(handle);
     if (!player) return -1;
     return player->decodeSpeechSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeAudioSpot(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jdouble startSeconds,
+    jdouble durationSeconds,
+    jint sampleRate,
+    jint channelCount,
+    jstring outputPath
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return -1;
+    return player->decodeAudioSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath), sampleRate, channelCount);
 }
 
 extern "C" JNIEXPORT void JNICALL

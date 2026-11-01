@@ -1,5 +1,7 @@
 package com.nuvio.app.features.trailer
 
+import com.nuvio.app.features.preroll.StreamLoudnessBook
+import com.nuvio.app.features.preroll.streamUrls
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
@@ -79,6 +81,8 @@ internal data class StreamCandidate(
      * `audioTrack` (a single-language video, where every audio format is the original).
      */
     val isOriginalAudio: Boolean? = null,
+    /** Audio only: YouTube's `loudnessDb` for this format (how far above its reference it is), when it sent one. */
+    val loudnessDb: Double? = null,
 )
 
 private data class ManifestBestVariant(
@@ -434,6 +438,8 @@ class InAppYouTubeExtractor internal constructor(
         // YouTube's own explanation (region block, age gate, removed video, ...), read from
         // whichever client responded last.
         var lastPlayabilityStatus: JsonObject? = null
+        // fork:loudness - the video's overall loudness from the player config, for a stream with no per-format figure.
+        var playerLoudnessDb: Double? = null
 
         for (client in if (useAccount) ACCOUNT_CLIENTS else CLIENTS) {
             runCatching {
@@ -457,6 +463,11 @@ class InAppYouTubeExtractor internal constructor(
                     lastPlayabilityStatus = playerResponse.objectValue("playabilityStatus")
                         ?: lastPlayabilityStatus
                     return@runCatching
+                }
+                if (playerLoudnessDb == null) {
+                    playerLoudnessDb = playerResponse.objectValue("playerConfig")
+                        ?.objectValue("audioConfig")
+                        ?.numberValue("loudnessDb")
                 }
                 val hlsManifestUrl = streamingData.stringValue("hlsManifestUrl")
                 if (!hlsManifestUrl.isNullOrBlank()) {
@@ -545,6 +556,7 @@ class InAppYouTubeExtractor internal constructor(
                             bitrate = bitrate,
                             ext = if (mimeType.contains("webm")) "webm" else "m4a",
                             isOriginalAudio = format.isOriginalAudioTrack(url),
+                            loudnessDb = format.numberValue("loudnessDb"),
                         )
                     }
                 }
@@ -589,8 +601,11 @@ class InAppYouTubeExtractor internal constructor(
             // audio as a rendition only the master links.
             val single = bestManifest?.manifestUrl?.takeIf { it.isNotBlank() } ?: bestProgressive?.url
             log.i { "Selected single-url stream manifest=${bestManifest != null} progressive=${bestProgressive?.height ?: 0}p" }
-            return single?.let { TrailerResolution.Available(TrailerPlaybackSource(videoUrl = it)) }
-                ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+            return single?.let {
+                val singleSource = TrailerPlaybackSource(videoUrl = it)
+                StreamLoudnessBook.record(singleSource.streamUrls(), playerLoudnessDb)
+                TrailerResolution.Available(singleSource)
+            } ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
         }
         val bestVideo = pickBestVideoForClient(
             items = adaptiveVideo,
@@ -631,7 +646,12 @@ class InAppYouTubeExtractor internal constructor(
         val sharpest = dimensions.maxOfOrNull { (w, h) -> if (w > 0) minOf(w, h) else h } ?: 0
         val portrait = dimensions.any { (w, h) -> w in 1 until h }
         val reliable = bestVideo?.client == PREFERRED_SEPARATE_CLIENT || bestManifest?.client == PREFERRED_SEPARATE_CLIENT
-        return source?.let { TrailerResolution.Available(it.copy(heightPx = sharpest, reliable = reliable, portrait = portrait)) }
+        return source?.let {
+            val finished = it.copy(heightPx = sharpest, reliable = reliable, portrait = portrait)
+            // fork:loudness - what YouTube says the audio's loudness is, kept for the player to plan its gain from.
+            StreamLoudnessBook.record(finished.streamUrls(), bestAudio?.loudnessDb ?: playerLoudnessDb)
+            TrailerResolution.Available(finished)
+        }
             ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
     }
 

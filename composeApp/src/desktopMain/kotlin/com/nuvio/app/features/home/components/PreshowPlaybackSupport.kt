@@ -1,8 +1,8 @@
 package com.nuvio.app.features.home.components
 
 import com.nuvio.app.features.player.desktop.NativePlayerController
-import com.nuvio.app.features.player.desktop.TRAILER_AUDIO_NORMALIZATION_FILTER
 import com.nuvio.app.features.preroll.mpvAudioFilterValue
+import com.nuvio.app.features.preroll.trailerLoudnessChain
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,6 +66,8 @@ internal fun heroTrailerAudioInitOptions(
     volume: Int,
     normalizeAudio: Boolean,
     preshow: Boolean,
+    /** The trailer's stream URL, so the gain can be planned from what YouTube said about its loudness (fork:loudness). */
+    sourceUrl: String? = null,
 ): List<String> = buildList {
     add("mute=${if (muted) "yes" else "no"}")
     add("volume=$volume")
@@ -74,7 +76,8 @@ internal fun heroTrailerAudioInitOptions(
     // as every item opening quietly. It is a filter rather than a volume ramp so it is
     // sample-accurate and cannot be missed if the UI thread is busy at clip start.
     val chain = buildList {
-        if (normalizeAudio) add(TRAILER_AUDIO_NORMALIZATION_FILTER)
+        // fork:loudness - a fixed gain, then a compressor and limiter: nothing rides, so nothing swells at the start.
+        if (normalizeAudio) addAll(trailerLoudnessChain(sourceUrl))
         if (preshow) add("afade=t=in:st=0:d=${PRESHOW_FADE_IN_MS / 1000.0}")
     }
     // Always one libavfilter chain: `loudnorm` takes colon-separated options, which a bare mpv filter spec

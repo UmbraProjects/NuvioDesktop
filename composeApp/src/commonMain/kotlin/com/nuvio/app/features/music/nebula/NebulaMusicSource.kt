@@ -398,7 +398,7 @@ internal object NebulaMusicSource {
                 track = track,
                 mode = mode,
                 videoId = track.videoId,
-                source = TrailerPlaybackSource(videoUrl = stream.url),
+                source = TrailerPlaybackSource(videoUrl = stream.url, loudnessKey = "addon:${track.videoId}"),
                 viaCounterpart = false,
                 // The addon gives audio only: in video mode (no YouTube video found) the lyric view is the picture.
                 lyricVideo = mode == MusicPlayMode.Video,
