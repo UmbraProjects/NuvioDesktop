@@ -1,6 +1,15 @@
 package com.nuvio.app.features.music
 
 import com.nuvio.app.features.music.library.musicKeyFocusRing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.key
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.rounded.PlaylistAdd
@@ -28,6 +37,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -84,51 +95,104 @@ internal fun NowPlayingWidgets(
     Column(modifier.graphicsLayer { this.alpha = alpha }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (queue.size > 1) {
             Text("QUEUE", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
-            // The whole queue, scrolling in whatever height the column has left, kept on the song playing: earlier songs
-            // above it (dimmed), the rest below. A click plays that song; a later album's songs are reached by Next.
-            val listState = rememberLazyListState()
-            LaunchedEffect(playingAt) { if (playingAt > 0) listState.animateScrollToItem((playingAt - 1).coerceAtLeast(0)) }
-            LazyColumn(
-                Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(min = UP_NEXT_MIN_HEIGHT),
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                itemsIndexed(queue, key = { i, e -> "$i:${e.track.videoId}" }) { i, entry ->
-                    val next = entry.track
-                    val playing = i == playingAt
-                    val source = remember { MutableInteractionSource() }
-                    val hovered by source.collectIsHoveredAsState()
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer { this.alpha = if (i < playingAt) 0.5f else 1f }
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                when {
-                                    playing -> MaterialTheme.nuvio.colors.accent.copy(alpha = 0.22f)
-                                    hovered && entry.inAlbum -> Color.White.copy(alpha = 0.16f)
-                                    else -> Color.White.copy(alpha = 0.08f)
-                                },
-                            )
-                            .hoverable(source)
-                            .then(
-                                if (entry.inAlbum && !playing) Modifier.musicKeyFocusRing().clickable(interactionSource = source, indication = null) { player.jumpTo(entry.albumIndex) }
-                                else Modifier,
-                            )
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        MusicCover(next.coverUrl ?: album?.thumbnailUrl, next.title, size = 40.dp)
-                        Text(next.title, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        if (next.durationSeconds > 0) {
-                            Text(formatMusicTime(next.durationSeconds * 1_000L), color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
-                        }
-                    }
-                }
-            }
+            QueueWindow(queue, playingAt, album?.thumbnailUrl, player, Modifier.weight(1f, fill = false))
         }
         if (lyricsMissing && state.isPlaying && libraryArtist != null) MiniLadder(libraryArtist, onOpenArtist)
+    }
+}
+
+/** Rows the queue shows at once, so it never ends in a half-cut row. */
+private const val QUEUE_ROWS_SHOWN = 4
+private val QUEUE_ROW_HEIGHT = 56.dp
+private val QUEUE_ROW_GAP = 8.dp
+
+/**
+ * fork:music-stage - the queue as a window of four whole rows (fewer when the queue is shorter): the song before the one
+ * playing (dimmed), the one playing and the next two. When the song changes the top row slides up and fades out while the
+ * next one slides in from below. The mouse wheel moves the window along the queue; it returns to the playing song when the
+ * song changes. A click plays that song; a later album's songs are reached by Next.
+ */
+@Composable
+private fun QueueWindow(queue: List<MusicQueueEntry>, playingAt: Int, fallbackCover: String?, player: MusicPlayer, modifier: Modifier = Modifier) =
+    BoxWithConstraints(modifier) {
+    // Fewer rows when the column is short, never fewer than two.
+    val room = if (maxHeight == Dp.Infinity) QUEUE_ROWS_SHOWN else ((maxHeight + QUEUE_ROW_GAP) / (QUEUE_ROW_HEIGHT + QUEUE_ROW_GAP)).toInt()
+    val shown = minOf(room.coerceIn(2, QUEUE_ROWS_SHOWN), queue.size)
+    val maxStart = (queue.size - shown).coerceAtLeast(0)
+    val base = (playingAt - 1).coerceAtLeast(0)
+    var browse by remember { mutableStateOf(0) }
+    LaunchedEffect(playingAt) { browse = 0 }
+    val start = (base + browse).coerceIn(0, maxStart)
+    var carried by remember { mutableStateOf(0f) }
+    val wheel = rememberScrollableState { delta ->
+        carried += delta
+        while (carried <= -WHEEL_ROW_PX) { carried += WHEEL_ROW_PX; browse = (browse + 1).coerceAtMost(maxStart - base) }
+        while (carried >= WHEEL_ROW_PX) { carried -= WHEEL_ROW_PX; browse = (browse - 1).coerceAtLeast(-base) }
+        delta
+    }
+    val step = QUEUE_ROW_HEIGHT + QUEUE_ROW_GAP
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(step * shown - QUEUE_ROW_GAP)
+            .clipToBounds()
+            .scrollable(wheel, Orientation.Vertical),
+    ) {
+        // One row either side of the window is kept composed (invisible), so a row sliding in or out already exists.
+        for (i in (start - 1)..(start + shown)) {
+            val entry = queue.getOrNull(i) ?: continue
+            key(i, entry.track.videoId) {
+                QueueRow(entry, slot = i - start, shown = shown, playing = i == playingAt, played = i < playingAt, fallbackCover = fallbackCover, player = player)
+            }
+        }
+    }
+    }
+
+private const val WHEEL_ROW_PX = 40f
+
+@Composable
+private fun QueueRow(entry: MusicQueueEntry, slot: Int, shown: Int, playing: Boolean, played: Boolean, fallbackCover: String?, player: MusicPlayer) {
+    val reduced = rememberMusicReducedMotion()
+    val visible = slot in 0 until shown
+    val y by animateDpAsState(
+        (QUEUE_ROW_HEIGHT + QUEUE_ROW_GAP) * slot,
+        if (reduced) snap() else tween(380, easing = FastOutSlowInEasing),
+    )
+    val fade by animateFloatAsState(
+        if (visible) 1f else 0f,
+        if (reduced) snap() else tween(320),
+    )
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val track = entry.track
+    Row(
+        Modifier
+            .offset(y = y)
+            .fillMaxWidth()
+            .height(QUEUE_ROW_HEIGHT)
+            .graphicsLayer { alpha = fade * (if (played) 0.5f else 1f) }
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                when {
+                    playing -> MaterialTheme.nuvio.colors.accent.copy(alpha = 0.22f)
+                    hovered && entry.inAlbum -> Color.White.copy(alpha = 0.16f)
+                    else -> Color.White.copy(alpha = 0.08f)
+                },
+            )
+            .hoverable(source)
+            .then(
+                if (visible && entry.inAlbum && !playing) Modifier.musicKeyFocusRing().clickable(interactionSource = source, indication = null) { player.jumpTo(entry.albumIndex) }
+                else Modifier,
+            )
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        MusicCover(track.coverUrl ?: fallbackCover, track.title, size = 40.dp)
+        Text(track.title, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        if (track.durationSeconds > 0) {
+            Text(formatMusicTime(track.durationSeconds * 1_000L), color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
+        }
     }
 }
 
@@ -185,9 +249,6 @@ private fun MiniLadder(artist: LibraryArtist, onOpenArtist: (String) -> Unit) {
 
 /** One white for every control and one softer shade for the texts either side (where in the album, the time). */
 private val CONTROLS_SIDE_TEXT = Color.White.copy(alpha = 0.7f)
-
-/** The least height the queue's scrolling box keeps (about two rows). */
-private val UP_NEXT_MIN_HEIGHT = 112.dp
 
 /**
  * The lyric view's own player, which stays on screen (the bar, dock and card step aside while the view is open). One
