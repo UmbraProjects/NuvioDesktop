@@ -158,11 +158,23 @@ class MusicPlayer(
     ) {
         launchRequest {
             val requested = trackIndex.coerceIn(0, album.tracks.size - 1)
-            val fresh = MusicQueue(album, mode, shuffled, seed, requested)
+            var fresh = MusicQueue(album, mode, shuffled, seed, requested)
             // fork:player - play starts with the new track (see startOnShow), not now: the old one is still on the surface.
             startOnShow = true
             _state.update { it.copy(isLoading = true, notice = null) }
-            val found = fresh.jumpTo(fresh.currentIndex ?: 0) { track -> resolve(track, album, fresh.mode) }
+            var found = fresh.jumpTo(fresh.currentIndex ?: 0) { track -> resolve(track, album, fresh.mode) }
+            var fellBackToAudio = false
+            if (found == null && mode == MusicPlayMode.Video) {
+                // fork:player - nothing opened as a video (YouTube refusing, or no video for any track): play the album as audio
+                // rather than leaving the old song going as if Play did nothing. The mode carried over from the old song, so the
+                // person never chose video for this album; it only played the old one.
+                val audio = MusicQueue(album, MusicPlayMode.Audio, shuffled, seed, requested)
+                found = audio.jumpTo(audio.currentIndex ?: 0) { track -> resolve(track, album, MusicPlayMode.Audio) }
+                if (found != null) {
+                    fresh = audio
+                    fellBackToAudio = true
+                }
+            }
             if (found == null) {
                 startOnShow = false
                 // Nothing in the album opened. Leave whatever was playing before alone if it still is.
@@ -174,7 +186,10 @@ class MusicPlayer(
             }
             queue = fresh
             val start = if (found.index == requested) startPositionMs.coerceAtLeast(0L) else 0L
-            show(fresh, found, startPositionMs = start, skipped = found.skipped.size)
+            show(
+                fresh, found, startPositionMs = start, skipped = found.skipped.size,
+                notice = if (fellBackToAudio) "No music video would open, playing the audio" else null,
+            )
         }
     }
 

@@ -254,11 +254,24 @@ class MusicPlayerTest {
 
     @Test
     fun anAlbumNothingInItCanPlayStartsNothing() {
-        val fake = Fake(noVideo = setOf("id1", "id2"))
-        val p = player(fake)
+        val nothing: MusicTrackResolver = { track, _, _ -> MusicResolution.Failed(track, "gone") }
+        val p = MusicPlayer(CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), nothing, now = { 0L })
         p.play(album(2), mode = MusicPlayMode.Video)
         assertFalse(p.state.value.isActive)
         assertNotNull(p.state.value.notice)
+    }
+
+    @Test
+    fun anAlbumWithNoVideoForAnyTrackPlaysAsAudioInsteadOfDoingNothing() {
+        // The mode came from the song that was playing; Play on another album must not leave that song going.
+        val fake = Fake(noVideo = setOf("id1", "id2"))
+        val p = player(fake)
+        p.play(album(2), mode = MusicPlayMode.Video)
+        val s = p.state.value
+        assertTrue(s.isActive)
+        assertEquals("id1", s.track?.videoId)
+        assertEquals(MusicPlayMode.Audio, s.mode)
+        assertNotNull(s.notice)
     }
 
     private fun albumOf(prefix: String, n: Int) = MusicAlbum(
