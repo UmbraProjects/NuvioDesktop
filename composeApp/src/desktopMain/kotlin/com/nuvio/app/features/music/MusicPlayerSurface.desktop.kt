@@ -404,8 +404,11 @@ actual fun MusicPlayerSurface(
 /** The corner of the Now Playing picture, as the Stage's glass panels. */
 private const val FRAMED_CORNER_DP = 16f
 
-/** The bars beside a picture that is not 16:9, in the Stage's dark tone rather than black. */
-private const val FRAMED_BARS_COLOR = "#101018"
+/**
+ * The bars beside a picture that is not 16:9. Black, like the host window behind the rounded picture: mpv drew a Stage-toned
+ * "#101018" lighter than asked (about #1E1E2A on screen), which showed as a navy band inside the host's black corners.
+ */
+private const val FRAMED_BARS_COLOR = "#000000"
 
 /** An open part way in can land a few seconds short of its time (on a keyframe); that still counts as there. */
 private const val OPEN_AT_SLACK_MS = 10_000L
