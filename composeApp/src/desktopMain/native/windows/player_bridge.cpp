@@ -4994,6 +4994,18 @@ private:
     LONG lastRegionHeight = -1;
     int lastRegionRadius = -1;
 
+    // The corners a region cuts away show whatever is behind the window; ask the parent (the app's own surface) to
+    // paint that area again, or it keeps the default window colour until something else repaints it.
+    void repaintBehindHost() {
+        HWND parent = GetParent(hostHwnd);
+        if (!parent || !IsWindow(parent)) return;
+        RECT area = {};
+        if (!GetWindowRect(hostHwnd, &area)) return;
+        MapWindowPoints(HWND_DESKTOP, parent, reinterpret_cast<POINT *>(&area), 2);
+        InflateRect(&area, 2, 2);
+        RedrawWindow(parent, &area, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_NOCHILDREN);
+    }
+
     void applyCornerRegion() {
         if (!hostHwnd || !IsWindow(hostHwnd)) return;
         RECT bounds = {};
@@ -5017,6 +5029,7 @@ private:
             lastRegionWidth = width;
             lastRegionHeight = height;
             lastRegionRadius = clamped;
+            repaintBehindHost();
         } else {
             DeleteObject(region);
         }
