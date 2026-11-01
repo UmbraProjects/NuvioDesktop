@@ -52,8 +52,7 @@ internal fun loudStackHeightDp(paneHeightDp: Float, hasNext: Boolean): Float =
 /** The text with an ellipsis after its last word, for a line that had to be cut. */
 internal fun withEllipsis(text: String): String = text.trimEnd(',', ';', ':', '-', ' ', '.') + "…"
 
-/** Stage panels: three side by side only when there is room for the lyrics between the player and the booklet. */
+/** Stage panels: three side by side only when there is room for the lyrics (or the video) between the player and the booklet; a playing video does not matter. */
 internal const val THREE_PANEL_MIN_WIDTH_DP = 1400f
 
-internal fun stageUsesThreePanels(widthDp: Float, realVideo: Boolean): Boolean =
-    !realVideo && widthDp >= THREE_PANEL_MIN_WIDTH_DP
+internal fun stageUsesThreePanels(widthDp: Float): Boolean = widthDp >= THREE_PANEL_MIN_WIDTH_DP

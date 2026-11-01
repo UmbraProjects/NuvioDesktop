@@ -82,10 +82,9 @@ class LyricFitTest {
     }
 
     @Test
-    fun threePanelsNeedWidthAndNoVideo() {
-        assertTrue(stageUsesThreePanels(1920f, false))
-        assertTrue(stageUsesThreePanels(1400f, false))
-        assertFalse(stageUsesThreePanels(1399f, false))
-        assertFalse(stageUsesThreePanels(1920f, true))
+    fun threePanelsNeedWidthOnly() {
+        assertTrue(stageUsesThreePanels(1920f))
+        assertTrue(stageUsesThreePanels(1400f))
+        assertFalse(stageUsesThreePanels(1399f))
     }
 }

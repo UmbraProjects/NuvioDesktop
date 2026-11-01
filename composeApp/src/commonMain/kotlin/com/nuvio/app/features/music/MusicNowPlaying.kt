@@ -327,7 +327,7 @@ private fun MusicNowPlayingScreen(
             val wide = maxWidth >= 860.dp
             val cutout = identity?.cutoutUrl.takeIf { wide }
             // fork:stage - three panels (player, lyrics, booklet over the artist) when there is room; each keeps to its own.
-            val threePanels = wide && stageUsesThreePanels(maxWidth.value, realVideo)
+            val threePanels = wide && stageUsesThreePanels(maxWidth.value)
             // Small in a corner while a video plays, so it stays clear of the video and the lyric sync controls.
             if (cutout != null && !threePanels) {
                 StageCutout(
