@@ -887,7 +887,11 @@ private fun LyricsPane(
                     when (style) {
                         LyricStyle.Calm -> PosterLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap)
                         LyricStyle.Loud -> LoudLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap)
-                        LyricStyle.Scroll -> SyncedLyrics(lyrics.lines, positionMs, playing, onSeek, reduced, tapping = tapping, onTapLine = onTap)
+                        // The list stops above the source note and sync buttons at the pane's foot and fades out into that edge,
+                        // so the last visible line is never printed over them.
+                        LyricStyle.Scroll -> Box(Modifier.fillMaxSize().padding(bottom = SCROLL_SYNC_BAND).fadeBottomEdge(SCROLL_FADE)) {
+                            SyncedLyrics(lyrics.lines, positionMs, playing, onSeek, reduced, tapping = tapping, onTapLine = onTap)
+                        }
                     }
                     LyricSyncStrip(
                         syncState, tapping, { tapping = !tapping }, onNudge, onResetSync,
@@ -903,6 +907,24 @@ private fun LyricsPane(
         }
     }
 }
+
+/** Room kept under the scrolling lyrics for the source note and the sync buttons. */
+private val SCROLL_SYNC_BAND = 96.dp
+
+/** How far up from the list's lower edge the lines fade out. */
+private val SCROLL_FADE = 56.dp
+
+/** Fades what is drawn to nothing over the last [fade] of its height. */
+private fun Modifier.fadeBottomEdge(fade: Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val h = fade.toPx().coerceAtMost(size.height)
+        drawRect(
+            Brush.verticalGradient(listOf(Color.Black, Color.Transparent), startY = size.height - h, endY = size.height),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 
 /** What the lyric timing is doing, with a nudge for when the automatic answer is off or missing. */
 @Composable
