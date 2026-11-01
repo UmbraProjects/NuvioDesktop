@@ -820,9 +820,11 @@ private fun LyricsPane(
                     }
                     LyricSyncStrip(
                         syncState, tapping, { tapping = !tapping }, onNudge, onResetSync,
-                        // Down at the pane's foot, apart from the lines, so it does not read as one of them.
-                        Modifier.align(Alignment.BottomEnd).offset(y = 36.dp),
+                        // Down at the pane's foot, apart from the lines, so it does not read as one of them. On the left, under
+                        // where the lines start: the right-hand corner is the artist's cut-out and logo, which swallowed it.
+                        Modifier.align(Alignment.BottomStart).offset(x = 12.dp, y = 36.dp),
                         note = lyrics.sourceNote(),
+                        horizontalAlignment = Alignment.Start,
                     )
                 }
             }
@@ -841,6 +843,8 @@ private fun LyricSyncStrip(
     modifier: Modifier = Modifier,
     /** How the lyrics are timed and by whom ("Word-synced \u00B7 Unison"), shown when there is no sync status to show instead. */
     note: String? = null,
+    /** Centred under a video; left-aligned with the lines on the Stage. */
+    horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
 ) {
     val offset = state.offsetMs()
     // A word or two above the buttons: the offset itself, or what is going on.
@@ -851,8 +855,8 @@ private fun LyricSyncStrip(
         offset != 0L -> formatLyricOffset(offset)
         else -> note
     }
-    Column(modifier.padding(bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label.orEmpty(), color = Color.White.copy(alpha = if (tapping) 0.85f else 0.5f), fontSize = 12.sp, maxLines = 1)
+    Column(modifier.padding(bottom = 4.dp), horizontalAlignment = horizontalAlignment, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label.orEmpty(), color = Color.White.copy(alpha = if (tapping) 0.9f else 0.7f), fontSize = 12.sp, maxLines = 1)
         // Grouped in one glass pill, as icons, so the controls read as a set apart from the lyrics.
         Row(Modifier.musicGlass(RoundedCornerShape(percent = 50)).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             SyncIcon(
