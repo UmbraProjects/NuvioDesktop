@@ -314,4 +314,13 @@ internal object WikipediaClient {
     /** [title] is the already-encoded last part of the article URL, as MusicBrainz gives it. */
     suspend fun summary(title: String): String? =
         fetch("https://en.wikipedia.org/api/rest_v1/page/summary/$title")?.let(::parseWikipediaSummary)
+
+    /** fork:booklet - the English Wikipedia text for [album] by [artist] (the lead and the sections after it), or null when no page fits. */
+    suspend fun albumText(album: String, artist: String): String? {
+        val query = "$album $artist album".encodeURLParameter()
+        return fetch(
+            "https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=$query&gsrlimit=5" +
+                "&prop=extracts&explaintext=1&exchars=3500&format=json&formatversion=2",
+        )?.let { parseWikipediaAlbumSearch(it, album, artist) }
+    }
 }

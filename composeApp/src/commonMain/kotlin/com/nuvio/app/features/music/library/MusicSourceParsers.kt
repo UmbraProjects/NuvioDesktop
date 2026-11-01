@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.features.music.booklet.bookletNorm
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -463,6 +464,31 @@ internal fun parseWikipediaSummary(body: String): String? {
     val root = parse(body).obj() ?: return null
     if (root.text("type") == "disambiguation") return null
     return root.text("extract")?.takeIf { it.length > 40 }
+}
+
+/**
+ * fork:booklet - the plain-text extract of the English Wikipedia page for an album, from a `generator=search` answer
+ * (`formatversion=2`), or null when no page looks like it. The page title must hold the album's name (a page that is a
+ * song, single, film or series of that name is passed over) and its text must name the artist, so a band or book of the
+ * same name is not taken for the album.
+ */
+internal fun parseWikipediaAlbumSearch(body: String, album: String, artist: String): String? {
+    val pages = parse(body).obj()?.get("query").obj()?.get("pages").arr()?.mapNotNull { it.obj() } ?: return null
+    val wantedAlbum = bookletNorm(album.substringBefore(" (").substringBefore(" - "))
+    val wantedArtist = bookletNorm(artist)
+    if (wantedAlbum.isEmpty() || wantedArtist.isEmpty()) return null
+    val notAnAlbum = listOf(" song", " single", " film", " tv series", " novel", " band")
+    return pages
+        .sortedBy { it.int("index") ?: Int.MAX_VALUE }
+        .firstOrNull { page ->
+            val title = bookletNorm(page.text("title").orEmpty())
+            val extract = page.text("extract").orEmpty()
+            title.contains(wantedAlbum) &&
+                notAnAlbum.none { title.endsWith(it) } &&
+                extract.length > 200 &&
+                bookletNorm(extract).contains(wantedArtist)
+        }
+        ?.text("extract")
 }
 
 // endregion
