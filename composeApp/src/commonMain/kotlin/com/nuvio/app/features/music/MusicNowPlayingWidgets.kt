@@ -9,6 +9,13 @@ import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.key
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -123,6 +130,8 @@ private fun QueueWindow(queue: List<MusicQueueEntry>, playingAt: Int, fallbackCo
     var browse by remember { mutableStateOf(0) }
     LaunchedEffect(playingAt) { browse = 0 }
     val start = (base + browse).coerceIn(0, maxStart)
+    // The row that should take the focus once it is in the window: Down on the last row or Up on the first slides the window.
+    var wantFocus by remember { mutableStateOf<Int?>(null) }
     var carried by remember { mutableStateOf(0f) }
     val wheel = rememberScrollableState { delta ->
         carried += delta
@@ -142,7 +151,22 @@ private fun QueueWindow(queue: List<MusicQueueEntry>, playingAt: Int, fallbackCo
         for (i in (start - 1)..(start + shown)) {
             val entry = queue.getOrNull(i) ?: continue
             key(i, entry.track.videoId) {
-                QueueRow(entry, slot = i - start, shown = shown, playing = i == playingAt, played = i < playingAt, fallbackCover = fallbackCover, player = player)
+                QueueRow(
+                    entry, slot = i - start, shown = shown, playing = i == playingAt, played = i < playingAt,
+                    fallbackCover = fallbackCover, player = player,
+                    wantsFocus = wantFocus == i,
+                    onFocusHandled = { if (wantFocus == i) wantFocus = null },
+                    onSlide = { direction ->
+                        val target = i + direction
+                        if (target in queue.indices) {
+                            browse = (start + direction - base).coerceIn(-base, maxStart - base)
+                            wantFocus = target
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                )
             }
         }
     }
@@ -151,7 +175,19 @@ private fun QueueWindow(queue: List<MusicQueueEntry>, playingAt: Int, fallbackCo
 private const val WHEEL_ROW_PX = 40f
 
 @Composable
-private fun QueueRow(entry: MusicQueueEntry, slot: Int, shown: Int, playing: Boolean, played: Boolean, fallbackCover: String?, player: MusicPlayer) {
+private fun QueueRow(
+    entry: MusicQueueEntry,
+    slot: Int,
+    shown: Int,
+    playing: Boolean,
+    played: Boolean,
+    fallbackCover: String?,
+    player: MusicPlayer,
+    wantsFocus: Boolean,
+    onFocusHandled: () -> Unit,
+    /** Slides the window one row (+1 down, -1 up); false when there is no row that way. */
+    onSlide: (Int) -> Boolean,
+) {
     val reduced = rememberMusicReducedMotion()
     val visible = slot in 0 until shown
     val y by animateDpAsState(
@@ -165,8 +201,24 @@ private fun QueueRow(entry: MusicQueueEntry, slot: Int, shown: Int, playing: Boo
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val track = entry.track
+    val focusable = visible && entry.inAlbum && !playing
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(wantsFocus, focusable) {
+        if (!wantsFocus) return@LaunchedEffect
+        // The row becomes focusable on the frame after the window has moved.
+        if (focusable) runCatching { requester.requestFocus() }
+        onFocusHandled()
+    }
     Row(
         Modifier
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when {
+                    event.key == Key.DirectionDown && slot == shown - 1 -> onSlide(1)
+                    event.key == Key.DirectionUp && slot == 0 -> onSlide(-1)
+                    else -> false
+                }
+            }
             .offset(y = y)
             .fillMaxWidth()
             .height(QUEUE_ROW_HEIGHT)
@@ -181,7 +233,7 @@ private fun QueueRow(entry: MusicQueueEntry, slot: Int, shown: Int, playing: Boo
             )
             .hoverable(source)
             .then(
-                if (visible && entry.inAlbum && !playing) Modifier.musicKeyFocusRing().clickable(interactionSource = source, indication = null) { player.jumpTo(entry.albumIndex) }
+                if (focusable) Modifier.focusRequester(requester).musicKeyFocusRing().clickable(interactionSource = source, indication = null) { player.jumpTo(entry.albumIndex) }
                 else Modifier,
             )
             .padding(8.dp),
