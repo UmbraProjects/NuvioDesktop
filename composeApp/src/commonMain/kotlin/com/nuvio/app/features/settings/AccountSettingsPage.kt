@@ -185,7 +185,6 @@ private fun AccountSettingsBody(
                     accent = true,
                 )
             }
-            WhatsNewSettingsRow() // fork:whatsnew
         }
 
         // Sign out / sign in lives on the far right of the section heading, where the other pages

@@ -19,9 +19,6 @@ object StartupOverlayCoordinator {
         SetupWizard,
         ApiKeys,
         Updater,
-
-        /** The "What's new" cards. Last: it only ever waits, never takes the screen from the others. */
-        WhatsNew,
     }
 
     private var wanted = emptySet<Overlay>()
