@@ -253,6 +253,27 @@ object MusicLibraryRepository {
         if (savedChanged) persist()
     }
 
+    /**
+     * Records that the YouTube Music album [ytBrowseId] really has [trackCount] tracks, when the metadata sources said another
+     * number and no other edition of it could be found. The artist page's version chips then say what opening it will show.
+     */
+    fun recordTrackCount(ytBrowseId: String, trackCount: Int) {
+        if (trackCount <= 0) return
+        ensureLoaded()
+        fun LibraryArtist.recorded() = copy(
+            releases = releases.map { if (it.ytBrowseId == ytBrowseId) it.copy(trackCount = trackCount) else it },
+        )
+        var savedChanged = false
+        _state.update { s ->
+            savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == ytBrowseId && it.trackCount != trackCount } }
+            s.copy(
+                artists = s.artists.map { a -> if (a.releases.any { it.ytBrowseId == ytBrowseId }) a.recorded() else a },
+                preview = s.preview.mapValues { (_, a) -> if (a.releases.any { it.ytBrowseId == ytBrowseId }) a.recorded() else a },
+            )
+        }
+        if (savedChanged) persist()
+    }
+
     /** Stores [artist]. With [onlyIfPresent] a late result for an artist the person has since removed is dropped. */
     private fun replace(artist: LibraryArtist, onlyIfPresent: Boolean = false) {
         if (onlyIfPresent && !_state.value.contains(artist.id)) return

@@ -79,6 +79,10 @@ internal suspend fun libraryEdition(catalog: MusicCatalog, album: MusicAlbum): M
     }
     if (edition.browseId != album.browseId) {
         MusicLibraryRepository.relinkRelease(album.browseId, edition.browseId, edition.tracks.size)
+    } else if (expected.isNotEmpty() && album.tracks.isNotEmpty() && album.tracks.size !in expected) {
+        // No edition with the expected count exists on YouTube Music: say so, rather than let the artist page's version chip
+        // keep promising the metadata sources' number ("11 tracks · YouTube Music" for a 7-track album).
+        MusicLibraryRepository.recordTrackCount(album.browseId, album.tracks.size)
     }
     return edition
 }
