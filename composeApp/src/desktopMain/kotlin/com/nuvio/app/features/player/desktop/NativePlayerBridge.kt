@@ -171,6 +171,9 @@ internal object NativePlayerBridge {
         fontName: String,
     )
     external fun setMpvProperty(handle: Long, key: String, value: String)
+
+    /** fork:music-stage - cut the video window to rounded corners of [radiusPx] pixels; 0 makes it square again. */
+    external fun setCornerRadius(handle: Long, radiusPx: Int)
     external fun toggleStatsOverlay(handle: Long)
     external fun forceVideoRedraw(handle: Long)
 

@@ -4981,6 +4981,41 @@ private:
         nuvioBridgeLog("mpv start complete");
     }
 
+    // fork:music-stage - rounded corners for the Now Playing video: the host window (and so the player inside it)
+    // is cut to a rounded rectangle. Zero leaves it square. Called from the UI toolkit thread on a resize or a change.
+    std::atomic<int> cornerRadiusPx{0};
+    LONG lastRegionWidth = -1;
+    LONG lastRegionHeight = -1;
+    int lastRegionRadius = -1;
+
+    void applyCornerRegion() {
+        if (!hostHwnd || !IsWindow(hostHwnd)) return;
+        RECT bounds = {};
+        GetClientRect(hostHwnd, &bounds);
+        LONG width = bounds.right - bounds.left;
+        LONG height = bounds.bottom - bounds.top;
+        int radius = cornerRadiusPx.load();
+        if (radius <= 0 || width <= 1 || height <= 1) {
+            if (lastRegionRadius != 0) {
+                SetWindowRgn(hostHwnd, nullptr, TRUE);
+                lastRegionRadius = 0;
+                lastRegionWidth = lastRegionHeight = -1;
+            }
+            return;
+        }
+        int clamped = std::min<int>(radius, static_cast<int>(std::min(width, height) / 2));
+        if (width == lastRegionWidth && height == lastRegionHeight && clamped == lastRegionRadius) return;
+        HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, clamped * 2, clamped * 2);
+        if (!region) return;
+        if (SetWindowRgn(hostHwnd, region, TRUE)) {
+            lastRegionWidth = width;
+            lastRegionHeight = height;
+            lastRegionRadius = clamped;
+        } else {
+            DeleteObject(region);
+        }
+    }
+
     // Last geometry applied by layoutNativeSubviews, so the 500 ms timer can skip the z-order
     // change and WebView2 relayout when nothing moved.
     LONG lastLayoutWidth = -1;
@@ -7293,6 +7328,14 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_addSubtitleUrl(JNI
     if (!player) return;
     std::string urlText = jstringToUtf8(env, url);
     player->postMpvCall([p = player.get(), urlText]() { p->addSubtitleUrl(urlText); });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setCornerRadius(JNIEnv *, jobject, jlong handle, jint radiusPx) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->cornerRadiusPx.store(radiusPx);
+    player->applyCornerRegion();
 }
 
 extern "C" JNIEXPORT void JNICALL

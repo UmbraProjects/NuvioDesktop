@@ -264,6 +264,7 @@ fun MusicPlayerHost(
             seekRequestId = seek?.id ?: 0L,
             seekRequestMs = seek?.positionMs ?: 0L,
             letterbox = big || inline,
+            framed = inline,
             modifier = surfaceModifier,
             onSnapshot = { id, snapshot -> if (id == player.state.value.loadId) player.onSnapshot(snapshot) },
             onEnded = { id -> if (id == player.state.value.loadId) player.onSurfaceEnded() },

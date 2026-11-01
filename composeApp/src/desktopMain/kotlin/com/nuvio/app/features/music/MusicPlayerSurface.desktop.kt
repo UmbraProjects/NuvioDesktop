@@ -142,6 +142,7 @@ actual fun MusicPlayerSurface(
     seekRequestId: Long,
     seekRequestMs: Long,
     letterbox: Boolean,
+    framed: Boolean,
     modifier: Modifier,
     onSnapshot: (loadId: Long, snapshot: PlayerPlaybackSnapshot) -> Unit,
     onEnded: (loadId: Long) -> Unit,
@@ -277,6 +278,25 @@ actual fun MusicPlayerSurface(
         controller.setMpvProperty("panscan", if (letterbox) "0.0" else "1.0")
     }
 
+    // fork:music-stage - the Now Playing picture wears the glass panels' corners, and its side bars the Stage's tone.
+    // The window is re-cut when it is resized (the surface moves between the lyric view and the bar).
+    val density = LocalDensity.current.density
+    val cornerPx = if (framed) (FRAMED_CORNER_DP * density).toInt() else 0
+    DisposableEffect(host, controller, cornerPx) {
+        val listener = object : java.awt.event.ComponentAdapter() {
+            override fun componentResized(e: java.awt.event.ComponentEvent) = controller.setCornerRadius(cornerPx)
+        }
+        host.addComponentListener(listener)
+        onDispose { host.removeComponentListener(listener) }
+    }
+    LaunchedEffect(controller, cornerPx, revealed, loadId) { controller.setCornerRadius(cornerPx) }
+    LaunchedEffect(controller, framed) {
+        // Newer mpv builds call it background-color, older ones background; the one it does not know is ignored.
+        val bars = if (framed) FRAMED_BARS_COLOR else "#000000"
+        controller.setMpvProperty("background-color", bars)
+        controller.setMpvProperty("background", bars)
+    }
+
     LaunchedEffect(controller, loadId, forbiddenRetries, volume) {
         controller.setMpvProperty("volume", volume.coerceIn(0, 100).toString())
         controller.setHeroTrailerVolume(volume.coerceIn(0, 100))
@@ -380,6 +400,12 @@ actual fun MusicPlayerSurface(
         }
     }
 }
+
+/** The corner of the Now Playing picture, as the Stage's glass panels. */
+private const val FRAMED_CORNER_DP = 16f
+
+/** The bars beside a picture that is not 16:9, in the Stage's dark tone rather than black. */
+private const val FRAMED_BARS_COLOR = "#101018"
 
 /** An open part way in can land a few seconds short of its time (on a keyframe); that still counts as there. */
 private const val OPEN_AT_SLACK_MS = 10_000L

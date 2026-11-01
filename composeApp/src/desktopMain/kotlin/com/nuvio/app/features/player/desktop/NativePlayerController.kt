@@ -610,6 +610,12 @@ internal class NativePlayerController(
         }
     }
 
+    /** fork:music-stage - rounded corners for the video window (see NativePlayerBridge.setCornerRadius); a library without it stays square. */
+    fun setCornerRadius(radiusPx: Int) {
+        val current = handle.takeIf { it != 0L } ?: return
+        runCatching { NativePlayerBridge.setCornerRadius(current, radiusPx) }
+    }
+
     fun setMpvProperty(key: String, value: String) {
         if (key == "vf") mayHostVapourSynth = true
         videoProfileBatch.get()?.let { it.properties[key] = value; return }

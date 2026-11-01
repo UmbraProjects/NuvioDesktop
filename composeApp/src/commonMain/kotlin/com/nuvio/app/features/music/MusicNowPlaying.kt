@@ -76,6 +76,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -1085,11 +1086,37 @@ private const val WIDGET_IDLE_MS = 6_000L
 @Composable
 private fun ColumnScope.InlineVideoSlot() {
     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-        val width = minOf(maxWidth, maxHeight * (16f / 9f))
+        // Room is kept all round for the glass rim that frames the picture (see below).
+        val width = minOf(maxWidth - VIDEO_RIM * 2, (maxHeight - VIDEO_RIM * 2) * (16f / 9f)).coerceAtLeast(1.dp)
         Box(
             Modifier
                 .width(width)
                 .height(width * (9f / 16f))
+                // fork:music-stage - the native picture is cut to 16 dp corners by the player; behind it this draws the glass
+                // rim (a soft halo, a pane, a hairline) that stands a few dp outside it, as the panels' borders do.
+                .drawBehind {
+                    val rim = VIDEO_RIM.toPx()
+                    val corner = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx() + rim)
+                    drawRoundRect(
+                        Color.Black.copy(alpha = 0.25f),
+                        topLeft = androidx.compose.ui.geometry.Offset(-rim - 6.dp.toPx(), -rim - 2.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(size.width + (rim + 6.dp.toPx()) * 2, size.height + (rim + 6.dp.toPx()) * 2),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx() + rim + 6.dp.toPx()),
+                    )
+                    drawRoundRect(
+                        Color.White.copy(alpha = 0.08f),
+                        topLeft = androidx.compose.ui.geometry.Offset(-rim, -rim),
+                        size = androidx.compose.ui.geometry.Size(size.width + rim * 2, size.height + rim * 2),
+                        cornerRadius = corner,
+                    )
+                    drawRoundRect(
+                        Color.White.copy(alpha = 0.22f),
+                        topLeft = androidx.compose.ui.geometry.Offset(-rim, -rim),
+                        size = androidx.compose.ui.geometry.Size(size.width + rim * 2, size.height + rim * 2),
+                        cornerRadius = corner,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                    )
+                }
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color.Black)
                 .onGloballyPositioned { c ->
@@ -1102,6 +1129,9 @@ private fun ColumnScope.InlineVideoSlot() {
     DisposableEffect(Unit) { onDispose { MusicPlayback.inlineVideoFrame.value = null } }
     Spacer(Modifier.height(16.dp))
 }
+
+/** The glass rim round the Now Playing picture. */
+private val VIDEO_RIM = 5.dp
 
 /** The lyric strip under a video: four line slots and the sync controls. */
 private val COMPACT_LYRICS_HEIGHT = 284.dp
