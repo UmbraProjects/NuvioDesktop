@@ -417,8 +417,36 @@ private fun ShelfArtistRow(
     val missing = row.tiles.count { it.release.needsPalette }
     LaunchedEffect(artist.id, missing) { ReleasePaletteResolver.ensure(context, artist, keys = keys, limit = 40) }
 
-    fun playTop(shuffled: Boolean) {
-        scope.launch { playTopAlbums(catalog, row.top.map { it.release }, shuffled) }
+    // What the two play buttons are doing or why they could not: shown in the count line under the name, so a press that
+    // opens nothing is no longer silent. Cleared a few seconds after a failure.
+    var notice by remember(artist.id) { mutableStateOf<String?>(null) }
+    var busy by remember(artist.id) { mutableStateOf(false) }
+
+    fun runPlay(opening: String, failed: String, play: suspend () -> Boolean) {
+        if (busy) return
+        busy = true
+        notice = opening
+        scope.launch {
+            val opened = try { play() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Throwable) { false }
+            busy = false
+            if (opened) {
+                notice = null
+            } else {
+                notice = failed
+                kotlinx.coroutines.delay(4_000)
+                if (notice == failed) notice = null
+            }
+        }
+    }
+
+    /** Left: the top albums (five, or fewer) one after the other, in order, as a queue. */
+    fun playTopQueue() = runPlay("Opening ${row.topLabel}…", "Couldn't open their top albums.") {
+        playTopAlbums(catalog, row.top.map { it.release }, shuffled = false)
+    }
+
+    /** Middle: every playable track by the artist, shuffled together. */
+    fun shuffleEverything() = runPlay("Mixing their tracks…", "Couldn't open their tracks.") {
+        playArtistMix(catalog, artist, row.tiles.map { it.release })
     }
 
     // The covers by column for the keyboard: the top albums, the rest (the divider between them is no column), then
@@ -469,7 +497,7 @@ private fun ShelfArtistRow(
             .padding(vertical = 18.dp),
         left = {
             // The artist on top, their name and count under it, then three round buttons: their hits (the top five),
-            // a shuffle of them, and the favourite star, which floats the artist to the top of the shelf.
+            // a shuffle of every playable track, and the favourite star, which floats the artist to the top of the shelf.
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -500,15 +528,16 @@ private fun ShelfArtistRow(
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
+                val line = status ?: notice
                 val subtitle = when {
-                    status != null -> status
+                    line != null -> line
                     row.playableReleases == row.totalReleases -> "${row.totalReleases} release${if (row.totalReleases == 1) "" else "s"}"
                     else -> "${row.playableReleases} playable of ${row.totalReleases}"
                 }
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (status != null) colors.accent else colors.textSecondary,
+                    color = if (line != null) colors.accent else colors.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -518,9 +547,9 @@ private fun ShelfArtistRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (row.top.isNotEmpty()) {
-                        ShelfRoundButton(Icons.Rounded.LocalFireDepartment, row.topLabel) { playTop(shuffled = false) }
-                        ShelfRoundButton(Icons.Rounded.Shuffle, "Shuffle their hits") { playTop(shuffled = true) }
+                    if (row.tiles.isNotEmpty()) {
+                        ShelfRoundButton(Icons.Rounded.LocalFireDepartment, "Play ${row.topLabel} in a queue") { playTopQueue() }
+                        ShelfRoundButton(Icons.Rounded.Shuffle, "Shuffle all their playable tracks") { shuffleEverything() }
                     }
                     ShelfRoundButton(
                         icon = Icons.Rounded.Star,
