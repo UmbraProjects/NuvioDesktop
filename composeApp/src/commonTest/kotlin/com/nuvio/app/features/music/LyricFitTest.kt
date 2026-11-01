@@ -75,6 +75,13 @@ class LyricFitTest {
     }
 
     @Test
+    fun loudStackLeavesRoomForTheStripAndTheNextLine() {
+        assertEquals(900f - LOUD_STRIP_BAND_DP, loudStackHeightDp(900f, hasNext = false))
+        assertEquals(900f - LOUD_STRIP_BAND_DP - LOUD_NEXT_LINE_DP, loudStackHeightDp(900f, hasNext = true))
+        assertEquals(80f, loudStackHeightDp(100f, hasNext = true))
+    }
+
+    @Test
     fun threePanelsNeedWidthAndNoVideo() {
         assertTrue(stageUsesThreePanels(1920f, false))
         assertTrue(stageUsesThreePanels(1400f, false))

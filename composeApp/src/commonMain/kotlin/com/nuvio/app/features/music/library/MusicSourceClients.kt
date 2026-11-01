@@ -315,6 +315,11 @@ internal object WikipediaClient {
     suspend fun summary(title: String): String? =
         fetch("https://en.wikipedia.org/api/rest_v1/page/summary/$title")?.let(::parseWikipediaSummary)
 
+    /** fork:booklet - the opening of the English Wikipedia page named [artist], or null when there is none or it is a disambiguation page. */
+    suspend fun artistText(artist: String): String? =
+        summary(artist.trim().replace(' ', '_').encodeURLParameter())
+            ?.takeIf { it.length > 60 && !it.contains("may refer to", ignoreCase = true) }
+
     /** fork:booklet - the English Wikipedia text for [album] by [artist] (the lead and the sections after it), or null when no page fits. */
     suspend fun albumText(album: String, artist: String): String? {
         val query = "$album $artist album".encodeURLParameter()

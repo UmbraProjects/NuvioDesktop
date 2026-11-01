@@ -29,9 +29,34 @@ internal data class AlbumBooklet(
     val credits: List<BookletCredit>,
     val trackNotes: Map<Int, String>,
     val source: BookletSource,
+    /** Question-and-answer trivia cards, about the album and about the artist. */
+    val facts: List<BookletFact> = emptyList(),
+    /** People who appear on the album, with the track they are on when the text says. */
+    val guests: List<BookletGuest> = emptyList(),
 )
 
+internal enum class FactKind { Album, Artist }
+
+/** One trivia card: the [question] is on its face, the [answer] is revealed. */
+internal data class BookletFact(val kind: FactKind, val question: String, val answer: String)
+
+internal data class BookletGuest(val name: String, val trackNumber: Int?)
+
 internal data class BookletTrack(val title: String, val durationSeconds: Int)
+
+/** One of the artist's albums, for the timeline. [browseId] opens it when the library has it. */
+internal data class BookletRelease(val title: String, val year: Int, val browseId: String?)
+
+/** What the app already knows about the artist (from the music library), used for cards and for the timeline. */
+internal data class BookletArtist(
+    /** "Group", "Person", "Orchestra" as MusicBrainz says; null when unknown. */
+    val type: String? = null,
+    val beginYear: String? = null,
+    val country: String? = null,
+    val genres: List<String> = emptyList(),
+    val biography: String? = null,
+    val albums: List<BookletRelease> = emptyList(),
+)
 
 /** What is known about the album being played, enough to look it up and to ask about it. */
 internal data class BookletRequest(
@@ -39,11 +64,16 @@ internal data class BookletRequest(
     val album: String,
     val year: String?,
     val tracks: List<BookletTrack>,
+    val artistInfo: BookletArtist? = null,
 )
 
 private const val MAX_INTRO_CHARS = 700
 private const val MAX_NOTE_CHARS = 260
 private const val MAX_CREDITS = 8
+private const val MAX_FACTS = 8
+private const val MAX_GUESTS = 8
+private const val MAX_QUESTION_CHARS = 140
+private const val MAX_ANSWER_CHARS = 320
 
 /** Lower case, letters and digits only, single spaces: "Travelling Without Moving (Deluxe)" and its plain title agree on the words. */
 internal fun bookletNorm(text: String): String =
@@ -62,7 +92,7 @@ internal fun bookletNorm(text: String): String =
 
 /** The key one album's booklet is cached under for [mode] ("ai" with the model, or "wiki"). */
 internal fun bookletKey(request: BookletRequest, mode: String): String =
-    "v1|$mode|${bookletNorm(request.artist)}|${bookletNorm(request.album)}"
+    "v2|$mode|${bookletNorm(request.artist)}|${bookletNorm(request.album)}"
 
 /** [text] cut to at most [max] characters: at the last sentence end that fits, else at a word with an ellipsis. */
 internal fun cutAtSentence(text: String, max: Int): String {
@@ -76,38 +106,187 @@ internal fun cutAtSentence(text: String, max: Int): String {
     return cut.trimEnd(',', ';', ':', '-', ' ', '.') + "…"
 }
 
-/** The Wikipedia text as a booklet intro: its opening, ended at a sentence. Null when there is nothing to show. */
-internal fun wikipediaBooklet(text: String?): AlbumBooklet? {
+/**
+ * The Wikipedia text as a booklet intro: its opening, ended at a sentence. Null when there is nothing to show. With a
+ * [request] (and the artist's own Wikipedia text) it also carries trivia cards built straight from what is known.
+ */
+internal fun wikipediaBooklet(text: String?, request: BookletRequest? = null, artistText: String? = null): AlbumBooklet? {
     val lead = text?.lineSequence()?.map { it.trim() }?.firstOrNull { it.length > 40 } ?: return null
     // Whatever follows a heading ("== Background ==") is not the opening.
     val intro = cutAtSentence(lead, MAX_INTRO_CHARS)
-    return AlbumBooklet(intro, emptyList(), emptyMap(), BookletSource.Wikipedia)
+    val facts = if (request != null) fallbackFacts(request, lead, artistText) else emptyList()
+    return AlbumBooklet(intro, emptyList(), emptyMap(), BookletSource.Wikipedia, facts)
 }
+
+/** The sentences of [text], in order: a stop and a space before a capital or quote ends one. */
+internal fun bookletSentences(text: String): List<String> {
+    val clean = text.replace(Regex("""\s+"""), " ").trim()
+    val parts = ArrayList<String>()
+    var start = 0
+    for (i in 0 until clean.length - 2) {
+        val c = clean[i]
+        if ((c == '.' || c == '!' || c == '?') && clean[i + 1] == ' ' && (clean[i + 2].isUpperCase() || clean[i + 2] == '"')) {
+            // "St. Louis", "Vol. 2", "U.S. tour": a one or two letter word before the stop is not the end.
+            val word = clean.substring(start, i).substringAfterLast(' ')
+            if (word.length <= 2 && c == '.') continue
+            parts += clean.substring(start, i + 1).trim()
+            start = i + 2
+        }
+    }
+    if (start < clean.length) parts += clean.substring(start).trim()
+    return parts.filter { it.length >= 3 }
+}
+
+private fun beginVerb(type: String?): String = when (type?.lowercase()) {
+    "person" -> "born"
+    "group", "orchestra", "choir" -> "formed"
+    else -> "started"
+}
+
+/**
+ * Trivia cards made without the AI, from the text and the library data alone: fewer than the AI writes, but each one is a
+ * stated fact. Cards that need data that is missing are left out.
+ */
+internal fun fallbackFacts(request: BookletRequest, albumLead: String?, artistText: String?): List<BookletFact> {
+    val out = ArrayList<BookletFact>()
+    val artist = request.artist
+    val info = request.artistInfo
+    val artistSentences = (artistText ?: info?.biography)?.let(::bookletSentences).orEmpty()
+    artistSentences.firstOrNull()?.takeIf { it.length >= 30 }?.let {
+        out += BookletFact(FactKind.Artist, "Who is $artist?", cutAtSentence(it, MAX_ANSWER_CHARS))
+    }
+    info?.beginYear?.takeIf { it.isNotBlank() }?.let { year ->
+        val where = info.country?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+        out += BookletFact(FactKind.Artist, "When were $artist ${beginVerb(info.type)}?", "$year$where")
+    }
+    info?.genres?.filter { it.isNotBlank() }?.take(3)?.takeIf { it.isNotEmpty() }?.let {
+        out += BookletFact(FactKind.Artist, "What sound is $artist known for?", it.joinToString(", "))
+    }
+    val timeline = timelineFor(info, request.album, request.year)
+    if (timeline != null) {
+        timeline.entries.getOrNull(timeline.currentIndex - 1)?.let {
+            out += BookletFact(FactKind.Album, "Which album came before ${request.album}?", "${it.title} (${it.year})")
+        }
+        timeline.entries.getOrNull(timeline.currentIndex + 1)?.let {
+            out += BookletFact(FactKind.Album, "And which came after it?", "${it.title} (${it.year})")
+        }
+    }
+    if (request.tracks.size >= 2) {
+        val seconds = request.tracks.sumOf { it.durationSeconds }
+        val length = if (seconds >= 60) ", about ${(seconds + 30) / 60} minutes long" else ""
+        out += BookletFact(FactKind.Album, "How many tracks are on ${request.album}?", "${request.tracks.size} tracks$length.")
+    }
+    albumLead?.let(::bookletSentences)?.drop(2)?.take(2)?.joinToString(" ")?.takeIf { it.length >= 40 }?.let {
+        out += BookletFact(FactKind.Album, "What is the story behind ${request.album}?", cutAtSentence(it, MAX_ANSWER_CHARS))
+    }
+    artistSentences.drop(1).take(2).joinToString(" ").takeIf { it.length >= 40 }?.let {
+        out += BookletFact(FactKind.Artist, "What else should you know about $artist?", cutAtSentence(it, MAX_ANSWER_CHARS))
+    }
+    return out.take(MAX_FACTS)
+}
+
+/** The artist's albums in order with the one playing marked, for the timeline page. */
+internal data class BookletTimeline(val entries: List<BookletRelease>, val currentIndex: Int)
+
+/**
+ * The timeline of [info]'s albums around [albumTitle] ([albumYear] when the library lacks the album), at most nine of them.
+ * Null when there is nothing to walk (fewer than two albums, or no year for the one playing).
+ */
+internal fun timelineFor(info: BookletArtist?, albumTitle: String, albumYear: String?): BookletTimeline? {
+    info ?: return null
+    val norm = bookletNorm(albumTitle)
+    val all = info.albums.distinctBy { bookletNorm(it.title) }.toMutableList()
+    var at = all.indexOfFirst { bookletNorm(it.title) == norm }
+    if (at < 0) {
+        val year = albumYear?.take(4)?.toIntOrNull() ?: return null
+        all += BookletRelease(albumTitle, year, null)
+    }
+    val sorted = all.sortedBy { it.year }
+    at = sorted.indexOfFirst { bookletNorm(it.title) == norm }
+    if (sorted.size < 2 || at < 0) return null
+    val window = 9
+    val from = (at - window / 2).coerceIn(0, (sorted.size - window).coerceAtLeast(0))
+    val shown = sorted.drop(from).take(window)
+    return BookletTimeline(shown, at - from)
+}
+
+/** What the cover page's stat strip says: label and value pairs, only for what is known (at most four). */
+internal fun coverStats(request: BookletRequest, released: String?): List<Pair<String, String>> {
+    val out = ArrayList<Pair<String, String>>()
+    released?.takeIf { it.isNotBlank() }?.let { out += "Released" to it }
+    if (request.tracks.isNotEmpty()) out += "Tracks" to request.tracks.size.toString()
+    timelineFor(request.artistInfo, request.album, request.year)?.let { t ->
+        t.entries.getOrNull(t.currentIndex - 1)?.let { out += "Before it" to "${it.title}, ${it.year}" }
+    }
+    request.artistInfo?.genres?.firstOrNull { it.isNotBlank() }?.let { out += "Sound" to it }
+    return out.take(4)
+}
+
+/** One page of the deck. */
+internal sealed interface LinerPage {
+    data object Cover : LinerPage
+    data class Fact(val number: Int, val total: Int, val fact: BookletFact) : LinerPage
+    data class Guests(val guests: List<BookletGuest>) : LinerPage
+    data class Timeline(val timeline: BookletTimeline) : LinerPage
+    data class Track(val number: Int, val title: String, val note: String) : LinerPage
+}
+
+/** The deck for [booklet], in order; a page with nothing to show is left out. [playing] is the track number playing, if any. */
+internal fun linerPages(booklet: AlbumBooklet, request: BookletRequest, playing: Int?): List<LinerPage> {
+    val pages = ArrayList<LinerPage>()
+    pages += LinerPage.Cover
+    booklet.facts.forEachIndexed { i, fact -> pages += LinerPage.Fact(i + 1, booklet.facts.size, fact) }
+    if (booklet.guests.isNotEmpty()) pages += LinerPage.Guests(booklet.guests)
+    timelineFor(request.artistInfo, request.album, request.year)?.let { pages += LinerPage.Timeline(it) }
+    val note = playing?.let { booklet.trackNotes[it] }
+    if (playing != null && note != null) {
+        pages += LinerPage.Track(playing, request.tracks.getOrNull(playing - 1)?.title.orEmpty(), note)
+    }
+    return pages
+}
+
+/** The track a guest chip jumps to, matched by name in the guest list order; null when the text did not say. */
+internal fun guestTrack(guest: BookletGuest, trackCount: Int): Int? = guest.trackNumber?.takeIf { it in 1..trackCount }
 
 // region AI
 
 internal const val BOOKLET_SYSTEM_PROMPT =
-    "You write short sleeve notes for an album's booklet. Use only the facts in the Wikipedia text and the track list " +
-        "you are given. If something is not stated there, leave it out: never invent names, dates, places, chart " +
-        "positions or quotes. Write plain text with no markdown. Reply with one JSON object and nothing else."
+    "You write the sleeve notes and trivia cards for an album's booklet. Use only the facts in the texts and lists you " +
+        "are given. If something is not stated there, leave it out: never invent names, dates, places, chart " +
+        "positions, sales or quotes. Write plain text with no markdown. Reply with one JSON object and nothing else."
 
-/** The user message: the album, its tracks, and the Wikipedia text it is to be grounded in. */
-internal fun bookletPrompt(request: BookletRequest, wikipediaText: String): String = buildString {
+/** The user message: the album, its tracks, and the Wikipedia text (and what is known of the artist) it is to be grounded in. */
+internal fun bookletPrompt(request: BookletRequest, wikipediaText: String, artistText: String? = null): String = buildString {
     append("Album: ").append(request.album).append('\n')
     append("Artist: ").append(request.artist).append('\n')
     request.year?.let { append("Year: ").append(it).append('\n') }
+    request.artistInfo?.let { info ->
+        info.type?.let { append("Artist type: ").append(it).append('\n') }
+        info.beginYear?.let { append("Artist began: ").append(it).append('\n') }
+        info.country?.let { append("Artist country: ").append(it).append('\n') }
+        if (info.genres.isNotEmpty()) append("Artist genres: ").append(info.genres.take(4).joinToString(", ")).append('\n')
+        if (info.albums.isNotEmpty()) {
+            append("Artist albums: ").append(info.albums.sortedBy { it.year }.take(12).joinToString("; ") { "${it.title} (${it.year})" }).append('\n')
+        }
+    }
     append("\nTrack list:\n")
     request.tracks.forEachIndexed { i, track ->
         append(i + 1).append(". ").append(track.title)
         if (track.durationSeconds > 0) append(" (").append(track.durationSeconds / 60).append(':').append((track.durationSeconds % 60).toString().padStart(2, '0')).append(')')
         append('\n')
     }
-    append("\nWikipedia text:\n<<<\n").append(wikipediaText.take(3_500)).append("\n>>>\n\n")
-    append("Return JSON of this shape:\n")
+    append("\nAlbum Wikipedia text:\n<<<\n").append(wikipediaText.take(3_500)).append("\n>>>\n")
+    artistText?.takeIf { it.isNotBlank() }?.let { append("\nArtist text:\n<<<\n").append(it.take(2_500)).append("\n>>>\n") }
+    append("\nReturn JSON of this shape:\n")
     append("{\"intro\": \"2 to 4 sentences about the album: when and where it was made, its sound, how it was received\",\n")
     append(" \"credits\": [{\"role\": \"Producer\", \"names\": \"...\"}],\n")
+    append(" \"facts\": [{\"kind\": \"album\", \"q\": \"a short, friendly question\", \"a\": \"the answer, one or two sentences\"}],\n")
+    append(" \"guests\": [{\"name\": \"a guest or featured artist\", \"track\": 3}],\n")
     append(" \"tracks\": {\"1\": \"one sentence about track 1, only if the text says something about it\"}}\n")
-    append("Leave out any credit or track note the text does not support. Track keys are the numbers in the track list.")
+    append("Write 6 to 8 facts, a mix of kind \"album\" and kind \"artist\", each a fun or nostalgic detail a fan would enjoy, ")
+    append("such as who made it, where, what came before, a famous guest or a surprising origin. ")
+    append("Each question must be answerable by its answer, and every answer must be stated in the texts above. ")
+    append("Leave out any credit, guest, fact or track note the texts do not support. Track keys and guest tracks are the numbers in the track list.")
 }
 
 private val BOOKLET_JSON = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -138,7 +317,22 @@ internal fun parseAiBooklet(reply: String, trackCount: Int): AlbumBooklet? {
         val note = value.text() ?: return@forEach
         notes[number] = cutAtSentence(note, MAX_NOTE_CHARS)
     }
-    return AlbumBooklet(intro, credits, notes.entries.sortedBy { it.key }.associate { it.key to it.value }, BookletSource.Ai)
+    val seen = HashSet<String>()
+    val facts = (root["facts"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val q = obj["q"].text() ?: obj["question"].text() ?: return@mapNotNull null
+        val a = obj["a"].text() ?: obj["answer"].text() ?: return@mapNotNull null
+        if (q.length < 8 || a.length < 3 || !seen.add(bookletNorm(q))) return@mapNotNull null
+        val kind = if (obj["kind"].text()?.lowercase() == "artist") FactKind.Artist else FactKind.Album
+        BookletFact(kind, cutAtSentence(q, MAX_QUESTION_CHARS), cutAtSentence(a, MAX_ANSWER_CHARS))
+    }.take(MAX_FACTS)
+    val guests = (root["guests"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val name = obj["name"].text() ?: return@mapNotNull null
+        val track = (obj["track"] as? JsonPrimitive)?.content?.trim()?.toIntOrNull()?.takeIf { it in 1..trackCount }
+        BookletGuest(name.take(60), track)
+    }.distinctBy { bookletNorm(it.name) }.take(MAX_GUESTS)
+    return AlbumBooklet(intro, credits, notes.entries.sortedBy { it.key }.associate { it.key to it.value }, BookletSource.Ai, facts, guests)
 }
 
 // endregion
@@ -158,6 +352,14 @@ internal fun encodeBookletEntry(entry: BookletEntry): String = buildJsonObject {
             booklet.credits.forEach { credit -> add(buildJsonArray { add(JsonPrimitive(credit.role)); add(JsonPrimitive(credit.names)) }) }
         })
         put("t", buildJsonObject { booklet.trackNotes.forEach { (number, note) -> put(number.toString(), JsonPrimitive(note)) } })
+        put("f", buildJsonArray {
+            booklet.facts.forEach { fact ->
+                add(buildJsonArray { add(JsonPrimitive(if (fact.kind == FactKind.Artist) "artist" else "album")); add(JsonPrimitive(fact.question)); add(JsonPrimitive(fact.answer)) })
+            }
+        })
+        put("g", buildJsonArray {
+            booklet.guests.forEach { guest -> add(buildJsonArray { add(JsonPrimitive(guest.name)); add(JsonPrimitive(guest.trackNumber ?: 0)) }) }
+        })
     }
 }.toString()
 
@@ -179,7 +381,18 @@ internal fun decodeBookletEntry(raw: String?): BookletEntry? {
         val note = value.text() ?: return@mapNotNull null
         number to note
     }?.sortedBy { it.first }?.toMap().orEmpty()
-    return BookletEntry(at, AlbumBooklet(intro, credits, notes, source))
+    val facts = (root["f"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val triple = element as? JsonArray ?: return@mapNotNull null
+        val q = triple.getOrNull(1).text() ?: return@mapNotNull null
+        val a = triple.getOrNull(2).text() ?: return@mapNotNull null
+        BookletFact(if (triple.getOrNull(0).text() == "artist") FactKind.Artist else FactKind.Album, q, a)
+    }
+    val guests = (root["g"] as? JsonArray).orEmpty().mapNotNull { element ->
+        val pair = element as? JsonArray ?: return@mapNotNull null
+        val name = pair.getOrNull(0).text() ?: return@mapNotNull null
+        BookletGuest(name, (pair.getOrNull(1) as? JsonPrimitive)?.longOrNull?.toInt()?.takeIf { it > 0 })
+    }
+    return BookletEntry(at, AlbumBooklet(intro, credits, notes, source, facts, guests))
 }
 
 private const val HOUR_MS = 60L * 60L * 1_000L
@@ -218,3 +431,17 @@ internal fun bookletTrackNumber(videoIds: List<String>, playingVideoId: String?)
 
 /** An album a booklet can be written for: a real album, EP or single (`MPRE...` on YouTube Music), not a mix or playlist. */
 internal fun isBookletAlbum(browseId: String?): Boolean = browseId?.startsWith("MPRE") == true
+
+/** Where the deck is: the page and, on a page that walks a list (guests, the timeline), the entry under the cursor. */
+internal data class DeckPosition(val page: Int, val cursor: Int)
+
+/**
+ * One step ([direction] -1 or 1) of Left or Right. On a page with [cursorCount] entries the step walks them until the
+ * last; past that, or on any other page, it turns the page. At the first or last page the position is returned unchanged.
+ */
+internal fun deckStep(position: DeckPosition, pageCount: Int, cursorCount: Int, direction: Int): DeckPosition {
+    val cursor = position.cursor + direction
+    if (cursorCount > 1 && cursor in 0 until cursorCount) return position.copy(cursor = cursor)
+    val page = (position.page + direction).coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    return if (page == position.page) position else DeckPosition(page, 0)
+}

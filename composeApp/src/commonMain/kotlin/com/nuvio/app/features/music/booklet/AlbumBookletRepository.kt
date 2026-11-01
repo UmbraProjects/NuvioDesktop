@@ -21,6 +21,9 @@ import kotlin.time.Clock
  * Billing discipline as for the post-show cards: a request is made only for the album being played, once, and its answer
  * (or its failure, for two hours) is kept. Without a key, or when the AI fails, the Wikipedia opening stands in.
  */
+private const val MIN_AI_FACTS = 4
+private const val MAX_FACT_CARDS = 8
+
 internal object AlbumBookletRepository {
     private val log = Logger.withTag("AlbumBooklet")
 
@@ -103,7 +106,12 @@ internal object AlbumBookletRepository {
             log.i { "no Wikipedia page for ${request.artist} - ${request.album}" }
             return null
         }
-        val wiki = wikipediaBooklet(text)
+        // The artist's own page and what the library knows of them feed the artist cards. A miss here only means fewer cards.
+        val artistText = listOfNotNull(
+            runCatching { WikipediaClient.artistText(request.artist) }.getOrNull(),
+            request.artistInfo?.biography?.takeIf { it.isNotBlank() },
+        ).distinct().joinToString("\n\n").takeIf { it.isNotBlank() }
+        val wiki = wikipediaBooklet(text, request, artistText)
         if (wiki == null) {
             write(wikiKey, null)
             return null
@@ -111,19 +119,24 @@ internal object AlbumBookletRepository {
         write(wikiKey, wiki)
 
         if (settings == null || aiKey == null || aiRecentlyFailed) return wiki
-        val reply = DiscoverAiClient.complete(settings, DiscoverAiPromptText(BOOKLET_SYSTEM_PROMPT, bookletPrompt(request, text))).getOrElse {
+        val reply = DiscoverAiClient.complete(settings, DiscoverAiPromptText(BOOKLET_SYSTEM_PROMPT, bookletPrompt(request, text, artistText))).getOrElse {
             log.w { "notes for ${request.album} failed: $it" }
             write(aiKey, null)
             return wiki
         }
-        val ai = parseAiBooklet(reply, request.tracks.size)
-        if (ai == null) {
+        val parsed = parseAiBooklet(reply, request.tracks.size)
+        if (parsed == null) {
             log.w { "notes for ${request.album}: reply unreadable" }
             write(aiKey, null)
             return wiki
         }
+        // Too few cards from the AI: top up with the plain ones (questions already asked are not repeated).
+        val ai = if (parsed.facts.size >= MIN_AI_FACTS) parsed else {
+            val asked = parsed.facts.map { bookletNorm(it.question) }.toSet()
+            parsed.copy(facts = (parsed.facts + wiki.facts.filter { bookletNorm(it.question) !in asked }).take(MAX_FACT_CARDS))
+        }
         write(aiKey, ai)
-        log.i { "notes for ${request.album}: ${ai.credits.size} credits, ${ai.trackNotes.size} track notes" }
+        log.i { "notes for ${request.album}: ${ai.credits.size} credits, ${ai.facts.size} cards, ${ai.trackNotes.size} track notes" }
         return ai
     }
 }

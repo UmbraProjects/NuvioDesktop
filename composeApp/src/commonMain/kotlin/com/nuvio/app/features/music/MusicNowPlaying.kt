@@ -293,7 +293,7 @@ private fun MusicNowPlayingScreen(
     val lyricStyle = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricStyle
     // fork:booklet - the album's sleeve notes for the third panel of a wide Stage.
     val bookletOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.booklet
-    val bookletUi = rememberBookletUi(album, bookletOn)
+    val bookletUi = rememberBookletUi(album, bookletOn, libraryArtist)
     LaunchedEffect(inputTick, track?.videoId) {
         widgetsVisible = true
         delay(WIDGET_IDLE_MS)
@@ -468,6 +468,8 @@ private fun MusicNowPlayingScreen(
                                     album = album,
                                     playingVideoId = track?.videoId,
                                     reduced = reduced,
+                                    onJumpToTrack = { index -> player.jumpTo(index) },
+                                    onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
                                     modifier = Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth(),
                                 )
                             }

@@ -149,9 +149,16 @@ internal fun LoudLyrics(
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val widthPx = with(density) { (maxWidth * 0.9f - 48.dp).toPx() }
-        val heightPx = with(density) { (maxHeight - 70.dp).toPx() }
+        // fork:stage - room kept for the next line under the words and the sync strip at the foot, so neither is overprinted.
+        val nextText = next?.text?.takeIf { it.isNotBlank() }
+        val heightPx = with(density) { loudStackHeightDp(maxHeight.value, nextText != null).dp.toPx() }
         val stageScale = (maxWidth.value / 1000f).coerceIn(0.4f, 1f)
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // The stack and the next line are one centred group, lifted by half the strip band so the group sits above it.
+        Column(
+            Modifier.fillMaxSize().padding(bottom = (LOUD_STRIP_BAND_DP / 2f).dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
             if (current != null && current.text.isNotBlank()) {
                 val words = remember(lines, shown) { lineWords(lines, shown) }
                 val durationMs = remember(lines, shown) { sungEndMs(lines, shown) - current.timeMs }
@@ -220,7 +227,7 @@ internal fun LoudLyrics(
                     }
                 }
             }
-            next?.text?.takeIf { it.isNotBlank() }?.let {
+            nextText?.let {
                 Text(
                     it,
                     color = Color.White.copy(alpha = 0.35f),
@@ -229,7 +236,7 @@ internal fun LoudLyrics(
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 14.dp),
                 )
             }
         }
