@@ -95,7 +95,7 @@ internal fun bookletNorm(text: String): String =
 
 /** The key one album's booklet is cached under for [mode] ("ai" with the model, or "wiki"). */
 internal fun bookletKey(request: BookletRequest, mode: String): String =
-    "v3|$mode|${bookletNorm(request.artist)}|${bookletNorm(request.album)}"
+    "v4|$mode|${bookletNorm(request.artist)}|${bookletNorm(request.album)}"
 
 /** [text] cut to at most [max] characters: at the last sentence end that fits, else at a word with an ellipsis. */
 internal fun cutAtSentence(text: String, max: Int): String {
