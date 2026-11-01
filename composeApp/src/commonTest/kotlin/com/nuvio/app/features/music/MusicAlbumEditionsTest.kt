@@ -124,7 +124,7 @@ class MusicAlbumEditionsTest {
 
     @Test
     fun aSearchFindsTheFullerEditionListedAsAnAlbumOfItsOwn() = runBlocking {
-        val alone = album("short", 7)
+        val alone = album("short", 7).copy(artists = listOf(MusicArtistRef("Ren")))
         val candidates = listOf(hit("short", "Vincent's Tale"), hit("elsewhere", "Vincent's Tale", "Someone Else"), hit("long", "Vincent's Tale"))
         val result = searchedEdition(alone, listOf(11), candidates) { mapOf("long" to long, "elsewhere" to album("elsewhere", 11))[it] }
         assertEquals("long", result.browseId)
