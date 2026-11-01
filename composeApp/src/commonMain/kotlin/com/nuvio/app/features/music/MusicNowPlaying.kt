@@ -1107,6 +1107,8 @@ private const val WIDGET_IDLE_MS = 6_000L
  */
 @Composable
 private fun ColumnScope.InlineVideoSlot() {
+    // With the player's own bezel over the picture the rim drawn here would show through it.
+    val bezel by MusicPlayback.inlineBezel.collectAsStateWithLifecycle()
     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
         // Room is kept all round for the glass rim that frames the picture (see below).
         val width = minOf(maxWidth - VIDEO_RIM * 2, (maxHeight - VIDEO_RIM * 2) * (16f / 9f)).coerceAtLeast(1.dp)
@@ -1117,6 +1119,7 @@ private fun ColumnScope.InlineVideoSlot() {
                 // fork:music-stage - the native picture is cut to 16 dp corners by the player; behind it this draws the glass
                 // rim (a soft halo, a pane, a hairline) that stands a few dp outside it, as the panels' borders do.
                 .drawBehind {
+                    if (bezel) return@drawBehind
                     val rim = VIDEO_RIM.toPx()
                     val corner = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx() + rim)
                     drawRoundRect(

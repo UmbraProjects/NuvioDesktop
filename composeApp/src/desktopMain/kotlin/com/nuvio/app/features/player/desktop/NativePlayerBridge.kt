@@ -174,6 +174,17 @@ internal object NativePlayerBridge {
 
     /** fork:music-stage - cut the video window to rounded corners of [radiusPx] pixels; 0 makes it square again. */
     external fun setCornerRadius(handle: Long, radiusPx: Int)
+
+    /**
+     * fork:music-stage - the glass bezel over the Now Playing video: a click-through window of [width] x [height] pixels showing
+     * [argb] (premultiplied ARGB) with the video host's rectangle [marginPx] in from each edge. Process-wide, and every call
+     * is made on the AWT event thread. A library without these leaves the video as it was.
+     */
+    external fun bezelShow(hostViewPtr: Long, argb: IntArray, width: Int, height: Int, marginPx: Int)
+
+    /** Moves the bezel to follow the host window (the app window moved). */
+    external fun bezelMove(hostViewPtr: Long)
+    external fun bezelHide()
     external fun toggleStatsOverlay(handle: Long)
     external fun forceVideoRedraw(handle: Long)
 

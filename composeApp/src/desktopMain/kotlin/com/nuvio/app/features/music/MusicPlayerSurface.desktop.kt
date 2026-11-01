@@ -291,6 +291,29 @@ actual fun MusicPlayerSurface(
         onDispose { host.removeComponentListener(listener) }
     }
     LaunchedEffect(controller, cornerPx, revealed, loadId) { controller.setCornerRadius(cornerPx) }
+    // fork:music-stage - the glass bezel laid over the picture (NowPlayingBezel): it covers the square corners the rounded cut
+    // leaves, and follows the picture as it resizes and as the app window moves.
+    val bezelUp = framed && videoVisible && revealed
+    DisposableEffect(host, bezelUp, density) {
+        if (!bezelUp) return@DisposableEffect onDispose { NowPlayingBezel.release(host) }
+        fun fit() {
+            val scale = host.graphicsConfiguration?.defaultTransform?.scaleX ?: density.toDouble()
+            NowPlayingBezel.show(host, scale, density)
+        }
+        val listener = object : java.awt.event.ComponentAdapter() {
+            override fun componentResized(e: java.awt.event.ComponentEvent) = fit()
+            override fun componentMoved(e: java.awt.event.ComponentEvent) = NowPlayingBezel.follow(host)
+        }
+        host.addComponentListener(listener)
+        val window = javax.swing.SwingUtilities.getWindowAncestor(host)
+        window?.addComponentListener(listener)
+        fit()
+        onDispose {
+            host.removeComponentListener(listener)
+            window?.removeComponentListener(listener)
+            NowPlayingBezel.release(host)
+        }
+    }
     // The corners the rounded picture leaves show the host window. mpv's own "black" reaches the screen as about (8, 8, 8), so
     // a pure black host made a faint rounded shape inside a darker square; the host takes mpv's black instead.
     SideEffect { host.background = if (framed) java.awt.Color(8, 8, 8) else java.awt.Color.BLACK }

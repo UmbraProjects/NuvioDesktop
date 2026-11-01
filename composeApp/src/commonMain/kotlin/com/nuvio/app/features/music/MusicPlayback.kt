@@ -75,6 +75,9 @@ object MusicPlayback {
     /** Published by the lyric view while it shows a video frame; null when there is none on screen. */
     val inlineVideoFrame = MutableStateFlow<MusicInlineVideoFrame?>(null)
 
+    /** True while the player's glass bezel is laid over the Now Playing video, so the page leaves out the rim it draws itself. */
+    val inlineBezel = MutableStateFlow(false)
+
     val player: MusicPlayer by lazy {
         MusicPlayer(
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
