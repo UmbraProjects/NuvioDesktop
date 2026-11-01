@@ -131,4 +131,19 @@ class NebulaAddonsTest {
         assertTrue(miss.fitsAddons(addons))
         assertFalse(miss.fitsAddons(addons.take(1)))
     }
+
+    @Test
+    fun aTrackTheAddonIsStillPreparingIsWaitedFor() {
+        assertTrue(nebulaStreamWaitable(503, "Preparing this track. It will be ready shortly.", timedOut = false))
+        assertTrue(nebulaStreamWaitable(503, "Temporary problem resolving this track. Try again in a moment.", timedOut = false))
+        assertTrue(nebulaStreamWaitable(null, null, timedOut = true))
+    }
+
+    @Test
+    fun aRealNoIsNotWaitedFor() {
+        assertFalse(nebulaStreamWaitable(404, "no playable source", timedOut = false))
+        assertFalse(nebulaStreamWaitable(503, "Service unavailable", timedOut = false))
+        assertFalse(nebulaStreamWaitable(503, null, timedOut = false))
+        assertFalse(nebulaStreamWaitable(429, "Preparing", timedOut = false))
+    }
 }

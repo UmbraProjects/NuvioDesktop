@@ -157,7 +157,8 @@ internal fun NebulaSourceRow(controller: NebulaAlbumController, onRetry: () -> U
                         }
                     }
                     Text(
-                        "Asking your addon for \u201C${status.trackTitle}\u201D" + (if (waited >= 3) " (${waited} s)…" else "…"),
+                        (if (status.preparing) "Your addon is preparing \u201C${status.trackTitle}\u201D" else "Asking your addon for \u201C${status.trackTitle}\u201D") +
+                            (if (waited >= 3) " (${waited} s)…" else "…"),
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textSecondary,
                         textAlign = TextAlign.Center,

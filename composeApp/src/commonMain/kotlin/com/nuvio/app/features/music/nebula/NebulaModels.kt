@@ -168,6 +168,18 @@ internal fun nebulaTrackRef(videoId: String): NebulaTrackRef? {
     return NebulaTrackRef(null, rest)
 }
 
+/**
+ * Whether a refused stream request is the addon still working (TorBox fetching the file) rather than a no: a 503 that
+ * says it is preparing the track or to try again, or a request that timed out. Such a request is asked again until it is
+ * ready, where any other refusal is final.
+ */
+internal fun nebulaStreamWaitable(status: Int?, detail: String?, timedOut: Boolean): Boolean {
+    if (timedOut) return true
+    if (status != 503) return false
+    val text = detail.orEmpty().lowercase()
+    return "prepar" in text || "shortly" in text || "try again" in text || "moment" in text
+}
+
 /** A short plain reason an addon call failed, for the album page and the log. Never includes the addon's address. */
 internal fun nebulaFailureReason(status: Int?, detail: String? = null, error: String? = null): String {
     val extra = detail?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()

@@ -44,6 +44,10 @@ private val log = Logger.withTag("NebulaMusic")
 private const val MAX_CANDIDATES = 3
 private const val LINK_RETRY_DELAY_MS = 700L
 
+/** How long a track the addon is still preparing is waited for in all, counted from the first ask, and how often it is asked again. */
+private const val STREAM_PATIENCE_MS = 90_000L
+private const val STREAM_POLL_MS = 3_000L
+
 /**
  * The most a stream request may take. The addon asks TorBox for the file, which can sit for a minute on an
  * album nobody has fetched lately; past this the track is reported as not answering rather than left spinning.
@@ -54,14 +58,14 @@ private const val STREAM_CONNECT_TIMEOUT_MS = 10_000L
 /** What the player is waiting on from the addon, or what went wrong with the last track it asked for. */
 internal sealed interface NebulaStreamStatus {
     val trackTitle: String
-    data class Asking(override val trackTitle: String, val sinceMs: Long) : NebulaStreamStatus
+    data class Asking(override val trackTitle: String, val sinceMs: Long, val preparing: Boolean = false) : NebulaStreamStatus
     data class Failed(override val trackTitle: String, val reason: String) : NebulaStreamStatus
 }
 
 /** One stream request: a link, or why there is none ([staleMatch] when the addon no longer knows the track). */
 private sealed interface StreamReply {
     data class Ok(val stream: NebulaStream) : StreamReply
-    data class Refused(val reason: String, val staleMatch: Boolean, val worthRetry: Boolean) : StreamReply
+    data class Refused(val reason: String, val staleMatch: Boolean, val worthRetry: Boolean, val waitable: Boolean = false) : StreamReply
 }
 
 /** Percent-encodes [text] for a query value. */
@@ -446,26 +450,46 @@ internal object NebulaMusicSource {
         )
         val base = addon.base
         val id = ref.id
-        streamStatus = NebulaStreamStatus.Asking(track.title, LibraryClock.nowEpochMs())
+        val askedAt = LibraryClock.nowEpochMs()
+        streamStatus = NebulaStreamStatus.Asking(track.title, askedAt)
         return try {
             var reply = fetchStream(base, id)
-            if (reply is StreamReply.Refused && reply.worthRetry) {
+            if (reply is StreamReply.Refused && reply.worthRetry && !reply.waitable) {
                 delay(LINK_RETRY_DELAY_MS)
                 reply = fetchStream(base, id)
             }
-            val stream = when (reply) {
-                is StreamReply.Ok -> reply.stream
-                is StreamReply.Refused -> {
-                    // Only a "no such track" means the kept match is stale (the addon's ids changed): search again next
-                    // visit. A slow or broken addon says nothing about the match, so it is kept.
-                    if (reply.staleMatch) {
-                        forget(album)
-                        // fork:nebula - an addon-only album is remembered per release, not per YouTube Music album.
-                        parseAddonAlbumId(album.browseId)?.let { forgetRelease(addonCacheKey(it.artistId, it.releaseKey)) }
-                    }
-                    streamStatus = NebulaStreamStatus.Failed(track.title, reply.reason)
-                    return MusicResolution.Failed(track, reply.reason)
+            var found: NebulaStream? = (reply as? StreamReply.Ok)?.stream
+            if (found == null) {
+                // fork:addons - another addon that has the same album may have this track ready when this one does not.
+                found = streamFromOtherAddons(track.videoId, addon)
+            }
+            if (found == null && (reply as? StreamReply.Refused)?.waitable == true) {
+                // The addon is still fetching the file: ask again until it is ready, for up to STREAM_PATIENCE_MS in all.
+                streamStatus = NebulaStreamStatus.Asking(track.title, askedAt, preparing = true)
+                while ((reply as? StreamReply.Refused)?.waitable == true && LibraryClock.nowEpochMs() - askedAt < STREAM_PATIENCE_MS) {
+                    delay(STREAM_POLL_MS)
+                    reply = fetchStream(base, id)
                 }
+                found = (reply as? StreamReply.Ok)?.stream
+                if (found == null && (reply as? StreamReply.Refused)?.waitable == true) {
+                    reply = StreamReply.Refused(
+                        "Your music addon is still preparing this track after ${STREAM_PATIENCE_MS / 1000} s. Try again in a minute.",
+                        staleMatch = false,
+                        worthRetry = false,
+                    )
+                }
+            }
+            val stream = found ?: run {
+                val refused = reply as StreamReply.Refused
+                // Only a "no such track" means the kept match is stale (the addon's ids changed): search again next
+                // visit. A slow or broken addon says nothing about the match, so it is kept.
+                if (refused.staleMatch) {
+                    forget(album)
+                    // fork:nebula - an addon-only album is remembered per release, not per YouTube Music album.
+                    parseAddonAlbumId(album.browseId)?.let { forgetRelease(addonCacheKey(it.artistId, it.releaseKey)) }
+                }
+                streamStatus = NebulaStreamStatus.Failed(track.title, refused.reason)
+                return MusicResolution.Failed(track, refused.reason)
             }
             streamStatus = null
             nebulaQualityLabel(stream.format, stream.quality)?.let { qualities[track.videoId] = it }
@@ -548,6 +572,47 @@ internal object NebulaMusicSource {
         return buildAddonAlbum(ref, detail, artist, artist?.releases?.firstOrNull { it.key == ref.releaseKey })
     }
 
+    /** What the other addons have, per addon and album: kept in memory only, for the tracks that need a second source. */
+    private val alternates = HashMap<String, StoredLookup?>()
+
+    private suspend fun alternateMatch(addon: NebulaAddon, album: MusicAlbum): StoredLookup? {
+        val key = "${addon.key}|${album.browseId}"
+        lock.withLock { if (alternates.containsKey(key)) return alternates[key] }
+        val match = try {
+            (search(addon, album) as? NebulaAlbumLookup.Found)?.match
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null // could not be asked: not remembered, so a later track asks again
+        }
+        lock.withLock { alternates[key] = match }
+        return match
+    }
+
+    /**
+     * fork:addons - the stream of the same song from another addon, for when [tried] gave none. The album is looked up on
+     * each of the others (kept for the session) and the song's place in it gives that addon's track. Null when the track
+     * has no YouTube Music original to match by (an addon-only album, a playlist song) or no other addon has it ready.
+     */
+    private suspend fun streamFromOtherAddons(videoId: String, tried: NebulaAddon): NebulaStream? {
+        val (original, originalAlbum) = youTubeTracks[videoId] ?: return null
+        val index = originalAlbum.tracks.indexOfFirst { it.videoId == original.videoId }.takeIf { it >= 0 } ?: return null
+        for (other in addons()) {
+            if (other.key == tried.key) continue
+            val otherId = alternateMatch(other, originalAlbum)?.trackIds?.getOrNull(index) ?: continue
+            val reply = try {
+                fetchStream(other.base, otherId)
+            } catch (e: CancellationException) {
+                throw e
+            }
+            if (reply is StreamReply.Ok) {
+                log.i { "\"${original.title}\" came from another music addon (the first had none ready)" }
+                return reply.stream
+            }
+        }
+        return null
+    }
+
     private suspend fun fetchStream(base: String, id: String): StreamReply = try {
         val reply = get(base, "/stream/${urlEncodeQuery(id)}", callTimeoutMs = STREAM_TIMEOUT_MS, connectTimeoutMs = STREAM_CONNECT_TIMEOUT_MS)
         val stream = if (reply.status in 200..299) parseNebulaStream(reply.body) else null
@@ -559,10 +624,12 @@ internal object NebulaMusicSource {
             }
             else -> {
                 log.w { "Music addon stream answered HTTP ${reply.status}: ${reply.body.take(200)}" }
+                val waitable = nebulaStreamWaitable(reply.status, parseNebulaDetail(reply.body), timedOut = false)
                 StreamReply.Refused(
                     nebulaFailureReason(reply.status, parseNebulaDetail(reply.body)),
                     staleMatch = reply.status == 404,
-                    worthRetry = reply.status >= 500,
+                    worthRetry = reply.status >= 500 && !waitable,
+                    waitable = waitable,
                 )
             }
         }
@@ -576,7 +643,9 @@ internal object NebulaMusicSource {
             else nebulaFailureReason(status = null, error = e.message),
             staleMatch = false,
             // Another 25 s wait on a timeout would only double the silence.
-            worthRetry = !timedOut,
+            worthRetry = false,
+            // ... but the addon is probably still fetching the file, so it is asked again later (see resolve).
+            waitable = timedOut,
         )
     }
 }
