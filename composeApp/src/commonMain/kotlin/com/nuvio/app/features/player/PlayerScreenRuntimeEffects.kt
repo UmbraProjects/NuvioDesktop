@@ -1840,6 +1840,8 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         )
     }
 
+    // The post-show cards outlast the file: hold the end until they close, then act on it as usual.
+    val postShowShowing = PostShowController.showing
     LaunchedEffect(
         playbackSnapshot.isEnded,
         lastTrustedPlaybackPositionMs,
@@ -1847,8 +1849,10 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         isProviderDiagnosticVideoPlayback,
         playbackSourceFailureActive,
         errorMessage,
+        postShowShowing,
     ) {
         if (
+            !postShowShowing &&
             !isProviderDiagnosticVideoPlayback &&
             !playbackSourceFailureActive &&
             errorMessage == null &&

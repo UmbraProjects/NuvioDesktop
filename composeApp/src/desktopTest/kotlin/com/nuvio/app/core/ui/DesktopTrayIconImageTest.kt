@@ -96,6 +96,21 @@ class DesktopTrayIconImageTest {
         ImageIO.write(big, "png", File("build/test-artifacts/window-icon-32.png"))
     }
 
+    /**
+     * Each size the shell asks for has a copy drawn for it. A missing one is not an error at
+     * runtime (that size is resampled from the master), which is why it has to be caught here:
+     * the resampled corners are the jagged ones.
+     */
+    @Test
+    fun everyShellSizeHasItsOwnDrawnCopy() {
+        for (size in intArrayOf(16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256)) {
+            assertNotNull(
+                Thread.currentThread().contextClassLoader.getResource("icons/sizes/nuvio-app-icon-$size.png"),
+                "no drawn ${size}px icon; that size would be resampled",
+            )
+        }
+    }
+
     private data class OpaqueBounds(val minX: Int, val minY: Int, val maxX: Int, val maxY: Int)
 
     private fun opaqueBounds(image: BufferedImage): OpaqueBounds? {

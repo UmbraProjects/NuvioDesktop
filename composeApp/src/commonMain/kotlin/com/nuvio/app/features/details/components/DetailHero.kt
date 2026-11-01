@@ -5,6 +5,7 @@ import kotlinx.coroutines.async
 import com.nuvio.app.features.tmdb.fullSizeTmdbBackdrop
 import com.nuvio.app.features.tvdb.TvdbCharacter
 import com.nuvio.app.features.tvdb.TvdbImageService
+import com.nuvio.app.features.details.CastEpisodeCountVisibility
 import com.nuvio.app.features.details.CastViewStorage
 import com.nuvio.app.features.mdblist.linkFor
 import androidx.compose.animation.core.Animatable
@@ -146,6 +147,7 @@ fun DetailHero(
     showActions: Boolean = false,
     showOverview: Boolean = false,
     showCast: Boolean = false,
+    castEpisodeCountVisibility: CastEpisodeCountVisibility = CastEpisodeCountVisibility.SHOW,
     showProduction: Boolean = false,
     showDetails: Boolean = false,
     showManualPlayOption: Boolean = false,
@@ -394,6 +396,7 @@ fun DetailHero(
                         showActions = showActions,
                         showOverview = showOverview,
                         showCast = showCast,
+                        castEpisodeCountVisibility = castEpisodeCountVisibility,
                         showProduction = showProduction,
                         showDetails = showDetails,
                         showManualPlayOption = showManualPlayOption,
@@ -553,6 +556,7 @@ private fun DetailDesktopHeroOverlay(
     showActions: Boolean,
     showOverview: Boolean,
     showCast: Boolean,
+    castEpisodeCountVisibility: CastEpisodeCountVisibility,
     showProduction: Boolean,
     showDetails: Boolean,
     showManualPlayOption: Boolean,
@@ -843,6 +847,7 @@ private fun DetailDesktopHeroOverlay(
                         // shown; keeping the line from the start stops the row growing then.
                         reserveEpisodeLine = activePeopleTab == DetailHeroPeopleTab.Starring &&
                             meta.type.trim().lowercase() in setOf("series", "show", "tv", "tvshow"),
+                        showEpisodeCounts = castEpisodeCountVisibility.showCounts(meta.genres),
                         showHeader = false,
                         visibleItemCount = 6,
                         onCastClick = if (activePeopleTab == DetailHeroPeopleTab.Starring) onCastClick else null,

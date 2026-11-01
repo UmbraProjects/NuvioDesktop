@@ -198,7 +198,6 @@ import com.nuvio.app.features.tmdb.TmdbSettings
 import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesUiState
-import com.nuvio.app.features.whatsnew.WhatsNewController
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.*
@@ -288,6 +287,7 @@ fun SettingsScreen(
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
     onNavigateToLiveTv: (() -> Unit)? = null,
+    onNavigateToMusic: (() -> Unit)? = null,
 ) {
     val homeKeyFocusRequester = remember { FocusRequester() }
     var settingsSearchHasFocus by remember { mutableStateOf(false) }
@@ -481,7 +481,6 @@ fun SettingsScreen(
         LaunchedEffect(currentPage) {
             perfSettingsPage = currentPage
             PerfTelemetry.markScreen("Settings/$currentPage")
-            WhatsNewController.onSettingsPage(currentPage) // fork:whatsnew
         }
         var selectedDownloadsShowId by rememberSaveable { mutableStateOf<String?>(null) }
         var pendingDownloadsDelete by remember { mutableStateOf<DownloadsSettingsDeleteTarget?>(null) }
@@ -646,6 +645,7 @@ fun SettingsScreen(
                 onNavigateToDiscover = onNavigateToDiscover,
                 onNavigateToCalendar = onNavigateToCalendar,
                 onNavigateToLiveTv = onNavigateToLiveTv,
+                onNavigateToMusic = onNavigateToMusic,
                 onSettingsSearchFocusChange = { settingsSearchHasFocus = it },
             )
         } else {
@@ -840,6 +840,7 @@ private fun MobileSettingsScreen(
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
     onNavigateToLiveTv: (() -> Unit)? = null,
+    onNavigateToMusic: (() -> Unit)? = null,
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val saveableStateHolder = rememberSaveableStateHolder()
@@ -1418,6 +1419,7 @@ private fun TabletSettingsScreen(
     onNavigateToDiscover: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
     onNavigateToLiveTv: (() -> Unit)? = null,
+    onNavigateToMusic: (() -> Unit)? = null,
     onSettingsSearchFocusChange: (Boolean) -> Unit = {},
 ) {
     val tokens = MaterialTheme.nuvio
@@ -1603,6 +1605,7 @@ private fun TabletSettingsScreen(
                 onNavigateToDiscover = onNavigateToDiscover,
                 onNavigateToCalendar = onNavigateToCalendar,
                 onNavigateToLiveTv = onNavigateToLiveTv,
+                onNavigateToMusic = onNavigateToMusic,
                 contextPanelWidth = contextPanelWidth,
             )
             if (desktopColumnGuidesVisible) {
@@ -2694,6 +2697,7 @@ private fun DesktopSettingsTopBar(
     onNavigateToDiscover: (() -> Unit)?,
     onNavigateToCalendar: (() -> Unit)?,
     onNavigateToLiveTv: (() -> Unit)?,
+    onNavigateToMusic: (() -> Unit)?,
     contextPanelWidth: Dp,
 ) {
     val tokens = MaterialTheme.nuvio
@@ -2811,6 +2815,7 @@ private fun DesktopSettingsTopBar(
             onNavigateToDiscover = onNavigateToDiscover,
             onNavigateToCalendar = onNavigateToCalendar,
             onNavigateToLiveTv = onNavigateToLiveTv,
+            onNavigateToMusic = onNavigateToMusic,
         )
     }
 }
@@ -2823,14 +2828,17 @@ private fun DesktopSettingsRootNavigation(
     onNavigateToDiscover: (() -> Unit)?,
     onNavigateToCalendar: (() -> Unit)?,
     onNavigateToLiveTv: (() -> Unit)?,
+    onNavigateToMusic: (() -> Unit)?,
 ) {
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsState()
     val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
+    val musicTabVisible = com.nuvio.app.features.music.rememberMusicTabVisible() // fork:music
     // Laid out like the floating nav bar's quadrants (64dp a slot, 6dp inset, 2dp gaps) and in its
     // order, with Calendar in the profile/Settings slot, so each icon sits where its tab does.
-    val slotCount = 4 + (if (discoverTabVisible) 1 else 0) + (if (liveTvTabVisible) 1 else 0)
+    val slotCount = 4 + (if (discoverTabVisible) 1 else 0) + (if (liveTvTabVisible) 1 else 0) +
+        (if (musicTabVisible) 1 else 0)
     Row(
         modifier = Modifier
             .width(DesktopSettingsNavSlotWidth * slotCount)
@@ -2871,6 +2879,14 @@ private fun DesktopSettingsRootNavigation(
             contentDescription = stringResource(Res.string.compose_nav_library),
             painter = painterResource(Res.drawable.sidebar_library),
         )
+        // Music, like its tab, only once it is switched on (Settings > Music > Show Music).
+        if (musicTabVisible) { // fork:music
+            DesktopSettingsNavIcon(
+                onClick = onNavigateToMusic,
+                contentDescription = "Music",
+                imageVector = Icons.Rounded.MusicNote,
+            )
+        }
         // Calendar is a pushed route rather than a tab, so it has no sidebar entry to fall back
         // on; from Settings the only other ways in are the hotkey or the Library header icon.
         DesktopSettingsNavIcon(

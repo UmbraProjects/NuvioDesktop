@@ -445,8 +445,6 @@ import com.nuvio.app.features.watchprogress.opensDetails
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingActions
 import com.nuvio.app.features.watching.application.WatchingState
-import com.nuvio.app.features.whatsnew.WhatsNewController
-import com.nuvio.app.features.whatsnew.WhatsNewHost
 import io.ktor.http.Url
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -3942,6 +3940,7 @@ private fun MainAppContent(
                                             onNavigateToHome = { handleRootTabClick(AppScreenTab.Home) },
                                             onNavigateToCalendar = { navController.navigateIfResumed(CalendarRoute) },
                                             onNavigateToLiveTv = { handleRootTabClick(AppScreenTab.LiveTv) },
+                                            onNavigateToMusic = { handleRootTabClick(AppScreenTab.Music) }, // fork:music
                                             onLiveTvSettingsClick = {
                                                 requestedSettingsPageName = "Iptv"
                                                 handleRootTabClick(AppScreenTab.Settings)
@@ -5445,23 +5444,6 @@ private fun MainAppContent(
                 },
             )
 
-            // The "What's new" cards: last in StartupOverlayCoordinator, so the wizard, the key prompt
-            // and the updater all go first. Only over the tabs (never a player or a details page) and
-            // never over game mode; nothing is marked seen until the cards have been shown and closed.
-            // A card sent the person to a Settings page; leaving the Settings tab brings it back.
-            LaunchedEffect(selectedTab) {
-                if (selectedTab != AppScreenTab.Settings) WhatsNewController.onSettingsTabLeft()
-            } // fork:whatsnew
-            WhatsNewHost(
-                canShow = currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true && !gameModeActive,
-                // A card's "Set it up" lands on its Settings page, the way the setup wizard's last
-                // step lands on the keyboard shortcuts page.
-                onOpenSettingsPage = { page ->
-                    requestedSettingsPageName = page
-                    selectedTab = AppScreenTab.Settings
-                },
-            ) // fork:whatsnew
-
             // Game mode sits on top of a still-composed app rather than replacing it, so toggling
             // back lands on exactly the row and scroll position the user left. The wrapper is a
             // pointer-input node covering the whole window: without it, clicks and wheel events
@@ -5776,6 +5758,7 @@ private fun AppTabHost(
     onNavigateToHome: (() -> Unit)? = null,
     onNavigateToCalendar: (() -> Unit)? = null,
     onNavigateToLiveTv: (() -> Unit)? = null,
+    onNavigateToMusic: (() -> Unit)? = null,
     onLiveTvSettingsClick: () -> Unit = {},
     onMusicNavigate: (Any) -> Unit = {}, // fork:music
 ) {
@@ -5934,6 +5917,7 @@ private fun AppTabHost(
                         onNavigateToDiscover = onNavigateToDiscover,
                         onNavigateToCalendar = onNavigateToCalendar,
                         onNavigateToLiveTv = onNavigateToLiveTv,
+                        onNavigateToMusic = onNavigateToMusic,
                     )
                 }
             }

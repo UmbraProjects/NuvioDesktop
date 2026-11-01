@@ -75,12 +75,10 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
-// fork:updater - this fork's releases, cut from its Spyder branch (see .github/workflows/windows-build.yml). An upstream
-// sync puts the original's values back here; keep these pointing at the fork.
-private const val gitHubOwner = "spydermahn1234"
+private const val gitHubOwner = "UmbraProjects"
 private const val gitHubRepo = "NuvioDesktop"
 private const val gitHubApiBase = "https://api.github.com"
-private const val releaseChannelBranch = "Spyder"
+private const val releaseChannelBranch = "windows-tv-adaptive"
 
 /** The rolling prerelease tag every nightly build is uploaded under. */
 private const val nightlyReleaseTag = "Nightly"
@@ -1219,7 +1217,7 @@ private fun UpdaterHairline() {
     )
 }
 
-private const val NuvioHtpcRepoUrl = "https://github.com/spydermahn1234/NuvioDesktop"
+private const val NuvioHtpcRepoUrl = "https://github.com/UmbraProjects/NuvioDesktop"
 
 /** Display name for a channel, shared by the update dialog and the settings selector. */
 @Composable

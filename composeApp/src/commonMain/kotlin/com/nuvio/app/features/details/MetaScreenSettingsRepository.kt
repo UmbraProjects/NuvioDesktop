@@ -59,6 +59,7 @@ data class MetaScreenSettingsUiState(
     val episodeRatingsVisibility: EpisodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL,
     val showOverallRatings: Boolean = true,
     val sameCastLabelPlacement: SameCastLabelPlacement = SameCastLabelPlacement.AUTO,
+    val castEpisodeCountVisibility: CastEpisodeCountVisibility = CastEpisodeCountVisibility.SHOW,
 )
 
 enum class MetaScreenBackgroundMode {
@@ -188,6 +189,8 @@ private data class StoredMetaScreenSettingsPayload(
     val showOverallRatings: Boolean = true,
     @SerialName("same_cast_label_placement")
     val sameCastLabelPlacement: String? = null,
+    @SerialName("cast_episode_count_visibility")
+    val castEpisodeCountVisibility: String? = null,
 )
 
 private data class MetaScreenSectionDefinition(
@@ -274,6 +277,7 @@ object MetaScreenSettingsRepository {
     private var episodeRatingsVisibility: EpisodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL
     private var showOverallRatings: Boolean = true
     private var sameCastLabelPlacement: SameCastLabelPlacement = SameCastLabelPlacement.AUTO
+    private var castEpisodeCountVisibility: CastEpisodeCountVisibility = CastEpisodeCountVisibility.SHOW
     private fun localizedString(resource: StringResource): String = runBlocking { getString(resource) }
 
     fun ensureLoaded() {
@@ -311,6 +315,9 @@ object MetaScreenSettingsRepository {
                 sameCastLabelPlacement = parsed.sameCastLabelPlacement
                     ?.let(SameCastLabelPlacement::parse)
                     ?: SameCastLabelPlacement.AUTO
+                castEpisodeCountVisibility = parsed.castEpisodeCountVisibility
+                    ?.let(CastEpisodeCountVisibility::parse)
+                    ?: CastEpisodeCountVisibility.SHOW
                 preferences = parsed.items.mapNotNull { item ->
                     val key = runCatching { MetaScreenSectionKey.valueOf(item.key) }.getOrNull() ?: return@mapNotNull null
                     key to item
@@ -340,6 +347,7 @@ object MetaScreenSettingsRepository {
         episodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL
         showOverallRatings = true
         sameCastLabelPlacement = SameCastLabelPlacement.AUTO
+        castEpisodeCountVisibility = CastEpisodeCountVisibility.SHOW
         _uiState.value = MetaScreenSettingsUiState()
         ensureLoaded()
     }
@@ -439,6 +447,13 @@ object MetaScreenSettingsRepository {
         persist()
     }
 
+    fun setCastEpisodeCountVisibility(visibility: CastEpisodeCountVisibility) {
+        ensureLoaded()
+        castEpisodeCountVisibility = visibility
+        publish()
+        persist()
+    }
+
     fun setShowOverallRatings(enabled: Boolean) {
         ensureLoaded()
         showOverallRatings = enabled
@@ -470,6 +485,7 @@ object MetaScreenSettingsRepository {
         episodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL
         showOverallRatings = true
         sameCastLabelPlacement = SameCastLabelPlacement.AUTO
+        castEpisodeCountVisibility = CastEpisodeCountVisibility.SHOW
         _uiState.value = MetaScreenSettingsUiState()
     }
 
@@ -535,6 +551,7 @@ object MetaScreenSettingsRepository {
         episodeRatingsVisibility = EpisodeRatingsVisibility.SHOW_ALL
         showOverallRatings = true
         sameCastLabelPlacement = SameCastLabelPlacement.AUTO
+        castEpisodeCountVisibility = CastEpisodeCountVisibility.SHOW
         normalizePreferences()
         publish()
         persist()
@@ -600,6 +617,7 @@ object MetaScreenSettingsRepository {
             episodeRatingsVisibility = episodeRatingsVisibility,
             showOverallRatings = showOverallRatings,
             sameCastLabelPlacement = sameCastLabelPlacement,
+            castEpisodeCountVisibility = castEpisodeCountVisibility,
         )
     }
 
@@ -623,6 +641,7 @@ object MetaScreenSettingsRepository {
                     episodeRatingsVisibility = episodeRatingsVisibility.name,
                     showOverallRatings = showOverallRatings,
                     sameCastLabelPlacement = sameCastLabelPlacement.name,
+                    castEpisodeCountVisibility = castEpisodeCountVisibility.name,
                 ),
             ),
         )

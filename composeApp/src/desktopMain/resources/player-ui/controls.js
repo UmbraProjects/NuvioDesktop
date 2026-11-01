@@ -5955,9 +5955,12 @@ const renderChrome = () => {
   if (isChromeHidden || activeModal) hideControlTooltip();
   // Never hide the cursor in hero-trailer mode — it's a background surface, not the
   // focused player, so the OS/app cursor must behave normally.
-  if (!isHeroTrailerSurface && !state.heroTrailerMode && isChromeHidden !== lastCursorHidden) {
-    lastCursorHidden = isChromeHidden;
-    send("cursorVisibility", isChromeHidden ? 0 : 1);
+  // Nor while the post-show cards are up: the chrome is hidden then, but the cards are clickable,
+  // and the native side hides the cursor for the whole window, not just the video box.
+  const cursorHidden = isChromeHidden && !state.postShowInput;
+  if (!isHeroTrailerSurface && !state.heroTrailerMode && cursorHidden !== lastCursorHidden) {
+    lastCursorHidden = cursorHidden;
+    send("cursorVisibility", cursorHidden ? 0 : 1);
   }
   syncHudSubtitleClearance(isChromeHidden);
   root.classList.toggle("source-visible", Boolean(!showError && !isPlaying && !state.isLoading && (state.streamTitle || state.providerName)));

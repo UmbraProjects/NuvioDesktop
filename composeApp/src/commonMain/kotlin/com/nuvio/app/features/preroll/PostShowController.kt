@@ -55,6 +55,13 @@ object PostShowController {
     /** The cards are up: the video belongs in the corner box. */
     val active: State<Boolean> = derivedStateOf { pack != null }
 
+    /**
+     * The cards are loading or up. While true the player does not act on the file ending (exit,
+     * autoplay, playlist advance): the cards run on past the last frame and the player carries on
+     * once they close.
+     */
+    val showing: Boolean get() = loading || pack != null
+
     val title: String get() = nowPlaying?.title.orEmpty()
 
     /** The cards are about a season or series finale, not a film. */

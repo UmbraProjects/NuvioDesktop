@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,7 +53,7 @@ import androidx.compose.ui.unit.sp
  * stops short of the right-hand side, where the video sits on top of this screen, so no text ever
  * runs under it. Keys normally arrive through the controls page (it holds keyboard focus while the
  * video plays) and reach the controller from there; this screen also takes them directly, for the
- * moments Compose has focus.
+ * moments Compose has focus. With a mouse, clicking a card moves on and Close closes.
  */
 @Composable
 fun PostShowScreen(
@@ -140,7 +142,20 @@ fun PostShowScreen(
         ) { shown ->
             Column(
                 // Leaves the right third to the video box.
-                modifier = Modifier.fillMaxWidth(0.62f).padding(start = 56.dp, end = 24.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.62f)
+                    .then(
+                        // A click on a card moves on; a question has its own buttons.
+                        if (shown is PreShowStage.Slide) {
+                            Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { PostShowController.press(PostShowKey.Right) }
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(start = 56.dp, end = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 when (shown) {
@@ -176,11 +191,9 @@ fun PostShowScreen(
                     modifier = Modifier.padding(end = 12.dp),
                 )
             }
-            Text(
-                text = "Back to close",
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.6f),
-            )
+            TextButton(onClick = { PostShowController.press(PostShowKey.Back) }) {
+                Text("Close", color = Color.White.copy(alpha = 0.85f))
+            }
         }
 
         if (skipLabel != null) {

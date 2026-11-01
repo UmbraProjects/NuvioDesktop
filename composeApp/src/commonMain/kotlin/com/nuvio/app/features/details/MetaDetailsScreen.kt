@@ -2292,6 +2292,7 @@ fun MetaDetailsScreen(
                                         showCast = useDesktopDetailLayout &&
                                             MetaScreenSectionKey.CAST in enabledHeroSections &&
                                             meta.cast.isNotEmpty(),
+                                        castEpisodeCountVisibility = metaScreenSettingsUiState.castEpisodeCountVisibility,
                                         showProduction = useDesktopDetailLayout &&
                                             MetaScreenSectionKey.PRODUCTION in enabledHeroSections &&
                                             hasProductionSection,
@@ -3737,6 +3738,7 @@ private fun ConfiguredMetaSections(
                 DetailCastSection(
                     cast = meta.cast,
                     showHeader = showHeader,
+                    showEpisodeCounts = settings.castEpisodeCountVisibility.showCounts(meta.genres),
                     onCastClick = onCastClick,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,

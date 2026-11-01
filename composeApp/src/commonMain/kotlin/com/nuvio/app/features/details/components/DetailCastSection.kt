@@ -59,6 +59,8 @@ fun DetailCastSection(
     showCharacters: Boolean = false,
     /** Keeps the episode-count line's space even before (or without) counts, so the row can't grow. */
     reserveEpisodeLine: Boolean = false,
+    /** False drops the episode-count line, reserved space and all (see [CastEpisodeCountVisibility]). */
+    showEpisodeCounts: Boolean = true,
     /** Characters view on and its portraits still being looked up: blank circles, no actor photos. */
     portraitsPending: Boolean = false,
 ) {
@@ -98,6 +100,7 @@ fun DetailCastSection(
                         asCharacter = showCharacters && !person.characterImage.isNullOrBlank(),
                         portraitPending = portraitsPending,
                         reserveEpisodeLine = reserveEpisodeLine,
+                        showEpisodeCount = showEpisodeCounts,
                         sharedTransitionKey = sharedTransitionKey,
                         sizing = sizing,
                         sharedTransitionScope = sharedTransitionScope,
@@ -122,6 +125,7 @@ private fun CastItem(
     asCharacter: Boolean = false,
     portraitPending: Boolean = false,
     reserveEpisodeLine: Boolean = false,
+    showEpisodeCount: Boolean = true,
     sharedTransitionKey: String? = null,
     sizing: CastSectionSizing,
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -231,7 +235,7 @@ private fun CastItem(
             )
         }
         val episodeCount = person.episodeCount?.takeIf { it > 0 }
-        if (episodeCount != null || reserveEpisodeLine) {
+        if (showEpisodeCount && (episodeCount != null || reserveEpisodeLine)) {
             Text(
                 text = when (episodeCount) {
                     null -> " "
