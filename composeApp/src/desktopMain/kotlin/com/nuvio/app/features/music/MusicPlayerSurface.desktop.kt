@@ -289,14 +289,7 @@ actual fun MusicPlayerSurface(
         host.addComponentListener(listener)
         onDispose { host.removeComponentListener(listener) }
     }
-    LaunchedEffect(controller, cornerPx, revealed, loadId) {
-        controller.setCornerRadius(cornerPx)
-        // The corners the cut exposes belong to the app's own surface, which has to draw them again.
-        if (cornerPx > 0) {
-            delay(250L)
-            runCatching { javax.swing.SwingUtilities.getWindowAncestor(host)?.repaint() }
-        }
-    }
+    LaunchedEffect(controller, cornerPx, revealed, loadId) { controller.setCornerRadius(cornerPx) }
     LaunchedEffect(controller, framed) {
         // Newer mpv builds call it background-color, older ones background; the one it does not know is ignored.
         val bars = if (framed) FRAMED_BARS_COLOR else "#000000"

@@ -4987,35 +4987,25 @@ private:
         nuvioBridgeLog("mpv start complete");
     }
 
-    // fork:music-stage - rounded corners for the Now Playing video: the host window (and so the player inside it)
-    // is cut to a rounded rectangle. Zero leaves it square. Called from the UI toolkit thread on a resize or a change.
+    // fork:music-stage - rounded corners for the Now Playing video: the player's own container window is cut to a rounded
+    // rectangle, so the host window behind it (which the app paints black) shows in the corners. Cutting the host itself
+    // instead exposed the app's surface, which Compose does not paint under a video panel, as pale grey. Zero leaves it
+    // square. Called on a radius change (any thread) and after every layout (the UI thread).
     std::atomic<int> cornerRadiusPx{0};
     LONG lastRegionWidth = -1;
     LONG lastRegionHeight = -1;
     int lastRegionRadius = -1;
 
-    // The corners a region cuts away show whatever is behind the window; ask the parent (the app's own surface) to
-    // paint that area again, or it keeps the default window colour until something else repaints it.
-    void repaintBehindHost() {
-        HWND parent = GetParent(hostHwnd);
-        if (!parent || !IsWindow(parent)) return;
-        RECT area = {};
-        if (!GetWindowRect(hostHwnd, &area)) return;
-        MapWindowPoints(HWND_DESKTOP, parent, reinterpret_cast<POINT *>(&area), 2);
-        InflateRect(&area, 2, 2);
-        RedrawWindow(parent, &area, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_NOCHILDREN);
-    }
-
     void applyCornerRegion() {
-        if (!hostHwnd || !IsWindow(hostHwnd)) return;
+        if (!containerHwnd || !IsWindow(containerHwnd)) return;
         RECT bounds = {};
-        GetClientRect(hostHwnd, &bounds);
+        GetClientRect(containerHwnd, &bounds);
         LONG width = bounds.right - bounds.left;
         LONG height = bounds.bottom - bounds.top;
         int radius = cornerRadiusPx.load();
         if (radius <= 0 || width <= 1 || height <= 1) {
             if (lastRegionRadius != 0) {
-                SetWindowRgn(hostHwnd, nullptr, TRUE);
+                SetWindowRgn(containerHwnd, nullptr, TRUE);
                 lastRegionRadius = 0;
                 lastRegionWidth = lastRegionHeight = -1;
             }
@@ -5025,11 +5015,10 @@ private:
         if (width == lastRegionWidth && height == lastRegionHeight && clamped == lastRegionRadius) return;
         HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, clamped * 2, clamped * 2);
         if (!region) return;
-        if (SetWindowRgn(hostHwnd, region, TRUE)) {
+        if (SetWindowRgn(containerHwnd, region, TRUE)) {
             lastRegionWidth = width;
             lastRegionHeight = height;
             lastRegionRadius = clamped;
-            repaintBehindHost();
         } else {
             DeleteObject(region);
         }
@@ -5064,6 +5053,7 @@ private:
         }
         if (containerHwnd) {
             SetWindowPos(containerHwnd, HWND_TOP, 0, 0, width, height, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+            applyCornerRegion();
         }
         if (controller) {
             // Normalize to the HUD's 192-DPI baseline, then apply the saved UI setting as actual
