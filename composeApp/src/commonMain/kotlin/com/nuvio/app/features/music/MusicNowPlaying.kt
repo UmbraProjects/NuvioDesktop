@@ -291,6 +291,7 @@ private fun MusicNowPlayingScreen(
     var widgetsVisible by remember { mutableStateOf(true) }
     val fadeQueue = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.fadeQueue
     val lyricStyle = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricStyle
+    val lyricsOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricsOn
     // fork:booklet - the album's sleeve notes for the third panel of a wide Stage.
     val bookletOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.booklet
     val bookletUi = rememberBookletUi(album, bookletOn, libraryArtist)
@@ -453,6 +454,7 @@ private fun MusicNowPlayingScreen(
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
                         onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
                         centredSync = threePanels,
+                        visible = lyricsOn,
                     )
                     }
                     if (threePanels) {
@@ -501,6 +503,7 @@ private fun MusicNowPlayingScreen(
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
                         onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
+                        visible = lyricsOn,
                     )
                 }
             }
@@ -524,6 +527,11 @@ private fun MusicNowPlayingScreen(
             },
             onToggleMotion = { setMusicReducedMotion(!reduced) },
             lyricStyle = lyricStyle,
+            lyricsOn = lyricsOn,
+            onToggleLyrics = {
+                val settings = MusicLibraryRepository.state.value.settings
+                MusicLibraryRepository.updateSettings(settings.copy(lyricsOn = !settings.lyricsOn))
+            },
             onCycleLyricStyle = {
                 val settings = MusicLibraryRepository.state.value.settings
                 MusicLibraryRepository.updateSettings(settings.copy(lyricStyle = settings.lyricStyle.next()))
@@ -552,7 +560,7 @@ private fun MusicNowPlayingScreen(
     }
 }
 
-/** Collapse, the album, the Stage / Video switch, the motion switch and Fullscreen (when there is a real video). */
+/** Collapse, the album, the Stage / Video switch, Fullscreen (when there is a real video) and the Options menu at the far right. */
 @Composable
 private fun StageTopBar(
     title: String,
@@ -568,6 +576,8 @@ private fun StageTopBar(
     onToggleFadeQueue: () -> Unit = {},
     lyricStyle: LyricStyle = LyricStyle.Scroll,
     onCycleLyricStyle: () -> Unit = {},
+    lyricsOn: Boolean = true,
+    onToggleLyrics: () -> Unit = {},
     /** fork:booklet - null hides the chip (no booklet panel at this width or in this view). */
     booklet: Boolean? = null,
     onToggleBooklet: () -> Unit = {},
@@ -599,11 +609,19 @@ private fun StageTopBar(
             selected = view,
             onSelect = onView,
         )
-        MusicTextChip("Lyrics: ${lyricStyle.label}", onCycleLyricStyle)
-        MusicTextChip(if (fadeQueue) "Fade queue: on" else "Fade queue: off", onToggleFadeQueue)
-        if (booklet != null) MusicTextChip(if (booklet) "Booklet: on" else "Booklet: off", onToggleBooklet)
-        MusicTextChip(if (reduced) "Motion: reduced" else "Motion: full", onToggleMotion)
         if (canFullscreen) MusicTextChip("Fullscreen", onFullscreen)
+        StageOptionsMenu(
+            lyricsOn = lyricsOn,
+            lyricStyle = lyricStyle,
+            fadeQueue = fadeQueue,
+            booklet = booklet,
+            reduced = reduced,
+            onToggleLyrics = onToggleLyrics,
+            onCycleLyricStyle = onCycleLyricStyle,
+            onToggleFadeQueue = onToggleFadeQueue,
+            onToggleBooklet = onToggleBooklet,
+            onToggleMotion = onToggleMotion,
+        )
     }
 }
 
@@ -818,9 +836,15 @@ private fun LyricsPane(
     style: LyricStyle = LyricStyle.Scroll,
     /** fork:stage - the sync strip centred under the lyrics (the three-panel Stage) instead of at the bottom-left. */
     centredSync: Boolean = false,
+    /** fork:stage - the Options menu's lyrics switch: off shows nothing here. */
+    visible: Boolean = true,
 ) {
     // Tap to sync: the next line tapped is the one being heard, not a seek.
     var tapping by remember { mutableStateOf(false) }
+    if (!visible) {
+        Box(modifier)
+        return
+    }
     if (compact) {
         Column(modifier.height(COMPACT_LYRICS_HEIGHT)) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {

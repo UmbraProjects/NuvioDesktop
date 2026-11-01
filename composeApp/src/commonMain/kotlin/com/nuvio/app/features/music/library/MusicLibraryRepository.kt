@@ -42,6 +42,8 @@ data class MusicLibrarySettings(
     val fadeQueue: Boolean = true,
     /** fork:booklet - the album's sleeve notes in a glass panel beside the lyrics on a wide Stage. */
     val booklet: Boolean = true,
+    /** fork:stage - the lyrics on the Now Playing stage; off leaves the middle of the Stage to the artist's art. */
+    val lyricsOn: Boolean = true,
     /** How the lyric view sets its lyrics: the scrolling list, one calm marker-pen line, or loud stacked chunks. */
     val lyricStyle: com.nuvio.app.features.music.LyricStyle = com.nuvio.app.features.music.LyricStyle.Scroll,
     /** The artist page's "Where next?" ladder builds by itself (lazily, behind other MusicBrainz calls). Off for a slow connection: it then waits for a button. */
