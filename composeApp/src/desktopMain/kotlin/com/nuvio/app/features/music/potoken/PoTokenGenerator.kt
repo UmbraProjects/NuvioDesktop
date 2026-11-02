@@ -147,7 +147,15 @@ internal class PoTokenGenerator(
     private var sessionId: String? = null
     private var lastUsedMs = 0L
     private var failures = 0
+
+    @Volatile
     private var pausedUntilMs = 0L
+
+    /**
+     * True when a token can be asked for now: this machine can host a page and the generator is not
+     * paused after failures. A caller that would ask for a token first uses this to decide whether to.
+     */
+    val ready: Boolean get() = available() && now() >= pausedUntilMs
 
     /**
      * Tokens for [videoId] in the session [visitorData], or null when none can be made now (no browser,
@@ -253,6 +261,8 @@ internal class PoTokenGenerator(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            // fork:potoken-log — a page that will not start was silent until the second failure paused tokens.
+            log.w { "BotGuard page could not start: ${error.message}" }
             recordFailure()
             throw error
         }

@@ -15,12 +15,26 @@ internal interface MusicStreamFallback {
 
     /** An audio stream for [videoId], or null when this resolver cannot find one either. */
     suspend fun resolve(videoId: String): TrailerPlaybackSource?
+
+    /**
+     * fork:potoken-first — true while this resolver can do what the in-app extractor cannot (mint PO
+     * tokens), so [MusicResolver] asks it first for audio, as BitChord does, and lets a track the person
+     * chose ask it once even while YouTube is refusing the in-app extractor.
+     */
+    val preferred: Boolean get() = false
 }
 
 internal object MusicStreamFallbacks {
     private const val IMPLEMENTATION = "com.nuvio.app.features.music.InnerTubeXFallback"
 
-    val active: MusicStreamFallback? by lazy { load(IMPLEMENTATION) }
+    val active: MusicStreamFallback? by lazy {
+        load(IMPLEMENTATION).also {
+            Logger.withTag("MusicStreamFallbacks").i {
+                if (it == null) "no fallback resolver in this build (built without -Pnuvio.innertubex=true)"
+                else "fallback resolver: ${it.name}"
+            }
+        }
+    }
 
     internal fun load(className: String): MusicStreamFallback? =
         try {

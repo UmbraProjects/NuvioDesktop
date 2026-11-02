@@ -36,9 +36,10 @@ import java.io.File
 /**
  * fork:innertubex — stream lookup through InnerTubeX, the library BitChord resolves with: a catalog
  * of YouTube clients picked by what each can currently play, plus cipher / `n`-parameter decoding
- * that the in-app extractor does not have. Used only after the extractor has failed a track, and
- * with the signed-in Google account's cookies, so an age-gated track opens the way it does in
- * BitChord. Written against the shape of BitChord's `InnerTubeXResolver` (GPL-3.0).
+ * that the in-app extractor does not have, with the signed-in Google account's cookies, so an
+ * age-gated track opens the way it does in BitChord. Asked first for a track's audio while PO tokens
+ * can be minted ([preferred], as BitChord resolves InnerTubeX first), otherwise only after the
+ * extractor has failed the track. Written against the shape of BitChord's `InnerTubeXResolver` (GPL-3.0).
  *
  * PoTokens come from [BrowserPoTokens]: BotGuard run in a headless Edge / Chrome, as BitChord does in a
  * WebView, so the web clients that need one are in the catalog. With no browser installed, or with
@@ -48,6 +49,9 @@ import java.io.File
  */
 internal object InnerTubeXFallback : MusicStreamFallback {
     override val name = "InnerTubeX"
+
+    /** fork:potoken-first — asked before the in-app extractor while a BotGuard browser can mint tokens. */
+    override val preferred: Boolean get() = BrowserPoTokens.ready
 
     private val log = Logger.withTag("InnerTubeX")
 

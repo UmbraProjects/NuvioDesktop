@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -111,6 +112,21 @@ class PoTokenGeneratorTest {
         createFailure = null
         assertNotNull(generator.tokens("v", "visitor"))
         assertEquals(3, creations)
+    }
+
+    @Test
+    fun `ready is false without a browser and while paused, true again after the pause`() = runBlocking {
+        assertTrue(generator.ready)
+        available = false
+        assertFalse(generator.ready)
+        available = true
+        createFailure = PoTokenException("attestation refused")
+        generator.tokens("v", "visitor")
+        assertTrue(generator.ready) // one failure does not pause
+        generator.tokens("v", "visitor")
+        assertFalse(generator.ready)
+        clock += PoTokenGenerator.BASE_PAUSE_MS
+        assertTrue(generator.ready)
     }
 
     @Test
