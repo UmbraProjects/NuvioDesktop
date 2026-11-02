@@ -20,6 +20,9 @@ private val log = co.touchlab.kermit.Logger.withTag("YouTubeFeed")
 internal actual suspend fun youTubeBrowse(browseId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("browse", mapOf("browseId" to browseId, "continuation" to continuation), pageId)
 
+internal actual suspend fun youTubeSearch(query: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest("search", mapOf("query" to query, "continuation" to continuation), pageId)
+
 internal actual suspend fun youTubeAccountsList(): YouTubeBrowseResult =
     signedWebRequest(
         "account/accounts_list",

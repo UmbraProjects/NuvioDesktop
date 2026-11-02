@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -28,7 +29,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -54,11 +57,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.arrowKeyFocusNavigation
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
@@ -98,6 +103,13 @@ fun YouTubeTabScreen(
     val feeds by YouTubeFeedRepository.feeds.collectAsStateWithLifecycle()
     val feed = feeds.getValue(kind)
     val channel by YouTubeFeedRepository.channel.collectAsStateWithLifecycle()
+    val searchQuery by YouTubeFeedRepository.searchQuery.collectAsStateWithLifecycle()
+    var searchText by rememberSaveable { mutableStateOf(YouTubeFeedRepository.searchQuery.value) }
+    fun submitSearch() {
+        if (searchText.isBlank()) return
+        YouTubeFeedRepository.search(searchText)
+        selectedName = YouTubeFeedKind.Search.name
+    }
 
     // Pages fetched under one session are not the other session's feed.
     var lastSignedIn by remember { mutableStateOf<Boolean?>(null) }
@@ -165,7 +177,7 @@ fun YouTubeTabScreen(
     }
 
     val gridState = rememberLazyGridState()
-    LaunchedEffect(kind) { gridState.scrollToItem(0) }
+    LaunchedEffect(kind, searchQuery) { gridState.scrollToItem(0) }
     LaunchedEffect(gridState, kind) {
         snapshotFlow {
             val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
@@ -193,12 +205,45 @@ fun YouTubeTabScreen(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(end = 12.dp),
             )
-            YouTubeFeedKind.entries.forEach { entry ->
+            YouTubeFeedKind.entries.filter { it != YouTubeFeedKind.Search }.forEach { entry ->
                 if (entry == kind) {
                     Button(onClick = { YouTubeFeedRepository.load(entry) }) { Text(entry.label) }
                 } else {
                     OutlinedButton(onClick = { selectedName = entry.name }) { Text(entry.label) }
                 }
+            }
+            if (auth.signedIn) {
+                NuvioTextField(
+                    value = searchText,
+                    onValueChange = { searchText = it },
+                    modifier = Modifier.width(340.dp),
+                    placeholder = "Search YouTube",
+                    imeAction = ImeAction.Search,
+                    onImeAction = ::submitSearch,
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = "Search",
+                            tint = if (kind == YouTubeFeedKind.Search) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp).clip(CircleShape).clickable(onClick = ::submitSearch),
+                        )
+                    },
+                    trailingContent = if (searchText.isNotEmpty() || kind == YouTubeFeedKind.Search) {
+                        {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Clear search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp).clip(CircleShape).clickable {
+                                    searchText = ""
+                                    if (kind == YouTubeFeedKind.Search) selectedName = YouTubeFeedKind.Home.name
+                                },
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
             }
             Box(Modifier.weight(1f))
             if (auth.signedIn && channel.resolved) {
@@ -229,6 +274,11 @@ fun YouTubeTabScreen(
                 action = "Open YouTube account settings",
                 onAction = onOpenSettings,
             )
+            kind == YouTubeFeedKind.Search && searchQuery.isBlank() -> FeedMessage(
+                text = "Type in the search box above and press Enter to search YouTube.",
+                action = "Back to Home",
+                onAction = { selectedName = YouTubeFeedKind.Home.name },
+            )
             channel.needsChoice -> FeedMessage(
                 text = "This Google account has several YouTube channels. Pick the one to watch as from \"Watching as\" above.",
                 action = "Reload channels",
@@ -244,10 +294,11 @@ fun YouTubeTabScreen(
                 onAction = { YouTubeFeedRepository.load(kind, force = true) },
             )
             feed.videos.isEmpty() -> FeedMessage(
-                text = if (kind == YouTubeFeedKind.Subscriptions) {
-                    "No recent uploads from your subscriptions."
-                } else {
-                    "YouTube has no recommendations for this account yet. Watch history turned off gives an empty home feed."
+                text = when (kind) {
+                    YouTubeFeedKind.Subscriptions -> "No recent uploads from your subscriptions."
+                    YouTubeFeedKind.Search -> "No videos found for \"$searchQuery\"."
+                    YouTubeFeedKind.Home ->
+                        "YouTube has no recommendations for this account yet. Watch history turned off gives an empty home feed."
                 },
                 action = "Refresh",
                 onAction = { YouTubeFeedRepository.load(kind, force = true) },

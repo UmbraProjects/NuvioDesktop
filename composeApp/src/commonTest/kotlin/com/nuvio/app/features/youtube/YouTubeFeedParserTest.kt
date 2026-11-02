@@ -41,6 +41,34 @@ class YouTubeFeedParserTest {
     }
 
     @Test
+    fun readsSearchResultsAndSkipsChannelsAndShorts() {
+        // The `search` answer: an item section of video renderers, with a channel result and a
+        // Shorts shelf mixed in, and the next page's token after the section.
+        val body = """
+            {"contents":{"twoColumnSearchResultsRenderer":{"primaryContents":{"sectionListRenderer":{"contents":[
+              {"itemSectionRenderer":{"contents":[
+                {"channelRenderer":{"channelId":"UC1","title":{"simpleText":"Some Channel"}}},
+                {"videoRenderer":{"videoId":"vid1","title":{"runs":[{"text":"First result"}]},
+                  "ownerText":{"runs":[{"text":"Some Channel"}]},
+                  "viewCountText":{"simpleText":"1,234 views"},"publishedTimeText":{"simpleText":"2 days ago"},
+                  "lengthText":{"simpleText":"12:34"},
+                  "thumbnail":{"thumbnails":[{"url":"https://i.ytimg.com/vi/vid1/hq.jpg"}]}}},
+                {"reelShelfRenderer":{"items":[{"videoRenderer":{"videoId":"short1","title":{"simpleText":"A short"}}}]}}
+              ]}},
+              {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"NEXT"}}}}
+            ]}}}}}
+        """.trimIndent()
+
+        val page = parseYouTubeFeed(body)
+
+        assertEquals(listOf("vid1"), page.videos.map { it.videoId })
+        assertEquals("Some Channel", page.videos.single().channel)
+        assertEquals("1,234 views • 2 days ago", page.videos.single().details)
+        assertEquals("12:34", page.videos.single().duration)
+        assertEquals("NEXT", page.continuation)
+    }
+
+    @Test
     fun readsFeedLockupsWithChannelRow() {
         val page = parseYouTubeFeed(
             feed(

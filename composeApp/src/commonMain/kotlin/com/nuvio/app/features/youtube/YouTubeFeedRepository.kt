@@ -26,6 +26,9 @@ import kotlinx.coroutines.launch
 enum class YouTubeFeedKind(val browseId: String, val label: String) {
     Home("FEwhat_to_watch", "Home"),
     Subscriptions("FEsubscriptions", "Subscriptions"),
+
+    /** Results for [YouTubeFeedRepository.searchQuery]; not a browse feed, so it has no browse id. */
+    Search("", "Search"),
 }
 
 data class YouTubeFeedState(
@@ -48,6 +51,12 @@ sealed interface YouTubeBrowseResult {
  * acting as the brand channel [pageId] (null for the Google account's own profile).
  */
 internal expect suspend fun youTubeBrowse(browseId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult
+
+/**
+ * One page of search results: [query] for the first page, [continuation] for the ones after it,
+ * signed like [youTubeBrowse] so the results are the account's (history, region, the chosen channel).
+ */
+internal expect suspend fun youTubeSearch(query: String?, continuation: String?, pageId: String?): YouTubeBrowseResult
 
 /** The account's channel list (`account/accounts_list`), as a raw body like [youTubeBrowse]. */
 internal expect suspend fun youTubeAccountsList(): YouTubeBrowseResult
@@ -119,11 +128,31 @@ object YouTubeFeedRepository {
         _tabEnabled.value = enabled
     }
 
+    private val _searchQuery = MutableStateFlow("")
+
+    /** What the Search feed holds results for; blank before the first search. */
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    /** Bumped with each new search, so a page still in flight for the previous query is dropped. */
+    @Volatile
+    private var searchGeneration = 0
+
     /** Loads the first page unless one is already showing; [force] reloads it. */
     fun load(kind: YouTubeFeedKind, force: Boolean = false) {
+        if (kind == YouTubeFeedKind.Search && _searchQuery.value.isBlank()) return
         val current = _feeds.value.getValue(kind)
         if (current.loading || (current.loaded && !force && current.error == null)) return
         fetch(kind, continuation = null)
+    }
+
+    /** Replaces the Search feed with the results for [query]. Blank does nothing. */
+    fun search(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return
+        searchGeneration++
+        _searchQuery.value = trimmed
+        _feeds.update { it + (YouTubeFeedKind.Search to YouTubeFeedState()) }
+        fetch(YouTubeFeedKind.Search, continuation = null)
     }
 
     fun loadMore(kind: YouTubeFeedKind) {
@@ -201,22 +230,29 @@ object YouTubeFeedRepository {
     private fun fetch(kind: YouTubeFeedKind, continuation: String?) {
         _feeds.update { it + (kind to it.getValue(kind).copy(loading = true, error = null)) }
         val generation = feedGeneration
+        val search = searchGeneration
         scope.launch {
-            val result = if (!YouTubeMusicAuth.isSignedIn) {
-                YouTubeBrowseResult.SignedOut
-            } else {
-                youTubeBrowse(
+            val result = when {
+                !YouTubeMusicAuth.isSignedIn -> YouTubeBrowseResult.SignedOut
+                kind == YouTubeFeedKind.Search -> youTubeSearch(
+                    query = _searchQuery.value.takeIf { continuation == null },
+                    continuation = continuation,
+                    pageId = _channel.value.pageId,
+                )
+                else -> youTubeBrowse(
                     browseId = kind.browseId.takeIf { continuation == null },
                     continuation = continuation,
                     pageId = _channel.value.pageId,
                 )
             }
             if (generation != feedGeneration) return@launch
+            if (kind == YouTubeFeedKind.Search && search != searchGeneration) return@launch
             _feeds.update { feeds ->
                 val previous = feeds.getValue(kind)
                 val next = when (result) {
                     is YouTubeBrowseResult.Ok -> {
                         val page = parseYouTubeFeed(result.body)
+                        // The label only: a search query stays out of the log.
                         log.i { "${kind.label}: ${page.videos.size} videos, more=${page.continuation != null}" }
                         val videos = if (continuation == null) {
                             page.videos
