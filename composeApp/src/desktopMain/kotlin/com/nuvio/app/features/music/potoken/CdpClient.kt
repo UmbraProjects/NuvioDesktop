@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -38,9 +40,12 @@ internal class CdpClient private constructor() : WebSocket.Listener {
     private val json = Json { ignoreUnknownKeys = true }
     private val ids = AtomicInteger(0)
     private val pending = ConcurrentHashMap<Int, CompletableFuture<JsonObject>>()
-    private val listeners = CopyOnWriteArrayList<(CdpEvent) -> Unit>()
+    private val listeners = CopyOnWriteArrayList<suspend (CdpEvent) -> Unit>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val buffer = StringBuilder()
+
+    /** `java.net.http.WebSocket` fails a send that starts while another is still going out. */
+    private val sendLock = Mutex()
 
     @Volatile
     private var socket: WebSocket? = null
@@ -49,7 +54,7 @@ internal class CdpClient private constructor() : WebSocket.Listener {
     var isClosed: Boolean = false
         private set
 
-    fun onEvent(listener: (CdpEvent) -> Unit) {
+    fun onEvent(listener: suspend (CdpEvent) -> Unit) {
         listeners += listener
     }
 
@@ -72,7 +77,7 @@ internal class CdpClient private constructor() : WebSocket.Listener {
         try {
             return withContext(Dispatchers.IO) {
                 try {
-                    ws.sendText(message.toString(), true).get(timeoutMs, TimeUnit.MILLISECONDS)
+                    sendLock.withLock { ws.sendText(message.toString(), true).get(timeoutMs, TimeUnit.MILLISECONDS) }
                     future.get(timeoutMs, TimeUnit.MILLISECONDS)
                 } catch (error: TimeoutException) {
                     throw PoTokenException("$method timed out after ${timeoutMs}ms", error)
