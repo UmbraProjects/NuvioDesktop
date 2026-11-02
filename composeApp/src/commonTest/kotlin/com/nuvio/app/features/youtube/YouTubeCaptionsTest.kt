@@ -25,6 +25,46 @@ class YouTubeCaptionsTest {
     }
 
     @Test
+    fun rollingAutoCaptionsBecomeOneLineAtATime() {
+        // As YouTube serves an auto-generated track: each cue repeats the previous line, words carry
+        // timing tags, and 10 ms cues hold the finished line between them.
+        val rolling = """
+            WEBVTT
+            Kind: captions
+            Language: en
+
+            00:00:00.000 --> 00:00:02.500 align:start position:0%
+
+            hello<00:00:00.320><c> there</c><00:00:00.800><c> everyone</c>
+
+            00:00:02.500 --> 00:00:02.510 align:start position:0%
+            hello there everyone
+
+
+            00:00:02.510 --> 00:00:05.000 align:start position:0%
+            hello there everyone
+            welcome<00:00:02.900><c> back</c>
+
+            00:00:05.000 --> 00:00:05.010 align:start position:0%
+            welcome back
+
+        """.trimIndent()
+
+        assertEquals(
+            "WEBVTT\n\n" +
+                "00:00:00.000 --> 00:00:02.500\nhello there everyone\n\n" +
+                "00:00:02.510 --> 00:00:05.000\nwelcome back\n\n",
+            plainYouTubeCaptions(rolling),
+        )
+    }
+
+    @Test
+    fun anUploadedTrackIsLeftAsItIs() {
+        val uploaded = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nA line someone wrote\n"
+        assertEquals(uploaded, plainYouTubeCaptions(uploaded))
+    }
+
+    @Test
     fun theUrlAsksForWebVttAndCarriesAToken() {
         val base = "https://www.youtube.com/api/timedtext?v=vid&lang=en&kind=asr&fmt=srv3"
         assertEquals("https://www.youtube.com/api/timedtext?v=vid&lang=en&kind=asr&fmt=vtt", youTubeCaptionUrl(base, null))

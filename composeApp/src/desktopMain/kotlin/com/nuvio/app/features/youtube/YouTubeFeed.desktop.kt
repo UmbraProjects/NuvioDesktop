@@ -176,7 +176,8 @@ internal actual suspend fun youTubeCaptionSubtitles(videoId: String): List<Addon
                 if (vtt != null) usedToken = true
             }
         }
-        val text = vtt ?: return@mapIndexedNotNull null
+        // Auto-generated tracks roll like karaoke; shown as ordinary subtitles instead.
+        val text = vtt?.let(::plainYouTubeCaptions) ?: return@mapIndexedNotNull null
         val file = dir.resolve("$videoId-$index.vtt")
         runCatching { java.nio.file.Files.writeString(file, text) }.getOrNull() ?: return@mapIndexedNotNull null
         AddonSubtitle(

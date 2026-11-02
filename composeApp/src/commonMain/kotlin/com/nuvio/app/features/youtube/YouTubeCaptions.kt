@@ -73,6 +73,53 @@ internal fun youTubeCaptionUrl(baseUrl: String, poToken: String?): String {
     return "$path?" + (kept + added).joinToString("&")
 }
 
+private val INLINE_TAG = Regex("<[^>]*>")
+
+/**
+ * Auto-generated tracks come in YouTube's rolling layout, which reads like karaoke as subtitles:
+ * every cue repeats the line before above the one being spoken, words carry timing tags
+ * (`word<00:00:01.200><c> next</c>`), 10 ms cues sit between lines, and `align:start position:0%`
+ * pins it all to the left. This keeps one line per cue (the one being spoken, tags stripped), drops
+ * the in-between cues and repeats, and leaves out the cue settings so they sit where any subtitle
+ * does. A track without word timing (an uploaded one) is returned as it is.
+ */
+internal fun plainYouTubeCaptions(vtt: String): String {
+    val normalized = vtt.replace("\r\n", "\n")
+    if ("<c>" !in normalized && "</c>" !in normalized) return vtt
+    val out = StringBuilder("WEBVTT\n\n")
+    var lastText: String? = null
+    // A cue runs from its timing line to the next one: its blank lines (YouTube's are a single
+    // space, which an editor or a trim turns empty) are not boundaries.
+    val lines = normalized.split('\n')
+    val timings = lines.indices.filter { "-->" in lines[it] }
+    for ((n, timingAt) in timings.withIndex()) {
+        val start = lines[timingAt].substringBefore("-->").trim()
+        val end = lines[timingAt].substringAfter("-->").trim().substringBefore(' ')
+        val startMs = vttTimeMs(start) ?: continue
+        val endMs = vttTimeMs(end) ?: continue
+        // The in-between cues that only hold the finished line for a moment.
+        if (endMs - startMs < 50) continue
+        val body = lines.subList(timingAt + 1, timings.getOrElse(n + 1) { lines.size }).filter { it.isNotBlank() }
+        // The line being spoken carries the word timing; a cue without any shows its last line.
+        val spoken = body.lastOrNull { INLINE_TAG.containsMatchIn(it) } ?: body.lastOrNull() ?: continue
+        val text = spoken.replace(INLINE_TAG, "").replace(Regex("\\s+"), " ").trim()
+        if (text.isEmpty() || text == lastText) continue
+        lastText = text
+        out.append(start).append(" --> ").append(end).append('\n').append(text).append("\n\n")
+    }
+    return out.toString()
+}
+
+/** `hh:mm:ss.mmm` or `mm:ss.mmm` in milliseconds. */
+private fun vttTimeMs(value: String): Long? {
+    val parts = value.split(':')
+    if (parts.size !in 2..3) return null
+    val seconds = parts.last().toDoubleOrNull() ?: return null
+    val minutes = parts[parts.size - 2].toLongOrNull() ?: return null
+    val hours = if (parts.size == 3) parts[0].toLongOrNull() ?: return null else 0L
+    return ((hours * 3600 + minutes * 60) * 1000) + (seconds * 1000).toLong()
+}
+
 private fun encodeQueryValue(value: String): String = buildString {
     for (char in value) {
         if (char.isLetterOrDigit() || char in "-_.~") append(char) else {
