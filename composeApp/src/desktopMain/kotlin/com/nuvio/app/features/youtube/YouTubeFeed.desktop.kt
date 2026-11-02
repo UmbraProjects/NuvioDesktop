@@ -134,6 +134,12 @@ internal actual object YouTubeModeStorage {
 
     actual fun saveDeArrow(enabled: Boolean) = store.putBoolean(DEARROW_KEY, enabled)
 
+    private const val HIDE_WATCHED_KEY = "hide_watched"
+
+    actual fun loadHideWatched(): Boolean = store.getBoolean(HIDE_WATCHED_KEY) ?: false
+
+    actual fun saveHideWatched(enabled: Boolean) = store.putBoolean(HIDE_WATCHED_KEY, enabled)
+
     private const val CHANNEL_CHOICE_KEY = "channel_page_id"
 
     actual fun loadChannelChoice(): String? = store.getString(CHANNEL_CHOICE_KEY)

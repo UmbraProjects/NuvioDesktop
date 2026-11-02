@@ -40,6 +40,12 @@ data class YouTubeFeedState(
     val error: String? = null,
 )
 
+/** Watched this far, a video counts as seen: YouTube's own bar stops a little short on end cards. */
+private const val WATCHED_PERCENT = 90
+
+/** Whether "Hide watched" leaves [video] out. */
+internal fun isYouTubeVideoWatched(video: YouTubeVideo): Boolean = (video.watchedPercent ?: 0) >= WATCHED_PERCENT
+
 sealed interface YouTubeBrowseResult {
     data class Ok(val body: String) : YouTubeBrowseResult
     data object SignedOut : YouTubeBrowseResult
@@ -75,6 +81,10 @@ internal expect object YouTubeModeStorage {
     /** Show DeArrow's community titles and thumbnails; null when never set. */
     fun loadDeArrow(): Boolean?
     fun saveDeArrow(enabled: Boolean)
+
+    /** Leave videos this account has (nearly) finished out of the feeds. */
+    fun loadHideWatched(): Boolean
+    fun saveHideWatched(enabled: Boolean)
 
     /** The chosen channel: a page id, "" for the account's own profile, null when never chosen. */
     fun loadChannelChoice(): String?
@@ -156,6 +166,17 @@ object YouTubeFeedRepository {
     fun setDeArrow(enabled: Boolean) {
         YouTubeModeStorage.saveDeArrow(enabled)
         _deArrow.value = enabled
+    }
+
+    private val _hideWatched by lazy { MutableStateFlow(YouTubeModeStorage.loadHideWatched()) }
+
+    /** The tab's "Hide watched" toggle; see [isYouTubeVideoWatched]. */
+    val hideWatched: StateFlow<Boolean>
+        get() = _hideWatched.asStateFlow()
+
+    fun setHideWatched(enabled: Boolean) {
+        YouTubeModeStorage.saveHideWatched(enabled)
+        _hideWatched.value = enabled
     }
 
     private val _searchQuery = MutableStateFlow("")

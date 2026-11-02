@@ -106,6 +106,13 @@ fun YouTubeTabScreen(
     val channel by YouTubeFeedRepository.channel.collectAsStateWithLifecycle()
     val searchQuery by YouTubeFeedRepository.searchQuery.collectAsStateWithLifecycle()
     val deArrow by remember { YouTubeFeedRepository.deArrow }.collectAsStateWithLifecycle()
+    val hideWatched by remember { YouTubeFeedRepository.hideWatched }.collectAsStateWithLifecycle()
+    val videos = if (hideWatched) feed.videos.filterNot(::isYouTubeVideoWatched) else feed.videos
+    // A page that was all watched leaves nothing on screen to scroll to the end of, so ask for the next one here.
+    val allHidden = videos.isEmpty() && feed.videos.isNotEmpty()
+    LaunchedEffect(allHidden, feed.continuation, feed.loading) {
+        if (allHidden && feed.continuation != null && !feed.loading && feed.error == null) YouTubeFeedRepository.loadMore(kind)
+    }
     var searchText by rememberSaveable { mutableStateOf(YouTubeFeedRepository.searchQuery.value) }
     fun submitSearch() {
         if (searchText.isBlank()) return
@@ -253,6 +260,14 @@ fun YouTubeTabScreen(
                 ChannelPicker(channel)
             }
             if (auth.signedIn) {
+                if (hideWatched) {
+                    FilledTonalButton(onClick = { YouTubeFeedRepository.setHideWatched(false) }) {
+                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 4.dp))
+                        Text("Hide watched")
+                    }
+                } else {
+                    OutlinedButton(onClick = { YouTubeFeedRepository.setHideWatched(true) }) { Text("Hide watched") }
+                }
                 IconButton(
                     onClick = { YouTubeFeedRepository.load(kind, force = true) },
                     enabled = !feed.loading,
@@ -287,16 +302,21 @@ fun YouTubeTabScreen(
                 action = "Reload channels",
                 onAction = { YouTubeFeedRepository.loadChannels(force = true) },
             )
-            feed.videos.isEmpty() && (feed.loading || !feed.loaded) -> Box(
+            videos.isEmpty() && (feed.loading || !feed.loaded || (allHidden && feed.continuation != null && feed.error == null)) -> Box(
                 modifier = Modifier.fillMaxWidth().padding(top = 96.dp),
                 contentAlignment = Alignment.TopCenter,
             ) { CircularProgressIndicator() }
-            feed.videos.isEmpty() && feed.error != null -> FeedMessage(
+            videos.isEmpty() && feed.error != null -> FeedMessage(
                 text = feed.error,
                 action = "Try again",
                 onAction = { YouTubeFeedRepository.load(kind, force = true) },
             )
-            feed.videos.isEmpty() -> FeedMessage(
+            allHidden -> FeedMessage(
+                text = "You've watched everything here.",
+                action = "Show watched videos",
+                onAction = { YouTubeFeedRepository.setHideWatched(false) },
+            )
+            videos.isEmpty() -> FeedMessage(
                 text = when (kind) {
                     YouTubeFeedKind.Subscriptions -> "No recent uploads from your subscriptions."
                     YouTubeFeedKind.Search -> "No videos found for \"$searchQuery\"."
@@ -314,7 +334,7 @@ fun YouTubeTabScreen(
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                items(feed.videos, key = { it.videoId }) { video ->
+                items(videos, key = { it.videoId }) { video ->
                     YouTubeVideoCard(
                         video = video,
                         opening = openingId == video.videoId,
