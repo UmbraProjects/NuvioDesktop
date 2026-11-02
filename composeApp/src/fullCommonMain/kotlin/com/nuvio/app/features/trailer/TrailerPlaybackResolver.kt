@@ -1,5 +1,7 @@
 package com.nuvio.app.features.trailer
 
+import kotlinx.coroutines.async
+
 actual object TrailerPlaybackResolver {
     private val extractor by lazy { InAppYouTubeExtractor() }
 
@@ -14,6 +16,14 @@ actual object TrailerPlaybackResolver {
     }
     actual suspend fun searchYouTube(query: String): List<YouTubeSearchHit> =
         extractor.searchVideos(query)
+
+    // fork:trailer-probe — the music resolver's BitChord-style probe, reused for trailers.
+    actual suspend fun streamRefused(source: TrailerPlaybackSource): Boolean = kotlinx.coroutines.coroutineScope {
+        com.nuvio.app.features.music.urlsToVerify(source, needsVideo = true)
+            .map { url -> async { com.nuvio.app.features.music.StreamProbe.probe(url) } }
+            .map { it.await() }
+            .any { it == com.nuvio.app.features.music.ProbeVerdict.Refused }
+    }
 
     /** Forgets the cached YouTube session so the next lookup starts a fresh one. Not part of the shared `expect` surface. */
     internal suspend fun forgetSession() = extractor.forgetSession()

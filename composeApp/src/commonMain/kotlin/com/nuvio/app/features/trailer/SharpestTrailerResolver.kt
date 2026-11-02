@@ -34,7 +34,10 @@ internal object SharpestTrailerResolver {
     private val log = Logger.withTag("SharpestTrailer")
 
     suspend fun resolve(title: String?, releaseInfo: String?, listedKeys: List<String>): TrailerPlaybackSource? {
-        val first = listedKeys.firstOrNull()?.let { resolveKey(it) }
+        // fork:trailer-probe — an upload whose streams googlevideo refuses is as good as none: on Nov 2 "Hung"'s
+        // listed trailer resolved fine and 403'd every time it was opened, twice half an hour apart, while another
+        // upload of it at the same height sat unused. Probing it here lets the hunt below find that one.
+        val first = listedKeys.firstOrNull()?.let { key -> resolveKey(key)?.takeUnless { refused(key, it) } }
         if (first != null && first.reliable && !first.portrait && first.heightPx >= GOOD_ENOUGH_TRAILER_HEIGHT) return first
         if (title.isNullOrBlank() && listedKeys.size < 2) return first
         // fork:preshow-caller — while YouTube is refusing us, the listed upload is the one ask; no hunt for a sharper one.
@@ -72,12 +75,22 @@ internal object SharpestTrailerResolver {
         }.orEmpty()
 
         val all = listOfNotNull(firstOption) + better
-        val best = pickBestTrailer(all)
+        // The first option was probed above already; the rest are probed best first until one passes.
+        val best = firstPlayableTrailer(all) { option -> option !== firstOption && refused(option.key, option.source) }
         log.i {
             "sharpest of ${all.size}: " + all.joinToString { "${it.key}=${it.source.heightPx}p${if (it.source.portrait) " portrait" else ""}" } +
                 " -> ${best?.key}"
         }
-        return best?.source ?: first
+        return best?.source
+    }
+
+    /** fork:trailer-probe — whether googlevideo refuses [source]'s streams; logged, since it decides what plays. */
+    private suspend fun refused(key: String, source: TrailerPlaybackSource): Boolean {
+        val refused = runCatching { TrailerPlaybackResolver.streamRefused(source) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrDefault(false)
+        if (refused) log.i { "$key: googlevideo refused its streams (${source.heightPx}p); not playing it" }
+        return refused
     }
 
     /**

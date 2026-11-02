@@ -56,13 +56,25 @@ internal fun trailerQualityClass(heightPx: Int): Int = when {
  * client ([TrailerPlaybackSource.reliable]) below any that can, whatever height it claims. Null
  * for an empty list.
  */
-internal fun pickBestTrailer(options: List<TrailerOption>): TrailerOption? =
+internal fun pickBestTrailer(options: List<TrailerOption>): TrailerOption? = rankTrailers(options).firstOrNull()
+
+/**
+ * fork:trailer-probe — the best option whose streams googlevideo does not refuse, checking them best first and
+ * stopping at the first that passes, so the usual case costs one probe. Null when every option is refused.
+ */
+internal suspend fun firstPlayableTrailer(
+    options: List<TrailerOption>,
+    refused: suspend (TrailerOption) -> Boolean,
+): TrailerOption? = rankTrailers(options).firstOrNull { !refused(it) }
+
+/** [options] in preference order, best first; see [pickBestTrailer]. */
+internal fun rankTrailers(options: List<TrailerOption>): List<TrailerOption> =
     options.sortedWith(
         compareBy<TrailerOption> { it.source.portrait }
             .thenByDescending { it.source.reliable }
             .thenByDescending { trailerQualityClass(it.source.heightPx) }
             .thenBy { it.order },
-    ).firstOrNull()
+    )
 
 internal fun trailerSearchQuery(title: String, year: String?): String =
     listOfNotNull(title.trim().takeIf { it.isNotEmpty() }, year?.trim()?.takeIf { it.isNotEmpty() }, "official trailer")

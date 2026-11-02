@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -211,6 +212,8 @@ actual fun MusicPlayerSurface(
 
     // Re-opens of this load's URL after a googlevideo 403 (see forbiddenStreamRetryDelayMs).
     var forbiddenRetries by remember(loadId) { mutableIntStateOf(0) }
+    // fork:trailer-403 - outlives the attach effect, whose scope has finished by the time mpv reports a 403.
+    val retryScope = rememberCoroutineScope()
 
     // fork:music - a song opened part way in (switching to Video mid-song, or past a non-music intro) on YouTube's
     // separate video and audio streams, or an HLS manifest. The native player's start-position hand-off (open, then seek
@@ -222,7 +225,6 @@ actual fun MusicPlayerSurface(
     }
 
     LaunchedEffect(controller, loadId, forbiddenRetries) {
-        val attachScope = this
         revealed = false
         controller.updateControls(
             PlayerControlsState(
@@ -250,7 +252,7 @@ actual fun MusicPlayerSurface(
                 val retryInMs = forbiddenStreamRetryDelayMs(message, forbiddenRetries)
                 if (retryInMs != null) {
                     log.i { "load $loadId: re-opening in ${retryInMs}ms (retry ${forbiddenRetries + 1})" }
-                    attachScope.launch {
+                    retryScope.launch {
                         delay(retryInMs)
                         forbiddenRetries++
                     }

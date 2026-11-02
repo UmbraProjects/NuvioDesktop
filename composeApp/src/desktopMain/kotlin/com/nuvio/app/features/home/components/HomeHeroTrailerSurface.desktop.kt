@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
@@ -191,9 +192,12 @@ actual fun HomeHeroTrailerSurface(
     }
 
     var forbiddenRetries by remember(sourceUrl) { mutableIntStateOf(0) } // fork:trailer-403
+    // fork:trailer-403 - the re-open has to outlive the attach effect: that effect's body has returned by the time mpv
+    // reports the 403, and a coroutine launched into a finished scope is cancelled before it runs (Nov 2: "re-opening in
+    // 1500ms" was logged and nothing re-opened; the 20 s start watchdog ended the trailer instead).
+    val retryScope = rememberCoroutineScope()
 
     LaunchedEffect(controller, sourceUrl, forbiddenRetries, backgroundHex, normalizeAudio) { // fork:preshow fork:trailer-403
-        val attachScope = this // fork:trailer-403
         playbackRevealReady = false
         // Push hero-trailer overlay state first so attach() forwards it to the controls page.
         controller.updateControls(
@@ -234,7 +238,7 @@ actual fun HomeHeroTrailerSurface(
                 val retryInMs = forbiddenStreamRetryDelayMs(message, forbiddenRetries)
                 if (retryInMs != null) {
                     trailerSurfaceLog.i { "re-opening in ${retryInMs}ms (retry ${forbiddenRetries + 1})" }
-                    attachScope.launch {
+                    retryScope.launch {
                         delay(retryInMs)
                         forbiddenRetries++
                     }
