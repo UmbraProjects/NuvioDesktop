@@ -44,6 +44,18 @@ data class YouTubeChannel(
 
 data class YouTubeChannelPage(val channels: List<YouTubeChannel>, val continuation: String?)
 
+/** A playlist in the account's library ("WL" is Watch Later, "LL" Liked videos). */
+data class YouTubePlaylist(
+    val playlistId: String,
+    val title: String,
+    val thumbnailUrl: String?,
+    /** "12 videos", as YouTube words it. */
+    val details: String?,
+)
+
+/** A playlist offered by "Save to playlist", and whether the video is already in it. */
+data class YouTubePlaylistOption(val playlistId: String, val title: String, val containsVideo: Boolean)
+
 data class YouTubeFeedPage(
     val videos: List<YouTubeVideo>,
     /** Token for the next page, or null at the end of the feed. */
@@ -101,7 +113,7 @@ internal fun parseYouTubeFeed(body: String): YouTubeFeedPage {
                     in SKIPPED_KEYS -> Unit
                     "lockupViewModel" -> (value as? JsonObject)?.let(::lockupVideo)
                         ?.let { videos.putIfAbsent(it.videoId, it) }
-                    "videoRenderer", "gridVideoRenderer" -> (value as? JsonObject)?.let(::rendererVideo)
+                    "videoRenderer", "gridVideoRenderer", "playlistVideoRenderer" -> (value as? JsonObject)?.let(::rendererVideo)
                         ?.let { videos.putIfAbsent(it.videoId, it) }
                     "continuationItemRenderer" -> findContinuationToken(value)?.let { continuation = it }
                     else -> walk(value)
@@ -168,6 +180,8 @@ private fun rendererVideo(renderer: JsonObject): YouTubeVideo? {
     val videoId = renderer.string("videoId")?.takeIf { it.isNotBlank() } ?: return null
     val title = text(renderer["title"])?.takeIf { it.isNotBlank() } ?: return null
     if (renderer["upcomingEventData"] != null) return null
+    // A playlist keeps rows for deleted and private videos; they cannot be played.
+    if (renderer.boolean("isPlayable") == false) return null
     val badgeStyles = renderer.array("badges").orEmpty()
         .mapNotNull { (it as? JsonObject)?.obj("metadataBadgeRenderer")?.string("style") }
     val viewText = text(renderer["shortViewCountText"]) ?: text(renderer["viewCountText"])
@@ -175,7 +189,9 @@ private fun rendererVideo(renderer: JsonObject): YouTubeVideo? {
     if (isLive) return null
     val byline = renderer["ownerText"] ?: renderer["shortBylineText"] ?: renderer["longBylineText"]
     val channel = text(byline)
-    val details = listOfNotNull(viewText, text(renderer["publishedTimeText"]))
+    // A playlist's rows word it as one `videoInfo` line ("1.2M views • 3 years ago") instead.
+    val details = (listOfNotNull(viewText, text(renderer["publishedTimeText"])).takeIf { it.isNotEmpty() }
+        ?: listOfNotNull(text(renderer["videoInfo"])))
         .filter { it.isNotBlank() }
         .joinToString(" • ")
         .ifEmpty { null }
@@ -242,6 +258,65 @@ private fun channelOf(renderer: JsonObject): YouTubeChannel? {
         .joinToString(" • ")
         .ifEmpty { null }
     return YouTubeChannel(channelId = id, name = name, avatarUrl = avatar, details = details)
+}
+
+/**
+ * The account's playlists (`FEplaylist_aggregation`, the website's Playlists page): its playlist
+ * lockups, or the older `gridPlaylistRenderer` items.
+ */
+internal fun parseYouTubePlaylists(body: String): List<YouTubePlaylist> {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return emptyList()
+    val playlists = LinkedHashMap<String, YouTubePlaylist>()
+    fun walk(element: JsonElement) {
+        when (element) {
+            is JsonObject -> for ((key, value) in element) {
+                when (key) {
+                    "topbar", "frameworkUpdates" -> Unit
+                    "lockupViewModel" -> (value as? JsonObject)?.let(::playlistLockup)
+                        ?.let { playlists.putIfAbsent(it.playlistId, it) }
+                    "gridPlaylistRenderer", "playlistRenderer" -> (value as? JsonObject)?.let(::playlistRenderer)
+                        ?.let { playlists.putIfAbsent(it.playlistId, it) }
+                    else -> walk(value)
+                }
+            }
+            is JsonArray -> element.forEach(::walk)
+            else -> Unit
+        }
+    }
+    walk(root)
+    return playlists.values.toList()
+}
+
+private fun playlistLockup(lockup: JsonObject): YouTubePlaylist? {
+    if (lockup.string("contentType") != "LOCKUP_CONTENT_TYPE_PLAYLIST") return null
+    val id = lockup.string("contentId")?.takeIf { it.isNotBlank() } ?: return null
+    val title = lockup.obj("metadata")?.obj("lockupMetadataViewModel")?.obj("title")?.string("content")
+        ?.takeIf { it.isNotBlank() } ?: return null
+    val image = lockup.obj("contentImage")
+    val thumbnail = image?.let { collectObjects(it, "image") }
+        ?.firstNotNullOfOrNull { it.array("sources")?.mapNotNull { s -> (s as? JsonObject)?.string("url") }?.lastOrNull() }
+    val count = image?.let { collectObjects(it, "thumbnailBadgeViewModel") }
+        ?.firstNotNullOfOrNull { it.string("text")?.takeIf { text -> text.any(Char::isDigit) } }
+    return YouTubePlaylist(id, title, thumbnail, count)
+}
+
+private fun playlistRenderer(renderer: JsonObject): YouTubePlaylist? {
+    val id = renderer.string("playlistId")?.takeIf { it.isNotBlank() } ?: return null
+    val title = text(renderer["title"])?.takeIf { it.isNotBlank() } ?: return null
+    val thumbnail = collectObjects(renderer, "thumbnail")
+        .firstNotNullOfOrNull { it.array("thumbnails")?.mapNotNull { t -> (t as? JsonObject)?.string("url") }?.lastOrNull() }
+    val count = text(renderer["videoCountShortText"]) ?: text(renderer["videoCountText"])
+    return YouTubePlaylist(id, title, thumbnail, count)
+}
+
+/** The "Save to playlist" choices (`playlist/get_add_to_playlist`), with whether each holds the video already. */
+internal fun parseYouTubePlaylistOptions(body: String): List<YouTubePlaylistOption> {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return emptyList()
+    return collectObjects(root, "playlistAddToOptionRenderer").mapNotNull { option ->
+        val id = option.string("playlistId")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val title = text(option["title"])?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        YouTubePlaylistOption(id, title, containsVideo = option.string("containsSelectedVideos") == "ALL")
+    }.distinctBy { it.playlistId }
 }
 
 /**

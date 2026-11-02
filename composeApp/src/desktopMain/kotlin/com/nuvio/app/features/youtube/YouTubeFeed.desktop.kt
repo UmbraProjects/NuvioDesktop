@@ -51,6 +51,29 @@ internal actual suspend fun youTubeSetLiked(videoId: String, liked: Boolean, pag
         pageId,
     )
 
+internal actual suspend fun youTubeEditPlaylist(playlistId: String, videoId: String, add: Boolean, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        "browse/edit_playlist",
+        mapOf(
+            "playlistId" to playlistId,
+            "actions" to listOf(
+                if (add) {
+                    mapOf("action" to "ACTION_ADD_VIDEO", "addedVideoId" to videoId)
+                } else {
+                    mapOf("action" to "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId" to videoId)
+                },
+            ),
+        ),
+        pageId,
+    )
+
+internal actual suspend fun youTubePlaylistOptions(videoId: String, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        "playlist/get_add_to_playlist",
+        mapOf("videoIds" to listOf(videoId), "excludeWatchLater" to false),
+        pageId,
+    )
+
 internal actual suspend fun youTubeAccountsList(): YouTubeBrowseResult =
     signedWebRequest(
         "account/accounts_list",

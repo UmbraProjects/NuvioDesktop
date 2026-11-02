@@ -36,7 +36,23 @@ enum class YouTubeFeedKind(val browseId: String, val label: String, val inHeader
 
     /** The Videos tab of [YouTubeFeedRepository.openChannel]; its browse id is the channel's. */
     Channel("", "Channel", inHeader = false),
+
+    /** The videos of [YouTubeFeedRepository.openPlaylist], in its order; browsed as "VL" + its id. */
+    Playlist("", "Playlist", inHeader = false),
 }
+
+/** Watch Later's playlist id, which "Save to Watch Later" adds to. */
+internal const val WATCH_LATER_PLAYLIST_ID = "WL"
+
+/** Liked videos' playlist id; YouTube keeps it, so nothing is removed from it by hand. */
+internal const val LIKED_PLAYLIST_ID = "LL"
+
+data class YouTubePlaylistListState(
+    val playlists: List<YouTubePlaylist> = emptyList(),
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val error: String? = null,
+)
 
 /** A channel the tab has open, and whether the account is subscribed to it (null until known). */
 data class YouTubeOpenChannel(
@@ -97,6 +113,12 @@ internal expect suspend fun youTubeSetSubscribed(channelId: String, subscribed: 
 
 /** Likes [videoId] as the account (as [pageId]), or takes the like back. */
 internal expect suspend fun youTubeSetLiked(videoId: String, liked: Boolean, pageId: String?): YouTubeBrowseResult
+
+/** Adds [videoId] to [playlistId] as the account (as [pageId]), or removes it. */
+internal expect suspend fun youTubeEditPlaylist(playlistId: String, videoId: String, add: Boolean, pageId: String?): YouTubeBrowseResult
+
+/** The playlists "Save to playlist" offers for [videoId], with whether each already holds it. */
+internal expect suspend fun youTubePlaylistOptions(videoId: String, pageId: String?): YouTubeBrowseResult
 
 /** The account's channel list (`account/accounts_list`), as a raw body like [youTubeBrowse]. */
 internal expect suspend fun youTubeAccountsList(): YouTubeBrowseResult
@@ -226,6 +248,7 @@ object YouTubeFeedRepository {
     fun load(kind: YouTubeFeedKind, force: Boolean = false) {
         if (kind == YouTubeFeedKind.Search && _searchQuery.value.isBlank()) return
         if (kind == YouTubeFeedKind.Channel && _openChannel.value == null) return
+        if (kind == YouTubeFeedKind.Playlist && _openPlaylist.value == null) return
         val current = _feeds.value.getValue(kind)
         if (current.loading || (current.loaded && !force && current.error == null)) return
         fetch(kind, continuation = null)
@@ -274,6 +297,89 @@ object YouTubeFeedRepository {
         val ok = youTubeSetLiked(videoId, liked, _channel.value.pageId) is YouTubeBrowseResult.Ok
         log.i { "${if (liked) "like" else "remove like"}: ok=$ok" }
         return ok
+    }
+
+    private val _openPlaylist = MutableStateFlow<YouTubePlaylist?>(null)
+
+    /** The playlist the Playlist feed holds; null before one is opened. */
+    val openPlaylist: StateFlow<YouTubePlaylist?> = _openPlaylist.asStateFlow()
+
+    @Volatile
+    private var playlistGeneration = 0
+
+    /** Opens [playlist]: its videos, in order, replace the Playlist feed. */
+    fun openPlaylist(playlist: YouTubePlaylist) {
+        if (_openPlaylist.value?.playlistId == playlist.playlistId && _feeds.value.getValue(YouTubeFeedKind.Playlist).error == null) {
+            _openPlaylist.value = playlist
+            return
+        }
+        playlistGeneration++
+        _openPlaylist.value = playlist
+        _feeds.update { it + (YouTubeFeedKind.Playlist to YouTubeFeedState()) }
+        fetch(YouTubeFeedKind.Playlist, continuation = null)
+    }
+
+    private val _playlists = MutableStateFlow(YouTubePlaylistListState())
+
+    /** The account's playlists, Watch Later and Liked videos first. */
+    val playlists: StateFlow<YouTubePlaylistListState> = _playlists.asStateFlow()
+
+    fun loadPlaylists(force: Boolean = false) {
+        val current = _playlists.value
+        if (current.loading || (current.loaded && !force && current.error == null)) return
+        _playlists.update { it.copy(loading = true, error = null) }
+        val generation = feedGeneration
+        scope.launch {
+            val result = if (!YouTubeMusicAuth.isSignedIn) {
+                YouTubeBrowseResult.SignedOut
+            } else {
+                youTubeBrowse("FEplaylist_aggregation", continuation = null, pageId = _channel.value.pageId)
+            }
+            if (generation != feedGeneration) return@launch
+            _playlists.value = when (result) {
+                is YouTubeBrowseResult.Ok -> {
+                    val found = parseYouTubePlaylists(result.body)
+                    log.i { "Playlists: ${found.size}" }
+                    // The page does not always list the two built-in ones; they are always there.
+                    val builtIn = listOf(
+                        YouTubePlaylist(WATCH_LATER_PLAYLIST_ID, "Watch later", null, null),
+                        YouTubePlaylist(LIKED_PLAYLIST_ID, "Liked videos", null, null),
+                    ).filter { builtIn -> found.none { it.playlistId == builtIn.playlistId } }
+                    val ordered = found.sortedBy { if (it.playlistId == WATCH_LATER_PLAYLIST_ID || it.playlistId == LIKED_PLAYLIST_ID) 0 else 1 }
+                    YouTubePlaylistListState(playlists = builtIn + ordered, loaded = true)
+                }
+                YouTubeBrowseResult.SignedOut -> YouTubePlaylistListState(loaded = true, error = "Sign in to your YouTube account to see your playlists.")
+                is YouTubeBrowseResult.Failed -> _playlists.value.copy(loading = false, loaded = true, error = result.message)
+            }
+        }
+    }
+
+    /**
+     * Adds [video] to [playlistId] or removes it. True when YouTube took it; the open playlist's
+     * page follows at once (a removed video goes, an added one shows on its next load).
+     */
+    suspend fun saveToPlaylist(playlistId: String, video: YouTubeVideo, add: Boolean): Boolean {
+        val ok = youTubeEditPlaylist(playlistId, video.videoId, add, _channel.value.pageId) is YouTubeBrowseResult.Ok
+        log.i { "${if (add) "save to" else "remove from"} ${if (playlistId == WATCH_LATER_PLAYLIST_ID) "Watch later" else "playlist"}: ok=$ok" }
+        if (ok && _openPlaylist.value?.playlistId == playlistId) {
+            if (add) {
+                _feeds.update { it + (YouTubeFeedKind.Playlist to it.getValue(YouTubeFeedKind.Playlist).copy(loaded = false)) }
+            } else {
+                _feeds.update { feeds ->
+                    val state = feeds.getValue(YouTubeFeedKind.Playlist)
+                    feeds + (YouTubeFeedKind.Playlist to state.copy(videos = state.videos.filterNot { it.videoId == video.videoId }))
+                }
+            }
+        }
+        // The library's counts and thumbnails changed.
+        if (ok) _playlists.update { it.copy(loaded = false) }
+        return ok
+    }
+
+    /** The playlists [videoId] can be saved to, or null when YouTube did not answer. */
+    suspend fun playlistOptions(videoId: String): List<YouTubePlaylistOption>? {
+        val result = youTubePlaylistOptions(videoId, _channel.value.pageId) as? YouTubeBrowseResult.Ok ?: return null
+        return parseYouTubePlaylistOptions(result.body)
     }
 
     private val _subscribedChannels = MutableStateFlow(YouTubeChannelListState())
@@ -351,6 +457,7 @@ object YouTubeFeedRepository {
         _feeds.value = YouTubeFeedKind.entries.associateWith { YouTubeFeedState() }
         _channel.value = YouTubeChannelState()
         _subscribedChannels.value = YouTubeChannelListState()
+        _playlists.value = YouTubePlaylistListState()
         _openChannel.update { it?.copy(subscribed = null, changing = false) }
     }
 
@@ -418,6 +525,8 @@ object YouTubeFeedRepository {
         val search = searchGeneration
         val channelPage = channelGeneration
         val openChannelId = _openChannel.value?.channelId
+        val playlistPage = playlistGeneration
+        val openPlaylistId = _openPlaylist.value?.playlistId
         scope.launch {
             val result = when {
                 !YouTubeMusicAuth.isSignedIn -> YouTubeBrowseResult.SignedOut
@@ -429,6 +538,9 @@ object YouTubeFeedRepository {
                 kind == YouTubeFeedKind.Channel -> openChannelId?.let {
                     youTubeChannelVideos(it, continuation, _channel.value.pageId)
                 } ?: YouTubeBrowseResult.Failed("No channel is open.")
+                kind == YouTubeFeedKind.Playlist -> openPlaylistId?.let {
+                    youTubeBrowse("VL$it".takeIf { continuation == null }, continuation, _channel.value.pageId)
+                } ?: YouTubeBrowseResult.Failed("No playlist is open.")
                 else -> youTubeBrowse(
                     browseId = kind.browseId.takeIf { continuation == null },
                     continuation = continuation,
@@ -438,6 +550,7 @@ object YouTubeFeedRepository {
             if (generation != feedGeneration) return@launch
             if (kind == YouTubeFeedKind.Search && search != searchGeneration) return@launch
             if (kind == YouTubeFeedKind.Channel && channelPage != channelGeneration) return@launch
+            if (kind == YouTubeFeedKind.Playlist && playlistPage != playlistGeneration) return@launch
             // The first page of a channel also says whether the account is subscribed to it.
             if (kind == YouTubeFeedKind.Channel && continuation == null && result is YouTubeBrowseResult.Ok) {
                 parseYouTubeSubscribed(result.body)?.let { subscribed ->

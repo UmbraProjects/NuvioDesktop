@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,10 +33,17 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -68,6 +76,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.NuvioModalDialog
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.arrowKeyFocusNavigation
 import com.nuvio.app.features.player.PlayerLaunch
@@ -103,19 +112,29 @@ fun YouTubeTabScreen(
         YouTubeMusicAuth.ensureLoaded()
         YouTubeMusicAuth.state
     }.collectAsStateWithLifecycle()
-    // A feed's name, or CHANNELS_VIEW for the list of subscribed channels (not a video feed).
+    // A feed's name, or CHANNELS_VIEW / PLAYLISTS_VIEW for the lists of subscribed channels and of
+    // playlists (not video feeds).
     var selectedName by rememberSaveable { mutableStateOf(YouTubeFeedKind.Home.name) }
     val showingChannelList = selectedName == CHANNELS_VIEW
-    // The channel list sits under Subscriptions, whose feed is what the effects keep loaded meanwhile.
-    val kind = if (showingChannelList) YouTubeFeedKind.Subscriptions else YouTubeFeedKind.valueOf(selectedName)
+    val showingPlaylists = selectedName == PLAYLISTS_VIEW
+    // Under a list, the effects keep the Subscriptions feed loaded meanwhile.
+    val kind = if (showingChannelList || showingPlaylists) YouTubeFeedKind.Subscriptions else YouTubeFeedKind.valueOf(selectedName)
     val openChannel by YouTubeFeedRepository.openChannel.collectAsStateWithLifecycle()
-    // Where the channel page's back button goes.
-    var channelReturnTo by rememberSaveable { mutableStateOf(YouTubeFeedKind.Home.name) }
+    val openPlaylist by YouTubeFeedRepository.openPlaylist.collectAsStateWithLifecycle()
+    // Where a channel or playlist page's back button goes.
+    var returnTo by rememberSaveable { mutableStateOf(YouTubeFeedKind.Home.name) }
     fun showChannel(channelId: String, name: String, avatarUrl: String?) {
-        if (selectedName != YouTubeFeedKind.Channel.name) channelReturnTo = selectedName
+        if (selectedName != YouTubeFeedKind.Channel.name) returnTo = selectedName
         YouTubeFeedRepository.openChannel(channelId, name, avatarUrl)
         selectedName = YouTubeFeedKind.Channel.name
     }
+    fun showPlaylist(playlist: YouTubePlaylist) {
+        if (selectedName != YouTubeFeedKind.Playlist.name) returnTo = selectedName
+        YouTubeFeedRepository.openPlaylist(playlist)
+        selectedName = YouTubeFeedKind.Playlist.name
+    }
+    val queue by YouTubePlayQueue.state.collectAsStateWithLifecycle()
+    val queueNext by YouTubePlayQueue.next.collectAsStateWithLifecycle()
     val feeds by YouTubeFeedRepository.feeds.collectAsStateWithLifecycle()
     val feed = feeds.getValue(kind)
     val channel by YouTubeFeedRepository.channel.collectAsStateWithLifecycle()
@@ -171,7 +190,20 @@ fun YouTubeTabScreen(
             }
         }
     }
+    var savingVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
+    fun saveTo(playlistId: String, name: String, video: YouTubeVideo, add: Boolean) {
+        scope.launch {
+            val ok = YouTubeFeedRepository.saveToPlaylist(playlistId, video, add)
+            notice = when {
+                !ok -> "YouTube didn't take that. Try again shortly."
+                add -> "Saved to $name."
+                else -> "Removed from $name."
+            }
+        }
+    }
     fun play(video: YouTubeVideo) {
+        // Anything opened outside the playlist being played through ends it.
+        YouTubePlayQueue.onOpened(video.videoId)
         openJob?.cancel()
         openError = null
         openingId = video.videoId
@@ -218,6 +250,17 @@ fun YouTubeTabScreen(
         }
     }
 
+    // The playlist being played through: its previous video ended, so open the next.
+    LaunchedEffect(queueNext) {
+        if (queueNext != null) YouTubePlayQueue.takeNext()?.let(::play)
+    }
+    fun playFromPlaylist(index: Int) {
+        val playlist = openPlaylist ?: return
+        val video = videos.getOrNull(index) ?: return
+        YouTubePlayQueue.start(playlist.title, videos, index)
+        play(video)
+    }
+
     val gridState = rememberLazyGridState()
     LaunchedEffect(kind, searchQuery) { gridState.scrollToItem(0) }
     LaunchedEffect(gridState, kind) {
@@ -258,6 +301,11 @@ fun YouTubeTabScreen(
                 Button(onClick = { YouTubeFeedRepository.loadSubscribedChannels() }) { Text("Channels") }
             } else {
                 OutlinedButton(onClick = { selectedName = CHANNELS_VIEW }) { Text("Channels") }
+            }
+            if (showingPlaylists) {
+                Button(onClick = { YouTubeFeedRepository.loadPlaylists() }) { Text("Playlists") }
+            } else {
+                OutlinedButton(onClick = { selectedName = PLAYLISTS_VIEW }) { Text("Playlists") }
             }
             if (auth.signedIn) {
                 NuvioTextField(
@@ -330,20 +378,60 @@ fun YouTubeTabScreen(
                 modifier = Modifier.padding(bottom = 12.dp),
             )
         }
-        if (kind == YouTubeFeedKind.Channel && !showingChannelList) {
+        queue?.let { playing ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "Playing \"${playing.name}\" · ${playing.index + 1} of ${playing.videos.size}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = YouTubePlayQueue::stop) { Text("Stop") }
+            }
+        }
+        if (kind == YouTubeFeedKind.Channel) {
             openChannel?.let { open ->
                 ChannelHeader(
                     channel = open,
-                    onBack = { selectedName = channelReturnTo },
+                    onBack = { selectedName = returnTo },
                     onSubscribe = YouTubeFeedRepository::setSubscribed,
                 )
             }
+        }
+        if (kind == YouTubeFeedKind.Playlist) {
+            openPlaylist?.let { playlist ->
+                PlaylistHeader(
+                    playlist = playlist,
+                    canPlay = videos.isNotEmpty(),
+                    onBack = { selectedName = returnTo },
+                    onPlayAll = { playFromPlaylist(0) },
+                )
+            }
+        }
+        savingVideo?.let { video ->
+            SaveToPlaylistDialog(
+                video = video,
+                onDismiss = { savingVideo = null },
+                onToggle = { option, add -> saveTo(option.playlistId, option.title, video, add) },
+            )
         }
 
         when {
             showingChannelList && auth.signedIn -> SubscribedChannels(
                 onOpen = { showChannel(it.channelId, it.name, it.avatarUrl) },
             )
+            showingPlaylists && auth.signedIn -> PlaylistLibrary(onOpen = ::showPlaylist)
             !auth.signedIn -> FeedMessage(
                 text = "Sign in to your YouTube account to see your home feed and subscriptions.",
                 action = "Open YouTube account settings",
@@ -380,6 +468,7 @@ fun YouTubeTabScreen(
                     YouTubeFeedKind.History ->
                         "Nothing in this account's watch history. YouTube keeps none while watch history is paused."
                     YouTubeFeedKind.Channel -> "This channel has no videos."
+                    YouTubeFeedKind.Playlist -> "This playlist is empty."
                     YouTubeFeedKind.Home ->
                         "YouTube has no recommendations for this account yet. Watch history turned off gives an empty home feed."
                 },
@@ -394,13 +483,21 @@ fun YouTubeTabScreen(
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                items(videos, key = { it.videoId }) { video ->
+                itemsIndexed(videos, key = { _, video -> video.videoId }) { index, video ->
+                    val inPlaylist = openPlaylist?.takeIf { kind == YouTubeFeedKind.Playlist }
                     YouTubeVideoCard(
                         video = video,
                         opening = openingId == video.videoId,
                         deArrow = deArrow,
-                        onClick = { play(video) },
+                        // Inside a playlist a video plays on through the rest of it, as on the website.
+                        onClick = { if (inPlaylist != null) playFromPlaylist(index) else play(video) },
                         onLike = { like(video) },
+                        onSaveToWatchLater = { saveTo(WATCH_LATER_PLAYLIST_ID, "Watch later", video, add = true) },
+                        onSaveToPlaylist = { savingVideo = video },
+                        // Liked videos is YouTube's own list: a like taken back leaves it, not a removal.
+                        onRemoveFromPlaylist = inPlaylist?.takeIf { it.playlistId != LIKED_PLAYLIST_ID }?.let { playlist ->
+                            { saveTo(playlist.playlistId, playlist.title, video, add = false) }
+                        },
                         // Not from the channel's own page, which is where it would go.
                         onOpenChannel = video.channelId?.takeIf { kind != YouTubeFeedKind.Channel }?.let { id ->
                             { showChannel(id, video.channel ?: "Channel", null) }
@@ -511,6 +608,181 @@ private fun FeedMessage(text: String, action: String, onAction: () -> Unit) {
 
 /** [YouTubeTabScreen]'s selection for the subscribed-channels list, beside the feed kinds' names. */
 private const val CHANNELS_VIEW = "Channels"
+
+/** [YouTubeTabScreen]'s selection for the playlist library. */
+private const val PLAYLISTS_VIEW = "Playlists"
+
+/** The open playlist's name, a way back, and Play all. */
+@Composable
+private fun PlaylistHeader(playlist: YouTubePlaylist, canPlay: Boolean, onBack: () -> Unit, onPlayAll: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
+        }
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            Text(
+                text = playlist.title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            playlist.details?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Button(onClick = onPlayAll, enabled = canPlay) {
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 4.dp))
+            Text("Play all")
+        }
+    }
+}
+
+/** The account's playlists, Watch Later and Liked videos first; picking one opens it. */
+@Composable
+private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit) {
+    val state by YouTubeFeedRepository.playlists.collectAsStateWithLifecycle()
+    LaunchedEffect(state.loaded) { YouTubeFeedRepository.loadPlaylists() }
+    when {
+        state.playlists.isEmpty() && (state.loading || !state.loaded) -> Box(
+            modifier = Modifier.fillMaxWidth().padding(top = 96.dp),
+            contentAlignment = Alignment.TopCenter,
+        ) { CircularProgressIndicator() }
+        state.playlists.isEmpty() -> FeedMessage(
+            text = state.error ?: "This account has no playlists.",
+            action = "Refresh",
+            onAction = { YouTubeFeedRepository.loadPlaylists(force = true) },
+        )
+        else -> LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 260.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            items(state.playlists, key = { it.playlistId }) { playlist ->
+                PlaylistTile(playlist = playlist, onClick = { onOpen(playlist) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistTile(playlist: YouTubePlaylist, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .hoverable(interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(2.dp, if (focused || hovered) MaterialTheme.colorScheme.primary else Color.Transparent, shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (playlist.thumbnailUrl != null) {
+                NuvioAsyncImage(
+                    model = playlist.thumbnailUrl,
+                    contentDescription = playlist.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(
+                    imageVector = if (playlist.playlistId == LIKED_PLAYLIST_ID) Icons.Rounded.ThumbUp else Icons.Rounded.PlaylistPlay,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+        }
+        Text(
+            text = playlist.title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        playlist.details?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** "Save to playlist": the account's playlists with a tick on those already holding [video]; a click adds or removes. */
+@Composable
+private fun SaveToPlaylistDialog(
+    video: YouTubeVideo,
+    onDismiss: () -> Unit,
+    onToggle: (YouTubePlaylistOption, Boolean) -> Unit,
+) {
+    var options by remember(video.videoId) { mutableStateOf<List<YouTubePlaylistOption>?>(null) }
+    var failed by remember(video.videoId) { mutableStateOf(false) }
+    LaunchedEffect(video.videoId) {
+        val found = YouTubeFeedRepository.playlistOptions(video.videoId)
+        if (found == null) failed = true else options = found
+    }
+    NuvioModalDialog(
+        onDismissRequest = onDismiss,
+        title = "Save to playlist",
+        subtitle = video.title,
+        maxWidth = 480.dp,
+        actions = { FilledTonalButton(onClick = onDismiss) { Text("Done") } },
+    ) {
+        val current = options
+        when {
+            failed -> Text(
+                "YouTube didn't list your playlists. Try again shortly.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            current == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            current.isEmpty() -> Text(
+                "This account has no playlists to save to.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> current.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            val add = !option.containsVideo
+                            onToggle(option, add)
+                            options = current.map { if (it.playlistId == option.playlistId) it.copy(containsVideo = add) else it }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        imageVector = if (option.containsVideo) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
+                        contentDescription = null,
+                        tint = if (option.containsVideo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(option.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+    }
+}
 
 /** The open channel's name and avatar, a way back, and its Subscribe button. */
 @Composable
@@ -642,6 +914,9 @@ private fun YouTubeVideoCard(
     deArrow: Boolean,
     onClick: () -> Unit,
     onLike: () -> Unit,
+    onSaveToWatchLater: () -> Unit,
+    onSaveToPlaylist: () -> Unit,
+    onRemoveFromPlaylist: (() -> Unit)?,
     onOpenChannel: (() -> Unit)?,
 ) {
     // DeArrow's title and thumbnail once looked up (cards ask as they come into view); YouTube's meanwhile.
@@ -747,6 +1022,32 @@ private fun YouTubeVideoCard(
                             onLike()
                         },
                     )
+                    DropdownMenuItem(
+                        text = { Text("Save to Watch later") },
+                        leadingIcon = { Icon(Icons.Rounded.WatchLater, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onSaveToWatchLater()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Save to playlist…") },
+                        leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onSaveToPlaylist()
+                        },
+                    )
+                    if (onRemoveFromPlaylist != null) {
+                        DropdownMenuItem(
+                            text = { Text("Remove from this playlist") },
+                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                onRemoveFromPlaylist()
+                            },
+                        )
+                    }
                     if (onOpenChannel != null) {
                         DropdownMenuItem(
                             text = { Text("Go to channel") },

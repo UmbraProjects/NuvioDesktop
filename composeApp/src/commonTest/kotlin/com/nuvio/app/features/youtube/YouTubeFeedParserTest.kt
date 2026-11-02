@@ -41,6 +41,51 @@ class YouTubeFeedParserTest {
     }
 
     @Test
+    fun readsPlaylistRowsAndSkipsUnplayableOnes() {
+        val body = """
+            {"contents":[{"playlistVideoListRenderer":{"contents":[
+              {"playlistVideoRenderer":{"videoId":"p1","title":{"runs":[{"text":"Saved one"}]},
+                "shortBylineText":{"runs":[{"text":"Chan","navigationEndpoint":{"browseEndpoint":{"browseId":"UCchan"}}}]},
+                "videoInfo":{"runs":[{"text":"1.2M views"},{"text":" • "},{"text":"3 years ago"}]},
+                "lengthText":{"simpleText":"4:05"},"isPlayable":true}},
+              {"playlistVideoRenderer":{"videoId":"p2","title":{"runs":[{"text":"[Private video]"}]},"isPlayable":false}}
+            ]}}]}
+        """.trimIndent()
+
+        val page = parseYouTubeFeed(body)
+
+        assertEquals(listOf("p1"), page.videos.map { it.videoId })
+        assertEquals("1.2M views • 3 years ago", page.videos.single().details)
+        assertEquals("UCchan", page.videos.single().channelId)
+    }
+
+    @Test
+    fun readsThePlaylistLibraryAndTheSaveChoices() {
+        val library = """
+            {"contents":[{"lockupViewModel":{"contentId":"PLabc","contentType":"LOCKUP_CONTENT_TYPE_PLAYLIST",
+              "contentImage":{"collectionThumbnailViewModel":{"primaryThumbnail":{"thumbnailViewModel":{
+                "image":{"sources":[{"url":"https://i.ytimg.com/a.jpg"}]},
+                "overlays":[{"thumbnailOverlayBadgeViewModel":{"thumbnailBadges":[{"thumbnailBadgeViewModel":{"text":"12 videos"}}]}}]}}}},
+              "metadata":{"lockupMetadataViewModel":{"title":{"content":"Mine"}}}}},
+             {"lockupViewModel":{"contentId":"vid","contentType":"LOCKUP_CONTENT_TYPE_VIDEO"}}]}
+        """.trimIndent()
+        val playlists = parseYouTubePlaylists(library)
+        assertEquals(listOf("PLabc"), playlists.map { it.playlistId })
+        assertEquals("Mine", playlists.single().title)
+        assertEquals("https://i.ytimg.com/a.jpg", playlists.single().thumbnailUrl)
+        assertEquals("12 videos", playlists.single().details)
+
+        val choices = """
+            {"contents":[{"addToPlaylistRenderer":{"playlists":[
+              {"playlistAddToOptionRenderer":{"playlistId":"WL","title":{"simpleText":"Watch later"},"containsSelectedVideos":"ALL"}},
+              {"playlistAddToOptionRenderer":{"playlistId":"PLabc","title":{"simpleText":"Mine"},"containsSelectedVideos":"NONE"}}
+            ]}}]}
+        """.trimIndent()
+        val options = parseYouTubePlaylistOptions(choices)
+        assertEquals(listOf(true, false), options.map { it.containsVideo })
+    }
+
+    @Test
     fun aVideoRendererKeepsItsChannelId() {
         val body = """
             {"contents":[{"videoRenderer":{"videoId":"vid1","title":{"simpleText":"T"},
