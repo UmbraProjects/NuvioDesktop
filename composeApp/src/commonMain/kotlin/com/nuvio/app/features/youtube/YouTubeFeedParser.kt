@@ -39,6 +39,27 @@ data class YouTubeFeedPage(
 
 private val feedJson = Json { ignoreUnknownKeys = true }
 
+/**
+ * fork:youtube-signin-expired — true when YouTube answered a signed request as signed out.
+ *
+ * Google does not refuse saved cookies it no longer accepts: it answers 200 with the signed-out page,
+ * a home feed with nothing in it, and says so in `responseContext.serviceTrackingParams`
+ * (`logged_in` = "0", checked from the cloud with dead cookies on Nov 2, 2026). The tab read that as
+ * "no recommendations". Only an explicit "0" counts; an answer that says nothing is taken as signed in.
+ */
+internal fun youTubeAnsweredSignedOut(body: String): Boolean {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() as? JsonObject ?: return false
+    val services = (root["responseContext"] as? JsonObject)?.get("serviceTrackingParams") as? JsonArray ?: return false
+    val flags = services.flatMap { service ->
+        ((service as? JsonObject)?.get("params") as? JsonArray).orEmpty().mapNotNull { param ->
+            val obj = param as? JsonObject ?: return@mapNotNull null
+            if ((obj["key"] as? JsonPrimitive)?.content != "logged_in") return@mapNotNull null
+            (obj["value"] as? JsonPrimitive)?.content
+        }
+    }
+    return flags.isNotEmpty() && flags.all { it == "0" }
+}
+
 /** Keys whose subtree never holds an ordinary upload worth listing. */
 private val SKIPPED_KEYS = setOf(
     "richSectionRenderer",

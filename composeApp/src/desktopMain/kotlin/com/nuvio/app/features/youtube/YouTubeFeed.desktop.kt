@@ -15,6 +15,8 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val YOUTUBE_ORIGIN = "https://www.youtube.com"
 
+private val log = co.touchlab.kermit.Logger.withTag("YouTubeFeed")
+
 internal actual suspend fun youTubeBrowse(browseId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("browse", mapOf("browseId" to browseId, "continuation" to continuation), pageId)
 
@@ -33,6 +35,14 @@ private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>
     if (accountHeaders.isEmpty()) return YouTubeBrowseResult.SignedOut
     val (status, body) = TrailerPlaybackResolver.webRequest(endpoint, params, accountHeaders, pageId)
     return when {
+        // fork:youtube-signin-expired — Google answers cookies it no longer accepts with 200 and the signed-out page.
+        status in 200..299 && youTubeAnsweredSignedOut(body) -> {
+            YouTubeMusicAuth.onSessionRejected()
+            log.w { "$endpoint: YouTube answered as signed out; the saved sign-in has expired" }
+            YouTubeBrowseResult.Failed(
+                "YouTube no longer accepts the saved sign-in (it answered as signed out). Sign in again under Settings > YouTube account.",
+            )
+        }
         status in 200..299 -> {
             YouTubeMusicAuth.onSessionAccepted()
             YouTubeBrowseResult.Ok(body)
