@@ -3878,7 +3878,7 @@
   <string name="iptv_settings_section_playback">Odtwarzanie</string>
   <string name="iptv_settings_intro">Nuvio nie zawiera żadnych kanałów. Dodaj dane otrzymane od dostawcy IPTV.</string>
   <string name="iptv_settings_add_playlist">Dodaj playlistę</string>
-  <string name="iptv_settings_add_playlist_description">Logowanie Xtream Codes lub link M3U.</string>
+  <string name="iptv_settings_add_playlist_description">Logowanie Xtream Codes, portal Stalker lub link M3U.</string>
   <string name="iptv_settings_refresh_interval">Odświeżaj kanały i program</string>
   <string name="iptv_settings_refresh_interval_description">Jak często ponownie pobierać listę kanałów i program telewizyjny. Oba są zachowywane między uruchomieniami.</string>
   <string name="iptv_settings_refresh_every_launch">Przy każdym uruchomieniu</string>
@@ -3892,6 +3892,7 @@
   <string name="iptv_settings_format_hls">HLS</string>
   <string name="iptv_playlist_type_xtream">Xtream</string>
   <string name="iptv_playlist_type_m3u">Link M3U</string>
+  <string name="iptv_playlist_type_stalker">Portal Stalker</string>
   <string name="iptv_playlist_summary_channels">%1$s · kanałów: %2$d</string>
   <string name="iptv_playlist_summary_not_loaded">%1$s · jeszcze nie załadowano</string>
   <string name="iptv_playlist_summary_loading">%1$s · aktualizowanie…</string>
@@ -3906,6 +3907,15 @@
   <string name="iptv_playlist_password">Hasło</string>
   <string name="iptv_playlist_url">URL playlisty</string>
   <string name="iptv_playlist_url_description">Link do pliku .m3u lub .m3u8.</string>
+  <string name="iptv_playlist_portal">URL portalu</string>
+  <string name="iptv_playlist_portal_description">Adres otrzymany od dostawcy, np. http://example.com:8080/c/</string>
+  <string name="iptv_playlist_mac">Adres MAC</string>
+  <string name="iptv_playlist_mac_description">Adres MAC zarejestrowany przez dostawcę dla tej linii. Bez rejestracji portal nie pokaże żadnych kanałów. Nuvio nie odczytuje ani nie wysyła prawdziwego adresu MAC tego komputera.</string>
+  <string name="iptv_playlist_serial">Numer seryjny (opcjonalnie)</string>
+  <string name="iptv_playlist_identity_description">Tylko jeśli otrzymasz je od dostawcy. Gdy zostaną puste, Nuvio wyliczy je z adresu MAC.</string>
+  <string name="iptv_playlist_device_id">ID urządzenia (opcjonalnie)</string>
+  <string name="iptv_playlist_device_id2">ID urządzenia 2 (opcjonalnie)</string>
+  <string name="iptv_playlist_signature">Podpis (opcjonalnie)</string>
   <string name="iptv_playlist_epg_url">URL programu (opcjonalnie)</string>
   <string name="iptv_playlist_epg_url_description">Program XMLTV (.xml lub .xml.gz). Zostaw puste, aby użyć programu udostępnianego przez dostawcę.</string>
   <string name="iptv_playlist_test">Testuj</string>
@@ -3913,6 +3923,7 @@
   <string name="iptv_playlist_delete_confirm">Usunąć bezpowrotnie?</string>
   <string name="iptv_playlist_missing_fields">Uzupełnij serwer, nazwę użytkownika i hasło.</string>
   <string name="iptv_playlist_missing_url">Podaj URL playlisty.</string>
+  <string name="iptv_playlist_missing_stalker">Podaj URL portalu i adres MAC, np. 00:1A:79:12:34:56.</string>
   <string name="iptv_test_ok_channels">Połączono. Znaleziono kanałów: %1$d.</string>
   <string name="iptv_test_ok_account">Połączono. Konto %1$s, maks. połączeń: %2$d.</string>
   <string name="iptv_test_ok_account_expires">Połączono. Konto %1$s, maks. połączeń: %2$d, wygasa %3$s.</string>
@@ -3920,6 +3931,7 @@
   <string name="iptv_error_no_url">Brak adresu.</string>
   <string name="iptv_error_bad_url">Ten adres wygląda nieprawidłowo. Sprawdź, czy zaczyna się od http:// lub https://.</string>
   <string name="iptv_error_bad_login">Dostawca odrzucił nazwę użytkownika lub hasło.</string>
+  <string name="iptv_error_stalker_mac">Portal odrzucił ten adres MAC. Sprawdź, czy jest zarejestrowany u dostawcy.</string>
   <string name="iptv_error_inactive">Dostawca podaje, że to konto jest: %1$s.</string>
   <string name="iptv_error_http">Dostawca odpowiedział błędem %1$d.</string>
   <string name="iptv_error_bad_response">Dostawca przesłał coś, co nie jest playlistą. Sprawdź adres.</string>

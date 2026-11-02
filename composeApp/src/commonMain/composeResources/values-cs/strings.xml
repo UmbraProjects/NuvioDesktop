@@ -3878,7 +3878,7 @@
   <string name="iptv_settings_section_playback">Přehrávání</string>
   <string name="iptv_settings_intro">Nuvio neobsahuje žádné kanály. Přidejte údaje, které vám poskytl váš poskytovatel IPTV.</string>
   <string name="iptv_settings_add_playlist">Přidat playlist</string>
-  <string name="iptv_settings_add_playlist_description">Přihlášení Xtream Codes nebo odkaz M3U.</string>
+  <string name="iptv_settings_add_playlist_description">Přihlášení Xtream Codes, portál Stalker nebo odkaz M3U.</string>
   <string name="iptv_settings_refresh_interval">Obnovit kanály a průvodce</string>
   <string name="iptv_settings_refresh_interval_description">Jak často znovu stahovat seznam kanálů a programového průvodce. Obojí se uchovává mezi spuštěními.</string>
   <string name="iptv_settings_refresh_every_launch">Při každém spuštění</string>
@@ -3892,6 +3892,7 @@
   <string name="iptv_settings_format_hls">HLS</string>
   <string name="iptv_playlist_type_xtream">Xtream</string>
   <string name="iptv_playlist_type_m3u">Odkaz M3U</string>
+  <string name="iptv_playlist_type_stalker">Portál Stalker</string>
   <string name="iptv_playlist_summary_channels">%1$s · %2$d kanálů</string>
   <string name="iptv_playlist_summary_not_loaded">%1$s · zatím nenačteno</string>
   <string name="iptv_playlist_summary_loading">%1$s · aktualizace…</string>
@@ -3906,6 +3907,15 @@
   <string name="iptv_playlist_password">Heslo</string>
   <string name="iptv_playlist_url">URL playlistu</string>
   <string name="iptv_playlist_url_description">Odkaz na soubor .m3u nebo .m3u8.</string>
+  <string name="iptv_playlist_portal">URL portálu</string>
+  <string name="iptv_playlist_portal_description">Adresa, kterou vám poskytovatel dal, např. http://example.com:8080/c/</string>
+  <string name="iptv_playlist_mac">Adresa MAC</string>
+  <string name="iptv_playlist_mac_description">Adresa MAC, kterou poskytovatel pro tuto linku zaregistroval. Bez registrace portál nezobrazí žádné kanály. Nuvio skutečnou adresu MAC tohoto počítače nečte ani neodesílá.</string>
+  <string name="iptv_playlist_serial">Sériové číslo (volitelné)</string>
+  <string name="iptv_playlist_identity_description">Vyplňte jen tehdy, když vám je poskytovatel dal. Pokud je necháte prázdné, Nuvio je odvodí z adresy MAC.</string>
+  <string name="iptv_playlist_device_id">ID zařízení (volitelné)</string>
+  <string name="iptv_playlist_device_id2">ID zařízení 2 (volitelné)</string>
+  <string name="iptv_playlist_signature">Podpis (volitelné)</string>
   <string name="iptv_playlist_epg_url">URL průvodce (volitelné)</string>
   <string name="iptv_playlist_epg_url_description">Průvodce XMLTV (.xml nebo .xml.gz). Nechte prázdné, chcete-li použít průvodce od poskytovatele.</string>
   <string name="iptv_playlist_test">Test</string>
@@ -3913,6 +3923,7 @@
   <string name="iptv_playlist_delete_confirm">Smazat natrvalo?</string>
   <string name="iptv_playlist_missing_fields">Vyplňte server, uživatelské jméno a heslo.</string>
   <string name="iptv_playlist_missing_url">Zadejte URL playlistu.</string>
+  <string name="iptv_playlist_missing_stalker">Zadejte URL portálu a adresu MAC, např. 00:1A:79:12:34:56.</string>
   <string name="iptv_test_ok_channels">Připojeno. Nalezeno kanálů: %1$d.</string>
   <string name="iptv_test_ok_account">Připojeno. Účet %1$s, až %2$d připojení.</string>
   <string name="iptv_test_ok_account_expires">Připojeno. Účet %1$s, až %2$d připojení, vyprší %3$s.</string>
@@ -3920,6 +3931,7 @@
   <string name="iptv_error_no_url">Chybí adresa.</string>
   <string name="iptv_error_bad_url">Adresa nevypadá správně. Zkontrolujte, že začíná na http:// nebo https://.</string>
   <string name="iptv_error_bad_login">Poskytovatel odmítl uživatelské jméno nebo heslo.</string>
+  <string name="iptv_error_stalker_mac">Portál tuto adresu MAC odmítl. Ověřte, že je u poskytovatele zaregistrovaná.</string>
   <string name="iptv_error_inactive">Poskytovatel hlásí, že tento účet je %1$s.</string>
   <string name="iptv_error_http">Poskytovatel odpověděl chybou %1$d.</string>
   <string name="iptv_error_bad_response">Poskytovatel poslal něco, co není playlist. Zkontrolujte adresu.</string>

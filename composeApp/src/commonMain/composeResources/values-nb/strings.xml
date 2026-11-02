@@ -3870,7 +3870,7 @@
   <string name="iptv_settings_section_playback">Avspilling</string>
   <string name="iptv_settings_intro">Nuvio inneholder ingen kanaler. Legg til opplysningene IPTV-leverandøren din ga deg.</string>
   <string name="iptv_settings_add_playlist">Legg til spilleliste</string>
-  <string name="iptv_settings_add_playlist_description">En Xtream Codes-innlogging eller en M3U-lenke.</string>
+  <string name="iptv_settings_add_playlist_description">En Xtream Codes-innlogging, en Stalker-portal eller en M3U-lenke.</string>
   <string name="iptv_settings_refresh_interval">Oppdater kanaler og guide</string>
   <string name="iptv_settings_refresh_interval_description">Hvor ofte kanallisten og programguiden lastes ned på nytt. Begge beholdes mellom oppstarter.</string>
   <string name="iptv_settings_refresh_every_launch">Ved hver oppstart</string>
@@ -3884,6 +3884,7 @@
   <string name="iptv_settings_format_hls">HLS</string>
   <string name="iptv_playlist_type_xtream">Xtream</string>
   <string name="iptv_playlist_type_m3u">M3U-lenke</string>
+  <string name="iptv_playlist_type_stalker">Stalker-portal</string>
   <string name="iptv_playlist_summary_channels">%1$s · %2$d kanaler</string>
   <string name="iptv_playlist_summary_not_loaded">%1$s · ikke lastet inn ennå</string>
   <string name="iptv_playlist_summary_loading">%1$s · oppdaterer…</string>
@@ -3898,6 +3899,15 @@
   <string name="iptv_playlist_password">Passord</string>
   <string name="iptv_playlist_url">Spilleliste-URL</string>
   <string name="iptv_playlist_url_description">En lenke til en .m3u- eller .m3u8-fil.</string>
+  <string name="iptv_playlist_portal">Portal-URL</string>
+  <string name="iptv_playlist_portal_description">Adressen leverandøren ga deg, f.eks. http://example.com:8080/c/</string>
+  <string name="iptv_playlist_mac">MAC-adresse</string>
+  <string name="iptv_playlist_mac_description">MAC-en leverandøren har registrert for dette abonnementet. Uten registrering viser portalen ingen kanaler. Nuvio verken leser eller sender den ekte MAC-en til denne datamaskinen.</string>
+  <string name="iptv_playlist_serial">Serienummer (valgfritt)</string>
+  <string name="iptv_playlist_identity_description">Bare hvis leverandøren ga deg disse. Står de tomme, regner Nuvio dem ut fra MAC-en.</string>
+  <string name="iptv_playlist_device_id">Enhets-ID (valgfritt)</string>
+  <string name="iptv_playlist_device_id2">Enhets-ID 2 (valgfritt)</string>
+  <string name="iptv_playlist_signature">Signatur (valgfritt)</string>
   <string name="iptv_playlist_epg_url">Guide-URL (valgfritt)</string>
   <string name="iptv_playlist_epg_url_description">En XMLTV-guide (.xml eller .xml.gz). La stå tomt for å bruke den leverandøren oppgir.</string>
   <string name="iptv_playlist_test">Test</string>
@@ -3905,6 +3915,7 @@
   <string name="iptv_playlist_delete_confirm">Slette for godt?</string>
   <string name="iptv_playlist_missing_fields">Fyll ut server, brukernavn og passord.</string>
   <string name="iptv_playlist_missing_url">Skriv inn spilleliste-URL-en.</string>
+  <string name="iptv_playlist_missing_stalker">Skriv inn portal-URL og en MAC som 00:1A:79:12:34:56.</string>
   <string name="iptv_test_ok_channels">Tilkoblet. Fant %1$d kanaler.</string>
   <string name="iptv_test_ok_account">Tilkoblet. Konto %1$s, opptil %2$d tilkoblinger.</string>
   <string name="iptv_test_ok_account_expires">Tilkoblet. Konto %1$s, opptil %2$d tilkoblinger, utløper %3$s.</string>
@@ -3912,6 +3923,7 @@
   <string name="iptv_error_no_url">Adressen mangler.</string>
   <string name="iptv_error_bad_url">Adressen ser ikke riktig ut. Sjekk at den starter med http:// eller https://.</string>
   <string name="iptv_error_bad_login">Leverandøren avviste brukernavnet eller passordet.</string>
+  <string name="iptv_error_stalker_mac">Portalen avviste denne MAC-en. Sjekk at den er registrert hos leverandøren.</string>
   <string name="iptv_error_inactive">Leverandøren sier at denne kontoen er %1$s.</string>
   <string name="iptv_error_http">Leverandøren svarte med feil %1$d.</string>
   <string name="iptv_error_bad_response">Leverandøren sendte noe som ikke er en spilleliste. Sjekk adressen.</string>

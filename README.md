@@ -22,7 +22,7 @@ If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamS
 
 * Mouse, keyboard or controller friendly TV Mode with full-screen navigation, adaptive hero, row-jump navigation, cast and award information. This applies across all panels, not just home.
 * Game Mode for browsing and launching your game library alongside your media.
-* IPTV from your own provider (Xtream Codes or M3U) with a programme guide, favourites and an in-player channel switcher, based on Slokker's GoatTV (used with Permission).
+* IPTV from your own provider (Xtream Codes, Stalker portal or M3U) with a programme guide, favourites and an in-player channel switcher, based on Slokker's GoatTV (used with Permission).
 * Automatic control of smart lights based on playback state for a theater like experience.
 * Automatic dim and shutdown for OLED displays.
 * Audio pass-through features for a receiver.

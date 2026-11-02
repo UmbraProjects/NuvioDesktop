@@ -600,11 +600,13 @@ private fun NativePlayerSurface(
         // 429 report needs: which resolver handed out the link, and which host mpv is actually
         // hammering with range requests.
         BingeAdvanceLog.i {
-            "desktop attach firing attemptId=$playbackAttemptId" +
-                " sourceHost=${PlaybackRedirectResolver.hostOf(sourceUrl)}" +
-                " playbackHost=${PlaybackRedirectResolver.hostOf(resolution.playbackUrl)}" +
-                " redirect=${resolution.outcome.name.lowercase()}/${resolution.hops}" +
-                " sourceUrl=${com.nuvio.app.features.iptv.redactIptvCredentials(sourceUrl).takeLast(48)}"
+            com.nuvio.app.features.iptv.redactIptvCredentials(
+                "desktop attach firing attemptId=$playbackAttemptId" +
+                    " sourceHost=${PlaybackRedirectResolver.hostOf(sourceUrl)}" +
+                    " playbackHost=${PlaybackRedirectResolver.hostOf(resolution.playbackUrl)}" +
+                    " redirect=${resolution.outcome.name.lowercase()}/${resolution.hops}" +
+                    " sourceUrl=${com.nuvio.app.features.iptv.redactIptvCredentials(sourceUrl).takeLast(48)}",
+            )
         }
         fun attachWith(
             playbackUrl: String,

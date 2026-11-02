@@ -1,12 +1,18 @@
 package com.nuvio.app.features.iptv
 
 import com.nuvio.app.features.player.PlayerLaunch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * Meta type of an IPTV playback. It is in `isLiveEventContentType`'s list, so the player keeps no
@@ -27,6 +33,8 @@ object IptvPlaybackSession {
         val index: Int = 0,
         /** The channels channel up/down walks through: the list the user started from. */
         val zapList: List<IptvChannel> = emptyList(),
+        /** The channel whose link the portal is being asked for; channel up/down counts from it. */
+        val opening: IptvChannel? = null,
     ) {
         val current: IptvStreamCandidate get() = candidates[index]
     }
@@ -40,13 +48,43 @@ object IptvPlaybackSession {
         return iptvStreamCandidates(playlist, channel, settings.preferredFormat, allowed)
     }
 
+    /** Whether opening [channel] means asking its portal for a link first, because links expire. */
+    fun needsLink(playlist: IptvPlaylist, channel: IptvChannel): Boolean =
+        playlist.type == IptvPlaylistType.Stalker && StalkerUrls.needsLink(channel.url)
+
+    /** Asks the playing playlist's portal for [channel]'s link now. */
+    suspend fun linkCandidates(channel: IptvChannel): List<IptvStreamCandidate> {
+        val current = _active.value ?: return emptyList()
+        return StalkerClient.streamCandidates(current.playlist, channel)
+    }
+
+    fun needsLink(channel: IptvChannel): Boolean = _active.value?.let { needsLink(it.playlist, channel) } == true
+
+    fun setOpening(channel: IptvChannel?) {
+        _active.update { it?.copy(opening = channel) }
+    }
+
+    /** A new link for the playing channel when it needs one, for a reconnect; null to reuse the URL. */
+    suspend fun renewLink(): String? {
+        val current = _active.value ?: return null
+        if (!needsLink(current.playlist, current.channel)) return null
+        val candidates = linkCandidates(current.channel).takeIf { it.isNotEmpty() } ?: return null
+        if (_active.value?.channel?.uid != current.channel.uid) return null
+        _active.update { it?.copy(candidates = candidates, index = 0) }
+        return candidates.first().url
+    }
+
     /**
      * Starts a session for [channel] and builds its player launch; null when it has no playable URL.
      * [zapList] is what channel up/down steps through (the tab's current list); empty means the
      * whole playlist.
      */
-    fun launchFor(playlist: IptvPlaylist, channel: IptvChannel, zapList: List<IptvChannel> = emptyList()): PlayerLaunch? {
-        val candidates = candidatesFor(playlist, channel)
+    fun launchFor(
+        playlist: IptvPlaylist,
+        channel: IptvChannel,
+        zapList: List<IptvChannel> = emptyList(),
+        candidates: List<IptvStreamCandidate> = candidatesFor(playlist, channel),
+    ): PlayerLaunch? {
         if (candidates.isEmpty()) return null
         _active.value = Active(playlist, channel, candidates, zapList = zapList)
         IptvRepository.recordRecent(playlist.id, channel.key)
@@ -90,7 +128,8 @@ object IptvPlaybackSession {
         val current = _active.value ?: return null
         val list = zapListOf(current)
         if (list.size < 2) return null
-        val at = list.indexOfFirst { it.uid == current.channel.uid }.takeIf { it >= 0 } ?: return list.first()
+        val from = current.opening ?: current.channel
+        val at = list.indexOfFirst { it.uid == from.uid }.takeIf { it >= 0 } ?: return list.first()
         return list[Math.floorMod(at + delta, list.size)]
     }
 
@@ -107,11 +146,11 @@ object IptvPlaybackSession {
     }
 
     /** Makes [channel] the playing one; returns the URL to open, or null when it has none. */
-    fun switchTo(channel: IptvChannel): String? {
+    fun switchTo(channel: IptvChannel, link: List<IptvStreamCandidate>? = null): String? {
         val current = _active.value ?: return null
-        val candidates = candidatesFor(current.playlist, channel)
+        val candidates = link ?: candidatesFor(current.playlist, channel)
         if (candidates.isEmpty()) return null
-        _active.value = current.copy(channel = channel, candidates = candidates, index = 0)
+        _active.value = current.copy(channel = channel, candidates = candidates, index = 0, opening = null)
         IptvRepository.recordRecent(current.playlist.id, channel.key)
         return candidates.first().url
     }
@@ -132,8 +171,19 @@ object IptvPlaybackRequests {
     private val _requests = MutableSharedFlow<PlayerLaunch>(extraBufferCapacity = 1)
     val requests: SharedFlow<PlayerLaunch> = _requests.asSharedFlow()
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var linkJob: Job? = null
+
     /** False when the channel has no playable URL. [zapList]: see [IptvPlaybackSession.launchFor]. */
     fun play(playlist: IptvPlaylist, channel: IptvChannel, zapList: List<IptvChannel> = emptyList()): Boolean {
+        linkJob?.cancel()
+        if (IptvPlaybackSession.needsLink(playlist, channel)) {
+            linkJob = scope.launch {
+                val candidates = StalkerClient.streamCandidates(playlist, channel)
+                IptvPlaybackSession.launchFor(playlist, channel, zapList, candidates)?.let { _requests.tryEmit(it) }
+            }
+            return true
+        }
         val launch = IptvPlaybackSession.launchFor(playlist, channel, zapList) ?: return false
         return _requests.tryEmit(launch)
     }

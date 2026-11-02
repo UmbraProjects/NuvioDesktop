@@ -17,8 +17,11 @@ internal object PlaybackErrorLog {
     fun error(attemptId: Long, sourceUrl: String?, message: String) {
         val failure = playbackErrorFailure(message)?.name ?: "none"
         log.i {
-            "error attemptId=$attemptId host=${playbackLogHost(sourceUrl) ?: "-"}" +
-                " failure=$failure message=${redactPlaybackLogText(message)}"
+            // The host stays for other sources, but a Stalker portal's address may not reach a log.
+            com.nuvio.app.features.iptv.redactIptvCredentials(
+                "error attemptId=$attemptId host=${playbackLogHost(sourceUrl) ?: "-"}" +
+                    " failure=$failure message=${redactPlaybackLogText(message)}",
+            )
         }
     }
 
