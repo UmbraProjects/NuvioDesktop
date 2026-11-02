@@ -329,6 +329,11 @@ internal class NativePlayerController(
                 // Add keeps this one, and Full (the user's own configuration only) never gets it.
                 if (PlayerSettingsRepository.uiState.value.desktopMpvConfigMode != DesktopMpvConfigMode.Full) {
                     directMediaNetworkTimeoutOption(sourceUrl)?.let(::add)
+                    // YouTube tab videos: googlevideo serves one open-ended request at about the
+                    // playback rate, so a 1440p video at 2x ran dry every few seconds (Nov 2:
+                    // 2.9 s ahead at 1x, four cache pauses in 8 s at 2x). Bounded ranges are not
+                    // held to that rate, as the trailer and music players already found.
+                    addAll(com.nuvio.app.features.home.components.youtubeStreamMpvOptions(sourceUrl))
                 }
                 if (enableUserMpvOptions) addAll(buildDesktopUserMpvOptions(initialPlaybackSpeed))
                 // After the buffer preset in the user options, which also sets demuxer-max-back-bytes
