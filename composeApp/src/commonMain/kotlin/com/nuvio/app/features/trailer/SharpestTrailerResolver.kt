@@ -37,6 +37,11 @@ internal object SharpestTrailerResolver {
         val first = listedKeys.firstOrNull()?.let { resolveKey(it) }
         if (first != null && first.reliable && !first.portrait && first.heightPx >= GOOD_ENOUGH_TRAILER_HEIGHT) return first
         if (title.isNullOrBlank() && listedKeys.size < 2) return first
+        // fork:preshow-caller — while YouTube is refusing us, the listed upload is the one ask; no hunt for a sharper one.
+        if (com.nuvio.app.features.music.MusicRateLimit.isBlocked()) {
+            log.i { "YouTube is paused after a refusal; playing the listed upload without looking for a sharper one" }
+            return first
+        }
 
         val tried = listedKeys.take(1).toMutableSet()
         val firstOption = first?.let { TrailerOption(listedKeys.first(), it, order = 0) }
