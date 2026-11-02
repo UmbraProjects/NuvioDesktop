@@ -6070,7 +6070,9 @@ const updatePlayerClock = () => {
   const speed = Number.isFinite(parsedSpeed) && parsedSpeed > 0 ? parsedSpeed : 1;
   const remainingWallMs = Math.max(0, durationMs - positionMs) / speed;
   const endTime = new Date(now.getTime() + remainingWallMs);
-  const contentLabel = String(state.episodeText || "").trim() ? hudText("player_hud_episode", "Episode") : hudText("player_hud_movie", "Movie");
+  const contentLabel = String(state.episodeText || "").trim()
+    ? hudText("player_hud_episode", "Episode")
+    : state.isYouTubeVideo ? hudText("player_hud_video", "Video") : hudText("player_hud_movie", "Movie");
   // Live TV never ends; the same spot (and its click, "back") is the way out.
   playerEndTime.textContent = state.iptv
     ? (state.iptv.exitLabel || state.closeLabel || "Exit")

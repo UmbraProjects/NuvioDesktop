@@ -82,7 +82,28 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioModalDialog
+import com.nuvio.app.core.ui.ContextMenuInvocation
+import com.nuvio.app.core.ui.KeyboardInputMode
+import com.nuvio.app.core.ui.NuvioContextMenu
 import com.nuvio.app.core.ui.NuvioTextField
+import com.nuvio.app.core.ui.PlatformBackHandler
+import com.nuvio.app.core.ui.PosterZoomOverlayAction
+import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
+import com.nuvio.app.core.ui.rememberHoldToSelectState
+import com.nuvio.app.core.ui.secondaryClick
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import com.nuvio.app.core.ui.arrowKeyFocusNavigation
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
@@ -126,18 +147,26 @@ fun YouTubeTabScreen(
     val kind = if (showingChannelList || showingPlaylists) YouTubeFeedKind.Subscriptions else YouTubeFeedKind.valueOf(selectedName)
     val openChannel by YouTubeFeedRepository.openChannel.collectAsStateWithLifecycle()
     val openPlaylist by YouTubeFeedRepository.openPlaylist.collectAsStateWithLifecycle()
-    // Where a channel or playlist page's back button goes.
-    var returnTo by rememberSaveable { mutableStateOf(YouTubeFeedKind.Home.name) }
+    // The pages a channel or playlist page was opened from, newest last: Back (the arrow, Esc, a
+    // pad's B) steps through them inside the tab instead of leaving it.
+    var backStack by rememberSaveable { mutableStateOf(listOf<String>()) }
+    fun push(next: String) {
+        if (selectedName != next) backStack = (backStack + selectedName).takeLast(MAX_BACK_STEPS)
+        selectedName = next
+    }
+    fun goBack() {
+        selectedName = backStack.lastOrNull() ?: YouTubeFeedKind.Home.name
+        backStack = backStack.dropLast(1)
+    }
     fun showChannel(channelId: String, name: String, avatarUrl: String?) {
-        if (selectedName != YouTubeFeedKind.Channel.name) returnTo = selectedName
         YouTubeFeedRepository.openChannel(channelId, name, avatarUrl)
-        selectedName = YouTubeFeedKind.Channel.name
+        push(YouTubeFeedKind.Channel.name)
     }
     fun showPlaylist(playlist: YouTubePlaylist) {
-        if (selectedName != YouTubeFeedKind.Playlist.name) returnTo = selectedName
         YouTubeFeedRepository.openPlaylist(playlist)
-        selectedName = YouTubeFeedKind.Playlist.name
+        push(YouTubeFeedKind.Playlist.name)
     }
+    PlatformBackHandler(enabled = backStack.isNotEmpty()) { goBack() }
     val queue by YouTubePlayQueue.state.collectAsStateWithLifecycle()
     val queueNext by YouTubePlayQueue.next.collectAsStateWithLifecycle()
     val feeds by YouTubeFeedRepository.feeds.collectAsStateWithLifecycle()
@@ -157,7 +186,11 @@ fun YouTubeTabScreen(
     fun submitSearch() {
         if (searchText.isBlank()) return
         YouTubeFeedRepository.search(searchText)
-        selectedName = YouTubeFeedKind.Search.name
+        // Back from the results returns to where the search was typed.
+        if (selectedName != YouTubeFeedKind.Search.name) {
+            backStack = (backStack + selectedName).takeLast(MAX_BACK_STEPS)
+            selectedName = YouTubeFeedKind.Search.name
+        }
     }
 
     // Pages fetched under one session are not the other session's feed.
@@ -269,6 +302,14 @@ fun YouTubeTabScreen(
 
     val gridState = rememberLazyGridState()
     LaunchedEffect(kind, searchQuery) { gridState.scrollToItem(0) }
+    // Shown again after a while (switched to, the tab reopened, the player closed): a feed that
+    // changes by itself is fetched again, the old page staying up until the new one replaces it.
+    // Not while scrolled down it, where the new page would pull the list out from under the reader.
+    LaunchedEffect(kind, auth.signedIn, channel.resolved) {
+        if (auth.signedIn && channel.resolved && YouTubeFeedRepository.isStale(kind) && gridState.firstVisibleItemIndex < 6) {
+            YouTubeFeedRepository.load(kind, force = true)
+        }
+    }
     LaunchedEffect(gridState, kind) {
         snapshotFlow {
             val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
@@ -278,9 +319,23 @@ fun YouTubeTabScreen(
         }
     }
 
+    // Keyboard and pad: a page of videos arriving with nothing in the tab focused hands focus to its
+    // first card, so the arrows have somewhere to start (a mouse user never sees it: the ring is
+    // keyboard-only).
+    val firstCardFocus = remember { FocusRequester() }
+    var tabHasFocus by remember { mutableStateOf(false) }
+    val firstVideoId = videos.firstOrNull()?.videoId
+    LaunchedEffect(KeyboardInputMode.active, selectedName, firstVideoId) {
+        if (KeyboardInputMode.active && !tabHasFocus && firstVideoId != null) {
+            kotlinx.coroutines.delay(50L) // the grid's first frame
+            runCatching { firstCardFocus.requestFocus() }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
+            .onFocusChanged { tabHasFocus = it.hasFocus }
             .arrowKeyFocusNavigation()
             .padding(start = 32.dp, end = 32.dp, top = topChromePadding ?: 24.dp),
     ) {
@@ -296,28 +351,35 @@ fun YouTubeTabScreen(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(end = 12.dp),
             )
+            // A header button starts a section afresh: nothing to go back to inside it.
+            fun section(name: String) {
+                backStack = emptyList()
+                selectedName = name
+            }
             YouTubeFeedKind.entries.filter { it.inHeader }.forEach { entry ->
-                if (entry == kind && !showingChannelList) {
+                if (entry == kind && !showingChannelList && !showingPlaylists) {
                     Button(onClick = { YouTubeFeedRepository.load(entry) }) { Text(entry.label) }
                 } else {
-                    OutlinedButton(onClick = { selectedName = entry.name }) { Text(entry.label) }
+                    OutlinedButton(onClick = { section(entry.name) }) { Text(entry.label) }
                 }
             }
             if (showingChannelList) {
                 Button(onClick = { YouTubeFeedRepository.loadSubscribedChannels() }) { Text("Channels") }
             } else {
-                OutlinedButton(onClick = { selectedName = CHANNELS_VIEW }) { Text("Channels") }
+                OutlinedButton(onClick = { section(CHANNELS_VIEW) }) { Text("Channels") }
             }
             if (showingPlaylists) {
                 Button(onClick = { YouTubeFeedRepository.loadPlaylists() }) { Text("Playlists") }
             } else {
-                OutlinedButton(onClick = { selectedName = PLAYLISTS_VIEW }) { Text("Playlists") }
+                OutlinedButton(onClick = { section(PLAYLISTS_VIEW) }) { Text("Playlists") }
             }
             if (auth.signedIn) {
                 NuvioTextField(
                     value = searchText,
                     onValueChange = { searchText = it },
                     modifier = Modifier.width(340.dp),
+                    // A pill, like the buttons it sits among.
+                    shape = CircleShape,
                     placeholder = "Search YouTube",
                     imeAction = ImeAction.Search,
                     onImeAction = ::submitSearch,
@@ -337,7 +399,7 @@ fun YouTubeTabScreen(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp).clip(CircleShape).clickable {
                                     searchText = ""
-                                    if (kind == YouTubeFeedKind.Search) selectedName = YouTubeFeedKind.Home.name
+                                    if (kind == YouTubeFeedKind.Search) goBack()
                                 },
                             )
                         }
@@ -410,7 +472,7 @@ fun YouTubeTabScreen(
             openChannel?.let { open ->
                 ChannelHeader(
                     channel = open,
-                    onBack = { selectedName = returnTo },
+                    onBack = ::goBack,
                     onSubscribe = YouTubeFeedRepository::setSubscribed,
                 )
             }
@@ -420,7 +482,7 @@ fun YouTubeTabScreen(
                 PlaylistHeader(
                     playlist = playlist,
                     canPlay = videos.isNotEmpty(),
-                    onBack = { selectedName = returnTo },
+                    onBack = ::goBack,
                     onPlayAll = { playFromPlaylist(0) },
                 )
             }
@@ -516,6 +578,7 @@ fun YouTubeTabScreen(
                         onOpenChannel = video.channelId?.takeIf { kind != YouTubeFeedKind.Channel }?.let { id ->
                             { showChannel(id, video.channel ?: "Channel", null) }
                         },
+                        focusRequester = firstCardFocus.takeIf { index == 0 },
                     )
                 }
                 if (feed.continuation != null || feed.error != null) {
@@ -619,6 +682,9 @@ private fun FeedMessage(text: String, action: String, onAction: () -> Unit) {
         FilledTonalButton(onClick = onAction) { Text(action) }
     }
 }
+
+/** How many pages Back can step through inside the tab. */
+private const val MAX_BACK_STEPS = 12
 
 /** [YouTubeTabScreen]'s selection for the subscribed-channels list, beside the feed kinds' names. */
 private const val CHANNELS_VIEW = "Channels"
@@ -1042,7 +1108,14 @@ private fun YouTubeVideoCard(
     onComments: () -> Unit,
     onRemoveFromPlaylist: (() -> Unit)?,
     onOpenChannel: (() -> Unit)?,
+    focusRequester: FocusRequester? = null,
 ) {
+    // The card's menu, open at this window position (the ⋮ button, the cursor, or beside the card).
+    var menuAt by remember { mutableStateOf<IntOffset?>(null) }
+    var cardBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    var moreBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    fun beside(): IntOffset? = cardBounds?.let { IntOffset(it.left.roundToInt() + 24, it.top.roundToInt() + 24) }
+    val selectHold = rememberHoldToSelectState()
     // DeArrow's title and thumbnail once looked up (cards ask as they come into view); YouTube's meanwhile.
     val branding by produceState(YouTubeDeArrow.cached(video.videoId), video.videoId, deArrow) {
         if (deArrow) value = YouTubeDeArrow.branding(video.videoId)
@@ -1052,13 +1125,65 @@ private fun YouTubeVideoCard(
     var brandedThumbnailFailed by remember(video.videoId) { mutableStateOf(false) }
     val thumbnail = branding?.thumbnailUrl?.takeIf { deArrow && !brandedThumbnailFailed } ?: video.thumbnailUrl
     val interaction = remember { MutableInteractionSource() }
-    val focused by interaction.collectIsFocusedAsState()
+    // A focus ring only while the keyboard or a pad is in use: a click focuses what it lands on too.
+    val focused by interaction.collectIsKeyboardFocusedAsState()
     val hovered by interaction.collectIsHoveredAsState()
     val highlight = focused || hovered
     val shape = RoundedCornerShape(12.dp)
+    menuAt?.let { position ->
+        NuvioContextMenu(
+            windowPosition = position,
+            actions = buildList {
+                add(PosterZoomOverlayAction(icon = Icons.Rounded.ThumbUp, label = "Like", onSelected = onLike))
+                add(PosterZoomOverlayAction(icon = Icons.Rounded.WatchLater, label = "Save to Watch later", onSelected = onSaveToWatchLater))
+                add(PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Save to playlist…", onSelected = onSaveToPlaylist))
+                add(PosterZoomOverlayAction(icon = Icons.AutoMirrored.Rounded.Comment, label = "Comments", onSelected = onComments, group = 1))
+                onOpenChannel?.let {
+                    add(PosterZoomOverlayAction(icon = Icons.Rounded.AccountCircle, label = "Go to channel", onSelected = it, group = 1))
+                }
+                onRemoveFromPlaylist?.let {
+                    add(
+                        PosterZoomOverlayAction(
+                            icon = Icons.Rounded.Delete,
+                            label = "Remove from this playlist",
+                            isDestructive = true,
+                            onSelected = it,
+                            group = 2,
+                        ),
+                    )
+                }
+            },
+            onDismiss = { menuAt = null },
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .onGloballyPositioned { cardBounds = it.boundsInWindow() }
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            // Select plays; holding it (Enter, or a pad's A) opens the menu beside the card, as
+            // right-click does under the cursor.
+            .onPreviewKeyEvent { event ->
+                when (event.key) {
+                    Key.Enter, Key.NumPadEnter -> selectHold.handle(
+                        event,
+                        onSelect = onClick,
+                        onHold = {
+                            beside()?.let { ContextMenuInvocation.recordKeyboardInvocation(it) }
+                            menuAt = ContextMenuInvocation.consume() ?: beside()
+                        },
+                    )
+                    Key.Menu -> {
+                        if (event.type == KeyEventType.KeyDown) {
+                            beside()?.let { ContextMenuInvocation.recordKeyboardInvocation(it) }
+                            menuAt = ContextMenuInvocation.consume() ?: beside()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .secondaryClick { menuAt = ContextMenuInvocation.consume() ?: beside() }
             .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1127,70 +1252,24 @@ private fun YouTubeVideoCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            var menuOpen by remember { mutableStateOf(false) }
-            Box {
-                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        Icons.Rounded.MoreVert,
-                        contentDescription = "More",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Like") },
-                        leadingIcon = { Icon(Icons.Rounded.ThumbUp, contentDescription = null) },
-                        onClick = {
-                            menuOpen = false
-                            onLike()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Save to Watch later") },
-                        leadingIcon = { Icon(Icons.Rounded.WatchLater, contentDescription = null) },
-                        onClick = {
-                            menuOpen = false
-                            onSaveToWatchLater()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Save to playlist…") },
-                        leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, contentDescription = null) },
-                        onClick = {
-                            menuOpen = false
-                            onSaveToPlaylist()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Comments") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Comment, contentDescription = null) },
-                        onClick = {
-                            menuOpen = false
-                            onComments()
-                        },
-                    )
-                    if (onRemoveFromPlaylist != null) {
-                        DropdownMenuItem(
-                            text = { Text("Remove from this playlist") },
-                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
-                            onClick = {
-                                menuOpen = false
-                                onRemoveFromPlaylist()
-                            },
-                        )
-                    }
-                    if (onOpenChannel != null) {
-                        DropdownMenuItem(
-                            text = { Text("Go to channel") },
-                            leadingIcon = { Icon(Icons.Rounded.AccountCircle, contentDescription = null) },
-                            onClick = {
-                                menuOpen = false
-                                onOpenChannel()
-                            },
-                        )
-                    }
-                }
+            // For the mouse; the keyboard and a pad open the same menu by holding select, so the
+            // button is left out of focus and arrowing across the grid lands on cards only.
+            IconButton(
+                onClick = {
+                    ContextMenuInvocation.consume()
+                    menuAt = moreBounds?.let { IntOffset(it.left.roundToInt(), it.bottom.roundToInt()) } ?: beside()
+                },
+                modifier = Modifier
+                    .size(28.dp)
+                    .onGloballyPositioned { moreBounds = it.boundsInWindow() }
+                    .focusProperties { canFocus = false },
+            ) {
+                Icon(
+                    Icons.Rounded.MoreVert,
+                    contentDescription = "More",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
         listOfNotNull(video.channel, video.details).forEach { line ->

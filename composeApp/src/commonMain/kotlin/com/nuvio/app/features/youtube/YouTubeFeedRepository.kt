@@ -79,7 +79,19 @@ data class YouTubeFeedState(
     /** True once a first page has come back (even an empty one). */
     val loaded: Boolean = false,
     val error: String? = null,
+    /** When the first page came back; how old the feed is. */
+    val loadedAtMs: Long = 0L,
 )
+
+/**
+ * A feed older than this is fetched again when it is shown again (switched to, the tab reopened, the
+ * player closed), as the website does on each visit to Home, so new uploads and recommendations
+ * that follow what was just watched turn up without pressing Refresh.
+ */
+private const val FEED_STALE_MS = 10 * 60_000L
+
+/** The feeds that change by themselves; a search, a channel page or a playlist does not. */
+private val SELF_REFRESHING_FEEDS = setOf(YouTubeFeedKind.Home, YouTubeFeedKind.Subscriptions, YouTubeFeedKind.History)
 
 /** Watched this far, a video counts as seen: YouTube's own bar stops a little short on end cards. */
 private const val WATCHED_PERCENT = 90
@@ -451,6 +463,14 @@ object YouTubeFeedRepository {
         }
     }
 
+    /** Whether [kind] is one that changes by itself and was last fetched more than [FEED_STALE_MS] ago. */
+    fun isStale(kind: YouTubeFeedKind): Boolean {
+        if (kind !in SELF_REFRESHING_FEEDS) return false
+        val state = _feeds.value.getValue(kind)
+        return state.loaded && !state.loading && state.error == null &&
+            com.nuvio.app.features.streams.epochMs() - state.loadedAtMs > FEED_STALE_MS
+    }
+
     /** Replaces the Search feed with the results for [query]. Blank does nothing. */
     fun search(query: String) {
         val trimmed = query.trim()
@@ -589,7 +609,13 @@ object YouTubeFeedRepository {
                             val seen = previous.videos.mapTo(HashSet()) { it.videoId }
                             previous.videos + page.videos.filter { it.videoId !in seen }
                         }
-                        YouTubeFeedState(videos = videos, continuation = page.continuation, loaded = true)
+                        YouTubeFeedState(
+                            videos = videos,
+                            continuation = page.continuation,
+                            loaded = true,
+                            // A later page does not make the feed any newer.
+                            loadedAtMs = if (continuation == null) com.nuvio.app.features.streams.epochMs() else previous.loadedAtMs,
+                        )
                     }
                     YouTubeBrowseResult.SignedOut -> YouTubeFeedState(
                         loaded = true,

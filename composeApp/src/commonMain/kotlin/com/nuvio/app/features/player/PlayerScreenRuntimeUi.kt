@@ -408,6 +408,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         streamTitle = activeStreamTitle,
         streamFilename = activeStreamFilename.orEmpty(),
         providerName = activeProviderName,
+        isYouTubeVideo = parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE,
         pauseOverlayWatchingLabel = stringResource(Res.string.compose_player_youre_watching),
         pauseOverlayLogo = logo,
         // The episode code, or nothing. Movies used to borrow this line for the provider name, which

@@ -2500,6 +2500,8 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("providerName", providerName)
         append(',')
+        appendJsonField("isYouTubeVideo", isYouTubeVideo)
+        append(',')
         appendJsonField("pauseOverlayWatchingLabel", pauseOverlayWatchingLabel)
         append(',')
         appendJsonField("pauseOverlayLogo", pauseOverlayLogo.orEmpty())

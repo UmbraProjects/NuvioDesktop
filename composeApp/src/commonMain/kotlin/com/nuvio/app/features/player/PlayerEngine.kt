@@ -171,6 +171,8 @@ data class PlayerControlsState(
     // The addon's real media file name; mpv's diagnostics show it ahead of the source label.
     val streamFilename: String = "",
     val providerName: String = "",
+    // A video from the YouTube tab: the HUD calls it a video rather than a movie ("Video ends at").
+    val isYouTubeVideo: Boolean = false,
     val pauseOverlayWatchingLabel: String = "You're watching",
     val pauseOverlayLogo: String? = null,
     val pauseOverlayEpisodeInfo: String = "",
