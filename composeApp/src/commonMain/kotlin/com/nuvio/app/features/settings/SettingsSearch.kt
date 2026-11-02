@@ -1100,6 +1100,15 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.Appearance,
+            key = "navigation-order",
+            title = "Navigation order",
+            description = "The order of the sidebar and top bar, and which of their optional entries show.",
+            pageLabel = layoutPage,
+            section = resolve(Res.string.settings_appearance_section_display),
+            icon = Icons.Rounded.Palette,
+        )
+        addRow(
+            page = SettingsPage.Appearance,
             key = "desktop-discover-tab",
             title = resolve(Res.string.settings_appearance_desktop_discover_tab),
             description = resolve(Res.string.settings_appearance_desktop_discover_tab_description),
@@ -1447,6 +1456,12 @@ private fun settingsSearchEntries(
 
     listOf(
         PlaybackSearchRow("games-shortcut", gamesPage, resolve(Res.string.settings_games_shortcut_hint), resolve(Res.string.settings_games_title)),
+        PlaybackSearchRow(
+            "games-in-navigation",
+            "Show in navigation",
+            "A Games button in the sidebar and top bar that opens game mode.",
+            resolve(Res.string.settings_games_title),
+        ),
         PlaybackSearchRow("games-metadata-source", resolve(Res.string.settings_games_metadata_source), resolve(Res.string.settings_games_metadata_source_description), resolve(Res.string.settings_games_section_metadata)),
         PlaybackSearchRow("games-igdb-client-id", resolve(Res.string.settings_games_igdb_client_id), resolve(Res.string.settings_games_igdb_client_id_description), resolve(Res.string.settings_games_section_metadata)),
         PlaybackSearchRow("games-igdb-client-secret", resolve(Res.string.settings_games_igdb_client_secret), resolve(Res.string.settings_games_igdb_client_secret_description), resolve(Res.string.settings_games_section_metadata)),

@@ -1,6 +1,8 @@
 package com.nuvio.app.features.settings
 
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.SmartDisplay
+import androidx.compose.runtime.key
 import com.nuvio.app.core.ui.LocalOpenMetaDetails
 import nuvio.composeapp.generated.resources.settings_desktop_recent_searches
 import androidx.compose.material.icons.rounded.History
@@ -2830,62 +2832,68 @@ private fun DesktopSettingsRootNavigation(
     onNavigateToLiveTv: (() -> Unit)?,
     onNavigateToMusic: (() -> Unit)?,
 ) {
-    val discoverTabVisible by remember {
-        ThemeSettingsRepository.desktopDiscoverTabVisible
-    }.collectAsState()
-    val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
-    val musicTabVisible = com.nuvio.app.features.music.rememberMusicTabVisible() // fork:music
-    // Laid out like the floating nav bar's quadrants (64dp a slot, 6dp inset, 2dp gaps) and in its
-    // order, with Calendar in the profile/Settings slot, so each icon sits where its tab does.
-    val slotCount = 4 + (if (discoverTabVisible) 1 else 0) + (if (liveTvTabVisible) 1 else 0) +
-        (if (musicTabVisible) 1 else 0)
+    // Settings hides the top bar entirely, so this row is the way to the tabs from here. It holds the
+    // same entries in the same order (NavBarLayout.kt), each shown only while its tab is (a button for
+    // a hidden tab would do nothing, since navigation to it is refused), and is laid out like the
+    // floating bar's quadrants (navBarSlotWidth a slot, 6dp inset, 2dp gaps) with Calendar in the
+    // profile/Settings slot, so each icon sits where its tab does.
+    val entries = com.nuvio.app.features.navbar.rememberNavBarEntries()
+    val slotCount = entries.size + 1
     Row(
         modifier = Modifier
-            .width(DesktopSettingsNavSlotWidth * slotCount)
+            .width(com.nuvio.app.features.navbar.navBarSlotWidth(slotCount) * slotCount)
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        DesktopSettingsNavIcon(
-            onClick = onNavigateToHome,
-            contentDescription = stringResource(Res.string.compose_nav_home),
-            imageVector = Icons.Filled.Home,
-        )
-        DesktopSettingsNavIcon(
-            onClick = onNavigateToSearch,
-            contentDescription = stringResource(Res.string.compose_nav_search),
-            painter = painterResource(Res.drawable.sidebar_search),
-        )
-        // Settings hides the top bar entirely, so without this row Discover is only reachable by
-        // detouring through another tab or knowing the hotkey. Hidden outright when the tab is
-        // turned off, since navigation to it is refused and the button would do nothing.
-        if (discoverTabVisible) {
-            DesktopSettingsNavIcon(
-                onClick = onNavigateToDiscover,
-                contentDescription = stringResource(Res.string.compose_nav_discover),
-                imageVector = Icons.Rounded.Explore,
-            )
-        }
-        // Live TV, like its tab, only once a playlist exists.
-        if (liveTvTabVisible) {
-            DesktopSettingsNavIcon(
-                onClick = onNavigateToLiveTv,
-                contentDescription = stringResource(Res.string.iptv_settings_page),
-                imageVector = Icons.Rounded.LiveTv,
-            )
-        }
-        DesktopSettingsNavIcon(
-            onClick = onNavigateToLibrary,
-            contentDescription = stringResource(Res.string.compose_nav_library),
-            painter = painterResource(Res.drawable.sidebar_library),
-        )
-        // Music, like its tab, only once it is switched on (Settings > Music > Show Music).
-        if (musicTabVisible) { // fork:music
-            DesktopSettingsNavIcon(
-                onClick = onNavigateToMusic,
-                contentDescription = "Music",
-                imageVector = Icons.Rounded.MusicNote,
-            )
+        // Entries this screen has no callback for go through the app's navigation requests.
+        fun request(entry: com.nuvio.app.features.navbar.NavBarEntry): () -> Unit =
+            { com.nuvio.app.features.navbar.NavBarNavigation.request(entry) }
+        entries.forEach { entry ->
+            key(entry) {
+                when (entry) {
+                    com.nuvio.app.features.navbar.NavBarEntry.Home -> DesktopSettingsNavIcon(
+                        onClick = onNavigateToHome,
+                        contentDescription = stringResource(Res.string.compose_nav_home),
+                        imageVector = Icons.Filled.Home,
+                    )
+                    com.nuvio.app.features.navbar.NavBarEntry.Search -> DesktopSettingsNavIcon(
+                        onClick = onNavigateToSearch,
+                        contentDescription = stringResource(Res.string.compose_nav_search),
+                        painter = painterResource(Res.drawable.sidebar_search),
+                    )
+                    com.nuvio.app.features.navbar.NavBarEntry.Discover -> DesktopSettingsNavIcon(
+                        onClick = onNavigateToDiscover,
+                        contentDescription = stringResource(Res.string.compose_nav_discover),
+                        imageVector = Icons.Rounded.Explore,
+                    )
+                    com.nuvio.app.features.navbar.NavBarEntry.LiveTv -> DesktopSettingsNavIcon(
+                        onClick = onNavigateToLiveTv,
+                        contentDescription = stringResource(Res.string.iptv_settings_page),
+                        imageVector = Icons.Rounded.LiveTv,
+                    )
+                    com.nuvio.app.features.navbar.NavBarEntry.Library -> DesktopSettingsNavIcon(
+                        onClick = onNavigateToLibrary,
+                        contentDescription = stringResource(Res.string.compose_nav_library),
+                        painter = painterResource(Res.drawable.sidebar_library),
+                    )
+                    com.nuvio.app.features.navbar.NavBarEntry.YouTube -> DesktopSettingsNavIcon( // fork:youtube-mode
+                        onClick = request(entry),
+                        contentDescription = "YouTube",
+                        imageVector = Icons.Rounded.SmartDisplay,
+                    )
+                    com.nuvio.app.features.navbar.NavBarEntry.Music -> DesktopSettingsNavIcon( // fork:music
+                        onClick = onNavigateToMusic ?: request(entry),
+                        contentDescription = "Music",
+                        imageVector = Icons.Rounded.MusicNote,
+                    )
+                    com.nuvio.app.features.navbar.NavBarEntry.Games -> DesktopSettingsNavIcon(
+                        onClick = request(entry),
+                        contentDescription = "Games",
+                        imageVector = Icons.Rounded.SportsEsports,
+                    )
+                }
+            }
         }
         // Calendar is a pushed route rather than a tab, so it has no sidebar entry to fall back
         // on; from Settings the only other ways in are the hotkey or the Library header icon.
@@ -2929,8 +2937,6 @@ private fun settingsColumnGuideBrush(horizontal: Boolean = false): Brush {
 /** A full pixel, as the glass edges are: a half-pixel line goes soft and patchy at 100% scale. */
 private val SettingsColumnGuideWidth = 1.dp
 
-/** One slot of the floating nav bar (`FloatingTopBarQuadrantWidth` in App.kt). */
-private val DesktopSettingsNavSlotWidth = 64.dp
 
 @Composable
 private fun RowScope.DesktopSettingsNavIcon(
