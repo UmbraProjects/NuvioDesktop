@@ -126,6 +126,19 @@ internal fun acceptLyricAlignment(alignment: LyricAlignment): Long? {
     return if (abs(shift) <= SNAP_TO_ZERO_MS) 0L else shift
 }
 
+/**
+ * The offset to fall back on when the analysis could not tell (vocals buried in a dense mix): a video that opens with a
+ * non-music intro ending at [introEndMs] (SponsorBlock's) mostly plays the album cut after it, so its lines start that
+ * much later. Only when the video is long enough to hold that intro on top of the lyrics' recording; null otherwise.
+ * Rough (the music can start a moment either side of the marked end), but close enough that a tap on the line puts it right.
+ */
+internal fun introFallbackOffsetMs(introEndMs: Long?, trackDurationMs: Long, playedDurationMs: Long): Long? {
+    if (introEndMs == null || introEndMs <= 0L || trackDurationMs <= 0L || playedDurationMs <= 0L) return null
+    val extra = playedDurationMs - trackDurationMs
+    if (introEndMs > extra + LYRIC_SAME_CUT_MS) return null
+    return introEndMs
+}
+
 /** The lyrics as they fall on the played stream: every line [offsetMs] later. */
 internal fun List<LyricLine>.shiftedBy(offsetMs: Long): List<LyricLine> =
     if (offsetMs == 0L) this else map { line ->

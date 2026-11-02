@@ -138,4 +138,23 @@ class LyricSyncTest {
         assertEquals("-0.5s", formatLyricOffset(-500L))
         assertEquals("+0.0s", formatLyricOffset(0L))
     }
+
+    @Test
+    fun anUnsureVideoFallsBackOnItsIntro() {
+        // The album cut is 223 s; the video is 237.74 s and its first 9.6 s are marked as not music.
+        assertEquals(9_647L, introFallbackOffsetMs(9_647L, trackDurationMs = 223_000L, playedDurationMs = 237_740L))
+        // No intro, or an intro longer than the video has to spare, gives nothing to go on.
+        assertNull(introFallbackOffsetMs(null, 223_000L, 237_740L))
+        assertNull(introFallbackOffsetMs(30_000L, 223_000L, 237_740L))
+        assertNull(introFallbackOffsetMs(9_647L, 0L, 237_740L))
+    }
+
+    @Test
+    fun aVideoIsKeyedByTheVideoThatPlaysAndAudioByTheTrack() {
+        // An addon's lossless track: its id is the addon's, the video that plays is YouTube's.
+        val track = MusicTrack(videoId = "nebula:tidal:track:1", title = "t", artists = emptyList(), durationSeconds = 1, trackNumber = 1, isAvailable = true)
+        assertEquals("bcvuYNhfj-c:video", lyricSyncKey(track, realVideo = true, playingId = "bcvuYNhfj-c"))
+        assertEquals("nebula:tidal:track:1:video", lyricSyncKey(track, realVideo = true))
+        assertEquals("nebula:tidal:track:1:audio", lyricSyncKey(track, realVideo = false, playingId = "bcvuYNhfj-c"))
+    }
 }

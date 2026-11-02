@@ -262,7 +262,9 @@ private fun MusicNowPlayingScreen(
 
     // The video is often another cut than the album track the lyrics were timed to: find how far
     // apart they are once the stream's length is known, and shift the lines by it.
-    val syncKey = track?.let { lyricSyncKey(it, realVideo || state.videoCutPlaying) }
+    val videoStream = realVideo || state.videoCutPlaying
+    val syncKey = track?.let { lyricSyncKey(it, videoStream, state.videoId) }
+    val legacySyncKey = track?.let { lyricSyncKey(it, videoStream) }?.takeIf { it != syncKey }
     val syncStates by MusicLyricSync.states.collectAsStateWithLifecycle()
     val syncState = syncKey?.let { syncStates[it] } ?: LyricSyncState.Idle
     val streamKnown = state.durationMs > 0L && !state.isLoading
@@ -276,8 +278,11 @@ private fun MusicNowPlayingScreen(
     val trackDurationMs = streamSynced?.durationMs?.takeIf { it > 0L } ?: ((track?.durationSeconds ?: 0) * 1_000L)
     LaunchedEffect(syncKey, syncLines, state.loadId, streamKnown, streamLyrics.resolved) {
         if (syncKey == null || syncLines == null || !streamKnown || !streamLyrics.resolved) return@LaunchedEffect
+        // A video's non-music intro, for when the analysis cannot hear the vocals (see introFallbackOffsetMs).
+        val introEndMs = state.videoId?.takeIf { videoStream }
+            ?.let { id -> musicIntroSegment(MusicSponsorBlock.segments(id), state.durationMs)?.endMs }
         repeat(LYRIC_SYNC_ATTEMPTS) {
-            MusicLyricSync.sync(syncKey, syncLines, trackDurationMs, state.durationMs, state.loadId)
+            MusicLyricSync.sync(syncKey, syncLines, trackDurationMs, state.durationMs, state.loadId, legacySyncKey, introEndMs)
             if (MusicLyricSync.stateOf(syncKey) !is LyricSyncState.Idle) return@LaunchedEffect
             delay(LYRIC_SYNC_RETRY_MS)
         }
@@ -328,7 +333,12 @@ private fun MusicNowPlayingScreen(
             val wide = maxWidth >= 860.dp
             val cutout = identity?.cutoutUrl.takeIf { wide }
             // fork:stage - three panels (player, lyrics, booklet over the artist) when there is room; each keeps to its own.
-            val threePanels = wide && stageUsesThreePanels(maxWidth.value)
+            // Without the liner notes there is no third panel: an empty column held the video and lyrics off centre.
+            val showBooklet = album != null && bookletUi !is BookletUi.None
+            val threePanels = wide && showBooklet && stageUsesThreePanels(maxWidth.value)
+            // The video, lyrics and sync controls sit in the middle of the space right of the player column, except when the
+            // full-height cut-out stands beside the lyrics and they keep to the left of it.
+            val centredMiddle = threePanels || realVideo || cutout == null
             // fork:stage - the right panel's glass runs from the top of the album case to the progress bar, so the three columns share
             // two lines (symmetry is a rule of this page). Measured in the window's pixels; null until the first layout.
             var caseTopPx by remember { mutableStateOf<Float?>(null) }
@@ -452,7 +462,7 @@ private fun MusicNowPlayingScreen(
                         // area right of the sidebar column rather than shifted left of it.
                         Modifier.weight(1f).fillMaxSize().padding(end = if (cutout != null && !realVideo && !threePanels) CUTOUT_CLEARANCE else 0.dp),
                         // Under a video the column is centred: the picture, then the lyric strip beneath it.
-                        horizontalAlignment = if (realVideo || threePanels) Alignment.CenterHorizontally else Alignment.Start,
+                        horizontalAlignment = if (centredMiddle) Alignment.CenterHorizontally else Alignment.Start,
                     ) {
                     // With a video: as large as the column allows, and four lines of lyrics under it.
                     if (realVideo) InlineVideoSlot()
@@ -465,13 +475,12 @@ private fun MusicNowPlayingScreen(
                         onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
                         onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
                         onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
-                        centredSync = threePanels,
+                        centredSync = centredMiddle,
                         visible = lyricsOn,
                     )
                     }
                     if (threePanels) {
                         // The right panel: the booklet in glass, and under it the artist, so the cut-out cannot reach the lyrics.
-                        val showBooklet = album != null && bookletUi !is BookletUi.None
                         val caseTop = caseTopPx
                         val barLine = barLinePx
                         val rightTop = rightTopPx

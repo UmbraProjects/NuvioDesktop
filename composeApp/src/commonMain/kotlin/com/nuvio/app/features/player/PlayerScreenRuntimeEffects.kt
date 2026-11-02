@@ -508,6 +508,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     BindPartyEffects()
     BindDiscordRichPresenceEffect()
     BindLightsEffect()
+    BindYouTubeWatchTimeEffect() // fork:youtube-mode
     BindStreamFailoverWatchdogEffect()
     BindIptvLiveEffects()
 
@@ -569,7 +570,8 @@ private enum class LightsPlaybackPhase { Idle, Loading, Playing, Paused, Ended }
 @Composable
 private fun PlayerScreenRuntime.BindLightsEffect() {
     // A trailer is a preview, not a screening; the room stays as it is.
-    val isTrailer = disableProgressTracking && providerName.equals("YouTube", ignoreCase = true)
+    val isTrailer = disableProgressTracking && providerName.equals("YouTube", ignoreCase = true) &&
+        parentMetaType != com.nuvio.app.features.youtube.YOUTUBE_META_TYPE // fork:youtube-mode - a video from the YouTube tab is a screening
     val phase = when {
         isTrailer || isProviderDiagnosticVideoPlayback || errorMessage != null -> LightsPlaybackPhase.Idle
         playbackSnapshot.isEnded -> LightsPlaybackPhase.Ended

@@ -110,6 +110,27 @@ class UnplacedGenresTest {
     }
 
     @Test
+    fun thePickerTogglesGenresInPickOrderUpToThree() {
+        val two = toggledManualGenre(toggledManualGenre(emptyList(), "folk"), "pop")
+        assertEquals(listOf("folk", "pop"), two)
+        // A second tap takes it off, whatever the spelling.
+        assertEquals(listOf("pop"), toggledManualGenre(two, "Folk"))
+        val three = toggledManualGenre(two, "rock")
+        assertEquals(listOf("folk", "pop", "rock"), three)
+        assertTrue(manualGenresFull(three))
+        // A fourth is not taken while three are chosen.
+        assertEquals(three, toggledManualGenre(three, "jazz"))
+        assertEquals(two, toggledManualGenre(two, "  "))
+    }
+
+    @Test
+    fun typedGenresJoinThePickerAfterTheChosenOnes() {
+        assertEquals(listOf("folk", "uk garage", "grime"), withTypedGenres(listOf("folk"), "uk garage, grime, jazz"))
+        assertEquals(listOf("folk"), withTypedGenres(listOf("folk"), "Folk"))
+        assertEquals(listOf("folk"), withTypedGenres(listOf("folk"), " ; "))
+    }
+
+    @Test
     fun typedTextAddsInFrontOrChangesNothing() {
         assertEquals(listOf("funk", "soul", "jazz"), withManualGenres(listOf("jazz"), "funk, soul"))
         assertEquals(listOf("jazz"), withManualGenres(listOf("jazz"), " ; "))

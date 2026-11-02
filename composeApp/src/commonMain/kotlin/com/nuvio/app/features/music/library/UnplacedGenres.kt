@@ -75,6 +75,27 @@ internal fun withManualGenre(current: List<String>, genre: String): List<String>
     return (listOf(name) + current).distinctBy(::genreKey).take(MAX_MANUAL_GENRES)
 }
 
+/**
+ * The picker's selection with [genre] switched: taken out when it is there, else added after the others (the first pick
+ * leads), unless [MAX_MANUAL_GENRES] are already chosen.
+ */
+internal fun toggledManualGenre(current: List<String>, genre: String): List<String> {
+    val name = canonicalGenre(genre) ?: return current
+    val key = genreKey(name)
+    return when {
+        current.any { genreKey(it) == key } -> current.filterNot { genreKey(it) == key }
+        current.size >= MAX_MANUAL_GENRES -> current
+        else -> current + name
+    }
+}
+
+/** The picker's selection with the genres typed in [text] added after it (never removing one), up to [MAX_MANUAL_GENRES]. */
+internal fun withTypedGenres(current: List<String>, text: String): List<String> =
+    (current + parseGenreInput(text)).distinctBy(::genreKey).take(MAX_MANUAL_GENRES)
+
+/** True when the picker holds as many genres as an artist can have. */
+internal fun manualGenresFull(current: List<String>): Boolean = current.size >= MAX_MANUAL_GENRES
+
 /** [current] with the genres typed in [text] added in front (see [parseGenreInput]); unchanged when the text names none. */
 internal fun withManualGenres(current: List<String>, text: String): List<String> =
     parseGenreInput(text).asReversed().fold(current) { acc, genre -> withManualGenre(acc, genre) }

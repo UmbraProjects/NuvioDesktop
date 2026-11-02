@@ -94,5 +94,20 @@ class LyricVersionTest {
         assertTrue(lyricSearchRange(primary.durationMs, 213_000L) != null)
     }
 
+    @Test
+    fun aVersionTimedLikeTheAlbumButLabelledWithTheVideosLengthIsNotSwappedIn() {
+        // LRCLIB holds the album's timing (first line at 15.26 s) uploaded again as 237.74 s, the music video's length; the
+        // video opens with a ten-second intro, so taking it as the video's own timing left every line early.
+        val album = timed(223.0, 15_460L)
+        val mislabelled = timed(237.74, 15_260L)
+        assertNull(pickLyricsForStream(album, listOf(mislabelled), playedDurationMs = 237_740L))
+        // The video's real timing (the intro in front) is still taken.
+        val videoTimed = timed(237.74, 25_000L)
+        assertSame(videoTimed, pickLyricsForStream(album, listOf(mislabelled, videoTimed), playedDurationMs = 237_740L))
+    }
+
+    private fun timed(duration: Double, firstLineMs: Long) =
+        Lyrics.Synced(List(8) { i -> LyricLine(firstLineMs + i * 3_500L, "line $i") }, duration)
+
     private fun videoVersion(duration: Double) = synced(duration, "video")
 }

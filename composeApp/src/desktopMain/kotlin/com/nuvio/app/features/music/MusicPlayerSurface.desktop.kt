@@ -293,10 +293,18 @@ actual fun MusicPlayerSurface(
     LaunchedEffect(controller, cornerPx, revealed, loadId) { controller.setCornerRadius(cornerPx) }
     // fork:music-stage - the glass bezel laid over the picture (NowPlayingBezel): it covers the square corners the rounded cut
     // leaves, and follows the picture as it resizes and as the app window moves.
+    // Only a load in progress (the next track) keeps the bezel up for its grace; leaving the page hides it at once.
+    val onStage by rememberUpdatedState(framed && videoVisible)
+    DisposableEffect(host) { onDispose { NowPlayingBezel.release(host, immediate = true) } }
     val bezelUp = framed && videoVisible && revealed
     DisposableEffect(host, bezelUp, density) {
-        if (!bezelUp) return@DisposableEffect onDispose { NowPlayingBezel.release(host) }
+        if (!bezelUp) return@DisposableEffect onDispose { NowPlayingBezel.release(host, immediate = !onStage) }
+        // Opening the page, the picture moves onto the Stage while the page fades in and its layout settles (the liner notes
+        // arriving moved it across the screen): a bezel shown at once sat over the page underneath and then jumped. It waits
+        // for the fade and for the picture to hold still. Between songs it is already up and simply carries on.
+        var settled = NowPlayingBezel.isUpFor(host)
         fun fit() {
+            if (!settled) return
             val scale = host.graphicsConfiguration?.defaultTransform?.scaleX ?: density.toDouble()
             NowPlayingBezel.show(host, scale, density)
         }
@@ -307,11 +315,28 @@ actual fun MusicPlayerSurface(
         host.addComponentListener(listener)
         val window = javax.swing.SwingUtilities.getWindowAncestor(host)
         window?.addComponentListener(listener)
-        fit()
+        val startedAt = System.currentTimeMillis()
+        var lastBounds: java.awt.Rectangle? = null
+        var stillSince = startedAt
+        val settle = javax.swing.Timer(BEZEL_SETTLE_POLL_MS) { event ->
+            val now = System.currentTimeMillis()
+            val bounds = if (host.isShowing) java.awt.Rectangle(host.locationOnScreen, host.size) else null
+            if (bounds != lastBounds) {
+                lastBounds = bounds
+                stillSince = now
+            }
+            if (bounds != null && now - startedAt >= BEZEL_FADE_MS && now - stillSince >= BEZEL_STILL_MS) {
+                (event.source as javax.swing.Timer).stop()
+                settled = true
+                fit()
+            }
+        }
+        if (settled) fit() else settle.start()
         onDispose {
+            settle.stop()
             host.removeComponentListener(listener)
             window?.removeComponentListener(listener)
-            NowPlayingBezel.release(host)
+            NowPlayingBezel.release(host, immediate = !onStage)
         }
     }
     // The corners the rounded picture leaves show the host window. mpv's own "black" reaches the screen as about (8, 8, 8), so
@@ -427,6 +452,13 @@ actual fun MusicPlayerSurface(
         }
     }
 }
+
+/** The Now Playing page's fade-in (MusicNowPlayingHost), and a little over: the bezel never shows before it is done. */
+private const val BEZEL_FADE_MS = 300L
+
+/** How long the picture has to hold still before the bezel is laid round it, and how often that is checked. */
+private const val BEZEL_STILL_MS = 150L
+private const val BEZEL_SETTLE_POLL_MS = 40
 
 /** The corner of the Now Playing picture, as the Stage's glass panels. */
 private const val FRAMED_CORNER_DP = 16f

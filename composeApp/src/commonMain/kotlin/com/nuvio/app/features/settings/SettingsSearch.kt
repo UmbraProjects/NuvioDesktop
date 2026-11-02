@@ -2440,6 +2440,18 @@ private fun settingsSearchEntries(
             icon = Icons.Rounded.Link,
             anchor = SettingsScrollAnchor.searchKey("youtube-account"),
         )
+        // fork:youtube-mode
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-tab",
+            title = "Show YouTube tab",
+            description = "Your YouTube home feed and subscriptions in their own tab",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-account"),
+        )
     }
 
     if (isDesktop) {

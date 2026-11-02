@@ -92,9 +92,13 @@ internal object SimklScrobbleAdapter : TrackingScrobbler {
     private val log = Logger.withTag("SimklScrobble")
     override val providerId: TrackingProviderId = TrackingProviderId.SIMKL
 
-    /** Matches the pre-existing seek behaviour: a seek stops the scrobble and starts a new one. */
+    /**
+     * A seek sends only the restart. A fresh `start` moves SIMKL's running session to the new
+     * position, and the stop that used to precede it was stored as a pause anyway (below 80%), so
+     * each seek cost two calls — skipping an intro with a few arrow taps sent ten in eight seconds.
+     */
     override val seekScrobblePolicy: TrackingSeekScrobblePolicy =
-        TrackingSeekScrobblePolicy.STOP_AND_RESTART
+        TrackingSeekScrobblePolicy.RESTART_ONLY
 
     /**
      * Five minutes, matching MDBList. SIMKL extrapolates the position of a running session from the

@@ -41,9 +41,13 @@ internal class LyricAudioRequest(
     val loadId: Long,
 )
 
-/** One offset per stream: the same song as audio and as video are different streams. */
-fun lyricSyncKey(track: MusicTrack, realVideo: Boolean): String =
-    "${track.videoId}:${if (realVideo) "video" else "audio"}"
+/**
+ * One offset per stream: the same song as audio and as video are different streams. A video is keyed by the video that
+ * plays ([playingId]): a track whose audio comes from an addon has the addon's id, not the video's, and every song of
+ * that addon would otherwise share no offset with the same video played any other way.
+ */
+fun lyricSyncKey(track: MusicTrack, realVideo: Boolean, playingId: String? = null): String =
+    if (realVideo) "${playingId ?: track.videoId}:video" else "${track.videoId}:audio"
 
 /**
  * Offsets per stream for the session. Hand it the lyrics and the lengths with [sync] and read
@@ -91,6 +95,9 @@ object MusicLyricSync {
      * person saved earlier wins over any analysis. The same cut as the lyrics ([trackDurationMs] is the
      * length of the recording they were timed to) is settled without reading any audio. A stream that
      * could not be read (no estimator yet, another load) stays [LyricSyncState.Idle] so a later call tries again.
+     * [legacyKey] is the key the same stream had before videos were keyed by the playing video: an offset saved under it
+     * still counts. [introEndMs] is where the stream's non-music intro ends, when one is known: an analysis that cannot
+     * tell falls back on it (see [introFallbackOffsetMs]).
      */
     internal suspend fun sync(
         key: String,
@@ -98,10 +105,13 @@ object MusicLyricSync {
         trackDurationMs: Long,
         playedDurationMs: Long,
         loadId: Long,
+        legacyKey: String? = null,
+        introEndMs: Long? = null,
     ) {
         lyricsLengths[key] = trackDurationMs
         if (stateOf(key) !is LyricSyncState.Idle) return
-        savedOffsetFor(savedOffsets(), key, trackDurationMs)?.let { offset ->
+        val saved = savedOffsets()
+        (savedOffsetFor(saved, key, trackDurationMs) ?: legacyKey?.let { savedOffsetFor(saved, it, trackDurationMs) })?.let { offset ->
             set(key, LyricSyncState.Offset(offset, auto = false))
             return
         }
@@ -128,12 +138,15 @@ object MusicLyricSync {
                 set(key, LyricSyncState.Idle)
                 return
             }
-            val offset = acceptLyricAlignment(alignment)
+            val heard = acceptLyricAlignment(alignment)
+            val fallback = if (heard == null) introFallbackOffsetMs(introEndMs, trackDurationMs, playedDurationMs) else null
+            val offset = heard ?: fallback
             log.i {
                 "$key range=${range.first}..${range.last}ms shift=${alignment.shiftMs.roundToLong()}ms " +
                     "peak=${round3(alignment.peak)} prominence=${round3(alignment.prominence)} " +
                     "lines=${alignment.lineCount} voice=${alignment.voiceSeconds.roundToLong()}s " +
-                    "edge=${alignment.atSearchEdge} -> ${offset?.let { "${it}ms" } ?: "unsure"}"
+                    "edge=${alignment.atSearchEdge} -> ${offset?.let { "${it}ms" } ?: "unsure"}" +
+                    if (fallback != null) " (the intro's end)" else ""
             }
             // A nudge made while this ran is the person's word over the analysis.
             if (stateOf(key) is LyricSyncState.Checking) {
