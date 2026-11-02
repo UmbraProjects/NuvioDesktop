@@ -106,7 +106,10 @@ internal fun PlayerScreenRuntime.youTubeRelatedEpisodeItems(): List<PlayerContro
         )
     }
 
-/** Comments as the Sources panel's rows: author and age on top, the comment below, likes and replies as the tag. */
+/**
+ * Comments as the Sources panel's rows: author and age on top, the comment below, likes as the tag.
+ * Not the reply count: the replies themselves are not loaded, so a count would point at nothing.
+ */
 internal fun PlayerScreenRuntime.youTubeCommentSourceItems(): List<PlayerControlSourceItem> =
     youTubeComments.mapIndexed { index, comment ->
         PlayerControlSourceItem(
@@ -117,9 +120,6 @@ internal fun PlayerScreenRuntime.youTubeCommentSourceItems(): List<PlayerControl
                 comment.published,
             ).joinToString(" · "),
             subtitle = comment.text,
-            addonName = listOfNotNull(
-                comment.likes?.let { "$it likes" },
-                comment.replies?.let { "$it ${if (it == "1") "reply" else "replies"}" },
-            ).joinToString(" · "),
+            addonName = comment.likes?.let { "$it likes" }.orEmpty(),
         )
     }

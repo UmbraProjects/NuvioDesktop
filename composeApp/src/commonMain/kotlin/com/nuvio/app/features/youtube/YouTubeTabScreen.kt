@@ -940,10 +940,8 @@ private fun CommentRow(comment: YouTubeComment) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(comment.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-            val counts = listOfNotNull(
-                comment.likes?.let { "$it likes" },
-                comment.replies?.let { "$it ${if (it == "1") "reply" else "replies"}" },
-            )
+            // Likes only: the replies are not loaded, so their count would point at nothing to read.
+            val counts = listOfNotNull(comment.likes?.let { "$it likes" })
             if (counts.isNotEmpty()) {
                 Text(
                     text = counts.joinToString(" · "),
