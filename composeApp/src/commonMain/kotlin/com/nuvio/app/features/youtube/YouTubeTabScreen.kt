@@ -107,7 +107,8 @@ fun YouTubeTabScreen(
     val searchQuery by YouTubeFeedRepository.searchQuery.collectAsStateWithLifecycle()
     val deArrow by remember { YouTubeFeedRepository.deArrow }.collectAsStateWithLifecycle()
     val hideWatched by remember { YouTubeFeedRepository.hideWatched }.collectAsStateWithLifecycle()
-    val videos = if (hideWatched) feed.videos.filterNot(::isYouTubeVideoWatched) else feed.videos
+    // Not on History, which is all watched by definition.
+    val videos = if (hideWatched && kind != YouTubeFeedKind.History) feed.videos.filterNot(::isYouTubeVideoWatched) else feed.videos
     // A page that was all watched leaves nothing on screen to scroll to the end of, so ask for the next one here.
     val allHidden = videos.isEmpty() && feed.videos.isNotEmpty()
     LaunchedEffect(allHidden, feed.continuation, feed.loading) {
@@ -320,6 +321,8 @@ fun YouTubeTabScreen(
                 text = when (kind) {
                     YouTubeFeedKind.Subscriptions -> "No recent uploads from your subscriptions."
                     YouTubeFeedKind.Search -> "No videos found for \"$searchQuery\"."
+                    YouTubeFeedKind.History ->
+                        "Nothing in this account's watch history. YouTube keeps none while watch history is paused."
                     YouTubeFeedKind.Home ->
                         "YouTube has no recommendations for this account yet. Watch history turned off gives an empty home feed."
                 },

@@ -27,6 +27,9 @@ enum class YouTubeFeedKind(val browseId: String, val label: String) {
     Home("FEwhat_to_watch", "Home"),
     Subscriptions("FEsubscriptions", "Subscriptions"),
 
+    /** The account's watch history, newest first (what the website lists under History). */
+    History("FEhistory", "History"),
+
     /** Results for [YouTubeFeedRepository.searchQuery]; not a browse feed, so it has no browse id. */
     Search("", "Search"),
 }
