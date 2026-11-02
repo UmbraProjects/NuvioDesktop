@@ -123,6 +123,26 @@ internal object YouTubeMusicAuth {
 
     private const val ROTATE_INTERVAL_MS = 9 * 60_000L
 
+    @Volatile
+    private var lastRescueAtMs = 0L
+
+    /**
+     * One renewal now, for a request YouTube answered as signed out: a sign-in that only went stale
+     * while the app was closed is renewed the way a browser reopened after a few days renews its
+     * own, and the request can be asked again. At most once a minute, so a session that is truly
+     * gone costs one extra request rather than one per feed. True when Google answered 2xx.
+     */
+    suspend fun renewNow(): Boolean {
+        ensureLoaded()
+        val jar = cookie ?: return false
+        val now = YouTubeMusicAuthPlatform.nowEpochSeconds() * 1000
+        if (now - lastRescueAtMs < 60_000L) return false
+        lastRescueAtMs = now
+        val status = YouTubeMusicAuthPlatform.rotateCookies(jar)
+        log.i { "Session renewal after a signed-out answer: HTTP $status" }
+        return status in 200..299
+    }
+
     val isSignedIn: Boolean
         get() {
             ensureLoaded()

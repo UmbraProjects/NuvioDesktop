@@ -90,7 +90,15 @@ internal actual suspend fun youTubeAccountsList(): YouTubeBrowseResult =
 private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>, pageId: String?): YouTubeBrowseResult {
     val accountHeaders = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)
     if (accountHeaders.isEmpty()) return YouTubeBrowseResult.SignedOut
-    val (status, body) = TrailerPlaybackResolver.webRequest(endpoint, params, accountHeaders, pageId)
+    var (status, body) = TrailerPlaybackResolver.webRequest(endpoint, params, accountHeaders, pageId)
+    // Answered as signed out: the session may only be stale (the app was closed for a while), so
+    // renew it once and ask again before calling the sign-in expired.
+    if (status in 200..299 && youTubeAnsweredSignedOut(body) && YouTubeMusicAuth.renewNow()) {
+        val retried = TrailerPlaybackResolver.webRequest(endpoint, params, YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN), pageId)
+        status = retried.first
+        body = retried.second
+        if (status in 200..299 && !youTubeAnsweredSignedOut(body)) log.i { "$endpoint: signed in again after renewing the session" }
+    }
     return when {
         // fork:youtube-signin-expired — Google answers cookies it no longer accepts with 200 and the signed-out page.
         status in 200..299 && youTubeAnsweredSignedOut(body) -> {
