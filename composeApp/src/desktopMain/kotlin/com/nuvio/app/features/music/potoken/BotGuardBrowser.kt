@@ -18,6 +18,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /*
  * fork:potoken
@@ -39,8 +40,10 @@ internal class BotGuardBrowser private constructor(
     private val profileDir: Path,
     private val cdp: CdpClient,
     private val sessionId: String,
+    /** Set when the page threw an error nobody caught: Google's script is in an unknown state. */
+    private val pageFailed: AtomicBoolean,
 ) {
-    val isDead: Boolean get() = cdp.isClosed || !process.isAlive
+    val isDead: Boolean get() = cdp.isClosed || !process.isAlive || pageFailed.get()
 
     /** Evaluates [expression] in the page, awaits a returned promise, and returns its string value. */
     suspend fun evaluate(expression: String, timeoutMs: Long): String {
@@ -123,10 +126,18 @@ internal class BotGuardBrowser private constructor(
 
                 // Serve our page on the YouTube origin; refuse everything else.
                 val loaded = CompletableDeferred<Unit>()
+                val pageFailed = AtomicBoolean(false)
                 client.onEvent { event ->
                     if (event.sessionId != session) return@onEvent
                     when (event.method) {
                         "Page.loadEventFired" -> loaded.complete(Unit)
+                        "Runtime.exceptionThrown" -> {
+                            // BitChord does the same for "Uncaught" console errors: replace the page at once
+                            // rather than find out from a mint that times out.
+                            val text = event.params["exceptionDetails"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull
+                            log.w { "Uncaught error in the BotGuard page: $text" }
+                            pageFailed.set(true)
+                        }
                         "Fetch.requestPaused" -> answerRequest(client, session, event.params)
                     }
                 }
@@ -136,10 +147,23 @@ internal class BotGuardBrowser private constructor(
                     session,
                 )
                 client.call("Page.enable", sessionId = session)
+                client.call("Runtime.enable", sessionId = session)
+                // New-style headless Chrome says "HeadlessChrome" in its user agent. BitChord's WebView presents a
+                // plain Chrome one, so do the same: the browser's own string with the "Headless" taken out.
+                val ownAgent = runCatching {
+                    client.call("Browser.getVersion")["userAgent"]?.jsonPrimitive?.contentOrNull
+                }.getOrNull()
+                client.call(
+                    "Emulation.setUserAgentOverride",
+                    buildJsonObject {
+                        put("userAgent", ownAgent?.replace("HeadlessChrome", "Chrome") ?: PoTokenProtocol.USER_AGENT)
+                    },
+                    session,
+                )
                 client.call("Page.navigate", buildJsonObject { put("url", PAGE_URL) }, session)
                 withTimeout(PAGE_LOAD_TIMEOUT_MS) { loaded.await() }
 
-                return BotGuardBrowser(process, profileDir, client, session)
+                return BotGuardBrowser(process, profileDir, client, session, pageFailed)
             } catch (error: Throwable) {
                 runCatching { cdp?.close() }
                 process?.let { stop(it, profileDir) } ?: deleteQuietly(profileDir)
