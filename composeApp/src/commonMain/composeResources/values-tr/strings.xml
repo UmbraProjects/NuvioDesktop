@@ -3870,7 +3870,7 @@
   <string name="iptv_settings_section_playback">Oynatma</string>
   <string name="iptv_settings_intro">Nuvio hiçbir kanal içermez. IPTV sağlayıcının verdiği bilgileri ekle.</string>
   <string name="iptv_settings_add_playlist">Oynatma listesi ekle</string>
-  <string name="iptv_settings_add_playlist_description">Bir Xtream Codes girişi veya M3U bağlantısı.</string>
+  <string name="iptv_settings_add_playlist_description">Bir Xtream Codes girişi, Stalker portalı veya M3U bağlantısı.</string>
   <string name="iptv_settings_refresh_interval">Kanalları ve rehberi yenile</string>
   <string name="iptv_settings_refresh_interval_description">Kanal listesinin ve program rehberinin ne sıklıkla yeniden indirileceği. İkisi de açılışlar arasında saklanır.</string>
   <string name="iptv_settings_refresh_every_launch">Her açılışta</string>
@@ -3884,6 +3884,7 @@
   <string name="iptv_settings_format_hls">HLS</string>
   <string name="iptv_playlist_type_xtream">Xtream</string>
   <string name="iptv_playlist_type_m3u">M3U bağlantısı</string>
+  <string name="iptv_playlist_type_stalker">Stalker portalı</string>
   <string name="iptv_playlist_summary_channels">%1$s · %2$d kanal</string>
   <string name="iptv_playlist_summary_not_loaded">%1$s · henüz yüklenmedi</string>
   <string name="iptv_playlist_summary_loading">%1$s · güncelleniyor…</string>
@@ -3898,6 +3899,15 @@
   <string name="iptv_playlist_password">Parola</string>
   <string name="iptv_playlist_url">Oynatma listesi URL'si</string>
   <string name="iptv_playlist_url_description">Bir .m3u veya .m3u8 dosyasına bağlantı.</string>
+  <string name="iptv_playlist_portal">Portal URL'si</string>
+  <string name="iptv_playlist_portal_description">Sağlayıcının verdiği adres, örn. http://example.com:8080/c/</string>
+  <string name="iptv_playlist_mac">MAC adresi</string>
+  <string name="iptv_playlist_mac_description">Sağlayıcının bu hat için kaydettiği MAC. Kayıtlı değilse portal hiç kanal göstermez. Nuvio bu bilgisayarın gerçek MAC adresini okumaz ve göndermez.</string>
+  <string name="iptv_playlist_serial">Seri numarası (isteğe bağlı)</string>
+  <string name="iptv_playlist_identity_description">Yalnızca sağlayıcın verdiyse doldur. Boş kalırsa Nuvio bunları MAC adresinden hesaplar.</string>
+  <string name="iptv_playlist_device_id">Cihaz kimliği (isteğe bağlı)</string>
+  <string name="iptv_playlist_device_id2">Cihaz kimliği 2 (isteğe bağlı)</string>
+  <string name="iptv_playlist_signature">İmza (isteğe bağlı)</string>
   <string name="iptv_playlist_epg_url">Rehber URL'si (isteğe bağlı)</string>
   <string name="iptv_playlist_epg_url_description">Bir XMLTV rehberi (.xml veya .xml.gz). Sağlayıcının sunduğunu kullanmak için boş bırak.</string>
   <string name="iptv_playlist_test">Test et</string>
@@ -3905,6 +3915,7 @@
   <string name="iptv_playlist_delete_confirm">Kalıcı olarak silinsin mi?</string>
   <string name="iptv_playlist_missing_fields">Sunucu, kullanıcı adı ve parolayı doldur.</string>
   <string name="iptv_playlist_missing_url">Oynatma listesi URL'sini gir.</string>
+  <string name="iptv_playlist_missing_stalker">Portal URL'sini ve 00:1A:79:12:34:56 gibi bir MAC gir.</string>
   <string name="iptv_test_ok_channels">Bağlandı. %1$d kanal bulundu.</string>
   <string name="iptv_test_ok_account">Bağlandı. Hesap %1$s, en fazla %2$d bağlantı.</string>
   <string name="iptv_test_ok_account_expires">Bağlandı. Hesap %1$s, en fazla %2$d bağlantı, bitiş: %3$s.</string>
@@ -3912,6 +3923,7 @@
   <string name="iptv_error_no_url">Adres eksik.</string>
   <string name="iptv_error_bad_url">Bu adres doğru görünmüyor. http:// veya https:// ile başladığını kontrol et.</string>
   <string name="iptv_error_bad_login">Sağlayıcı kullanıcı adını veya parolayı reddetti.</string>
+  <string name="iptv_error_stalker_mac">Portal bu MAC adresini reddetti. Sağlayıcında kayıtlı olduğunu kontrol et.</string>
   <string name="iptv_error_inactive">Sağlayıcıya göre bu hesap: %1$s.</string>
   <string name="iptv_error_http">Sağlayıcı %1$d hatasıyla yanıt verdi.</string>
   <string name="iptv_error_bad_response">Sağlayıcı oynatma listesi olmayan bir şey gönderdi. Adresi kontrol et.</string>

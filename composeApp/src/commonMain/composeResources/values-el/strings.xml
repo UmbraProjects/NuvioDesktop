@@ -3870,7 +3870,7 @@
   <string name="iptv_settings_section_playback">Αναπαραγωγή</string>
   <string name="iptv_settings_intro">Το Nuvio δεν περιλαμβάνει κανάλια. Προσθέστε τα στοιχεία που σας έδωσε ο πάροχος IPTV σας.</string>
   <string name="iptv_settings_add_playlist">Προσθήκη λίστας αναπαραγωγής</string>
-  <string name="iptv_settings_add_playlist_description">Σύνδεση Xtream Codes ή σύνδεσμος M3U.</string>
+  <string name="iptv_settings_add_playlist_description">Σύνδεση Xtream Codes, πύλη Stalker ή σύνδεσμος M3U.</string>
   <string name="iptv_settings_refresh_interval">Ανανέωση καναλιών και οδηγού</string>
   <string name="iptv_settings_refresh_interval_description">Κάθε πότε θα γίνεται νέα λήψη της λίστας καναλιών και του οδηγού προγράμματος. Και τα δύο διατηρούνται μεταξύ εκκινήσεων.</string>
   <string name="iptv_settings_refresh_every_launch">Σε κάθε εκκίνηση</string>
@@ -3884,6 +3884,7 @@
   <string name="iptv_settings_format_hls">HLS</string>
   <string name="iptv_playlist_type_xtream">Xtream</string>
   <string name="iptv_playlist_type_m3u">Σύνδεσμος M3U</string>
+  <string name="iptv_playlist_type_stalker">Πύλη Stalker</string>
   <string name="iptv_playlist_summary_channels">%1$s · %2$d κανάλια</string>
   <string name="iptv_playlist_summary_not_loaded">%1$s · δεν έχει φορτωθεί ακόμα</string>
   <string name="iptv_playlist_summary_loading">%1$s · γίνεται ενημέρωση…</string>
@@ -3898,6 +3899,15 @@
   <string name="iptv_playlist_password">Κωδικός πρόσβασης</string>
   <string name="iptv_playlist_url">URL λίστας αναπαραγωγής</string>
   <string name="iptv_playlist_url_description">Σύνδεσμος προς αρχείο .m3u ή .m3u8.</string>
+  <string name="iptv_playlist_portal">URL πύλης</string>
+  <string name="iptv_playlist_portal_description">Η διεύθυνση που σας έδωσε ο πάροχος, π.χ. http://example.com:8080/c/</string>
+  <string name="iptv_playlist_mac">Διεύθυνση MAC</string>
+  <string name="iptv_playlist_mac_description">Η MAC που καταχώρισε ο πάροχος για αυτή τη γραμμή. Χωρίς καταχώριση η πύλη δεν θα δείξει κανάλια. Το Nuvio δεν διαβάζει ούτε στέλνει την πραγματική MAC αυτού του υπολογιστή.</string>
+  <string name="iptv_playlist_serial">Σειριακός αριθμός (προαιρετικό)</string>
+  <string name="iptv_playlist_identity_description">Μόνο αν σας τα έδωσε ο πάροχος. Αν μείνουν κενά, το Nuvio τα υπολογίζει από τη MAC.</string>
+  <string name="iptv_playlist_device_id">Αναγνωριστικό συσκευής (προαιρετικό)</string>
+  <string name="iptv_playlist_device_id2">Αναγνωριστικό συσκευής 2 (προαιρετικό)</string>
+  <string name="iptv_playlist_signature">Υπογραφή (προαιρετικό)</string>
   <string name="iptv_playlist_epg_url">URL οδηγού (προαιρετικό)</string>
   <string name="iptv_playlist_epg_url_description">Οδηγός XMLTV (.xml ή .xml.gz). Αφήστε το κενό για να χρησιμοποιηθεί αυτός που παρέχει ο πάροχος.</string>
   <string name="iptv_playlist_test">Δοκιμή</string>
@@ -3905,6 +3915,7 @@
   <string name="iptv_playlist_delete_confirm">Οριστική διαγραφή;</string>
   <string name="iptv_playlist_missing_fields">Συμπληρώστε τον διακομιστή, το όνομα χρήστη και τον κωδικό πρόσβασης.</string>
   <string name="iptv_playlist_missing_url">Εισαγάγετε το URL της λίστας αναπαραγωγής.</string>
+  <string name="iptv_playlist_missing_stalker">Συμπληρώστε το URL της πύλης και μια MAC όπως 00:1A:79:12:34:56.</string>
   <string name="iptv_test_ok_channels">Η σύνδεση έγινε. Βρέθηκαν %1$d κανάλια.</string>
   <string name="iptv_test_ok_account">Η σύνδεση έγινε. Λογαριασμός %1$s, έως %2$d συνδέσεις.</string>
   <string name="iptv_test_ok_account_expires">Η σύνδεση έγινε. Λογαριασμός %1$s, έως %2$d συνδέσεις, λήγει %3$s.</string>
@@ -3912,6 +3923,7 @@
   <string name="iptv_error_no_url">Λείπει η διεύθυνση.</string>
   <string name="iptv_error_bad_url">Η διεύθυνση δεν φαίνεται σωστή. Βεβαιωθείτε ότι ξεκινά με http:// ή https://.</string>
   <string name="iptv_error_bad_login">Ο πάροχος απέρριψε το όνομα χρήστη ή τον κωδικό πρόσβασης.</string>
+  <string name="iptv_error_stalker_mac">Η πύλη απέρριψε αυτή τη MAC. Ελέγξτε ότι είναι καταχωρισμένη στον πάροχο.</string>
   <string name="iptv_error_inactive">Ο πάροχος αναφέρει ότι αυτός ο λογαριασμός είναι %1$s.</string>
   <string name="iptv_error_http">Ο πάροχος απάντησε με σφάλμα %1$d.</string>
   <string name="iptv_error_bad_response">Ο πάροχος έστειλε κάτι που δεν είναι λίστα αναπαραγωγής. Ελέγξτε τη διεύθυνση.</string>

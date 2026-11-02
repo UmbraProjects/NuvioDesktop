@@ -12,6 +12,7 @@ import nuvio.composeapp.generated.resources.iptv_error_network
 import nuvio.composeapp.generated.resources.iptv_error_no_url
 import nuvio.composeapp.generated.resources.iptv_error_proxy_auth
 import nuvio.composeapp.generated.resources.iptv_error_proxy_unreachable
+import nuvio.composeapp.generated.resources.iptv_error_stalker_mac
 import nuvio.composeapp.generated.resources.iptv_error_unreachable
 import org.jetbrains.compose.resources.stringResource
 
@@ -23,6 +24,7 @@ internal fun iptvErrorText(error: IptvSourceException): String {
         IptvSourceException.Kind.NoUrl -> stringResource(Res.string.iptv_error_no_url)
         IptvSourceException.Kind.BadUrl -> stringResource(Res.string.iptv_error_bad_url)
         IptvSourceException.Kind.BadLogin -> stringResource(Res.string.iptv_error_bad_login)
+        IptvSourceException.Kind.BadMac -> stringResource(Res.string.iptv_error_stalker_mac)
         IptvSourceException.Kind.Inactive -> stringResource(Res.string.iptv_error_inactive, error.status.orEmpty())
         IptvSourceException.Kind.Http -> when {
             error.httpCode == 407 -> stringResource(Res.string.iptv_error_proxy_auth)
@@ -89,7 +91,24 @@ internal fun describeIptvFailure(error: Throwable): String {
 
 private val CredentialQuery = Regex("((?:username|password)=)[^&\\s\"']*", RegexOption.IGNORE_CASE)
 private val CredentialPath = Regex("(/(?:live|movie|series|timeshift)/)[^/\\s]+/[^/\\s]+/")
+private val StalkerQuery = Regex(
+    "((?:^|[?&;\\s])(?:mac|sn|device_id2?|signature|hw_version(?:_2)?|metrics|token|play_token)=)[^&;\\s\"']*",
+    RegexOption.IGNORE_CASE,
+)
+private val MacAddress = Regex("\\b[0-9A-F]{2}(?:(?::|-|%3A)[0-9A-F]{2}){5}\\b", RegexOption.IGNORE_CASE)
 
-/** Xtream puts the login in both query strings and stream paths; neither may reach a log. */
-internal fun redactIptvCredentials(text: String): String =
-    CredentialPath.replace(CredentialQuery.replace(text, "$1***"), "$1***/***/")
+/**
+ * Xtream puts the login in both query strings and stream paths, and Stalker its MAC, device
+ * identity and token in query strings and stream links; none of them may reach a log, nor may the
+ * address of a Stalker portal.
+ */
+internal fun redactIptvCredentials(text: String): String {
+    val credentials = CredentialPath.replace(CredentialQuery.replace(text, "$1***"), "$1***/***/")
+    val identity = MacAddress.replace(StalkerQuery.replace(credentials, "$1***"), "***")
+    return StalkerUrls.portalHosts.fold(identity) { masked, host ->
+        // The whole URL, not only its host: a direct link can carry the login in its path.
+        Regex("""\b[a-zA-Z][a-zA-Z0-9+.-]*://${Regex.escape(host)}[^\s"'<>]*""", RegexOption.IGNORE_CASE)
+            .replace(masked, "***")
+            .replace(host, "***", ignoreCase = true)
+    }
+}

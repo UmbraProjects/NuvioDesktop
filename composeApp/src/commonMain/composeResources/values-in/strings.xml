@@ -3868,7 +3868,7 @@
   <string name="iptv_settings_section_playback">Pemutaran</string>
   <string name="iptv_settings_intro">Nuvio tidak menyertakan saluran apa pun. Tambahkan detail yang diberikan penyedia IPTV Anda.</string>
   <string name="iptv_settings_add_playlist">Tambah daftar putar</string>
-  <string name="iptv_settings_add_playlist_description">Login Xtream Codes atau tautan M3U.</string>
+  <string name="iptv_settings_add_playlist_description">Login Xtream Codes, portal Stalker, atau tautan M3U.</string>
   <string name="iptv_settings_refresh_interval">Segarkan saluran dan panduan</string>
   <string name="iptv_settings_refresh_interval_description">Seberapa sering daftar saluran dan panduan program diunduh ulang. Keduanya disimpan di antara peluncuran.</string>
   <string name="iptv_settings_refresh_every_launch">Setiap kali aplikasi dibuka</string>
@@ -3882,6 +3882,7 @@
   <string name="iptv_settings_format_hls">HLS</string>
   <string name="iptv_playlist_type_xtream">Xtream</string>
   <string name="iptv_playlist_type_m3u">Tautan M3U</string>
+  <string name="iptv_playlist_type_stalker">Portal Stalker</string>
   <string name="iptv_playlist_summary_channels">%1$s · %2$d saluran</string>
   <string name="iptv_playlist_summary_not_loaded">%1$s · belum dimuat</string>
   <string name="iptv_playlist_summary_loading">%1$s · memperbarui…</string>
@@ -3896,6 +3897,15 @@
   <string name="iptv_playlist_password">Kata sandi</string>
   <string name="iptv_playlist_url">URL daftar putar</string>
   <string name="iptv_playlist_url_description">Tautan ke file .m3u atau .m3u8.</string>
+  <string name="iptv_playlist_portal">URL portal</string>
+  <string name="iptv_playlist_portal_description">Alamat yang diberikan penyedia Anda, mis. http://example.com:8080/c/</string>
+  <string name="iptv_playlist_mac">Alamat MAC</string>
+  <string name="iptv_playlist_mac_description">MAC yang didaftarkan penyedia Anda untuk layanan ini. Tanpa pendaftaran, portal tidak akan menampilkan saluran. Nuvio tidak membaca atau mengirim MAC asli komputer ini.</string>
+  <string name="iptv_playlist_serial">Nomor seri (opsional)</string>
+  <string name="iptv_playlist_identity_description">Hanya jika diberikan oleh penyedia Anda. Jika dikosongkan, Nuvio menghitungnya dari MAC.</string>
+  <string name="iptv_playlist_device_id">ID perangkat (opsional)</string>
+  <string name="iptv_playlist_device_id2">ID perangkat 2 (opsional)</string>
+  <string name="iptv_playlist_signature">Tanda tangan (opsional)</string>
   <string name="iptv_playlist_epg_url">URL panduan (opsional)</string>
   <string name="iptv_playlist_epg_url_description">Panduan XMLTV (.xml atau .xml.gz). Biarkan kosong untuk memakai panduan yang disediakan penyedia.</string>
   <string name="iptv_playlist_test">Uji</string>
@@ -3903,6 +3913,7 @@
   <string name="iptv_playlist_delete_confirm">Hapus permanen?</string>
   <string name="iptv_playlist_missing_fields">Isi server, nama pengguna, dan kata sandi.</string>
   <string name="iptv_playlist_missing_url">Masukkan URL daftar putar.</string>
+  <string name="iptv_playlist_missing_stalker">Masukkan URL portal dan MAC seperti 00:1A:79:12:34:56.</string>
   <string name="iptv_test_ok_channels">Terhubung. %1$d saluran ditemukan.</string>
   <string name="iptv_test_ok_account">Terhubung. Akun %1$s, hingga %2$d koneksi.</string>
   <string name="iptv_test_ok_account_expires">Terhubung. Akun %1$s, hingga %2$d koneksi, kedaluwarsa %3$s.</string>
@@ -3910,6 +3921,7 @@
   <string name="iptv_error_no_url">Alamat belum diisi.</string>
   <string name="iptv_error_bad_url">Alamat itu tampaknya tidak benar. Pastikan diawali dengan http:// atau https://.</string>
   <string name="iptv_error_bad_login">Penyedia menolak nama pengguna atau kata sandi.</string>
+  <string name="iptv_error_stalker_mac">Portal menolak MAC ini. Pastikan MAC sudah terdaftar di penyedia Anda.</string>
   <string name="iptv_error_inactive">Penyedia menyatakan akun ini %1$s.</string>
   <string name="iptv_error_http">Penyedia menjawab dengan error %1$d.</string>
   <string name="iptv_error_bad_response">Penyedia mengirim sesuatu yang bukan daftar putar. Periksa alamatnya.</string>

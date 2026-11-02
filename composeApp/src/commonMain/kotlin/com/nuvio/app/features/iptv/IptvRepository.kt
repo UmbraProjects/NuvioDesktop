@@ -125,6 +125,8 @@ object IptvRepository {
         if (payload.isNullOrBlank()) return
         runCatching {
             _settings.value = json.decodeFromString<IptvSettings>(payload)
+            // Their logos are fetched, and logged, before anything else asks for a portal's address.
+            _settings.value.playlists.filter { it.type == IptvPlaylistType.Stalker }.forEach { StalkerUrls.base(it) }
         }.onFailure { error ->
             log.e(error) { "Failed to load IPTV settings from storage" }
         }
@@ -196,10 +198,16 @@ object IptvRepository {
     private fun sanitized(p: IptvPlaylist): IptvPlaylist = p.copy(
         name = p.name.trim(),
         server = p.server?.trim()?.takeIf { it.isNotEmpty() },
-        username = p.username?.trim()?.takeIf { it.isNotEmpty() },
+        username = p.username?.trim()?.takeIf { it.isNotEmpty() }?.let { username ->
+            if (p.type == IptvPlaylistType.Stalker) StalkerIdentity.normalizeMac(username) ?: username else username
+        },
         password = p.password?.takeIf { it.isNotEmpty() },
         url = p.url?.trim()?.takeIf { it.isNotEmpty() },
         epgUrl = p.epgUrl?.trim()?.takeIf { it.isNotEmpty() },
+        serial = p.serial?.trim()?.takeIf { it.isNotEmpty() },
+        deviceId = p.deviceId?.trim()?.takeIf { it.isNotEmpty() },
+        deviceId2 = p.deviceId2?.trim()?.takeIf { it.isNotEmpty() },
+        signature = p.signature?.trim()?.takeIf { it.isNotEmpty() },
     )
 
     private fun IptvPlaylist.withoutName() = copy(name = "")
@@ -336,8 +344,8 @@ object IptvRepository {
     }
 
     /**
-     * Checks a playlist the user is about to save: Xtream logs in and reports the account; M3U
-     * downloads and parses the list. Nothing is stored.
+     * Checks a playlist the user is about to save: Xtream logs in and reports the account; M3U and
+     * Stalker download and parse the list. Nothing is stored.
      */
     suspend fun test(playlist: IptvPlaylist): IptvTestResult {
         val clean = sanitized(playlist)
@@ -348,7 +356,7 @@ object IptvRepository {
                     val account = XtreamClient.account(clean)
                     IptvTestResult(account = account, channelCount = null)
                 }
-                IptvPlaylistType.M3u -> {
+                IptvPlaylistType.M3u, IptvPlaylistType.Stalker -> {
                     val content = IptvSources.loadPlaylist(clean)
                     IptvTestResult(account = null, channelCount = content.channels.size)
                 }

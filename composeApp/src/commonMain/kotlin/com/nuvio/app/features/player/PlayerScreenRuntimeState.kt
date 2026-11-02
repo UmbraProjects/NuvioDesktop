@@ -398,6 +398,9 @@ internal class PlayerScreenRuntime(
     /** When the current IPTV stream last dropped and was reopened, to cap reconnect loops. */
     val iptvReconnectTimesMs: ArrayDeque<Long> = ArrayDeque()
 
+    /** Asking a Stalker portal for the link of the channel being switched to; the next switch cancels it. */
+    var iptvLinkJob: kotlinx.coroutines.Job? = null
+
     /** The HUD's channel switcher is open: only then is the (possibly long) channel list sent. */
     var iptvPanelOpen by mutableStateOf(false)
 

@@ -61,7 +61,7 @@ internal fun PlayerScreenRuntime.BindIptvLiveEffects() {
         if (!playbackSnapshot.isEnded) return@LaunchedEffect
         if (!takeIptvReconnectSlot("live stream ended")) return@LaunchedEffect
         delay(1_500L)
-        reopenIptvSource(activeSourceUrl)
+        reconnectIptvSource()
     }
 
     BindIptvStallReconnect()
@@ -161,7 +161,7 @@ private fun PlayerScreenRuntime.BindIptvStallReconnect() {
                 }
             }
             if (reason != null) {
-                if (takeIptvReconnectSlot(reason)) reopenIptvSource(activeSourceUrl)
+                if (takeIptvReconnectSlot(reason)) reconnectIptvSource()
                 return@LaunchedEffect
             }
         }
@@ -249,6 +249,11 @@ internal fun PlayerScreenRuntime.tryNextIptvFormat(reason: String): Boolean {
 private fun failedFormat(url: String): String =
     IptvPlaybackSession.active.value?.candidates?.firstOrNull { it.url == url }?.format ?: "?"
 
+/** Reopens the playing channel, with a new link when its portal's may have expired. */
+private suspend fun PlayerScreenRuntime.reconnectIptvSource() {
+    reopenIptvSource(IptvPlaybackSession.renewLink() ?: activeSourceUrl)
+}
+
 /** Opens [url] as a fresh attempt; the same URL again is a reconnect (the engine keys on the attempt). */
 private fun PlayerScreenRuntime.reopenIptvSource(url: String) {
     activeInitialPositionMs = 0L
@@ -334,8 +339,21 @@ internal fun PlayerScreenRuntime.switchIptvChannelNumber(number: Int) {
 }
 
 private fun PlayerScreenRuntime.zapTo(channel: IptvChannel) {
+    iptvLinkJob?.cancel()
+    IptvPlaybackSession.setOpening(null)
     if (IptvPlaybackSession.active.value?.channel?.uid == channel.uid) return
-    val url = IptvPlaybackSession.switchTo(channel) ?: return
+    if (!IptvPlaybackSession.needsLink(channel)) {
+        openIptvChannel(channel, IptvPlaybackSession.switchTo(channel))
+        return
+    }
+    IptvPlaybackSession.setOpening(channel)
+    iptvLinkJob = scope.launch {
+        openIptvChannel(channel, IptvPlaybackSession.switchTo(channel, IptvPlaybackSession.linkCandidates(channel)))
+    }
+}
+
+private fun PlayerScreenRuntime.openIptvChannel(channel: IptvChannel, url: String?) {
+    if (url == null) return
     IptvPlaybackLog.i { "channel change to #${channel.num}" }
     activeSourceHeaders = sanitizePlaybackHeaders(channel.requestHeaders())
     iptvReconnectTimesMs.clear()

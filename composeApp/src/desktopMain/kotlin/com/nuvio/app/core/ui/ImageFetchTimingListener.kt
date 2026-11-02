@@ -134,7 +134,8 @@ internal class ImageFetchTimingListener(
          * full poster-service URLs were the biggest single emitter in nuvio.log.
          */
         fun describeData(data: Any): String {
-            val masked = SecretParam.replace(data.toString(), "$1***")
+            // A Stalker channel's logo can sit on the portal, whose address may not reach a log.
+            val masked = SecretParam.replace(com.nuvio.app.features.iptv.redactIptvCredentials(data.toString()), "$1***")
             if (masked.length <= MaxLoggedUrlLength) return masked
             val afterScheme = masked.substringAfter("://", missingDelimiterValue = masked)
             val host = afterScheme.substringBefore('/')

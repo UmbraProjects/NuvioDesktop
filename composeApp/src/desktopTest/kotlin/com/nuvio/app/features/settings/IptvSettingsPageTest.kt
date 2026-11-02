@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.runComposeUiTest
 import com.nuvio.app.core.ui.AppTheme
@@ -71,6 +72,54 @@ class IptvSettingsPageTest {
             }
         } finally {
             IptvRepository.settings.value.playlists.forEach { IptvRepository.removePlaylist(it.id) }
+        }
+    }
+
+    @Test
+    fun `a Stalker portal needs a real MAC, and is saved with it normalised`() = runComposeUiTest {
+        IptvRepository.onProfileChanged()
+        IptvRepository.settings.value.playlists.forEach { IptvRepository.removePlaylist(it.id) }
+        try {
+            setContent {
+                NuvioTheme(darkTheme = true, appTheme = AppTheme.CRIMSON) {
+                    LazyColumn { iptvSettingsContent(isTablet = true) }
+                }
+            }
+            onNodeWithText("Add playlist").performClick()
+            waitForIdle()
+            onNodeWithText("Stalker portal").performScrollTo().performClick()
+            onNodeWithText("Portal URL").assertExists()
+            onNodeWithText("MAC address").assertExists()
+            saveScreenshot("iptv-add-dialog-stalker.png")
+
+            // Fields: name, portal, MAC, serial, device ID, device ID 2, signature, guide URL.
+            val fields = onAllNodes(hasSetTextAction())
+            assertEquals(8, fields.fetchSemanticsNodes().size)
+            fields[0].performScrollTo().performTextInput("Portal")
+            fields[1].performScrollTo().performTextInput("http://127.0.0.1:9/c/")
+            fields[2].performScrollTo().performTextInput("not a mac")
+            onNodeWithText("Save").performClick()
+            onNodeWithText("Enter the portal URL and a MAC such as 00:1A:79:12:34:56.").performScrollTo().assertExists()
+            assertEquals(0, IptvRepository.settings.value.playlists.size)
+
+            fields[2].performScrollTo().performTextClearance()
+            fields[2].performTextInput("00-1a-79-12-34-56")
+            fields[3].performScrollTo().performTextInput(" SER1 ")
+            saveScreenshot("iptv-add-dialog-stalker-filled.png")
+            onNodeWithText("Save").performClick()
+            waitForIdle()
+
+            val saved = IptvRepository.settings.value.playlists.single()
+            assertEquals(IptvPlaylistType.Stalker, saved.type)
+            assertEquals("http://127.0.0.1:9/c/", saved.server)
+            assertEquals("00:1A:79:12:34:56", saved.username)
+            assertEquals("SER1", saved.serial)
+            assertEquals(null, saved.password)
+            assertEquals(null, saved.deviceId)
+            assertEquals(null, saved.url)
+        } finally {
+            IptvRepository.settings.value.playlists.forEach { IptvRepository.removePlaylist(it.id) }
+            com.nuvio.app.features.iptv.StalkerUrls.portalHosts.clear()
         }
     }
 

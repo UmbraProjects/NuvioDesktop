@@ -3874,7 +3874,7 @@
     <string name="iptv_settings_section_playback">Reproducción</string>
     <string name="iptv_settings_intro">Nuvio no incluye ningún canal. Agrega los datos que te dio tu proveedor de IPTV.</string>
     <string name="iptv_settings_add_playlist">Agregar lista de reproducción</string>
-    <string name="iptv_settings_add_playlist_description">Un inicio de sesión Xtream Codes o un enlace M3U.</string>
+    <string name="iptv_settings_add_playlist_description">Un inicio de sesión Xtream Codes, un portal Stalker o un enlace M3U.</string>
     <string name="iptv_settings_refresh_interval">Actualizar canales y guía</string>
     <string name="iptv_settings_refresh_interval_description">Cada cuánto se vuelve a descargar la lista de canales y la guía de programación. Ambas se conservan entre inicios.</string>
     <string name="iptv_settings_refresh_every_launch">En cada inicio</string>
@@ -3888,6 +3888,7 @@
     <string name="iptv_settings_format_hls">HLS</string>
     <string name="iptv_playlist_type_xtream">Xtream</string>
     <string name="iptv_playlist_type_m3u">Enlace M3U</string>
+    <string name="iptv_playlist_type_stalker">Portal Stalker</string>
     <string name="iptv_playlist_summary_channels">%1$s · %2$d canales</string>
     <string name="iptv_playlist_summary_not_loaded">%1$s · aún no cargada</string>
     <string name="iptv_playlist_summary_loading">%1$s · actualizando…</string>
@@ -3902,6 +3903,15 @@
     <string name="iptv_playlist_password">Contraseña</string>
     <string name="iptv_playlist_url">URL de la lista de reproducción</string>
     <string name="iptv_playlist_url_description">Un enlace a un archivo .m3u o .m3u8.</string>
+    <string name="iptv_playlist_portal">URL del portal</string>
+    <string name="iptv_playlist_portal_description">La dirección que te dio tu proveedor, p. ej. http://example.com:8080/c/</string>
+    <string name="iptv_playlist_mac">Dirección MAC</string>
+    <string name="iptv_playlist_mac_description">La MAC que tu proveedor registró para esta línea. Sin registrar, el portal no mostrará canales. Nuvio no lee ni envía la MAC real de este ordenador.</string>
+    <string name="iptv_playlist_serial">Número de serie (opcional)</string>
+    <string name="iptv_playlist_identity_description">Solo si te los dio tu proveedor. Si los dejas vacíos, Nuvio los calcula a partir de la MAC.</string>
+    <string name="iptv_playlist_device_id">ID de dispositivo (opcional)</string>
+    <string name="iptv_playlist_device_id2">ID de dispositivo 2 (opcional)</string>
+    <string name="iptv_playlist_signature">Firma (opcional)</string>
     <string name="iptv_playlist_epg_url">URL de la guía (opcional)</string>
     <string name="iptv_playlist_epg_url_description">Una guía XMLTV (.xml o .xml.gz). Déjalo vacío para usar la que proporciona el proveedor.</string>
     <string name="iptv_playlist_test">Probar</string>
@@ -3909,6 +3919,7 @@
     <string name="iptv_playlist_delete_confirm">¿Eliminar definitivamente?</string>
     <string name="iptv_playlist_missing_fields">Rellena el servidor, el usuario y la contraseña.</string>
     <string name="iptv_playlist_missing_url">Introduce la URL de la lista de reproducción.</string>
+    <string name="iptv_playlist_missing_stalker">Introduce la URL del portal y una MAC como 00:1A:79:12:34:56.</string>
     <string name="iptv_test_ok_channels">Conectado. Se encontraron %1$d canales.</string>
     <string name="iptv_test_ok_account">Conectado. Cuenta %1$s, hasta %2$d conexiones.</string>
     <string name="iptv_test_ok_account_expires">Conectado. Cuenta %1$s, hasta %2$d conexiones, caduca el %3$s.</string>
@@ -3916,6 +3927,7 @@
     <string name="iptv_error_no_url">Falta la dirección.</string>
     <string name="iptv_error_bad_url">Esa dirección no parece correcta. Comprueba que empiece por http:// o https://.</string>
     <string name="iptv_error_bad_login">El proveedor rechazó el usuario o la contraseña.</string>
+    <string name="iptv_error_stalker_mac">El portal rechazó esta MAC. Comprueba que esté registrada con tu proveedor.</string>
     <string name="iptv_error_inactive">El proveedor indica que esta cuenta está %1$s.</string>
     <string name="iptv_error_http">El proveedor respondió con el error %1$d.</string>
     <string name="iptv_error_bad_response">El proveedor envió algo que no es una lista de reproducción. Comprueba la dirección.</string>

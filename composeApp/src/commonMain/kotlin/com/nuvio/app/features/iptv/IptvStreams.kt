@@ -36,6 +36,8 @@ fun iptvStreamCandidates(
     }
 
     val url = channel.url ?: return emptyList()
+    // The URL as the channel's command has it; IptvPlaybackSession asks the portal when it needs to.
+    if (playlist.type == IptvPlaylistType.Stalker) return listOf(StalkerUrls.candidate(url, playlist))
     val path = url.substringBefore('?').substringBefore('#')
     return when {
         path.endsWith(".m3u8", ignoreCase = true) -> listOf(
