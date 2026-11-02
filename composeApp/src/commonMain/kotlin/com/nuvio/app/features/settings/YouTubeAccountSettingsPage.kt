@@ -137,4 +137,15 @@ private fun YouTubeTabSwitch(isTablet: Boolean) {
         isTablet = isTablet,
         onCheckedChange = YouTubeFeedRepository::setTabEnabled,
     )
+    if (enabled == true) {
+        val sponsorSkip by remember { YouTubeFeedRepository.sponsorAutoSkip }.collectAsState()
+        SettingsSwitchRow(
+            title = "Skip sponsors",
+            description = "Skips segments SponsorBlock users marked as sponsors, self-promotion or \"like and subscribe\" " +
+                "reminders without asking. Intros, end cards and previews still get a skip button.",
+            checked = sponsorSkip,
+            isTablet = isTablet,
+            onCheckedChange = YouTubeFeedRepository::setSponsorAutoSkip,
+        )
+    }
 }

@@ -122,6 +122,12 @@ internal actual object YouTubeModeStorage {
 
     actual fun saveTabEnabled(enabled: Boolean) = store.putBoolean(TAB_ENABLED_KEY, enabled)
 
+    private const val SPONSOR_AUTO_SKIP_KEY = "sponsor_auto_skip"
+
+    actual fun loadSponsorAutoSkip(): Boolean? = store.getBoolean(SPONSOR_AUTO_SKIP_KEY)
+
+    actual fun saveSponsorAutoSkip(enabled: Boolean) = store.putBoolean(SPONSOR_AUTO_SKIP_KEY, enabled)
+
     private const val CHANNEL_CHOICE_KEY = "channel_page_id"
 
     actual fun loadChannelChoice(): String? = store.getString(CHANNEL_CHOICE_KEY)

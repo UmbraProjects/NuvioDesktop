@@ -2378,6 +2378,11 @@
     <string name="player_skip_credits">Skip Credits</string>
     <string name="player_skip_to_post_credits">Skip to Post-Credits</string>
     <string name="player_skip_recap">Skip Recap</string>
+    <string name="player_skip_sponsor">Skip Sponsor</string>
+    <string name="player_skip_self_promotion">Skip Self-Promotion</string>
+    <string name="player_skip_reminder">Skip Reminder</string>
+    <string name="player_skip_filler">Skip Filler</string>
+    <string name="player_skip_non_music">Skip Non-Music</string>
     <string name="compose_player_no_subtitles_found">No subtitles found</string>
     <string name="lang_afrikaans">Afrikaans</string>
     <string name="lang_albanian">Albanian</string>

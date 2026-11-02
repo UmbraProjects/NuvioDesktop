@@ -68,6 +68,10 @@ internal expect object YouTubeModeStorage {
     fun loadTabEnabled(): Boolean
     fun saveTabEnabled(enabled: Boolean)
 
+    /** Skip SponsorBlock's sponsor, self-promotion and reminder segments without a prompt; null when never set. */
+    fun loadSponsorAutoSkip(): Boolean?
+    fun saveSponsorAutoSkip(enabled: Boolean)
+
     /** The chosen channel: a page id, "" for the account's own profile, null when never chosen. */
     fun loadChannelChoice(): String?
     fun saveChannelChoice(choice: String?)
@@ -126,6 +130,17 @@ object YouTubeFeedRepository {
     fun setTabEnabled(enabled: Boolean) {
         YouTubeModeStorage.saveTabEnabled(enabled)
         _tabEnabled.value = enabled
+    }
+
+    private val _sponsorAutoSkip by lazy { MutableStateFlow(YouTubeModeStorage.loadSponsorAutoSkip() ?: true) }
+
+    /** Settings > YouTube account > Skip sponsors (on unless turned off); see [YOUTUBE_AUTO_SKIP_TYPES]. */
+    val sponsorAutoSkip: StateFlow<Boolean>
+        get() = _sponsorAutoSkip.asStateFlow()
+
+    fun setSponsorAutoSkip(enabled: Boolean) {
+        YouTubeModeStorage.saveSponsorAutoSkip(enabled)
+        _sponsorAutoSkip.value = enabled
     }
 
     private val _searchQuery = MutableStateFlow("")

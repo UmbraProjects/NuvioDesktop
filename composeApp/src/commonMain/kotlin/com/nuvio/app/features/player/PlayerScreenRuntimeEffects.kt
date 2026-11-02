@@ -1321,6 +1321,21 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val episode = activeEpisodeNumber
         val vid = activeVideoId ?: return@LaunchedEffect
         if (isIptvPlayback) return@LaunchedEffect // no intro/outro timings exist for live TV
+        // A YouTube tab video: SponsorBlock's segments, by the video's own id, in place of the
+        // title-based providers (which know nothing of it).
+        if (parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE) {
+            launch {
+                val intervals = com.nuvio.app.features.youtube.YouTubeSponsorBlock.intervals(
+                    parentMetaId.removePrefix(com.nuvio.app.features.youtube.YOUTUBE_META_ID_PREFIX),
+                )
+                communitySkipIntervals = intervals
+                skipIntervals = mergeCommunityAndChapterSkipIntervals(
+                    communityIntervals = intervals,
+                    chapterIntervals = chapterSkipIntervals,
+                )
+            }
+            return@LaunchedEffect
+        }
 
         launch {
             // Which provider chain this playback belongs to is decided by its id, before anything
@@ -1480,7 +1495,11 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         // them — there skipping keeps the viewer in the film rather than ending it.
         val acceptsCreditsToScene = playerSettingsUiState.skipMovieCreditsToPostCredits &&
             !isSeries && interval.isOutroKind() && activeSkipLanding(interval).landsOnPostCredits
-        if (!acceptsCreditsToScene && !playerSettingsUiState.skipAutoAcceptMode.accepts(interval)) {
+        // SponsorBlock's sponsors and reminders are skipped on their own setting, as its extension does.
+        val acceptsSponsor = interval.provider == com.nuvio.app.features.youtube.SPONSORBLOCK_SKIP_PROVIDER &&
+            interval.type in com.nuvio.app.features.youtube.YOUTUBE_AUTO_SKIP_TYPES &&
+            com.nuvio.app.features.youtube.YouTubeFeedRepository.sponsorAutoSkip.value
+        if (!acceptsSponsor && !acceptsCreditsToScene && !playerSettingsUiState.skipAutoAcceptMode.accepts(interval)) {
             return@LaunchedEffect
         }
         // A host-only party member follows the host's skips instead of making their own.

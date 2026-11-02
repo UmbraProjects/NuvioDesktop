@@ -1754,6 +1754,12 @@ private fun skipPromptLabel(type: String?, landsOnPostCredits: Boolean, isMovie:
             },
         )
         "recap" -> stringResource(Res.string.player_skip_recap)
+        // SponsorBlock's own categories (YouTube tab videos).
+        "sponsor" -> stringResource(Res.string.player_skip_sponsor)
+        "selfpromo" -> stringResource(Res.string.player_skip_self_promotion)
+        "interaction" -> stringResource(Res.string.player_skip_reminder)
+        "filler" -> stringResource(Res.string.player_skip_filler)
+        "music_offtopic" -> stringResource(Res.string.player_skip_non_music)
         else -> stringResource(Res.string.player_skip)
     }
 
