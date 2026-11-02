@@ -1,7 +1,10 @@
 package com.nuvio.app.features.trailer
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.music.YouTubeMusicWebClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
@@ -108,28 +111,19 @@ internal suspend fun InAppYouTubeExtractor.musicRequest(endpoint: String, params
                 return@runCatching null.also { innerTubeLog.d { "YouTube Music $endpoint skipped: paused after a refusal" } }
             }
             withTimeout(INNERTUBE_TIMEOUT_MS) {
-                val session = innerTubeSession()
-                val headers = buildMap {
-                    putAll(TrailerExtractionPlatform.defaultHeaders)
-                    put("content-type", "application/json")
-                    put("origin", "https://music.youtube.com")
-                    put("x-youtube-client-name", MUSIC_CLIENT_ID)
-                    put("x-youtube-client-version", MUSIC_CLIENT_VERSION)
-                    if (!session.visitorData.isNullOrBlank()) put("x-goog-visitor-id", session.visitorData)
+                // fork:ytmusic-web — sent as music.youtube.com sends it (see YouTubeMusicWebClient), with a visitor
+                // id of its own; the watch page's id is only the fallback when none can be minted.
+                val visitor = MusicVisitorId.current() ?: innerTubeSession().visitorData
+                var response = postMusic(endpoint, params, visitor)
+                if (!response.ok && YouTubeMusicWebClient.isRefusal(response.status, response.body)) {
+                    // As BitChord does: a refusal can mean the visitor id is burned, so take a fresh one once and ask once more.
+                    val fresh = MusicVisitorId.remint()
+                    if (fresh != null && fresh != visitor) {
+                        innerTubeLog.w { "YouTube Music $endpoint refused (${response.status}); asking once more with a fresh visitor id" }
+                        response = postMusic(endpoint, params, fresh)
+                        if (response.ok) innerTubeLog.i { "YouTube Music $endpoint answered with the fresh visitor id" }
+                    }
                 }
-                val payload = innerTubePayload(
-                    params,
-                    clientName = "WEB_REMIX",
-                    clientVersion = MUSIC_CLIENT_VERSION,
-                )
-                val response = TrailerExtractionPlatform.performRequest(
-                    url = "https://music.youtube.com/youtubei/v1/$endpoint" +
-                        keyQuery(session) + "&prettyPrint=false",
-                    method = "POST",
-                    headers = headers,
-                    body = payload.toString(),
-                    timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
-                )
                 if (!response.ok) {
                     innerTubeLog.w { "YouTube Music $endpoint failed (${response.status}): ${response.body.take(160)}" }
                     if (com.nuvio.app.features.music.MusicRateLimit.noteRefusal(response.status, response.body)) {
@@ -143,6 +137,70 @@ internal suspend fun InAppYouTubeExtractor.musicRequest(endpoint: String, params
             innerTubeLog.w { "YouTube Music $endpoint failed: ${it.message}" }
         }.getOrNull()
     }
+
+private suspend fun postMusic(endpoint: String, params: Map<String, Any?>, visitorData: String?): TrailerRequestResponse =
+    TrailerExtractionPlatform.performRequest(
+        url = YouTubeMusicWebClient.url(endpoint),
+        method = "POST",
+        headers = YouTubeMusicWebClient.headers(MUSIC_CLIENT_ID, MUSIC_CLIENT_VERSION, visitorData),
+        body = innerTubePayload(
+            params,
+            clientName = "WEB_REMIX",
+            clientVersion = MUSIC_CLIENT_VERSION,
+            visitorData = visitorData,
+            webContext = true,
+        ).toString(),
+        timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+    )
+
+/**
+ * fork:ytmusic-web — YouTube Music's own visitor id, minted from `sw.js_data` on first use and kept for the
+ * session. [remint] replaces it, at most once per [YouTubeMusicWebClient.REMINT_MIN_INTERVAL_MS].
+ */
+private object MusicVisitorId {
+    private val lock = Mutex()
+    private var id: String? = null
+    private var mintedAtMs = 0L
+    private var tried = false
+
+    suspend fun current(): String? = lock.withLock {
+        if (id == null && !tried) {
+            tried = true
+            mintLocked()
+        }
+        id
+    }
+
+    /** A fresh id, or null when one was taken too recently or none could be minted. */
+    suspend fun remint(): String? = lock.withLock {
+        if (!YouTubeMusicWebClient.mayRemint(mintedAtMs, com.nuvio.app.features.streams.epochMs())) return@withLock null
+        mintLocked()
+        id
+    }
+
+    private suspend fun mintLocked() {
+        mintedAtMs = com.nuvio.app.features.streams.epochMs()
+        val minted = runCatching {
+            val response = TrailerExtractionPlatform.performRequest(
+                url = YouTubeMusicWebClient.VISITOR_URL,
+                method = "GET",
+                headers = mapOf(
+                    "user-agent" to YouTubeMusicWebClient.USER_AGENT,
+                    "accept-language" to "en-US,en;q=0.9",
+                ),
+                body = null,
+                timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+            )
+            if (response.ok) YouTubeMusicWebClient.visitorFromSwJsData(response.body) else null
+        }.getOrNull()
+        if (minted != null) {
+            id = minted
+            innerTubeLog.i { "YouTube Music visitor id minted" }
+        } else {
+            innerTubeLog.w { "YouTube Music visitor id could not be minted; using the watch page's" }
+        }
+    }
+}
 
 /**
  * fork:youtube-mode - POSTs [params] to youtube.com's InnerTube [endpoint] ("browse",
@@ -218,21 +276,29 @@ private fun innerTubePayload(
     clientName: String,
     clientVersion: String,
     onBehalfOfUser: String? = null,
+    visitorData: String? = null,
+    /** fork:ytmusic-web — the context fields the site itself sends (`user.lockedSafetyMode`, `request.useSsl`). */
+    webContext: Boolean = false,
 ): JsonObject {
     val fields = LinkedHashMap<String, JsonElement>()
     params.forEach { (key, value) -> if (value != null) fields[key] = toJsonElement(value) }
+    val client = buildMap<String, JsonElement> {
+        put("clientName", JsonPrimitive(clientName))
+        put("clientVersion", JsonPrimitive(clientVersion))
+        put("hl", JsonPrimitive("en"))
+        put("gl", JsonPrimitive("US"))
+        if (!visitorData.isNullOrBlank()) put("visitorData", JsonPrimitive(visitorData))
+    }
+    val user = buildMap<String, JsonElement> {
+        onBehalfOfUser?.let { put("onBehalfOfUser", JsonPrimitive(it)) }
+        if (webContext) put("lockedSafetyMode", JsonPrimitive(false))
+    }
     fields["context"] = JsonObject(
-        listOfNotNull(
-            onBehalfOfUser?.let { "user" to JsonObject(mapOf("onBehalfOfUser" to JsonPrimitive(it))) },
-            "client" to JsonObject(
-                mapOf(
-                    "clientName" to JsonPrimitive(clientName),
-                    "clientVersion" to JsonPrimitive(clientVersion),
-                    "hl" to JsonPrimitive("en"),
-                    "gl" to JsonPrimitive("US"),
-                ),
-            ),
-        ).toMap(),
+        buildMap {
+            if (user.isNotEmpty()) put("user", JsonObject(user))
+            put("client", JsonObject(client))
+            if (webContext) put("request", JsonObject(mapOf("useSsl" to JsonPrimitive(true))))
+        },
     )
     return JsonObject(fields)
 }
