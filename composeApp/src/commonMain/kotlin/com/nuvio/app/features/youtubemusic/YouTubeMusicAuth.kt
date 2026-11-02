@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +57,9 @@ internal expect object YouTubeMusicAuthPlatform {
      * itself, including when the calling coroutine is cancelled.
      */
     suspend fun interactiveLogin(): YouTubeMusicLoginOutcome
+
+    /** Asks Google to renew the session's short-lived cookies; the HTTP status, 0 when no answer came. */
+    suspend fun rotateCookies(cookieHeader: String): Int
 }
 
 internal object YouTubeMusicAuth {
@@ -80,7 +84,44 @@ internal object YouTubeMusicAuth {
             _state.update { it.copy(signedIn = cookie != null) }
             loaded = true
         }
+        if (cookie != null) startKeepAlive()
     }
+
+    private var keepAliveJob: Job? = null
+
+    @Volatile
+    private var lastRotationStatus: Int? = null
+
+    /**
+     * Keeps the saved session alive the way a signed-in YouTube tab does: the short-lived
+     * `*PSIDTS` cookies are renewed through `RotateCookies` every [ROTATE_INTERVAL_MS]. Without it
+     * the copy Nuvio holds went stale and Google answered as signed out, after anything from two
+     * to ten hours (Nov 2: signed in 18:58, signed out by 21:17), and the ordinary API answers
+     * never renew those cookies (no "refreshed the session cookies" in that time).
+     */
+    private fun startKeepAlive() {
+        synchronized(this) {
+            if (keepAliveJob?.isActive == true) return
+            keepAliveJob = scope.launch {
+                while (true) {
+                    val jar = cookie ?: break
+                    val status = YouTubeMusicAuthPlatform.rotateCookies(jar)
+                    // The first answer and any change; not every renewal.
+                    if (status != lastRotationStatus) {
+                        if (status in 200..299) {
+                            log.i { "Session renewal answered HTTP $status" }
+                        } else {
+                            log.w { "Session renewal answered HTTP $status; the sign-in may lapse" }
+                        }
+                        lastRotationStatus = status
+                    }
+                    delay(ROTATE_INTERVAL_MS)
+                }
+            }
+        }
+    }
+
+    private const val ROTATE_INTERVAL_MS = 9 * 60_000L
 
     val isSignedIn: Boolean
         get() {
@@ -126,6 +167,8 @@ internal object YouTubeMusicAuth {
                     YouTubeMusicAuthPlatform.saveCookie(outcome.cookieHeader)
                     _state.value = YouTubeMusicAuthState(signedIn = true, sessionEpoch = _state.value.sessionEpoch + 1)
                     log.i { "Signed in to YouTube Music" }
+                    lastRotationStatus = null
+                    startKeepAlive()
                 }
                 YouTubeMusicLoginOutcome.Cancelled ->
                     _state.update { it.copy(signingIn = false) }
@@ -142,6 +185,8 @@ internal object YouTubeMusicAuth {
 
     fun signOut() {
         loginJob?.cancel()
+        keepAliveJob?.cancel()
+        keepAliveJob = null
         cookie = null
         loaded = true
         YouTubeMusicAuthPlatform.saveCookie(null)
