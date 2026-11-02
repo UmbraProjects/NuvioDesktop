@@ -3408,6 +3408,31 @@ private fun MainAppContent(
                             lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
                             ResumePromptRepository.markPlayerExitedNormally()
                             PlayerLaunchStore.remove(route.launchId)
+                            // fork:youtube-mode - a YouTube playlist being played through: straight on to
+                            // its next video, the way the app's playlists hand over (see handOffPlaylistEntry),
+                            // its streams resolved before this player goes so a failure just returns to the tab.
+                            val youTubeVideoId = launch.parentMetaId
+                                .takeIf { launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE }
+                                ?.removePrefix(com.nuvio.app.features.youtube.YOUTUBE_META_ID_PREFIX)
+                            if (youTubeVideoId != null && com.nuvio.app.features.youtube.YouTubePlayQueue.isPlaying(youTubeVideoId)) {
+                                val entryId = backStackEntry.id
+                                coroutineScope.launch {
+                                    val next = com.nuvio.app.features.youtube.YouTubePlayQueue.handOffNext(youTubeVideoId)
+                                    // Left by Back meanwhile: nothing of this player's to close.
+                                    if (navController.currentBackStackEntry?.id != entryId) return@launch
+                                    if (next == null) {
+                                        navController.popBackStack()
+                                        return@launch
+                                    }
+                                    PlayerHandoff.holdShield()
+                                    navController.popBackStack()
+                                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                                        PlayerHandoff.activeRoutes.first { it == 0 }
+                                    }
+                                    navController.navigateToPlayer(next)
+                                }
+                                return@completed
+                            }
                             val playlistPlayback = PlaylistPlaybackSession.current()
                                 ?.takeIf { launch.autoPlayMode == PlayerAutoPlayMode.Playlist }
                             if (playlistPlayback != null) {

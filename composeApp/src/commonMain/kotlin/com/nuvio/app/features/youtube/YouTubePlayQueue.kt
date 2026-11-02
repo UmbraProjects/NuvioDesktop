@@ -1,6 +1,12 @@
 package com.nuvio.app.features.youtube
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.player.PlayerLaunch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,13 +15,62 @@ import kotlinx.coroutines.flow.asStateFlow
  * fork:youtube-mode
  *
  * Plays a YouTube playlist through in order. The app's own playlist mode is built around searching
- * addon sources for a film or an episode; a YouTube video only needs its streams resolved, and the
- * app opens one player at a time, so the queue advances from the tab instead: a video played to its
- * end closes the player as any other does ([onFinished], from PlayerYouTubeWatchTime), and the tab,
- * back on screen, opens the next one ([takeNext]).
+ * addon sources for a film or an episode; a YouTube video only needs its streams resolved.
+ *
+ * The next video is resolved while the current one nears its end ([prepareNext], from
+ * PlayerYouTubeWatchTime), and when it ends the app hands the player straight over to it
+ * ([handOffNext], from App's playback-completed path), behind the same shield the app's playlists
+ * use, without going back to the tab. Should that not happen (the next video would not open), the
+ * player closes as before and the tab, back on screen, tries it ([takeNext]).
  */
 internal object YouTubePlayQueue {
     private val log = Logger.withTag("YouTubeQueue")
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** The next video's launch, resolved ahead, keyed by that video's id. */
+    private var prepared: Pair<String, Deferred<PlayerLaunch?>>? = null
+
+    /** Whether [videoId] is the video the queue is playing now. */
+    fun isPlaying(videoId: String): Boolean = _state.value?.current?.videoId == videoId
+
+    /** Resolves the video after [videoId] ahead of time, once; its stream URLs outlast any video's end. */
+    fun prepareNext(videoId: String) {
+        val state = _state.value ?: return
+        if (state.current?.videoId != videoId) return
+        val upcoming = state.videos.getOrNull(state.index + 1) ?: return
+        if (prepared?.first == upcoming.videoId) return
+        log.i { "preparing ${state.index + 2} of ${state.videos.size}" }
+        prepared = upcoming.videoId to scope.async { youTubePlayerLaunch(upcoming) }
+    }
+
+    /**
+     * [videoId] played to its end: moves the queue on and returns the next video's launch for the
+     * player to be handed over to, or null when the queue is done (it ends) or the next video would
+     * not open (the tab is left to try it, [next]).
+     */
+    suspend fun handOffNext(videoId: String): PlayerLaunch? {
+        val state = _state.value ?: return null
+        if (state.current?.videoId != videoId) return null
+        val nextIndex = state.index + 1
+        val upcoming = state.videos.getOrNull(nextIndex)
+        if (upcoming == null) {
+            log.i { "queue finished" }
+            stop()
+            return null
+        }
+        // Moved on before the old player goes, so its own end report (onFinished) finds nothing to do.
+        _state.value = state.copy(index = nextIndex)
+        val ready = prepared?.takeIf { it.first == upcoming.videoId }?.second
+        prepared = null
+        val launch = ready?.await() ?: youTubePlayerLaunch(upcoming)
+        if (launch == null) {
+            log.i { "next video would not open; leaving it to the tab" }
+            _next.value = upcoming
+        } else {
+            log.i { "handing over to ${nextIndex + 1} of ${state.videos.size}" }
+        }
+        return launch
+    }
 
     data class State(val name: String, val videos: List<YouTubeVideo>, val index: Int) {
         val current: YouTubeVideo? get() = videos.getOrNull(index)
@@ -43,6 +98,8 @@ internal object YouTubePlayQueue {
         if (_state.value != null) log.i { "queue stopped" }
         _state.value = null
         _next.value = null
+        prepared?.second?.cancel()
+        prepared = null
     }
 
     /** A video opened outside the queue ends it, unless it is the queue's own current one. */

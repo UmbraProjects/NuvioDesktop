@@ -247,45 +247,14 @@ fun YouTubeTabScreen(
         openError = null
         openingId = video.videoId
         openJob = scope.launch {
-            val source = try {
-                youTubeOpenVideo(video.videoId)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                null
-            }
+            val launch = youTubePlayerLaunch(video)
             if (openingId != video.videoId) return@launch
             openingId = null
-            val title = YouTubeDeArrow.cached(video.videoId)?.title?.takeIf { deArrow } ?: video.title
-            if (source == null) {
-                openError = "\"$title\" couldn't be opened. YouTube may be limiting requests; try again shortly."
+            if (launch == null) {
+                openError = "\"${youTubeDisplayTitle(video)}\" couldn't be opened. YouTube may be limiting requests; try again shortly."
                 return@launch
             }
-            onPlay(
-                PlayerLaunch(
-                    title = title,
-                    sourceUrl = source.videoUrl,
-                    sourceAudioUrl = source.audioUrl,
-                    sourceHeaders = source.headers,
-                    streamTitle = title,
-                    streamSubtitle = video.channel,
-                    providerName = "YouTube",
-                    poster = video.thumbnailUrl,
-                    background = video.thumbnailUrl,
-                    contentType = YOUTUBE_META_TYPE,
-                    videoId = video.videoId,
-                    parentMetaId = YOUTUBE_META_ID_PREFIX + video.videoId,
-                    parentMetaType = YOUTUBE_META_TYPE,
-                    // Picks up where YouTube says this account left off, unless it was finished. A source that
-                    // cannot be opened part way in starts from the top instead: mpv would wait on that seek for good.
-                    initialProgressFraction = video.watchedPercent
-                        ?.takeIf { it in 1..94 && source.openableMidway }
-                        ?.div(100f),
-                    // Kept out of Continue Watching and the trackers; YouTube's own history gets it
-                    // instead (PlayerYouTubeWatchTime.kt).
-                    disableProgressTracking = true,
-                ),
-            )
+            onPlay(launch)
         }
     }
 
