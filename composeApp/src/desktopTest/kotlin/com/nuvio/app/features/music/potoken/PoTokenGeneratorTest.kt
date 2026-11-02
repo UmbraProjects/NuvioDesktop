@@ -146,6 +146,17 @@ class PoTokenGeneratorTest {
     }
 
     @Test
+    fun `a prewarmed page lives for the idle time from when it was made`() = runBlocking {
+        clock = 1_000_000
+        generator.prewarm()
+        generator.closeIfIdle()
+        assertTrue(!made[0].closed)
+        clock += 11_000
+        generator.closeIfIdle()
+        assertTrue(made[0].closed)
+    }
+
+    @Test
     fun `an idle page is closed, a recently used one is not`() = runBlocking {
         generator.tokens("v", "visitor")
         clock += 9_000

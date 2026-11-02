@@ -269,6 +269,9 @@ internal class PoTokenGenerator(
         minter = created
         sessionToken = null
         sessionId = null
+        // A prewarmed page had never been used, so the first idle check (a minute later) closed it and the next
+        // track's prewarm started the browser again (HTPC log, Nov 2 15:24 and 15:25). Its life starts now.
+        lastUsedMs = now()
         startIdleTimer()
         return created
     }
