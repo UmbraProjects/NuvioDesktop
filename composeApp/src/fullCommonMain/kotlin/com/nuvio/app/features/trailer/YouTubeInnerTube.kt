@@ -35,11 +35,11 @@ private const val INNERTUBE_TIMEOUT_MS = 30_000L
  * extractor does not expose that, so a fixed value is sent. If YouTube ever starts refusing it,
  * bump this constant.
  */
-private const val WEB_CLIENT_VERSION = "2.20260101.00.00"
+private const val WEB_CLIENT_VERSION = "2.20260708.00.00"
 
 /** YouTube Music's web client (WEB_REMIX). The version only has to look current. */
 private const val MUSIC_CLIENT_ID = "67"
-private const val MUSIC_CLIENT_VERSION = "1.20260101.01.00"
+private const val MUSIC_CLIENT_VERSION = "1.20260707.12.00"
 
 private val innerTubeLog = Logger.withTag(TRAILER_EXTRACTOR_TAG)
 

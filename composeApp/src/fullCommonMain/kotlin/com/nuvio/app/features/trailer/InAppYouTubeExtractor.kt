@@ -148,15 +148,15 @@ private val CLIENTS = listOf(
     YouTubeClient(
         key = "android",
         id = "3",
-        version = "20.10.35",
-        userAgent = "com.google.android.youtube/20.10.35 (Linux; U; Android 14; en_US) gzip",
+        version = "21.26.364",
+        userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
         context = jsonObjectOf(
             "clientName" to "ANDROID",
-            "clientVersion" to "20.10.35",
+            "clientVersion" to "21.26.364",
             "osName" to "Android",
-            "osVersion" to "14",
+            "osVersion" to "11",
             "platform" to "MOBILE",
-            "androidSdkVersion" to 34,
+            "androidSdkVersion" to 30,
             "hl" to "en",
             "gl" to "US",
         ),
@@ -165,14 +165,14 @@ private val CLIENTS = listOf(
     YouTubeClient(
         key = "ios",
         id = "5",
-        version = "20.10.1",
-        userAgent = "com.google.ios.youtube/20.10.1 (iPhone16,2; U; CPU iOS 17_4 like Mac OS X)",
+        version = "21.26.4",
+        userAgent = "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
         context = jsonObjectOf(
             "clientName" to "IOS",
-            "clientVersion" to "20.10.1",
+            "clientVersion" to "21.26.4",
             "deviceModel" to "iPhone16,2",
             "osName" to "iPhone",
-            "osVersion" to "17.4.0.21E219",
+            "osVersion" to "18.3.2.22D82",
             "platform" to "MOBILE",
             "hl" to "en",
             "gl" to "US",
@@ -188,11 +188,12 @@ private val ACCOUNT_CLIENTS = listOf(
     YouTubeClient(
         key = "tv",
         id = "7",
-        version = "7.20250923.13.00",
-        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+        version = "7.20260707.07.00",
+        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), " +
+            "Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)",
         context = jsonObjectOf(
             "clientName" to "TVHTML5",
-            "clientVersion" to "7.20250923.13.00",
+            "clientVersion" to "7.20260707.07.00",
             "hl" to "en",
             "gl" to "US",
         ),
@@ -212,6 +213,28 @@ private val ACCOUNT_CLIENTS = listOf(
             "gl" to "US",
         ),
         priority = 1,
+    ),
+    // fork:yt-clients — yt-dlp's first-choice client (its defaults are tv_samsung, visionos, web) and one it treats
+    // as needing no PO token: a Samsung Tizen smart-TV profile of TVHTML5. Only here, in the signed-in retry, and
+    // last. Every client in a list costs one player request per resolve, so it is deliberately NOT in [CLIENTS]
+    // until it has been shown to serve media URLs that last; see the po-token-minter / yt-dlp notes.
+    YouTubeClient(
+        key = "tv_samsung",
+        id = "7",
+        version = "5.20260707",
+        userAgent = "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) " +
+            "Version/2.4.0 TV Safari/538.1",
+        context = jsonObjectOf(
+            "clientName" to "TVHTML5",
+            "clientVersion" to "5.20260707",
+            "deviceMake" to "Samsung",
+            "deviceModel" to "UKS9800",
+            "osName" to "Tizen",
+            "osVersion" to "2.4.0",
+            "hl" to "en",
+            "gl" to "US",
+        ),
+        priority = 2,
     ),
 )
 
