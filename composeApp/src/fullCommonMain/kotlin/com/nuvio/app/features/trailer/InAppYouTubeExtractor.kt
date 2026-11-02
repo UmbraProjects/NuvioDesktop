@@ -113,6 +113,8 @@ internal data class TrailerRequestResponse(
     val statusText: String,
     val url: String,
     val body: String,
+    /** fork:youtube-cookie-upkeep — the response's `Set-Cookie` headers, for the signed-in YouTube session. */
+    val setCookies: List<String> = emptyList(),
 )
 
 private val JSON = Json { ignoreUnknownKeys = true }

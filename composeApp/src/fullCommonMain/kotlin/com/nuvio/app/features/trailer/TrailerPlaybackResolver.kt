@@ -27,7 +27,8 @@ actual object TrailerPlaybackResolver {
         params: Map<String, Any?>,
         accountHeaders: Map<String, String>,
         pageId: String?,
-    ): Pair<Int, String> = extractor.webRequest(endpoint, params, accountHeaders, pageId)
+        shell: com.nuvio.app.features.youtube.YouTubeWebShell?,
+    ): TrailerRequestResponse = extractor.webRequest(endpoint, params, accountHeaders, pageId, shell)
 
     /** YouTube Music's InnerTube, for the music feature. Not part of the shared `expect` surface. */
     internal suspend fun musicRequest(endpoint: String, params: Map<String, Any?>): String? =

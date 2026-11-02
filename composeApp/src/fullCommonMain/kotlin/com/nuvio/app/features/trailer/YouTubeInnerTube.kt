@@ -2,6 +2,8 @@ package com.nuvio.app.features.trailer
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.music.YouTubeMusicWebClient
+import com.nuvio.app.features.youtube.YouTubeWebClient
+import com.nuvio.app.features.youtube.YouTubeWebShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -211,50 +213,53 @@ private object MusicVisitorId {
  * channel), so its subscriptions are empty or long forgotten. The website picks the channel the same
  * way: the `x-goog-pageid` header plus `onBehalfOfUser` in the request context.
  *
- * Returns the HTTP status and body; status 0 when the request never got an answer.
+ * fork:youtube-web — sent as youtube.com sends it (see [YouTubeWebClient]): a desktop browser, the signed-in
+ * page's own visitor id, client version and account index from [shell], no API key. A refusal no longer
+ * pauses music (YouTube refuses per kind of request, not per address; see YouTubeMusicWebClient); the tab
+ * handles its own.
+ *
+ * Returns the response; status 0 when the request never got an answer.
  */
 internal suspend fun InAppYouTubeExtractor.webRequest(
     endpoint: String,
     params: Map<String, Any?>,
     accountHeaders: Map<String, String>,
     pageId: String?,
-): Pair<Int, String> =
+    shell: YouTubeWebShell?,
+): TrailerRequestResponse =
     withContext(Dispatchers.Default) {
         runCatching {
             withTimeout(INNERTUBE_TIMEOUT_MS) {
-                val session = innerTubeSession()
+                // The anonymous watch-page id only when the signed-in page could not be read.
+                val visitorData = shell?.visitorData ?: innerTubeSession().visitorData
                 val headers = buildMap {
-                    putAll(TrailerExtractionPlatform.defaultHeaders)
-                    put("content-type", "application/json")
-                    put("origin", "https://www.youtube.com")
-                    put("x-youtube-client-name", "1")
-                    put("x-youtube-client-version", WEB_CLIENT_VERSION)
-                    if (!session.visitorData.isNullOrBlank()) put("x-goog-visitor-id", session.visitorData)
                     putAll(accountHeaders)
+                    putAll(YouTubeWebClient.headers(shell?.copy(visitorData = visitorData)))
                     if (!pageId.isNullOrBlank()) put("x-goog-pageid", pageId)
                 }
                 val payload = innerTubePayload(
                     params,
                     clientName = "WEB",
-                    clientVersion = WEB_CLIENT_VERSION,
+                    clientVersion = shell?.clientVersion ?: YouTubeWebClient.FALLBACK_CLIENT_VERSION,
                     onBehalfOfUser = pageId?.takeIf { it.isNotBlank() },
+                    visitorData = visitorData,
+                    webContext = true,
                 )
                 val response = TrailerExtractionPlatform.performRequest(
-                    url = "https://www.youtube.com/youtubei/v1/$endpoint" + keyQuery(session) + "&prettyPrint=false",
+                    url = YouTubeWebClient.url(endpoint),
                     method = "POST",
                     headers = headers,
                     body = payload.toString(),
                     timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
                 )
                 if (!response.ok) {
-                    com.nuvio.app.features.music.MusicRateLimit.noteRefusal(response.status, response.body)
                     innerTubeLog.w { "YouTube $endpoint failed (${response.status}): ${response.body.take(160)}" }
                 }
-                response.status to response.body
+                response
             }
         }.onFailure {
             innerTubeLog.w { "YouTube $endpoint failed: ${it.message}" }
-        }.getOrDefault(0 to "")
+        }.getOrDefault(TrailerRequestResponse(ok = false, status = 0, statusText = "", url = "", body = ""))
     }
 
 /** `?key=...` when the session has a key, else `?` alone so a following `&prettyPrint=false` still parses. */

@@ -148,6 +148,26 @@ internal object YouTubeMusicAuth {
     }
 
     /** A request that carried the saved session was refused (401/403). The session is kept. */
+    /**
+     * fork:youtube-cookie-upkeep — keeps the saved cookies as a browser would: a value YouTube sends back for a
+     * cookie the session already holds replaces the saved one. Google rotates some of them (`SIDCC`,
+     * `__Secure-*PSIDCC`, `__Secure-*PSIDTS`) and a copy that never takes the new values is the one that
+     * stops being a session. Deletions and cookies the session does not hold are ignored.
+     */
+    fun applySetCookies(setCookies: List<String>) {
+        if (setCookies.isEmpty()) return
+        ensureLoaded()
+        val updated = synchronized(this) {
+            val jar = cookie ?: return
+            val merge = mergeSetCookies(jar, setCookies)
+            if (merge.updated.isEmpty()) return
+            cookie = merge.cookieHeader
+            YouTubeMusicAuthPlatform.saveCookie(merge.cookieHeader)
+            merge.updated
+        }
+        log.i { "YouTube refreshed ${updated.size} sign-in cookie(s): ${updated.joinToString()}" }
+    }
+
     fun onSessionRejected() {
         _state.update { if (it.signedIn) it.copy(sessionRejected = true) else it }
     }
@@ -163,6 +183,42 @@ internal object YouTubeMusicAuth {
 }
 
 private val SAPISID_NAMES = listOf("SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID")
+
+/** The result of [mergeSetCookies]: the new header and the names whose values changed. */
+internal data class CookieMerge(val cookieHeader: String, val updated: List<String>)
+
+private val EXPIRED_IN_THE_PAST = Regex("""expires=[^;]*\b(19\d\d|20[01]\d|202[0-5])\b""", RegexOption.IGNORE_CASE)
+
+/**
+ * fork:youtube-cookie-upkeep — applies `Set-Cookie` response headers to a `name=value; name=value` header:
+ * only names already in it, never a deletion (empty value, `Max-Age=0` or an expiry in the past), never
+ * a new name. Order is kept.
+ */
+internal fun mergeSetCookies(cookieHeader: String, setCookies: List<String>): CookieMerge {
+    val entries = cookieHeader.split(';').map { it.trim() }.filter { it.isNotEmpty() }.map { entry ->
+        val eq = entry.indexOf('=')
+        if (eq <= 0) entry to null else entry.substring(0, eq) to entry.substring(eq + 1)
+    }.toMutableList()
+    val updated = mutableListOf<String>()
+    for (header in setCookies) {
+        val first = header.substringBefore(';').trim()
+        val eq = first.indexOf('=')
+        if (eq <= 0) continue
+        val name = first.substring(0, eq).trim()
+        val value = first.substring(eq + 1).trim()
+        val attributes = header.substringAfter(';', "")
+        val deletion = value.isEmpty() ||
+            Regex("""max-age\s*=\s*0\b""", RegexOption.IGNORE_CASE).containsMatchIn(attributes) ||
+            EXPIRED_IN_THE_PAST.containsMatchIn(attributes)
+        if (deletion) continue
+        val index = entries.indexOfFirst { it.first == name }
+        if (index < 0 || entries[index].second == value) continue
+        entries[index] = name to value
+        if (name !in updated) updated += name
+    }
+    val header = entries.joinToString("; ") { (name, value) -> if (value == null) name else "$name=$value" }
+    return CookieMerge(header, updated)
+}
 
 /** The value Google signs requests with, found in a `name=value; name=value` cookie header. */
 internal fun sapisidFrom(cookieHeader: String): String? {
