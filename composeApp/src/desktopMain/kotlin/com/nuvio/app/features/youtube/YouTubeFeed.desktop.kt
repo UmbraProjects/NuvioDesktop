@@ -23,6 +23,34 @@ internal actual suspend fun youTubeBrowse(browseId: String?, continuation: Strin
 internal actual suspend fun youTubeSearch(query: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("search", mapOf("query" to query, "continuation" to continuation), pageId)
 
+/** The `params` that pick a channel page's Videos tab (newest uploads), as the website sends them. */
+private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
+
+internal actual suspend fun youTubeChannelVideos(channelId: String, continuation: String?, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        "browse",
+        if (continuation != null) {
+            mapOf("continuation" to continuation)
+        } else {
+            mapOf("browseId" to channelId, "params" to CHANNEL_VIDEOS_TAB_PARAMS)
+        },
+        pageId,
+    )
+
+internal actual suspend fun youTubeSetSubscribed(channelId: String, subscribed: Boolean, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        if (subscribed) "subscription/subscribe" else "subscription/unsubscribe",
+        mapOf("channelIds" to listOf(channelId)),
+        pageId,
+    )
+
+internal actual suspend fun youTubeSetLiked(videoId: String, liked: Boolean, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        if (liked) "like/like" else "like/removelike",
+        mapOf("target" to mapOf("videoId" to videoId)),
+        pageId,
+    )
+
 internal actual suspend fun youTubeAccountsList(): YouTubeBrowseResult =
     signedWebRequest(
         "account/accounts_list",

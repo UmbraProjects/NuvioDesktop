@@ -23,7 +23,8 @@ import kotlinx.coroutines.launch
  * feed with an empty "search to get started" page and refuses the subscriptions feed outright.
  */
 
-enum class YouTubeFeedKind(val browseId: String, val label: String) {
+/** [inHeader]: has its own button in the tab header (the others are reached from a search or a channel). */
+enum class YouTubeFeedKind(val browseId: String, val label: String, val inHeader: Boolean = true) {
     Home("FEwhat_to_watch", "Home"),
     Subscriptions("FEsubscriptions", "Subscriptions"),
 
@@ -31,8 +32,29 @@ enum class YouTubeFeedKind(val browseId: String, val label: String) {
     History("FEhistory", "History"),
 
     /** Results for [YouTubeFeedRepository.searchQuery]; not a browse feed, so it has no browse id. */
-    Search("", "Search"),
+    Search("", "Search", inHeader = false),
+
+    /** The Videos tab of [YouTubeFeedRepository.openChannel]; its browse id is the channel's. */
+    Channel("", "Channel", inHeader = false),
 }
+
+/** A channel the tab has open, and whether the account is subscribed to it (null until known). */
+data class YouTubeOpenChannel(
+    val channelId: String,
+    val name: String,
+    val avatarUrl: String?,
+    val subscribed: Boolean? = null,
+    /** A subscribe or unsubscribe is on its way. */
+    val changing: Boolean = false,
+)
+
+data class YouTubeChannelListState(
+    val channels: List<YouTubeChannel> = emptyList(),
+    val continuation: String? = null,
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val error: String? = null,
+)
 
 data class YouTubeFeedState(
     val videos: List<YouTubeVideo> = emptyList(),
@@ -66,6 +88,15 @@ internal expect suspend fun youTubeBrowse(browseId: String?, continuation: Strin
  * signed like [youTubeBrowse] so the results are the account's (history, region, the chosen channel).
  */
 internal expect suspend fun youTubeSearch(query: String?, continuation: String?, pageId: String?): YouTubeBrowseResult
+
+/** One page of a channel's Videos tab, newest first, signed like [youTubeBrowse]. */
+internal expect suspend fun youTubeChannelVideos(channelId: String, continuation: String?, pageId: String?): YouTubeBrowseResult
+
+/** Subscribes the account (as [pageId]) to [channelId], or unsubscribes it. */
+internal expect suspend fun youTubeSetSubscribed(channelId: String, subscribed: Boolean, pageId: String?): YouTubeBrowseResult
+
+/** Likes [videoId] as the account (as [pageId]), or takes the like back. */
+internal expect suspend fun youTubeSetLiked(videoId: String, liked: Boolean, pageId: String?): YouTubeBrowseResult
 
 /** The account's channel list (`account/accounts_list`), as a raw body like [youTubeBrowse]. */
 internal expect suspend fun youTubeAccountsList(): YouTubeBrowseResult
@@ -194,9 +225,107 @@ object YouTubeFeedRepository {
     /** Loads the first page unless one is already showing; [force] reloads it. */
     fun load(kind: YouTubeFeedKind, force: Boolean = false) {
         if (kind == YouTubeFeedKind.Search && _searchQuery.value.isBlank()) return
+        if (kind == YouTubeFeedKind.Channel && _openChannel.value == null) return
         val current = _feeds.value.getValue(kind)
         if (current.loading || (current.loaded && !force && current.error == null)) return
         fetch(kind, continuation = null)
+    }
+
+    private val _openChannel = MutableStateFlow<YouTubeOpenChannel?>(null)
+
+    /** The channel the Channel feed holds; null before one is opened. */
+    val openChannel: StateFlow<YouTubeOpenChannel?> = _openChannel.asStateFlow()
+
+    @Volatile
+    private var channelGeneration = 0
+
+    /** Opens [channelId]'s page: its uploads replace the Channel feed. */
+    fun openChannel(channelId: String, name: String, avatarUrl: String? = null) {
+        if (_openChannel.value?.channelId == channelId && _feeds.value.getValue(YouTubeFeedKind.Channel).error == null) return
+        channelGeneration++
+        _openChannel.value = YouTubeOpenChannel(channelId, name, avatarUrl)
+        _feeds.update { it + (YouTubeFeedKind.Channel to YouTubeFeedState()) }
+        fetch(YouTubeFeedKind.Channel, continuation = null)
+    }
+
+    /** Subscribes to the open channel, or unsubscribes; shown at once and put back if YouTube refuses. */
+    fun setSubscribed(subscribed: Boolean) {
+        val open = _openChannel.value ?: return
+        if (open.changing) return
+        _openChannel.value = open.copy(subscribed = subscribed, changing = true)
+        scope.launch {
+            val result = youTubeSetSubscribed(open.channelId, subscribed, _channel.value.pageId)
+            val ok = result is YouTubeBrowseResult.Ok
+            log.i { "${if (subscribed) "subscribe" else "unsubscribe"}: ok=$ok" }
+            _openChannel.update { current ->
+                if (current == null || current.channelId != open.channelId) current
+                else current.copy(subscribed = if (ok) subscribed else open.subscribed, changing = false)
+            }
+            if (ok) {
+                // The list and the feed no longer match the account.
+                _subscribedChannels.value = YouTubeChannelListState()
+                _feeds.update { it + (YouTubeFeedKind.Subscriptions to YouTubeFeedState()) }
+            }
+        }
+    }
+
+    /** Likes [videoId] (or takes it back). True when YouTube took it. */
+    suspend fun setLiked(videoId: String, liked: Boolean): Boolean {
+        val ok = youTubeSetLiked(videoId, liked, _channel.value.pageId) is YouTubeBrowseResult.Ok
+        log.i { "${if (liked) "like" else "remove like"}: ok=$ok" }
+        return ok
+    }
+
+    private val _subscribedChannels = MutableStateFlow(YouTubeChannelListState())
+
+    /** The channels the account subscribes to (Subscriptions > Channels on the website). */
+    val subscribedChannels: StateFlow<YouTubeChannelListState> = _subscribedChannels.asStateFlow()
+
+    fun loadSubscribedChannels(force: Boolean = false) {
+        val current = _subscribedChannels.value
+        if (current.loading || (current.loaded && !force && current.error == null)) return
+        fetchChannels(continuation = null)
+    }
+
+    fun loadMoreSubscribedChannels() {
+        val current = _subscribedChannels.value
+        val token = current.continuation ?: return
+        if (current.loading) return
+        fetchChannels(continuation = token)
+    }
+
+    private fun fetchChannels(continuation: String?) {
+        _subscribedChannels.update { it.copy(loading = true, error = null) }
+        val generation = feedGeneration
+        scope.launch {
+            val result = if (!YouTubeMusicAuth.isSignedIn) {
+                YouTubeBrowseResult.SignedOut
+            } else {
+                youTubeBrowse(
+                    browseId = "FEchannels".takeIf { continuation == null },
+                    continuation = continuation,
+                    pageId = _channel.value.pageId,
+                )
+            }
+            if (generation != feedGeneration) return@launch
+            _subscribedChannels.update { previous ->
+                when (result) {
+                    is YouTubeBrowseResult.Ok -> {
+                        val page = parseYouTubeChannelList(result.body)
+                        log.i { "Channels: ${page.channels.size}, more=${page.continuation != null}" }
+                        val seen = if (continuation == null) emptySet() else previous.channels.mapTo(HashSet()) { it.channelId }
+                        YouTubeChannelListState(
+                            channels = (if (continuation == null) emptyList() else previous.channels) +
+                                page.channels.filter { it.channelId !in seen },
+                            continuation = page.continuation,
+                            loaded = true,
+                        )
+                    }
+                    YouTubeBrowseResult.SignedOut -> YouTubeChannelListState(loaded = true, error = "Sign in to your YouTube account to see your subscriptions.")
+                    is YouTubeBrowseResult.Failed -> previous.copy(loading = false, loaded = true, error = result.message)
+                }
+            }
+        }
     }
 
     /** Replaces the Search feed with the results for [query]. Blank does nothing. */
@@ -221,6 +350,8 @@ object YouTubeFeedRepository {
         feedGeneration++
         _feeds.value = YouTubeFeedKind.entries.associateWith { YouTubeFeedState() }
         _channel.value = YouTubeChannelState()
+        _subscribedChannels.value = YouTubeChannelListState()
+        _openChannel.update { it?.copy(subscribed = null, changing = false) }
     }
 
     /** Fetches the channel list once per session (again after a failure) and settles which channel the feeds act as. */
@@ -285,6 +416,8 @@ object YouTubeFeedRepository {
         _feeds.update { it + (kind to it.getValue(kind).copy(loading = true, error = null)) }
         val generation = feedGeneration
         val search = searchGeneration
+        val channelPage = channelGeneration
+        val openChannelId = _openChannel.value?.channelId
         scope.launch {
             val result = when {
                 !YouTubeMusicAuth.isSignedIn -> YouTubeBrowseResult.SignedOut
@@ -293,6 +426,9 @@ object YouTubeFeedRepository {
                     continuation = continuation,
                     pageId = _channel.value.pageId,
                 )
+                kind == YouTubeFeedKind.Channel -> openChannelId?.let {
+                    youTubeChannelVideos(it, continuation, _channel.value.pageId)
+                } ?: YouTubeBrowseResult.Failed("No channel is open.")
                 else -> youTubeBrowse(
                     browseId = kind.browseId.takeIf { continuation == null },
                     continuation = continuation,
@@ -301,6 +437,15 @@ object YouTubeFeedRepository {
             }
             if (generation != feedGeneration) return@launch
             if (kind == YouTubeFeedKind.Search && search != searchGeneration) return@launch
+            if (kind == YouTubeFeedKind.Channel && channelPage != channelGeneration) return@launch
+            // The first page of a channel also says whether the account is subscribed to it.
+            if (kind == YouTubeFeedKind.Channel && continuation == null && result is YouTubeBrowseResult.Ok) {
+                parseYouTubeSubscribed(result.body)?.let { subscribed ->
+                    _openChannel.update {
+                        if (it != null && it.channelId == openChannelId && !it.changing) it.copy(subscribed = subscribed) else it
+                    }
+                }
+            }
             _feeds.update { feeds ->
                 val previous = feeds.getValue(kind)
                 val next = when (result) {

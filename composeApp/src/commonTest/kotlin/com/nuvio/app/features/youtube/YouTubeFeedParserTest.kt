@@ -41,6 +41,44 @@ class YouTubeFeedParserTest {
     }
 
     @Test
+    fun aVideoRendererKeepsItsChannelId() {
+        val body = """
+            {"contents":[{"videoRenderer":{"videoId":"vid1","title":{"simpleText":"T"},
+              "ownerText":{"runs":[{"text":"Some Channel","navigationEndpoint":{"browseEndpoint":{"browseId":"UCabc","canonicalBaseUrl":"/@some"}}}]}}}]}
+        """.trimIndent()
+        assertEquals("UCabc", parseYouTubeFeed(body).videos.single().channelId)
+    }
+
+    @Test
+    fun readsTheSubscribedChannelsList() {
+        val body = """
+            {"contents":{"sectionListRenderer":{"contents":[{"itemSectionRenderer":{"contents":[{"shelfRenderer":{"content":{"expandedShelfContentsRenderer":{"items":[
+              {"channelRenderer":{"channelId":"UC1","title":{"simpleText":"First"},
+                "thumbnail":{"thumbnails":[{"url":"//yt3.ggpht.com/a=s88"},{"url":"//yt3.ggpht.com/a=s176"}]},
+                "videoCountText":{"simpleText":"@first"},"subscriberCountText":{"simpleText":"1.2M subscribers"}}},
+              {"channelRenderer":{"channelId":"UC2","title":{"simpleText":"Second"}}}
+            ]}}}}]}},
+            {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"MORE"}}}}]}}}
+        """.trimIndent()
+
+        val page = parseYouTubeChannelList(body)
+
+        assertEquals(listOf("UC1", "UC2"), page.channels.map { it.channelId })
+        assertEquals("https://yt3.ggpht.com/a=s176", page.channels[0].avatarUrl)
+        assertEquals("@first • 1.2M subscribers", page.channels[0].details)
+        assertEquals("MORE", page.continuation)
+    }
+
+    @Test
+    fun readsWhetherTheAccountIsSubscribed() {
+        val entity = """{"frameworkUpdates":{"entityBatchUpdate":{"mutations":[{"payload":{"subscriptionStateEntity":{"key":"k","subscribed":true}}}]}}}"""
+        assertEquals(true, parseYouTubeSubscribed(entity))
+        val button = """{"header":{"c4TabbedHeaderRenderer":{"subscribeButton":{"subscribeButtonRenderer":{"subscribed":false}}}}}"""
+        assertEquals(false, parseYouTubeSubscribed(button))
+        assertNull(parseYouTubeSubscribed("""{"header":{}}"""))
+    }
+
+    @Test
     fun readsSearchResultsAndSkipsChannelsAndShorts() {
         // The `search` answer: an item section of video renderers, with a channel result and a
         // Shorts shelf mixed in, and the next page's token after the section.

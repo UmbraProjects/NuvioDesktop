@@ -28,10 +28,14 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -99,8 +103,19 @@ fun YouTubeTabScreen(
         YouTubeMusicAuth.ensureLoaded()
         YouTubeMusicAuth.state
     }.collectAsStateWithLifecycle()
+    // A feed's name, or CHANNELS_VIEW for the list of subscribed channels (not a video feed).
     var selectedName by rememberSaveable { mutableStateOf(YouTubeFeedKind.Home.name) }
-    val kind = YouTubeFeedKind.valueOf(selectedName)
+    val showingChannelList = selectedName == CHANNELS_VIEW
+    // The channel list sits under Subscriptions, whose feed is what the effects keep loaded meanwhile.
+    val kind = if (showingChannelList) YouTubeFeedKind.Subscriptions else YouTubeFeedKind.valueOf(selectedName)
+    val openChannel by YouTubeFeedRepository.openChannel.collectAsStateWithLifecycle()
+    // Where the channel page's back button goes.
+    var channelReturnTo by rememberSaveable { mutableStateOf(YouTubeFeedKind.Home.name) }
+    fun showChannel(channelId: String, name: String, avatarUrl: String?) {
+        if (selectedName != YouTubeFeedKind.Channel.name) channelReturnTo = selectedName
+        YouTubeFeedRepository.openChannel(channelId, name, avatarUrl)
+        selectedName = YouTubeFeedKind.Channel.name
+    }
     val feeds by YouTubeFeedRepository.feeds.collectAsStateWithLifecycle()
     val feed = feeds.getValue(kind)
     val channel by YouTubeFeedRepository.channel.collectAsStateWithLifecycle()
@@ -140,6 +155,22 @@ fun YouTubeTabScreen(
     var openingId by remember { mutableStateOf<String?>(null) }
     var openJob by remember { mutableStateOf<Job?>(null) }
     var openError by remember { mutableStateOf<String?>(null) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(notice) {
+        if (notice != null) {
+            kotlinx.coroutines.delay(4_000L)
+            notice = null
+        }
+    }
+    fun like(video: YouTubeVideo) {
+        scope.launch {
+            notice = if (YouTubeFeedRepository.setLiked(video.videoId, liked = true)) {
+                "Liked \"${video.title}\"."
+            } else {
+                "YouTube didn't take the like. Try again shortly."
+            }
+        }
+    }
     fun play(video: YouTubeVideo) {
         openJob?.cancel()
         openError = null
@@ -216,12 +247,17 @@ fun YouTubeTabScreen(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(end = 12.dp),
             )
-            YouTubeFeedKind.entries.filter { it != YouTubeFeedKind.Search }.forEach { entry ->
-                if (entry == kind) {
+            YouTubeFeedKind.entries.filter { it.inHeader }.forEach { entry ->
+                if (entry == kind && !showingChannelList) {
                     Button(onClick = { YouTubeFeedRepository.load(entry) }) { Text(entry.label) }
                 } else {
                     OutlinedButton(onClick = { selectedName = entry.name }) { Text(entry.label) }
                 }
+            }
+            if (showingChannelList) {
+                Button(onClick = { YouTubeFeedRepository.loadSubscribedChannels() }) { Text("Channels") }
+            } else {
+                OutlinedButton(onClick = { selectedName = CHANNELS_VIEW }) { Text("Channels") }
             }
             if (auth.signedIn) {
                 NuvioTextField(
@@ -286,8 +322,28 @@ fun YouTubeTabScreen(
                 modifier = Modifier.padding(bottom = 12.dp),
             )
         }
+        notice?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
+        if (kind == YouTubeFeedKind.Channel && !showingChannelList) {
+            openChannel?.let { open ->
+                ChannelHeader(
+                    channel = open,
+                    onBack = { selectedName = channelReturnTo },
+                    onSubscribe = YouTubeFeedRepository::setSubscribed,
+                )
+            }
+        }
 
         when {
+            showingChannelList && auth.signedIn -> SubscribedChannels(
+                onOpen = { showChannel(it.channelId, it.name, it.avatarUrl) },
+            )
             !auth.signedIn -> FeedMessage(
                 text = "Sign in to your YouTube account to see your home feed and subscriptions.",
                 action = "Open YouTube account settings",
@@ -323,6 +379,7 @@ fun YouTubeTabScreen(
                     YouTubeFeedKind.Search -> "No videos found for \"$searchQuery\"."
                     YouTubeFeedKind.History ->
                         "Nothing in this account's watch history. YouTube keeps none while watch history is paused."
+                    YouTubeFeedKind.Channel -> "This channel has no videos."
                     YouTubeFeedKind.Home ->
                         "YouTube has no recommendations for this account yet. Watch history turned off gives an empty home feed."
                 },
@@ -343,6 +400,11 @@ fun YouTubeTabScreen(
                         opening = openingId == video.videoId,
                         deArrow = deArrow,
                         onClick = { play(video) },
+                        onLike = { like(video) },
+                        // Not from the channel's own page, which is where it would go.
+                        onOpenChannel = video.channelId?.takeIf { kind != YouTubeFeedKind.Channel }?.let { id ->
+                            { showChannel(id, video.channel ?: "Channel", null) }
+                        },
                     )
                 }
                 if (feed.continuation != null || feed.error != null) {
@@ -447,8 +509,141 @@ private fun FeedMessage(text: String, action: String, onAction: () -> Unit) {
     }
 }
 
+/** [YouTubeTabScreen]'s selection for the subscribed-channels list, beside the feed kinds' names. */
+private const val CHANNELS_VIEW = "Channels"
+
+/** The open channel's name and avatar, a way back, and its Subscribe button. */
 @Composable
-private fun YouTubeVideoCard(video: YouTubeVideo, opening: Boolean, deArrow: Boolean, onClick: () -> Unit) {
+private fun ChannelHeader(channel: YouTubeOpenChannel, onBack: () -> Unit, onSubscribe: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
+        }
+        if (channel.avatarUrl != null) {
+            NuvioAsyncImage(
+                model = channel.avatarUrl,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp).clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        Text(
+            text = channel.name,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        when (channel.subscribed) {
+            // Not known until the page answers; no button rather than a guess.
+            null -> Unit
+            true -> OutlinedButton(onClick = { onSubscribe(false) }, enabled = !channel.changing) { Text("Subscribed") }
+            false -> Button(onClick = { onSubscribe(true) }, enabled = !channel.changing) { Text("Subscribe") }
+        }
+    }
+}
+
+/** The channels the account subscribes to, as a grid of avatars; picking one opens its page. */
+@Composable
+private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit) {
+    val state by YouTubeFeedRepository.subscribedChannels.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { YouTubeFeedRepository.loadSubscribedChannels() }
+    when {
+        state.channels.isEmpty() && (state.loading || !state.loaded) -> Box(
+            modifier = Modifier.fillMaxWidth().padding(top = 96.dp),
+            contentAlignment = Alignment.TopCenter,
+        ) { CircularProgressIndicator() }
+        state.channels.isEmpty() -> FeedMessage(
+            text = state.error ?: "This account doesn't subscribe to any channels.",
+            action = "Refresh",
+            onAction = { YouTubeFeedRepository.loadSubscribedChannels(force = true) },
+        )
+        else -> {
+            val gridState = rememberLazyGridState()
+            LaunchedEffect(gridState) {
+                snapshotFlow {
+                    val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                    last >= gridState.layoutInfo.totalItemsCount - 8
+                }.distinctUntilChanged().collect { nearEnd ->
+                    if (nearEnd) YouTubeFeedRepository.loadMoreSubscribedChannels()
+                }
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 180.dp),
+                state = gridState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 48.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                items(state.channels, key = { it.channelId }) { channel ->
+                    ChannelTile(channel = channel, onClick = { onOpen(channel) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelTile(channel: YouTubeChannel, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val hovered by interaction.collectIsHoveredAsState()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (focused || hovered) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+            .hoverable(interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        NuvioAsyncImage(
+            model = channel.avatarUrl,
+            contentDescription = channel.name,
+            modifier = Modifier
+                .size(96.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(2.dp, if (focused || hovered) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape),
+            contentScale = ContentScale.Crop,
+        )
+        Text(
+            text = channel.name,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        channel.details?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun YouTubeVideoCard(
+    video: YouTubeVideo,
+    opening: Boolean,
+    deArrow: Boolean,
+    onClick: () -> Unit,
+    onLike: () -> Unit,
+    onOpenChannel: (() -> Unit)?,
+) {
     // DeArrow's title and thumbnail once looked up (cards ask as they come into view); YouTube's meanwhile.
     val branding by produceState(YouTubeDeArrow.cached(video.videoId), video.videoId, deArrow) {
         if (deArrow) value = YouTubeDeArrow.branding(video.videoId)
@@ -524,13 +719,47 @@ private fun YouTubeVideoCard(video: YouTubeVideo, opening: Boolean, deArrow: Boo
                 ) { CircularProgressIndicator(color = Color.White) }
             }
         }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(verticalAlignment = Alignment.Top) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            var menuOpen by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        Icons.Rounded.MoreVert,
+                        contentDescription = "More",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Like") },
+                        leadingIcon = { Icon(Icons.Rounded.ThumbUp, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onLike()
+                        },
+                    )
+                    if (onOpenChannel != null) {
+                        DropdownMenuItem(
+                            text = { Text("Go to channel") },
+                            leadingIcon = { Icon(Icons.Rounded.AccountCircle, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                onOpenChannel()
+                            },
+                        )
+                    }
+                }
+            }
+        }
         listOfNotNull(video.channel, video.details).forEach { line ->
             Text(
                 text = line,

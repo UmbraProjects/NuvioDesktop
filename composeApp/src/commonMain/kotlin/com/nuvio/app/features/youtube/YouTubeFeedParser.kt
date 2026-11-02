@@ -29,7 +29,20 @@ data class YouTubeVideo(
     val thumbnailUrl: String?,
     /** How much of it this account has watched, 1-100, from YouTube's own history; null when unwatched. */
     val watchedPercent: Int? = null,
+    /** The uploader's channel id (`UC...`), when the item links to it; a channel's own page does not. */
+    val channelId: String? = null,
 )
+
+/** A channel, as the subscriptions list shows it. */
+data class YouTubeChannel(
+    val channelId: String,
+    val name: String,
+    val avatarUrl: String?,
+    /** The line under the name, as YouTube words it ("@handle • 1.2M subscribers"). */
+    val details: String?,
+)
+
+data class YouTubeChannelPage(val channels: List<YouTubeChannel>, val continuation: String?)
 
 data class YouTubeFeedPage(
     val videos: List<YouTubeVideo>,
@@ -146,6 +159,8 @@ private fun lockupVideo(lockup: JsonObject): YouTubeVideo? {
         duration = duration,
         thumbnailUrl = thumbnail,
         watchedPercent = watchedPercent(watched),
+        // The avatar and the channel name both open the channel; either carries its browse id.
+        channelId = findChannelId(metadata),
     )
 }
 
@@ -158,7 +173,8 @@ private fun rendererVideo(renderer: JsonObject): YouTubeVideo? {
     val viewText = text(renderer["shortViewCountText"]) ?: text(renderer["viewCountText"])
     val isLive = badgeStyles.any { it.contains("LIVE") } || viewText?.contains("watching") == true
     if (isLive) return null
-    val channel = text(renderer["ownerText"]) ?: text(renderer["shortBylineText"]) ?: text(renderer["longBylineText"])
+    val byline = renderer["ownerText"] ?: renderer["shortBylineText"] ?: renderer["longBylineText"]
+    val channel = text(byline)
     val details = listOfNotNull(viewText, text(renderer["publishedTimeText"]))
         .filter { it.isNotBlank() }
         .joinToString(" • ")
@@ -177,7 +193,66 @@ private fun rendererVideo(renderer: JsonObject): YouTubeVideo? {
             collectObjects(renderer, "thumbnailOverlayResumePlaybackRenderer")
                 .firstNotNullOfOrNull { it.int("percentDurationWatched") },
         ),
+        channelId = byline?.let(::findChannelId),
     )
+}
+
+/** The first channel (`UC...`) browse id under [element]. */
+private fun findChannelId(element: JsonElement): String? =
+    collectObjects(element, "browseEndpoint")
+        .firstNotNullOfOrNull { endpoint -> endpoint.string("browseId")?.takeIf { it.startsWith("UC") } }
+
+/**
+ * The subscriptions list (`FEchannels`): its `channelRenderer` items (`gridChannelRenderer` on the
+ * older grid) and the next page's token.
+ */
+internal fun parseYouTubeChannelList(body: String): YouTubeChannelPage {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return YouTubeChannelPage(emptyList(), null)
+    val channels = LinkedHashMap<String, YouTubeChannel>()
+    var continuation: String? = null
+    fun walk(element: JsonElement) {
+        when (element) {
+            is JsonObject -> for ((key, value) in element) {
+                when (key) {
+                    "topbar", "frameworkUpdates" -> Unit
+                    "channelRenderer", "gridChannelRenderer" -> (value as? JsonObject)?.let(::channelOf)
+                        ?.let { channels.putIfAbsent(it.channelId, it) }
+                    "continuationItemRenderer" -> findContinuationToken(value)?.let { continuation = it }
+                    else -> walk(value)
+                }
+            }
+            is JsonArray -> element.forEach(::walk)
+            else -> Unit
+        }
+    }
+    walk(root)
+    return YouTubeChannelPage(channels.values.toList(), continuation)
+}
+
+private fun channelOf(renderer: JsonObject): YouTubeChannel? {
+    val id = renderer.string("channelId")?.takeIf { it.startsWith("UC") } ?: return null
+    val name = text(renderer["title"])?.takeIf { it.isNotBlank() } ?: return null
+    val avatar = renderer.obj("thumbnail")?.array("thumbnails")
+        ?.mapNotNull { (it as? JsonObject)?.string("url") }
+        ?.lastOrNull()
+        ?.let { if (it.startsWith("//")) "https:$it" else it }
+    // On the subscriptions list `videoCountText` carries the @handle and `subscriberCountText` the count.
+    val details = listOfNotNull(text(renderer["videoCountText"]), text(renderer["subscriberCountText"]))
+        .filter { it.isNotBlank() }
+        .joinToString(" • ")
+        .ifEmpty { null }
+    return YouTubeChannel(channelId = id, name = name, avatarUrl = avatar, details = details)
+}
+
+/**
+ * Whether the account is subscribed to the channel whose page [body] is: the subscription state
+ * entity the current page keeps in `frameworkUpdates`, else the older header button's flag; null
+ * when the page says neither.
+ */
+internal fun parseYouTubeSubscribed(body: String): Boolean? {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return null
+    collectObjects(root, "subscriptionStateEntity").firstNotNullOfOrNull { it.boolean("subscribed") }?.let { return it }
+    return collectObjects(root, "subscribeButtonRenderer").firstNotNullOfOrNull { it.boolean("subscribed") }
 }
 
 private fun watchedPercent(raw: Int?): Int? = raw?.takeIf { it > 0 }?.coerceAtMost(100)
@@ -228,3 +303,4 @@ private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 private fun JsonObject.array(key: String): JsonArray? = this[key] as? JsonArray
 private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.content?.toDoubleOrNull()?.toInt()
 private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+private fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
