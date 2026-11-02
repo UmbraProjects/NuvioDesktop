@@ -322,6 +322,24 @@ internal fun parseYouTubePlaylistOptions(body: String): List<YouTubePlaylistOpti
 }
 
 /**
+ * Whether the account has liked the video whose watch page (`next` answer) [body] is: its
+ * `likeStatusEntity` (or an older button's `likeStatus`) says LIKE; null when the page says nothing.
+ */
+internal fun parseYouTubeLikeStatus(body: String): Boolean? {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return null
+    val status = collectObjects(root, "likeStatusEntity").firstNotNullOfOrNull { it.string("likeStatus") }
+        ?: findString(root, "likeStatus")
+        ?: return null
+    return status == "LIKE"
+}
+
+private fun findString(element: JsonElement, key: String): String? = when (element) {
+    is JsonObject -> element.string(key) ?: element.values.firstNotNullOfOrNull { findString(it, key) }
+    is JsonArray -> element.firstNotNullOfOrNull { findString(it, key) }
+    else -> null
+}
+
+/**
  * Whether the account is subscribed to the channel whose page [body] is: the subscription state
  * entity the current page keeps in `frameworkUpdates`, else the older header button's flag; null
  * when the page says neither.

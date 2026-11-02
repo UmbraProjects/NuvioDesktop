@@ -311,7 +311,20 @@ object YouTubeFeedRepository {
     suspend fun setLiked(videoId: String, liked: Boolean): Boolean {
         val ok = youTubeSetLiked(videoId, liked, _channel.value.pageId) is YouTubeBrowseResult.Ok
         log.i { "${if (liked) "like" else "remove like"}: ok=$ok" }
+        if (ok) _likeStatus.update { it + (videoId to liked) }
         return ok
+    }
+
+    private val _likeStatus = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+
+    /** Whether the account likes each video asked about ([loadLikeStatus]) or liked here; absent when not known. */
+    val likeStatus: StateFlow<Map<String, Boolean>> = _likeStatus.asStateFlow()
+
+    /** Asks YouTube once whether the account likes [videoId] (its watch page says), for the card's menu. */
+    suspend fun loadLikeStatus(videoId: String) {
+        if (videoId in _likeStatus.value) return
+        val page = youTubeNext(videoId, continuation = null, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok ?: return
+        parseYouTubeLikeStatus(page.body)?.let { liked -> _likeStatus.update { it + (videoId to liked) } }
     }
 
     private val _openPlaylist = MutableStateFlow<YouTubePlaylist?>(null)

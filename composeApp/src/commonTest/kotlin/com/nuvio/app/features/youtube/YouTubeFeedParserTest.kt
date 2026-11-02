@@ -115,6 +115,15 @@ class YouTubeFeedParserTest {
     }
 
     @Test
+    fun readsWhetherTheAccountLikesTheVideo() {
+        val liked = """{"frameworkUpdates":{"entityBatchUpdate":{"mutations":[{"payload":{"likeStatusEntity":{"key":"k","likeStatus":"LIKE"}}}]}}}"""
+        assertEquals(true, parseYouTubeLikeStatus(liked))
+        val neutral = """{"contents":{"likeButtonRenderer":{"likeStatus":"INDIFFERENT"}}}"""
+        assertEquals(false, parseYouTubeLikeStatus(neutral))
+        assertNull(parseYouTubeLikeStatus("""{"contents":{}}"""))
+    }
+
+    @Test
     fun readsWhetherTheAccountIsSubscribed() {
         val entity = """{"frameworkUpdates":{"entityBatchUpdate":{"mutations":[{"payload":{"subscriptionStateEntity":{"key":"k","subscribed":true}}}]}}}"""
         assertEquals(true, parseYouTubeSubscribed(entity))

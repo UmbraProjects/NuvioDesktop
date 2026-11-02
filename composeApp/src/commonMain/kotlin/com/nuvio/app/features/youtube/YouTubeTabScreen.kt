@@ -185,8 +185,10 @@ fun YouTubeTabScreen(
         if (allHidden && feed.continuation != null && !feed.loading && feed.error == null) YouTubeFeedRepository.loadMore(kind)
     }
     var searchText by rememberSaveable { mutableStateOf(YouTubeFeedRepository.searchQuery.value) }
+    var focusResultsPending by remember { mutableStateOf(false) }
     fun submitSearch() {
         if (searchText.isBlank()) return
+        focusResultsPending = true
         YouTubeFeedRepository.search(searchText)
         // Back from the results returns to where the search was typed.
         if (selectedName != YouTubeFeedKind.Search.name) {
@@ -214,19 +216,16 @@ fun YouTubeTabScreen(
     var openingId by remember { mutableStateOf<String?>(null) }
     var openJob by remember { mutableStateOf<Job?>(null) }
     var openError by remember { mutableStateOf<String?>(null) }
-    var notice by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(notice) {
-        if (notice != null) {
-            kotlinx.coroutines.delay(4_000L)
-            notice = null
-        }
-    }
-    fun like(video: YouTubeVideo) {
+    // What a like or a save did, as the app's toast: a line at the top of the grid went unnoticed.
+    fun confirm(title: String, message: String) =
+        com.nuvio.app.core.ui.NuvioToastController.show(message = message, title = title)
+    fun like(video: YouTubeVideo, liked: Boolean) {
         scope.launch {
-            notice = if (YouTubeFeedRepository.setLiked(video.videoId, liked = true)) {
-                "Liked \"${video.title}\"."
-            } else {
-                "YouTube didn't take the like. Try again shortly."
+            val ok = YouTubeFeedRepository.setLiked(video.videoId, liked)
+            when {
+                !ok -> confirm("Like", "YouTube didn't take that. Try again shortly.")
+                liked -> confirm("Liked", youTubeDisplayTitle(video))
+                else -> confirm("Like removed", youTubeDisplayTitle(video))
             }
         }
     }
@@ -235,10 +234,10 @@ fun YouTubeTabScreen(
     fun saveTo(playlistId: String, name: String, video: YouTubeVideo, add: Boolean) {
         scope.launch {
             val ok = YouTubeFeedRepository.saveToPlaylist(playlistId, video, add)
-            notice = when {
-                !ok -> "YouTube didn't take that. Try again shortly."
-                add -> "Saved to $name."
-                else -> "Removed from $name."
+            when {
+                !ok -> confirm(name, "YouTube didn't take that. Try again shortly.")
+                add -> confirm("Saved to $name", youTubeDisplayTitle(video))
+                else -> confirm("Removed from $name", youTubeDisplayTitle(video))
             }
         }
     }
@@ -294,12 +293,23 @@ fun YouTubeTabScreen(
     // first card, so the arrows have somewhere to start (a mouse user never sees it: the ring is
     // keyboard-only).
     val firstCardFocus = remember { FocusRequester() }
+    val searchFocus = remember { FocusRequester() }
+    val playlistsFocus = remember { FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var tabHasFocus by remember { mutableStateOf(false) }
     val firstVideoId = videos.firstOrNull()?.videoId
     LaunchedEffect(KeyboardInputMode.active, selectedName, firstVideoId) {
         if (KeyboardInputMode.active && !tabHasFocus && firstVideoId != null) {
             kotlinx.coroutines.delay(50L) // the grid's first frame
             runCatching { firstCardFocus.requestFocus() }
+        }
+    }
+    // Enter in the search box: once the results are in, focus moves to the first of them.
+    LaunchedEffect(focusResultsPending, firstVideoId, feed.loading) {
+        if (focusResultsPending && kind == YouTubeFeedKind.Search && firstVideoId != null && !feed.loading) {
+            kotlinx.coroutines.delay(50L)
+            runCatching { firstCardFocus.requestFocus() }
+            focusResultsPending = false
         }
     }
 
@@ -344,12 +354,36 @@ fun YouTubeTabScreen(
                 label = "Playlists",
                 selected = showingPlaylists,
                 onClick = { if (showingPlaylists) YouTubeFeedRepository.loadPlaylists() else section(PLAYLISTS_VIEW) },
+                // Right goes on to the search box: the geometric search passed it over.
+                modifier = if (auth.signedIn) {
+                    Modifier.focusRequester(playlistsFocus).focusProperties { right = searchFocus }
+                } else {
+                    Modifier
+                },
             )
             if (auth.signedIn) {
                 NuvioTextField(
                     value = searchText,
                     onValueChange = { searchText = it },
-                    modifier = Modifier.width(340.dp),
+                    focusRequester = searchFocus,
+                    modifier = Modifier
+                        .width(340.dp)
+                        .focusProperties { left = playlistsFocus }
+                        // The field takes the arrows for its cursor, which left a keyboard or pad
+                        // stuck in it: Down drops to the videos, Up has nowhere to go.
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when (event.key) {
+                                Key.DirectionDown -> {
+                                    if (firstVideoId == null || runCatching { firstCardFocus.requestFocus() }.isFailure) {
+                                        focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+                                    }
+                                    true
+                                }
+                                Key.DirectionUp -> true
+                                else -> false
+                            }
+                        },
                     // A pill, like the buttons it sits among.
                     shape = CircleShape,
                     placeholder = "Search YouTube",
@@ -406,14 +440,6 @@ fun YouTubeTabScreen(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(bottom = 12.dp),
-            )
-        }
-        notice?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
         }
@@ -537,7 +563,7 @@ fun YouTubeTabScreen(
                         deArrow = deArrow,
                         // Inside a playlist a video plays on through the rest of it, as on the website.
                         onClick = { if (inPlaylist != null) playFromPlaylist(index) else play(video) },
-                        onLike = { like(video) },
+                        onLike = { liked -> like(video, liked) },
                         onSaveToWatchLater = { saveTo(WATCH_LATER_PLAYLIST_ID, "Watch later", video, add = true) },
                         onSaveToPlaylist = { savingVideo = video },
                         onComments = { commentsVideo = video },
@@ -664,22 +690,28 @@ private fun YouTubePill(
     onClick: () -> Unit,
     enabled: Boolean = true,
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    modifier: Modifier = Modifier,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsKeyboardFocusedAsState()
-    val ring = Modifier.border(
-        width = 2.dp,
-        color = if (focused) MaterialTheme.colorScheme.onSurface else Color.Transparent,
-        shape = CircleShape,
-    )
+    // The button's own border, so the ring is the pill's outline: a border modifier traced the
+    // button's taller touch area instead, a ring standing off the pill.
+    val ring = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface).takeIf { focused }
     val content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
         leadingIcon?.let { Icon(it, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 4.dp)) }
         Text(label)
     }
     if (selected) {
-        Button(onClick = onClick, enabled = enabled, interactionSource = interaction, modifier = ring, content = content)
+        Button(onClick = onClick, enabled = enabled, interactionSource = interaction, modifier = modifier, border = ring, content = content)
     } else {
-        OutlinedButton(onClick = onClick, enabled = enabled, interactionSource = interaction, modifier = ring, content = content)
+        OutlinedButton(
+            onClick = onClick,
+            enabled = enabled,
+            interactionSource = interaction,
+            modifier = modifier,
+            border = ring ?: androidx.compose.material3.ButtonDefaults.outlinedButtonBorder(enabled),
+            content = content,
+        )
     }
 }
 
@@ -1113,7 +1145,8 @@ private fun YouTubeVideoCard(
     opening: Boolean,
     deArrow: Boolean,
     onClick: () -> Unit,
-    onLike: () -> Unit,
+    /** Likes the video (true) or takes the like back (false). */
+    onLike: (Boolean) -> Unit,
     onSaveToWatchLater: () -> Unit,
     onSaveToPlaylist: () -> Unit,
     onComments: () -> Unit,
@@ -1141,11 +1174,26 @@ private fun YouTubeVideoCard(
     val hovered by interaction.collectIsHoveredAsState()
     val highlight = focused || hovered
     val shape = RoundedCornerShape(12.dp)
+    // Whether this account likes the video: asked when the menu opens, so its first row can offer to
+    // take a like back. Until YouTube answers it reads "Like", and turns into "Remove like" in place.
+    val likeStatus by YouTubeFeedRepository.likeStatus.collectAsStateWithLifecycle()
+    val liked = likeStatus[video.videoId]
+    LaunchedEffect(menuAt != null, video.videoId) {
+        if (menuAt != null && liked == null) YouTubeFeedRepository.loadLikeStatus(video.videoId)
+    }
     menuAt?.let { position ->
         NuvioContextMenu(
-            windowPosition = position,
+            positionProvider = remember(position) { com.nuvio.app.core.ui.CursorMenuPositionProvider(position) },
+            // Live: the like row's label settles once YouTube has said; the rows themselves never change.
+            liveActions = true,
             actions = buildList {
-                add(PosterZoomOverlayAction(icon = Icons.Rounded.ThumbUp, label = "Like", onSelected = onLike))
+                add(
+                    PosterZoomOverlayAction(
+                        icon = Icons.Rounded.ThumbUp,
+                        label = if (liked == true) "Remove like" else "Like",
+                        onSelected = { onLike(liked != true) },
+                    ),
+                )
                 add(PosterZoomOverlayAction(icon = Icons.Rounded.WatchLater, label = "Save to Watch later", onSelected = onSaveToWatchLater))
                 add(PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Save to playlist…", onSelected = onSaveToPlaylist))
                 add(PosterZoomOverlayAction(icon = Icons.AutoMirrored.Rounded.Comment, label = "Comments", onSelected = onComments, group = 1))
