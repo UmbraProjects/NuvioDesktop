@@ -120,6 +120,9 @@ internal expect suspend fun youTubeEditPlaylist(playlistId: String, videoId: Str
 /** The playlists "Save to playlist" offers for [videoId], with whether each already holds it. */
 internal expect suspend fun youTubePlaylistOptions(videoId: String, pageId: String?): YouTubeBrowseResult
 
+/** The WEB `next` answer: for [videoId] (its page, which names the comments section), or a [continuation] of it. */
+internal expect suspend fun youTubeNext(videoId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult
+
 /** The account's channel list (`account/accounts_list`), as a raw body like [youTubeBrowse]. */
 internal expect suspend fun youTubeAccountsList(): YouTubeBrowseResult
 
@@ -374,6 +377,20 @@ object YouTubeFeedRepository {
         // The library's counts and thumbnails changed.
         if (ok) _playlists.update { it.copy(loaded = false) }
         return ok
+    }
+
+    /**
+     * A page of [videoId]'s top comments: the first with no [continuation], the next with the page's
+     * token. An empty page with no token when comments are off; null when YouTube did not answer.
+     */
+    suspend fun comments(videoId: String, continuation: String?): YouTubeCommentPage? {
+        val pageId = _channel.value.pageId
+        val token = continuation ?: run {
+            val video = youTubeNext(videoId, continuation = null, pageId = pageId) as? YouTubeBrowseResult.Ok ?: return null
+            parseYouTubeCommentsToken(video.body) ?: return YouTubeCommentPage(emptyList(), null)
+        }
+        val page = youTubeNext(videoId = null, continuation = token, pageId = pageId) as? YouTubeBrowseResult.Ok ?: return null
+        return parseYouTubeComments(page.body).also { log.i { "Comments: ${it.comments.size}, more=${it.continuation != null}" } }
     }
 
     /** The playlists [videoId] can be saved to, or null when YouTube did not answer. */

@@ -23,6 +23,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -30,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -191,6 +196,7 @@ fun YouTubeTabScreen(
         }
     }
     var savingVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
+    var commentsVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
     fun saveTo(playlistId: String, name: String, video: YouTubeVideo, add: Boolean) {
         scope.launch {
             val ok = YouTubeFeedRepository.saveToPlaylist(playlistId, video, add)
@@ -419,6 +425,13 @@ fun YouTubeTabScreen(
                 )
             }
         }
+        commentsVideo?.let { video ->
+            CommentsDialog(
+                video = video,
+                title = YouTubeDeArrow.cached(video.videoId)?.title?.takeIf { deArrow } ?: video.title,
+                onDismiss = { commentsVideo = null },
+            )
+        }
         savingVideo?.let { video ->
             SaveToPlaylistDialog(
                 video = video,
@@ -494,6 +507,7 @@ fun YouTubeTabScreen(
                         onLike = { like(video) },
                         onSaveToWatchLater = { saveTo(WATCH_LATER_PLAYLIST_ID, "Watch later", video, add = true) },
                         onSaveToPlaylist = { savingVideo = video },
+                        onComments = { commentsVideo = video },
                         // Liked videos is YouTube's own list: a like taken back leaves it, not a removal.
                         onRemoveFromPlaylist = inPlaylist?.takeIf { it.playlistId != LIKED_PLAYLIST_ID }?.let { playlist ->
                             { saveTo(playlist.playlistId, playlist.title, video, add = false) }
@@ -723,6 +737,115 @@ private fun PlaylistTile(playlist: YouTubePlaylist, onClick: () -> Unit) {
     }
 }
 
+/** [video]'s top comments, read-only, a page at a time as the list is scrolled. */
+@Composable
+private fun CommentsDialog(video: YouTubeVideo, title: String, onDismiss: () -> Unit) {
+    var comments by remember(video.videoId) { mutableStateOf<List<YouTubeComment>>(emptyList()) }
+    var continuation by remember(video.videoId) { mutableStateOf<String?>(null) }
+    var loading by remember(video.videoId) { mutableStateOf(true) }
+    var failed by remember(video.videoId) { mutableStateOf(false) }
+    // How many pages have been asked for; the first has no token, so it is told apart by this.
+    var requested by remember(video.videoId) { mutableStateOf(1) }
+    LaunchedEffect(video.videoId, requested) {
+        loading = true
+        val page = YouTubeFeedRepository.comments(video.videoId, continuation.takeIf { requested > 1 })
+        if (page == null) {
+            failed = true
+        } else {
+            failed = false
+            val seen = comments.mapTo(HashSet()) { it.id }
+            comments = comments + page.comments.filter { it.id !in seen }
+            continuation = page.continuation
+        }
+        loading = false
+    }
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            last >= listState.layoutInfo.totalItemsCount - 4
+        }.distinctUntilChanged().collect { nearEnd ->
+            if (nearEnd && !loading && !failed && continuation != null) requested++
+        }
+    }
+    NuvioModalDialog(
+        onDismissRequest = onDismiss,
+        title = "Comments",
+        subtitle = title,
+        maxWidth = 720.dp,
+        actions = { FilledTonalButton(onClick = onDismiss) { Text("Close") } },
+    ) {
+        when {
+            comments.isEmpty() && loading -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            comments.isEmpty() && failed -> Text(
+                "YouTube didn't send the comments. Try again shortly.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            comments.isEmpty() -> Text(
+                "No comments, or comments are turned off for this video.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                lazyItems(comments, key = { it.id }) { comment -> CommentRow(comment) }
+                if (loading || (failed && continuation != null)) {
+                    item(key = "more") {
+                        Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                            if (loading) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            } else {
+                                FilledTonalButton(onClick = { failed = false; requested++ }) { Text("Couldn't load more. Try again") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentRow(comment: YouTubeComment) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        NuvioAsyncImage(
+            model = comment.avatarUrl,
+            contentDescription = null,
+            modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+            contentScale = ContentScale.Crop,
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = listOfNotNull(
+                    "Pinned".takeIf { comment.pinned },
+                    comment.author.takeIf { it.isNotBlank() },
+                    comment.published,
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(comment.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            val counts = listOfNotNull(
+                comment.likes?.let { "$it likes" },
+                comment.replies?.let { "$it ${if (it == "1") "reply" else "replies"}" },
+            )
+            if (counts.isNotEmpty()) {
+                Text(
+                    text = counts.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 /** "Save to playlist": the account's playlists with a tick on those already holding [video]; a click adds or removes. */
 @Composable
 private fun SaveToPlaylistDialog(
@@ -916,6 +1039,7 @@ private fun YouTubeVideoCard(
     onLike: () -> Unit,
     onSaveToWatchLater: () -> Unit,
     onSaveToPlaylist: () -> Unit,
+    onComments: () -> Unit,
     onRemoveFromPlaylist: (() -> Unit)?,
     onOpenChannel: (() -> Unit)?,
 ) {
@@ -1036,6 +1160,14 @@ private fun YouTubeVideoCard(
                         onClick = {
                             menuOpen = false
                             onSaveToPlaylist()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Comments") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Comment, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onComments()
                         },
                     )
                     if (onRemoveFromPlaylist != null) {

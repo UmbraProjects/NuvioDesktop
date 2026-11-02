@@ -74,6 +74,9 @@ internal actual suspend fun youTubePlaylistOptions(videoId: String, pageId: Stri
         pageId,
     )
 
+internal actual suspend fun youTubeNext(videoId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest("next", mapOf("videoId" to videoId, "continuation" to continuation), pageId)
+
 internal actual suspend fun youTubeAccountsList(): YouTubeBrowseResult =
     signedWebRequest(
         "account/accounts_list",
