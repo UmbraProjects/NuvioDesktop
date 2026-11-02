@@ -46,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -104,6 +105,7 @@ fun YouTubeTabScreen(
     val feed = feeds.getValue(kind)
     val channel by YouTubeFeedRepository.channel.collectAsStateWithLifecycle()
     val searchQuery by YouTubeFeedRepository.searchQuery.collectAsStateWithLifecycle()
+    val deArrow by remember { YouTubeFeedRepository.deArrow }.collectAsStateWithLifecycle()
     var searchText by rememberSaveable { mutableStateOf(YouTubeFeedRepository.searchQuery.value) }
     fun submitSearch() {
         if (searchText.isBlank()) return
@@ -144,17 +146,18 @@ fun YouTubeTabScreen(
             }
             if (openingId != video.videoId) return@launch
             openingId = null
+            val title = YouTubeDeArrow.cached(video.videoId)?.title?.takeIf { deArrow } ?: video.title
             if (source == null) {
-                openError = "\"${video.title}\" couldn't be opened. YouTube may be limiting requests; try again shortly."
+                openError = "\"$title\" couldn't be opened. YouTube may be limiting requests; try again shortly."
                 return@launch
             }
             onPlay(
                 PlayerLaunch(
-                    title = video.title,
+                    title = title,
                     sourceUrl = source.videoUrl,
                     sourceAudioUrl = source.audioUrl,
                     sourceHeaders = source.headers,
-                    streamTitle = video.title,
+                    streamTitle = title,
                     streamSubtitle = video.channel,
                     providerName = "YouTube",
                     poster = video.thumbnailUrl,
@@ -315,6 +318,7 @@ fun YouTubeTabScreen(
                     YouTubeVideoCard(
                         video = video,
                         opening = openingId == video.videoId,
+                        deArrow = deArrow,
                         onClick = { play(video) },
                     )
                 }
@@ -421,7 +425,15 @@ private fun FeedMessage(text: String, action: String, onAction: () -> Unit) {
 }
 
 @Composable
-private fun YouTubeVideoCard(video: YouTubeVideo, opening: Boolean, onClick: () -> Unit) {
+private fun YouTubeVideoCard(video: YouTubeVideo, opening: Boolean, deArrow: Boolean, onClick: () -> Unit) {
+    // DeArrow's title and thumbnail once looked up (cards ask as they come into view); YouTube's meanwhile.
+    val branding by produceState(YouTubeDeArrow.cached(video.videoId), video.videoId, deArrow) {
+        if (deArrow) value = YouTubeDeArrow.branding(video.videoId)
+    }
+    val title = branding?.title?.takeIf { deArrow } ?: video.title
+    // A frame DeArrow's thumbnail service could not cut falls back to YouTube's thumbnail.
+    var brandedThumbnailFailed by remember(video.videoId) { mutableStateOf(false) }
+    val thumbnail = branding?.thumbnailUrl?.takeIf { deArrow && !brandedThumbnailFailed } ?: video.thumbnailUrl
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val hovered by interaction.collectIsHoveredAsState()
@@ -447,10 +459,11 @@ private fun YouTubeVideoCard(video: YouTubeVideo, opening: Boolean, onClick: () 
                 ),
         ) {
             NuvioAsyncImage(
-                model = video.thumbnailUrl,
-                contentDescription = video.title,
+                model = thumbnail,
+                contentDescription = title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                onError = { if (thumbnail != video.thumbnailUrl) brandedThumbnailFailed = true },
             )
             video.duration?.let { duration ->
                 Text(
@@ -489,7 +502,7 @@ private fun YouTubeVideoCard(video: YouTubeVideo, opening: Boolean, onClick: () 
             }
         }
         Text(
-            text = video.title,
+            text = title,
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,

@@ -128,6 +128,12 @@ internal actual object YouTubeModeStorage {
 
     actual fun saveSponsorAutoSkip(enabled: Boolean) = store.putBoolean(SPONSOR_AUTO_SKIP_KEY, enabled)
 
+    private const val DEARROW_KEY = "dearrow"
+
+    actual fun loadDeArrow(): Boolean? = store.getBoolean(DEARROW_KEY)
+
+    actual fun saveDeArrow(enabled: Boolean) = store.putBoolean(DEARROW_KEY, enabled)
+
     private const val CHANNEL_CHOICE_KEY = "channel_page_id"
 
     actual fun loadChannelChoice(): String? = store.getString(CHANNEL_CHOICE_KEY)

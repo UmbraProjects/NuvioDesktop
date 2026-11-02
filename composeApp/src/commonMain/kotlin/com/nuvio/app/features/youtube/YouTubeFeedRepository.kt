@@ -72,6 +72,10 @@ internal expect object YouTubeModeStorage {
     fun loadSponsorAutoSkip(): Boolean?
     fun saveSponsorAutoSkip(enabled: Boolean)
 
+    /** Show DeArrow's community titles and thumbnails; null when never set. */
+    fun loadDeArrow(): Boolean?
+    fun saveDeArrow(enabled: Boolean)
+
     /** The chosen channel: a page id, "" for the account's own profile, null when never chosen. */
     fun loadChannelChoice(): String?
     fun saveChannelChoice(choice: String?)
@@ -141,6 +145,17 @@ object YouTubeFeedRepository {
     fun setSponsorAutoSkip(enabled: Boolean) {
         YouTubeModeStorage.saveSponsorAutoSkip(enabled)
         _sponsorAutoSkip.value = enabled
+    }
+
+    private val _deArrow by lazy { MutableStateFlow(YouTubeModeStorage.loadDeArrow() ?: true) }
+
+    /** Settings > YouTube account > DeArrow (on unless turned off); see [YouTubeDeArrow]. */
+    val deArrow: StateFlow<Boolean>
+        get() = _deArrow.asStateFlow()
+
+    fun setDeArrow(enabled: Boolean) {
+        YouTubeModeStorage.saveDeArrow(enabled)
+        _deArrow.value = enabled
     }
 
     private val _searchQuery = MutableStateFlow("")

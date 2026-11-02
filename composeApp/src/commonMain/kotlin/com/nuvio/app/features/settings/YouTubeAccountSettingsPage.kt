@@ -147,5 +147,14 @@ private fun YouTubeTabSwitch(isTablet: Boolean) {
             isTablet = isTablet,
             onCheckedChange = YouTubeFeedRepository::setSponsorAutoSkip,
         )
+        val deArrow by remember { YouTubeFeedRepository.deArrow }.collectAsState()
+        SettingsSwitchRow(
+            title = "DeArrow titles and thumbnails",
+            description = "Shows the titles and thumbnails DeArrow users wrote in place of clickbait. " +
+                "Videos nobody has submitted keep YouTube's own.",
+            checked = deArrow,
+            isTablet = isTablet,
+            onCheckedChange = YouTubeFeedRepository::setDeArrow,
+        )
     }
 }
