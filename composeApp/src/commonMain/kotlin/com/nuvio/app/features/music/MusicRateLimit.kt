@@ -34,7 +34,12 @@ internal object MusicRateLimit {
  * is waiting on (a track they chose): it still tries once during a pause, but never retries or looks for replacements.
  * Everything else (background scans, trailer prefetch) waits the pause out.
  */
-internal class YouTubeCaller(val label: String, val urgent: Boolean = false) : AbstractCoroutineContextElement(Key) {
+/** [preferHdr]: choose a video's HDR encode when it has one (the YouTube tab; trailers and music do not ask). */
+internal class YouTubeCaller(
+    val label: String,
+    val urgent: Boolean = false,
+    val preferHdr: Boolean = false,
+) : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<YouTubeCaller>
 }
 

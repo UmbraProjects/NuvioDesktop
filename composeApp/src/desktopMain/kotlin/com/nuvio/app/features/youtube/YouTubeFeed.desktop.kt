@@ -163,7 +163,7 @@ private const val STATS_USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 
 internal actual suspend fun youTubeOpenVideo(videoId: String): TrailerPlaybackSource? =
-    withContext(YouTubeCaller("youtube tab", urgent = true)) {
+    withContext(YouTubeCaller("youtube tab", urgent = true, preferHdr = true)) {
         MusicResolver.openVideo(videoId)
     }
 

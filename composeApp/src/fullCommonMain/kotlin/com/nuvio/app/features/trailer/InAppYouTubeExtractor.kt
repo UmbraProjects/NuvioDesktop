@@ -88,7 +88,14 @@ internal data class StreamCandidate(
     val isOriginalAudio: Boolean? = null,
     /** Audio only: YouTube's `loudnessDb` for this format (how far above its reference it is), when it sent one. */
     val loudnessDb: Double? = null,
+    /** Video only: an HDR encode (PQ or HLG; VP9 profile 2 or AV1), listed beside the SDR one of the same height. */
+    val isHdr: Boolean = false,
 )
+
+/** Whether a streaming-data format is HDR: its `colorInfo` transfer is PQ or HLG, or YouTube labels it so ("2160p60 HDR"). */
+internal fun isHdrYouTubeFormat(transferCharacteristics: String?, qualityLabel: String?): Boolean =
+    transferCharacteristics?.let { "SMPTEST2084" in it || "ARIB_STD_B67" in it } == true ||
+        qualityLabel?.contains("HDR", ignoreCase = true) == true
 
 private data class ManifestBestVariant(
     val url: String,
@@ -579,6 +586,10 @@ class InAppYouTubeExtractor internal constructor(
                             bitrate = bitrate,
                             ext = if (mimeType.contains("webm")) "webm" else "mp4",
                             width = (format.numberValue("width") ?: 0.0).toInt(),
+                            isHdr = isHdrYouTubeFormat(
+                                (format["colorInfo"] as? JsonObject)?.stringValue("transferCharacteristics"),
+                                format.stringValue("qualityLabel"),
+                            ),
                         )
                     } else if (hasAudio) {
                         val bitrate = format.numberValue("bitrate")
@@ -648,11 +659,14 @@ class InAppYouTubeExtractor internal constructor(
                 TrailerResolution.Available(singleSource)
             } ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
         }
+        // Only for whoever asked for it (the YouTube tab's videos): trailers and music keep choosing as before.
+        val preferHdr = com.nuvio.app.features.music.youTubeCaller()?.preferHdr == true
         val bestVideo = pickBestVideoForClient(
             items = adaptiveVideo,
             clientKey = PREFERRED_SEPARATE_CLIENT,
             preferredHeights = TrailerExtractionPlatform.preferredSeparateVideoHeights,
             preferClient = TrailerExtractionPlatform.preferSeparateVideoClient,
+            preferHdr = preferHdr,
         )
         // Multi-language uploads (studio trailers, and anything YouTube has auto-dubbed) carry one
         // audio format per language, and the highest-bitrate one was as likely to be a dub as the
@@ -662,7 +676,8 @@ class InAppYouTubeExtractor internal constructor(
         val bestAudio = pickBestForClient(originalAudio.ifEmpty { adaptiveAudio }, PREFERRED_SEPARATE_CLIENT)
 
         log.i {
-            "Selected trailer streams adaptive=${bestVideo?.height ?: 0}p/${bestVideo?.fps ?: 0}fps " +
+            "Selected trailer streams adaptive=${bestVideo?.height ?: 0}p/${bestVideo?.fps ?: 0}fps" +
+                (if (preferHdr) " hdr=${bestVideo?.isHdr == true} (offered=${adaptiveVideo.any { it.isHdr }})" else "") + " " +
                 "progressive=${bestProgressive?.height ?: 0}p manifest=${bestManifest?.height ?: 0}p " +
                 "separateAudio=${bestAudio != null} videoClient=${bestVideo?.client} audioClient=${bestAudio?.client} " +
                 "manifestClient=${bestManifest?.client}"
@@ -976,6 +991,7 @@ class InAppYouTubeExtractor internal constructor(
         clientKey: String,
         preferredHeights: List<Int>,
         preferClient: Boolean,
+        preferHdr: Boolean = false,
     ): StreamCandidate? {
         val availableHeights = items.map { it.height }.filter { it > 0 }.distinct()
         val targetHeight = preferredHeights.firstOrNull { it in availableHeights }
@@ -983,10 +999,14 @@ class InAppYouTubeExtractor internal constructor(
             ?: availableHeights.maxOrNull()
             ?: return null
         val resolutionPool = items.filter { it.height == targetHeight }
+        // An HDR upload lists its HDR encode beside an SDR one at each height. Asked for HDR, only
+        // the HDR one competes, and before the frame-rate rule below: HDR uploads are mostly 60 fps,
+        // so that rule alone handed every one of them the 30 fps SDR encode (Nov 2).
+        val dynamicRangePool = if (preferHdr) resolutionPool.filter { it.isHdr }.ifEmpty { resolutionPool } else resolutionPool
         // At accelerated playback, 60 fps content makes the decoder/render path process
         // 120 frames per wall-clock second. Prefer the best <=30 fps encode at the same
         // resolution; retain 60 fps only when it is the sole option.
-        val frameRatePool = resolutionPool.filter { it.fps in 1..30 }.ifEmpty { resolutionPool }
+        val frameRatePool = dynamicRangePool.filter { it.fps in 1..30 }.ifEmpty { dynamicRangePool }
         val unthrottled = frameRatePool.filterNot { it.hasN }
         val networkPool = unthrottled.ifEmpty { frameRatePool }
         val clientPool = if (preferClient) {
