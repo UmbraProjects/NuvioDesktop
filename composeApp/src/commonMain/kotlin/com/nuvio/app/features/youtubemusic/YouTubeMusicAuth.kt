@@ -58,8 +58,17 @@ internal expect object YouTubeMusicAuthPlatform {
      */
     suspend fun interactiveLogin(): YouTubeMusicLoginOutcome
 
-    /** Asks Google to renew the session's short-lived cookies; the HTTP status, 0 when no answer came. */
-    suspend fun rotateCookies(cookieHeader: String): Int
+    /** Whether the sign-in's browser profile is kept, so [renewSession] can work (a sign-in from before it was kept has none). */
+    fun canRenew(): Boolean
+
+    /**
+     * Renews the session through the sign-in's own browser profile, which holds the key Google binds the
+     * session to; the fresh cookie header, or null when it could not be renewed.
+     */
+    suspend fun renewSession(cookieHeader: String?): String?
+
+    /** Drops the kept browser profile (signing out). */
+    fun forgetSession()
 }
 
 internal object YouTubeMusicAuth {
@@ -89,58 +98,71 @@ internal object YouTubeMusicAuth {
 
     private var keepAliveJob: Job? = null
 
-    @Volatile
-    private var lastRotationStatus: Int? = null
-
     /**
-     * Keeps the saved session alive the way a signed-in YouTube tab does: the short-lived
-     * `*PSIDTS` cookies are renewed through `RotateCookies` every [ROTATE_INTERVAL_MS]. Without it
-     * the copy Nuvio holds went stale and Google answered as signed out, after anything from two
-     * to ten hours (Nov 2: signed in 18:58, signed out by 21:17), and the ordinary API answers
-     * never renew those cookies (no "refreshed the session cookies" in that time).
+     * Keeps the saved session alive. Chrome and Edge on Windows bind the session to a key in the
+     * sign-in's browser profile (the `*PSIDRTS` cookies): the short-lived cookie lasts about two hours
+     * and only that profile can renew it, so a plain request cannot (RotateCookies answered 200 and
+     * changed nothing; signed out 2h17m after signing in, Nov 2). The profile is kept, and reopened
+     * headless to renew: now (the app starting, which also covers a long time closed) and every
+     * [RENEW_INTERVAL_MS] while it runs.
      */
     private fun startKeepAlive() {
         synchronized(this) {
             if (keepAliveJob?.isActive == true) return
             keepAliveJob = scope.launch {
-                while (true) {
-                    val jar = cookie ?: break
-                    val status = YouTubeMusicAuthPlatform.rotateCookies(jar)
-                    // The first answer and any change; not every renewal.
-                    if (status != lastRotationStatus) {
-                        if (status in 200..299) {
-                            log.i { "Session renewal answered HTTP $status" }
-                        } else {
-                            log.w { "Session renewal answered HTTP $status; the sign-in may lapse" }
-                        }
-                        lastRotationStatus = status
-                    }
-                    delay(ROTATE_INTERVAL_MS)
+                if (!YouTubeMusicAuthPlatform.canRenew()) {
+                    log.w { "This sign-in predates kept browser profiles and cannot be renewed; sign in again to keep it" }
+                    return@launch
+                }
+                while (cookie != null) {
+                    renewThroughBrowser(reason = "scheduled")
+                    delay(RENEW_INTERVAL_MS)
                 }
             }
         }
     }
 
-    private const val ROTATE_INTERVAL_MS = 9 * 60_000L
+    private const val RENEW_INTERVAL_MS = 60 * 60_000L
+
+    /** Renews and saves the session; true when a signed-in session came back. */
+    private suspend fun renewThroughBrowser(reason: String): Boolean {
+        val before = cookie ?: return false
+        val renewed = YouTubeMusicAuthPlatform.renewSession(before)
+        if (renewed == null || sapisidFrom(renewed) == null) {
+            log.w { "Session renewal ($reason) brought back no signed-in session" }
+            return false
+        }
+        // The browser's jar is the whole truth now, not a patch over the old one.
+        // Signed out (or in again) while the browser ran: that answer is not ours to keep.
+        // (Set-Cookie updates may have touched the jar meanwhile; the same SAPISID is the same sign-in.)
+        val kept = synchronized(this) {
+            val now = cookie
+            (now != null && sapisidFrom(now) == sapisidFrom(before)).also { if (it) cookie = renewed }
+        }
+        if (!kept) return false
+        YouTubeMusicAuthPlatform.saveCookie(renewed)
+        val changed = renewed != before
+        log.i { "Session renewed through the browser ($reason)${if (changed) "" else ", nothing needed changing"}" }
+        if (changed) onSessionAccepted()
+        return true
+    }
 
     @Volatile
     private var lastRescueAtMs = 0L
 
     /**
-     * One renewal now, for a request YouTube answered as signed out: a sign-in that only went stale
-     * while the app was closed is renewed the way a browser reopened after a few days renews its
-     * own, and the request can be asked again. At most once a minute, so a session that is truly
-     * gone costs one extra request rather than one per feed. True when Google answered 2xx.
+     * One renewal now, for a request YouTube answered as signed out (a session that went stale while
+     * the app was closed and the renewal at start had not finished yet), so the request can be asked
+     * again. At most once in two minutes, so a session that is truly gone costs one browser start
+     * rather than one per feed. True when a signed-in session came back.
      */
     suspend fun renewNow(): Boolean {
         ensureLoaded()
-        val jar = cookie ?: return false
+        if (cookie == null || !YouTubeMusicAuthPlatform.canRenew()) return false
         val now = YouTubeMusicAuthPlatform.nowEpochSeconds() * 1000
-        if (now - lastRescueAtMs < 60_000L) return false
+        if (now - lastRescueAtMs < 120_000L) return false
         lastRescueAtMs = now
-        val status = YouTubeMusicAuthPlatform.rotateCookies(jar)
-        log.i { "Session renewal after a signed-out answer: HTTP $status" }
-        return status in 200..299
+        return renewThroughBrowser(reason = "after a signed-out answer")
     }
 
     val isSignedIn: Boolean
@@ -187,7 +209,6 @@ internal object YouTubeMusicAuth {
                     YouTubeMusicAuthPlatform.saveCookie(outcome.cookieHeader)
                     _state.value = YouTubeMusicAuthState(signedIn = true, sessionEpoch = _state.value.sessionEpoch + 1)
                     log.i { "Signed in to YouTube Music" }
-                    lastRotationStatus = null
                     startKeepAlive()
                 }
                 YouTubeMusicLoginOutcome.Cancelled ->
@@ -210,6 +231,7 @@ internal object YouTubeMusicAuth {
         cookie = null
         loaded = true
         YouTubeMusicAuthPlatform.saveCookie(null)
+        YouTubeMusicAuthPlatform.forgetSession()
         _state.value = YouTubeMusicAuthState()
         log.i { "Signed out of YouTube Music" }
     }

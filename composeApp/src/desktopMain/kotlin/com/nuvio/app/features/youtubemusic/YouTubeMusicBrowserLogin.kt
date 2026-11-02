@@ -3,6 +3,7 @@ package com.nuvio.app.features.youtubemusic
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -64,12 +65,88 @@ internal object YouTubeMusicBrowserLogin {
     /** How long the closed window's helper processes get to finish before the profile is reopened. */
     private const val DESCENDANTS_EXIT_MS = 5_000L
 
-    suspend fun run(): YouTubeMusicLoginOutcome {
+    /**
+     * The sign-in's browser profile, kept in the account's folder. Chrome and Edge on Windows bind a
+     * Google session to a key the profile holds (device-bound sessions: the `*PSIDRTS` cookies): the
+     * short-lived cookie lasts about two hours and only that profile can renew it. Deleting the profile
+     * after sign-in, as this used to, left a session that lapsed two hours later every time (Nov 2).
+     */
+    private fun keptProfileDir(): Path =
+        com.nuvio.app.core.storage.DesktopAccountSlots.activeSlotDir().resolve("youtube-browser-profile")
+
+    /** One browser on the profile at a time: a renewal waits for a sign-in, and the other way round. */
+    private val profileLock = kotlinx.coroutines.sync.Mutex()
+
+    /** Whether a kept profile exists to renew from (a sign-in made before profiles were kept has none). */
+    fun hasKeptProfile(): Boolean = Files.isDirectory(keptProfileDir())
+
+    /** Removes the kept profile: signing out of YouTube Music. */
+    fun forgetProfile() {
+        deleteRecursivelyQuietly(keptProfileDir())
+    }
+
+    /**
+     * Renews the session the way the browser itself does: the kept profile is reopened headless on
+     * youtube.com, the browser renews its device-bound cookies with its own key while the page loads,
+     * and the cookies are read back. Null when there is no kept profile or no signed-in session came back.
+     * [previousCookie] tells when the renewed cookie has arrived (its `__Secure-1PSIDTS` changes).
+     */
+    suspend fun renew(previousCookie: String?): String? = profileLock.withLock {
+        val profileDir = keptProfileDir()
+        if (!Files.isDirectory(profileDir)) return@withLock null
+        val browser = findBrowser() ?: return@withLock null
+        val before = previousCookie?.let { cookieValue(it, "__Secure-1PSIDTS") }
+        var reader: Process? = null
+        var cdp: CdpConnection? = null
+        try {
+            // A kept profile still holds the last run's port file; read before the new one is written it
+            // would point at a port nothing listens on.
+            Files.deleteIfExists(profileDir.resolve("DevToolsActivePort"))
+            reader = ProcessBuilder(cookieReadCommand(browser, profileDir, startUrl = RENEW_URL))
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .start()
+            val endpoint = awaitDevToolsEndpoint(profileDir, reader) ?: run {
+                log.w { "Renewal browser gave no DevTools port (alive=${reader.isAlive})" }
+                return@withLock null
+            }
+            cdp = CdpConnection.open(endpoint)
+            // The page's first requests carry the renewal; give it until the short-lived cookie changes,
+            // or a few seconds past the page loading when it was still fresh and nothing needed renewing.
+            val deadline = System.currentTimeMillis() + RENEW_WAIT_MS
+            var header: String? = null
+            while (System.currentTimeMillis() < deadline) {
+                delay(POLL_MS)
+                header = cdp.call("Storage.getCookies")["cookies"]?.jsonArray
+                    ?.let(::buildCookieHeader)?.takeIf { sapisidFrom(it) != null }
+                val now = header?.let { cookieValue(it, "__Secure-1PSIDTS") }
+                if (now != null && now != before) break
+            }
+            header
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.w { "Session renewal through the browser failed: ${error.message}" }
+            null
+        } finally {
+            runCatching { cdp?.call("Browser.close") }
+            cdp?.close()
+            reader?.let { stop(it) }
+        }
+    }
+
+    suspend fun run(): YouTubeMusicLoginOutcome = profileLock.withLock { signIn() }
+
+    private suspend fun signIn(): YouTubeMusicLoginOutcome {
         val browser = findBrowser() ?: return YouTubeMusicLoginOutcome.Failed(
             "No Edge, Chrome, Brave or Chromium was found. Install one to sign in to YouTube Music.",
         )
-        val profileDir = Files.createTempDirectory("nuvio-ytmusic-login")
+        // A fresh profile each sign-in, so the window starts signed out and the user picks the account.
+        val profileDir = keptProfileDir()
+        deleteRecursivelyQuietly(profileDir)
+        Files.createDirectories(profileDir)
         var window: Process? = null
+        var keep = false
         try {
             // Step 1: the visible sign-in window, with nothing that marks it as automated.
             window = ProcessBuilder(signInCommand(browser, profileDir))
@@ -98,18 +175,28 @@ internal object YouTubeMusicBrowserLogin {
             }
 
             // Step 2: read what the window left in the profile.
-            return readSession(browser, profileDir)
+            val outcome = readSession(browser, profileDir)
+            // Kept for renewals (see keptProfileDir); a failed sign-in leaves nothing behind.
+            keep = outcome is YouTubeMusicLoginOutcome.Success
+            return outcome
         } finally {
             window?.let { stop(it) }
-            deleteRecursivelyQuietly(profileDir)
+            if (!keep) deleteRecursivelyQuietly(profileDir)
         }
     }
+
+    private const val RENEW_URL = "https://www.youtube.com/"
+    private const val RENEW_WAIT_MS = 15_000L
+
+    private fun cookieValue(header: String, name: String): String? =
+        header.split(';').map { it.trim() }.firstOrNull { it.startsWith("$name=") }?.substringAfter('=')
 
     /** Reopens [profileDir] headless, only to read its YouTube cookies. */
     private suspend fun readSession(browser: String, profileDir: Path): YouTubeMusicLoginOutcome {
         var reader: Process? = null
         var cdp: CdpConnection? = null
         try {
+            Files.deleteIfExists(profileDir.resolve("DevToolsActivePort"))
             reader = ProcessBuilder(cookieReadCommand(browser, profileDir))
                 .redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
@@ -200,8 +287,11 @@ internal object YouTubeMusicBrowserLogin {
         "--app=$LOGIN_URL",
     )
 
-    /** The same profile, headless, with a debugging port, used only to read cookies. */
-    internal fun cookieReadCommand(browser: String, profileDir: Path): List<String> = listOf(
+    /**
+     * The same profile, headless, with a debugging port, used only to read cookies. [startUrl] is the
+     * page it opens: blank after sign-in, youtube.com for a renewal (its requests are what renew).
+     */
+    internal fun cookieReadCommand(browser: String, profileDir: Path, startUrl: String = "about:blank"): List<String> = listOf(
         browser,
         "--user-data-dir=$profileDir",
         // Port 0 = pick a free one; it is written to <profile>/DevToolsActivePort.
@@ -210,7 +300,8 @@ internal object YouTubeMusicBrowserLogin {
         "--disable-gpu",
         "--no-first-run",
         "--no-default-browser-check",
-        "about:blank",
+        "--mute-audio",
+        startUrl,
     )
 
     // ---- Browser discovery ---------------------------------------------------------------------

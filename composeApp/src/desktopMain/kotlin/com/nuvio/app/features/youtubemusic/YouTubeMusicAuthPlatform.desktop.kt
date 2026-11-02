@@ -26,28 +26,10 @@ internal actual object YouTubeMusicAuthPlatform {
     actual suspend fun interactiveLogin(): YouTubeMusicLoginOutcome =
         withContext(Dispatchers.IO) { YouTubeMusicBrowserLogin.run() }
 
-    /**
-     * The request a signed-in YouTube page makes from its `accounts.youtube.com/RotateCookiesPage`
-     * frame, with the body Google's own pages send. The new `*PSIDTS` values come back as Set-Cookie
-     * and reach the saved jar through the request layer (YouTubeMusicAuth.absorbSetCookies).
-     */
-    actual suspend fun rotateCookies(cookieHeader: String): Int =
-        runCatching {
-            com.nuvio.app.features.trailer.TrailerExtractionPlatform.performRequest(
-                url = "https://accounts.youtube.com/RotateCookies",
-                method = "POST",
-                headers = mapOf(
-                    "cookie" to cookieHeader,
-                    "content-type" to "application/json",
-                    "origin" to "https://accounts.youtube.com",
-                    "referer" to "https://accounts.youtube.com/RotateCookiesPage?origin=https://www.youtube.com&yt_pid=1",
-                    "user-agent" to ROTATE_USER_AGENT,
-                ),
-                body = "[000,\"-0000000000000000000\"]",
-                timeoutMillis = 15_000L,
-            ).status
-        }.getOrDefault(0)
+    actual fun canRenew(): Boolean = YouTubeMusicBrowserLogin.hasKeptProfile()
 
-    private const val ROTATE_USER_AGENT =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+    actual suspend fun renewSession(cookieHeader: String?): String? =
+        withContext(Dispatchers.IO) { YouTubeMusicBrowserLogin.renew(cookieHeader) }
+
+    actual fun forgetSession() = YouTubeMusicBrowserLogin.forgetProfile()
 }
