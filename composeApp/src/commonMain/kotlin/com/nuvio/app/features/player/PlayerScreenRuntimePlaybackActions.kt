@@ -358,6 +358,9 @@ private fun PlayerScreenRuntime.prepareTrackingScrobbleStop(
     if (progressTrackingDisabled) return null
     if (isShortPlaceholderDuration(playbackSnapshot.durationMs)) return null
     val provided = progressPercent
+    // A seek only re-anchors a running session. Without one (paused, or already stopped) there is
+    // nothing to move, and the 80% allowance below let every paused seek in the last fifth send a stop.
+    if (viaSeek && !hasRequestedScrobbleStartForCurrentItem) return null
     if (!hasRequestedScrobbleStartForCurrentItem && (provided ?: 0f) < 80f) return null
 
     // Report raw position for accurate resume; speed only affects the completion threshold.
@@ -472,8 +475,10 @@ internal fun flushScrobbleStopKind(
         TrackingScrobbleWatchedProgressThresholdPercent.toFloat()
     }
     if (effectivePercent >= completionPercent) {
-        val isAtEnd = effectivePercent >= 99f
-        return if (!completionSent || isAtEnd) FlushScrobbleStopKind.COMPLETION else FlushScrobbleStopKind.NONE
+        // Once the completion is out, only a session restarted since (play resumed after it) still
+        // needs closing. This used to resend at 99%+ regardless, and a player sitting at the end
+        // re-flushes on every position update, so it repeated the stop for as long as it stayed there.
+        return if (!completionSent || sessionRunning) FlushScrobbleStopKind.COMPLETION else FlushScrobbleStopKind.NONE
     }
     return if (effectivePercent >= 0.1f && sessionRunning) FlushScrobbleStopKind.PROGRESS else FlushScrobbleStopKind.NONE
 }

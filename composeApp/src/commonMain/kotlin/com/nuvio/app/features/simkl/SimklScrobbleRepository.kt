@@ -23,6 +23,9 @@ import kotlin.math.abs
 
 private const val BASE_URL = "https://api.simkl.com"
 
+/** SIMKL records a scrobble `stop` at or above this as a watch. */
+private const val SIMKL_COMPLETION_PERCENT = 80f
+
 internal sealed interface SimklScrobbleItem {
     val itemKey: String
 
@@ -63,6 +66,15 @@ internal object SimklScrobbleRepository {
     private val retryDelayMs = 1_500L
     // SIMKL enforces a 20-second per-user lock on scrobble endpoints (429 = overlapping call).
     private val overlapRetryDelayMs = 21_000L
+    private val minSendGapMs = 20_000L
+
+    // Sends are spaced by [minSendGapMs]. A request that has to wait is dropped if a newer one for
+    // the same item arrives meanwhile, so a burst (seek taps, pause/play toggling) costs one call
+    // carrying the final position rather than one call per event.
+    private val sendStateMutex = Mutex()
+    private var lastSendAtMs = 0L
+    private var requestCounter = 0L
+    private val latestRequestByItem = mutableMapOf<String, Long>()
 
     suspend fun scrobbleStart(item: SimklScrobbleItem, progressPercent: Float) =
         send("start", item, progressPercent)
@@ -126,14 +138,70 @@ internal object SimklScrobbleRepository {
         if (!SimklAuthRepository.hasUsableToken()) return TrackingScrobbleResult.Declined
         val progress = progressPercent.coerceIn(0f, 100f)
         val itemKey = item.itemKey
-        if (shouldSkip(action, itemKey, progress)) return TrackingScrobbleResult.Declined
+        // A completing stop is the one write that must not be dropped or held back: it is what
+        // records the watch, and it is often the last thing sent before the player closes.
+        val isCompletion = action == "stop" && progress >= SIMKL_COMPLETION_PERCENT
+        val requestId = sendStateMutex.withLock {
+            (++requestCounter).also { latestRequestByItem[itemKey] = it }
+        }
+        try {
+            if (!reserveSendSlot(action, itemKey, progress, requestId, isCompletion)) {
+                return TrackingScrobbleResult.Handled
+            }
+            return sendNow(action, item, itemKey, progress, isCompletion)
+        } finally {
+            sendStateMutex.withLock {
+                if (latestRequestByItem[itemKey] == requestId) latestRequestByItem.remove(itemKey)
+            }
+        }
+    }
 
+    /**
+     * Waits until SIMKL's per-user lock has passed, then claims the slot. False means the request
+     * is not worth sending: a newer one for the same item replaced it, or it repeats the last send.
+     */
+    private suspend fun reserveSendSlot(
+        action: String,
+        itemKey: String,
+        progress: Float,
+        requestId: Long,
+        isCompletion: Boolean,
+    ): Boolean {
+        while (true) {
+            val waitMs = sendStateMutex.withLock {
+                if (!isCompletion && latestRequestByItem[itemKey] != requestId) {
+                    log.d { "SIMKL scrobble $action: $itemKey superseded while waiting" }
+                    return false
+                }
+                if (shouldSkip(action, itemKey, progress)) return false
+                val now = System.currentTimeMillis()
+                val wait = if (isCompletion) 0L else lastSendAtMs + minSendGapMs - now
+                if (wait <= 0L) {
+                    lastSendAtMs = now
+                    lastStamp = ScrobbleStamp(action, itemKey, progress, now)
+                }
+                wait
+            }
+            if (waitMs <= 0L) return true
+            delay(waitMs)
+        }
+    }
+
+    private suspend fun sendNow(
+        action: String,
+        item: SimklScrobbleItem,
+        itemKey: String,
+        progress: Float,
+        isCompletion: Boolean,
+    ): TrackingScrobbleResult {
         val body = buildBodyJson(item, progress)
         val url = SimklAuthRepository.appendParams("$BASE_URL/scrobble/$action")
 
         log.d { "SIMKL scrobble $action: $itemKey @ ${"%.1f".format(progress)}%" }
 
-        val attempts = if (action == "stop") maxStopRetries + 1 else 1
+        // Only the completing stop is retried. Anything else is resumable progress that the next
+        // start, stop or refresh restates, and a retry is another call against the per-user lock.
+        val attempts = if (isCompletion) maxStopRetries + 1 else 1
         for (attempt in 1..attempts) {
             val response = runCatching {
                 simklRequest(method = "POST", url = url, body = body)
@@ -151,7 +219,6 @@ internal object SimklScrobbleRepository {
 
             when (response.status) {
                 in 200..299 -> {
-                    lastStamp = ScrobbleStamp(action, itemKey, progress, System.currentTimeMillis())
                     return TrackingScrobbleResult(
                         handled = true,
                         confirmsWatched = trackingScrobbleResponseConfirmsWatched(response.body),

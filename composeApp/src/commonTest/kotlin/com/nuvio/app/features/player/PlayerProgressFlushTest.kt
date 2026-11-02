@@ -168,6 +168,22 @@ class PlayerProgressFlushTest {
     }
 
     @Test
+    fun repeatedFlushAtTheEndSendsTheCompletionOnce() {
+        assertEquals(
+            FlushScrobbleStopKind.NONE,
+            flushScrobbleStopKind(effectivePercent = 100f, paused = false, sessionRunning = false, completionSent = true),
+        )
+    }
+
+    @Test
+    fun sessionRestartedAfterTheCompletionIsClosedAgain() {
+        assertEquals(
+            FlushScrobbleStopKind.COMPLETION,
+            flushScrobbleStopKind(effectivePercent = 99.5f, paused = false, sessionRunning = true, completionSent = true),
+        )
+    }
+
+    @Test
     fun exitPastProviderThresholdIsStillACompletion() {
         assertEquals(
             FlushScrobbleStopKind.COMPLETION,
