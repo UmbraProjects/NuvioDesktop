@@ -34,6 +34,7 @@ import nuvio.composeapp.generated.resources.preshow_starting
 import nuvio.composeapp.generated.resources.preshow_starting_hint
 import org.jetbrains.compose.resources.stringResource
 import co.touchlab.kermit.Logger
+import kotlinx.coroutines.withContext
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.details.MetaDetails
@@ -60,6 +61,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 private val log = Logger.withTag("PrerollGate")
 
 private const val RESOLVE_TIMEOUT_MS = 25_000L
+
+/**
+ * fork:preshow-caller — the pre-show's YouTube lookups are made for someone who pressed play. Unlabelled they
+ * counted as background work and were skipped outright while YouTube was paused after a refusal: on Nov 1
+ * at 22:17 a YouTube Music refusal 32 s earlier made every trailer "no trailer" in 7 s. As a waited-on
+ * caller each lookup still goes out during a pause, with one client and no retries.
+ */
+internal val PRESHOW_CALLER = com.nuvio.app.features.music.YouTubeCaller("pre-show", urgent = true)
 private const val MAX_TRAILER_MS = 4 * 60_000L
 private const val DETAILS_FETCH_TIMEOUT_MS = 8_000L
 private const val MAX_CLIP_MS = 3 * 60_000L
@@ -249,7 +258,8 @@ fun PrerollGate(
                             // The logo lookup runs beside the trailer resolve, so it adds no wait.
                             val logoLookup = async { runCatching { candidate.withMetadataLogo() }.getOrDefault(candidate) }
                             val source = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
-                                HeroTrailerMetadataService.resolve(candidate.type, candidate.id, sharpest = true)
+                                // fork:preshow-caller — someone is waiting on these, so they go out during a YouTube pause too.
+                                withContext(PRESHOW_CALLER) { HeroTrailerMetadataService.resolve(candidate.type, candidate.id, sharpest = true) }
                             }
                             if (source == null) {
                                 logoLookup.cancel()
@@ -271,7 +281,7 @@ fun PrerollGate(
                         }
                         // Warm the one after this so there is no dead air between trailers.
                         candidates.getOrNull(index)?.let { next ->
-                            launch { runCatching { HeroTrailerMetadataService.resolve(next.type, next.id, sharpest = true) } }
+                            launch(PRESHOW_CALLER) { runCatching { HeroTrailerMetadataService.resolve(next.type, next.id, sharpest = true) } }
                         }
                         val done = CompletableDeferred<Unit>()
                         control.current = done

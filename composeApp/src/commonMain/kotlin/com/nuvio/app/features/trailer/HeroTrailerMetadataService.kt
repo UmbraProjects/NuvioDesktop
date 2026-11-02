@@ -110,8 +110,11 @@ object HeroTrailerMetadataService {
         }
 
         val ttl = if (source == null) MISSING_TTL_MS else FOUND_TTL_MS
+        // fork:preshow-caller — a miss decided while YouTube was paused says nothing about the title, so it is not kept
+        // (on Nov 1 a pause made the pre-show's whole lineup "no trailer" for the next ten minutes).
+        val keep = source != null || !com.nuvio.app.features.music.MusicRateLimit.isBlocked()
         cacheMutex.withLock {
-            cache[cacheKey] = CachedTrailer(source = source, expiresAtMs = now + ttl)
+            if (keep) cache[cacheKey] = CachedTrailer(source = source, expiresAtMs = now + ttl)
             inFlightRequests.remove(cacheKey)?.complete(source)
         }
         return source

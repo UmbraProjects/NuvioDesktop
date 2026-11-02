@@ -109,7 +109,9 @@ object PreshowAssets {
         }
         for (clip in candidates) {
             val source = withTimeoutOrNull(YOUTUBE_RESOLVE_TIMEOUT_MS) {
-                TrailerPlaybackResolver.resolveFromYouTubeUrl("https://www.youtube.com/watch?v=${clip.videoId}").sourceOrNull()
+                kotlinx.coroutines.withContext(PRESHOW_CALLER) {
+                    TrailerPlaybackResolver.resolveFromYouTubeUrl("https://www.youtube.com/watch?v=${clip.videoId}").sourceOrNull()
+                }
             }
             if (source != null) {
                 log.i { "${slot.key}: AVID clip ${clip.videoId}" }
