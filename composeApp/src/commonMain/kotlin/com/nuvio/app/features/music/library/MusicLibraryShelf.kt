@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -191,10 +192,21 @@ internal fun MusicLibraryShelf(
                             )
                         }
                     }
+                    // Each count over what it counts: the artists over their column, the releases over the covers, where a
+                    // five-figure library still has room.
                     item(key = "shelf-count") {
                         ShelfColumnLayout(Modifier.padding(top = 4.dp, bottom = 12.dp), left = {
-                            Text("${state.artists.size} artists · $totalReleases releases", fontSize = 22.sp, color = colors.textMuted, maxLines = 1)
-                        }) {}
+                            Text("${state.artists.size} artists", fontSize = 22.sp, color = colors.textMuted, maxLines = 1)
+                        }) {
+                            Text(
+                                "$totalReleases releases",
+                                fontSize = 22.sp,
+                                color = colors.textMuted,
+                                maxLines = 1,
+                                // In line with the first cover (the covers' row has this much padding at its start).
+                                modifier = Modifier.padding(start = 12.dp),
+                            )
+                        }
                     }
                     val pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }
                     items(pending.entries.toList(), key = { "pending:${it.key}" }) { (_, progress) ->
@@ -358,7 +370,11 @@ private fun ShelfCardRow(
 
 // The artist's column: one fixed width, so every artist (and the count over them) shares a centre line,
 // with a divider between it and the covers that runs unbroken down the shelf.
-private val SHELF_COLUMN_WIDTH = 260.dp
+// The artist column's contents are centred [SHELF_COLUMN_SHIFT] left of the column's middle (into the page margin), so the round
+// buttons (three of 40 dp, 10 apart) start about level with the left edge of the cards above the shelf, while a long name still
+// has room before the divider.
+private val SHELF_COLUMN_WIDTH = 200.dp
+private val SHELF_COLUMN_SHIFT = 26.dp
 private val SHELF_COLUMN_GAP = 28.dp
 private val SHELF_DIVIDER = Color.White.copy(alpha = 0.10f)
 
@@ -383,7 +399,7 @@ private fun ShelfColumnLayout(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(SHELF_COLUMN_GAP),
     ) {
-        Box(Modifier.width(SHELF_COLUMN_WIDTH), contentAlignment = Alignment.Center) { left() }
+        Box(Modifier.width(SHELF_COLUMN_WIDTH).offset(x = -SHELF_COLUMN_SHIFT), contentAlignment = Alignment.Center) { left() }
         content()
     }
 }

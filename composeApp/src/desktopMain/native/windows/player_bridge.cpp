@@ -37,6 +37,7 @@
 #include <cwctype>
 #include <deque>
 #include <functional>
+#include <future>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
@@ -7349,11 +7350,52 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setCornerRadius(JN
 // fork:music-stage - the glass bezel laid over the Now Playing video. Nothing the app draws can go over a native video window,
 // so the bezel is a window of its own: layered (per-pixel alpha, the image comes from the app), click-through, never activated,
 // and owned by the app's top-level window, which keeps it above that window and the video inside it. It is process-wide, not
-// the player's: each track opens a new player, and the bezel stays put across them. Every call is made on the AWT event
-// thread, which is also the thread that creates and destroys the window and pumps its messages.
+// the player's: each track opens a new player, and the bezel stays put across them.
+// The window lives on a thread of its own that pumps its messages. It used to be made on the AWT event thread, which never
+// reads Win32 messages: the owner window's thread then waited for ever on a message sent to the bezel (activation, z-order),
+// and the whole app stopped answering input while the video played on. The JNI calls only queue work for that thread.
 namespace {
-HWND gBezelHwnd = nullptr;
+HWND gBezelHwnd = nullptr;  // touched on the bezel thread only
 int gBezelMargin = 0;
+std::mutex gBezelMutex;
+std::deque<std::function<void()>> gBezelTasks;
+DWORD gBezelThreadId = 0;
+constexpr UINT WM_NUVIO_BEZEL_TASK = WM_APP + 0x4E42;
+
+void bezelThreadMain(std::shared_ptr<std::promise<void>> ready) {
+    MSG msg = {};
+    // Makes this thread's message queue before anyone posts to it.
+    PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+    ready->set_value();
+    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        if (msg.hwnd == nullptr && msg.message == WM_NUVIO_BEZEL_TASK) {
+            std::deque<std::function<void()>> tasks;
+            {
+                std::lock_guard<std::mutex> lock(gBezelMutex);
+                tasks.swap(gBezelTasks);
+            }
+            for (auto &task : tasks) task();
+            continue;
+        }
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+}
+
+// Runs [task] on the bezel thread, starting it the first time.
+void postBezelTask(std::function<void()> task) {
+    std::lock_guard<std::mutex> lock(gBezelMutex);
+    if (gBezelThreadId == 0) {
+        auto ready = std::make_shared<std::promise<void>>();
+        auto started = ready->get_future();
+        std::thread thread(bezelThreadMain, ready);
+        gBezelThreadId = GetThreadId(thread.native_handle());
+        thread.detach();
+        started.wait();
+    }
+    gBezelTasks.push_back(std::move(task));
+    PostThreadMessageW(gBezelThreadId, WM_NUVIO_BEZEL_TASK, 0, 0);
+}
 
 void bezelHide() {
     if (gBezelHwnd && IsWindow(gBezelHwnd)) ShowWindow(gBezelHwnd, SW_HIDE);
@@ -7372,14 +7414,9 @@ void bezelPlace(HWND host) {
         gBezelHwnd, nullptr, rect.left - gBezelMargin, rect.top - gBezelMargin, 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
-}  // namespace
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelShow(
-    JNIEnv *env, jobject, jlong hostViewPtr, jintArray argb, jint width, jint height, jint marginPx) {
-    HWND host = (HWND)(intptr_t)hostViewPtr;
-    if (!argb || width <= 0 || height <= 0 || !host || !IsWindow(host)) return;
-    if (env->GetArrayLength(argb) < static_cast<jsize>(width) * height) return;
+void bezelShowOnThread(HWND host, const std::vector<jint> &argb, int width, int height, int marginPx) {
+    if (!IsWindow(host)) return;
     HWND top = GetAncestor(host, GA_ROOT);
     if (!top) return;
     if (!gBezelHwnd || !IsWindow(gBezelHwnd) || GetWindow(gBezelHwnd, GW_OWNER) != top) {
@@ -7411,7 +7448,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelShow(
     HBITMAP dib = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
     if (dib && bits) {
         // Java's premultiplied ARGB ints are B, G, R, A in memory: the layout the DIB wants.
-        env->GetIntArrayRegion(argb, 0, static_cast<jsize>(width) * height, static_cast<jint *>(bits));
+        std::memcpy(bits, argb.data(), argb.size() * sizeof(jint));
         HGDIOBJ previous = SelectObject(memory, dib);
         POINT position = {rect.left - marginPx, rect.top - marginPx};
         SIZE size = {width, height};
@@ -7425,15 +7462,31 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelShow(
     ReleaseDC(nullptr, screen);
     SetWindowPos(gBezelHwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
+}  // namespace
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelShow(
+    JNIEnv *env, jobject, jlong hostViewPtr, jintArray argb, jint width, jint height, jint marginPx) {
+    HWND host = (HWND)(intptr_t)hostViewPtr;
+    if (!argb || width <= 0 || height <= 0 || !host || !IsWindow(host)) return;
+    const jsize count = static_cast<jsize>(width) * height;
+    if (env->GetArrayLength(argb) < count) return;
+    std::vector<jint> pixels(static_cast<size_t>(count));
+    env->GetIntArrayRegion(argb, 0, count, pixels.data());
+    postBezelTask([host, pixels = std::move(pixels), width, height, marginPx]() {
+        bezelShowOnThread(host, pixels, width, height, marginPx);
+    });
+}
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelMove(JNIEnv *, jobject, jlong hostViewPtr) {
-    bezelPlace((HWND)(intptr_t)hostViewPtr);
+    HWND host = (HWND)(intptr_t)hostViewPtr;
+    postBezelTask([host]() { bezelPlace(host); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_bezelHide(JNIEnv *, jobject) {
-    bezelHide();
+    postBezelTask([]() { bezelHide(); });
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -352,7 +352,9 @@ internal fun syncedAlternatives(records: List<LrcLibRecord>, artist: String): Li
  * whose length matches the stream (within [LYRIC_SAME_CUT_MS]) when [primary] does not, the closest such one;
  * null when [primary] already fits, has no known length, or nothing else fits (the audio analysis then finds
  * the offset). Only a version the stream is the same cut of is ever swapped in, so a live take or a remix
- * that merely has a nearby length is not.
+ * that merely has a nearby length is not. A version timed exactly like [primary] is the album timing uploaded with the
+ * stream's length (LRCLIB has such copies): swapping it in would skip the analysis and leave the lines off by the
+ * video's intro, so it is not taken.
  */
 internal fun pickLyricsForStream(
     primary: Lyrics.Synced,
@@ -363,8 +365,24 @@ internal fun pickLyricsForStream(
     if (abs(primary.durationMs - playedDurationMs) <= LYRIC_SAME_CUT_MS) return null
     return alternatives
         .filter { abs(it.durationMs - playedDurationMs) <= LYRIC_SAME_CUT_MS }
+        .filterNot { sameLineTiming(it, primary) }
         .minByOrNull { abs(it.durationMs - playedDurationMs) }
 }
+
+/**
+ * Whether [a] and [b] start their sung lines at the same times (the middle difference of the first few within
+ * [SAME_TIMING_SLACK_MS]). Too few lines to tell counts as not the same.
+ */
+internal fun sameLineTiming(a: Lyrics.Synced, b: Lyrics.Synced): Boolean {
+    fun starts(lyrics: Lyrics.Synced) = lyrics.lines.filter { isSungLyric(it.text) }.map { it.timeMs }.take(SAME_TIMING_LINES)
+    val gaps = starts(a).zip(starts(b)) { x, y -> abs(x - y) }.sorted()
+    if (gaps.size < SAME_TIMING_MIN_LINES) return false
+    return gaps[gaps.size / 2] <= SAME_TIMING_SLACK_MS
+}
+
+private const val SAME_TIMING_LINES = 12
+private const val SAME_TIMING_MIN_LINES = 4
+private const val SAME_TIMING_SLACK_MS = 750L
 
 internal const val LRCLIB_SOURCE = "LRCLIB"
 

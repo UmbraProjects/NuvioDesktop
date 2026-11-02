@@ -5,7 +5,6 @@ import com.nuvio.app.features.player.desktop.AwtNativeViewResolver
 import com.nuvio.app.features.player.desktop.NativePlayerBridge
 import com.nuvio.app.features.player.desktop.NativePlayerHost
 import java.awt.AlphaComposite
-import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.GradientPaint
 import java.awt.RenderingHints
@@ -50,6 +49,7 @@ internal fun renderBezel(spec: BezelSpec): IntArray {
     try {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
         val m = spec.margin.toFloat()
         val rim = spec.rim.toFloat()
         val lip = spec.lip.toFloat()
@@ -77,37 +77,32 @@ internal fun renderBezel(spec: BezelSpec): IntArray {
         g.fill(opening)
         g.composite = drawing
 
+        // One solid piece of glass. It has to be solid where it lies over the video (its lip and the window's square corners); a
+        // see-through part beside the video took the backdrop's colour and read as a second frame round the solid one.
         val ring = Area(outer(0f)).apply { subtract(Area(opening)) }
-        val window = Area(java.awt.Rectangle(spec.margin, spec.margin, spec.innerWidth, spec.innerHeight))
-        // Over the video (its lip and square corners) the glass has to hide what is under it, so it is solid; outside the video it is
-        // see-through like the page's panels, so the backdrop's colour shows in it.
-        val overVideo = Area(ring).apply { intersect(window) }
-        val besideVideo = Area(ring).apply { subtract(window) }
-        g.paint = GradientPaint(0f, m - rim, Color(58, 62, 76), 0f, h - (m - rim), Color(30, 32, 42))
-        g.fill(overVideo)
-        g.paint = GradientPaint(0f, m - rim, Color(218, 222, 236, 150), 0f, h - (m - rim), Color(120, 124, 142, 120))
-        g.fill(besideVideo)
-        // A soft highlight across the top, as the panels' glass has.
-        g.clip = ring
+        g.paint = GradientPaint(0f, m - rim, Color(150, 154, 166), 0f, h - (m - rim), Color(84, 86, 98))
+        g.fill(ring)
+        // A soft highlight across the top, as the panels' glass has. Painted on the ring itself, not through a clip: Java2D does not
+        // smooth a clip's edge, which left the sheen stepped round the corners.
         g.paint = GradientPaint(m - rim, m - rim, Color(255, 255, 255, 70), w * 0.62f, h * 0.62f, Color(255, 255, 255, 0))
         g.fill(ring)
-        g.clip = null
 
-        // The hairlines the panels have: light on the outer edge, a dark line where the picture begins.
-        g.stroke = BasicStroke(1f)
-        g.color = Color(255, 255, 255, 200)
-        g.draw(outer(-0.5f))
-        g.stroke = BasicStroke(2f)
-        g.color = Color(0, 0, 0, 150)
-        g.draw(opening)
-        g.stroke = BasicStroke(1f)
-        g.color = Color(255, 255, 255, 70)
-        g.draw(RoundRectangle2D.Float(opening.x - 1.5f, opening.y - 1.5f, opening.width + 3f, opening.height + 3f, opening.arcwidth + 3f, opening.archeight + 3f))
+        // The panels' light hairline on the outer edge, and a faint shade where the picture begins. Both are thin filled rings: a 1 px
+        // stroke came out stepped on the curves, a fill is smoothed by its coverage.
+        g.color = Color(255, 255, 255, 170)
+        g.fill(Area(outer(0f)).apply { subtract(Area(outer(-1.25f))) })
+        g.color = Color(0, 0, 0, 60)
+        g.fill(Area(grown(opening, 1.25f)).apply { subtract(Area(opening)) })
     } finally {
         g.dispose()
     }
     return (image.raster.dataBuffer as DataBufferInt).data.copyOf()
 }
+
+/** [shape] grown by [by] on every side, its corners with it. */
+private fun grown(shape: RoundRectangle2D.Float, by: Float) = RoundRectangle2D.Float(
+    shape.x - by, shape.y - by, shape.width + by * 2, shape.height + by * 2, shape.arcwidth + by * 2, shape.archeight + by * 2,
+)
 
 /**
  * fork:music-stage - keeps the bezel over whichever video window is on the Now Playing page. Used on the AWT event thread only.
@@ -161,6 +156,9 @@ internal object NowPlayingBezel {
         }
     }
 
+    /** True while the bezel is up round [host] (its grace after a song ends included). */
+    fun isUpFor(host: NativePlayerHost): Boolean = active && current === host
+
     /** Re-places the bezel after the app window moved. */
     fun follow(host: NativePlayerHost) {
         if (current !== host || !active) return
@@ -168,10 +166,20 @@ internal object NowPlayingBezel {
         if (pointer != 0L) runCatching { NativePlayerBridge.bezelMove(pointer) }
     }
 
-    /** [host] is going away (or is no longer the Now Playing picture): hides the bezel unless another window takes it over. */
-    fun release(host: NativePlayerHost) {
+    /**
+     * [host] is going away (or is no longer the Now Playing picture): hides the bezel unless another window takes it over. [immediate]
+     * when the page itself closed (or the picture left it), so the bezel does not hang over the page underneath for the grace.
+     */
+    fun release(host: NativePlayerHost, immediate: Boolean = false) {
         if (current !== host) return
         hideTimer?.stop()
+        if (immediate) {
+            hideTimer = null
+            current = null
+            active = false
+            runCatching { NativePlayerBridge.bezelHide() }
+            return
+        }
         hideTimer = Timer(BEZEL_GRACE_MS) {
             if (current === host) {
                 current = null

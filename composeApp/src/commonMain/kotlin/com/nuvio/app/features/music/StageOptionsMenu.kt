@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -94,6 +95,11 @@ internal fun StageOptionsMenu(
         if (!open) return@LaunchedEffect
         delay(OPTIONS_IDLE_MS)
         close()
+    }
+    // The native video draws over the menu; nothing in it changes the video, so the picture steps aside while it is open.
+    DisposableEffect(open) {
+        MusicPlayback.stageMenuOpen.value = open
+        onDispose { MusicPlayback.stageMenuOpen.value = false }
     }
 
     Box(modifier) {

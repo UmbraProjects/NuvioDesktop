@@ -37,7 +37,8 @@ internal fun artistTagline(artist: LibraryArtist): String? =
 /** The accent-filled mood chip and up to five outlined genre chips (a genre equal to the mood is not repeated). */
 internal fun passportChips(artist: LibraryArtist): Pair<String?, List<String>> {
     val mood = artist.mood?.takeIf { it.isNotBlank() }
-    val genres = artist.genres.filterNot { it.equals(mood, ignoreCase = true) }.distinctBy { it.lowercase() }.take(5)
+    // The genres the person chose lead, as they do on the Constellation.
+    val genres = (artist.manualGenres + artist.genres).filterNot { it.equals(mood, ignoreCase = true) }.distinctBy { it.lowercase() }.take(5)
     return mood to genres
 }
 

@@ -185,7 +185,9 @@ fun MusicPlayerHost(
     // The native video draws over the app's own popups, so while the "Add to playlist" picker is open the picture
     // steps out of sight (it keeps playing) and comes back when the picker closes.
     val pickerOpen = com.nuvio.app.features.music.playlist.PlaylistPicker.pending.collectAsStateWithLifecycle().value != null
-    val videoParked = (docked && view == MusicVideoView.Bar && !inline) || pickerOpen
+    // The same for the Stage's Options menu, which opens over the inline picture.
+    val stageMenuOpen = MusicPlayback.stageMenuOpen.collectAsStateWithLifecycle().value
+    val videoParked = (docked && view == MusicVideoView.Bar && !inline) || pickerOpen || (inline && stageMenuOpen)
     val big = videoVisible && view == MusicVideoView.Fullscreen
     var hostOrigin by remember { mutableStateOf(Offset.Zero) }
     val keys = remember { FocusRequester() }
@@ -264,7 +266,8 @@ fun MusicPlayerHost(
             seekRequestId = seek?.id ?: 0L,
             seekRequestMs = seek?.positionMs ?: 0L,
             letterbox = big || inline,
-            framed = inline,
+            // Parked, the picture is not on the Stage: the bezel goes with it.
+            framed = inline && !videoParked,
             modifier = surfaceModifier,
             onSnapshot = { id, snapshot -> if (id == player.state.value.loadId) player.onSnapshot(snapshot) },
             onEnded = { id -> if (id == player.state.value.loadId) player.onSurfaceEnded() },
