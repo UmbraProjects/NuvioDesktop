@@ -417,7 +417,7 @@ fun YouTubeTabScreen(
                 modifier = Modifier.padding(bottom = 12.dp),
             )
         }
-        queue?.let { playing ->
+        queue?.takeUnless { it.oneOff }?.let { playing ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

@@ -113,7 +113,9 @@ internal fun parseYouTubeFeed(body: String): YouTubeFeedPage {
                     in SKIPPED_KEYS -> Unit
                     "lockupViewModel" -> (value as? JsonObject)?.let(::lockupVideo)
                         ?.let { videos.putIfAbsent(it.videoId, it) }
-                    "videoRenderer", "gridVideoRenderer", "playlistVideoRenderer" -> (value as? JsonObject)?.let(::rendererVideo)
+                    // compactVideoRenderer: the older shape of a watch page's related videos.
+                    "videoRenderer", "gridVideoRenderer", "playlistVideoRenderer", "compactVideoRenderer" ->
+                        (value as? JsonObject)?.let(::rendererVideo)
                         ?.let { videos.putIfAbsent(it.videoId, it) }
                     "continuationItemRenderer" -> findContinuationToken(value)?.let { continuation = it }
                     else -> walk(value)

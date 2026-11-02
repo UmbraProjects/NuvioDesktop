@@ -5980,6 +5980,8 @@ const renderChrome = () => {
   audioLabel.textContent = state.audioLabel || "Audio";
   sourcesLabel.textContent = state.sourcesLabel || "Sources";
   episodesLabel.textContent = state.episodesLabel || "Episodes";
+  // A YouTube video's Sources panel holds its comments: their text gets more than a stream's two lines.
+  root.classList.toggle("youtube-video", Boolean(state.isYouTubeVideo));
   episodeNotchLabel.textContent = state.episodesLabel || "Episodes";
   lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
   // The Sources sheet leaves the picture uncovered and stays open across a swap, so buffering

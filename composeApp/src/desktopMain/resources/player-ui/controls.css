@@ -3201,6 +3201,13 @@ button svg * {
   white-space: normal;
 }
 
+/* A YouTube video's Sources panel lists its comments (the subtitle is the comment itself). */
+.youtube-video .source-row .stream-subtitle {
+  -webkit-line-clamp: 10;
+  color: rgba(255, 255, 255, .86);
+  font-size: 13px;
+}
+
 .episode-overview {
   display: -webkit-box;
   -webkit-line-clamp: 2;

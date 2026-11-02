@@ -405,6 +405,14 @@ object YouTubeFeedRepository {
         return parseYouTubeComments(page.body).also { log.i { "Comments: ${it.comments.size}, more=${it.continuation != null}" } }
     }
 
+    /** The videos YouTube suggests beside [videoId] (the watch page's column), [videoId] itself left out. */
+    suspend fun related(videoId: String): List<YouTubeVideo> {
+        val page = youTubeNext(videoId, continuation = null, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
+            ?: return emptyList()
+        return parseYouTubeFeed(page.body).videos.filter { it.videoId != videoId }
+            .also { log.i { "Related: ${it.size}" } }
+    }
+
     /** The playlists [videoId] can be saved to, or null when YouTube did not answer. */
     suspend fun playlistOptions(videoId: String): List<YouTubePlaylistOption>? {
         val result = youTubePlaylistOptions(videoId, _channel.value.pageId) as? YouTubeBrowseResult.Ok ?: return null

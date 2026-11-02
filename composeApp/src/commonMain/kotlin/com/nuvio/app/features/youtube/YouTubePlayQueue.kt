@@ -69,10 +69,13 @@ internal object YouTubePlayQueue {
         } else {
             log.i { "handing over to ${nextIndex + 1} of ${state.videos.size}" }
         }
+        // A one-off hand-over is done once it is handed over: nothing to play after it.
+        if (state.oneOff) _state.value = null
         return launch
     }
 
-    data class State(val name: String, val videos: List<YouTubeVideo>, val index: Int) {
+    /** [oneOff]: a single hand-over from the player (a related video), not a playlist; no banner, ends after it. */
+    data class State(val name: String, val videos: List<YouTubeVideo>, val index: Int, val oneOff: Boolean = false) {
         val current: YouTubeVideo? get() = videos.getOrNull(index)
     }
 
@@ -100,6 +103,20 @@ internal object YouTubePlayQueue {
         _next.value = null
         prepared?.second?.cancel()
         prepared = null
+    }
+
+    /**
+     * The player is to go straight on to [next] (a related video picked in it) from [currentVideoId]:
+     * set up as a two-video queue so the app hands the player over exactly as at a playlist's end
+     * ([handOffNext]); any playlist being played through ends here.
+     */
+    fun handOverFromPlayer(currentVideoId: String, next: YouTubeVideo) {
+        prepared?.second?.cancel()
+        prepared = null
+        _next.value = null
+        val current = YouTubeVideo(videoId = currentVideoId, title = "", channel = null, details = null, duration = null, thumbnailUrl = null)
+        _state.value = State(name = "", videos = listOf(current, next), index = 0, oneOff = true)
+        log.i { "handing over to a related video" }
     }
 
     /** A video opened outside the queue ends it, unless it is the queue's own current one. */

@@ -401,6 +401,13 @@ internal class PlayerScreenRuntime(
     /** Asking a Stalker portal for the link of the channel being switched to; the next switch cancels it. */
     var iptvLinkJob: kotlinx.coroutines.Job? = null
 
+    // fork:youtube-mode - a YouTube tab video's related videos (shown in the Episodes panel) and its
+    // comments (in the Sources panel, as such a video has no other source); see PlayerScreenRuntimeYouTube.
+    var youTubeRelated by mutableStateOf<List<com.nuvio.app.features.youtube.YouTubeVideo>>(emptyList())
+    var youTubeComments by mutableStateOf<List<com.nuvio.app.features.youtube.YouTubeComment>>(emptyList())
+    var youTubeCommentsLoading by mutableStateOf(false)
+    var youTubeCommentsLoaded = false
+
     /** The HUD's channel switcher is open: only then is the (possibly long) channel list sent. */
     var iptvPanelOpen by mutableStateOf(false)
 

@@ -509,6 +509,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     BindDiscordRichPresenceEffect()
     BindLightsEffect()
     BindYouTubeWatchTimeEffect() // fork:youtube-mode
+    BindYouTubeRelatedEffect() // fork:youtube-mode
     BindStreamFailoverWatchdogEffect()
     BindIptvLiveEffects()
 
