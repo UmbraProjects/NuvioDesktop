@@ -10,9 +10,6 @@ import com.metrolist.innertubex.cipher.YouTubeCipherService
 import com.metrolist.innertubex.extraction.AudioQuality
 import com.metrolist.innertubex.extraction.ContentHints
 import com.metrolist.innertubex.extraction.InnerTubeExtractor
-import com.metrolist.innertubex.extraction.PoTokenResult
-import com.metrolist.innertubex.extraction.TokenProvider
-import com.metrolist.innertubex.extraction.TokenProviderCapabilities
 import com.metrolist.innertubex.extraction.YtConfigParserImpl
 import com.metrolist.innertubex.extraction.generateClientPlaybackNonce
 import com.metrolist.innertubex.models.YouTubeLocale
@@ -29,6 +26,10 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -39,8 +40,9 @@ import java.io.File
  * with the signed-in Google account's cookies, so an age-gated track opens the way it does in
  * BitChord. Written against the shape of BitChord's `InnerTubeXResolver` (GPL-3.0).
  *
- * No BotGuard PoToken minter is installed (BitChord runs a browser page for that), so clients that
- * need a PoToken are left out of the catalog; the log says which client opened the track.
+ * PoTokens come from [BrowserPoTokens]: BotGuard run in a headless Edge / Chrome, as BitChord does in a
+ * WebView, so the web clients that need one are in the catalog. With no browser installed, or with
+ * `-Dnuvio.potoken=off`, none are and the catalog is as it was; the log says which client opened the track.
  *
  * Compiled in only with `-Pnuvio.innertubex=true`; found by name by [MusicStreamFallbacks].
  */
@@ -48,6 +50,8 @@ internal object InnerTubeXFallback : MusicStreamFallback {
     override val name = "InnerTubeX"
 
     private val log = Logger.withTag("InnerTubeX")
+
+    private val resolverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val dir: File by lazy { DesktopStorage.rootDir.resolve("innertubex").toFile().apply { mkdirs() } }
 
@@ -100,16 +104,6 @@ internal object InnerTubeXFallback : MusicStreamFallback {
             set(value) { write("etag", value) }
     }
 
-    /** Nothing here can mint a PoToken; see the class comment. */
-    private val noTokens = object : TokenProvider {
-        override val capabilities: TokenProviderCapabilities
-            get() = TokenProviderCapabilities(providers = emptySet(), usesWebView = false)
-
-        override suspend fun getPoToken(videoId: String, visitorData: String, cookie: String?): PoTokenResult? = null
-
-        override suspend fun close() {}
-    }
-
     private val innerTube = InnerTube(http, logger = logger)
     private val remoteStore = RemotePlayerConfigStore(http, repository, logger)
     private val cipherService = YouTubeCipherService(http, remoteStore, logger)
@@ -117,7 +111,7 @@ internal object InnerTubeXFallback : MusicStreamFallback {
         configParser = YtConfigParserImpl(http, innerTube, remoteStore, logger),
         cipherService = cipherService,
         innerTube = innerTube,
-        tokenProvider = noTokens,
+        tokenProvider = BrowserPoTokens.provider,
         logger = logger,
     )
 
@@ -160,6 +154,9 @@ internal object InnerTubeXFallback : MusicStreamFallback {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
     override suspend fun resolve(videoId: String): TrailerPlaybackSource? {
+        // Start the browser now if it is not up: it takes a few seconds the first time, and the library
+        // gives a token request 18 s before it does without one.
+        resolverScope.launch { runCatching { BrowserPoTokens.prewarm() } }
         val cookie = YouTubeMusicAuth.authHeaders("https://www.youtube.com")["cookie"]
         innerTube.cookie = cookie
         val signedIn = cookie?.let { accountSession(it) }
