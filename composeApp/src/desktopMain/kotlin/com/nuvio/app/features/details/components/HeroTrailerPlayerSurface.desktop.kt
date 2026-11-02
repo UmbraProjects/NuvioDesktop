@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -162,9 +163,10 @@ actual fun HeroTrailerPlayerSurface(
 
     // Re-opens of this URL after a googlevideo 403 (see forbiddenStreamRetryDelayMs).
     var forbiddenRetries by remember(sourceUrl) { mutableIntStateOf(0) }
+    // fork:trailer-403 - outlives the attach effect, whose scope has finished by the time mpv reports a 403.
+    val retryScope = rememberCoroutineScope()
 
     LaunchedEffect(controller, sourceUrl, forbiddenRetries) {
-        val attachScope = this
         playbackRevealReady = false
         controller.updateControls(
             PlayerControlsState(
@@ -196,7 +198,7 @@ actual fun HeroTrailerPlayerSurface(
                 val retryInMs = forbiddenStreamRetryDelayMs(message, forbiddenRetries)
                 if (retryInMs != null) {
                     detailHeroTrailerSurfaceLog.i { "re-opening in ${retryInMs}ms (retry ${forbiddenRetries + 1})" }
-                    attachScope.launch {
+                    retryScope.launch {
                         delay(retryInMs)
                         forbiddenRetries++
                     }

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.trailer
 
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -140,5 +141,24 @@ class TrailerQualityTest {
         assertEquals(0, parseDurationSeconds("LIVE"))
         assertEquals(1_234L, parseViewCount("1,234 views"))
         assertEquals(0L, parseViewCount("No views"))
+    }
+
+    @Test
+    fun aRefusedUploadGivesWayToTheNextBest() = runBlocking {
+        // Nov 2: "Hung"'s listed 480p upload 403'd every time; another 480p upload of it was never tried.
+        val listed = option("Ap128882yes", 480, 0)
+        val other = option("IuqlOXhCow8", 480, 101)
+        val soft = option("gwhfpgOP5_E", 240, 102)
+        val probed = mutableListOf<String>()
+        val best = firstPlayableTrailer(listOf(soft, other, listed)) { probed += it.key; it.key == "Ap128882yes" }
+        assertEquals("IuqlOXhCow8", best?.key)
+        // Best first, and no probing past the first that passes.
+        assertEquals(listOf("Ap128882yes", "IuqlOXhCow8"), probed)
+    }
+
+    @Test
+    fun everyUploadRefusedMeansNoTrailer() = runBlocking {
+        assertNull(firstPlayableTrailer(listOf(option("a", 1080, 0), option("b", 720, 1))) { true })
+        assertNull(firstPlayableTrailer(emptyList()) { false })
     }
 }
