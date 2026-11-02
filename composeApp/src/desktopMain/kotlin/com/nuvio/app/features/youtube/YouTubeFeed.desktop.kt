@@ -1,6 +1,7 @@
 package com.nuvio.app.features.youtube
 
 import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.features.player.AddonSubtitle
 import com.nuvio.app.features.music.MusicResolver
 import com.nuvio.app.features.music.YouTubeCaller
 import com.nuvio.app.features.trailer.TrailerExtractionPlatform
@@ -140,6 +141,96 @@ internal actual suspend fun youTubePlaybackTracking(videoId: String, pageId: Str
     val playback = url("videostatsPlaybackUrl") ?: return null
     val watchtime = url("videostatsWatchtimeUrl") ?: return null
     return YouTubeTrackingUrls(playbackUrl = playback, watchtimeUrl = watchtime)
+}
+
+/** At most this many tracks are fetched per video: the uploaded ones first, then the auto-generated. */
+private const val MAX_CAPTION_TRACKS = 6
+
+internal actual suspend fun youTubeCaptionSubtitles(videoId: String): List<AddonSubtitle> {
+    val player = signedWebRequest(
+        "player",
+        mapOf("videoId" to videoId, "contentCheckOk" to true, "racyCheckOk" to true),
+        YouTubeFeedRepository.channel.value.pageId,
+    ) as? YouTubeBrowseResult.Ok ?: return emptyList()
+    val tracks = parseYouTubeCaptionTracks(player.body).take(MAX_CAPTION_TRACKS)
+    if (tracks.isEmpty()) {
+        log.i { "$videoId: no subtitle tracks" }
+        return emptyList()
+    }
+    val visitor = youTubeVisitorData(player.body)
+    // Minted once, only when a track comes back empty without one.
+    var token: String? = null
+    var tokenAsked = false
+    var usedToken = false
+    val dir = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "nuvio-youtube-captions")
+    runCatching { java.nio.file.Files.createDirectories(dir) }
+    val subtitles = tracks.mapIndexedNotNull { index, track ->
+        var vtt = fetchCaptionVtt(youTubeCaptionUrl(track.baseUrl, poToken = null))
+        if (vtt == null) {
+            if (!tokenAsked) {
+                tokenAsked = true
+                token = visitor?.let { YouTubeCaptionTokens.videoToken(videoId, it) }
+            }
+            token?.let { pot ->
+                vtt = fetchCaptionVtt(youTubeCaptionUrl(track.baseUrl, pot))
+                if (vtt != null) usedToken = true
+            }
+        }
+        val text = vtt ?: return@mapIndexedNotNull null
+        val file = dir.resolve("$videoId-$index.vtt")
+        runCatching { java.nio.file.Files.writeString(file, text) }.getOrNull() ?: return@mapIndexedNotNull null
+        AddonSubtitle(
+            id = "youtube:$videoId:${track.vssId ?: index}",
+            url = file.toString(),
+            language = track.languageCode.substringBefore('-').lowercase(),
+            display = track.label,
+            addonName = "YouTube",
+        )
+    }
+    log.i {
+        "$videoId: ${subtitles.size} of ${tracks.size} subtitle tracks " +
+            "(${if (usedToken) "with a PO token" else if (tokenAsked) "no PO token could be made" else "no token needed"})"
+    }
+    return subtitles
+}
+
+/** The WebVTT at [url], or null when YouTube answered nothing usable (the empty body of a missing PO token). */
+private suspend fun fetchCaptionVtt(url: String): String? =
+    runCatching {
+        TrailerExtractionPlatform.performRequest(
+            url = url,
+            method = "GET",
+            headers = mapOf("user-agent" to STATS_USER_AGENT, "accept-language" to "en-US,en;q=0.9"),
+            body = null,
+            timeoutMillis = 15_000L,
+        )
+    }.getOrNull()?.takeIf { it.ok }?.body?.takeIf { it.trimStart().startsWith("WEBVTT") && it.contains("-->") }
+
+/**
+ * PO tokens for subtitle requests, from the same BotGuard minter music uses (a headless Edge or
+ * Chrome); its own instance, since music's is only built with the InnerTubeX option. Nothing starts
+ * until a video's subtitles come back empty without a token.
+ */
+private object YouTubeCaptionTokens {
+    private val browser: String? by lazy { com.nuvio.app.features.music.potoken.BrowserLocator.find() }
+
+    private val generator by lazy {
+        com.nuvio.app.features.music.potoken.PoTokenGenerator(
+            createMinter = {
+                com.nuvio.app.features.music.potoken.BotGuardMinter.create(requireNotNull(browser) { "No Edge or Chrome was found" })
+            },
+            available = { browser != null },
+        )
+    }
+
+    /** A token bound to [videoId] (what the subtitle endpoint checks), or null when none can be made. */
+    suspend fun videoToken(videoId: String, visitorData: String): String? {
+        if (browser == null) {
+            log.i { "subtitles need a PO token, but no Edge or Chrome was found to make one" }
+            return null
+        }
+        return generator.tokens(videoId, visitorData)?.videoToken
+    }
 }
 
 internal actual suspend fun youTubeStatsPing(url: String, pageId: String?): Int {

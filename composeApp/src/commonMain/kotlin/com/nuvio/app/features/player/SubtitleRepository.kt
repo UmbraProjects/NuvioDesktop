@@ -58,6 +58,20 @@ object SubtitleRepository {
             _error.value = null
             _addonSubtitles.value = emptyList()
 
+            // fork:youtube-mode - a YouTube tab video: its own uploaded and auto-generated tracks, not addons'.
+            if (type == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE) {
+                val tracks = try {
+                    com.nuvio.app.features.youtube.youTubeCaptionSubtitles(videoId)
+                } catch (error: Throwable) {
+                    if (error is CancellationException) throw error
+                    emptyList()
+                }
+                _addonSubtitles.value = tracks
+                if (tracks.isEmpty()) _error.value = getString(Res.string.compose_player_no_subtitles_found)
+                _isLoading.value = false
+                return@launch
+            }
+
             val addons = AddonRepository.uiState.value.addons.enabledAddons()
             val subtitleAddons = addons.filter { addon ->
                 val manifest = addon.manifest ?: return@filter false
