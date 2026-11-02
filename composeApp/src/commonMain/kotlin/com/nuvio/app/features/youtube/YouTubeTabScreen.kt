@@ -105,8 +105,9 @@ fun YouTubeTabScreen(
         if (lastSignedIn != null && lastSignedIn != auth.signedIn) YouTubeFeedRepository.clear()
         lastSignedIn = auth.signedIn
     }
-    LaunchedEffect(auth.signedIn) {
-        if (auth.signedIn) YouTubeFeedRepository.loadChannels()
+    // Also once the repository has dropped the lookup for a new sign-in (resolved goes back to false).
+    LaunchedEffect(auth.signedIn, channel.resolved) {
+        if (auth.signedIn && !channel.resolved) YouTubeFeedRepository.loadChannels()
     }
     // The feed waits for the channel: loading it first would show the wrong channel's feed and then swap.
     LaunchedEffect(kind, auth.signedIn, channel.resolved, channel.pageId, channel.needsChoice) {

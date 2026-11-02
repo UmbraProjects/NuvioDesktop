@@ -40,6 +40,8 @@ internal data class YouTubeMusicAuthState(
     /** The last request made with the saved session was refused; signing in again is the fix. */
     val sessionRejected: Boolean = false,
     val error: String? = null,
+    /** Goes up with each completed sign-in, including one over a lapsed session that stays "signed in". */
+    val sessionEpoch: Int = 0,
 )
 
 internal expect object YouTubeMusicAuthPlatform {
@@ -122,7 +124,7 @@ internal object YouTubeMusicAuth {
                     cookie = outcome.cookieHeader
                     loaded = true
                     YouTubeMusicAuthPlatform.saveCookie(outcome.cookieHeader)
-                    _state.value = YouTubeMusicAuthState(signedIn = true)
+                    _state.value = YouTubeMusicAuthState(signedIn = true, sessionEpoch = _state.value.sessionEpoch + 1)
                     log.i { "Signed in to YouTube Music" }
                 }
                 YouTubeMusicLoginOutcome.Cancelled ->

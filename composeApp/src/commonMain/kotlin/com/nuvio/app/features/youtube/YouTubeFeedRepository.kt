@@ -9,6 +9,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -99,6 +102,18 @@ object YouTubeFeedRepository {
             return _tabEnabled.asStateFlow()
         }
 
+    init {
+        // A new sign-in (also one over a lapsed session, which never stops counting as signed in)
+        // makes every cached page and the failed account lookup the old session's: drop them so
+        // the tab reloads by itself instead of showing the old failure until clicked.
+        scope.launch {
+            YouTubeMusicAuth.state.map { it.sessionEpoch }.distinctUntilChanged().drop(1).collect {
+                log.i { "New YouTube sign-in; reloading the feeds" }
+                clear()
+            }
+        }
+    }
+
     fun setTabEnabled(enabled: Boolean) {
         YouTubeModeStorage.saveTabEnabled(enabled)
         _tabEnabled.value = enabled
@@ -125,10 +140,10 @@ object YouTubeFeedRepository {
         _channel.value = YouTubeChannelState()
     }
 
-    /** Fetches the channel list once per session and settles which channel the feeds act as. */
+    /** Fetches the channel list once per session (again after a failure) and settles which channel the feeds act as. */
     fun loadChannels(force: Boolean = false) {
         val current = _channel.value
-        if (current.loading || (current.resolved && !force)) return
+        if (current.loading || (current.resolved && !force && current.error == null)) return
         _channel.update { it.copy(loading = true, error = null) }
         scope.launch {
             val choice = YouTubeModeStorage.loadChannelChoice()
