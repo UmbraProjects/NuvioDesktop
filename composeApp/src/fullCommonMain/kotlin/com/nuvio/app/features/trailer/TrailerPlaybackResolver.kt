@@ -21,6 +21,14 @@ actual object TrailerPlaybackResolver {
     /** fork:innertubex — the session's visitor data, for resolvers that make their own InnerTube requests. */
     internal suspend fun visitorData(): String? = extractor.innerTubeSession().visitorData
 
+    /** fork:youtube-mode - youtube.com's InnerTube as the WEB client, for the YouTube tab. Not part of the shared `expect` surface. */
+    internal suspend fun webRequest(
+        endpoint: String,
+        params: Map<String, Any?>,
+        accountHeaders: Map<String, String>,
+        pageId: String?,
+    ): Pair<Int, String> = extractor.webRequest(endpoint, params, accountHeaders, pageId)
+
     /** YouTube Music's InnerTube, for the music feature. Not part of the shared `expect` surface. */
     internal suspend fun musicRequest(endpoint: String, params: Map<String, Any?>): String? =
         extractor.musicRequest(endpoint, params)

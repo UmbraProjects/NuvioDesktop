@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.MusicNote // fork:music
+import androidx.compose.material.icons.rounded.SmartDisplay // fork:youtube-mode
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -666,6 +667,7 @@ enum class AppScreenTab {
     /** IPTV channels; only in the navigation while a playlist exists (see rememberLiveTvTabVisible). */
     LiveTv,
     Music, // fork:music - its own screen, like LiveTv (see MusicTabHost)
+    YouTube, // fork:youtube-mode - its own screen, like LiveTv (see YouTubeTabScreen)
     Settings,
 }
 
@@ -700,6 +702,7 @@ private fun AppScreenTab.toNativeNavigationTab(): NativeNavigationTab = when (th
     AppScreenTab.Discover -> NativeNavigationTab.Home
     AppScreenTab.LiveTv -> NativeNavigationTab.Home
     AppScreenTab.Music -> NativeNavigationTab.Home // fork:music - no slot on the native tab bar
+    AppScreenTab.YouTube -> NativeNavigationTab.Home // fork:youtube-mode
     AppScreenTab.Library -> NativeNavigationTab.Library
     AppScreenTab.Settings -> NativeNavigationTab.Settings
 }
@@ -1596,6 +1599,7 @@ private fun MainAppContent(
             ThemeSettingsRepository.desktopDiscoverTabVisible
         }.collectAsStateWithLifecycle()
         val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
+        val youTubeTabVisible = com.nuvio.app.features.youtube.rememberYouTubeTabVisible() // fork:youtube-mode
         val desktopAppUiScaleAppliesToDetails by remember {
             ThemeSettingsRepository.desktopAppUiScaleAppliesToDetails
         }.collectAsStateWithLifecycle()
@@ -1670,6 +1674,7 @@ private fun MainAppContent(
         // active tab and leave no way back.
         if (tab == AppScreenTab.Discover && !discoverTabVisible) return
         if (tab == AppScreenTab.LiveTv && !liveTvTabVisible) return
+        if (tab == AppScreenTab.YouTube && !youTubeTabVisible) return // fork:youtube-mode
         if (tab != AppScreenTab.Search) {
             searchOverlayActive = false
         }
@@ -1694,6 +1699,7 @@ private fun MainAppContent(
             AppScreenTab.Discover -> discoverScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.LiveTv -> Unit
             AppScreenTab.Music -> Unit // fork:music
+            AppScreenTab.YouTube -> Unit // fork:youtube-mode
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
     }
@@ -1703,6 +1709,13 @@ private fun MainAppContent(
         if (liveTvTabVisible) return@LaunchedEffect
         rootTabBackStack = rootTabBackStack.filterNot { it == AppScreenTab.LiveTv }
         if (selectedTab == AppScreenTab.LiveTv) selectedTab = AppScreenTab.Home
+    }
+
+    // fork:youtube-mode - switched off in Settings: same as the last playlist going.
+    LaunchedEffect(youTubeTabVisible) {
+        if (youTubeTabVisible) return@LaunchedEffect
+        rootTabBackStack = rootTabBackStack.filterNot { it == AppScreenTab.YouTube }
+        if (selectedTab == AppScreenTab.YouTube) selectedTab = AppScreenTab.Home
     }
 
     // Hiding the tab while it is open would leave an active tab with no entry in the bar, and its
@@ -3946,6 +3959,11 @@ private fun MainAppContent(
                                                 handleRootTabClick(AppScreenTab.Settings)
                                             },
                                             onMusicNavigate = { navController.navigateIfResumed(it) }, // fork:music
+                                            onPlayYouTube = { navController.navigateToPlayer(it) }, // fork:youtube-mode
+                                            onYouTubeSettingsClick = {
+                                                requestedSettingsPageName = "YouTubeAccount"
+                                                handleRootTabClick(AppScreenTab.Settings)
+                                            },
                                         )
                                     }
 
@@ -3991,6 +4009,7 @@ private fun MainAppContent(
                                                     selectedTab == AppScreenTab.Search ||
                                                     selectedTab == AppScreenTab.LiveTv ||
                                                     selectedTab == AppScreenTab.Music || // fork:music
+                                                    selectedTab == AppScreenTab.YouTube || // fork:youtube-mode
                                                     selectedTab == AppScreenTab.Settings
                                                 ),
                                             searchOverlayActive = searchOverlayActive,
@@ -5663,6 +5682,7 @@ private fun tabsDiscordBrowsingActivity(
         selectedTab == AppScreenTab.Discover -> browsingActivity(localizedString(Res.string.discord_presence_browsing_discover))
         selectedTab == AppScreenTab.LiveTv -> browsingActivity(localizedString(Res.string.discord_presence_browsing_live_tv))
         selectedTab == AppScreenTab.Music -> browsingActivity("Browsing Music") // fork:music
+        selectedTab == AppScreenTab.YouTube -> browsingActivity("Browsing YouTube") // fork:youtube-mode
         selectedTab == AppScreenTab.Settings -> settingsBrowsingActivity()
         else -> browsingActivity(localizedString(Res.string.discord_presence_browsing_nuvio))
     }
@@ -5761,6 +5781,8 @@ private fun AppTabHost(
     onNavigateToMusic: (() -> Unit)? = null,
     onLiveTvSettingsClick: () -> Unit = {},
     onMusicNavigate: (Any) -> Unit = {}, // fork:music
+    onPlayYouTube: (PlayerLaunch) -> Unit = {}, // fork:youtube-mode
+    onYouTubeSettingsClick: () -> Unit = {},
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
     // A cloud item can be a folder (a season pack), so a poster click has to ask which file rather
@@ -5772,11 +5794,12 @@ private fun AppTabHost(
         // Live TV is its own screen, built and disposed like Settings, with HomeScreen kept behind it.
         val liveTvSelected = selectedTab == AppScreenTab.LiveTv
         val musicSelected = selectedTab == AppScreenTab.Music // fork:music - its own screen, like Live TV
-        val homeHidden = settingsSelected || liveTvSelected || musicSelected
+        val youTubeSelected = selectedTab == AppScreenTab.YouTube // fork:youtube-mode
+        val homeHidden = settingsSelected || liveTvSelected || musicSelected || youTubeSelected
         // The content tab HomeScreen shows; kept while Settings is up, so the hidden screen does
         // not change mode underneath it.
         var contentTab by remember {
-            mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings && it != AppScreenTab.LiveTv && it != AppScreenTab.Music } ?: AppScreenTab.Home)
+            mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings && it != AppScreenTab.LiveTv && it != AppScreenTab.Music && it != AppScreenTab.YouTube } ?: AppScreenTab.Home)
         }
         if (!homeHidden) contentTab = selectedTab
         // HomeScreen stays composed (hidden) while Settings is open, so switching back shows it at
@@ -5885,6 +5908,17 @@ private fun AppTabHost(
             } else {
                 // Switched off in Settings while it was the open tab: nothing to show here any more.
                 LaunchedEffect(Unit) { onNavigateToHome?.invoke() }
+            }
+        }
+
+        if (youTubeSelected) { // fork:youtube-mode
+            tabStateHolder.SaveableStateProvider(AppScreenTab.YouTube.name) {
+                com.nuvio.app.features.youtube.YouTubeTabScreen(
+                    onPlay = onPlayYouTube,
+                    onOpenSettings = onYouTubeSettingsClick,
+                    modifier = Modifier.fillMaxSize(),
+                    topChromePadding = topChromePadding,
+                )
             }
         }
 
@@ -6149,6 +6183,19 @@ private fun DesktopHoverSidebar(
                         tint = color,
                     )
                 }
+                if (com.nuvio.app.features.youtube.rememberYouTubeTabVisible()) DesktopSidebarItem( // fork:youtube-mode
+                    label = "YouTube",
+                    selected = selectedTab == AppScreenTab.YouTube,
+                    expanded = false,
+                    onClick = { selectTab(AppScreenTab.YouTube) },
+                ) { color ->
+                    Icon(
+                        imageVector = Icons.Rounded.SmartDisplay,
+                        contentDescription = "YouTube",
+                        modifier = Modifier.size(DesktopSidebarIconSize),
+                        tint = color,
+                    )
+                }
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_settings_page_root),
                     selected = selectedTab == AppScreenTab.Settings,
@@ -6329,10 +6376,12 @@ private fun TabletFloatingTopBar(
     }.collectAsStateWithLifecycle()
     val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
     val musicTabVisible = com.nuvio.app.features.music.rememberMusicTabVisible() // fork:music
+    val youTubeTabVisible = com.nuvio.app.features.youtube.rememberYouTubeTabVisible() // fork:youtube-mode
     val topBarWidth = FloatingTopBarWidth -
         (if (discoverTabVisible) 0.dp else FloatingTopBarQuadrantWidth) +
         (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp) -
-        (if (musicTabVisible) 0.dp else FloatingTopBarQuadrantWidth) // fork:music
+        (if (musicTabVisible) 0.dp else FloatingTopBarQuadrantWidth) + // fork:music
+        (if (youTubeTabVisible) FloatingTopBarQuadrantWidth else 0.dp) // fork:youtube-mode
     // Right-clicking the Library quadrant hangs its quick-access menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
     var libraryMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
@@ -6695,6 +6744,17 @@ private fun TabletFloatingTopBar(
                             Icon(
                                 imageVector = Icons.Rounded.MusicNote,
                                 contentDescription = "Music",
+                                modifier = iconModifier,
+                                tint = iconTint,
+                            )
+                        }
+                        if (youTubeTabVisible) NavQuadrant( // fork:youtube-mode
+                            selected = selectedTab == AppScreenTab.YouTube,
+                            onClick = { onTabSelected(AppScreenTab.YouTube) },
+                        ) { iconModifier, iconTint ->
+                            Icon(
+                                imageVector = Icons.Rounded.SmartDisplay,
+                                contentDescription = "YouTube",
                                 modifier = iconModifier,
                                 tint = iconTint,
                             )

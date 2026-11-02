@@ -162,6 +162,12 @@ object MusicResolver {
      * of URLs that look fine and serve nothing. [needsVideo] is whether the picture will be shown;
      * the audio-only surface only reads the audio URL, so only that one has to be good.
      */
+    /**
+     * fork:youtube-mode - a full-length video with its audio, through the same restricted-client retry and stream
+     * probe the music videos get, so a long upload is not handed over on URLs that stop after a minute.
+     */
+    suspend fun openVideo(videoId: String): TrailerPlaybackSource? = openStream(videoId, needsVideo = true)
+
     private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? =
         // fork:loudness - kept under the video's id, which outlives the stream's URL.
         openStream(videoId, needsVideo)?.copy(loudnessKey = "yt:$videoId")
