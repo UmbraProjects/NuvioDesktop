@@ -86,7 +86,7 @@ import com.nuvio.app.core.ui.ContextMenuInvocation
 import com.nuvio.app.core.ui.KeyboardInputMode
 import com.nuvio.app.core.ui.NuvioContextMenu
 import com.nuvio.app.core.ui.NuvioTextField
-import com.nuvio.app.core.ui.PlatformBackHandler
+import com.nuvio.app.core.ui.TabBackHandler
 import com.nuvio.app.core.ui.PosterZoomOverlayAction
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.rememberHoldToSelectState
@@ -166,7 +166,9 @@ fun YouTubeTabScreen(
         YouTubeFeedRepository.openPlaylist(playlist)
         push(YouTubeFeedKind.Playlist.name)
     }
-    PlatformBackHandler(enabled = backStack.isNotEmpty()) { goBack() }
+    // TabBackHandler, not PlatformBackHandler (which does nothing on desktop): the app asks it before
+    // walking its tab history, as the Music tab's pages do.
+    TabBackHandler(enabled = backStack.isNotEmpty()) { goBack() }
     val queue by YouTubePlayQueue.state.collectAsStateWithLifecycle()
     val queueNext by YouTubePlayQueue.next.collectAsStateWithLifecycle()
     val feeds by YouTubeFeedRepository.feeds.collectAsStateWithLifecycle()
@@ -326,22 +328,23 @@ fun YouTubeTabScreen(
                 selectedName = name
             }
             YouTubeFeedKind.entries.filter { it.inHeader }.forEach { entry ->
-                if (entry == kind && !showingChannelList && !showingPlaylists) {
-                    Button(onClick = { YouTubeFeedRepository.load(entry) }) { Text(entry.label) }
-                } else {
-                    OutlinedButton(onClick = { section(entry.name) }) { Text(entry.label) }
-                }
+                val current = entry == kind && !showingChannelList && !showingPlaylists
+                YouTubePill(
+                    label = entry.label,
+                    selected = current,
+                    onClick = { if (current) YouTubeFeedRepository.load(entry) else section(entry.name) },
+                )
             }
-            if (showingChannelList) {
-                Button(onClick = { YouTubeFeedRepository.loadSubscribedChannels() }) { Text("Channels") }
-            } else {
-                OutlinedButton(onClick = { section(CHANNELS_VIEW) }) { Text("Channels") }
-            }
-            if (showingPlaylists) {
-                Button(onClick = { YouTubeFeedRepository.loadPlaylists() }) { Text("Playlists") }
-            } else {
-                OutlinedButton(onClick = { section(PLAYLISTS_VIEW) }) { Text("Playlists") }
-            }
+            YouTubePill(
+                label = "Channels",
+                selected = showingChannelList,
+                onClick = { if (showingChannelList) YouTubeFeedRepository.loadSubscribedChannels() else section(CHANNELS_VIEW) },
+            )
+            YouTubePill(
+                label = "Playlists",
+                selected = showingPlaylists,
+                onClick = { if (showingPlaylists) YouTubeFeedRepository.loadPlaylists() else section(PLAYLISTS_VIEW) },
+            )
             if (auth.signedIn) {
                 NuvioTextField(
                     value = searchText,
@@ -357,7 +360,8 @@ fun YouTubeTabScreen(
                             imageVector = Icons.Rounded.Search,
                             contentDescription = "Search",
                             tint = if (kind == YouTubeFeedKind.Search) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp).clip(CircleShape).clickable(onClick = ::submitSearch),
+                            // Clear of the pill's rounded end.
+                            modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).clickable(onClick = ::submitSearch),
                         )
                     },
                     trailingContent = if (searchText.isNotEmpty() || kind == YouTubeFeedKind.Search) {
@@ -366,7 +370,7 @@ fun YouTubeTabScreen(
                                 imageVector = Icons.Rounded.Close,
                                 contentDescription = "Clear search",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp).clip(CircleShape).clickable {
+                                modifier = Modifier.padding(end = 8.dp).size(18.dp).clip(CircleShape).clickable {
                                     searchText = ""
                                     if (kind == YouTubeFeedKind.Search) goBack()
                                 },
@@ -382,15 +386,13 @@ fun YouTubeTabScreen(
                 ChannelPicker(channel)
             }
             if (auth.signedIn) {
-                if (hideWatched) {
-                    FilledTonalButton(onClick = { YouTubeFeedRepository.setHideWatched(false) }) {
-                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 4.dp))
-                        Text("Hide watched")
-                    }
-                } else {
-                    OutlinedButton(onClick = { YouTubeFeedRepository.setHideWatched(true) }) { Text("Hide watched") }
-                }
-                IconButton(
+                YouTubePill(
+                    label = "Hide watched",
+                    selected = hideWatched,
+                    onClick = { YouTubeFeedRepository.setHideWatched(!hideWatched) },
+                    leadingIcon = Icons.Rounded.Check.takeIf { hideWatched },
+                )
+                YouTubeIconButton(
                     onClick = { YouTubeFeedRepository.load(kind, force = true) },
                     enabled = !feed.loading,
                 ) {
@@ -434,7 +436,7 @@ fun YouTubeTabScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                OutlinedButton(onClick = YouTubePlayQueue::stop) { Text("Stop") }
+                YouTubePill(label = "Stop", selected = false, onClick = YouTubePlayQueue::stop)
             }
         }
         if (kind == YouTubeFeedKind.Channel) {
@@ -572,18 +574,16 @@ fun YouTubeTabScreen(
 private fun ChannelPicker(state: YouTubeChannelState) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { open = true }) {
-            val current = state.current
-            Text(
-                text = when {
-                    state.channels.isEmpty() -> "Channel: account default"
-                    state.needsChoice || current == null -> "Choose channel"
-                    else -> "Watching as ${current.name}"
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        val current = state.current
+        YouTubePill(
+            label = when {
+                state.channels.isEmpty() -> "Channel: account default"
+                state.needsChoice || current == null -> "Choose channel"
+                else -> "Watching as ${current.name}"
+            },
+            selected = false,
+            onClick = { open = true },
+        )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             if (state.channels.isEmpty()) {
                 DropdownMenuItem(
@@ -648,8 +648,53 @@ private fun FeedMessage(text: String, action: String, onAction: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        FilledTonalButton(onClick = onAction) { Text(action) }
+        YouTubePill(label = action, selected = true, onClick = onAction)
     }
+}
+
+/**
+ * A pill button for the tab's header and pages: filled when [selected], outlined otherwise, with a
+ * ring while the keyboard or a pad has it focused (Material's own focus tint is too faint to follow
+ * across a row of them).
+ */
+@Composable
+private fun YouTubePill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsKeyboardFocusedAsState()
+    val ring = Modifier.border(
+        width = 2.dp,
+        color = if (focused) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+        shape = CircleShape,
+    )
+    val content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        leadingIcon?.let { Icon(it, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 4.dp)) }
+        Text(label)
+    }
+    if (selected) {
+        Button(onClick = onClick, enabled = enabled, interactionSource = interaction, modifier = ring, content = content)
+    } else {
+        OutlinedButton(onClick = onClick, enabled = enabled, interactionSource = interaction, modifier = ring, content = content)
+    }
+}
+
+/** An icon button with the same keyboard-focus ring as [YouTubePill]. */
+@Composable
+private fun YouTubeIconButton(onClick: () -> Unit, enabled: Boolean = true, content: @Composable () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsKeyboardFocusedAsState()
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        interactionSource = interaction,
+        modifier = Modifier.border(2.dp, if (focused) MaterialTheme.colorScheme.onSurface else Color.Transparent, CircleShape),
+        content = content,
+    )
 }
 
 /** How many pages Back can step through inside the tab. */
@@ -669,7 +714,7 @@ private fun PlaylistHeader(playlist: YouTubePlaylist, canPlay: Boolean, onBack: 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        IconButton(onClick = onBack) {
+        YouTubeIconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
         }
         Column(modifier = Modifier.weight(1f, fill = false)) {
@@ -685,10 +730,7 @@ private fun PlaylistHeader(playlist: YouTubePlaylist, canPlay: Boolean, onBack: 
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Button(onClick = onPlayAll, enabled = canPlay) {
-            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 4.dp))
-            Text("Play all")
-        }
+        YouTubePill(label = "Play all", selected = true, onClick = onPlayAll, enabled = canPlay, leadingIcon = Icons.Rounded.PlayArrow)
     }
 }
 
@@ -950,7 +992,7 @@ private fun ChannelHeader(channel: YouTubeOpenChannel, onBack: () -> Unit, onSub
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        IconButton(onClick = onBack) {
+        YouTubeIconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
         }
         if (channel.avatarUrl != null) {
@@ -973,8 +1015,8 @@ private fun ChannelHeader(channel: YouTubeOpenChannel, onBack: () -> Unit, onSub
         when (channel.subscribed) {
             // Not known until the page answers; no button rather than a guess.
             null -> Unit
-            true -> OutlinedButton(onClick = { onSubscribe(false) }, enabled = !channel.changing) { Text("Subscribed") }
-            false -> Button(onClick = { onSubscribe(true) }, enabled = !channel.changing) { Text("Subscribe") }
+            true -> YouTubePill(label = "Subscribed", selected = false, onClick = { onSubscribe(false) }, enabled = !channel.changing)
+            false -> YouTubePill(label = "Subscribe", selected = true, onClick = { onSubscribe(true) }, enabled = !channel.changing)
         }
     }
 }
