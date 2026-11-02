@@ -669,6 +669,9 @@ private fun NativePlayerSurface(
         var reconnectingForFailover = false
         // Node hops spent on 429s before the first frame (see tryHopAtOpen).
         var openHopsUsed = 0
+        // The one delayed reopen spent on a 429 at open from a host that had just answered the
+        // redirect probe (see tryRetryAtOpen).
+        var openRetryUsed = false
         val onSurfaceError = object : (String?) -> Unit {
             override fun invoke(message: String?) {
                 if (SeekRateLimitRecovery.isRateLimited(message)) {
@@ -685,6 +688,7 @@ private fun NativePlayerSurface(
                     ) || (reconnectingForFailover && inRecentIncident)
                     if (reconnect && tryStartReconnect(message.orEmpty())) return
                     if (tryHopAtOpen(message.orEmpty())) return
+                    if (tryRetryAtOpen(message.orEmpty())) return
                 }
                 if (TorBoxNodeHop.looksLikeNodeStall(message)) {
                     val stalledUrl = redirectResolutions[sourceUrl]?.playbackUrl ?: sourceUrl
@@ -824,6 +828,43 @@ private fun NativePlayerSurface(
                     )
                     attachWith(
                         playbackUrl = hopped,
+                        positionMs = initialPositionMs,
+                        progressFraction = initialProgressFraction ?: 0f,
+                        tracePlaybackStart = false,
+                        onError = handler,
+                    )
+                }
+                return true
+            }
+
+            /**
+             * A host that serves the file itself (the redirect probe got a 2xx moments ago) and
+             * then 429s mpv's open is throttling a burst, not refusing the link: the probe and the
+             * open land within a second or two, and a per-IP limit on a small worker counts both.
+             * Seen 2026-11-02 on an addon's `workers.dev` proxy. Waits the first reconnect delay
+             * and opens the same URL once more; a second 429 goes on to failover / exit. Off still
+             * never retries, and a TorBox node is [tryHopAtOpen]'s.
+             */
+            fun tryRetryAtOpen(message: String): Boolean {
+                if (startedAttemptId.value == playbackAttemptId || openRetryUsed) return false
+                val settings = PlayerSettingsRepository.uiState.value
+                if (settings.desktopRateLimitRecoveryMode == DesktopRateLimitRecoveryMode.Off) return false
+                val resolution = redirectResolutions[sourceUrl] ?: return false
+                if (resolution.outcome != PlaybackRedirectResolution.Outcome.NoRedirect) return false
+                if (TorBoxNodeHop.isTorBoxNode(resolution.playbackUrl)) return false
+                openRetryUsed = true
+                val waitMs = settings.desktopRateLimitReconnectFirstDelaySeconds * 1000L
+                val handler = this
+                surfaceScope.launch {
+                    BingeAdvanceLog.i {
+                        "desktop rate-limit retry at open attemptId=$playbackAttemptId" +
+                            " host=${PlaybackRedirectResolver.hostOf(resolution.playbackUrl)}" +
+                            " waitMs=$waitMs after: $message"
+                    }
+                    delay(waitMs)
+                    if (attachedAttemptId.value != playbackAttemptId) return@launch
+                    attachWith(
+                        playbackUrl = resolution.playbackUrl,
                         positionMs = initialPositionMs,
                         progressFraction = initialProgressFraction ?: 0f,
                         tracePlaybackStart = false,

@@ -76,11 +76,26 @@ internal object YouTubeMusicBrowserLogin {
                 .redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .start()
+            val deadline = System.currentTimeMillis() + LOGIN_TIMEOUT_MS
             if (!awaitExit(window, LOGIN_TIMEOUT_MS)) {
                 return YouTubeMusicLoginOutcome.Failed("Sign-in timed out.")
             }
             // Let the browser's helper processes finish writing the profile before it is reopened.
             awaitDescendantsExit(window)
+            // The launched process can exit at once while another browser process keeps the window
+            // open (a launcher stub, or a hand-off to an instance already running on this profile),
+            // so the window is closed only once the profile's lock is released.
+            if (profileInUse(profileDir)) {
+                log.i { "Browser process exited while the sign-in window is still open; waiting for the profile lock" }
+                while (profileInUse(profileDir)) {
+                    if (System.currentTimeMillis() >= deadline) {
+                        return YouTubeMusicLoginOutcome.Failed("Sign-in timed out.")
+                    }
+                    delay(POLL_MS)
+                }
+                // Same grace as above for the processes that actually held the window.
+                delay(1_000)
+            }
 
             // Step 2: read what the window left in the profile.
             return readSession(browser, profileDir)
@@ -100,7 +115,13 @@ internal object YouTubeMusicBrowserLogin {
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .start()
             val endpoint = awaitDevToolsEndpoint(profileDir, reader)
-                ?: return YouTubeMusicLoginOutcome.Failed("The browser could not be reopened to read the session.")
+            if (endpoint == null) {
+                log.w {
+                    "Cookie reader gave no DevTools port (alive=${reader.isAlive}, " +
+                        "exit=${if (reader.isAlive) "-" else reader.exitValue()}, profileInUse=${profileInUse(profileDir)})"
+                }
+                return YouTubeMusicLoginOutcome.Failed("The browser could not be reopened to read the session.")
+            }
             cdp = CdpConnection.open(endpoint)
             val cookies = cdp.call("Storage.getCookies")["cookies"]?.jsonArray
             val header = cookies?.let(::buildCookieHeader)?.takeIf { sapisidFrom(it) != null }
@@ -131,6 +152,20 @@ internal object YouTubeMusicBrowserLogin {
         val deadline = System.currentTimeMillis() + DESCENDANTS_EXIT_MS
         while (System.currentTimeMillis() < deadline && process.descendants().anyMatch { it.isAlive }) {
             delay(200)
+        }
+    }
+
+    /**
+     * True while a browser still has [profileDir] open. Windows: Chromium holds `lockfile` open with no
+     * sharing, so deleting it fails until the browser exits (a stale one is removed, which is harmless).
+     * Elsewhere: the `SingletonLock` symlink exists until a clean exit.
+     */
+    private fun profileInUse(profileDir: Path): Boolean {
+        val os = System.getProperty("os.name").orEmpty().lowercase()
+        return if ("win" in os) {
+            runCatching { Files.deleteIfExists(profileDir.resolve("lockfile")) }.isFailure
+        } else {
+            Files.exists(profileDir.resolve("SingletonLock"), java.nio.file.LinkOption.NOFOLLOW_LINKS)
         }
     }
 
