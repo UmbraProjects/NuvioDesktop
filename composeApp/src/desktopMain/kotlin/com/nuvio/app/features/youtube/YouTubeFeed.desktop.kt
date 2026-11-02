@@ -15,8 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val YOUTUBE_ORIGIN = "https://www.youtube.com"
 
-/** `responseContext.mainAppWebResponseContext.loggedOut` in a compact (`prettyPrint=false`) answer. */
-private const val SIGNED_OUT_MARKER = "\"loggedOut\":true"
+private val log = co.touchlab.kermit.Logger.withTag("YouTubeFeed")
 
 internal actual suspend fun youTubeBrowse(browseId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("browse", mapOf("browseId" to browseId, "continuation" to continuation), pageId)
@@ -36,11 +35,13 @@ private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>
     if (accountHeaders.isEmpty()) return YouTubeBrowseResult.SignedOut
     val (status, body) = TrailerPlaybackResolver.webRequest(endpoint, params, accountHeaders, pageId)
     return when {
-        // A session Google no longer honours is not refused: it is answered as a signed-out
-        // visitor (no channels, empty feeds), and only this flag says so.
-        status in 200..299 && SIGNED_OUT_MARKER in body -> {
+        // fork:youtube-signin-expired — Google answers cookies it no longer accepts with 200 and the signed-out page.
+        status in 200..299 && youTubeAnsweredSignedOut(body) -> {
             YouTubeMusicAuth.onSessionRejected()
-            YouTubeBrowseResult.Failed("YouTube no longer accepts the saved sign-in. Sign in again under Settings > YouTube account.")
+            log.w { "$endpoint: YouTube answered as signed out; the saved sign-in has expired" }
+            YouTubeBrowseResult.Failed(
+                "YouTube no longer accepts the saved sign-in (it answered as signed out). Sign in again under Settings > YouTube account.",
+            )
         }
         status in 200..299 -> {
             YouTubeMusicAuth.onSessionAccepted()
