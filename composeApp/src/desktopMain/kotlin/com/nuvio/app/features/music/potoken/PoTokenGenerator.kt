@@ -6,7 +6,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -192,9 +191,9 @@ internal class PoTokenGenerator(
         }
     }
 
+    /** Drops the page. The generator stays usable: the next request loads a new one (also used to reset attestation). */
     suspend fun close() {
         lock.withLock { dropMinter() }
-        scope.cancel()
     }
 
     private suspend fun discard() {
