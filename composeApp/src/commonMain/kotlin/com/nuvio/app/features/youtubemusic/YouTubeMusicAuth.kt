@@ -156,6 +156,40 @@ internal object YouTubeMusicAuth {
         _state.update { if (it.sessionRejected) it.copy(sessionRejected = false) else it }
     }
 
+    @Volatile
+    private var lastPersistMs = 0L
+
+    /**
+     * `Set-Cookie` values from a youtube.com response to a signed request. Google rotates parts of
+     * the session (`__Secure-1PSIDTS`, the `*SIDCC` checks) and expects the client to send the new
+     * values; a jar frozen at sign-in stops counting as signed in within hours or days, and YouTube
+     * then answers as a signed-out visitor rather than refusing. Only cookies already in the jar are
+     * updated, and deletions are ignored, so a stray response cannot sign the user out.
+     *
+     * The `*SIDCC` checks change on almost every response, so they reach storage at most every few
+     * minutes; anything else is saved at once.
+     */
+    fun absorbSetCookies(setCookies: List<String>) {
+        if (setCookies.isEmpty()) return
+        ensureLoaded()
+        val (merged, changed) = synchronized(this) {
+            val jar = cookie ?: return
+            val result = mergeSetCookies(jar, setCookies)
+            if (result.second.isNotEmpty() && sapisidFrom(result.first) != null) cookie = result.first
+            result
+        }
+        if (changed.isEmpty()) return
+        val significant = changed.filterNot { it.endsWith("SIDCC") }
+        val now = YouTubeMusicAuthPlatform.nowEpochSeconds() * 1000
+        if (significant.isNotEmpty() || now - lastPersistMs >= CHECK_COOKIE_PERSIST_MS) {
+            lastPersistMs = now
+            YouTubeMusicAuthPlatform.saveCookie(merged)
+        }
+        if (significant.isNotEmpty()) log.i { "YouTube refreshed the session cookies: ${significant.sorted()}" }
+    }
+
+    private const val CHECK_COOKIE_PERSIST_MS = 5 * 60_000L
+
     private fun sapisidHash(sapisid: String, origin: String): String {
         val timestamp = YouTubeMusicAuthPlatform.nowEpochSeconds()
         return "SAPISIDHASH ${timestamp}_${YouTubeMusicAuthPlatform.sha1Hex("$timestamp $sapisid $origin")}"
@@ -163,6 +197,39 @@ internal object YouTubeMusicAuth {
 }
 
 private val SAPISID_NAMES = listOf("SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID")
+
+/**
+ * [jar] (a `Cookie` header value) with the values from [setCookies] (`Set-Cookie` header values)
+ * for names it already holds, in the jar's order; plus the names whose value changed. A cookie being
+ * cleared (empty value, `Max-Age=0`, a 1970 expiry) and one for a domain other than youtube.com
+ * leave the jar alone.
+ */
+internal fun mergeSetCookies(jar: String, setCookies: List<String>): Pair<String, List<String>> {
+    val entries = jar.split(';').mapNotNull { entry ->
+        val name = entry.substringBefore('=').trim()
+        if (name.isEmpty()) null else name to entry.substringAfter('=', "").trim()
+    }
+    val values = LinkedHashMap<String, String>().apply { entries.forEach { (name, value) -> put(name, value) } }
+    val changed = LinkedHashSet<String>()
+    for (header in setCookies) {
+        val parts = header.split(';')
+        val name = parts.first().substringBefore('=').trim()
+        val value = parts.first().substringAfter('=', "").trim()
+        if (name.isEmpty() || value.isEmpty() || name !in values) continue
+        val attributes = parts.drop(1).associate { attribute ->
+            attribute.substringBefore('=').trim().lowercase() to attribute.substringAfter('=', "").trim()
+        }
+        val domain = attributes["domain"]?.trimStart('.')?.lowercase()
+        if (domain != null && domain != "youtube.com" && !domain.endsWith(".youtube.com")) continue
+        if (attributes["max-age"]?.toLongOrNull()?.let { it <= 0 } == true) continue
+        if (attributes["expires"]?.contains("1970") == true) continue
+        if (values[name] != value) {
+            values[name] = value
+            changed += name
+        }
+    }
+    return values.entries.joinToString("; ") { (name, value) -> "$name=$value" } to changed.toList()
+}
 
 /** The value Google signs requests with, found in a `name=value; name=value` cookie header. */
 internal fun sapisidFrom(cookieHeader: String): String? {

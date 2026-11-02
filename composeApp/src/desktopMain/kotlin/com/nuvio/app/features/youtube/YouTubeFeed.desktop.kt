@@ -15,6 +15,9 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val YOUTUBE_ORIGIN = "https://www.youtube.com"
 
+/** `responseContext.mainAppWebResponseContext.loggedOut` in a compact (`prettyPrint=false`) answer. */
+private const val SIGNED_OUT_MARKER = "\"loggedOut\":true"
+
 internal actual suspend fun youTubeBrowse(browseId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("browse", mapOf("browseId" to browseId, "continuation" to continuation), pageId)
 
@@ -33,6 +36,12 @@ private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>
     if (accountHeaders.isEmpty()) return YouTubeBrowseResult.SignedOut
     val (status, body) = TrailerPlaybackResolver.webRequest(endpoint, params, accountHeaders, pageId)
     return when {
+        // A session Google no longer honours is not refused: it is answered as a signed-out
+        // visitor (no channels, empty feeds), and only this flag says so.
+        status in 200..299 && SIGNED_OUT_MARKER in body -> {
+            YouTubeMusicAuth.onSessionRejected()
+            YouTubeBrowseResult.Failed("YouTube no longer accepts the saved sign-in. Sign in again under Settings > YouTube account.")
+        }
         status in 200..299 -> {
             YouTubeMusicAuth.onSessionAccepted()
             YouTubeBrowseResult.Ok(body)

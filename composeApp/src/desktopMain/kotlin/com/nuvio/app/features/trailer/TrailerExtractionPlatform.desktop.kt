@@ -77,6 +77,11 @@ internal object TrailerExtractionPlatform {
             httpClient.send(request, HttpResponse.BodyHandlers.ofString())
         }
         val status = response.statusCode()
+        // A request signed with the account's cookies: YouTube's rotated values replace the saved ones.
+        val host = response.uri().host.orEmpty().lowercase()
+        if ((host == "youtube.com" || host.endsWith(".youtube.com")) && headers.keys.any { it.equals("cookie", ignoreCase = true) }) {
+            com.nuvio.app.features.youtubemusic.YouTubeMusicAuth.absorbSetCookies(response.headers().allValues("set-cookie"))
+        }
         TrailerRequestResponse(
             ok = status in 200..299,
             status = status,
