@@ -39,8 +39,11 @@ data class YouTubeTrackingUrls(val playbackUrl: String, val watchtimeUrl: String
 /** The account's stats URLs for [videoId], acting as the brand channel [pageId]; null when YouTube gives none. */
 internal expect suspend fun youTubePlaybackTracking(videoId: String, pageId: String?): YouTubeTrackingUrls?
 
-/** One signed GET to a stats URL. True when YouTube took it. */
-internal expect suspend fun youTubeStatsPing(url: String): Boolean
+/**
+ * One signed GET to a stats URL, acting as the brand channel [pageId] like the request that handed
+ * the URL out. The HTTP status, or 0 when no answer came.
+ */
+internal expect suspend fun youTubeStatsPing(url: String, pageId: String?): Int
 
 private const val CPN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
@@ -143,7 +146,7 @@ internal class YouTubeWatchSession(
         if (closed) return null
         closed = true
         if (!started) return null
-        report(segmentStartMs, positionMs, playing = false)
+        report(segmentStartMs, positionMs, playing = false, last = true)
         val length = durationMs.takeIf { it > 0L } ?: return null
         return ((positionMs * 100) / length).toInt().coerceIn(1, 100)
     }
@@ -155,11 +158,18 @@ internal class YouTubeWatchSession(
             log.w { "$videoId: YouTube gave no stats URLs; this playback will not reach the watch history" }
             return
         }
-        val ok = youTubeStatsPing(youTubePlaybackPingUrl(tracking.playbackUrl, cpn))
-        log.i { "$videoId: playback reported to YouTube (ok=$ok)" }
+        val status = youTubeStatsPing(youTubePlaybackPingUrl(tracking.playbackUrl, cpn), pageId)
+        log.i {
+            "$videoId: playback reported to YouTube (HTTP $status, as ${if (pageId != null) "brand channel" else "account profile"};" +
+                " stats params ${queryNames(tracking.watchtimeUrl)})"
+        }
     }
 
-    private fun report(startMs: Long, endMs: Long, playing: Boolean) {
+    private var pingsSent = 0
+    private var pingsRefused = 0
+    private var reportedSeconds = 0.0
+
+    private fun report(startMs: Long, endMs: Long, playing: Boolean, last: Boolean = false) {
         if (endMs <= 0L) return
         val length = durationMs
         scope.launch {
@@ -173,7 +183,23 @@ internal class YouTubeWatchSession(
                 lengthSec = length / 1000.0,
                 playing = playing,
             )
-            if (!youTubeStatsPing(url)) log.w { "$videoId: watch time ping refused" }
+            val status = youTubeStatsPing(url, pageId)
+            pingsSent++
+            reportedSeconds += (endMs - startMs).coerceAtLeast(0L) / 1000.0
+            if (status !in 200..299) {
+                pingsRefused++
+                log.w { "$videoId: watch time ping refused (HTTP $status)" }
+            }
+            if (last) {
+                log.i {
+                    "$videoId: watch time reported: $pingsSent pings, $pingsRefused refused," +
+                        " ${reportedSeconds.toInt()} s of ${length / 1000} s, ended at ${endMs / 1000} s"
+                }
+            }
         }
     }
+
+    /** The parameter names of a stats URL (never the values), for the log. */
+    private fun queryNames(url: String): List<String> =
+        url.substringAfter('?', "").split('&').map { it.substringBefore('=') }.filter { it.isNotEmpty() }.sorted()
 }

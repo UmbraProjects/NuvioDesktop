@@ -77,23 +77,28 @@ internal actual suspend fun youTubePlaybackTracking(videoId: String, pageId: Str
     return YouTubeTrackingUrls(playbackUrl = playback, watchtimeUrl = watchtime)
 }
 
-internal actual suspend fun youTubeStatsPing(url: String): Boolean {
-    val cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: return false
+internal actual suspend fun youTubeStatsPing(url: String, pageId: String?): Int {
+    // Signed like the `player` request that handed the URL out, brand channel included: with the
+    // cookie alone YouTube took the pings (Nov 2) but nothing showed up as watched on the channel
+    // the feeds act as.
+    val accountHeaders = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)
+    if (accountHeaders.isEmpty()) return 0
     return runCatching {
         TrailerExtractionPlatform.performRequest(
             url = url,
             method = "GET",
-            headers = mapOf(
-                "cookie" to cookie,
-                "user-agent" to STATS_USER_AGENT,
-                "origin" to YOUTUBE_ORIGIN,
-                "referer" to "$YOUTUBE_ORIGIN/",
-                "accept-language" to "en-US,en;q=0.9",
-            ),
+            headers = buildMap {
+                putAll(accountHeaders)
+                if (!pageId.isNullOrBlank()) put("x-goog-pageid", pageId)
+                put("user-agent", STATS_USER_AGENT)
+                put("origin", YOUTUBE_ORIGIN)
+                put("referer", "$YOUTUBE_ORIGIN/")
+                put("accept-language", "en-US,en;q=0.9")
+            },
             body = null,
             timeoutMillis = 15_000L,
-        ).status in 200..299
-    }.getOrDefault(false)
+        ).status
+    }.getOrDefault(0)
 }
 
 /** The stats endpoints expect the desktop web player, which is the client the `player` request named. */
