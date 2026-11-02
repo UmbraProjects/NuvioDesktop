@@ -173,8 +173,12 @@ object MusicResolver {
         openStream(videoId, needsVideo)?.copy(loudnessKey = "yt:$videoId")
 
     private suspend fun openStream(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
+        // fork:potoken-first — the resolver that carries PO tokens goes first for audio, as in BitChord.
+        // It is asked at most once per open; when it finds nothing the in-app extractor runs as before.
+        val tokenFirst = !needsVideo && MusicStreamFallbacks.active?.preferred == true
+        if (tokenFirst) fallbackSource(videoId, needsVideo)?.let { return it }
         repeat(OPEN_ATTEMPTS) { attempt ->
-            var resolved = resolveSource(videoId) ?: return fallbackSource(videoId, needsVideo)
+            var resolved = resolveSource(videoId) ?: return fallbackSource(videoId, needsVideo, alreadyAsked = tokenFirst)
             if (paused()) {
                 // YouTube is refusing us: a second ask or another client would only lengthen the block.
                 return verifiedSource(resolved, needsVideo)
@@ -201,7 +205,7 @@ object MusicResolver {
                 }
             }
         }
-        return fallbackSource(videoId, needsVideo)
+        return fallbackSource(videoId, needsVideo, alreadyAsked = tokenFirst)
     }
 
     /**
@@ -209,11 +213,20 @@ object MusicResolver {
      * gate it cannot get past, typically). Audio only: the fallback resolver finds one audio stream,
      * and a video-mode album already degrades to its audio with a lyric picture when no video opens.
      * Null when the build has no fallback resolver (see [MusicStreamFallbacks]).
+     *
+     * fork:potoken-first — while it can mint PO tokens it is also the first ask ([openStream]), and a
+     * track the person chose may ask it once while YouTube is refusing the in-app extractor: it is a
+     * different, attested identity, and the refusal was given to the extractor's requests. Without
+     * tokens it stays out while YouTube is refusing us, as before.
      */
-    private suspend fun fallbackSource(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
-        if (needsVideo) return null
-        if (paused()) return null // the fallback resolver asks YouTube too
+    private suspend fun fallbackSource(
+        videoId: String,
+        needsVideo: Boolean,
+        alreadyAsked: Boolean = false,
+    ): TrailerPlaybackSource? {
+        if (needsVideo || alreadyAsked) return null
         val fallback = MusicStreamFallbacks.active ?: return null
+        if (paused() && !fallback.preferred) return null // the fallback resolver asks YouTube too
         return try {
             fallback.resolve(videoId)?.also { log.i { "$videoId opened through ${fallback.name}" } }
         } catch (error: CancellationException) {
