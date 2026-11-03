@@ -476,13 +476,37 @@ internal data class WikipediaPick(val title: String, val extract: String)
 
 private val RELEASE_WORDS = Regex("""\b(album|ep|mixtape|soundtrack|compilation|lp)\b""")
 
+/** An edition named at the end of a title, bracketed or not: "Collectors Edition.", "Deluxe Version", "2011 Remaster". */
+private val EDITION_SUFFIX = Regex(
+    // Words that only ever name an edition may stand alone; words an album could be called ("Tour", "Gold") need "Edition" after them.
+    """[\s:,\-–]*\b(?:the\s+)?(?:""" +
+        """(?:collector'?s|deluxe|super\s+deluxe|expanded|remastered|remaster|\d{4}\s+remaster(?:ed)?|\d+(?:st|nd|rd|th)\s+anniversary)(?:\s+(?:edition|version))?""" +
+        """|(?:special|limited|anniversary|bonus\s+tracks?|platinum|gold|tour|complete|definitive|international|legacy)\s+(?:edition|version)""" +
+        """|edition)\.?\s*$""",
+    RegexOption.IGNORE_CASE,
+)
+
+/**
+ * The album's own name for a Wikipedia search: brackets ("(Deluxe)", "[Remastered]"), a " - " subtitle and edition words at
+ * the end ("DAMN. COLLECTORS EDITION." is "DAMN.") taken off. The title as given when nothing would be left.
+ */
+internal fun albumSearchTitle(album: String): String {
+    var title = album.substringBefore(" (").substringBefore(" [").substringBefore(" - ").trim()
+    while (true) {
+        val shorter = title.replace(EDITION_SUFFIX, "").trim()
+        if (shorter == title || shorter.isEmpty()) break
+        title = shorter
+    }
+    return title.ifEmpty { album.trim() }
+}
+
 /**
  * The page in a search answer that is the album: titled with the album's name, not a song, film or band of that name,
  * opening by calling itself an album (or EP, mixtape...) and naming [artist]. Best-ranked first.
  */
 internal fun pickWikipediaAlbum(body: String, album: String, artist: String): WikipediaPick? {
     val pages = parse(body).obj()?.get("query").obj()?.get("pages").arr()?.mapNotNull { it.obj() } ?: return null
-    val wantedAlbum = bookletNorm(album.substringBefore(" (").substringBefore(" - "))
+    val wantedAlbum = bookletNorm(albumSearchTitle(album))
     val wantedArtist = bookletNorm(artist)
     if (wantedAlbum.isEmpty() || wantedArtist.isEmpty()) return null
     val notAnAlbum = listOf(" song", " single", " film", " tv series", " novel", " band")

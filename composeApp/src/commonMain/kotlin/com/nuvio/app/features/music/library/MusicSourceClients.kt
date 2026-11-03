@@ -326,7 +326,7 @@ internal object WikipediaClient {
      * intros), then the chosen page's own text.
      */
     suspend fun albumText(album: String, artist: String): String? {
-        val query = "$album $artist album".encodeURLParameter()
+        val query = "${albumSearchTitle(album)} $artist album".encodeURLParameter()
         val pick = fetch(
             "https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=$query&gsrlimit=8" +
                 "&prop=extracts&exintro=1&explaintext=1&exlimit=max&format=json&formatversion=2",

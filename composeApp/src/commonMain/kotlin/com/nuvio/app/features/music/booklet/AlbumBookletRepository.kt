@@ -32,7 +32,8 @@ internal object AlbumBookletRepository {
     private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
     private fun aiCacheKey(request: BookletRequest, model: String) = bookletKey(request, "ai:$model")
-    private fun wikiCacheKey(request: BookletRequest) = bookletKey(request, "wiki")
+    // "wiki2": the edition-word fix (Nov 3, 2026) asks again for albums the older matcher had marked as having no page.
+    private fun wikiCacheKey(request: BookletRequest) = bookletKey(request, "wiki2")
 
     private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletStorage.get(key))
 
