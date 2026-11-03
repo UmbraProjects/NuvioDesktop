@@ -2,6 +2,7 @@ package com.nuvio.app.features.music.visualiser
 
 import com.nuvio.app.features.music.LyricLine
 import com.nuvio.app.features.music.chorusLineIndices
+import kotlin.math.abs
 
 /*
  * fork:visualiser - the parts of a song for the Song Map, read from its synced lyrics: the hook lines (sung three or more
@@ -28,6 +29,12 @@ private const val LINE_TAIL_MS = 5_000L
 /** An intro or outro shorter than this joins the part next to it. */
 private const val MIN_EDGE_MS = 4_000L
 
+/** A line is a chorus line when most sung lines within this of it are: one hook line inside a verse stays verse. */
+private const val CHORUS_WINDOW_MS = 6_000L
+
+/** A verse or chorus shorter than this joins the longer part beside it (songs that alternate a hook line with others). */
+private const val MIN_PART_MS = 8_000L
+
 internal fun songSections(lines: List<LyricLine>, durationMs: Long): List<SongSection> {
     if (durationMs <= 0L) return emptyList()
     val chorus = chorusLineIndices(lines)
@@ -45,11 +52,25 @@ internal fun songSections(lines: List<LyricLine>, durationMs: Long): List<SongSe
         }
     }
 
+    // Each line takes the kind most sung lines around it have (a tie keeps its own), so the parts do not flicker line by line.
+    val hook = sung.map { it.index in chorus }
+    val smoothed = sung.indices.map { k ->
+        val at = sung[k].value.timeMs
+        var chorusLines = 0
+        var all = 0
+        for (j in sung.indices) {
+            if (abs(sung[j].value.timeMs - at) > CHORUS_WINDOW_MS) continue
+            all++
+            if (hook[j]) chorusLines++
+        }
+        if (chorusLines * 2 == all) hook[k] else chorusLines * 2 > all
+    }
+
     val first = sung.first().value.timeMs
     if (first >= MIN_EDGE_MS) add(0L, first, SectionKind.Intro)
     for (k in sung.indices) {
-        val (index, line) = sung[k]
-        val kind = if (index in chorus) SectionKind.Chorus else SectionKind.Verse
+        val line = sung[k].value
+        val kind = if (smoothed[k]) SectionKind.Chorus else SectionKind.Verse
         val next = sung.getOrNull(k + 1)?.value?.timeMs
         if (next == null) {
             val end = minOf(durationMs, line.timeMs + LINE_TAIL_MS)
@@ -65,6 +86,40 @@ internal fun songSections(lines: List<LyricLine>, durationMs: Long): List<SongSe
     }
     // An intro too short to stand alone belongs to the first part.
     if (out.isNotEmpty() && out.first().startMs > 0L) out[0] = out.first().copy(startMs = 0L)
+    return mergeShortParts(out)
+}
+
+/** Folds each verse or chorus shorter than [MIN_PART_MS] into the longer of its neighbours, shortest first. */
+private fun mergeShortParts(parts: List<SongSection>): List<SongSection> {
+    val out = parts.toMutableList()
+    fun movable(s: SongSection) = s.kind == SectionKind.Verse || s.kind == SectionKind.Chorus
+    while (true) {
+        val i = out.indices
+            .filter { at ->
+                movable(out[at]) && out[at].endMs - out[at].startMs < MIN_PART_MS &&
+                    (out.getOrNull(at - 1)?.let(::movable) == true || out.getOrNull(at + 1)?.let(::movable) == true)
+            }
+            .minByOrNull { out[it].endMs - out[it].startMs } ?: break
+        val before = out.getOrNull(i - 1)?.takeIf(::movable)
+        val after = out.getOrNull(i + 1)?.takeIf(::movable)
+        val into = when {
+            before != null && after != null -> if (before.endMs - before.startMs >= after.endMs - after.startMs) i - 1 else i + 1
+            before != null -> i - 1
+            after != null -> i + 1
+            else -> break
+        }
+        val target = out[into]
+        out[into] = target.copy(startMs = minOf(target.startMs, out[i].startMs), endMs = maxOf(target.endMs, out[i].endMs))
+        out.removeAt(i)
+        // Neighbours of one kind become one part.
+        var k = 0
+        while (k < out.size - 1) {
+            if (out[k].kind == out[k + 1].kind) {
+                out[k] = out[k].copy(endMs = out[k + 1].endMs)
+                out.removeAt(k + 1)
+            } else k++
+        }
+    }
     return out
 }
 

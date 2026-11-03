@@ -17,28 +17,128 @@ import kotlin.test.assertTrue
 class TrackMapTest {
     private val rate = 24_000
 
-    /** A drum loop: kick on beats 1 and 3, snare on 2 and 4, hats on every eighth, starting at [startS]. */
-    private fun drums(seconds: Double, bpm: Double, startS: Double = 0.5): FloatArray {
+    /** Sixteenth steps of each bar where the funk bass line starts a note: on the kicks (0, 8) and off them (3, 6, 11, 14). */
+    private val bassSteps = setOf(0, 3, 6, 8, 11, 14)
+    private val bassNotes = doubleArrayOf(55.0, 73.4, 82.4, 65.4, 49.0, 61.7)
+
+    /**
+     * A loop starting at [startS]: with [drums], kick on beats 1 and 3 (a falling pitch and a click), snare on 2 and 4, hats
+     * on every eighth; with [bass], a syncopated bass line of rich notes that also start between the kicks.
+     */
+    private fun loop(seconds: Double, bpm: Double, startS: Double = 0.5, drums: Boolean = true, bass: Boolean = false): FloatArray {
         val n = (seconds * rate).toInt()
         val out = FloatArray(n * 2)
         val beat = 60.0 / bpm
+        val step = beat / 4
         val noise = Random(7)
+        var hat1 = 0.0
+        var hat2 = 0.0
         for (i in 0 until n) {
             val t = i.toDouble() / rate - startS
             var v = 0.0
             if (t >= 0) {
                 val b = (t / beat).toInt()
                 val inBeat = t - b * beat
-                if (b % 2 == 0) v += 0.8 * sin(2 * PI * 55.0 * inBeat) * exp(-inBeat * 18)
-                if (b % 2 == 1) v += 0.35 * (noise.nextDouble() * 2 - 1) * exp(-inBeat * 30)
-                val e = beat / 2
-                val inEighth = t - (t / e).toInt() * e
-                v += 0.08 * (noise.nextDouble() * 2 - 1) * exp(-inEighth * 120)
+                if (drums) {
+                    if (b % 2 == 0) {
+                        val phase = 2 * PI * (50.0 * inBeat + 100.0 / 40.0 * (1 - exp(-40 * inBeat)))
+                        v += 0.8 * sin(phase) * exp(-inBeat * 12) + 0.3 * (noise.nextDouble() * 2 - 1) * exp(-inBeat * 400)
+                    } else {
+                        v += 0.35 * (noise.nextDouble() * 2 - 1) * exp(-inBeat * 30) + 0.2 * sin(2 * PI * 200 * inBeat) * exp(-inBeat * 25)
+                    }
+                    // Hats: noise with its lows taken away (a second difference), as a closed hi-hat sounds.
+                    val e = beat / 2
+                    val inEighth = t - (t / e).toInt() * e
+                    val white = noise.nextDouble() * 2 - 1
+                    v += 0.06 * (white - 2 * hat1 + hat2) * exp(-inEighth * 120)
+                    hat2 = hat1; hat1 = white
+                }
+                if (bass) {
+                    val s = (t / step).toInt()
+                    // The note that is sounding: the last bass step at or before this one.
+                    var start = s
+                    while (start % 16 !in bassSteps) start--
+                    val sinceNote = t - start * step
+                    val f = bassNotes[(start / 16 * 7 + start % 16) % bassNotes.size]
+                    val attack = minOf(1.0, sinceNote / 0.004)
+                    var tone = 0.0
+                    for (h in 1..4) tone += sin(2 * PI * f * h * sinceNote) / h
+                    v += 0.3 * attack * tone * exp(-sinceNote * 2)
+                }
             }
             out[2 * i] = v.toFloat()
             out[2 * i + 1] = (v * 0.8).toFloat()
         }
         return out
+    }
+
+    private fun drums(seconds: Double, bpm: Double, startS: Double = 0.5) = loop(seconds, bpm, startS)
+
+    /** Kick hits further than 90 ms from any real kick (1 s apart from [firstMs] at 120 BPM, beats 1 and 3). */
+    private fun falseKicks(map: TrackMap, firstMs: Long, everyMs: Long): Int {
+        var count = 0
+        for (f in 0 until map.frames) {
+            if (!map.hits(f, Onset.KICK)) continue
+            val ms = f.toLong() * MAP_FRAME_MS + MAP_FRAME_MS / 2
+            val off = ((ms - firstMs) % everyMs + everyMs) % everyMs
+            if (minOf(off, everyMs - off) > 90) count++
+        }
+        return count
+    }
+
+    @Test
+    fun aBassLineIsNotTakenForKicks() {
+        val map = build(loop(20.0, 120.0, drums = false, bass = true))
+        var hits = 0
+        for (f in 0 until map.frames) if (map.hits(f, Onset.KICK)) hits++
+        // About 60 bass notes start in 20 s; a few may still pass, most must not.
+        assertTrue(hits <= 8, "$hits kicks found in a bass line with no drums")
+    }
+
+    @Test
+    fun kicksStayOnTheBeatOverAFunkBassLine() {
+        val map = build(loop(24.0, 120.0, startS = 0.5, bass = true))
+        var found = 0
+        var total = 0
+        var kickMs = 500L
+        while (kickMs < 23_000L) {
+            total++
+            if (map.hitsBetween(Onset.KICK, kickMs - 60.0, kickMs + 90.0)) found++
+            kickMs += 1_000L
+        }
+        assertTrue(found >= total * 0.85, "$found of $total kicks")
+        val wrong = falseKicks(map, 500L, 1_000L)
+        assertTrue(wrong <= total / 5, "$wrong kicks off the beat")
+    }
+
+    @Test
+    fun kicksLandOnBeatsOneAndThreeOfTheGrid() {
+        val map = build(loop(24.0, 120.0, startS = 0.5, bass = true))
+        val beat = assertNotNull(map.beat)
+        var onGrid = 0
+        var kicks = 0
+        for (f in 0 until map.frames) {
+            if (!map.hits(f, Onset.KICK)) continue
+            kicks++
+            val step = beat.stepAt(f * MAP_FRAME_MS + MAP_FRAME_MS / 2.0).mod(16L).toInt()
+            if (step in setOf(15, 0, 1, 7, 8, 9)) onGrid++
+        }
+        assertTrue(kicks > 0 && onGrid >= kicks * 0.8, "$onGrid of $kicks kicks on beats 1 and 3")
+    }
+
+    @Test
+    fun snaresLandOnBeatsTwoAndFour() {
+        val map = build(loop(24.0, 120.0, startS = 0.5, bass = true))
+        val beat = assertNotNull(map.beat)
+        var onGrid = 0
+        var snares = 0
+        for (f in 0 until map.frames) {
+            if (!map.hits(f, Onset.SNARE)) continue
+            snares++
+            val step = beat.stepAt(f * MAP_FRAME_MS + MAP_FRAME_MS / 2.0).mod(16L).toInt()
+            if (step in setOf(3, 4, 5, 11, 12, 13)) onGrid++
+        }
+        assertTrue(snares > 0 && onGrid >= snares * 0.7, "$onGrid of $snares snares on beats 2 and 4")
     }
 
     private fun build(samples: FloatArray, pieces: Int = 3): TrackMap {
@@ -118,7 +218,7 @@ class TrackMapTest {
         val second = builder.snapshot()
         assertFalse(first.complete)
         assertTrue(second.frames > first.frames)
-        assertTrue(abs(first.analysedMs - 10_000L) < 200L, "first ${first.analysedMs}")
+        assertTrue(abs(first.analysedMs - 10_000L) < 500L, "first ${first.analysedMs}")
     }
 
     @Test
@@ -143,6 +243,15 @@ class TrackMapTest {
     }
 
     @Test
+    fun theVuRestsBelowZeroOnTheTracksOwnLevel() {
+        val scale = mapScale(build(drums(12.0, 120.0)))
+        assertEquals(-3.0, vuFor(scale.levelMedian, scale), 1e-9)
+        // Six decibels above the middle reads +3 VU, however loud the master is.
+        assertEquals(3.0, vuFor(scale.levelMedian + 6f / 48f, scale), 1e-4)
+        assertTrue(scale.band(0, 1f) == 1f && scale.band(0, 0f) == 0f)
+    }
+
+    @Test
     fun beatGridCountsSixteenths() {
         val grid = BeatGrid(periodMs = 500.0, downbeatMs = 1_000.0)
         assertEquals(0L, grid.stepAt(1_000.0))
@@ -156,20 +265,28 @@ class TrackMapTest {
 
     private fun lines(vararg pairs: Pair<Long, String>) = pairs.map { LyricLine(it.first, it.second) }
 
+    private val hook = "Hold on to the line"
+
     private val song = lines(
-        10_000L to "Out on the highway tonight",
-        14_000L to "Nothing but the radio",
-        18_000L to "Hold on to the line",
-        22_000L to "Hold on to the line",
-        30_000L to "Every mile I meant to say",
-        34_000L to "Hold on to the line",
-        60_000L to "Back on the highway",
-        64_000L to "Hold on to the line",
+        12_000L to "Out on the highway tonight",
+        16_000L to "Nothing but the radio",
+        20_000L to "Headlights in the rain",
+        24_000L to hook,
+        28_000L to hook,
+        32_000L to hook,
+        36_000L to "Every mile I meant to say",
+        40_000L to "Every word I never said",
+        44_000L to hook,
+        48_000L to hook,
+        75_000L to "Back on the highway",
+        79_000L to "Morning on the glass",
+        83_000L to hook,
+        87_000L to hook,
     )
 
     @Test
     fun sectionsComeFromTheLyrics() {
-        val parts = songSections(song, 80_000L)
+        val parts = songSections(song, 110_000L)
         assertEquals(
             listOf(
                 SectionKind.Intro, SectionKind.Verse, SectionKind.Chorus, SectionKind.Verse, SectionKind.Chorus,
@@ -178,17 +295,27 @@ class TrackMapTest {
             parts.map { it.kind },
         )
         assertEquals(0L, parts.first().startMs)
-        assertEquals(80_000L, parts.last().endMs)
+        assertEquals(110_000L, parts.last().endMs)
         parts.zipWithNext().forEach { (a, b) -> assertEquals(a.endMs, b.startMs) }
     }
 
     @Test
     fun theNextChorusIsFound() {
-        val parts = songSections(song, 80_000L)
-        assertEquals(18_000L, nextChorusStartMs(parts, 12_000L))
-        assertEquals(34_000L, nextChorusStartMs(parts, 25_000L))
-        assertNull(nextChorusStartMs(parts, 70_000L))
-        assertEquals(SectionKind.Instrumental, sectionAt(parts, 45_000L)?.kind)
+        val parts = songSections(song, 110_000L)
+        assertEquals(24_000L, nextChorusStartMs(parts, 14_000L))
+        assertEquals(44_000L, nextChorusStartMs(parts, 38_000L))
+        assertNull(nextChorusStartMs(parts, 95_000L))
+        assertEquals(SectionKind.Instrumental, sectionAt(parts, 60_000L)?.kind)
+    }
+
+    @Test
+    fun aHookAlternatingWithOtherLinesDoesNotFlicker() {
+        // "Use the force" between other lines every four seconds: one part, not a stripe per line.
+        val alternating = (0 until 12).map { i -> LyricLine(10_000L + i * 4_000L, if (i % 2 == 0) "Use the force" else "I know I'm gonna line $i") }
+        val parts = songSections(alternating, 70_000L)
+        val inner = parts.filter { it.kind == SectionKind.Verse || it.kind == SectionKind.Chorus }
+        assertTrue(inner.all { it.endMs - it.startMs >= 8_000L }, "parts: $parts")
+        assertTrue(inner.size <= 2, "parts: $parts")
     }
 
     @Test

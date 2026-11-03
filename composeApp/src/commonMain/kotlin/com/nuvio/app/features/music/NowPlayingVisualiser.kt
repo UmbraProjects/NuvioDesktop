@@ -33,7 +33,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage
-import com.nuvio.app.features.music.visualiser.LEVEL_FLOOR_DBFS
+import com.nuvio.app.features.music.visualiser.MapScale
 import com.nuvio.app.features.music.visualiser.LiveTrackMap
 import com.nuvio.app.features.music.visualiser.MAP_BANDS
 import com.nuvio.app.features.music.visualiser.MAP_FRAME_MS
@@ -43,6 +43,8 @@ import com.nuvio.app.features.music.visualiser.SongSection
 import com.nuvio.app.features.music.visualiser.TrackMap
 import com.nuvio.app.features.music.visualiser.VisualiserStyle
 import com.nuvio.app.features.music.visualiser.clockLabel
+import com.nuvio.app.features.music.visualiser.mapScale
+import com.nuvio.app.features.music.visualiser.vuFor
 import com.nuvio.app.features.music.visualiser.nextChorusStartMs
 import com.nuvio.app.features.music.visualiser.sectionAt
 import kotlin.math.PI
@@ -75,6 +77,7 @@ internal fun VisualiserView(
 ) {
     val measurer = rememberTextMeasurer()
     val map = live?.map
+    val scale = remember(map) { map?.let(::mapScale) }
     val status = when {
         live?.unavailable == true && map == null -> "CAN'T ANALYSE THIS TRACK HERE"
         map == null -> "LISTENING…"
@@ -85,8 +88,8 @@ internal fun VisualiserView(
             val cache = remember(map, durationMs) { SongMapColumns() }
             Canvas(modifier) { drawSongMap(measurer, map, position.value, durationMs, sections, cache, accent, reduced, status) }
         }
-        VisualiserStyle.Halo -> HaloView(measurer, map, position, coverUrl, accent, reduced, status, modifier)
-        VisualiserStyle.TwinVu -> Canvas(modifier) { drawTwinVu(measurer, map, position.value, live?.lufs, accent, status) }
+        VisualiserStyle.Halo -> HaloView(measurer, map, scale, position, coverUrl, accent, reduced, status, modifier)
+        VisualiserStyle.TwinVu -> Canvas(modifier) { drawTwinVu(measurer, map, scale, position.value, live?.lufs, accent, status) }
         VisualiserStyle.BeatGrid -> Canvas(modifier) { drawBeatGrid(measurer, map, position.value, accent, reduced, status) }
     }
 }
@@ -228,6 +231,7 @@ private fun DrawScope.drawSongMap(
 private fun HaloView(
     m: TextMeasurer,
     map: TrackMap?,
+    scale: MapScale?,
     position: State<Long>,
     coverUrl: String?,
     accent: Color,
@@ -237,7 +241,7 @@ private fun HaloView(
 ) {
     BoxWithConstraints(modifier) {
         val cover = min(maxWidth.value, maxHeight.value).dp * 0.40f
-        Canvas(Modifier.fillMaxSize()) { drawHalo(map, position.value, accent, reduced) }
+        Canvas(Modifier.fillMaxSize()) { drawHalo(map, scale, position.value, accent, reduced) }
         Box(
             Modifier
                 .align(Alignment.Center)
@@ -260,7 +264,7 @@ private fun HaloView(
 
 private const val HALO_SPOKES = 72
 
-private fun DrawScope.drawHalo(map: TrackMap?, nowMs: Long, accent: Color, reduced: Boolean) {
+private fun DrawScope.drawHalo(map: TrackMap?, scale: MapScale?, nowMs: Long, accent: Color, reduced: Boolean) {
     val cx = size.width / 2f
     val cy = size.height / 2f
     val minD = size.minDimension
@@ -277,7 +281,11 @@ private fun DrawScope.drawHalo(map: TrackMap?, nowMs: Long, accent: Color, reduc
             if (++drawn == 4) break
         }
     }
-    val held = FloatArray(MAP_BANDS) { b -> lift(map?.heldBand(b, nowMs) ?: 0f) }
+    // Each band between its own usual quiet and loud for this track, so the ring moves on any master instead of sitting full.
+    val held = FloatArray(MAP_BANDS) { b ->
+        val raw = map?.heldBand(b, nowMs) ?: 0f
+        if (scale != null) scale.band(b, raw) else lift(raw)
+    }
     val stroke = (minD * 0.012f).coerceAtLeast(1.5.dp.toPx())
     val half = HALO_SPOKES / 2
     for (i in 0 until HALO_SPOKES) {
@@ -302,34 +310,41 @@ private fun DrawScope.drawHalo(map: TrackMap?, nowMs: Long, accent: Color, reduc
 
 // ---- Twin VU ----
 
-/** 0 VU sits at -18 dBFS RMS, as on a studio meter; the scale runs from -20 to +3 VU. */
+/** The scale runs from -20 to +3 VU, spaced as a real meter's (linear in voltage, so 0 VU sits at about 70%). */
 private fun vuPosition(vu: Double): Float = (10.0.pow(vu / 20.0) / 1.4125).toFloat().coerceIn(0f, 1.05f)
 
-private fun levelToVu(level: Float): Double = LEVEL_FLOOR_DBFS + level * -LEVEL_FLOOR_DBFS + 18.0
+private val VU_TICKS = listOf(-20.0, -10.0, -7.0, -5.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0)
+private val VU_NUMBERS = listOf(-20.0 to "20", -10.0 to "10", -5.0 to "5", 0.0 to "0", 3.0 to "3")
+private val VU_RED = Color(0xFFF05A46)
 
-private fun DrawScope.drawTwinVu(m: TextMeasurer, map: TrackMap?, nowMs: Long, lufs: Double?, accent: Color, status: String?) {
+private fun DrawScope.drawTwinVu(m: TextMeasurer, map: TrackMap?, scale: MapScale?, nowMs: Long, lufs: Double?, accent: Color, status: String?) {
     val w = size.width
     val h = size.height
     val ls = labelSize()
     val gap = w * 0.06f
     val mw = (w - gap) / 2f
     val mh = h * 0.66f
+    val corner = CornerRadius(8.dp.toPx())
     for (side in 0..1) {
         val mx = side * (mw + gap)
-        drawRoundRect(Color(0x0FFFF8E6), topLeft = Offset(mx, 0f), size = Size(mw, mh), cornerRadius = CornerRadius(8.dp.toPx()))
-        drawRoundRect(Color.White.copy(alpha = 0.10f), topLeft = Offset(mx, 0f), size = Size(mw, mh), cornerRadius = CornerRadius(8.dp.toPx()), style = Stroke(1.dp.toPx()))
+        drawRoundRect(Color(0x0FFFF8E6), topLeft = Offset(mx, 0f), size = Size(mw, mh), cornerRadius = corner)
+        drawRoundRect(Color.White.copy(alpha = 0.10f), topLeft = Offset(mx, 0f), size = Size(mw, mh), cornerRadius = corner, style = Stroke(1.dp.toPx()))
+        // The channel name and the peak lamp share the top row; the dial fills the rest, its pivot near the bottom edge.
+        val pad = 8.dp.toPx()
+        label(m, if (side == 0) "L" else "R", mx + pad, pad * 0.7f, ls * 0.85f, 0.55f)
         val cx = mx + mw / 2f
-        val cy = mh * 0.92f
-        val r = min(mw * 0.46f, mh * 0.74f)
+        val cy = mh - pad * 1.2f
+        val top = pad + ls * 1.6f
+        val r = min(mw * 0.5f - pad * 0.5f, (cy - top) / 1.1f)
         fun at(pos: Float, rr: Float): Offset {
             val a = ((-150f + pos * 120f) * PI / 180f).toFloat()
             return Offset(cx + cos(a) * rr, cy + sin(a) * rr)
         }
-        // The red zone from 0 to +3 VU, then the ticks.
+        // The red zone from 0 to +3 VU, the ticks, and the numbers outside them.
         val p0 = vuPosition(0.0)
         val p3 = vuPosition(3.0)
         drawArc(
-            Color(0xFFF05A46).copy(alpha = 0.6f),
+            VU_RED.copy(alpha = 0.6f),
             startAngle = -150f + p0 * 120f,
             sweepAngle = (p3 - p0) * 120f,
             useCenter = false,
@@ -337,31 +352,38 @@ private fun DrawScope.drawTwinVu(m: TextMeasurer, map: TrackMap?, nowMs: Long, l
             size = Size(r * 1.72f, r * 1.72f),
             style = Stroke(2.5.dp.toPx()),
         )
-        for (vu in listOf(-20.0, -10.0, -7.0, -5.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0)) {
+        for (vu in VU_TICKS) {
             val p = vuPosition(vu)
-            val major = vu == -20.0 || vu == -10.0 || vu == -5.0 || vu == 0.0 || vu == 3.0
+            val major = VU_NUMBERS.any { it.first == vu }
             drawLine(
-                if (vu > 0) Color(0xFFF05A46) else Color.White.copy(alpha = 0.6f),
+                if (vu > 0) VU_RED else Color.White.copy(alpha = 0.6f),
                 start = at(p, r * 0.80f),
                 end = at(p, r * if (major) 0.94f else 0.88f),
                 strokeWidth = if (major) 1.6.dp.toPx() else 1.dp.toPx(),
             )
         }
-        label(m, "VU", cx, cy - r * 0.48f, ls * 0.9f, 0.35f, align = 0.5f)
-        // The needle reads the last 300 ms, as a VU meter integrates; the lamp lights for a peak above +1 VU in the last second.
-        val values = if (side == 0) map?.left else map?.right
-        val level = if (map != null && values != null) map.meanOver(values, nowMs, 300L) else 0f
-        val needle = if (level > 0f) vuPosition(levelToVu(level)) else 0f
-        drawLine(lerp(accent, Color.White, 0.55f), start = Offset(cx, cy), end = at(needle, r * 0.97f), strokeWidth = 1.6.dp.toPx(), cap = StrokeCap.Round)
-        drawCircle(Color.White.copy(alpha = 0.7f), radius = 2.5.dp.toPx(), center = Offset(cx, cy))
-        var peak = 0f
-        if (map != null && values != null) {
-            val now = map.frameAt(nowMs)
-            for (f in maxOf(0, now - 1_000 / MAP_FRAME_MS)..now) if (map.has(f)) peak = maxOf(peak, (values[f].toInt() and 0xFF) / 255f)
+        val small = ls * 0.72f
+        for ((vu, text) in VU_NUMBERS) {
+            val spot = at(vuPosition(vu), r * 1.03f)
+            label(m, text, spot.x, spot.y - small * 1.1f, small, if (vu > 0) 0.8f else 0.45f, align = 0.5f)
         }
-        val lamp = peak > 0f && levelToVu(peak) > 1.0
-        drawCircle(Color(0xFFFF5A46).copy(alpha = if (lamp) 0.95f else 0.15f), radius = 3.dp.toPx(), center = Offset(mx + mw - 10.dp.toPx(), 10.dp.toPx()))
-        label(m, if (side == 0) "LEFT" else "RIGHT", cx, mh - ls * 1.6f, ls * 0.85f, 0.5f, align = 0.5f)
+        label(m, "VU", cx, cy - r * 0.42f, ls * 0.8f, 0.3f, align = 0.5f)
+        // The needle reads the last 300 ms, as a VU meter integrates, against this track's own middle level; the lamp
+        // lights for a peak above +2 VU in the last second.
+        val values = if (side == 0) map?.left else map?.right
+        var needle = 0f
+        var lamp = false
+        if (map != null && values != null && scale != null) {
+            val level = map.meanOver(values, nowMs, 300L)
+            if (level > 0f) needle = vuPosition(vuFor(level, scale))
+            val now = map.frameAt(nowMs)
+            var peak = 0f
+            for (f in maxOf(0, now - 1_000 / MAP_FRAME_MS)..now) if (map.has(f)) peak = maxOf(peak, (values[f].toInt() and 0xFF) / 255f)
+            lamp = peak > 0f && vuFor(peak, scale) > 2.0
+        }
+        drawLine(lerp(accent, Color.White, 0.55f), start = Offset(cx, cy), end = at(needle, r * 0.97f), strokeWidth = 1.6.dp.toPx(), cap = StrokeCap.Round)
+        drawCircle(Color.White.copy(alpha = 0.7f), radius = 3.dp.toPx(), center = Offset(cx, cy))
+        drawCircle(Color(0xFFFF5A46).copy(alpha = if (lamp) 0.95f else 0.15f), radius = 3.dp.toPx(), center = Offset(mx + mw - pad - 3.dp.toPx(), pad + ls * 0.45f))
     }
     // The loudness Nuvio measured for this track, and what it brings everything to.
     val big = (h * 0.10f).coerceIn(14.dp.toPx(), 26.dp.toPx())

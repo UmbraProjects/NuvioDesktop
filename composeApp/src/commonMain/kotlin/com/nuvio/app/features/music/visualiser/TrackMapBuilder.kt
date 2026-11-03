@@ -15,10 +15,16 @@ import kotlin.math.sqrt
 
 /*
  * fork:visualiser - builds a TrackMap from interleaved stereo float samples, fed in the order they were decoded (the
- * loudness measurement's windows). Each 25 ms frame gets an FFT of 2048 samples centred on it: 16 log-spaced band levels,
- * and the spectral flux of four ranges (kick 40-130 Hz, melody 300-1500 Hz, snare 1.5-5 kHz, hats 7-11.5 kHz), from which
- * hits are picked with an adaptive threshold. The beat grid comes from the autocorrelation of the drum flux, refined by
- * a comb over the whole track; the downbeat is the beat of four with the most kick.
+ * loudness measurement's windows). Each 25 ms frame gets an FFT of 2048 samples centred on it, which gives the 16 band
+ * levels drawn by the styles.
+ *
+ * Hits are not read off the raw spectrum: in most music the 40-130 Hz range is the bass guitar as much as the kick, and
+ * every bass note would count as a kick. The spectrum is first split into what is sustained and what is struck
+ * (harmonic/percussive separation by median filtering, Fitzgerald 2010): a note holds steady across time, so the median
+ * over 17 frames keeps it; a drum hit is a short burst across many frequencies, so the median over 13 neighbouring
+ * bands keeps it. Kick, snare and hats are picked from the struck part's spectral flux, melody from the sustained part's,
+ * each with an adaptive threshold. The beat grid comes from the autocorrelation of the drum flux, refined by a comb over
+ * the whole track; the downbeat is the beat of four with the most kick.
  */
 
 private const val FFT_SIZE = 2048
@@ -32,20 +38,51 @@ private const val BAND_RANGE_DB = 60.0
 /** Frame levels (RMS): -48 dBFS maps to 0 and 0 dBFS to 1. */
 internal const val LEVEL_FLOOR_DBFS = -48.0
 
-/** Frames a hit decision waits for (it compares a frame with the ones just after it). */
+/**
+ * Half the median filters: 17 frames (425 ms) across time, so a kick's 100 ms body is a minority of the window and stays a
+ * hit while a bass note of a quarter second or more holds it; 13 fine bands across frequency.
+ */
+private const val HALF_TIME = 8
+private const val HALF_FREQ = 6
+
+/** A frame-band counts as struck only where the burst clearly beats the sustained level (a soft mask with this margin). */
+private const val SPLIT_MARGIN = 2f
+
+/** Frames a hit decision waits for after the split (it compares a frame with the ones just after it). */
 private const val LOOKAHEAD = 3
 
 /** The beat grid needs this many seconds of track. */
 private const val BEAT_MIN_FRAMES = 8_000 / MAP_FRAME_MS
 
-private class Group(val loHz: Double, val hiHz: Double, val kind: Int, val minGap: Int, val sensitivity: Float)
+/** Single FFT bins are fine bands up to here; above it, twelfth-octave groups. */
+private const val FINE_SINGLE_BIN_HZ = 375.0
+
+private class Group(
+    val loHz: Double,
+    val hiHz: Double,
+    val kind: Int,
+    val minGap: Int,
+    val sensitivity: Float,
+    /** A hit must reach this share of the strongest recent one. */
+    val peakShare: Float,
+    val struck: Boolean,
+    /**
+     * The least flux a hit can have at all. The flux is a rise in log magnitude, so it hardly depends on how loud the track
+     * is: a kick in a full mix rises by 1.5 or more, a bass note leaking into the struck part by about 1, which is what keeps
+     * a bass line without drums off the kick row.
+     */
+    val floor: Float = 0f,
+)
 
 private val GROUPS = listOf(
-    Group(40.0, 130.0, Onset.KICK, minGap = 5, sensitivity = 1.45f),
-    Group(1_500.0, 5_000.0, Onset.SNARE, minGap = 5, sensitivity = 1.5f),
-    Group(7_000.0, 11_500.0, Onset.HATS, minGap = 3, sensitivity = 1.4f),
-    Group(300.0, 1_500.0, Onset.MELODY, minGap = 5, sensitivity = 1.6f),
+    Group(40.0, 150.0, Onset.KICK, minGap = 6, sensitivity = 1.5f, peakShare = 0.45f, struck = true, floor = 1.1f),
+    Group(1_500.0, 5_000.0, Onset.SNARE, minGap = 6, sensitivity = 1.5f, peakShare = 0.45f, struck = true),
+    Group(7_000.0, 11_500.0, Onset.HATS, minGap = 3, sensitivity = 1.4f, peakShare = 0.3f, struck = true),
+    Group(250.0, 2_000.0, Onset.MELODY, minGap = 5, sensitivity = 1.6f, peakShare = 0.25f, struck = false),
 )
+private const val KICK = 0
+private const val SNARE = 1
+private const val HATS = 2
 
 internal class TrackMapBuilder(private val sampleRate: Int) {
     private val hop = sampleRate * MAP_FRAME_MS / 1_000
@@ -53,7 +90,8 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
     private val window = FloatArray(FFT_SIZE) { (0.5 - 0.5 * cos(2.0 * PI * it / FFT_SIZE)).toFloat() }
     private val binHz = sampleRate.toDouble() / FFT_SIZE
     private val bandBins: List<IntRange>
-    private val groupBins: List<IntRange>
+    private val fineBins: List<IntRange>
+    private val groupFine: List<IntRange>
     private val reference = (FFT_SIZE / 4.0).pow(2)
 
     // Mono samples still needed by a frame not yet analysed; monoStart is the absolute index of mono[0].
@@ -76,9 +114,17 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
     private val flux = List(GROUPS.size) { Floats() }
     private val recentMax = FloatArray(GROUPS.size)
     private val lastHit = IntArray(GROUPS.size) { -1_000 }
+
+    /** Frames with an FFT; frames split into sustained and struck (their flux is known); frames with their hits picked. */
     private var analysed = 0
+    private var separated = 0
     private var decided = 0
-    private var previous = FloatArray(FFT_SIZE / 2 + 1)
+
+    // Fine-band magnitudes of the frames the split still needs; spectraStart is the frame index of spectra[0].
+    private val spectra = ArrayDeque<FloatArray>()
+    private var spectraStart = 0
+    private var previousStruck: FloatArray? = null
+    private var previousHeld: FloatArray? = null
     private val re = DoubleArray(FFT_SIZE)
     private val im = DoubleArray(FFT_SIZE)
 
@@ -89,9 +135,24 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
             val hi = max(lo, kotlin.math.floor(edges[b + 1] / binHz).toInt())
             lo..min(hi, FFT_SIZE / 2)
         }
-        groupBins = GROUPS.map { g ->
-            val lo = kotlin.math.ceil(g.loHz / binHz).toInt()
-            lo..max(lo, min(FFT_SIZE / 2, kotlin.math.floor(g.hiHz / binHz).toInt()))
+        val fine = mutableListOf<IntRange>()
+        val firstBin = kotlin.math.ceil(35.0 / binHz).toInt()
+        val singleTo = kotlin.math.floor(FINE_SINGLE_BIN_HZ / binHz).toInt()
+        for (k in firstBin..singleTo) fine += k..k
+        var lowHz = (singleTo + 1) * binHz
+        while (lowHz < 11_500.0) {
+            val highHz = lowHz * 2.0.pow(1.0 / 12)
+            val lo = kotlin.math.ceil(lowHz / binHz).toInt()
+            val hi = max(lo, min(FFT_SIZE / 2, kotlin.math.floor(highHz / binHz).toInt()))
+            if (fine.isEmpty() || lo > fine.last().last) fine += lo..hi
+            lowHz = highHz
+        }
+        fineBins = fine
+        groupFine = GROUPS.map { g ->
+            val centres = fineBins.map { (it.first + it.last) / 2.0 * binHz }
+            val lo = centres.indexOfFirst { it >= g.loHz }.coerceAtLeast(0)
+            val hi = centres.indexOfLast { it <= g.hiHz }.coerceAtLeast(lo)
+            lo..hi
         }
     }
 
@@ -114,6 +175,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
             i += 2
         }
         analyseReady(flush = false)
+        separate(flush = false)
         decide(flush = false)
     }
 
@@ -127,6 +189,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
             hopCount = 0
         }
         analyseReady(flush = true)
+        separate(flush = true)
         decide(flush = true)
         return build(decided, complete = true)
     }
@@ -134,9 +197,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
     private fun build(frames: Int, complete: Boolean): TrackMap {
         val n = minOf(frames, level.size, analysed)
         val beat = if (n >= BEAT_MIN_FRAMES) {
-            estimateBeat(
-                kick = flux[0].data, snare = flux[1].data, hats = flux[2].data, frames = n,
-            )
+            estimateBeat(kick = flux[0].data, snare = flux[1].data, hats = flux[2].data, frames = n)
         } else null
         return TrackMap(
             frames = n,
@@ -186,40 +247,108 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
         }
         fft.transform(re, im)
         val bins = FFT_SIZE / 2 + 1
-        val mag = FloatArray(bins)
-        for (k in 0 until bins) mag[k] = sqrt(re[k] * re[k] + im[k] * im[k]).toFloat()
+        val power = DoubleArray(bins) { re[it] * re[it] + im[it] * im[it] }
         for (b in 0 until MAP_BANDS) {
-            var power = 0.0
-            for (k in bandBins[b]) power += mag[k].toDouble() * mag[k]
-            val db = 10.0 * log10(power / reference + 1e-12)
+            var sum = 0.0
+            for (k in bandBins[b]) sum += power[k]
+            val db = 10.0 * log10(sum / reference + 1e-12)
             bands.add(unit((db - BAND_FLOOR_DB) / BAND_RANGE_DB))
         }
-        val compressed = FloatArray(bins) { ln(1f + 1_000f * mag[it] / (FFT_SIZE / 4f)) }
-        GROUPS.indices.forEach { g ->
-            var sum = 0f
-            val range = groupBins[g]
-            for (k in range) sum += max(0f, compressed[k] - previous[k])
-            flux[g].add(sum / (range.last - range.first + 1))
-        }
-        previous = compressed
+        spectra.addLast(FloatArray(fineBins.size) { f ->
+            var sum = 0.0
+            for (k in fineBins[f]) sum += power[k]
+            (sqrt(sum) / (FFT_SIZE / 4.0)).toFloat()
+        })
     }
 
-    /** Picks hits for frames whose look-ahead is analysed. */
-    private fun decide(flush: Boolean) {
-        val limit = if (flush) analysed else analysed - LOOKAHEAD
-        while (decided < limit) {
-            var bits = 0
+    /** Splits each frame whose nine-frame neighbourhood is analysed into its sustained and struck parts, and takes their flux. */
+    private fun separate(flush: Boolean) {
+        val fine = fineBins.size
+        val column = FloatArray(2 * HALF_TIME + 1)
+        val row = FloatArray(2 * HALF_FREQ + 1)
+        while (separated < analysed && (flush || separated + HALF_TIME < analysed)) {
+            val t = separated
+            val now = spectra[t - spectraStart]
+            val struck = FloatArray(fine)
+            val held = FloatArray(fine)
+            val from = maxOf(spectraStart, t - HALF_TIME)
+            val to = minOf(analysed - 1, t + HALF_TIME)
+            for (f in 0 until fine) {
+                var n = 0
+                for (j in from..to) column[n++] = spectra[j - spectraStart][f]
+                val sustained = median(column, n)
+                var m = 0
+                for (g in maxOf(0, f - HALF_FREQ)..minOf(fine - 1, f + HALF_FREQ)) row[m++] = now[g]
+                val burst = median(row, m)
+                val ratio = burst / (sustained + 1e-9f)
+                val r4 = ratio * ratio * ratio * ratio
+                val m4 = SPLIT_MARGIN * SPLIT_MARGIN * SPLIT_MARGIN * SPLIT_MARGIN
+                val share = r4 / (r4 + m4)
+                struck[f] = ln(1f + 1_000f * now[f] * share)
+                held[f] = ln(1f + 1_000f * now[f] * (1f - share))
+            }
             GROUPS.forEachIndexed { g, group ->
+                val previous = if (group.struck) previousStruck else previousHeld
+                val current = if (group.struck) struck else held
+                var sum = 0f
+                var peak = 0f
+                val range = groupFine[g]
+                if (previous != null) for (f in range) {
+                    val rise = max(0f, current[f] - previous[f])
+                    sum += rise
+                    peak = max(peak, rise)
+                }
+                val width = range.last - range.first + 1
+                var value = sum / width
+                if (group.struck && peak > 0f && previous != null) {
+                    // A drum rises across its whole range at once; a note leaking into the struck part rises in a few bands
+                    // (its partials). Weighting by how much of the range rose keeps the first and fades the second.
+                    var broad = 0
+                    for (f in range) if (current[f] - previous[f] > peak * 0.25f) broad++
+                    value *= broad.toFloat() / width
+                }
+                flux[g].add(value)
+            }
+            previousStruck = struck
+            previousHeld = held
+            separated++
+            // Keep the frames a later split still looks back at.
+            while (spectraStart < separated - HALF_TIME && spectra.isNotEmpty()) {
+                spectra.removeFirst()
+                spectraStart++
+            }
+        }
+    }
+
+    /** Picks hits for frames whose look-ahead has been split. */
+    private fun decide(flush: Boolean) {
+        val limit = if (flush) separated else separated - LOOKAHEAD
+        val candidate = BooleanArray(GROUPS.size)
+        val strength = FloatArray(GROUPS.size)
+        while (decided < limit) {
+            GROUPS.forEachIndexed { g, group ->
+                candidate[g] = false
                 val f = flux[g]
                 val v = f[decided]
-                recentMax[g] = max(v, recentMax[g] * 0.9995f)
+                // The strongest recent hit, fading over about ten seconds: a bass note that leaks into the struck part is a
+                // fraction of a real kick, so a hit must reach a share of it as well as stand out from its neighbours.
+                recentMax[g] = max(v, recentMax[g] * 0.9975f)
+                strength[g] = if (recentMax[g] > 0f) v / recentMax[g] else 0f
                 if (v <= 0f || decided - lastHit[g] < group.minGap) return@forEachIndexed
                 for (j in decided - 2..decided + 2) if (j != decided && j in 0 until f.size && f[j] > v) return@forEachIndexed
                 var sum = 0f
                 var count = 0
                 for (j in maxOf(0, decided - 20)..minOf(f.size - 1, decided + LOOKAHEAD)) { sum += f[j]; count++ }
-                val threshold = sum / count * group.sensitivity + recentMax[g] * 0.08f
-                if (v > threshold) {
+                candidate[g] = v > group.floor && v > max(sum / count * group.sensitivity, recentMax[g] * group.peakShare)
+            }
+            // A kick's beater click and a hi-hat both reach the snare's range: a snare is only a snare when that range is hit
+            // harder (for its usual level) than the kick's or the hats' at the same moment.
+            if (candidate[SNARE] && (strength[SNARE] < strength[KICK] && candidate[KICK] || strength[SNARE] < strength[HATS] * 0.9f)) {
+                candidate[SNARE] = false
+            }
+            var bits = 0
+            GROUPS.forEachIndexed { g, group ->
+                if (candidate[g]) {
                     bits = bits or group.kind
                     lastHit[g] = decided
                 }
@@ -235,6 +364,17 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
     }
 
     private fun unit(v: Double): Byte = (v.coerceIn(0.0, 1.0) * 255.0).roundToInt().toByte()
+}
+
+/** The median of the first [n] values of [a] (reorders them). */
+private fun median(a: FloatArray, n: Int): Float {
+    for (i in 1 until n) {
+        val v = a[i]
+        var j = i - 1
+        while (j >= 0 && a[j] > v) { a[j + 1] = a[j]; j-- }
+        a[j + 1] = v
+    }
+    return if (n % 2 == 1) a[n / 2] else (a[n / 2 - 1] + a[n / 2]) * 0.5f
 }
 
 /**

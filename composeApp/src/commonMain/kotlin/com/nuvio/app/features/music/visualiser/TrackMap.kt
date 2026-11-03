@@ -146,9 +146,55 @@ internal object TrackMapLive {
     }
 }
 
+// ---- scaling ----
+
+/**
+ * How loud this track's bands and level usually are, so the styles can draw any master at a good size: a loud modern master
+ * and a quiet 1970s one both swing across the full range. [bandLow] and [bandHigh] are each band's 10th and 97th percentile,
+ * [levelMedian] the middle frame level (all as 0..1 map values).
+ */
+internal class MapScale(val bandLow: FloatArray, val bandHigh: FloatArray, val levelMedian: Float) {
+    /** [value] of [band] placed between its usual quiet and loud: 0..1. */
+    fun band(band: Int, value: Float): Float =
+        ((value - bandLow[band]) / (bandHigh[band] - bandLow[band]).coerceAtLeast(0.04f)).coerceIn(0f, 1f)
+}
+
+internal fun mapScale(map: TrackMap): MapScale {
+    fun percentile(histogram: IntArray, total: Int, share: Double): Float {
+        val wanted = (total * share).toLong()
+        var seen = 0L
+        for (v in 0..255) {
+            seen += histogram[v]
+            if (seen > wanted) return v / 255f
+        }
+        return 1f
+    }
+    val n = map.frames
+    val low = FloatArray(MAP_BANDS)
+    val high = FloatArray(MAP_BANDS) { 1f }
+    if (n == 0) return MapScale(low, high, 0.5f)
+    for (b in 0 until MAP_BANDS) {
+        val histogram = IntArray(256)
+        for (f in 0 until n) histogram[map.bands[f * MAP_BANDS + b].toInt() and 0xFF]++
+        low[b] = percentile(histogram, n, 0.10)
+        high[b] = percentile(histogram, n, 0.97)
+    }
+    val levels = IntArray(256)
+    for (f in 0 until n) levels[map.level[f].toInt() and 0xFF]++
+    return MapScale(low, high, percentile(levels, n, 0.5))
+}
+
+/**
+ * Where a frame at [level] sits on a VU meter for this track: 0 VU three decibels above the track's middle level, so the
+ * needle rests a little below 0 and swings into the red only on the loud parts, whatever the master's own level.
+ */
+internal fun vuFor(level: Float, scale: MapScale): Double =
+    (level - scale.levelMedian) * -LEVEL_FLOOR_DBFS - 3.0
+
 // ---- storage format ----
 
-private const val MAGIC = 0x4E564D31 // "NVM1"
+// "NVM2": maps from before the drum split (Nov 3, 2026) found bass notes as kicks; they are read as missing and redone.
+private const val MAGIC = 0x4E564D32 // "NVM2"
 
 /** The map as bytes for the disk cache. */
 internal fun encodeTrackMap(map: TrackMap): ByteArray {
