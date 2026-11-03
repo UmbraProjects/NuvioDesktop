@@ -274,6 +274,10 @@ internal object DeezerClient {
     /** The artist's most played tracks (up to 100), each with the album it is on. Null when Deezer could not be reached; empty when it has none. */
     suspend fun topTracks(artistId: Long): List<DeezerTopTrack>? =
         pacedFetch("$BASE/artist/$artistId/top?limit=100")?.let(::parseDeezerTopTracks)
+
+    /** fork:essentials - the same list with each song's title, for the album page's Essentials and popularity bars. */
+    suspend fun topSongs(artistId: Long): List<DeezerTopSong>? =
+        pacedFetch("$BASE/artist/$artistId/top?limit=100")?.let(::parseDeezerTopSongs)
 }
 
 /**

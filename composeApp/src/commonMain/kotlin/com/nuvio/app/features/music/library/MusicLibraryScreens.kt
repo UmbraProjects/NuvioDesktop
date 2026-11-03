@@ -953,7 +953,11 @@ data class LibraryAlbumInfo(val artist: LibraryArtist, val release: LibraryRelea
         get() = artist.releases
             .filter { it.isPlayable && it.ytBrowseId != release.ytBrowseId && !it.isDemo() }
             .distinctBy { it.dedupeKey() }
-            .sortedByDescending { it.releaseDate ?: it.year ?: "" }
+            // fork:essentials - the artist's best first (the Top albums ranking), then the newest.
+            .sortedWith(
+                compareBy<LibraryRelease> { r -> artist.topAlbumKeys.indexOf(r.key).takeIf { it >= 0 } ?: Int.MAX_VALUE }
+                    .thenByDescending { it.releaseDate ?: it.year ?: "" },
+            )
             .take(10)
 }
 

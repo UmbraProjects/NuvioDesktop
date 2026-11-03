@@ -100,6 +100,16 @@ import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.LibraryAlbumInfo
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.rememberLibraryAlbumInfo
+import com.nuvio.app.features.music.booklet.AlbumBookletRepository
+import com.nuvio.app.features.music.booklet.StartHere
+import com.nuvio.app.features.music.library.ArtistTopSongs
+import com.nuvio.app.features.music.library.ESSENTIAL_ALBUM_COUNT
+import com.nuvio.app.features.music.library.EssentialSong
+import com.nuvio.app.features.music.library.essentialSongs
+import com.nuvio.app.features.music.library.selectTopAlbums
+import com.nuvio.app.features.music.library.singleKeys
+import com.nuvio.app.features.music.library.songKey
+import com.nuvio.app.features.music.library.trackPopularity
 
 /**
  * An album: cover, a Play/Shuffle pair, the Audio/Video choice, the track list, and more from the artist.
@@ -208,6 +218,44 @@ private fun AlbumContent(
 
     val playing = loaded && state.isPlaying
     val discOut = discChoice ?: playing
+    // fork:essentials - the artist's best songs and albums for the right-hand column, and the popularity bars and SINGLE
+    // badges in the track list. Deezer's top songs and the library's own ranking; nothing here needs the AI.
+    val artistInfo = info?.artist
+    val deezerId = artistInfo?.deezerId
+    LaunchedEffect(deezerId) { deezerId?.let { ArtistTopSongs.ensure(it) } }
+    LaunchedEffect(artistInfo?.id) { artistInfo?.id?.let { MusicLibraryRepository.ensureTopAlbums(it) } }
+    val topSongs = deezerId?.let { ArtistTopSongs.state.collectAsStateWithLifecycle().value[it] }.orEmpty()
+    val artistReleases = artistInfo?.releases.orEmpty()
+    val essentialSongList = remember(topSongs, artistReleases) { essentialSongs(topSongs, artistReleases) }
+    val popularity = remember(topSongs, view.tracks) { trackPopularity(view.tracks.map { it.title }, topSongs) }
+    val singles = remember(artistReleases) { singleKeys(artistReleases) }
+    val hereKeys = remember(view.tracks) { view.tracks.map { songKey(it.title) }.toSet() }
+    val hereReleaseKey = info?.release?.key
+    val essentialAlbums = remember(artistInfo, album.browseId, hereReleaseKey) {
+        artistInfo?.let { a ->
+            val top = selectTopAlbums(a, ESSENTIAL_ALBUM_COUNT)
+            // Only the really ranked ones: the rest of the five are just the newest, which is what this column replaces.
+            top.releases.take(top.rankedCount).mapIndexed { i, r ->
+                EssentialAlbum(r, i + 1, here = r.ytBrowseId == album.browseId || r.key == hereReleaseKey)
+            }
+        }.orEmpty()
+    }
+    // "Start here": one short AI recommendation per artist, asked once the albums and songs are known (a kept one shows at once).
+    val artistName = artistInfo?.name
+    val startAlbums = remember(essentialAlbums) { essentialAlbums.map { a -> a.release.title + a.release.year?.let { y -> " ($y)" }.orEmpty() } }
+    val startReady = startAlbums.size >= 2 && (deezerId == null || topSongs.isNotEmpty())
+    var startHere by remember(artistName) { mutableStateOf(artistName?.let { StartHere.peek(it) }) }
+    LaunchedEffect(artistName, startReady) {
+        if (artistName != null && startReady && startHere == null) {
+            startHere = StartHere.forArtist(artistName, startAlbums, essentialSongList.map { it.title }.take(5))
+        }
+    }
+    // The album's notes under the case: the cache's (free), and the live ones while this album plays, as on the Stage.
+    val bookletRequest = remember(album.browseId, artistInfo) { bookletRequestFor(album, artistInfo) }
+    val cachedBooklet = remember(bookletRequest, loaded) { bookletRequest?.let { AlbumBookletRepository.peek(it) } }
+    val liveBooklet = (if (loaded) rememberBookletUi(album, artistInfo) else null) as? BookletUi.Ready
+    val booklet = liveBooklet?.booklet ?: cachedBooklet
+    val playingNote = if (loaded) booklet?.trackNotes?.get(state.trackIndex + 1) else null
     // Board 3: the object (case, disc and its two toggles) on the left, everything about the record on the right.
     val objectPanel: @Composable (Dp) -> Unit = { caseSize ->
         AlbumObjectPanel(
@@ -326,6 +374,21 @@ private fun AlbumContent(
         }
     }
 
+    fun tapTrack(index: Int) {
+        if (loaded && startsFresh) {
+            // fork:nebula - the album is playing from the other source: start it over in the chosen one.
+            startAlbum(index, chosenMode, shuffled = false)
+        } else when (val tap = musicTrackTap(state, view, index, chosenMode)) {
+            is MusicTrackTap.JumpInQueue -> player.jumpTo(tap.trackIndex)
+            is MusicTrackTap.StartAlbum -> startAlbum(tap.trackIndex, tap.mode, shuffled = false)
+        }
+    }
+    // fork:essentials - a best song on this very record plays from here; one on another record opens that record.
+    val onEssentialSong: (EssentialSong) -> Unit = { song ->
+        val key = songKey(song.title)
+        val index = view.tracks.indexOfFirst { it.isAvailable && songKey(it.title) == key }
+        if (index >= 0) tapTrack(index) else song.release?.ytBrowseId?.let(onAlbumClick)
+    }
     val pane: LazyListScope.() -> Unit = {
         itemsIndexed(view.tracks) { index, track ->
             TrackRow(
@@ -334,15 +397,9 @@ private fun AlbumContent(
                 current = loaded && state.trackIndex == index,
                 modifier = if (index == firstPlayable) Modifier.focusRequester(firstTrackFocus) else Modifier,
                 onAddToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
-                onClick = {
-                    if (loaded && startsFresh) {
-                        // fork:nebula - the album is playing from the other source: start it over in the chosen one.
-                        startAlbum(index, chosenMode, shuffled = false)
-                    } else when (val tap = musicTrackTap(state, view, index, chosenMode)) {
-                        is MusicTrackTap.JumpInQueue -> player.jumpTo(tap.trackIndex)
-                        is MusicTrackTap.StartAlbum -> startAlbum(tap.trackIndex, tap.mode, shuffled = false)
-                    }
-                },
+                popularity = popularity.getOrNull(index),
+                single = songKey(track.title) in singles,
+                onClick = { tapTrack(index) },
             )
         }
     }
@@ -350,27 +407,37 @@ private fun AlbumContent(
     val moreTitle = "More from ${info?.artist?.name ?: "this artist"}"
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // Wide enough for three columns: the object, the record and its songs, then More from down the right in two
-        // columns, always in the same place however long the track list is. Narrower, More from goes under the songs.
-        val moreAside = more.isNotEmpty() && maxWidth >= 1200.dp
+        // Wide enough for three columns: the object, the record and its songs, then the artist's best down the right. The two
+        // side columns are the same width (and padded as mirrors), so the record is centred on the window, always in the same
+        // place however long the track list is, and a window with nothing for the right keeps the space. Narrower, More from
+        // goes under the songs.
         // The case grows with the window (a TV is read from the sofa) and the column grows with it, so the unused strip
         // beside the case stays the same. A function of the window width only, never of content: nothing moves.
-        val caseSize = albumCaseSize(maxWidth)
-        val objectColumnWidth = albumObjectColumnWidth(caseSize)
+        val grownCase = albumCaseSize(maxWidth)
+        val grownColumn = albumObjectColumnWidth(grownCase)
+        // 1320 dp and up (the record keeps at least 520 dp): both sides are the object column's width, or half of what the
+        // record leaves when the window is not wide enough for that (never under 400 dp), and the case shrinks to fit.
+        val sideRight = maxWidth >= 1320.dp
+        val sideWidth = if (sideRight) minOf(grownColumn, ((maxWidth - 520.dp) / 2).coerceAtLeast(400.dp)) else grownColumn
+        // The case and the disc peeking out of it are 1.3 times as wide as the case, and must fit the column's 44 dp of padding.
+        val caseSize = if (sideRight) minOf(grownCase, (sideWidth - 44.dp) / CASE_WIDTH_FACTOR) else grownCase
+        val essentialsOn = essentialSongList.isNotEmpty() || essentialAlbums.isNotEmpty()
         if (maxWidth >= 840.dp) {
             Row(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.width(objectColumnWidth).fillMaxHeight().verticalScroll(rememberScrollState())
+                    Modifier.width(sideWidth).fillMaxHeight().verticalScroll(rememberScrollState())
                         .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) { objectPanel(caseSize) }
+                ) {
+                    objectPanel(caseSize)
+                    booklet?.let { AlbumInBriefCard(it, playingNote) }
+                }
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    // With More from beside it, the end padding makes up the difference between the two side columns, so
-                    // the record is centred on the window (level with the docked player) rather than between them.
+                    // Mirrored side columns: 12 dp from each, so the record is centred on the window (level with the docked player).
                     contentPadding = PaddingValues(
                         start = 12.dp,
-                        end = if (moreAside) (objectColumnWidth + 12.dp - MORE_COLUMN_WIDTH).coerceAtLeast(24.dp) else 32.dp,
+                        end = if (sideRight) 12.dp else 32.dp,
                         top = 16.dp,
                         bottom = 40.dp,
                     ),
@@ -385,9 +452,25 @@ private fun AlbumContent(
                         ) { facts() }
                     }
                     pane()
-                    if (!moreAside && more.isNotEmpty()) item(key = "more") { MoreFromRow(moreTitle, more, onAlbumClick) }
+                    if (!sideRight && more.isNotEmpty()) item(key = "more") { MoreFromRow(moreTitle, more, onAlbumClick) }
                 }
-                if (moreAside) MoreFromColumn(moreTitle, more, onAlbumClick)
+                if (sideRight) {
+                    when {
+                        essentialsOn -> EssentialsColumn(
+                            artist = artistName ?: "This artist",
+                            songs = essentialSongList,
+                            hereKeys = hereKeys,
+                            albums = essentialAlbums,
+                            startHere = startHere,
+                            onSongClick = onEssentialSong,
+                            onAlbumClick = onAlbumClick,
+                            tile = ((sideWidth - 44.dp - 42.dp) / 4).coerceAtMost(108.dp),
+                            modifier = Modifier.width(sideWidth).fillMaxHeight(),
+                        )
+                        more.isNotEmpty() -> MoreFromColumn(moreTitle, more, onAlbumClick, sideWidth)
+                        else -> Spacer(Modifier.width(sideWidth))
+                    }
+                }
             }
         } else {
             LazyColumn(
@@ -397,6 +480,7 @@ private fun AlbumContent(
                 item(key = "object") {
                     Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { objectPanel(240.dp) }
                 }
+                booklet?.let { item(key = "brief") { AlbumInBriefCard(it, playingNote, Modifier.padding(bottom = 16.dp)) } }
                 item(key = "facts") {
                     Column(
                         Modifier.fillMaxWidth().padding(bottom = 16.dp),
@@ -412,14 +496,13 @@ private fun AlbumContent(
 }
 
 /** Narrow enough that a song's length reads with its title, as on a record sleeve. */
-private val TRACK_ROW_MAX_WIDTH = 480.dp
+private val TRACK_ROW_MAX_WIDTH = 600.dp
 
 /** One round button in the album's action row. */
 private class AlbumAction(val label: String, val icon: ImageVector, val active: Boolean, val onClick: () -> Unit)
 private val MORE_TILE = 150.dp
 private const val TOP_ROW_SCROLL_DELAY_MS = 180L
 private val MORE_GAP = 16.dp
-private val MORE_COLUMN_WIDTH = MORE_TILE * 2 + MORE_GAP + 56.dp
 private val OBJECT_COLUMN_WIDTH = 520.dp
 private val CASE_SIZE_MIN = 340.dp
 private val CASE_SIZE_MAX = 420.dp
@@ -443,15 +526,15 @@ internal fun albumObjectColumnWidth(caseSize: Dp): Dp =
 
 /** More from the artist down the right of a wide window: two columns of covers, scrolling on their own. */
 @Composable
-private fun MoreFromColumn(title: String, more: List<LibraryRelease>, onAlbumClick: (String) -> Unit) {
+private fun MoreFromColumn(title: String, more: List<LibraryRelease>, onAlbumClick: (String) -> Unit, width: Dp) {
     val colors = MaterialTheme.nuvio.colors
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         state = gridState,
-        modifier = Modifier.width(MORE_COLUMN_WIDTH).fillMaxHeight(),
-        contentPadding = PaddingValues(start = 24.dp, end = 32.dp, top = 24.dp, bottom = 40.dp),
+        modifier = Modifier.width(width).fillMaxHeight(),
+        contentPadding = PaddingValues(start = 12.dp, end = 32.dp, top = 24.dp, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(MORE_GAP),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
@@ -610,6 +693,10 @@ private fun TrackRow(
     onClick: () -> Unit,
     /** fork:music-playlists - shown as a + on hover. */
     onAddToPlaylist: (() -> Unit)? = null,
+    /** fork:essentials - how played the song is next to the artist's others (0..1), null when unknown: the bar stays empty. */
+    popularity: Float? = null,
+    /** fork:essentials - the artist released this song as a single. */
+    single: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val hoverSource = remember { MutableInteractionSource() }
@@ -642,17 +729,30 @@ private fun TrackRow(
             }
         }
         Column(Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = when {
-                    !track.isAvailable -> colors.textDisabled
-                    current -> colors.accent
-                    else -> colors.textPrimary
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = when {
+                        !track.isAvailable -> colors.textDisabled
+                        current -> colors.accent
+                        else -> colors.textPrimary
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (single) {
+                    Text(
+                        "SINGLE",
+                        style = MaterialTheme.typography.labelSmall,
+                        letterSpacing = 0.8.sp,
+                        color = if (track.isAvailable) colors.textSecondary else colors.textDisabled,
+                        maxLines = 1,
+                        modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
+            }
             if (credit != null) {
                 // A credit chip for the featured artist(s), as on board 3.
                 val chip = RoundedCornerShape(8.dp)
@@ -684,6 +784,13 @@ private fun TrackRow(
             }
         }
         Spacer(Modifier.width(12.dp))
+        // Always laid out, so the lengths line up whether or not Deezer knows how played the song is.
+        Box(Modifier.width(56.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.12f))) {
+            if (popularity != null) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(popularity.coerceIn(0f, 1f)).background(if (current) colors.accent else colors.accent.copy(alpha = 0.7f)))
+            }
+        }
+        Spacer(Modifier.width(14.dp))
         Text(
             text = if (track.durationSeconds > 0) formatMusicTime(track.durationSeconds * 1000L) else "",
             style = MaterialTheme.typography.bodyMedium,

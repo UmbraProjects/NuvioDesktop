@@ -296,6 +296,20 @@ internal fun parseDeezerTopTracks(body: String): List<DeezerTopTrack> =
         )
     }
 
+/** fork:essentials - one of an artist's most played songs, with the album Deezer files it under. [rank] bigger is more played. */
+internal data class DeezerTopSong(val title: String, val albumTitle: String, val albumId: Long, val rank: Long)
+
+internal fun parseDeezerTopSongs(body: String): List<DeezerTopSong> =
+    parse(body).obj()?.takeIf { it["error"] == null }?.objects("data").orEmpty().mapNotNull { t ->
+        val album = t["album"].obj()
+        DeezerTopSong(
+            title = t.text("title_short") ?: t.text("title") ?: return@mapNotNull null,
+            albumTitle = album?.text("title").orEmpty(),
+            albumId = album?.long("id") ?: 0L,
+            rank = t.long("rank") ?: 0L,
+        )
+    }
+
 internal fun parseDeezerAlbumDetail(body: String): DeezerAlbumDetail? {
     val a = parse(body).obj()?.takeIf { it["error"] == null } ?: return null
     return DeezerAlbumDetail(

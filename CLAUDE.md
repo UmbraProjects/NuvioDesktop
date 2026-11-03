@@ -12,6 +12,7 @@ these UI changes are in the merge and that they are fork-only, and let them deci
 - `composeApp/src/commonMain/**/features/music/visualiser/**` (track map, visualiser styles, Beat Grid, Song Map)
 - `composeApp/src/desktopMain/**/features/music/TrackMapBook.desktop.kt` and the decode/track-map code in `MusicPlayerSurface.desktop.kt`
 - the matching tests under `composeApp/src/commonTest/**/visualiser/`
+- the album page redesign (equal side columns, Essentials rail, In brief card, popularity bars): `MusicAlbumScreen.kt`, `AlbumEssentialsColumn.kt`, `AlbumInBrief.kt`, `library/AlbumEssentials.kt`, `booklet/StartHere.kt`, and their tests
 - the matching `CHANGELOG.md` entries and `.github/workflows/windows-build.yml` (fork updater channel)
 
 Rules for the stage UI on this branch: symmetry is key, and no UI element may move or resize depending on content
