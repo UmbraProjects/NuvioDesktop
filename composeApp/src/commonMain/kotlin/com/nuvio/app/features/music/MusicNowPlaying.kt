@@ -333,9 +333,10 @@ private fun MusicNowPlayingScreen(
             val wide = maxWidth >= 860.dp
             val cutout = identity?.cutoutUrl.takeIf { wide }
             // fork:stage - three panels (player, lyrics, booklet over the artist) when there is room; each keeps to its own.
-            // Without the liner notes there is no third panel: an empty column held the video and lyrics off centre.
+            // The layout depends on the window only, never on whether the liner notes have anything to show: nothing on this page
+            // may move or resize when the notes are missing (user rule, Nov 3 2026). A missing booklet leaves its slot empty.
             val showBooklet = album != null && bookletUi !is BookletUi.None
-            val threePanels = wide && showBooklet && stageUsesThreePanels(maxWidth.value)
+            val threePanels = wide && stageUsesThreePanels(maxWidth.value)
             // The video, lyrics and sync controls sit in the middle of the space right of the player column, except when the
             // full-height cut-out stands beside the lyrics and they keep to the left of it.
             val centredMiddle = threePanels || realVideo || cutout == null
@@ -511,6 +512,11 @@ private fun MusicNowPlayingScreen(
                                     onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
                                     modifier = Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth(),
                                 )
+                            } else if (glassTop != null && glassHeight != null) {
+                                // No notes: the slot stays, empty and the same size, so the cut-out, video and lyrics do not move.
+                                Spacer(Modifier.padding(top = glassTop).height(glassHeight).fillMaxWidth())
+                            } else {
+                                Spacer(Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth())
                             }
                             if (cutout != null) {
                                 StageCutout(cutout, Modifier.weight(1f).fillMaxWidth())
