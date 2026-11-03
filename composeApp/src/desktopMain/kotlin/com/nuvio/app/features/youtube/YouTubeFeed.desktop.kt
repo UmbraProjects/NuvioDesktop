@@ -294,6 +294,16 @@ internal actual object YouTubeModeStorage {
 
     actual fun saveHideWatched(enabled: Boolean) = store.putBoolean(HIDE_WATCHED_KEY, enabled)
 
+    actual fun loadSearchHistory(profileId: Int): String? = store.getString("search_history_$profileId")
+
+    actual fun saveSearchHistory(profileId: Int, payload: String?) = store.putString("search_history_$profileId", payload)
+
+    private const val AUTOPLAY_KEY = "autoplay"
+
+    actual fun loadAutoplay(): Boolean = store.getBoolean(AUTOPLAY_KEY) ?: false
+
+    actual fun saveAutoplay(enabled: Boolean) = store.putBoolean(AUTOPLAY_KEY, enabled)
+
     private const val HIDE_STREAMS_KEY = "hide_streams"
 
     actual fun loadHideStreams(): Boolean = store.getBoolean(HIDE_STREAMS_KEY) ?: false

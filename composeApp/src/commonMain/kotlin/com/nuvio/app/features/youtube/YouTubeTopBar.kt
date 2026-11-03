@@ -24,6 +24,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import com.nuvio.app.features.music.MusicBarSuggestions
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -97,6 +100,10 @@ object YouTubeTopBarSearch {
         clears++
     }
 
+    /** The recent searches the bar hangs under the box while it is empty and focused (drawn by the bar, as Music's). */
+    var suggestions by mutableStateOf<MusicBarSuggestions?>(null)
+        internal set
+
     /** The search key on the YouTube tab: into this box rather than the video search. */
     fun requestFocus() {
         focusRequests++
@@ -161,6 +168,19 @@ private fun YouTubeBarSearchField(fieldFocus: FocusRequester, swapFocus: FocusRe
         swallowActivationKey = false
     }
     fun toResults(): Boolean = runCatching { state.resultsFocus.requestFocus() }.getOrDefault(false)
+    // Recent searches, under the empty box while it has focus; Up and Down walk them, Enter picks one.
+    val recent by remember { YouTubeSearchHistory.recent }.collectAsState()
+    val offered = recent.take(RECENT_SHOWN)
+    var picked by remember(offered) { mutableIntStateOf(-1) }
+    val showRecent = focused && state.text.isEmpty() && offered.isNotEmpty()
+    fun pick(query: String) {
+        field = TextFieldValue(query, TextRange(query.length))
+        state.text = query
+        state.submit()
+    }
+    val published = if (showRecent) MusicBarSuggestions(offered, picked, ::pick, onClear = YouTubeSearchHistory::clear) else null
+    SideEffect { YouTubeTopBarSearch.suggestions = published }
+    DisposableEffect(Unit) { onDispose { YouTubeTopBarSearch.suggestions = null } }
     BasicTextField(
         value = shown,
         onValueChange = { next ->
@@ -179,6 +199,23 @@ private fun YouTubeBarSearchField(fieldFocus: FocusRequester, swapFocus: FocusRe
             .onPreviewKeyEvent { event ->
                 if (!focused) return@onPreviewKeyEvent false
                 val down = event.type == KeyEventType.KeyDown
+                if (showRecent) {
+                    when (event.key) {
+                        Key.DirectionDown -> {
+                            if (down) picked = (picked + 1).coerceAtMost(offered.lastIndex)
+                            return@onPreviewKeyEvent true
+                        }
+                        Key.DirectionUp -> {
+                            if (down) picked = (picked - 1).coerceAtLeast(-1)
+                            return@onPreviewKeyEvent true
+                        }
+                        Key.Enter, Key.NumPadEnter -> if (picked >= 0) {
+                            if (down) pick(offered[picked])
+                            return@onPreviewKeyEvent true
+                        }
+                        else -> Unit
+                    }
+                }
                 when (event.key) {
                     // Left at the start of the text (nothing to move past) goes on to the swap button.
                     Key.DirectionLeft -> if (shown.selection.collapsed && shown.selection.start == 0) {
@@ -249,6 +286,9 @@ private fun YouTubeBarSearchField(fieldFocus: FocusRequester, swapFocus: FocusRe
         },
     )
 }
+
+/** How many recent searches the panel offers. */
+private const val RECENT_SHOWN = 6
 
 @Composable
 private fun BarIconButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {

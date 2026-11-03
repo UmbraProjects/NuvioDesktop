@@ -6507,7 +6507,9 @@ private fun TabletFloatingTopBar(
     val pickerItemCount = pickerEntries.size
     // fork:music-navbar - the Music box on the bar offers its recent searches through the same attached panel. The
     // last ones shown are kept so the panel fades out on them rather than switching to the video history.
+    // fork:youtube-mode - and the YouTube box its own, through the same panel.
     val musicSuggestions = com.nuvio.app.features.music.MusicTopBarSearch.suggestions.takeIf { musicBarActive }
+        ?: com.nuvio.app.features.youtube.YouTubeTopBarSearch.suggestions.takeIf { youTubeBarActive }
     var lastMusicSuggestions by remember { mutableStateOf<com.nuvio.app.features.music.MusicBarSuggestions?>(null) }
     SideEffect { if (musicSuggestions != null) lastMusicSuggestions = musicSuggestions }
     val panelMusic = musicSuggestions ?: lastMusicSuggestions.takeIf { !isSearchActive }
@@ -6976,7 +6978,7 @@ private fun TabletFloatingTopBar(
                                 modifier = Modifier
                                     .clickable {
                                         if (panelMusic != null) {
-                                            com.nuvio.app.features.music.library.MusicSearchHistory.clear()
+                                            panelMusic.onClear()
                                         } else {
                                             com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
                                             pickerSelectedIndex = -1

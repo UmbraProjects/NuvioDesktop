@@ -41,6 +41,30 @@ class YouTubeFeedParserTest {
     }
 
     @Test
+    fun readsYouTubesAutoplayPick() {
+        val overlay = """
+            {"playerOverlays":{"playerOverlayRenderer":{"autoplay":{"playerOverlayAutoplayRenderer":{
+              "videoId":"next1","videoTitle":{"simpleText":"Part two"},"byline":{"runs":[{"text":"Chan"}]},
+              "background":{"thumbnails":[{"url":"https://i.ytimg.com/vi/next1/a.jpg"},{"url":"https://i.ytimg.com/vi/next1/b.jpg"}]}
+            }}}}}
+        """.trimIndent()
+        val pick = parseYouTubeAutoplay(overlay)
+        assertEquals("next1", pick?.videoId)
+        assertEquals("Part two", pick?.title)
+        assertEquals("Chan", pick?.channel)
+        assertEquals("https://i.ytimg.com/vi/next1/b.jpg", pick?.thumbnailUrl)
+
+        // Only the watch column's autoplay set: the id alone.
+        val set = """
+            {"contents":{"twoColumnWatchNextResults":{"autoplay":{"autoplay":{"sets":[{"autoplayVideo":{
+              "watchEndpoint":{"videoId":"next2"}}}]}}}}}
+        """.trimIndent()
+        assertEquals("next2", parseYouTubeAutoplay(set)?.videoId)
+
+        assertNull(parseYouTubeAutoplay("""{"contents":{}}"""))
+    }
+
+    @Test
     fun marksPastLiveStreams() {
         val page = parseYouTubeFeed(
             feed(

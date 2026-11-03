@@ -50,6 +50,13 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import com.nuvio.app.core.ui.CursorMenuPositionProvider
+import com.nuvio.app.core.ui.NuvioGlassMenuSurface
 import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -189,6 +196,7 @@ fun YouTubeTabScreen(
     val deArrow by remember { YouTubeFeedRepository.deArrow }.collectAsStateWithLifecycle()
     val hideWatched by remember { YouTubeFeedRepository.hideWatched }.collectAsStateWithLifecycle()
     val hideStreams by remember { YouTubeFeedRepository.hideStreams }.collectAsStateWithLifecycle()
+    val autoplay by remember { YouTubeFeedRepository.autoplay }.collectAsStateWithLifecycle()
     // Not on History, which is all watched by definition (a stream watched is history like any other).
     val filtered = kind != YouTubeFeedKind.History
     val videos = if (filtered && (hideWatched || hideStreams)) {
@@ -207,6 +215,7 @@ fun YouTubeTabScreen(
     fun submitSearch() {
         if (searchBox.text.isBlank()) return
         focusResultsPending = true
+        YouTubeSearchHistory.record(searchBox.text)
         YouTubeFeedRepository.search(searchBox.text)
         // Back from the results returns to where the search was typed.
         if (selectedName != YouTubeFeedKind.Search.name) {
@@ -452,12 +461,15 @@ fun YouTubeTabScreen(
                 YouTubeSectionTab(Icons.Rounded.Sensors, "Hide streams", on = hideStreams) {
                     YouTubeFeedRepository.setHideStreams(!hideStreams)
                 }
+                YouTubeSectionTab(Icons.Rounded.SkipNext, "Autoplay", on = autoplay) {
+                    YouTubeFeedRepository.setAutoplay(!autoplay)
+                }
                 YouTubeSectionTab(Icons.Rounded.Refresh, "Refresh", on = false) {
                     if (!feed.loading) YouTubeFeedRepository.load(kind, force = true)
                 }
                 if (channel.resolved) {
                     Spacer(Modifier.width(6.dp))
-                    ChannelPicker(channel)
+                    ChannelPicker(channel, onOpenSettings = onOpenSettings)
                 }
             }
         }
@@ -629,8 +641,9 @@ fun YouTubeTabScreen(
 
 /** Which of the account's channels the feeds act as; the website's "Switch account". */
 @Composable
-private fun ChannelPicker(state: YouTubeChannelState) {
+private fun ChannelPicker(state: YouTubeChannelState, onOpenSettings: () -> Unit) {
     var open by remember { mutableStateOf(false) }
+    var avatarBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     Box {
         val current = state.current
         val label = when {
@@ -650,6 +663,7 @@ private fun ChannelPicker(state: YouTubeChannelState) {
             Box(
                 modifier = Modifier
                     .size(36.dp)
+                    .onGloballyPositioned { avatarBounds = it.boundsInWindow() }
                     .clip(CircleShape)
                     .border(2.dp, ring, CircleShape)
                     .clickable(interactionSource = interaction, indication = null) { open = true },
@@ -668,54 +682,143 @@ private fun ChannelPicker(state: YouTubeChannelState) {
                 }
             }
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            if (state.channels.isEmpty()) {
-                DropdownMenuItem(
-                    text = { Text("Couldn't read this account's channels. Reload") },
-                    onClick = {
-                        open = false
-                        YouTubeFeedRepository.loadChannels(force = true)
-                    },
-                )
-            }
-            state.channels.forEach { identity ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(identity.name, style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                text = when {
-                                    !identity.hasChannel -> "No channel"
-                                    identity.handle != null -> identity.handle
-                                    identity.pageId == null -> "Account profile"
-                                    else -> "Brand channel"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    leadingIcon = {
-                        NuvioAsyncImage(
-                            model = identity.photoUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(32.dp).clip(CircleShape),
-                            contentScale = ContentScale.Crop,
-                        )
-                    },
-                    trailingIcon = if (identity.pageId == state.pageId && !state.needsChoice) {
-                        { Icon(Icons.Rounded.Check, contentDescription = "Current") }
-                    } else {
-                        null
-                    },
-                    onClick = {
+        val anchor = avatarBounds
+        if (open && anchor != null) {
+            // Under the picture, lined up with its right edge (the menu flips left off the window's edge).
+            Popup(
+                popupPositionProvider = remember(anchor) {
+                    CursorMenuPositionProvider(IntOffset(anchor.right.roundToInt(), anchor.bottom.roundToInt() + 6))
+                },
+                onDismissRequest = { open = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                ProfileMenu(
+                    state = state,
+                    onPick = { identity ->
                         open = false
                         if (identity.pageId != state.pageId || state.needsChoice) {
                             YouTubeFeedRepository.selectChannel(identity.pageId)
                         }
                     },
+                    onReload = {
+                        open = false
+                        YouTubeFeedRepository.loadChannels(force = true)
+                    },
+                    onOpenSettings = {
+                        open = false
+                        onOpenSettings()
+                    },
                 )
             }
+        }
+    }
+}
+
+/** The profile picture's menu: the account's channels to watch as, then a way to the YouTube settings. In the app's menu glass. */
+@Composable
+private fun ProfileMenu(
+    state: YouTubeChannelState,
+    onPick: (YouTubeChannelIdentity) -> Unit,
+    onReload: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val tokens = MaterialTheme.nuvio
+    val first = remember { FocusRequester() }
+    // Opened from the keyboard (or a pad), the arrows walk the menu straight away.
+    LaunchedEffect(Unit) {
+        if (KeyboardInputMode.active) {
+            kotlinx.coroutines.delay(16)
+            runCatching { first.requestFocus() }
+        }
+    }
+    NuvioGlassMenuSurface(modifier = Modifier.widthIn(min = 260.dp, max = 360.dp)) {
+        Column(
+            modifier = Modifier
+                .focusRequester(first)
+                .arrowKeyFocusNavigation()
+                .padding(6.dp),
+        ) {
+            Text(
+                text = "WATCHING AS",
+                modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = tokens.colors.textMuted,
+            )
+            if (state.channels.isEmpty()) {
+                ProfileMenuRow(onClick = onReload) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text("Couldn't read this account's channels. Reload", modifier = Modifier.weight(1f))
+                }
+            }
+            state.channels.forEach { identity ->
+                val current = identity.pageId == state.pageId && !state.needsChoice
+                ProfileMenuRow(onClick = { onPick(identity) }) {
+                    NuvioAsyncImage(
+                        model = identity.photoUrl,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(identity.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = when {
+                                !identity.hasChannel -> "No channel"
+                                identity.handle != null -> identity.handle
+                                identity.pageId == null -> "Account profile"
+                                else -> "Brand channel"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.colors.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (current) Icon(Icons.Rounded.Check, contentDescription = "Current", tint = tokens.colors.accent, modifier = Modifier.size(18.dp))
+                }
+            }
+            Box(
+                Modifier
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(com.nuvio.app.core.ui.NuvioGlass.EdgeColor),
+            )
+            ProfileMenuRow(onClick = onOpenSettings) {
+                Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(20.dp))
+                Text("YouTube settings", modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/** One row of [ProfileMenu], lit like the app's other menus under the pointer or the keyboard. */
+@Composable
+private fun ProfileMenuRow(onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    val tokens = MaterialTheme.nuvio
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val focused by interaction.collectIsKeyboardFocusedAsState()
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 40.dp)
+            .clip(shape)
+            .background(if (hovered || focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .border(1.5.dp, if (focused) tokens.colors.borderFocus else Color.Transparent, shape)
+            .hoverable(interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides Color.White.copy(alpha = 0.9f),
+            androidx.compose.material3.LocalTextStyle provides MaterialTheme.typography.bodyMedium,
+        ) {
+            content()
         }
     }
 }

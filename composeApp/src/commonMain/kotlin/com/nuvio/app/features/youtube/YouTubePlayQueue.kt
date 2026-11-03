@@ -7,6 +7,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,9 +34,30 @@ internal object YouTubePlayQueue {
     /** Whether [videoId] is the video the queue is playing now. */
     fun isPlaying(videoId: String): Boolean = _state.value?.current?.videoId == videoId
 
+    /** The video autoplay was last looked up for, so it is asked once per video. */
+    @Volatile
+    private var autoplayAskedFor: String? = null
+
+    /**
+     * Autoplay ([YouTubeFeedRepository.autoplay]): with no playlist playing, YouTube's next pick after
+     * [videoId] is set up as a one-off hand-over, exactly like a related video picked in the player, and
+     * resolved ahead; the app then hands over to it at the end as it does at a playlist's.
+     */
+    private fun prepareAutoplay(videoId: String) {
+        if (!YouTubeFeedRepository.autoplay.value || autoplayAskedFor == videoId) return
+        autoplayAskedFor = videoId
+        scope.launch {
+            val pick = runCatching { YouTubeFeedRepository.autoplayPick(videoId) }.getOrNull() ?: return@launch
+            // A playlist or a related video picked in the player took over meanwhile: that comes first.
+            if (_state.value != null || !YouTubeFeedRepository.autoplay.value) return@launch
+            handOverFromPlayer(videoId, pick)
+            prepareNext(videoId)
+        }
+    }
+
     /** Resolves the video after [videoId] ahead of time, once; its stream URLs outlast any video's end. */
     fun prepareNext(videoId: String) {
-        val state = _state.value ?: return
+        val state = _state.value ?: return prepareAutoplay(videoId)
         if (state.current?.videoId != videoId) return
         val upcoming = state.videos.getOrNull(state.index + 1) ?: return
         if (prepared?.first == upcoming.videoId) return
@@ -116,7 +138,7 @@ internal object YouTubePlayQueue {
         _next.value = null
         val current = YouTubeVideo(videoId = currentVideoId, title = "", channel = null, details = null, duration = null, thumbnailUrl = null)
         _state.value = State(name = "", videos = listOf(current, next), index = 0, oneOff = true)
-        log.i { "handing over to a related video" }
+        log.i { "handing over to ${next.videoId} next" }
     }
 
     /** A video opened outside the queue ends it, unless it is the queue's own current one. */

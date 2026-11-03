@@ -406,3 +406,29 @@ private fun JsonObject.array(key: String): JsonArray? = this[key] as? JsonArray
 private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.content?.toDoubleOrNull()?.toInt()
 private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 private fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+
+/**
+ * The video YouTube would play next after the watch page in [body] (a `next` answer): its own pick,
+ * made on its side for this account, not the first related video. Read from the end-screen countdown
+ * (`playerOverlayAutoplayRenderer`, which also names it) or, failing that, the watch column's
+ * autoplay set (`autoplayVideo`, the id alone). Null when the answer carries neither.
+ */
+internal fun parseYouTubeAutoplay(body: String): YouTubeVideo? {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return null
+    collectObjects(root, "playerOverlayAutoplayRenderer").firstNotNullOfOrNull { overlay ->
+        val videoId = overlay.string("videoId")?.takeIf { it.isNotBlank() } ?: return@firstNotNullOfOrNull null
+        YouTubeVideo(
+            videoId = videoId,
+            title = text(overlay["videoTitle"]).orEmpty(),
+            channel = text(overlay["byline"]),
+            details = null,
+            duration = null,
+            thumbnailUrl = overlay.obj("background")?.array("thumbnails")
+                ?.mapNotNull { (it as? JsonObject)?.string("url") }
+                ?.lastOrNull(),
+        )
+    }?.let { return it }
+    return collectObjects(root, "autoplayVideo").firstNotNullOfOrNull { endpoint ->
+        endpoint.obj("watchEndpoint")?.string("videoId")?.takeIf { it.isNotBlank() }
+    }?.let { YouTubeVideo(videoId = it, title = "", channel = null, details = null, duration = null, thumbnailUrl = null) }
+}

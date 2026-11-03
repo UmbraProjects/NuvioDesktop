@@ -157,6 +157,14 @@ internal expect object YouTubeModeStorage {
     fun loadHideWatched(): Boolean
     fun saveHideWatched(enabled: Boolean)
 
+    /** [profileId]'s recent YouTube searches, as JSON; see [YouTubeSearchHistory]. */
+    fun loadSearchHistory(profileId: Int): String?
+    fun saveSearchHistory(profileId: Int, payload: String?)
+
+    /** Play YouTube's next pick when a video ends outside a playlist. */
+    fun loadAutoplay(): Boolean
+    fun saveAutoplay(enabled: Boolean)
+
     /** Leave past live streams out of the feeds. */
     fun loadHideStreams(): Boolean
     fun saveHideStreams(enabled: Boolean)
@@ -256,6 +264,17 @@ object YouTubeFeedRepository {
     fun setHideWatched(enabled: Boolean) {
         YouTubeModeStorage.saveHideWatched(enabled)
         _hideWatched.value = enabled
+    }
+
+    private val _autoplay by lazy { MutableStateFlow(YouTubeModeStorage.loadAutoplay()) }
+
+    /** The tab's "Autoplay" toggle: after a video ends outside a playlist, on to YouTube's next pick ([autoplayPick]). */
+    val autoplay: StateFlow<Boolean>
+        get() = _autoplay.asStateFlow()
+
+    fun setAutoplay(enabled: Boolean) {
+        YouTubeModeStorage.saveAutoplay(enabled)
+        _autoplay.value = enabled
     }
 
     private val _hideStreams by lazy { MutableStateFlow(YouTubeModeStorage.loadHideStreams()) }
@@ -454,6 +473,22 @@ object YouTubeFeedRepository {
             ?: return emptyList()
         return parseYouTubeFeed(page.body).videos.filter { it.videoId != videoId }
             .also { log.i { "Related: ${it.size}" } }
+    }
+
+    /**
+     * The video to play after [videoId] when autoplay is on: YouTube's own pick ([parseYouTubeAutoplay]),
+     * taken from the related videos when it is among them (they carry its length and channel), or the
+     * first related video not yet watched when YouTube named none. Null when YouTube did not answer.
+     */
+    suspend fun autoplayPick(videoId: String): YouTubeVideo? {
+        val page = youTubeNext(videoId, continuation = null, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
+            ?: return null
+        val related = parseYouTubeFeed(page.body).videos.filter { it.videoId != videoId }
+        val pick = parseYouTubeAutoplay(page.body)?.takeIf { it.videoId != videoId }
+        val chosen = pick?.let { p -> related.firstOrNull { it.videoId == p.videoId } ?: p }
+            ?: related.firstOrNull { !isYouTubeVideoWatched(it) }
+        log.i { "Autoplay after $videoId: ${chosen?.videoId} (${if (pick != null) "YouTube's pick" else "first unwatched related"})" }
+        return chosen
     }
 
     /** The playlists [videoId] can be saved to, or null when YouTube did not answer. */
