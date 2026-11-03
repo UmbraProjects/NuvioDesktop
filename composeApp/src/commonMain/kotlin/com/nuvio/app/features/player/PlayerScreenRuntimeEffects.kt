@@ -1398,10 +1398,12 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         playerController,
         playerControllerSourceUrl,
         playbackSnapshot.durationMs,
+        youTubeChapters,
     ) {
         if (playbackSnapshot.durationMs <= 0L) return@LaunchedEffect
         if (playerControllerSourceUrl != activeSourceUrl) return@LaunchedEffect
-        val chapters = playerController?.getChapters().orEmpty()
+        // A YouTube video's own chapters (from its watch page) when the stream reports none.
+        val chapters = playerController?.getChapters().orEmpty().ifEmpty { youTubeChapters }
         playerChapters = chapters
         val intervals = ChapterSkipDetector.findIntervals(
             chapters = chapters,

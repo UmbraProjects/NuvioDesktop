@@ -24,16 +24,20 @@ internal val PlayerScreenRuntime.isYouTubeVideoPlayback: Boolean
 private val PlayerScreenRuntime.youTubeVideoId: String
     get() = parentMetaId.removePrefix(YOUTUBE_META_ID_PREFIX)
 
-/** Loads the related videos when a YouTube tab video opens. */
+/** Loads the related videos and the chapters when a YouTube tab video opens. */
 @Composable
 internal fun PlayerScreenRuntime.BindYouTubeRelatedEffect() {
     if (!isYouTubeVideoPlayback) return
     val videoId = youTubeVideoId
     LaunchedEffect(videoId) {
         youTubeRelated = emptyList()
+        youTubeChapters = emptyList()
         youTubeComments = emptyList()
         youTubeCommentsLoaded = false
-        youTubeRelated = YouTubeFeedRepository.related(videoId)
+        val page = YouTubeFeedRepository.watchPage(videoId)
+        youTubeRelated = page.related
+        // The stream itself carries no chapters; YouTube's player draws these (see the chapter effect).
+        youTubeChapters = page.chapters.map { PlayerChapter(it.startSeconds, it.title) }
     }
 }
 

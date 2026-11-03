@@ -432,3 +432,36 @@ internal fun parseYouTubeAutoplay(body: String): YouTubeVideo? {
         endpoint.obj("watchEndpoint")?.string("videoId")?.takeIf { it.isNotBlank() }
     }?.let { YouTubeVideo(videoId = it, title = "", channel = null, details = null, duration = null, thumbnailUrl = null) }
 }
+
+/** A chapter of a YouTube video: where it starts, in seconds, and its name. */
+data class YouTubeChapter(val startSeconds: Double, val title: String)
+
+/**
+ * The chapters YouTube's own player marks on the seek bar, from a watch page's `next` answer [body]:
+ * the player bar's markers (`multiMarkersPlayerBarRenderer`), the creator's own from the description
+ * first and YouTube's automatic ones otherwise; failing those, the Chapters panel's list
+ * (`macroMarkersListItemRenderer`). In order, starting from the first; empty when the video has none.
+ */
+internal fun parseYouTubeChapters(body: String): List<YouTubeChapter> {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return emptyList()
+    val markerSets = collectObjects(root, "multiMarkersPlayerBarRenderer")
+        .flatMap { it.array("markersMap").orEmpty().mapNotNull { entry -> entry as? JsonObject } }
+        .associate { entry -> entry.string("key").orEmpty() to entry.obj("value")?.array("chapters").orEmpty() }
+    val fromBar = (markerSets["DESCRIPTION_CHAPTERS"] ?: markerSets["AUTO_CHAPTERS"] ?: markerSets.values.firstOrNull { it.isNotEmpty() })
+        .orEmpty()
+        .mapNotNull { item ->
+            val chapter = (item as? JsonObject)?.obj("chapterRenderer") ?: return@mapNotNull null
+            val startMs = (chapter["timeRangeStartMillis"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            val title = text(chapter["title"])?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            YouTubeChapter(startMs / 1000.0, title)
+        }
+    val chapters = fromBar.ifEmpty {
+        collectObjects(root, "macroMarkersListItemRenderer").mapNotNull { item ->
+            val start = item.obj("onTap")?.obj("watchEndpoint")?.int("startTimeSeconds") ?: return@mapNotNull null
+            val title = text(item["title"])?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            YouTubeChapter(start.toDouble(), title)
+        }
+    }
+    // One chapter marks nothing; and the same start twice (a list read from two places) only once.
+    return chapters.distinctBy { it.startSeconds }.sortedBy { it.startSeconds }.takeIf { it.size >= 2 }.orEmpty()
+}

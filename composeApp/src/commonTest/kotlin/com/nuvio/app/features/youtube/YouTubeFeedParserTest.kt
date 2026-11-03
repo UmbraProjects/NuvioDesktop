@@ -41,6 +41,33 @@ class YouTubeFeedParserTest {
     }
 
     @Test
+    fun readsChaptersFromThePlayerBarPreferringTheCreators() {
+        fun chapter(title: String, ms: Long) = """{"chapterRenderer":{"title":{"simpleText":"$title"},"timeRangeStartMillis":$ms}}"""
+        val body = """
+            {"playerOverlays":{"playerOverlayRenderer":{"decoratedPlayerBarRenderer":{"decoratedPlayerBarRenderer":{"playerBar":{
+              "multiMarkersPlayerBarRenderer":{"markersMap":[
+                {"key":"AUTO_CHAPTERS","value":{"chapters":[${chapter("Auto one", 0)},${chapter("Auto two", 5000)}]}},
+                {"key":"DESCRIPTION_CHAPTERS","value":{"chapters":[${chapter("Intro", 0)},${chapter("The build", 83500)},${chapter("Outro", 600000)}]}}
+              ]}}}}}}}
+        """.trimIndent()
+
+        assertEquals(
+            listOf(YouTubeChapter(0.0, "Intro"), YouTubeChapter(83.5, "The build"), YouTubeChapter(600.0, "Outro")),
+            parseYouTubeChapters(body),
+        )
+    }
+
+    @Test
+    fun readsChaptersFromTheChaptersPanelWhenTheBarHasNone() {
+        fun item(title: String, s: Int) =
+            """{"macroMarkersListItemRenderer":{"title":{"simpleText":"$title"},"onTap":{"watchEndpoint":{"startTimeSeconds":$s}}}}"""
+        val body = """{"engagementPanels":[{"contents":[${item("Start", 0)},${item("Middle", 120)}]}]}"""
+
+        assertEquals(listOf(YouTubeChapter(0.0, "Start"), YouTubeChapter(120.0, "Middle")), parseYouTubeChapters(body))
+        assertEquals(emptyList(), parseYouTubeChapters("""{"engagementPanels":[{"contents":[${item("Only", 0)}]}]}"""))
+    }
+
+    @Test
     fun readsYouTubesAutoplayPick() {
         val overlay = """
             {"playerOverlays":{"playerOverlayRenderer":{"autoplay":{"playerOverlayAutoplayRenderer":{

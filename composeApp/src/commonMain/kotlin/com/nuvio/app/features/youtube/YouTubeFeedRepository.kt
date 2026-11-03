@@ -178,6 +178,9 @@ internal expect object YouTubeModeStorage {
     fun saveChannelChoice(choice: String?)
 }
 
+/** See [YouTubeFeedRepository.watchPage]. */
+data class YouTubeWatchPage(val related: List<YouTubeVideo>, val chapters: List<YouTubeChapter>)
+
 data class YouTubeChannelState(
     val channels: List<YouTubeChannelIdentity> = emptyList(),
     /** The brand channel requests act as; null for the account's own profile. */
@@ -467,12 +470,18 @@ object YouTubeFeedRepository {
         return parseYouTubeComments(page.body).also { log.i { "Comments: ${it.comments.size}, more=${it.continuation != null}" } }
     }
 
-    /** The videos YouTube suggests beside [videoId] (the watch page's column), [videoId] itself left out. */
-    suspend fun related(videoId: String): List<YouTubeVideo> {
+    /**
+     * What the watch page of [videoId] holds for the player: the videos YouTube suggests beside it (its
+     * column, [videoId] itself left out) and the video's chapters ([parseYouTubeChapters]). Empty when
+     * YouTube did not answer.
+     */
+    suspend fun watchPage(videoId: String): YouTubeWatchPage {
         val page = youTubeNext(videoId, continuation = null, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
-            ?: return emptyList()
-        return parseYouTubeFeed(page.body).videos.filter { it.videoId != videoId }
-            .also { log.i { "Related: ${it.size}" } }
+            ?: return YouTubeWatchPage(emptyList(), emptyList())
+        val related = parseYouTubeFeed(page.body).videos.filter { it.videoId != videoId }
+        val chapters = parseYouTubeChapters(page.body)
+        log.i { "Watch page: ${related.size} related, ${chapters.size} chapters" }
+        return YouTubeWatchPage(related, chapters)
     }
 
     /**
