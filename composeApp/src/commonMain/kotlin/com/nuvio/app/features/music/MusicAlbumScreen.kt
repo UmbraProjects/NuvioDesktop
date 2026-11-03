@@ -353,20 +353,24 @@ private fun AlbumContent(
         // Wide enough for three columns: the object, the record and its songs, then More from down the right in two
         // columns, always in the same place however long the track list is. Narrower, More from goes under the songs.
         val moreAside = more.isNotEmpty() && maxWidth >= 1200.dp
+        // The case grows with the window (a TV is read from the sofa) and the column grows with it, so the unused strip
+        // beside the case stays the same. A function of the window width only, never of content: nothing moves.
+        val caseSize = albumCaseSize(maxWidth)
+        val objectColumnWidth = albumObjectColumnWidth(caseSize)
         if (maxWidth >= 840.dp) {
             Row(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.width(OBJECT_COLUMN_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState())
+                    Modifier.width(objectColumnWidth).fillMaxHeight().verticalScroll(rememberScrollState())
                         .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) { objectPanel(340.dp) }
+                ) { objectPanel(caseSize) }
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     // With More from beside it, the end padding makes up the difference between the two side columns, so
                     // the record is centred on the window (level with the docked player) rather than between them.
                     contentPadding = PaddingValues(
                         start = 12.dp,
-                        end = if (moreAside) (OBJECT_COLUMN_WIDTH + 12.dp - MORE_COLUMN_WIDTH).coerceAtLeast(24.dp) else 32.dp,
+                        end = if (moreAside) (objectColumnWidth + 12.dp - MORE_COLUMN_WIDTH).coerceAtLeast(24.dp) else 32.dp,
                         top = 16.dp,
                         bottom = 40.dp,
                     ),
@@ -417,6 +421,25 @@ private const val TOP_ROW_SCROLL_DELAY_MS = 180L
 private val MORE_GAP = 16.dp
 private val MORE_COLUMN_WIDTH = MORE_TILE * 2 + MORE_GAP + 56.dp
 private val OBJECT_COLUMN_WIDTH = 520.dp
+private val CASE_SIZE_MIN = 340.dp
+private val CASE_SIZE_MAX = 420.dp
+private val CASE_GROWS_FROM = 1500.dp
+/** The case plus the disc that slides out of it (see the `peek` passed to AlbumObject), as a share of the case's height. */
+private const val CASE_WIDTH_FACTOR = 1.3f
+
+/**
+ * The album case's height for a window [width]: 340 dp up to 1500 dp wide (as before), then growing to 420 dp by about
+ * 1920 dp, so on a TV the cover is the hero of the page. Window width only; the cover, the tracks and the artist never
+ * change it.
+ */
+internal fun albumCaseSize(width: Dp): Dp {
+    val grown = CASE_SIZE_MIN.value + (width.value - CASE_GROWS_FROM.value).coerceAtLeast(0f) * 0.19f
+    return grown.coerceAtMost(CASE_SIZE_MAX.value).dp
+}
+
+/** The object column's width for a case: 520 dp at the smallest case, wider by the case's growth times its width factor. */
+internal fun albumObjectColumnWidth(caseSize: Dp): Dp =
+    OBJECT_COLUMN_WIDTH + (caseSize - CASE_SIZE_MIN) * CASE_WIDTH_FACTOR
 
 /** More from the artist down the right of a wide window: two columns of covers, scrolling on their own. */
 @Composable
