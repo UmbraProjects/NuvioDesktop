@@ -74,6 +74,80 @@ class TrackMapTest {
 
     private fun drums(seconds: Double, bpm: Double, startS: Double = 0.5) = loop(seconds, bpm, startS)
 
+    /**
+     * Speed garage: a kick on every beat (four to the floor), a clap on 2 and 4, a loud open hi-hat on every off-beat eighth
+     * and a bass line that starts its notes off the beat. The off-beats are what made the old tempo finder read 130 as 87.
+     */
+    private fun garage(seconds: Double, bpm: Double, startS: Double = 0.5): FloatArray {
+        val n = (seconds * rate).toInt()
+        val out = FloatArray(n * 2)
+        val beat = 60.0 / bpm
+        val step = beat / 4
+        val noise = Random(11)
+        var hat1 = 0.0
+        var hat2 = 0.0
+        val bassSteps = setOf(2, 6, 7, 10, 14)
+        for (i in 0 until n) {
+            val t = i.toDouble() / rate - startS
+            var v = 0.0
+            val white = noise.nextDouble() * 2 - 1
+            if (t >= 0) {
+                val b = (t / beat).toInt()
+                val inBeat = t - b * beat
+                val phase = 2 * PI * (50.0 * inBeat + 100.0 / 40.0 * (1 - exp(-40 * inBeat)))
+                v += 0.8 * sin(phase) * exp(-inBeat * 12) + 0.3 * white * exp(-inBeat * 400)
+                if (b % 2 == 1) v += 0.4 * white * exp(-inBeat * 35)
+                // The open hat: half a beat after each kick, ringing on.
+                val off = inBeat - beat / 2
+                if (off >= 0) v += 0.18 * (white - 2 * hat1 + hat2) * exp(-off * 18)
+                val s = (t / step).toInt()
+                var start = s
+                while (start % 16 !in bassSteps && start > 0) start--
+                if (start % 16 in bassSteps) {
+                    val since = t - start * step
+                    var tone = 0.0
+                    for (h in 1..4) tone += sin(2 * PI * 55.0 * h * since) / h
+                    v += 0.3 * minOf(1.0, since / 0.004) * tone * exp(-since * 3)
+                }
+            }
+            hat2 = hat1; hat1 = white
+            out[2 * i] = v.toFloat()
+            out[2 * i + 1] = (v * 0.9).toFloat()
+        }
+        return out
+    }
+
+    @Test
+    fun fourToTheFloorGarageReadsAtItsOwnTempo() {
+        val map = build(garage(30.0, 130.0))
+        val beat = assertNotNull(map.beat)
+        assertTrue(abs(beat.bpm - 130.0) < 2.0, "bpm ${beat.bpm}")
+    }
+
+    @Test
+    fun fourToTheFloorKicksFillEveryBeatOfTheGrid() {
+        val map = build(garage(30.0, 130.0))
+        val beat = assertNotNull(map.beat)
+        var onBeat = 0
+        var kicks = 0
+        var claps = 0
+        var clapsOnBackbeat = 0
+        for (f in 0 until map.frames) {
+            val step = beat.stepAt(f * MAP_FRAME_MS + MAP_FRAME_MS / 2.0).mod(16L).toInt()
+            if (map.hits(f, Onset.KICK)) {
+                kicks++
+                if (step % 4 == 0 || step % 4 == 3 || step % 4 == 1) onBeat++
+            }
+            if (map.hits(f, Onset.SNARE)) {
+                claps++
+                if (step in setOf(3, 4, 5, 11, 12, 13)) clapsOnBackbeat++
+            }
+        }
+        assertTrue(kicks > 40 && onBeat >= kicks * 0.85, "$onBeat of $kicks kicks on a beat")
+        // A loud open hat on every off-beat still passes for a clap now and then; most claps must be on the backbeat.
+        assertTrue(claps > 0 && clapsOnBackbeat >= claps * 0.55, "$clapsOnBackbeat of $claps claps on 2 and 4")
+    }
+
     /** Kick hits further than 90 ms from any real kick (1 s apart from [firstMs] at 120 BPM, beats 1 and 3). */
     private fun falseKicks(map: TrackMap, firstMs: Long, everyMs: Long): Int {
         var count = 0
