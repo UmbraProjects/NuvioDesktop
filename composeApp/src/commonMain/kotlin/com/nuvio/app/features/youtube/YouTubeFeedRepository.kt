@@ -264,6 +264,19 @@ object YouTubeFeedRepository {
                 clear()
             }
         }
+        // A session that was answered as signed out and then renewed (the app closed for hours): the
+        // channel lookup that failed meanwhile left the feeds acting as the account profile, not the
+        // chosen brand channel. Look the channels up again and reload, as a new sign-in would.
+        scope.launch {
+            YouTubeMusicAuth.state.map { it.sessionRejected }.distinctUntilChanged().drop(1).collect { rejected ->
+                if (rejected) return@collect
+                val failed = _channel.value.error != null || _feeds.value.values.any { it.error != null }
+                if (failed) {
+                    log.i { "YouTube sign-in accepted again; reloading the channels and feeds" }
+                    clear()
+                }
+            }
+        }
     }
 
     fun setTabEnabled(enabled: Boolean) {
