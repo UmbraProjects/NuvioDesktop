@@ -73,9 +73,12 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
     val runtime = remember {
         PlayerScreenRuntime(args).apply {
             // A playlist opens a fresh player per entry; keep the speed the last entry played at.
+            // Live TV always starts at 1x: it arrives in real time, so a faster default only runs
+            // into the live edge and buffers. Changing the speed by hand there still works.
             sessionPlaybackSpeed = PlaylistPlaybackSession.playbackSpeed
                 ?.takeIf { args.autoPlayMode == PlayerAutoPlayMode.Playlist }
-                ?: playerSettingsUiState.defaultPlaybackSpeed
+                ?: playerSettingsUiState.defaultPlaybackSpeed.takeUnless { isIptvPlayback }
+                ?: 1f
         }
     }
     runtime.args = args
