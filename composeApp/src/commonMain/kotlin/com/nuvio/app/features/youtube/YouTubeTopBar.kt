@@ -42,7 +42,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import com.nuvio.app.core.ui.arrowFocusDirection
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -106,27 +110,43 @@ fun YouTubeTopBarContent(onLeave: () -> Unit, modifier: Modifier = Modifier) {
         YouTubeTopBarSearch.barHosted = true
         onDispose { YouTubeTopBarSearch.barHosted = false }
     }
+    val swapFocus = remember { FocusRequester() }
+    val fieldFocus = remember { FocusRequester() }
     Row(modifier.fillMaxWidth().padding(end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         NuvioPosterHoverTooltip(title = "Back to the main bar") {
             BarIconButton(
                 icon = Icons.Rounded.SwapHoriz,
                 description = "Back to the main bar",
                 onClick = onLeave,
-                modifier = Modifier.padding(start = 10.dp, end = 4.dp),
+                modifier = Modifier
+                    .padding(start = 10.dp, end = 4.dp)
+                    .focusRequester(swapFocus)
+                    // The bar's row is two stops: Right goes back to the box, Down to the videos.
+                    .onKeyEvent { event ->
+                        when (arrowFocusDirection(event)) {
+                            FocusDirection.Right -> runCatching { fieldFocus.requestFocus() }.getOrDefault(false)
+                            FocusDirection.Down -> runCatching { YouTubeTopBarSearch.resultsFocus.requestFocus() }.getOrDefault(false)
+                            FocusDirection.Left -> true
+                            else -> false
+                        }
+                    },
             )
         }
         Box(Modifier.size(width = 1.dp, height = 22.dp).background(NuvioGlass.EdgeColor))
         Spacer(Modifier.width(6.dp))
-        YouTubeBarSearchField(Modifier.weight(1f))
+        YouTubeBarSearchField(fieldFocus = fieldFocus, swapFocus = swapFocus, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun YouTubeBarSearchField(modifier: Modifier) {
+private fun YouTubeBarSearchField(fieldFocus: FocusRequester, swapFocus: FocusRequester, modifier: Modifier) {
     val tokens = MaterialTheme.nuvio
     val state = YouTubeTopBarSearch
     val focusManager = LocalFocusManager.current
-    val fieldFocus = remember { FocusRequester() }
+    // The cursor is kept here so Left knows when it is at the start; the text itself is shared with the tab,
+    // and a change made there (the tab's own box, a clear) puts the cursor at the end.
+    var field by remember { mutableStateOf(TextFieldValue(state.text, TextRange(state.text.length))) }
+    val shown = if (field.text == state.text) field else TextFieldValue(state.text, TextRange(state.text.length))
     var focused by remember { mutableStateOf(false) }
     // The search shortcut focuses the box. Requests made before it existed are not replayed, and the
     // key's own letter is kept out of the empty box it just focused.
@@ -142,12 +162,13 @@ private fun YouTubeBarSearchField(modifier: Modifier) {
     }
     fun toResults(): Boolean = runCatching { state.resultsFocus.requestFocus() }.getOrDefault(false)
     BasicTextField(
-        value = state.text,
+        value = shown,
         onValueChange = { next ->
-            if (swallowActivationKey && state.text.isEmpty() && next.length == 1) {
+            if (swallowActivationKey && state.text.isEmpty() && next.text.length == 1) {
                 swallowActivationKey = false
             } else {
-                state.text = next
+                field = next
+                state.text = next.text
             }
         },
         modifier = modifier
@@ -159,6 +180,13 @@ private fun YouTubeBarSearchField(modifier: Modifier) {
                 if (!focused) return@onPreviewKeyEvent false
                 val down = event.type == KeyEventType.KeyDown
                 when (event.key) {
+                    // Left at the start of the text (nothing to move past) goes on to the swap button.
+                    Key.DirectionLeft -> if (shown.selection.collapsed && shown.selection.start == 0) {
+                        if (down) runCatching { swapFocus.requestFocus() }
+                        true
+                    } else {
+                        false
+                    }
                     // The field would take Down as a cursor move: it goes to the videos instead.
                     Key.DirectionDown -> {
                         if (down && !toResults()) focusManager.moveFocus(FocusDirection.Down)

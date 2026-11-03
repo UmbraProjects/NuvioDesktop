@@ -1787,14 +1787,23 @@ private fun MainAppContent(
                     }
                     latestRootTabClick.value(if (selectedTab == AppScreenTab.Music) AppScreenTab.Home else AppScreenTab.Music)
                 }
+                AppShortcutAction.OpenYouTube -> {
+                    // Likewise nothing while the YouTube tab is turned off.
+                    if (com.nuvio.app.features.youtube.YouTubeFeedRepository.tabEnabled.value != true) return@collect
+                    navController.navigate(TabsRoute) {
+                        popUpTo<TabsRoute> { inclusive = false }
+                        launchSingleTop = true
+                    }
+                    latestRootTabClick.value(if (selectedTab == AppScreenTab.YouTube) AppScreenTab.Home else AppScreenTab.YouTube)
+                }
                 AppShortcutAction.GoHome,
                 AppShortcutAction.OpenSearch,
                 AppShortcutAction.OpenDiscover,
                 AppShortcutAction.OpenLiveTv,
                 AppShortcutAction.OpenLibrary -> {
-                    // Live TV only exists once a playlist does; the key then does nothing.
+                    // Live TV only while it is in the navigation; the key then does nothing.
                     if (action == AppShortcutAction.OpenLiveTv &&
-                        com.nuvio.app.features.iptv.IptvRepository.settings.value.playlists.isEmpty()
+                        !com.nuvio.app.features.iptv.IptvRepository.settings.value.tabShown
                     ) {
                         return@collect
                     }
