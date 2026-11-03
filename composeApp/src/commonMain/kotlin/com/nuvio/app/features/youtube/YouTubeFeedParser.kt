@@ -31,6 +31,8 @@ data class YouTubeVideo(
     val watchedPercent: Int? = null,
     /** The uploader's channel id (`UC...`), when the item links to it; a channel's own page does not. */
     val channelId: String? = null,
+    /** A past live stream ("Streamed 13 hours ago"); streams still on air are left out of the feeds. */
+    val wasLive: Boolean = false,
 )
 
 /** A channel, as the subscriptions list shows it. */
@@ -175,6 +177,7 @@ private fun lockupVideo(lockup: JsonObject): YouTubeVideo? {
         watchedPercent = watchedPercent(watched),
         // The avatar and the channel name both open the channel; either carries its browse id.
         channelId = findChannelId(metadata),
+        wasLive = rows.flatten().any(::isPastStream),
     )
 }
 
@@ -212,6 +215,7 @@ private fun rendererVideo(renderer: JsonObject): YouTubeVideo? {
                 .firstNotNullOfOrNull { it.int("percentDurationWatched") },
         ),
         channelId = byline?.let(::findChannelId),
+        wasLive = details?.split(" • ")?.any(::isPastStream) == true,
     )
 }
 
@@ -351,6 +355,9 @@ internal fun parseYouTubeSubscribed(body: String): Boolean? {
 }
 
 private fun watchedPercent(raw: Int?): Int? = raw?.takeIf { it > 0 }?.coerceAtMost(100)
+
+/** The age of a past live stream, as an English-language request words it ("Streamed 13 hours ago"). */
+private fun isPastStream(part: String): Boolean = part.startsWith("Streamed", ignoreCase = true)
 
 private fun isUpcoming(part: String): Boolean =
     part.startsWith("Scheduled for", ignoreCase = true) || part.startsWith("Premieres", ignoreCase = true)

@@ -41,6 +41,18 @@ class YouTubeFeedParserTest {
     }
 
     @Test
+    fun marksPastLiveStreams() {
+        val page = parseYouTubeFeed(
+            feed(
+                lockup("s1", "Late stream", listOf(listOf("Chan"), listOf("1K views", "Streamed 13 hours ago")), badge = "3:12:40"),
+                lockup("v1", "Upload", listOf(listOf("Chan"), listOf("1K views", "13 hours ago"))),
+            ),
+        )
+
+        assertEquals(listOf(true, false), page.videos.map { it.wasLive })
+    }
+
+    @Test
     fun readsPlaylistRowsAndSkipsUnplayableOnes() {
         val body = """
             {"contents":[{"playlistVideoListRenderer":{"contents":[

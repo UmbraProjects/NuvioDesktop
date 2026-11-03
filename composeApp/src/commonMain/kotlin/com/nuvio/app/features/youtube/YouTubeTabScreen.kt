@@ -50,10 +50,12 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Sensors
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.foundation.layout.Spacer
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.library.musicKeyFocusRing
 import com.nuvio.app.features.discover.BrowseFilterIconAction
 import com.nuvio.app.features.settings.settingsSkyBackground
 import androidx.compose.material.icons.rounded.Search
@@ -187,8 +189,14 @@ fun YouTubeTabScreen(
     val searchQuery by YouTubeFeedRepository.searchQuery.collectAsStateWithLifecycle()
     val deArrow by remember { YouTubeFeedRepository.deArrow }.collectAsStateWithLifecycle()
     val hideWatched by remember { YouTubeFeedRepository.hideWatched }.collectAsStateWithLifecycle()
-    // Not on History, which is all watched by definition.
-    val videos = if (hideWatched && kind != YouTubeFeedKind.History) feed.videos.filterNot(::isYouTubeVideoWatched) else feed.videos
+    val hideStreams by remember { YouTubeFeedRepository.hideStreams }.collectAsStateWithLifecycle()
+    // Not on History, which is all watched by definition (a stream watched is history like any other).
+    val filtered = kind != YouTubeFeedKind.History
+    val videos = if (filtered && (hideWatched || hideStreams)) {
+        feed.videos.filterNot { (hideWatched && isYouTubeVideoWatched(it)) || (hideStreams && it.wasLive) }
+    } else {
+        feed.videos
+    }
     // A page that was all watched leaves nothing on screen to scroll to the end of, so ask for the next one here.
     val allHidden = videos.isEmpty() && feed.videos.isNotEmpty()
     LaunchedEffect(allHidden, feed.continuation, feed.loading) {
@@ -363,19 +371,19 @@ fun YouTubeTabScreen(
                 backStack = emptyList()
                 selectedName = name
             }
-            // The sections as icons, the way the Music tab and Discover's row headers show theirs; the one in use is lit.
+            // The sections as named icons; the one in use is lit.
             YouTubeFeedKind.entries.filter { it.inHeader }.forEach { entry ->
                 val current = entry == kind && !showingChannelList && !showingPlaylists
-                BrowseFilterIconAction(entry.headerIcon, entry.label, on = current) {
+                YouTubeSectionTab(entry.headerIcon, entry.label, on = current) {
                     if (current) YouTubeFeedRepository.load(entry) else section(entry.name)
                 }
             }
-            BrowseFilterIconAction(Icons.Rounded.Groups, "Channels", on = showingChannelList) {
+            YouTubeSectionTab(Icons.Rounded.Groups, "Channels", on = showingChannelList) {
                 if (showingChannelList) YouTubeFeedRepository.loadSubscribedChannels() else section(CHANNELS_VIEW)
             }
             // Right goes on to the search box: the geometric search passed it over.
             Box(if (auth.signedIn && !barHosted) Modifier.focusRequester(playlistsFocus).focusProperties { right = searchFocus } else Modifier) {
-                BrowseFilterIconAction(Icons.Rounded.VideoLibrary, "Playlists", on = showingPlaylists) {
+                YouTubeSectionTab(Icons.Rounded.VideoLibrary, "Playlists", on = showingPlaylists) {
                     if (showingPlaylists) YouTubeFeedRepository.loadPlaylists() else section(PLAYLISTS_VIEW)
                 }
             }
@@ -442,6 +450,11 @@ fun YouTubeTabScreen(
                     if (hideWatched) "Showing unwatched videos only" else "Hide watched videos",
                     on = hideWatched,
                 ) { YouTubeFeedRepository.setHideWatched(!hideWatched) }
+                BrowseFilterIconAction(
+                    Icons.Rounded.Sensors,
+                    if (hideStreams) "Hiding past live streams" else "Hide past live streams",
+                    on = hideStreams,
+                ) { YouTubeFeedRepository.setHideStreams(!hideStreams) }
                 BrowseFilterIconAction(Icons.Rounded.Refresh, "Refresh") {
                     if (!feed.loading) YouTubeFeedRepository.load(kind, force = true)
                 }
@@ -546,9 +559,12 @@ fun YouTubeTabScreen(
                 onAction = { YouTubeFeedRepository.load(kind, force = true) },
             )
             allHidden -> FeedMessage(
-                text = "You've watched everything here.",
-                action = "Show watched videos",
-                onAction = { YouTubeFeedRepository.setHideWatched(false) },
+                text = if (hideWatched) "You've watched everything here." else "Everything here is a past live stream.",
+                action = if (hideWatched && hideStreams) "Show everything" else if (hideWatched) "Show watched videos" else "Show live streams",
+                onAction = {
+                    YouTubeFeedRepository.setHideWatched(false)
+                    YouTubeFeedRepository.setHideStreams(false)
+                },
             )
             videos.isEmpty() -> FeedMessage(
                 text = when (kind) {
@@ -1384,6 +1400,50 @@ private fun YouTubeVideoCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/**
+ * A section in the tab's header: its icon and name, white at rest and lit in the accent glass while
+ * it is the one shown, like the settings bar's pages; the keyboard ring follows the pill.
+ */
+@Composable
+private fun YouTubeSectionTab(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+    val tokens = MaterialTheme.nuvio
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(percent = 50)
+    val tint = when {
+        on -> tokens.colors.accent
+        hovered -> Color.White
+        else -> Color.White.copy(alpha = 0.7f)
+    }
+    Row(
+        modifier = Modifier
+            .height(36.dp)
+            .clip(shape)
+            .background(
+                when {
+                    on -> tokens.colors.accent.copy(alpha = 0.18f)
+                    hovered -> Color.White.copy(alpha = 0.06f)
+                    else -> Color.Transparent
+                },
+            )
+            .musicKeyFocusRing(shape)
+            .hoverable(interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+            color = tint,
+            maxLines = 1,
+        )
     }
 }
 

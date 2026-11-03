@@ -157,6 +157,10 @@ internal expect object YouTubeModeStorage {
     fun loadHideWatched(): Boolean
     fun saveHideWatched(enabled: Boolean)
 
+    /** Leave past live streams out of the feeds. */
+    fun loadHideStreams(): Boolean
+    fun saveHideStreams(enabled: Boolean)
+
     /** Draw the tab on the Settings screen's gradient instead of the plain background. */
     fun loadSkyBackground(): Boolean
     fun saveSkyBackground(enabled: Boolean)
@@ -252,6 +256,17 @@ object YouTubeFeedRepository {
     fun setHideWatched(enabled: Boolean) {
         YouTubeModeStorage.saveHideWatched(enabled)
         _hideWatched.value = enabled
+    }
+
+    private val _hideStreams by lazy { MutableStateFlow(YouTubeModeStorage.loadHideStreams()) }
+
+    /** The tab's "Hide live streams" toggle; see [YouTubeVideo.wasLive]. */
+    val hideStreams: StateFlow<Boolean>
+        get() = _hideStreams.asStateFlow()
+
+    fun setHideStreams(enabled: Boolean) {
+        YouTubeModeStorage.saveHideStreams(enabled)
+        _hideStreams.value = enabled
     }
 
     private val _skyBackground by lazy { MutableStateFlow(YouTubeModeStorage.loadSkyBackground()) }
