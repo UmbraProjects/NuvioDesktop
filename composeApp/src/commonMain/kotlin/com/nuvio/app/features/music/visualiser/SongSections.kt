@@ -1,4 +1,5 @@
 package com.nuvio.app.features.music.visualiser
+// FORK UI (Spyder): Nick's Now Playing stage, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
 import com.nuvio.app.features.music.LyricLine
 import com.nuvio.app.features.music.chorusLineIndices

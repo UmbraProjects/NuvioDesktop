@@ -1,4 +1,5 @@
 package com.nuvio.app.features.music
+// FORK UI (Spyder): Nick's Now Playing stage, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
