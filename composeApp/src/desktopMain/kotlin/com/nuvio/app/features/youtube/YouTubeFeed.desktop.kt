@@ -1,5 +1,8 @@
 package com.nuvio.app.features.youtube
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.features.player.AddonSubtitle
 import com.nuvio.app.features.music.MusicResolver
@@ -123,17 +126,59 @@ private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>
     }
 }
 
+/**
+ * The signed WEB `player` answer for a video, asked once and shared for a couple of minutes: the
+ * watch-time pings, the subtitle tracks and the seek previews all read it as playback starts, and
+ * each used to ask YouTube for it again. Its streams are not used (they came from the extractor).
+ */
+private object WebPlayerAnswers {
+    private const val KEEP_MS = 2 * 60_000L
+    private val lock = Mutex()
+    private val answers = HashMap<String, Pair<Long, CompletableDeferred<YouTubeBrowseResult>>>()
+
+    suspend fun get(videoId: String, pageId: String?): YouTubeBrowseResult {
+        val key = "$videoId|${pageId.orEmpty()}"
+        val (answer, asking) = lock.withLock {
+            val now = System.currentTimeMillis()
+            answers.entries.removeAll { now - it.value.first > KEEP_MS }
+            answers[key]?.let { it.second to false }
+                ?: (CompletableDeferred<YouTubeBrowseResult>().also { answers[key] = now to it } to true)
+        }
+        if (asking) {
+            try {
+                val result = signedWebRequest(
+                    "player",
+                    mapOf(
+                        "videoId" to videoId,
+                        "contentCheckOk" to true,
+                        "racyCheckOk" to true,
+                        "playbackContext" to mapOf("contentPlaybackContext" to mapOf("html5Preference" to "HTML5_PREF_WANTS")),
+                    ),
+                    pageId,
+                )
+                // A failure is not kept: the next reader asks again.
+                if (result !is YouTubeBrowseResult.Ok) lock.withLock { answers.remove(key) }
+                answer.complete(result)
+            } catch (error: Throwable) {
+                lock.withLock { answers.remove(key) }
+                answer.complete(YouTubeBrowseResult.Failed("Couldn't reach YouTube."))
+                throw error
+            }
+        }
+        return answer.await()
+    }
+}
+
+internal actual suspend fun youTubeStoryboard(videoId: String): YouTubeStoryboard? {
+    val player = WebPlayerAnswers.get(videoId, YouTubeFeedRepository.channel.value.pageId) as? YouTubeBrowseResult.Ok
+        ?: return null
+    return parseYouTubeStoryboard(player.body).also { board ->
+        log.i { "$videoId: ${board?.let { "storyboard ${it.width}x${it.height}, ${it.count} frames every ${it.intervalMs} ms" } ?: "no storyboard"}" }
+    }
+}
+
 internal actual suspend fun youTubePlaybackTracking(videoId: String, pageId: String?): YouTubeTrackingUrls? {
-    val result = signedWebRequest(
-        "player",
-        mapOf(
-            "videoId" to videoId,
-            "contentCheckOk" to true,
-            "racyCheckOk" to true,
-            "playbackContext" to mapOf("contentPlaybackContext" to mapOf("html5Preference" to "HTML5_PREF_WANTS")),
-        ),
-        pageId,
-    ) as? YouTubeBrowseResult.Ok ?: return null
+    val result = WebPlayerAnswers.get(videoId, pageId) as? YouTubeBrowseResult.Ok ?: return null
     // Only the stats URLs are wanted here; the streams came from the extractor.
     val tracking = runCatching { Json.parseToJsonElement(result.body).jsonObject["playbackTracking"]?.jsonObject }
         .getOrNull() ?: return null
@@ -147,11 +192,8 @@ internal actual suspend fun youTubePlaybackTracking(videoId: String, pageId: Str
 private const val MAX_CAPTION_TRACKS = 6
 
 internal actual suspend fun youTubeCaptionSubtitles(videoId: String): List<AddonSubtitle> {
-    val player = signedWebRequest(
-        "player",
-        mapOf("videoId" to videoId, "contentCheckOk" to true, "racyCheckOk" to true),
-        YouTubeFeedRepository.channel.value.pageId,
-    ) as? YouTubeBrowseResult.Ok ?: return emptyList()
+    val player = WebPlayerAnswers.get(videoId, YouTubeFeedRepository.channel.value.pageId) as? YouTubeBrowseResult.Ok
+        ?: return emptyList()
     val tracks = parseYouTubeCaptionTracks(player.body).take(MAX_CAPTION_TRACKS)
     if (tracks.isEmpty()) {
         log.i { "$videoId: no subtitle tracks" }

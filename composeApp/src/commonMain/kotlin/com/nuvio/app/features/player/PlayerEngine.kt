@@ -223,6 +223,18 @@ data class PlayerControlsState(
     /** Signed Seekr WebVTT for this playback, or blank; when set the HUD draws sprites instead. */
     val seekrVttUrl: String = "",
     val seekrScale: Double = 1.0,
+    /**
+     * A YouTube video's storyboard (see YouTubeStoryboard): sheet URL with `$M` for the sheet's number,
+     * tile size, grid, frame count and spacing. Blank URL for anything else. The HUD works out a frame's
+     * tile itself, so the push stays small however long the video is.
+     */
+    val storyboardUrl: String = "",
+    val storyboardWidth: Int = 0,
+    val storyboardHeight: Int = 0,
+    val storyboardColumns: Int = 0,
+    val storyboardRows: Int = 0,
+    val storyboardCount: Int = 0,
+    val storyboardIntervalMs: Long = 0L,
     /** Drives the HUD's seek button/command-palette labels so they name the real jump distance. */
     val seekStepSeconds: Int = 10,
     /** Live TV: the HUD's live mode (LIVE badge, now/next, channel buttons); null for anything else. */

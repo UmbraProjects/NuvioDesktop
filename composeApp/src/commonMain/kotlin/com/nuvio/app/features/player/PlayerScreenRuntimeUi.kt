@@ -243,6 +243,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     )
     // fork:youtube-mode - a YouTube tab video's Sources panel holds its comments, its Episodes its related videos.
     val youTubeVideo = isYouTubeVideoPlayback
+    // YouTube's own seek previews, unless previews are off or the connection is metered.
+    val youTubeStoryboardShown = youTubeStoryboard?.takeIf {
+        youTubeVideo &&
+            playerSettingsUiState.desktopSeekThumbnailMode != DesktopSeekThumbnailMode.Off &&
+            playerSettingsUiState.desktopBufferPreset != DesktopBufferPreset.Metered
+    }
     val sourceItems = if (youTubeVideo) {
         youTubeCommentSourceItems()
     } else {
@@ -479,7 +485,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         activeSubtitleLabel = activePlaybackSubtitleLabel(),
         // The native decoder stands down while Seekr has (or is still fetching) this playback's
         // sprites, and takes over again only if Seekr has nothing for it.
-        seekThumbnailsEnabled = seekrTrack == null && !seekrLookupPending && seekThumbnailsAllowed(
+        // Likewise for a YouTube video's storyboard, which comes from YouTube's image servers.
+        seekThumbnailsEnabled = seekrTrack == null && !seekrLookupPending &&
+            youTubeStoryboardShown == null && !(youTubeVideo && youTubeStoryboardPending) && seekThumbnailsAllowed(
             mode = playerSettingsUiState.desktopSeekThumbnailMode,
             bufferPreset = playerSettingsUiState.desktopBufferPreset,
             sourceUrl = activeSourceUrl,
@@ -488,6 +496,13 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         ),
         seekrVttUrl = seekrTrack?.vttUrl.orEmpty(),
         seekrScale = seekrTrack?.scale ?: 1.0,
+        storyboardUrl = youTubeStoryboardShown?.sheetUrl.orEmpty(),
+        storyboardWidth = youTubeStoryboardShown?.width ?: 0,
+        storyboardHeight = youTubeStoryboardShown?.height ?: 0,
+        storyboardColumns = youTubeStoryboardShown?.columns ?: 0,
+        storyboardRows = youTubeStoryboardShown?.rows ?: 0,
+        storyboardCount = youTubeStoryboardShown?.count ?: 0,
+        storyboardIntervalMs = youTubeStoryboardShown?.intervalMs ?: 0L,
         seekStepSeconds = playerSettingsUiState.seekStepSeconds,
         tapToUnlockLabel = stringResource(Res.string.compose_player_tap_to_unlock),
         playbackErrorTitle = stringResource(Res.string.compose_player_playback_error),

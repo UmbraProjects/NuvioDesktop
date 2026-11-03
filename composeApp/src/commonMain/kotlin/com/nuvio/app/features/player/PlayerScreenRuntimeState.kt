@@ -405,6 +405,12 @@ internal class PlayerScreenRuntime(
     // comments (in the Sources panel, as such a video has no other source); see PlayerScreenRuntimeYouTube.
     var youTubeRelated by mutableStateOf<List<com.nuvio.app.features.youtube.YouTubeVideo>>(emptyList())
 
+    /** A YouTube video's seek previews (YouTube's storyboard), once looked up; null when it has none. */
+    var youTubeStoryboard by mutableStateOf<com.nuvio.app.features.youtube.YouTubeStoryboard?>(null)
+
+    /** The storyboard lookup for this YouTube video is still running: the native previews wait for it. */
+    var youTubeStoryboardPending by mutableStateOf(false)
+
     /** A YouTube video's chapters from its watch page, for the seek bar when the stream has none of its own. */
     var youTubeChapters by mutableStateOf<List<PlayerChapter>>(emptyList())
     var youTubeComments by mutableStateOf<List<com.nuvio.app.features.youtube.YouTubeComment>>(emptyList())

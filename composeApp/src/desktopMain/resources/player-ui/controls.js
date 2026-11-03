@@ -387,6 +387,7 @@ let state = {
   seekThumbnailsEnabled: true,
   seekrVttUrl: "",
   seekrScale: 1,
+  storyboardUrl: "",
   seekStepSeconds: 10,
   tapToUnlockLabel: "Tap to unlock",
   playbackErrorTitle: "Playback error",
@@ -1379,8 +1380,33 @@ const syncSeekrTrack = () => {
   });
 };
 
+// A YouTube video's storyboard: one grid of frames per sheet, frame k on sheet k / (columns x rows).
+// Kotlin sends only the layout; the tile is worked out here, in the shape Seekr's cues take.
+const storyboardCueAt = positionMs => {
+  const url = String(state.storyboardUrl || "");
+  const count = Number(state.storyboardCount) || 0;
+  const interval = Number(state.storyboardIntervalMs) || 0;
+  const columns = Number(state.storyboardColumns) || 0;
+  const rows = Number(state.storyboardRows) || 0;
+  const width = Number(state.storyboardWidth) || 0;
+  const height = Number(state.storyboardHeight) || 0;
+  if (!url || count <= 0 || interval <= 0 || columns <= 0 || rows <= 0 || width <= 0 || height <= 0) return null;
+  const frame = Math.max(0, Math.min(count - 1, Math.floor(positionMs / interval)));
+  const perSheet = columns * rows;
+  const cell = frame % perSheet;
+  return {
+    start: frame * interval,
+    end: (frame + 1) * interval,
+    src: url.replace("$M", String(Math.floor(frame / perSheet))),
+    x: (cell % columns) * width,
+    y: Math.floor(cell / columns) * height,
+    w: width,
+    h: height,
+  };
+};
+
 const seekrCueAt = clientPositionMs => {
-  if (!seekrTrack) return null;
+  if (!seekrTrack) return storyboardCueAt(clientPositionMs);
   const scale = Number(state.seekrScale) > 0 ? Number(state.seekrScale) : 1;
   const sourceMs = clientPositionMs / scale;
   let low = 0;

@@ -24,11 +24,20 @@ internal val PlayerScreenRuntime.isYouTubeVideoPlayback: Boolean
 private val PlayerScreenRuntime.youTubeVideoId: String
     get() = parentMetaId.removePrefix(YOUTUBE_META_ID_PREFIX)
 
-/** Loads the related videos and the chapters when a YouTube tab video opens. */
+/** Loads the related videos, the chapters and the seek previews when a YouTube tab video opens. */
 @Composable
 internal fun PlayerScreenRuntime.BindYouTubeRelatedEffect() {
     if (!isYouTubeVideoPlayback) return
     val videoId = youTubeVideoId
+    LaunchedEffect(videoId) {
+        youTubeStoryboard = null
+        youTubeStoryboardPending = true
+        try {
+            youTubeStoryboard = com.nuvio.app.features.youtube.youTubeStoryboard(videoId)
+        } finally {
+            youTubeStoryboardPending = false
+        }
+    }
     LaunchedEffect(videoId) {
         youTubeRelated = emptyList()
         youTubeChapters = emptyList()
