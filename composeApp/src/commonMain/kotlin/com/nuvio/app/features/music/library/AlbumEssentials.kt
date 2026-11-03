@@ -52,6 +52,36 @@ internal fun trackPopularity(titles: List<String>, top: List<DeezerTopSong>): Li
     return titles.map { title -> score[songKey(title)]?.let { (it / best).toFloat().coerceIn(MIN_BAR, 1f) } }
 }
 
+/** Where [title] stands among the artist's most played songs: 1 for the most played, null when it is not in Deezer's top 100. */
+internal fun songRank(title: String, top: List<DeezerTopSong>): Int? {
+    val key = songKey(title)
+    val index = bestSongs(top, limit = top.size.coerceAtLeast(1)).indexOfFirst { songKey(it.title) == key }
+    return if (index >= 0) index + 1 else null
+}
+
+/**
+ * The starter path: which of [titles] the recommendation [text] names, as indices into [titles] in the order the text
+ * mentions them (at most [limit]). A title counts only as a whole word, so "Bad" is not found in "badly".
+ */
+internal fun starterPath(text: String, titles: List<String>, limit: Int = 3): List<Int> {
+    val lower = text.lowercase()
+    fun positionOf(title: String): Int {
+        val wanted = title.lowercase().trim()
+        if (wanted.isEmpty()) return -1
+        var from = 0
+        while (true) {
+            val at = lower.indexOf(wanted, from)
+            if (at < 0) return -1
+            val before = lower.getOrNull(at - 1)
+            val after = lower.getOrNull(at + wanted.length)
+            if ((before == null || !before.isLetterOrDigit()) && (after == null || !after.isLetterOrDigit())) return at
+            from = at + 1
+        }
+    }
+    return titles.indices.mapNotNull { i -> positionOf(titles[i]).takeIf { it >= 0 }?.let { i to it } }
+        .sortedBy { it.second }.take(limit).map { it.first }
+}
+
 /** The shortest bar drawn for a song that is in the list at all. */
 private const val MIN_BAR = 0.08f
 

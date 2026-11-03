@@ -106,7 +106,10 @@ import com.nuvio.app.features.music.library.ArtistTopSongs
 import com.nuvio.app.features.music.library.ESSENTIAL_ALBUM_COUNT
 import com.nuvio.app.features.music.library.EssentialSong
 import com.nuvio.app.features.music.library.essentialSongs
+import com.nuvio.app.features.music.library.playTopAlbums
 import com.nuvio.app.features.music.library.selectTopAlbums
+import com.nuvio.app.features.music.library.songRank
+import com.nuvio.app.features.music.library.starterPath
 import com.nuvio.app.features.music.library.singleKeys
 import com.nuvio.app.features.music.library.songKey
 import com.nuvio.app.features.music.library.trackPopularity
@@ -157,7 +160,7 @@ fun MusicAlbumScreen(
                 actionLabel = "Try again",
                 onAction = { attempt++ },
             )
-            is MusicLoad.Loaded -> AlbumContent(load.value, onArtistClick, onAlbumClick, player)
+            is MusicLoad.Loaded -> AlbumContent(load.value, onArtistClick, onAlbumClick, player, catalog)
         }
     }
     }
@@ -170,6 +173,7 @@ private fun AlbumContent(
     onArtistClick: (String) -> Unit,
     onAlbumClick: (String) -> Unit,
     player: MusicPlayer,
+    catalog: MusicCatalog,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val state by player.state.collectAsStateWithLifecycle()
@@ -255,7 +259,22 @@ private fun AlbumContent(
     val cachedBooklet = remember(bookletRequest, loaded) { bookletRequest?.let { AlbumBookletRepository.peek(it) } }
     val liveBooklet = (if (loaded) rememberBookletUi(album, artistInfo) else null) as? BookletUi.Ready
     val booklet = liveBooklet?.booklet ?: cachedBooklet
-    val playingNote = if (loaded) booklet?.trackNotes?.get(state.trackIndex + 1) else null
+    // The line about the song playing: the notes' own word on it, else what is known of it (no AI needed).
+    val playingTrack = if (loaded) view.tracks.getOrNull(state.trackIndex) else null
+    val playingNote = playingTrack?.let { t ->
+        booklet?.trackNotes?.get(state.trackIndex + 1) ?: listOfNotNull(
+            "Released as a single".takeIf { songKey(t.title) in singles },
+            songRank(t.title, topSongs)?.let { "No. $it of ${artistName ?: "the artist"}'s most played songs" },
+            "Track ${state.trackIndex + 1} of ${view.tracks.size}",
+        ).joinToString(" · ")
+    }
+    // The starter path: the albums the recommendation names, in the order it names them, played one after the other.
+    val pathScope = rememberCoroutineScope()
+    val pathReleases = remember(startHere, essentialAlbums) {
+        startHere?.let { text -> starterPath(text, essentialAlbums.map { it.release.title }).map { essentialAlbums[it].release } }.orEmpty()
+    }
+    val playPath: (() -> Unit)? =
+        if (pathReleases.size >= 2) ({ pathScope.launch { playTopAlbums(catalog, pathReleases, shuffled = false) }; Unit }) else null
     // Board 3: the object (case, disc and its two toggles) on the left, everything about the record on the right.
     val objectPanel: @Composable (Dp) -> Unit = { caseSize ->
         AlbumObjectPanel(
@@ -390,6 +409,7 @@ private fun AlbumContent(
         if (index >= 0) tapTrack(index) else song.release?.ytBrowseId?.let(onAlbumClick)
     }
     val pane: LazyListScope.() -> Unit = {
+        item(key = "legend") { TrackLegend() }
         itemsIndexed(view.tracks) { index, track ->
             TrackRow(
                 album = album,
@@ -462,6 +482,7 @@ private fun AlbumContent(
                             hereKeys = hereKeys,
                             albums = essentialAlbums,
                             startHere = startHere,
+                            onPlayPath = playPath,
                             onSongClick = onEssentialSong,
                             onAlbumClick = onAlbumClick,
                             tile = ((sideWidth - 44.dp - 42.dp) / 4).coerceAtMost(108.dp),
@@ -685,6 +706,24 @@ private fun AlbumFacts(album: MusicAlbum, info: LibraryAlbumInfo?, onArtistClick
     }
 }
 
+/** The column names above the songs, on the same columns as [TrackRow]: number, title, how played, length. */
+@Composable
+private fun TrackLegend() {
+    val colors = MaterialTheme.nuvio.colors
+    val label = MaterialTheme.typography.labelSmall
+    Row(
+        Modifier.widthIn(max = TRACK_ROW_MAX_WIDTH).fillMaxWidth().padding(horizontal = 8.dp).padding(bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("#", Modifier.width(32.dp), style = label, letterSpacing = 1.2.sp, color = colors.textMuted)
+        Text("TITLE", Modifier.weight(1f), style = label, letterSpacing = 1.2.sp, color = colors.textMuted)
+        Spacer(Modifier.width(28.dp + 12.dp)) // the add button's place, and the gap after it
+        Text("POPULAR", Modifier.width(56.dp), style = label, letterSpacing = 0.6.sp, color = colors.textMuted, maxLines = 1, softWrap = false)
+        Spacer(Modifier.width(14.dp))
+        Text("TIME", Modifier.width(44.dp), style = label, letterSpacing = 1.2.sp, color = colors.textMuted, textAlign = TextAlign.End)
+    }
+}
+
 @Composable
 private fun TrackRow(
     album: MusicAlbum,
@@ -782,6 +821,8 @@ private fun TrackRow(
                     Icon(Icons.Rounded.Add, contentDescription = "Add to playlist", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
                 }
             }
+        } else {
+            Spacer(Modifier.size(28.dp)) // keeps the bar and the length in their columns on a song with no add button
         }
         Spacer(Modifier.width(12.dp))
         // Always laid out, so the lengths line up whether or not Deezer knows how played the song is.
@@ -793,6 +834,8 @@ private fun TrackRow(
         Spacer(Modifier.width(14.dp))
         Text(
             text = if (track.durationSeconds > 0) formatMusicTime(track.durationSeconds * 1000L) else "",
+            modifier = Modifier.width(44.dp),
+            textAlign = TextAlign.End,
             style = MaterialTheme.typography.bodyMedium,
             color = if (track.isAvailable) colors.textMuted else colors.textDisabled,
         )

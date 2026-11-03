@@ -104,6 +104,25 @@ class AlbumEssentialsTest {
     }
 
     @Test
+    fun aSongsRankIsItsPlaceAmongTheArtistsMostPlayed() {
+        val top = listOf(song("Beat It", 90), song("Billie Jean", 100), song("Billie Jean (Live)", 60), song("Thriller", 95))
+        assertEquals(1, songRank("Billie Jean", top))
+        assertEquals(3, songRank("Beat It (Remastered)", top))
+        assertNull(songRank("Jam", top))
+        assertNull(songRank("Jam", emptyList()))
+    }
+
+    @Test
+    fun theStarterPathFollowsTheOrderTheTextNamesTheAlbums() {
+        val titles = listOf("Thriller", "Bad", "Off the Wall", "Dangerous")
+        val text = "Begin with Dangerous, then move to Off the Wall, and finish with Thriller. Badly named, but fun."
+        assertEquals(listOf(3, 2, 0), starterPath(text, titles))
+        assertEquals(listOf(1), starterPath("Start with Bad.", titles))
+        assertEquals(emptyList(), starterPath("Nothing here, just badly written.", titles))
+        assertEquals(2, starterPath(text, titles, limit = 2).size)
+    }
+
+    @Test
     fun theTopSongsReplyIsReadWithTitlesAndAlbums() {
         val body = """{"data":[{"title":"Black or White (Single Version)","title_short":"Black or White","rank":812345,"album":{"id":119606,"title":"Dangerous"}},
             {"title":"Jam","rank":700000,"album":{"id":119606,"title":"Dangerous"}}],"total":2}"""

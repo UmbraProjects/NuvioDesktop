@@ -11,10 +11,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +52,8 @@ internal fun EssentialsColumn(
     hereKeys: Set<String>,
     albums: List<EssentialAlbum>,
     startHere: String?,
+    /** Plays the albums the recommendation names, in its order; null when it names fewer than two. */
+    onPlayPath: (() -> Unit)?,
     onSongClick: (EssentialSong) -> Unit,
     onAlbumClick: (String) -> Unit,
     /** The size of an album tile: four of them and their gaps fill the column's content (108 dp in the widest column). */
@@ -84,6 +90,18 @@ internal fun EssentialsColumn(
                 BriefHeader("START HERE", ai = true)
                 Text(startHere, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
                 Text("Written by AI, may contain mistakes", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                if (onPlayPath != null) {
+                    val pill = RoundedCornerShape(20.dp)
+                    Row(
+                        Modifier.clip(pill).background(Color.White.copy(alpha = 0.10f)).border(1.dp, Color.White.copy(alpha = 0.18f), pill)
+                            .musicKeyFocusRing(pill).clickable(onClick = onPlayPath).height(40.dp).padding(horizontal = 18.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = colors.textPrimary, modifier = Modifier.size(18.dp))
+                        Text("Play the starter path", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+                    }
+                }
             }
         }
     }

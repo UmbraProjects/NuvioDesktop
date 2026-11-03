@@ -72,8 +72,9 @@ internal fun BriefHeader(label: String, ai: Boolean) {
 }
 
 /**
- * The album in brief: the notes' opening, a few credits, and, when the notes have a word on each song, the one for the song
- * playing ([playingNote]). That slot has a fixed height, so the card does not change size from song to song.
+ * The album in brief: the notes' opening, a few credits, and a line about the song playing ([playingNote]): the notes' own
+ * word on it when they have one, else what is known of it (a single, how played, its place on the record). That slot has a
+ * fixed height, so the card does not change size from song to song.
  */
 @Composable
 internal fun AlbumInBriefCard(booklet: AlbumBooklet, playingNote: String?, modifier: Modifier = Modifier) {
@@ -94,18 +95,16 @@ internal fun AlbumInBriefCard(booklet: AlbumBooklet, playingNote: String?, modif
                 }
             }
         }
-        if (booklet.trackNotes.isNotEmpty()) {
-            CardRule()
-            Text("ABOUT THIS SONG", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.textMuted)
-            Box(Modifier.fillMaxWidth().height(60.dp)) {
-                Text(
-                    playingNote ?: "Play a song to read its note.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (playingNote != null) colors.textPrimary else colors.textMuted,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+        CardRule()
+        Text("ABOUT THIS SONG", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.textMuted)
+        Box(Modifier.fillMaxWidth().height(60.dp)) {
+            Text(
+                playingNote ?: "Play a song to read about it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (playingNote != null) colors.textPrimary else colors.textMuted,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         Text(
             when (booklet.source) {
