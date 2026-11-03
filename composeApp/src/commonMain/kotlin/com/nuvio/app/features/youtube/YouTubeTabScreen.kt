@@ -56,7 +56,6 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.foundation.layout.Spacer
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.musicKeyFocusRing
-import com.nuvio.app.features.discover.BrowseFilterIconAction
 import com.nuvio.app.features.settings.settingsSkyBackground
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ThumbUp
@@ -446,17 +445,14 @@ fun YouTubeTabScreen(
             }
             Box(Modifier.weight(1f))
             if (auth.signedIn) {
-                BrowseFilterIconAction(
-                    Icons.Rounded.VisibilityOff,
-                    if (hideWatched) "Showing unwatched videos only" else "Hide watched videos",
-                    on = hideWatched,
-                ) { YouTubeFeedRepository.setHideWatched(!hideWatched) }
-                BrowseFilterIconAction(
-                    Icons.Rounded.Sensors,
-                    if (hideStreams) "Hiding past live streams" else "Hide past live streams",
-                    on = hideStreams,
-                ) { YouTubeFeedRepository.setHideStreams(!hideStreams) }
-                BrowseFilterIconAction(Icons.Rounded.Refresh, "Refresh") {
+                // Named like the sections; lit while the filter is on.
+                YouTubeSectionTab(Icons.Rounded.VisibilityOff, "Hide watched", on = hideWatched) {
+                    YouTubeFeedRepository.setHideWatched(!hideWatched)
+                }
+                YouTubeSectionTab(Icons.Rounded.Sensors, "Hide streams", on = hideStreams) {
+                    YouTubeFeedRepository.setHideStreams(!hideStreams)
+                }
+                YouTubeSectionTab(Icons.Rounded.Refresh, "Refresh", on = false) {
                     if (!feed.loading) YouTubeFeedRepository.load(kind, force = true)
                 }
                 if (channel.resolved) {
@@ -1417,7 +1413,7 @@ private fun YouTubeVideoCard(
 }
 
 /**
- * A section in the tab's header: its icon and name, white at rest and lit in the accent glass while
+ * A section (or filter, or Refresh) in the tab's header: its icon and name, white at rest and lit in the accent glass while
  * it is the one shown, like the settings bar's pages; the keyboard ring follows the pill.
  */
 @Composable
