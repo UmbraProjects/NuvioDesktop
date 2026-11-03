@@ -179,7 +179,9 @@ private fun DrawScope.drawSongMap(
         val x = c * colW
         val value = if (cache.count == cols) cache.values.getOrNull(c) else null
         if (value == null) {
-            drawCircle(Color.White.copy(alpha = 0.12f), radius = 1.dp.toPx(), center = Offset(x + colW / 2, mid))
+            // Not analysed yet: a faint low bar, so the song fills the whole width and the part still to come is plain.
+            val stub = amp * 0.14f
+            drawRect(Color.White.copy(alpha = if (x < px) 0.16f else 0.08f), topLeft = Offset(x, mid - stub), size = Size((colW - 0.8f).coerceAtLeast(1f), stub * 1.6f))
             continue
         }
         var v = ((value - cache.lo) / (cache.hi - cache.lo).coerceAtLeast(0.05f)).coerceIn(0.06f, 1f)

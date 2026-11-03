@@ -101,6 +101,8 @@ import com.nuvio.app.features.music.library.LibraryAlbumInfo
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.rememberLibraryAlbumInfo
 import com.nuvio.app.features.music.booklet.AlbumBookletRepository
+import com.nuvio.app.features.music.booklet.SongNotes
+import com.nuvio.app.features.music.booklet.TrackNotes
 import com.nuvio.app.features.music.booklet.StartHere
 import com.nuvio.app.features.music.library.ArtistTopSongs
 import com.nuvio.app.features.music.library.ESSENTIAL_ALBUM_COUNT
@@ -257,12 +259,20 @@ private fun AlbumContent(
     // The album's notes under the case: the cache's (free), and the live ones while this album plays, as on the Stage.
     val bookletRequest = remember(album.browseId, artistInfo) { bookletRequestFor(album, artistInfo) }
     val cachedBooklet = remember(bookletRequest, loaded) { bookletRequest?.let { AlbumBookletRepository.peek(it) } }
-    val liveBooklet = (if (loaded) rememberBookletUi(album, artistInfo) else null) as? BookletUi.Ready
+    val liveUi = if (loaded) rememberBookletUi(album, artistInfo) else null
+    val liveBooklet = liveUi as? BookletUi.Ready
     val booklet = liveBooklet?.booklet ?: cachedBooklet
+    // A note for every song: the AI's (one request for the album) with MusicBrainz's writers and producers as the fallback.
+    // Asked for once the album is playing and its booklet has settled, so the AI is given the album's intro to write from.
+    var songNotes by remember(bookletRequest) { mutableStateOf(bookletRequest?.let { TrackNotes.peek(it) } ?: SongNotes()) }
+    val notesSettled = liveUi != null && liveUi !is BookletUi.Loading
+    LaunchedEffect(bookletRequest, notesSettled) {
+        if (bookletRequest != null && notesSettled) songNotes = TrackNotes.load(bookletRequest, booklet?.intro)
+    }
     // The line about the song playing: the notes' own word on it, else what is known of it (no AI needed).
     val playingTrack = if (loaded) view.tracks.getOrNull(state.trackIndex) else null
     val playingNote = playingTrack?.let { t ->
-        booklet?.trackNotes?.get(state.trackIndex + 1) ?: listOfNotNull(
+        booklet?.trackNotes?.get(state.trackIndex + 1) ?: songNotes.lineFor(state.trackIndex + 1) ?: listOfNotNull(
             "Released as a single".takeIf { songKey(t.title) in singles },
             songRank(t.title, topSongs)?.let { "No. $it of ${artistName ?: "the artist"}'s most played songs" },
             "Track ${state.trackIndex + 1} of ${view.tracks.size}",

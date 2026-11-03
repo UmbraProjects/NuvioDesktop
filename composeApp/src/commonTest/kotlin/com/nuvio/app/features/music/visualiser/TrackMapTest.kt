@@ -74,6 +74,49 @@ class TrackMapTest {
 
     private fun drums(seconds: Double, bpm: Double, startS: Double = 0.5) = loop(seconds, bpm, startS)
 
+    /** Billie Jean: the clean drum loop plus a loud, steady eighth-note bass riff and synth stabs that speak on every eighth. */
+    private fun billie(seconds: Double, bpm: Double, startS: Double = 0.5, bassGain: Double = 0.5): FloatArray {
+        val base = loop(seconds, bpm, startS)
+        val eighth = 60.0 / bpm / 2
+        val notes = doubleArrayOf(73.4, 73.4, 110.0, 73.4, 82.4, 73.4, 110.0, 98.0)
+        for (i in 0 until base.size / 2) {
+            val t = i.toDouble() / rate - startS
+            if (t < 0) continue
+            val s = (t / eighth).toInt()
+            val since = t - s * eighth
+            val f = notes[s % notes.size]
+            var tone = 0.0
+            for (h in 1..5) tone += sin(2 * PI * f * h * since) / h
+            val v = (bassGain * minOf(1.0, since / 0.003) * tone * exp(-since * 6)).toFloat()
+            base[2 * i] += v; base[2 * i + 1] += v * 0.8f
+        }
+        return base
+    }
+
+    @Test
+    fun aBusyEighthNoteBassDoesNotHideTheBeat() {
+        for (bpm in listOf(117.0, 100.0, 128.0)) {
+            val map = build(billie(60.0, bpm))
+            val beat = assertNotNull(map.beat, "no beat at $bpm")
+            assertTrue(abs(beat.bpm - bpm) < 2.0, "bpm ${beat.bpm} for $bpm")
+        }
+    }
+
+    @Test
+    fun theBeatLocksOnWhileTheMapIsStillGrowing() {
+        val samples = billie(60.0, 117.0)
+        val builder = TrackMapBuilder(rate)
+        val chunk = rate * 2 * 5
+        var at = 0
+        var got = false
+        while (at < samples.size / 2) {
+            builder.add(samples.copyOfRange(at, minOf(samples.size, at + chunk)))
+            at += chunk
+            if (builder.snapshot().beat != null) { got = true; break }
+        }
+        assertTrue(got, "never locked while growing")
+    }
+
     /**
      * Speed garage: a kick on every beat (four to the floor), a clap on 2 and 4, a loud open hi-hat on every off-beat eighth
      * and a bass line that starts its notes off the beat. The off-beats are what made the old tempo finder read 130 as 87.

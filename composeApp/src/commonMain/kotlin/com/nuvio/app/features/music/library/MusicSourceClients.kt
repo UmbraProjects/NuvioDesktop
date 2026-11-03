@@ -196,6 +196,15 @@ internal object MusicBrainzClient {
         return paced("$BASE/artist?query=$query&limit=$ARTIST_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
     }
 
+    /** fork:essentials - the writers and producers of each song on [album] by [artist] (see [parseMbTrackCredits]); empty when not found. */
+    suspend fun trackCredits(artist: String, album: String): Map<Int, String> {
+        fun quote(v: String) = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        val query = "release:${quote(album)} AND artist:${quote(artist)}".encodeURLParameter()
+        val id = paced("$BASE/release?query=$query&limit=3&fmt=json")?.let(::parseMbReleaseSearchId) ?: return emptyMap()
+        val body = paced("$BASE/release/$id?inc=recordings+recording-rels+work-rels+work-level-rels+artist-rels&fmt=json") ?: return emptyMap()
+        return parseMbTrackCredits(body)
+    }
+
     suspend fun artist(mbid: String): MbArtist? =
         offline { it.artist(mbid) }?.let(::parseMbArtist)
             ?: paced("$BASE/artist/$mbid?inc=url-rels+tags+genres+ratings&fmt=json")?.let(::parseMbArtist)

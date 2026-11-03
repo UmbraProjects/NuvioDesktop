@@ -390,11 +390,17 @@ private fun median(a: FloatArray, n: Int): Float {
  * loses. Hats are left out: off-beat and sixteenth hats (garage, house, funk) made an autocorrelation find a beat and a half
  * as steady as one beat, and a four-on-the-floor track at 130 BPM read as 87.
  */
-internal fun estimateBeat(kick: FloatArray, snare: FloatArray, @Suppress("UNUSED_PARAMETER") hats: FloatArray, frames: Int): BeatGrid? {
+internal fun estimateBeat(kick: FloatArray, snare: FloatArray, hats: FloatArray, frames: Int): BeatGrid? {
     if (frames < BEAT_MIN_FRAMES) return null
     fun meanOf(a: FloatArray): Float { var s = 0f; for (i in 0 until frames) s += a[i]; return (s / frames).takeIf { it > 1e-6f } ?: 1f }
-    val mk = meanOf(kick); val ms = meanOf(snare)
-    val raw = FloatArray(frames) { kick[it] / mk + snare[it] / ms }
+    val mk = meanOf(kick); val ms = meanOf(snare); val mh = meanOf(hats)
+    // A clear kick-and-snare pulse first. Busy mixes (a loud bass riff, gated reverb snares) bury it, so then the same fit is
+    // tried on a gentler bar, and last with the hats added: a steady pulse of any kind is better than none.
+    beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms }, frames, 1.3)?.let { return it }
+    return beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + 0.5f * hats[it] / mh }, frames, 1.25)
+}
+
+private fun beatFrom(kick: FloatArray, snare: FloatArray, mk: Float, ms: Float, raw: FloatArray, frames: Int, gate: Double): BeatGrid? {
     // Take away the local mean so loud passages do not look like beats.
     val env = FloatArray(frames)
     var run = 0f
@@ -443,7 +449,7 @@ internal fun estimateBeat(kick: FloatArray, snare: FloatArray, @Suppress("UNUSED
         p += 0.25
     }
     // A beat's hits must stand well clear of the track's average, or there is no steady beat to draw.
-    if (period < 0 || fitAtTop / meanWide < 1.6) return null
+    if (period < 0 || fitAtTop / meanWide < gate) return null
     // Settle the period and phase finely around the winner.
     var phase = 0.0
     var bestFit = -1.0

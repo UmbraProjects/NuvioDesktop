@@ -196,7 +196,7 @@ private fun VisualiserDeck(
             VisualiserStyle.Halo -> "Reacting to the bass"
             VisualiserStyle.TwinVu -> "Left and right level"
             VisualiserStyle.BeatGrid -> map?.beat?.let { "${it.bpm.roundToInt()} BPM" }
-                ?: if (map?.complete == true) "No steady beat" else "Finding the beat"
+                ?: if (map?.complete == true) "No steady beat" else if (map != null && map.frames > 0) "Listening for the beat" else "Finding the beat"
         }
     }
 
