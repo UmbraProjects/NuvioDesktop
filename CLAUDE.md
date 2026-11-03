@@ -1,10 +1,11 @@
 @AGENTS.md
 
-## FORK-ONLY: do not merge the Now Playing stage UI into UmbraProjects/NuvioDesktop
+## FORK UI: warn before merging the Now Playing stage into UmbraProjects/NuvioDesktop
 
-This branch (`Spyder`) is Nick's HTPC fork. Its Now Playing stage is a deliberate fork-only design and must NOT be
-merged, cherry-picked, rebased or otherwise sent to the UmbraProjects parent, in a PR or a direct merge. If you are a
-Claude (or a person) syncing this branch with upstream, leave these out of anything that goes to the parent:
+UmbraProjects may merge from this branch (`Spyder`, Nick's HTPC fork); that is fine. But the Now Playing stage here is a
+deliberate fork-only design that does not exist upstream, so if you are a Claude merging, cherry-picking or opening a PR
+from this branch into the parent, STOP and warn the person you are working for before it goes in: tell them which of
+these UI changes are in the merge and that they are fork-only, and let them decide. Do not silently take or drop them.
 
 - `composeApp/src/commonMain/**/features/music/MusicNowPlaying.kt` (symmetric three-panel stage, no moving UI)
 - `composeApp/src/commonMain/**/features/music/NowPlayingLinerBox.kt`, `NowPlayingVisualiser.kt`, `NowPlayingBooklet.kt`
@@ -15,4 +16,4 @@ Claude (or a person) syncing this branch with upstream, leave these out of anyth
 
 Rules for the stage UI on this branch: symmetry is key, and no UI element may move or resize depending on content
 (for example, a missing Liner Notes box must not resize the video or shift the lyrics). Do not re-add code that does.
-Merging upstream INTO this branch is fine; keep the fork's version of the files above when they conflict.
+When merging upstream INTO this branch, keep the fork's version of the files above if they conflict.
