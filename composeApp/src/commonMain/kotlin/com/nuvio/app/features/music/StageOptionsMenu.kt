@@ -68,13 +68,10 @@ internal fun StageOptionsMenu(
     lyricsOn: Boolean,
     lyricStyle: LyricStyle,
     fadeQueue: Boolean,
-    /** Null when there is no booklet to switch (not an album, or a window too narrow for it). */
-    booklet: Boolean?,
     reduced: Boolean,
     onToggleLyrics: () -> Unit,
     onCycleLyricStyle: () -> Unit,
     onToggleFadeQueue: () -> Unit,
-    onToggleBooklet: () -> Unit,
     onToggleMotion: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -162,12 +159,6 @@ internal fun StageOptionsMenu(
                     OptionRow("Fade queue", if (fadeQueue) "On" else "Off", on = fadeQueue) {
                         touched++
                         onToggleFadeQueue()
-                    }
-                    if (booklet != null) {
-                        OptionRow("Liner notes", if (booklet) "On" else "Off", on = booklet) {
-                            touched++
-                            onToggleBooklet()
-                        }
                     }
                     OptionRow("Motion", if (reduced) "Reduced" else "Full", on = !reduced) {
                         touched++

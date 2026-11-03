@@ -40,8 +40,6 @@ data class MusicLibrarySettings(
     val barStyleChosen: Boolean = false,
     /** The lyric view's queue (and its Where next) fades out after a few idle seconds; off keeps it on screen. */
     val fadeQueue: Boolean = true,
-    /** fork:booklet - the album's sleeve notes in a glass panel beside the lyrics on a wide Stage. */
-    val booklet: Boolean = true,
     /** fork:visualiser - the right-hand box shows the liner notes or the visualiser (the visualiser whenever there are no notes). */
     val stageBoxView: com.nuvio.app.features.music.visualiser.StageBoxView = com.nuvio.app.features.music.visualiser.StageBoxView.Notes,
     /** fork:visualiser - the visualiser style last chosen with Left and Right. */

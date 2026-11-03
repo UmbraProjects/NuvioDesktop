@@ -126,9 +126,9 @@ internal fun bookletRequestFor(album: MusicAlbum, artist: LibraryArtist? = null)
 
 /** The booklet for the album playing: from the cache at once, else looked up (once per album) in the background. */
 @Composable
-internal fun rememberBookletUi(album: MusicAlbum?, enabled: Boolean, artist: LibraryArtist? = null): BookletUi {
-    val request = remember(album?.browseId, album?.tracks?.size, enabled, artist?.id, artist?.releases?.size, artist?.beginYear, artist?.channelMismatch) {
-        if (enabled && album != null) bookletRequestFor(album, artist) else null
+internal fun rememberBookletUi(album: MusicAlbum?, artist: LibraryArtist? = null): BookletUi {
+    val request = remember(album?.browseId, album?.tracks?.size, artist?.id, artist?.releases?.size, artist?.beginYear, artist?.channelMismatch) {
+        if (album != null) bookletRequestFor(album, artist) else null
     }
     // A key added or removed in Settings changes who writes the notes, so it starts a new lookup.
     val aiReady = DiscoverAiSettingsRepository.uiState.collectAsState().value.isConfigured

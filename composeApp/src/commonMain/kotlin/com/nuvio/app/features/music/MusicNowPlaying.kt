@@ -1,7 +1,6 @@
 package com.nuvio.app.features.music
 // FORK UI (Spyder): Nick's Now Playing stage, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
-import com.nuvio.app.features.music.booklet.isBookletAlbum
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.wrapContentWidth
 import com.nuvio.app.features.music.library.musicGlass
@@ -300,8 +299,7 @@ private fun MusicNowPlayingScreen(
     val lyricStyle = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricStyle
     val lyricsOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricsOn
     // fork:booklet - the album's sleeve notes for the third panel of a wide Stage.
-    val bookletOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.booklet
-    val bookletUi = rememberBookletUi(album, bookletOn, libraryArtist)
+    val bookletUi = rememberBookletUi(album, libraryArtist)
     // fork:visualiser - the playing track's map, from the player surface's background analysis (null for another load).
     val trackMap = com.nuvio.app.features.music.visualiser.TrackMapLive.state.collectAsStateWithLifecycle().value
         ?.takeIf { it.loadId == state.loadId }
@@ -583,11 +581,6 @@ private fun MusicNowPlayingScreen(
                 MusicLibraryRepository.updateSettings(settings.copy(fadeQueue = !settings.fadeQueue))
             },
             onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Fullscreen) },
-            booklet = bookletOn.takeIf { album != null && isBookletAlbum(album.browseId) },
-            onToggleBooklet = {
-                val settings = MusicLibraryRepository.state.value.settings
-                MusicLibraryRepository.updateSettings(settings.copy(booklet = !settings.booklet))
-            },
             modifier = Modifier.align(Alignment.TopStart),
         )
         state.notice?.let { note ->
@@ -619,9 +612,6 @@ private fun StageTopBar(
     onCycleLyricStyle: () -> Unit = {},
     lyricsOn: Boolean = true,
     onToggleLyrics: () -> Unit = {},
-    /** fork:booklet - null hides the chip (no booklet panel at this width or in this view). */
-    booklet: Boolean? = null,
-    onToggleBooklet: () -> Unit = {},
 ) {
     Row(
         modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -655,12 +645,10 @@ private fun StageTopBar(
             lyricsOn = lyricsOn,
             lyricStyle = lyricStyle,
             fadeQueue = fadeQueue,
-            booklet = booklet,
             reduced = reduced,
             onToggleLyrics = onToggleLyrics,
             onCycleLyricStyle = onCycleLyricStyle,
             onToggleFadeQueue = onToggleFadeQueue,
-            onToggleBooklet = onToggleBooklet,
             onToggleMotion = onToggleMotion,
         )
     }
