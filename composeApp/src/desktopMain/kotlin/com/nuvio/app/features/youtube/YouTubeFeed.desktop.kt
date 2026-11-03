@@ -294,6 +294,12 @@ internal actual object YouTubeModeStorage {
 
     actual fun saveHideWatched(enabled: Boolean) = store.putBoolean(HIDE_WATCHED_KEY, enabled)
 
+    private const val SKY_BACKGROUND_KEY = "sky_background"
+
+    actual fun loadSkyBackground(): Boolean = store.getBoolean(SKY_BACKGROUND_KEY) ?: false
+
+    actual fun saveSkyBackground(enabled: Boolean) = store.putBoolean(SKY_BACKGROUND_KEY, enabled)
+
     private const val CHANNEL_CHOICE_KEY = "channel_page_id"
 
     actual fun loadChannelChoice(): String? = store.getString(CHANNEL_CHOICE_KEY)

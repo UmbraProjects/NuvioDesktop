@@ -1432,9 +1432,12 @@ private fun MainAppContent(
         val hapticFeedback = LocalHapticFeedback.current
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
-        // fork:music-navbar - where the Music bar's swap button returns to.
+        // fork:music-navbar - where the Music and YouTube bars' swap button returns to: the last tab that
+        // shows the main bar, so going from one of them to the other and back still lands on the tabs.
         var lastTabBeforeMusic by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
-        LaunchedEffect(selectedTab) { if (selectedTab != AppScreenTab.Music) lastTabBeforeMusic = selectedTab }
+        LaunchedEffect(selectedTab) {
+            if (selectedTab != AppScreenTab.Music && selectedTab != AppScreenTab.YouTube) lastTabBeforeMusic = selectedTab
+        }
         var rootTabBackStack by remember { mutableStateOf<List<AppScreenTab>>(emptyList()) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
         var navigateToContentCount by remember { mutableStateOf(0) }
@@ -1765,6 +1768,13 @@ private fun MainAppContent(
                 navController.currentDestination?.hasRoute<TabsRoute>() == true
             ) {
                 com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
+                return@collect
+            }
+            // fork:youtube-mode - and on the YouTube tab, to its search box.
+            if (action == AppShortcutAction.OpenSearch && selectedTab == AppScreenTab.YouTube &&
+                navController.currentDestination?.hasRoute<TabsRoute>() == true
+            ) {
+                com.nuvio.app.features.youtube.YouTubeTopBarSearch.requestFocus()
                 return@collect
             }
             when (action) {
@@ -4032,6 +4042,7 @@ private fun MainAppContent(
                                             selectedTab = selectedTab,
                                             onTabSelected = ::handleRootTabClick,
                                             onLeaveMusic = { handleRootTabClick(lastTabBeforeMusic) }, // fork:music-navbar
+                                            onLeaveYouTube = { handleRootTabClick(lastTabBeforeMusic) }, // fork:youtube-mode
                                             onProfileSelected = onProfileSelected,
                                             onAddProfileRequested = onSwitchProfile,
                                             // TV mode docks the source picker into the home hero, right where
@@ -6422,6 +6433,7 @@ private fun TabletFloatingTopBar(
     onSearchSubmit: (String) -> Unit = {},
     onNavigateToContent: () -> Unit = {},
     onLeaveMusic: () -> Unit = {}, // fork:music-navbar
+    onLeaveYouTube: () -> Unit = {}, // fork:youtube-mode
 ) {
     val tokens = MaterialTheme.nuvio
     val focusManager = LocalFocusManager.current
@@ -6430,6 +6442,8 @@ private fun TabletFloatingTopBar(
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
     // fork:music-navbar - on the Music tab the bar holds the Music search instead of the tabs.
     val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive
+    // fork:youtube-mode - and on the YouTube tab, the YouTube search.
+    val youTubeBarActive = selectedTab == AppScreenTab.YouTube && !isSearchActive
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsStateWithLifecycle()
@@ -6449,7 +6463,7 @@ private fun TabletFloatingTopBar(
         // it and the menu is left floating over nothing.
         targetValue = when {
             hidden -> 0f
-            dimUntilHovered && !isSearchActive && !musicBarActive && !activationZoneHovered && !libraryMenuVisible -> 0f // fork:music-navbar
+            dimUntilHovered && !isSearchActive && !musicBarActive && !youTubeBarActive && !activationZoneHovered && !libraryMenuVisible -> 0f // fork:music-navbar
             else -> 1f
         },
         animationSpec = tween(durationMillis = 200),
@@ -6730,6 +6744,8 @@ private fun TabletFloatingTopBar(
                     }
                 } else if (musicBarActive) { // fork:music-navbar
                     com.nuvio.app.features.music.MusicTopBarContent(onLeave = onLeaveMusic, modifier = Modifier.fillMaxSize())
+                } else if (youTubeBarActive) { // fork:youtube-mode
+                    com.nuvio.app.features.youtube.YouTubeTopBarContent(onLeave = onLeaveYouTube, modifier = Modifier.fillMaxSize())
                 } else {
                     Row(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),

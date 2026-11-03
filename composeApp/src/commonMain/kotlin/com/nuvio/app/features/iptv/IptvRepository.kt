@@ -38,7 +38,16 @@ data class IptvSettings(
     val proxy: IptvProxy = IptvProxy(),
     /** How far back live TV can be rewound, in minutes; 0 = mpv's own default (a few minutes). */
     val rewindMinutes: Int = 0,
-)
+    /**
+     * Settings > Live TV > Show in navigation. Null until the switch is first used: the tab then shows
+     * while a playlist exists, as it always did, so turning the switch into a setting moves nobody's bar.
+     */
+    val tabEnabled: Boolean? = null,
+) {
+    /** Whether the Live TV entry belongs in the navigation. */
+    val tabShown: Boolean
+        get() = tabEnabled ?: playlists.isNotEmpty()
+}
 
 /** The rewind buffer choices, in minutes; anything above 0 is kept on disk, not in memory. */
 val IPTV_REWIND_OPTIONS = listOf(0, 10, 30, 60)
@@ -246,6 +255,11 @@ object IptvRepository {
     fun setRewindMinutes(minutes: Int) {
         ensureLoaded()
         mutate { it.copy(rewindMinutes = minutes.takeIf { m -> m in IPTV_REWIND_OPTIONS } ?: 0) }
+    }
+
+    fun setTabEnabled(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(tabEnabled = enabled) }
     }
 
     fun setProxy(proxy: IptvProxy) {

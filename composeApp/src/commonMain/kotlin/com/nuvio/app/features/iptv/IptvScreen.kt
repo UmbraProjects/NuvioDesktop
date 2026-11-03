@@ -124,12 +124,12 @@ import org.jetbrains.compose.resources.stringResource
 /** Sidebar entries that are not provider categories. */
 private typealias IptvSection = IptvGroups
 
-/** Whether the Live TV tab belongs in the navigation: only once a playlist exists. */
+/** Whether the Live TV tab belongs in the navigation: [IptvSettings.tabShown]. */
 @Composable
 fun rememberLiveTvTabVisible(): Boolean {
     remember { IptvRepository.ensureLoaded() }
     val settings by IptvRepository.settings.collectAsStateWithLifecycle()
-    return settings.playlists.isNotEmpty()
+    return settings.tabShown
 }
 
 /** Where the arrow keys are: the tab is driven by one virtual focus, like the Calendar. */

@@ -156,5 +156,13 @@ private fun YouTubeTabSwitch(isTablet: Boolean) {
             isTablet = isTablet,
             onCheckedChange = YouTubeFeedRepository::setDeArrow,
         )
+        val sky by remember { YouTubeFeedRepository.skyBackground }.collectAsState()
+        SettingsSwitchRow(
+            title = "Gradient background",
+            description = "Draws the tab on the same gradient as this screen instead of a plain background.",
+            checked = sky,
+            isTablet = isTablet,
+            onCheckedChange = YouTubeFeedRepository::setSkyBackground,
+        )
     }
 }

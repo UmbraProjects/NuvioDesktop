@@ -45,7 +45,17 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.foundation.layout.Spacer
+import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.discover.BrowseFilterIconAction
+import com.nuvio.app.features.settings.settingsSkyBackground
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.WatchLater
@@ -184,12 +194,13 @@ fun YouTubeTabScreen(
     LaunchedEffect(allHidden, feed.continuation, feed.loading) {
         if (allHidden && feed.continuation != null && !feed.loading && feed.error == null) YouTubeFeedRepository.loadMore(kind)
     }
-    var searchText by rememberSaveable { mutableStateOf(YouTubeFeedRepository.searchQuery.value) }
+    // The box's text lives with the top bar's box, which shows it while the bar hosts the search.
+    val searchBox = YouTubeTopBarSearch
     var focusResultsPending by remember { mutableStateOf(false) }
     fun submitSearch() {
-        if (searchText.isBlank()) return
+        if (searchBox.text.isBlank()) return
         focusResultsPending = true
-        YouTubeFeedRepository.search(searchText)
+        YouTubeFeedRepository.search(searchBox.text)
         // Back from the results returns to where the search was typed.
         if (selectedName != YouTubeFeedKind.Search.name) {
             backStack = (backStack + selectedName).takeLast(MAX_BACK_STEPS)
@@ -292,7 +303,7 @@ fun YouTubeTabScreen(
     // Keyboard and pad: a page of videos arriving with nothing in the tab focused hands focus to its
     // first card, so the arrows have somewhere to start (a mouse user never sees it: the ring is
     // keyboard-only).
-    val firstCardFocus = remember { FocusRequester() }
+    val firstCardFocus = searchBox.resultsFocus
     val searchFocus = remember { FocusRequester() }
     val playlistsFocus = remember { FocusRequester() }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -304,6 +315,18 @@ fun YouTubeTabScreen(
             runCatching { firstCardFocus.requestFocus() }
         }
     }
+    // The bar's box: Enter searches, its clear button leaves the results. Requests made before this
+    // screen existed are not replayed.
+    var handledSubmits by remember { mutableStateOf(searchBox.submits) }
+    LaunchedEffect(searchBox.submits) {
+        if (searchBox.submits != handledSubmits) submitSearch()
+        handledSubmits = searchBox.submits
+    }
+    var handledClears by remember { mutableStateOf(searchBox.clears) }
+    LaunchedEffect(searchBox.clears) {
+        if (searchBox.clears != handledClears && kind == YouTubeFeedKind.Search) goBack()
+        handledClears = searchBox.clears
+    }
     // Enter in the search box: once the results are in, focus moves to the first of them.
     LaunchedEffect(focusResultsPending, firstVideoId, feed.loading) {
         if (focusResultsPending && kind == YouTubeFeedKind.Search && firstVideoId != null && !feed.loading) {
@@ -313,58 +336,55 @@ fun YouTubeTabScreen(
         }
     }
 
+    val sky by remember { YouTubeFeedRepository.skyBackground }.collectAsStateWithLifecycle()
+    val tokens = MaterialTheme.nuvio
+    val barHosted = searchBox.barHosted
     Column(
         modifier = modifier
             .fillMaxSize()
+            // Settings > YouTube account > Gradient background: the Settings screen's sky.
+            .then(if (sky) Modifier.settingsSkyBackground(tokens.colors.background, tokens.colors.accent) else Modifier)
             .onFocusChanged { tabHasFocus = it.hasFocus }
             .arrowKeyFocusNavigation()
-            .padding(start = 32.dp, end = 32.dp, top = topChromePadding ?: 24.dp),
+            // With the search on the top bar, the page starts right under the bar.
+            .padding(
+                start = 32.dp,
+                end = 32.dp,
+                top = if (barHosted) ((topChromePadding ?: 24.dp) - BAR_HOSTED_TRIM).coerceAtLeast(8.dp) else topChromePadding ?: 24.dp,
+            ),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = "YouTube",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(end = 12.dp),
-            )
-            // A header button starts a section afresh: nothing to go back to inside it.
+            // A section button starts it afresh: nothing to go back to inside it. Pressed again, it reloads.
             fun section(name: String) {
                 backStack = emptyList()
                 selectedName = name
             }
+            // The sections as icons, the way the Music tab and Discover's row headers show theirs; the one in use is lit.
             YouTubeFeedKind.entries.filter { it.inHeader }.forEach { entry ->
                 val current = entry == kind && !showingChannelList && !showingPlaylists
-                YouTubePill(
-                    label = entry.label,
-                    selected = current,
-                    onClick = { if (current) YouTubeFeedRepository.load(entry) else section(entry.name) },
-                )
+                BrowseFilterIconAction(entry.headerIcon, entry.label, on = current) {
+                    if (current) YouTubeFeedRepository.load(entry) else section(entry.name)
+                }
             }
-            YouTubePill(
-                label = "Channels",
-                selected = showingChannelList,
-                onClick = { if (showingChannelList) YouTubeFeedRepository.loadSubscribedChannels() else section(CHANNELS_VIEW) },
-            )
-            YouTubePill(
-                label = "Playlists",
-                selected = showingPlaylists,
-                onClick = { if (showingPlaylists) YouTubeFeedRepository.loadPlaylists() else section(PLAYLISTS_VIEW) },
-                // Right goes on to the search box: the geometric search passed it over.
-                modifier = if (auth.signedIn) {
-                    Modifier.focusRequester(playlistsFocus).focusProperties { right = searchFocus }
-                } else {
-                    Modifier
-                },
-            )
-            if (auth.signedIn) {
+            BrowseFilterIconAction(Icons.Rounded.Groups, "Channels", on = showingChannelList) {
+                if (showingChannelList) YouTubeFeedRepository.loadSubscribedChannels() else section(CHANNELS_VIEW)
+            }
+            // Right goes on to the search box: the geometric search passed it over.
+            Box(if (auth.signedIn && !barHosted) Modifier.focusRequester(playlistsFocus).focusProperties { right = searchFocus } else Modifier) {
+                BrowseFilterIconAction(Icons.Rounded.VideoLibrary, "Playlists", on = showingPlaylists) {
+                    if (showingPlaylists) YouTubeFeedRepository.loadPlaylists() else section(PLAYLISTS_VIEW)
+                }
+            }
+            // Without the top bar (the sidebar layout) the search box stays in the tab.
+            if (auth.signedIn && !barHosted) {
+                Spacer(Modifier.width(12.dp))
                 NuvioTextField(
-                    value = searchText,
-                    onValueChange = { searchText = it },
+                    value = searchBox.text,
+                    onValueChange = { searchBox.text = it },
                     focusRequester = searchFocus,
                     modifier = Modifier
                         .width(340.dp)
@@ -384,7 +404,7 @@ fun YouTubeTabScreen(
                                 else -> false
                             }
                         },
-                    // A pill, like the buttons it sits among.
+                    // A pill, like the top bar's search.
                     shape = CircleShape,
                     placeholder = "Search YouTube",
                     imeAction = ImeAction.Search,
@@ -398,14 +418,14 @@ fun YouTubeTabScreen(
                             modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).clickable(onClick = ::submitSearch),
                         )
                     },
-                    trailingContent = if (searchText.isNotEmpty() || kind == YouTubeFeedKind.Search) {
+                    trailingContent = if (searchBox.text.isNotEmpty() || kind == YouTubeFeedKind.Search) {
                         {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
                                 contentDescription = "Clear search",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(end = 8.dp).size(18.dp).clip(CircleShape).clickable {
-                                    searchText = ""
+                                    searchBox.text = ""
                                     if (kind == YouTubeFeedKind.Search) goBack()
                                 },
                             )
@@ -416,21 +436,18 @@ fun YouTubeTabScreen(
                 )
             }
             Box(Modifier.weight(1f))
-            if (auth.signedIn && channel.resolved) {
-                ChannelPicker(channel)
-            }
             if (auth.signedIn) {
-                YouTubePill(
-                    label = "Hide watched",
-                    selected = hideWatched,
-                    onClick = { YouTubeFeedRepository.setHideWatched(!hideWatched) },
-                    leadingIcon = Icons.Rounded.Check.takeIf { hideWatched },
-                )
-                YouTubeIconButton(
-                    onClick = { YouTubeFeedRepository.load(kind, force = true) },
-                    enabled = !feed.loading,
-                ) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.onSurface)
+                BrowseFilterIconAction(
+                    Icons.Rounded.VisibilityOff,
+                    if (hideWatched) "Showing unwatched videos only" else "Hide watched videos",
+                    on = hideWatched,
+                ) { YouTubeFeedRepository.setHideWatched(!hideWatched) }
+                BrowseFilterIconAction(Icons.Rounded.Refresh, "Refresh") {
+                    if (!feed.loading) YouTubeFeedRepository.load(kind, force = true)
+                }
+                if (channel.resolved) {
+                    Spacer(Modifier.width(6.dp))
+                    ChannelPicker(channel)
                 }
             }
         }
@@ -515,7 +532,7 @@ fun YouTubeTabScreen(
                 onAction = { selectedName = YouTubeFeedKind.Home.name },
             )
             channel.needsChoice -> FeedMessage(
-                text = "This Google account has several YouTube channels. Pick the one to watch as from \"Watching as\" above.",
+                text = "This Google account has several YouTube channels. Pick the one to watch as from the picture at the top right.",
                 action = "Reload channels",
                 onAction = { YouTubeFeedRepository.loadChannels(force = true) },
             )
@@ -601,15 +618,41 @@ private fun ChannelPicker(state: YouTubeChannelState) {
     var open by remember { mutableStateOf(false) }
     Box {
         val current = state.current
-        YouTubePill(
-            label = when {
-                state.channels.isEmpty() -> "Channel: account default"
-                state.needsChoice || current == null -> "Choose channel"
-                else -> "Watching as ${current.name}"
-            },
-            selected = false,
-            onClick = { open = true },
-        )
+        val label = when {
+            state.channels.isEmpty() -> "Channel: account default"
+            state.needsChoice || current == null -> "Choose a channel"
+            else -> "Watching as ${current.name}"
+        }
+        val interaction = remember { MutableInteractionSource() }
+        val focused by interaction.collectIsKeyboardFocusedAsState()
+        // Ringed in the accent while a channel still has to be picked, as the feed asks.
+        val ring = when {
+            focused -> MaterialTheme.colorScheme.onSurface
+            state.needsChoice -> MaterialTheme.colorScheme.primary
+            else -> Color.Transparent
+        }
+        com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = if (open) "" else label) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .border(2.dp, ring, CircleShape)
+                    .clickable(interactionSource = interaction, indication = null) { open = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                val photo = current?.photoUrl.takeUnless { state.needsChoice }
+                if (photo != null) {
+                    NuvioAsyncImage(
+                        model = photo,
+                        contentDescription = label,
+                        modifier = Modifier.size(30.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(Icons.Rounded.AccountCircle, contentDescription = label, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(30.dp))
+                }
+            }
+        }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             if (state.channels.isEmpty()) {
                 DropdownMenuItem(
@@ -728,6 +771,9 @@ private fun YouTubeIconButton(onClick: () -> Unit, enabled: Boolean = true, cont
         content = content,
     )
 }
+
+/** The tabs' top padding leaves room under the bar for a header; with the search on the bar most of it is spare. */
+private val BAR_HOSTED_TRIM = 36.dp
 
 /** How many pages Back can step through inside the tab. */
 private const val MAX_BACK_STEPS = 12
@@ -1340,3 +1386,14 @@ private fun YouTubeVideoCard(
         }
     }
 }
+
+/** A section's icon in the tab's header. */
+private val YouTubeFeedKind.headerIcon: androidx.compose.ui.graphics.vector.ImageVector
+    get() = when (this) {
+        YouTubeFeedKind.Home -> Icons.Rounded.Home
+        YouTubeFeedKind.Subscriptions -> Icons.Rounded.Subscriptions
+        YouTubeFeedKind.History -> Icons.Rounded.History
+        YouTubeFeedKind.Search -> Icons.Rounded.Search
+        YouTubeFeedKind.Channel -> Icons.Rounded.AccountCircle
+        YouTubeFeedKind.Playlist -> Icons.Rounded.PlaylistPlay
+    }

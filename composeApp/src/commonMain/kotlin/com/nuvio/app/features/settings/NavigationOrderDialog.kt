@@ -143,7 +143,7 @@ internal fun NavigationOrderDialog(onDismiss: () -> Unit) {
 /** An entry's show / hide switch: its state and the setter its own settings page uses. */
 internal class NavEntrySwitch(val on: Boolean, val set: (Boolean) -> Unit)
 
-/** The switches of the entries that have one. Home, Search and Library always show; Live TV shows while a playlist exists. */
+/** The switches of the entries that have one. Home, Search and Library always show. */
 @Composable
 private fun rememberNavEntrySwitches(): Map<NavBarEntry, NavEntrySwitch> {
     val discover by remember { ThemeSettingsRepository.desktopDiscoverTabVisible }.collectAsStateWithLifecycle()
@@ -153,7 +153,12 @@ private fun rememberNavEntrySwitches(): Map<NavBarEntry, NavEntrySwitch> {
         MusicLibraryRepository.state
     }.collectAsStateWithLifecycle()
     val games by remember { NavBarLayoutRepository.gamesInNav }.collectAsStateWithLifecycle()
+    val iptv by remember {
+        com.nuvio.app.features.iptv.IptvRepository.ensureLoaded()
+        com.nuvio.app.features.iptv.IptvRepository.settings
+    }.collectAsStateWithLifecycle()
     return mapOf(
+        NavBarEntry.LiveTv to NavEntrySwitch(iptv.tabShown, com.nuvio.app.features.iptv.IptvRepository::setTabEnabled),
         NavBarEntry.Discover to NavEntrySwitch(discover, ThemeSettingsRepository::setDesktopDiscoverTabVisible),
         NavBarEntry.YouTube to NavEntrySwitch(youTube == true, YouTubeFeedRepository::setTabEnabled),
         NavBarEntry.Music to NavEntrySwitch(music.settings.tabEnabled) { on ->

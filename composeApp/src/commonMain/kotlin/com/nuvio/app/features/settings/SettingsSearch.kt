@@ -604,6 +604,12 @@ private fun settingsSearchEntries(
         icon = Icons.Rounded.LiveTv,
     )
     listOf(
+        PlaybackSearchRow(
+            "iptv-in-navigation",
+            "Show in navigation",
+            "A Live TV button in the sidebar and top bar.",
+            "General",
+        ),
         PlaybackSearchRow("iptv-add-playlist", resolve(Res.string.iptv_settings_add_playlist), resolve(Res.string.iptv_settings_add_playlist_description), resolve(Res.string.iptv_settings_section_playlists)),
         PlaybackSearchRow("iptv-refresh-interval", resolve(Res.string.iptv_settings_refresh_interval), resolve(Res.string.iptv_settings_refresh_interval_description), resolve(Res.string.iptv_settings_section_updates)),
         PlaybackSearchRow("iptv-refresh-now", resolve(Res.string.iptv_settings_refresh_now), resolve(Res.string.iptv_settings_refresh_now_description), resolve(Res.string.iptv_settings_section_updates)),

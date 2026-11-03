@@ -118,7 +118,7 @@ fun navBarSlotWidth(slotCount: Int): Dp {
     return (64 - extra * 4).coerceAtLeast(50).dp
 }
 
-/** The entries that show now, in order: optional ones only while their switch (or, for Live TV, a playlist) says so. */
+/** The entries that show now, in order: optional ones only while their switch says so. */
 @Composable
 fun rememberNavBarEntries(): List<NavBarEntry> {
     val order by remember { NavBarLayoutRepository.order }.collectAsStateWithLifecycle()

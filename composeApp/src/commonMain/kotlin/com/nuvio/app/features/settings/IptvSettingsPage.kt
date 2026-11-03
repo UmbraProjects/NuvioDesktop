@@ -133,6 +133,23 @@ internal fun LazyListScope.iptvSettingsContent(
     isTablet: Boolean,
 ) {
     item {
+        val settings = rememberIptvSettings()
+        SettingsSection(title = "General", isTablet = isTablet) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Show in navigation",
+                    description = "A Live TV button in the sidebar and top bar. Its place can be changed under " +
+                        "Appearance > Navigation order.",
+                    checked = settings.tabShown,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-in-navigation")),
+                    onCheckedChange = IptvRepository::setTabEnabled,
+                )
+            }
+        }
+    }
+
+    item {
         IptvPlaylistsSection(isTablet = isTablet, settings = rememberIptvSettings())
     }
 

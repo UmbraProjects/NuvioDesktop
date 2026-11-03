@@ -157,6 +157,10 @@ internal expect object YouTubeModeStorage {
     fun loadHideWatched(): Boolean
     fun saveHideWatched(enabled: Boolean)
 
+    /** Draw the tab on the Settings screen's gradient instead of the plain background. */
+    fun loadSkyBackground(): Boolean
+    fun saveSkyBackground(enabled: Boolean)
+
     /** The chosen channel: a page id, "" for the account's own profile, null when never chosen. */
     fun loadChannelChoice(): String?
     fun saveChannelChoice(choice: String?)
@@ -248,6 +252,17 @@ object YouTubeFeedRepository {
     fun setHideWatched(enabled: Boolean) {
         YouTubeModeStorage.saveHideWatched(enabled)
         _hideWatched.value = enabled
+    }
+
+    private val _skyBackground by lazy { MutableStateFlow(YouTubeModeStorage.loadSkyBackground()) }
+
+    /** Settings > YouTube account > Gradient background: the Settings screen's sky behind the tab. Off unless turned on. */
+    val skyBackground: StateFlow<Boolean>
+        get() = _skyBackground.asStateFlow()
+
+    fun setSkyBackground(enabled: Boolean) {
+        YouTubeModeStorage.saveSkyBackground(enabled)
+        _skyBackground.value = enabled
     }
 
     private val _searchQuery = MutableStateFlow("")
