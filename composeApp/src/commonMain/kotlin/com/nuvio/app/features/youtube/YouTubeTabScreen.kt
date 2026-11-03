@@ -160,6 +160,8 @@ fun YouTubeTabScreen(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     topChromePadding: Dp? = null,
+    /** Opens a playlist's next video once the player gave up on it; off in the mini player's copy of the tab. */
+    opensQueueNext: Boolean = true,
 ) {
     val auth by remember {
         YouTubeMusicAuth.ensureLoaded()
@@ -351,7 +353,7 @@ fun YouTubeTabScreen(
 
     // The playlist being played through: its previous video ended, so open the next.
     LaunchedEffect(queueNext) {
-        if (queueNext != null) YouTubePlayQueue.takeNext()?.let(::play)
+        if (opensQueueNext && queueNext != null) YouTubePlayQueue.takeNext()?.let(::play)
     }
     fun playFromPlaylist(index: Int) {
         val playlist = openPlaylist ?: return
@@ -533,6 +535,15 @@ fun YouTubeTabScreen(
             // Without the top bar (the sidebar layout) the search box stays in the tab.
             if (auth.signedIn && !barHosted) {
                 Spacer(Modifier.width(12.dp))
+                com.nuvio.app.core.ui.VoiceSearchCommands(
+                    owner = "youtube-tab",
+                    text = searchBox.text,
+                    onTextChange = { searchBox.text = it },
+                    onSubmit = { query ->
+                        searchBox.text = query
+                        submitSearch()
+                    },
+                )
                 NuvioTextField(
                     value = searchBox.text,
                     onValueChange = { searchBox.text = it },
@@ -569,20 +580,27 @@ fun YouTubeTabScreen(
                             modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).clickable(onClick = ::submitSearch),
                         )
                     },
-                    trailingContent = if (searchBox.text.isNotEmpty() || kind == YouTubeFeedKind.Search) {
-                        {
+                    trailingContent = {
+                        if (searchBox.text.isNotEmpty() || kind == YouTubeFeedKind.Search) {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
                                 contentDescription = "Clear search",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(end = 8.dp).size(18.dp).clip(CircleShape).clickable {
+                                modifier = Modifier.size(18.dp).clip(CircleShape).clickable {
                                     searchBox.text = ""
                                     if (kind == YouTubeFeedKind.Search) goBack()
                                 },
                             )
                         }
-                    } else {
-                        null
+                        // Clear of the pill's rounded end, as the search icon is at the other.
+                        com.nuvio.app.core.ui.VoiceSearchButton(
+                            owner = "youtube-tab",
+                            focusField = { runCatching { searchFocus.requestFocus() } },
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 4.dp),
+                            size = 28.dp,
+                            iconSize = 18.dp,
+                        )
                     },
                 )
             }

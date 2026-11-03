@@ -528,6 +528,7 @@ let state = {
   durationMs: 0,
   positionMs: 0,
   chapters: [],
+  seekSegments: [],
   audioTracks: [],
   subtitleTracks: [],
   sourceIsLoading: false,
@@ -1239,6 +1240,13 @@ const setProgress = (positionMs, durationMs) => {
 // fill, buffered and unplayed as lighter and darker see-through white) and a highlight band across
 // the top half. Kept in the background rather than a mask so the thumb is never sliced by a gap.
 let seekChapterPercents = [];
+// SponsorBlock's marked stretches of a YouTube video, as { from, to, colour } in percent: painted
+// over the bar in its own colour whether played or not, as SponsorBlock's extension does.
+let seekSegmentRanges = [];
+const SEEK_SEGMENT_COLOURS = {
+  sponsor: "rgba(0, 212, 0, .9)",
+  selfpromo: "rgba(255, 221, 0, .9)",
+};
 let seekTrackProgress = 0;
 let seekTrackBuffered = 0;
 
@@ -1268,6 +1276,10 @@ const applySeekTrack = (progress, buffered) => {
     events.push({ at, offset: -1, kind: "gapStart" });
     events.push({ at, offset: 1, kind: "gapEnd" });
   });
+  seekSegmentRanges.forEach((range, index) => {
+    events.push({ at: range.from, offset: 0, kind: "segStart", index });
+    events.push({ at: range.to, offset: 0, kind: "segEnd", index });
+  });
   events.push({ at: 100, offset: 0, kind: "end" });
   events.sort((a, b) => a.at - b.at || a.offset - b.offset);
 
@@ -1276,17 +1288,24 @@ const applySeekTrack = (progress, buffered) => {
   let from = seekStop(0, 0);
   let fromAt = 0;
   let inGap = 0;
+  const openSegments = [];
   events.forEach(event => {
     const to = seekStop(event.at, event.offset);
     // The segment's colour is decided by where it sits against played/buffered, by its middle.
     const middle = (fromAt + event.at) / 2;
     const played = middle < progress;
-    const colour = inGap > 0 ? "transparent" : played ? SEEK_PLAYED : middle < buffered ? SEEK_BUFFERED : SEEK_UNPLAYED;
+    const marked = openSegments.length ? seekSegmentRanges[openSegments[openSegments.length - 1]].colour : null;
+    const colour = inGap > 0 ? "transparent" : marked ? marked : played ? SEEK_PLAYED : middle < buffered ? SEEK_BUFFERED : SEEK_UNPLAYED;
     const shine = inGap > 0 ? "transparent" : played ? SEEK_SHEEN_PLAYED : SEEK_SHEEN_REST;
     colours.push(`${colour} ${from} ${to}`);
     sheen.push(`${shine} ${from} ${to}`);
     if (event.kind === "gapStart") inGap += 1;
     if (event.kind === "gapEnd") inGap = Math.max(0, inGap - 1);
+    if (event.kind === "segStart") openSegments.push(event.index);
+    if (event.kind === "segEnd") {
+      const open = openSegments.indexOf(event.index);
+      if (open >= 0) openSegments.splice(open, 1);
+    }
     from = to;
     fromAt = event.at;
   });
@@ -1310,12 +1329,26 @@ const displayChapters = () => {
   return chapters.length > 1 ? chapters : [];
 };
 
+const normalizedSeekSegments = () => (Array.isArray(state.seekSegments) ? state.seekSegments : [])
+  .map(segment => ({
+    start: Number(segment?.start),
+    end: Number(segment?.end),
+    colour: SEEK_SEGMENT_COLOURS[String(segment?.kind || "")],
+  }))
+  .filter(segment => Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end > segment.start && segment.colour);
+
 const renderChapterMarkers = durationMs => {
   const chapters = normalizedChapters();
-  const signature = `${Math.round(durationMs)}:${chapters.map(chapter => `${chapter.startTime}:${chapter.title}`).join("|")}`;
+  const segments = normalizedSeekSegments();
+  const signature = `${Math.round(durationMs)}:${chapters.map(chapter => `${chapter.startTime}:${chapter.title}`).join("|")}` +
+    `#${segments.map(segment => `${segment.start}-${segment.end}:${segment.colour}`).join("|")}`;
   if (signature === chapterMarkersSignature) return;
   chapterMarkersSignature = signature;
   chapterMarkers.textContent = "";
+  const toPercent = seconds => Math.max(0, Math.min(100, seconds * 1000 / durationMs * 100));
+  seekSegmentRanges = durationMs <= 0 ? [] : segments
+    .map(segment => ({ from: toPercent(segment.start), to: toPercent(segment.end), colour: segment.colour }))
+    .filter(range => range.to > range.from);
   // The same chapter starts, as gaps cut into the seek track.
   seekChapterPercents = durationMs <= 0 ? [] : chapters
     .filter(chapter => chapter.startTime > 0 && chapter.startTime * 1000 < durationMs)

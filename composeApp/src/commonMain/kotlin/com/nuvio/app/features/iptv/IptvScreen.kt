@@ -711,6 +711,13 @@ private fun IptvHeader(
                             Icon(Icons.Rounded.Search, contentDescription = null, tint = tokens.colors.textMuted, modifier = Modifier.size(18.dp))
                         },
                         trailingContent = {
+                            com.nuvio.app.core.ui.VoiceSearchButton(
+                                owner = "iptv-filter",
+                                focusField = { runCatching { searchFocus.requestFocus() } },
+                                tint = tokens.colors.textMuted,
+                                size = 26.dp,
+                                iconSize = 18.dp,
+                            )
                             Icon(
                                 imageVector = Icons.Rounded.Close,
                                 contentDescription = null,
@@ -719,6 +726,7 @@ private fun IptvHeader(
                             )
                         },
                     )
+                    com.nuvio.app.core.ui.VoiceSearchCommands(owner = "iptv-filter", text = filter, onTextChange = onFilterChange)
                 } else {
                     LaunchedEffect(Unit) { onSearchBounds(null) }
                     IptvHeaderButton(Icons.Rounded.Search, filterLabel, focused) { onAction(action) }

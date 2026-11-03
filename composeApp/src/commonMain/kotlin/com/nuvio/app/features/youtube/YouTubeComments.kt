@@ -34,7 +34,26 @@ data class YouTubeComment(
     val repliesToken: String? = null,
     /** What a reply to it sends YouTube (`createReplyParams`); null when it cannot be replied to. */
     val replyParams: String? = null,
+    /** The account likes it, as the page said. */
+    val liked: Boolean = false,
+    /** The `performCommentActionEndpoint` actions that like it and take the like back; null when it cannot be liked (signed out). */
+    val likeAction: String? = null,
+    val unlikeAction: String? = null,
+    /** [likes] as YouTube words it with the account's like and without it, when the page gave both. */
+    val likesLiked: String? = null,
+    val likesNotLiked: String? = null,
 )
+
+/** The likes to show for [comment] when the account's like is [liked]: YouTube's own wording when known, else counted on. */
+internal fun youTubeCommentLikes(comment: YouTubeComment, liked: Boolean): String? {
+    if (liked == comment.liked) return comment.likes
+    val worded = if (liked) comment.likesLiked else comment.likesNotLiked
+    if (worded != null) return worded.trim().takeIf { it.isNotEmpty() && it != "0" }
+    // A plain number counts on; a worded one ("1.2K") does not move for one like.
+    val count = comment.likes?.trim()?.toIntOrNull() ?: if (comment.likes == null) 0 else return comment.likes
+    val next = count + if (liked) 1 else -1
+    return next.takeIf { it > 0 }?.toString()
+}
 
 /** [createParams]: what a new comment on the video sends YouTube (`createCommentParams`), from the first page; null when none can be made. */
 data class YouTubeCommentPage(val comments: List<YouTubeComment>, val continuation: String?, val createParams: String? = null)
@@ -68,7 +87,7 @@ internal fun parseYouTubeComments(body: String): YouTubeCommentPage {
         val comment = view?.let { v ->
             payloads[v.string("commentKey")]?.let(::entityComment)?.let { c ->
                 // The pin is shown by the view model, not the entity.
-                c.copy(pinned = v["pinnedText"] != null || c.pinned)
+                c.copy(pinned = v["pinnedText"] != null || c.pinned).withEntityLike(v, surfaces)
             }
         } ?: thread.obj("comment")?.obj("commentRenderer")?.let(::rendererComment)
         comment?.let {
@@ -97,9 +116,10 @@ internal fun parseYouTubeComments(body: String): YouTubeCommentPage {
 internal fun parseYouTubeCommentReplies(body: String): YouTubeCommentPage {
     val root = runCatching { json.parseToJsonElement(body) }.getOrNull() ?: return YouTubeCommentPage(emptyList(), null)
     val payloads = objects(root, "commentEntityPayload").associateBy { it.string("key") }
+    val surfaces = entityPayloads(root)
     val replies = LinkedHashMap<String, YouTubeComment>()
     objects(root, "commentViewModel")
-        .mapNotNull { view -> view.string("commentKey")?.let { payloads[it] }?.let(::entityComment) }
+        .mapNotNull { view -> view.string("commentKey")?.let { payloads[it] }?.let(::entityComment)?.withEntityLike(view, surfaces) }
         .forEach { replies.putIfAbsent(it.id, it) }
     objects(root, "commentRenderer").mapNotNull(::rendererComment).forEach { replies.putIfAbsent(it.id, it) }
     val continuation = objects(root, "continuationItemRenderer").firstNotNullOfOrNull(::continuationToken)
@@ -130,6 +150,28 @@ private fun replyParams(thread: JsonObject, view: JsonObject?, surfaces: Map<Str
     findText(thread, "createReplyParams")
         ?: view?.string("toolbarSurfaceKey")?.let { surfaces[it] }?.let { findText(it, "createReplyParams") }
 
+/**
+ * The current shape's like: the toolbar surface entity holds the like and unlike commands, the toolbar
+ * state entity whether the account likes it.
+ */
+private fun YouTubeComment.withEntityLike(view: JsonObject, surfaces: Map<String, JsonObject>): YouTubeComment {
+    val surface = view.string("toolbarSurfaceKey")?.let { surfaces[it] }
+    val state = view.string("toolbarStateKey")?.let { surfaces[it] }
+    val likedNow = state?.let { findText(it, "likeState") } == "TOOLBAR_LIKE_STATE_LIKED" || liked
+    return copy(
+        liked = likedNow,
+        // The toolbar words the count both ways; the one shown is the one with the account's like as it stands.
+        likes = if (likedNow) likesLiked?.trim()?.takeIf { it.isNotEmpty() && it != "0" } ?: likes else likes,
+        // Each entity's payload is wrapped in its type's name, so the commands are looked for under it.
+        likeAction = surface?.let { objects(it, "likeCommand").firstNotNullOfOrNull(::commentAction) } ?: likeAction,
+        unlikeAction = surface?.let { objects(it, "unlikeCommand").firstNotNullOfOrNull(::commentAction) } ?: unlikeAction,
+    )
+}
+
+/** The `performCommentActionEndpoint.action` under [element]; null for a sign-in prompt in its place. */
+private fun commentAction(element: JsonElement): String? = objects(element, "performCommentActionEndpoint")
+    .firstNotNullOfOrNull { it.string("action") }
+
 private fun findText(element: JsonElement, key: String): String? = when (element) {
     is JsonObject -> element.string(key) ?: element.values.firstNotNullOfOrNull { findText(it, key) }
     is JsonArray -> element.firstNotNullOfOrNull { findText(it, key) }
@@ -150,13 +192,22 @@ private fun entityComment(payload: JsonObject): YouTubeComment? {
         published = properties.string("publishedTime"),
         likes = toolbar?.string("likeCountNotliked")?.trim()?.takeIf { it.isNotEmpty() && it != "0" },
         replies = toolbar?.string("replyCount")?.trim()?.takeIf { it.isNotEmpty() && it != "0" },
+        likesLiked = toolbar?.string("likeCountLiked"),
+        likesNotLiked = toolbar?.string("likeCountNotliked"),
     )
 }
 
 private fun rendererComment(renderer: JsonObject): YouTubeComment? {
     val id = renderer.string("commentId") ?: return null
     val text = runs(renderer["contentText"])?.takeIf { it.isNotBlank() } ?: return null
+    val likeButton = renderer.obj("actionButtons")?.obj("commentActionButtonsRenderer")
+        ?.obj("likeButton")?.obj("toggleButtonRenderer")
+    val liked = renderer["isLiked"]?.let { (it as? JsonPrimitive)?.content == "true" }
+        ?: (likeButton?.get("isToggled") as? JsonPrimitive)?.content.equals("true")
     return YouTubeComment(
+        liked = liked,
+        likeAction = likeButton?.obj("defaultServiceEndpoint")?.let(::commentAction),
+        unlikeAction = likeButton?.obj("toggledServiceEndpoint")?.let(::commentAction),
         id = id,
         author = runs(renderer["authorText"]).orEmpty(),
         avatarUrl = renderer.obj("authorThumbnail")?.array("thumbnails")

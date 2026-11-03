@@ -88,6 +88,9 @@ internal actual suspend fun youTubeCreateComment(params: String, text: String, r
         pageId,
     )
 
+internal actual suspend fun youTubePerformCommentAction(action: String, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest("comment/perform_comment_action", mapOf("actions" to listOf(action)), pageId)
+
 internal actual suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult =
     signedWebRequest(
         "feedback",
@@ -392,6 +395,12 @@ internal actual object YouTubeModeStorage {
     actual fun loadOpenWindowed(): Boolean = store.getBoolean(OPEN_WINDOWED_KEY) ?: true
 
     actual fun saveOpenWindowed(windowed: Boolean) = store.putBoolean(OPEN_WINDOWED_KEY, windowed)
+
+    private const val MINI_PLAYER_ON_BACK_KEY = "mini_player_on_back"
+
+    actual fun loadMiniPlayerOnBack(): Boolean = store.getBoolean(MINI_PLAYER_ON_BACK_KEY) ?: true
+
+    actual fun saveMiniPlayerOnBack(enabled: Boolean) = store.putBoolean(MINI_PLAYER_ON_BACK_KEY, enabled)
 
     private const val THEATER_MODE_KEY = "theater_mode"
 

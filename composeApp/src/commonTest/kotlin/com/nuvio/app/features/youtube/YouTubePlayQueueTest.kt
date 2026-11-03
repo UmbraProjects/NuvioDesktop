@@ -11,7 +11,10 @@ class YouTubePlayQueueTest {
     private val list = listOf(video("a"), video("b"), video("c"))
 
     @AfterTest
-    fun reset() = YouTubePlayQueue.stop()
+    fun reset() {
+        YouTubePlayQueue.stop()
+        YouTubeWatchQueue.clear()
+    }
 
     @Test
     fun closingAVideoNearItsEndDoesNotPlayTheNext() {
@@ -42,6 +45,35 @@ class YouTubePlayQueueTest {
         YouTubePlayQueue.onOpened("a")
         assertEquals(0, YouTubePlayQueue.state.value?.index)
         YouTubePlayQueue.onOpened("zzz")
+        assertNull(YouTubePlayQueue.state.value)
+    }
+
+    @Test
+    fun videosQueuedDuringAVideoPlayAfterIt() {
+        YouTubeWatchQueue.add(video("q1"))
+        YouTubeWatchQueue.add(video("q2"))
+
+        assertEquals(true, YouTubePlayQueue.followsOn("a"))
+        val state = YouTubePlayQueue.state.value
+        assertEquals(listOf("a", "q1", "q2"), state?.videos?.map { it.videoId })
+        assertEquals(true, state?.watchQueue)
+    }
+
+    @Test
+    fun theQueueReplacesAutoplaysPickButNotAPickedVideo() {
+        YouTubeWatchQueue.add(video("q1"))
+        YouTubePlayQueue.handOverFromPlayer("a", video("auto"), autoplay = true)
+        YouTubePlayQueue.followsOn("a")
+        assertEquals("q1", YouTubePlayQueue.state.value?.videos?.getOrNull(1)?.videoId)
+
+        YouTubePlayQueue.handOverFromPlayer("a", video("picked"))
+        YouTubePlayQueue.followsOn("a")
+        assertEquals("picked", YouTubePlayQueue.state.value?.videos?.getOrNull(1)?.videoId)
+    }
+
+    @Test
+    fun nothingQueuedLeavesNothingToFollow() {
+        assertEquals(false, YouTubePlayQueue.followsOn("a"))
         assertNull(YouTubePlayQueue.state.value)
     }
 }

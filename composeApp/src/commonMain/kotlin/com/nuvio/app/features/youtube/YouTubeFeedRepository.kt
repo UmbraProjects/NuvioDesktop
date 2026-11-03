@@ -147,6 +147,9 @@ internal expect suspend fun youTubeNext(videoId: String?, continuation: String?,
 /** Posts [text] as a comment (`comment/create_comment`) or, with [reply], a reply (`comment/create_comment_reply`), with the params YouTube gave for it. */
 internal expect suspend fun youTubeCreateComment(params: String, text: String, reply: Boolean, pageId: String?): YouTubeBrowseResult
 
+/** Runs a comment's `performCommentActionEndpoint` action (its like, or taking it back) as the account. */
+internal expect suspend fun youTubePerformCommentAction(action: String, pageId: String?): YouTubeBrowseResult
+
 /** Sends a feed item's feedback token (`feedback`), as its menu rows do on the website: "Don't recommend channel". */
 internal expect suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult
 
@@ -194,6 +197,10 @@ internal expect object YouTubeModeStorage {
 
     fun loadOpenWindowed(): Boolean
     fun saveOpenWindowed(windowed: Boolean)
+
+    /** fork:youtube-mini-player - Back from a video goes to the tab, the video playing on in the corner. */
+    fun loadMiniPlayerOnBack(): Boolean
+    fun saveMiniPlayerOnBack(enabled: Boolean)
 
     fun loadTheaterMode(): Boolean
     fun saveTheaterMode(theater: Boolean)
@@ -372,6 +379,21 @@ object YouTubeFeedRepository {
     fun setOpenWindowed(windowed: Boolean) {
         _openWindowed.value = windowed
         YouTubeModeStorage.saveOpenWindowed(windowed)
+    }
+
+    private val _miniPlayerOnBack by lazy { MutableStateFlow(YouTubeModeStorage.loadMiniPlayerOnBack()) }
+
+    /**
+     * fork:youtube-mini-player - Settings > YouTube account > Mini player: Back from a YouTube tab video
+     * returns to the tab with the video playing on in a corner box (YouTubeWatchLayout.browsing) rather
+     * than closing it.
+     */
+    val miniPlayerOnBack: StateFlow<Boolean>
+        get() = _miniPlayerOnBack.asStateFlow()
+
+    fun setMiniPlayerOnBack(enabled: Boolean) {
+        _miniPlayerOnBack.value = enabled
+        YouTubeModeStorage.saveMiniPlayerOnBack(enabled)
     }
 
     private val _theaterMode by lazy { MutableStateFlow(YouTubeModeStorage.loadTheaterMode()) }
@@ -688,6 +710,14 @@ object YouTubeFeedRepository {
     suspend fun postComment(params: String, text: String, reply: Boolean): Boolean {
         val ok = youTubeCreateComment(params, text, reply, _channel.value.pageId) is YouTubeBrowseResult.Ok
         log.i { "${if (reply) "reply" else "comment"} posted: ok=$ok" }
+        return ok
+    }
+
+    /** Likes [comment] as the account, or takes the like back. True when YouTube took it. */
+    suspend fun setCommentLiked(comment: YouTubeComment, liked: Boolean): Boolean {
+        val action = (if (liked) comment.likeAction else comment.unlikeAction) ?: return false
+        val ok = youTubePerformCommentAction(action, _channel.value.pageId) is YouTubeBrowseResult.Ok
+        log.i { "comment ${if (liked) "like" else "remove like"}: ok=$ok" }
         return ok
     }
 

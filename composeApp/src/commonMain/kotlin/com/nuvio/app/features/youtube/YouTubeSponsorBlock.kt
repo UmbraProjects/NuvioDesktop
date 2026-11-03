@@ -105,4 +105,46 @@ internal fun parseYouTubeSponsorSegments(body: String, videoId: String): List<Sk
     }.sortedBy { it.startTime }
 }
 
+/** Painted on the seek bar in their own colour, and named as chapters. */
+private val SEEK_SEGMENT_TYPES = setOf("sponsor", "selfpromo")
+
+/** The SponsorBlock intervals the seek bar paints: sponsors (green) and self-promotion (yellow). */
+internal fun sponsorSeekSegments(intervals: List<SkipInterval>): List<com.nuvio.app.features.player.PlayerSeekSegment> =
+    intervals
+        .filter { it.provider == SPONSORBLOCK_SKIP_PROVIDER && it.type in SEEK_SEGMENT_TYPES && it.endTime > it.startTime }
+        .map { com.nuvio.app.features.player.PlayerSeekSegment(it.startTime, it.endTime, it.type) }
+
+/**
+ * [chapters] with each sponsor and self-promotion stretch cut in as a chapter of its own ("Sponsor",
+ * "Self-promotion"), and the chapter it interrupted resumed after it. A video without chapters gets
+ * a "Video" chapter around them, so the bar's chapter names read right on either side.
+ */
+internal fun withSponsorChapters(
+    chapters: List<com.nuvio.app.features.player.PlayerChapter>,
+    intervals: List<SkipInterval>,
+): List<com.nuvio.app.features.player.PlayerChapter> {
+    val segments = sponsorSeekSegments(intervals).sortedBy { it.start }
+    if (segments.isEmpty()) return chapters
+    val base = chapters.sortedBy { it.startTime }.ifEmpty { listOf(com.nuvio.app.features.player.PlayerChapter(0.0, "Video")) }
+    fun titleAt(seconds: Double): String = base.lastOrNull { it.startTime <= seconds }?.title ?: base.first().title
+    val out = mutableListOf<com.nuvio.app.features.player.PlayerChapter>()
+    // Chapters starting inside a marked stretch are covered by it.
+    base.filterTo(out) { chapter -> segments.none { chapter.startTime > it.start && chapter.startTime < it.end } }
+    var lastEnd = Double.NEGATIVE_INFINITY
+    for (segment in segments) {
+        if (segment.start < lastEnd) continue // overlapping marks: the first one wins
+        out.removeAll { it.startTime == segment.start }
+        out += com.nuvio.app.features.player.PlayerChapter(
+            segment.start,
+            if (segment.kind == "sponsor") "Sponsor" else "Self-promotion",
+        )
+        // What plays after it: the chapter it interrupted, unless one starts right there.
+        if (out.none { it.startTime == segment.end } && base.none { it.startTime == segment.end }) {
+            out += com.nuvio.app.features.player.PlayerChapter(segment.end, titleAt(segment.end))
+        }
+        lastEnd = segment.end
+    }
+    return out.sortedBy { it.startTime }
+}
+
 private fun kotlinx.serialization.json.JsonElement.string(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content

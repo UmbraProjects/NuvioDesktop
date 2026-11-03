@@ -61,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -2486,6 +2487,17 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.YouTubeAccount,
+            key = "youtube-mini-player",
+            title = "Mini player",
+            description = "Back from a YouTube video keeps it playing in a corner box while you browse the YouTube tab",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-mini-player"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
             key = "youtube-max-quality",
             title = "Max video quality",
             description = "The sharpest a YouTube tab video plays at: 8K, 4K, 1440p, 1080p or 720p",
@@ -2908,12 +2920,16 @@ internal fun SettingsSearchField(
     val tokens = MaterialTheme.nuvio
     val focused = remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val fieldFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    // Searches as it is typed in, so a spoken "search" is only taken off the end.
+    com.nuvio.app.core.ui.VoiceSearchCommands(owner = "settings-search", text = query, onTextChange = onQueryChange)
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = modifier
             .fillMaxWidth()
             .height(38.dp)
+            .focusRequester(fieldFocus)
             // The section cards' frosted glass, so the field belongs to the page under it.
             .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
             .border(
@@ -2981,6 +2997,12 @@ internal fun SettingsSearchField(
                             .clickable { onQueryChange("") },
                     )
                 }
+                com.nuvio.app.core.ui.VoiceSearchButton(
+                    owner = "settings-search",
+                    focusField = { runCatching { fieldFocus.requestFocus() } },
+                    tint = tokens.colors.textMuted,
+                    size = 28.dp,
+                )
             }
         },
     )

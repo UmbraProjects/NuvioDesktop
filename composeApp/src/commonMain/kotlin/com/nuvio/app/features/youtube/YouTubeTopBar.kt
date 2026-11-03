@@ -181,6 +181,15 @@ private fun YouTubeBarSearchField(fieldFocus: FocusRequester, swapFocus: FocusRe
     val published = if (showRecent) MusicBarSuggestions(offered, picked, ::pick, onClear = YouTubeSearchHistory::clear) else null
     SideEffect { YouTubeTopBarSearch.suggestions = published }
     DisposableEffect(Unit) { onDispose { YouTubeTopBarSearch.suggestions = null } }
+    com.nuvio.app.core.ui.VoiceSearchCommands(
+        owner = "youtube-bar",
+        text = state.text,
+        onTextChange = { state.text = it },
+        onSubmit = { query ->
+            state.text = query
+            state.submit()
+        },
+    )
     BasicTextField(
         value = shown,
         onValueChange = { next ->
@@ -282,6 +291,15 @@ private fun YouTubeBarSearchField(fieldFocus: FocusRequester, swapFocus: FocusRe
                         modifier = Modifier.size(20.dp).clip(CircleShape).musicKeyFocusRing(CircleShape).clickable { state.clear() },
                     )
                 }
+                // Voice search: Windows voice typing types what is said into the box. A 32dp square
+                // like the swap button at the other end, so both icons sit the same way in the pill's
+                // rounded ends (a bare 20dp icon here sat closer to the edge than the swap icon).
+                com.nuvio.app.core.ui.VoiceSearchButton(
+                    owner = "youtube-bar",
+                    focusField = { runCatching { fieldFocus.requestFocus() } },
+                    tint = tokens.colors.textMuted,
+                    modifier = Modifier.musicKeyFocusRing(CircleShape),
+                )
             }
         },
     )

@@ -101,6 +101,25 @@ private fun PlayerScreenRuntime.loadYouTubeComments(force: Boolean = false) {
     }
 }
 
+/**
+ * fork:youtube-mini-player - the player's Back on a YouTube tab video. Over the tab (the mini player) it
+ * steps back inside the tab and never closes the video, which the box's X does; otherwise, with
+ * Settings > YouTube account > Mini player on, it goes to the tab with the video in the corner. False
+ * leaves Back to close the player as before.
+ */
+internal fun PlayerScreenRuntime.handleYouTubeMiniPlayerBack(): Boolean {
+    if (!isYouTubeVideoPlayback || pictureInPictureActive) return false
+    val layout = com.nuvio.app.features.youtube.YouTubeWatchLayout
+    if (layout.browsing.value) {
+        com.nuvio.app.core.ui.TabBackInterceptor.handle()
+        return true
+    }
+    if (!YouTubeFeedRepository.miniPlayerOnBack.value || com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page == null) return false
+    playerControlsCloseModalsToken += 1
+    layout.startBrowsing()
+    return true
+}
+
 internal fun PlayerScreenRuntime.openRelatedYouTubeVideo(index: Int) {
     youTubeRelated.getOrNull(index)?.let(::openYouTubeVideoFromPlayer)
 }

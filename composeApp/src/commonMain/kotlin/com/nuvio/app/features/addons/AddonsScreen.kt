@@ -495,6 +495,7 @@ private fun DesktopAddonsManager(
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.weight(1f),
+                voiceOwner = "addons-filter",
             )
             DesktopSegmentedFilters(
                 activeOnly = activeOnly,
@@ -597,10 +598,13 @@ private fun DesktopAddonSearchField(
     placeholder: String = stringResource(Res.string.addons_filter_placeholder),
     leadingIcon: ImageVector? = Icons.Rounded.Search,
     onSubmit: (() -> Unit)? = null,
+    /** Offers voice search under this name; null for a box voice makes no sense in (an addon URL). */
+    voiceOwner: String? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     val focusRequester = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
+    voiceOwner?.let { com.nuvio.app.core.ui.VoiceSearchCommands(owner = it, text = value, onTextChange = onValueChange) }
     Box(
         modifier = modifier
             .height(40.dp)
@@ -661,6 +665,14 @@ private fun DesktopAddonSearchField(
                     }
                 },
             )
+            voiceOwner?.let { owner ->
+                com.nuvio.app.core.ui.VoiceSearchButton(
+                    owner = owner,
+                    focusField = { runCatching { focusRequester.requestFocus() } },
+                    tint = tokens.colors.textMuted,
+                    size = 28.dp,
+                )
+            }
         }
     }
 }

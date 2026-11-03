@@ -1042,18 +1042,23 @@ private fun NativePlayerSurface(
     val youTubePageWindowed by com.nuvio.app.features.youtube.YouTubeWatchLayout.windowed.collectAsState()
     val youTubePageAvailable by com.nuvio.app.features.youtube.YouTubeWatchLayout.available.collectAsState()
     val youTubeTheater by com.nuvio.app.features.youtube.YouTubeFeedRepository.theaterMode.collectAsState()
-    LaunchedEffect(controller, playerControlsState, postShowBoxed, youTubeMiniPlayer, youTubePageWindowed, youTubePageAvailable, youTubeTheater) {
-        val youTubePage = youTubePageAvailable && youTubePageWindowed
+    // fork:youtube-mini-player - the tab drawn around the video in its corner box: the HUD shows nothing there either.
+    val youTubeBrowsing by com.nuvio.app.features.youtube.YouTubeWatchLayout.browsing.collectAsState()
+    LaunchedEffect(controller, playerControlsState, postShowBoxed, youTubeMiniPlayer, youTubePageWindowed, youTubePageAvailable, youTubeTheater, youTubeBrowsing) {
+        val youTubeBrowse = youTubePageAvailable && youTubeBrowsing
+        val youTubePage = (youTubePageAvailable && youTubePageWindowed) || youTubeBrowse
         controller.watchPage = youTubePage
-        controller.miniPlayer = youTubeMiniPlayer && youTubePage
+        controller.miniPlayer = (youTubeMiniPlayer && youTubePage) || youTubeBrowse
         controller.updateControls(
             if (youTubePage && !youTubeTheater && !postShowBoxed) {
                 // The watch page shows the comments and related videos beside the video, larger than
                 // the HUD's panels: their buttons go. Theater fills the window, so it keeps them.
                 playerControlsState.copy(
-                    hiddenHudButtons = listOf(playerControlsState.hiddenHudButtons, "sources", "episodes")
-                        .filter { it.isNotBlank() }
-                        .joinToString(","),
+                    hud = playerControlsState.hud.copy(
+                        hiddenHudButtons = listOf(playerControlsState.hud.hiddenHudButtons, "sources", "episodes")
+                            .filter { it.isNotBlank() }
+                            .joinToString(","),
+                    ),
                 )
             } else if (postShowBoxed) {
                 // The HUD lives inside the video's container, so it would be squashed into the box.
@@ -1061,8 +1066,8 @@ private fun NativePlayerSurface(
                 // The skip prompt is drawn by the cards screen instead (skipKeyAction stays, so the key works).
                 playerControlsState.copy(
                     controlsVisible = false,
-                    mouseMoveRevealsControlsEnabled = false,
-                    skipPromptVisible = false,
+                    hud = playerControlsState.hud.copy(mouseMoveRevealsControlsEnabled = false),
+                    skipPrompt = playerControlsState.skipPrompt.copy(skipPromptVisible = false),
                     heroTrailer = playerControlsState.heroTrailer.copy(postShowInput = true),
                 )
             } else {
@@ -1352,12 +1357,12 @@ private fun NativePlayerSurface(
     ) {
         // Drawn first, so the SwingPanel's corner box sits on top of it.
         if (postShowBoxed) {
-            val skipOffered = playerControlsState.skipPromptVisible &&
-                !playerControlsState.skipPromptDismissed &&
+            val skipOffered = playerControlsState.skipPrompt.skipPromptVisible &&
+                !playerControlsState.skipPrompt.skipPromptDismissed &&
                 playerControlsState.skipKeyAction.isNotEmpty()
             PostShowScreen(
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = postShowProgress },
-                skipLabel = if (skipOffered) playerControlsState.skipPromptLabel else null,
+                skipLabel = if (skipOffered) playerControlsState.skipPrompt.skipPromptLabel else null,
                 skipKeyLabel = playerShortcutKeyCodeLabel(
                     PlayerShortcutsRepository.keyCode(PlayerShortcutAction.SkipInterval),
                 ),

@@ -1540,6 +1540,25 @@ private fun MainAppContent(
                     GameModeController.setActive(false)
                     return@collect
                 }
+                // fork:youtube-mini-player - over the tab the mini player draws, Back steps back inside the
+                // tab and never closes the video (the box's X does). From a YouTube tab video's page, Back
+                // goes to the mini player, as the player's own Back does (handleYouTubeMiniPlayerBack).
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    val youTubeLayout = com.nuvio.app.features.youtube.YouTubeWatchLayout
+                    if (youTubeLayout.available.value && youTubeLayout.browsing.value) {
+                        com.nuvio.app.core.ui.TabBackInterceptor.handle()
+                        return@collect
+                    }
+                    if (
+                        source == DesktopBackRequestSource.Keyboard &&
+                        youTubeLayout.available.value &&
+                        com.nuvio.app.features.youtube.YouTubeFeedRepository.miniPlayerOnBack.value &&
+                        com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page != null
+                    ) {
+                        youTubeLayout.startBrowsing()
+                        return@collect
+                    }
+                }
                 if (
                     StreamPickerController.isOpen &&
                     navController.currentDestination?.hasRoute<PlayerRoute>() != true
@@ -3098,6 +3117,9 @@ private fun MainAppContent(
                     com.nuvio.app.features.music.LocalMusicBarInset provides
                         (if (musicPageTakesInset) musicBarInset else 0.dp), // fork:music
                 ) {
+                // fork:youtube-mini-player - where the tab the mini player draws was left, kept from one
+                // video's player to the next (each player route has its own saved state, gone with it).
+                val youTubeMiniStateHolder = rememberSaveableStateHolder()
                 NavHost(
                     navController = navController,
                     startDestination = TabsRoute,
@@ -3384,6 +3406,54 @@ private fun MainAppContent(
                             }
                         },
                     )
+                    // fork:youtube-mini-player - the YouTube tab the player draws around the video while it
+                    // plays on in its corner box (YouTubeWatchLayout.browsing). A video picked there hands this
+                    // player over to it, behind the same shield as a playlist moving on, and opens it in full;
+                    // the tab's settings button closes the player first (a route pushed over it would end it).
+                    if (launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE) {
+                        val latestOnBackFromPlayer by rememberUpdatedState(onBackFromPlayer)
+                        val miniPlayerPage: @Composable (Modifier) -> Unit = remember(route.launchId) {
+                            { pageModifier ->
+                                youTubeMiniStateHolder.SaveableStateProvider("youtube-mini-player") {
+                                    com.nuvio.app.features.youtube.YouTubeTabScreen(
+                                        onPlay = { next ->
+                                            if (navController.currentBackStackEntry?.id == backStackEntry.id) {
+                                                com.nuvio.app.features.youtube.YouTubeWatchLayout.stopBrowsing()
+                                                lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
+                                                ResumePromptRepository.markPlayerExitedNormally()
+                                                PlayerLaunchStore.remove(route.launchId)
+                                                PlayerHandoff.holdShield()
+                                                navController.popBackStack()
+                                                coroutineScope.launch {
+                                                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                                                        PlayerHandoff.activeRoutes.first { it == 0 }
+                                                    }
+                                                    navController.navigateToPlayer(next)
+                                                }
+                                            }
+                                        },
+                                        onOpenSettings = {
+                                            com.nuvio.app.features.youtube.YouTubeWatchLayout.stopBrowsing()
+                                            latestOnBackFromPlayer()
+                                            requestedSettingsPageName = "YouTubeAccount"
+                                            handleRootTabClick(AppScreenTab.Settings)
+                                        },
+                                        modifier = pageModifier,
+                                        // The tab back on screen once this player goes opens it, not this one.
+                                        opensQueueNext = false,
+                                    )
+                                }
+                            }
+                        }
+                        DisposableEffect(miniPlayerPage) {
+                            com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page = miniPlayerPage
+                            onDispose {
+                                if (com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page === miniPlayerPage) {
+                                    com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page = null
+                                }
+                            }
+                        }
+                    }
                     // fork:preroll - the pre-show owns the screen until it finishes (module hook, no re-indent).
                     if (!com.nuvio.app.features.preroll.prerollGateCleared(route.launchId.toString(), launch)) {
                         return@composable
@@ -3448,7 +3518,7 @@ private fun MainAppContent(
                             val youTubeVideoId = launch.parentMetaId
                                 .takeIf { launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE }
                                 ?.removePrefix(com.nuvio.app.features.youtube.YOUTUBE_META_ID_PREFIX)
-                            if (youTubeVideoId != null && com.nuvio.app.features.youtube.YouTubePlayQueue.isPlaying(youTubeVideoId)) {
+                            if (youTubeVideoId != null && com.nuvio.app.features.youtube.YouTubePlayQueue.followsOn(youTubeVideoId)) {
                                 val entryId = backStackEntry.id
                                 coroutineScope.launch {
                                     val next = com.nuvio.app.features.youtube.YouTubePlayQueue.handOffNext(youTubeVideoId)
@@ -6722,6 +6792,23 @@ private fun TabletFloatingTopBar(
                             },
                         )
                     }
+                        // Voice search: Windows voice typing types what is said into the field.
+                        com.nuvio.app.core.ui.VoiceSearchCommands(
+                            owner = "app-search",
+                            text = searchQuery,
+                            onTextChange = { text ->
+                                searchFieldState = TextFieldValue(text, TextRange(text.length))
+                                onSearchQueryChange(text)
+                            },
+                            onSubmit = { query -> onSearchSubmit(query) },
+                        )
+                        com.nuvio.app.core.ui.VoiceSearchButton(
+                            owner = "app-search",
+                            focusField = { try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {} },
+                            tint = inactiveIconTint,
+                            size = NuvioTokens.Space.s32,
+                            iconSize = 16.dp,
+                        )
                         // Mirrors the Tab key inside the field: toggles the discover-catalog
                         // picker so discovery mode is reachable by mouse as well.
                         if (discoverTabVisible) {

@@ -67,4 +67,35 @@ class YouTubeCommentsTest {
         assertEquals("42", comment.likes)
         assertEquals("3", comment.replies)
     }
+
+    @Test
+    fun readsTheLikeCommandsAndStateFromTheToolbarEntities() {
+        val body = """
+            {"onResponseReceivedEndpoints":[{"reloadContinuationItemsCommand":{"continuationItems":[
+              {"commentThreadRenderer":{"commentViewModel":{"commentViewModel":{"commentKey":"k1","toolbarSurfaceKey":"S1","toolbarStateKey":"T1"}}}}
+            ]}}],
+            "frameworkUpdates":{"entityBatchUpdate":{"mutations":[
+              {"entityKey":"k1","payload":{"commentEntityPayload":{"key":"k1","properties":{"commentId":"c1","content":{"content":"Hi"}},
+                "toolbar":{"likeCountNotliked":"4","likeCountLiked":"5"}}}},
+              {"entityKey":"S1","payload":{"engagementToolbarSurfaceEntityPayload":{"key":"S1",
+                "likeCommand":{"innertubeCommand":{"performCommentActionEndpoint":{"action":"LIKE"}}},
+                "unlikeCommand":{"innertubeCommand":{"performCommentActionEndpoint":{"action":"UNLIKE"}}}}}},
+              {"entityKey":"T1","payload":{"engagementToolbarStateEntityPayload":{"key":"T1","likeState":"TOOLBAR_LIKE_STATE_LIKED"}}}
+            ]}}}
+        """.trimIndent()
+        val comment = parseYouTubeComments(body).comments.single()
+        assertEquals("LIKE", comment.likeAction)
+        assertEquals("UNLIKE", comment.unlikeAction)
+        assertTrue(comment.liked)
+        assertEquals("5", comment.likes)
+        assertEquals("4", youTubeCommentLikes(comment, liked = false))
+    }
+
+    @Test
+    fun aLikeCountsOnAPlainNumber() {
+        val comment = YouTubeComment("c", "a", null, "t", null, likes = "41", replies = null)
+        assertEquals("42", youTubeCommentLikes(comment, liked = true))
+        assertEquals("1", youTubeCommentLikes(comment.copy(likes = null), liked = true))
+        assertEquals("1.2K", youTubeCommentLikes(comment.copy(likes = "1.2K"), liked = true))
+    }
 }
