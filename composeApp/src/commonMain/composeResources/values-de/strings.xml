@@ -2338,6 +2338,8 @@
     <string name="settings_playback_info_panel_description">Eine Zusammenfassung der Medieninfos bei der Wiedergabe anzeigen.</string>
     <string name="settings_playback_fine_speed_increments">Feine Geschwindigkeitsschritte</string>
     <string name="settings_playback_fine_speed_increments_description">Die Geschwindigkeit steigt in 0,1er-Schritten statt über Voreinstellungen.</string>
+    <string name="settings_playback_scroll_zones">Scroll-Zonen</string>
+    <string name="settings_playback_scroll_zones_description">Links scrollen ändert die Geschwindigkeit, in der Mitte wird gespult und rechts die Lautstärke geändert.</string>
     <string name="settings_playback_speed_toggle">Bereich für Geschwindigkeitswechsel</string>
     <string name="settings_playback_speed_toggle_description">Drücke R, um zwischen diesen Geschwindigkeiten zu wechseln.</string>
     <string name="settings_playback_desktop_verbose_mpv_logging">Ausführliche MPV-Protokollierung</string>

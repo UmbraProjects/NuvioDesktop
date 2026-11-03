@@ -1769,6 +1769,8 @@
   <string name="settings_playback_info_panel_description">Oynatma sırasında medya bilgisi özetini göster.</string>
   <string name="settings_playback_fine_speed_increments">Hassas Hız Adımları</string>
   <string name="settings_playback_fine_speed_increments_description">Hız, hazır ayarlar yerine 0,1 artar.</string>
+  <string name="settings_playback_scroll_zones">Kaydırma Bölgeleri</string>
+  <string name="settings_playback_scroll_zones_description">Hız için solda, videoda ilerlemek veya geri gitmek için ortada, ses için sağda kaydırın.</string>
   <string name="settings_playback_speed_toggle">Hız Geçiş Aralığı</string>
   <string name="settings_playback_speed_toggle_description">Bu hızlar arasında geçiş yapmak için R tuşuna bas.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Ayrıntılı MPV Günlüğü</string>

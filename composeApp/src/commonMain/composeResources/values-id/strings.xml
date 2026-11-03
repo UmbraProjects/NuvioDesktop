@@ -1769,6 +1769,8 @@
   <string name="settings_playback_info_panel_description">Tampilkan ringkasan info media saat pemutaran.</string>
   <string name="settings_playback_fine_speed_increments">Kenaikan Kecepatan Halus</string>
   <string name="settings_playback_fine_speed_increments_description">Kecepatan naik 0,1, bukan preset.</string>
+  <string name="settings_playback_scroll_zones">Zona Gulir</string>
+  <string name="settings_playback_scroll_zones_description">Gulir di kiri untuk kecepatan, di tengah untuk memajukan atau memundurkan video, dan di kanan untuk volume.</string>
   <string name="settings_playback_speed_toggle">Rentang Pengalih Kecepatan</string>
   <string name="settings_playback_speed_toggle_description">Tekan R untuk beralih di antara kecepatan ini.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Log MPV Terperinci</string>

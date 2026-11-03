@@ -1769,6 +1769,8 @@
   <string name="settings_playback_info_panel_description">Pokaż podsumowanie informacji o multimediach podczas odtwarzania.</string>
   <string name="settings_playback_fine_speed_increments">Dokładne zmiany prędkości</string>
   <string name="settings_playback_fine_speed_increments_description">Prędkość zmienia się co 0,1 zamiast według ustawień wstępnych.</string>
+  <string name="settings_playback_scroll_zones">Strefy przewijania</string>
+  <string name="settings_playback_scroll_zones_description">Przewijaj po lewej, aby zmienić prędkość, na środku, aby przesuwać wideo, a po prawej, aby zmienić głośność.</string>
   <string name="settings_playback_speed_toggle">Zakres przełączania prędkości</string>
   <string name="settings_playback_speed_toggle_description">Naciśnij R, aby przełączać między tymi prędkościami.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Szczegółowe logi MPV</string>

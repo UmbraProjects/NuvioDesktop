@@ -1769,6 +1769,8 @@
   <string name="settings_playback_info_panel_description">Mostra um resumo das informações do conteúdo durante a reprodução.</string>
   <string name="settings_playback_fine_speed_increments">Incrementos de velocidade finos</string>
   <string name="settings_playback_fine_speed_increments_description">A velocidade aumenta 0,1 de cada vez, em vez de usar predefinições.</string>
+  <string name="settings_playback_scroll_zones">Zonas de deslocamento</string>
+  <string name="settings_playback_scroll_zones_description">Desloque à esquerda para a velocidade, ao centro para avançar ou recuar e à direita para o volume.</string>
   <string name="settings_playback_speed_toggle">Intervalo de alternância de velocidade</string>
   <string name="settings_playback_speed_toggle_description">Prime R para alternar entre estas velocidades.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Registo detalhado do MPV</string>

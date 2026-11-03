@@ -1769,6 +1769,8 @@
   <string name="settings_playback_info_panel_description">Vis en oppsummering av medieinfo under avspilling.</string>
   <string name="settings_playback_fine_speed_increments">Fine hastighetstrinn</string>
   <string name="settings_playback_fine_speed_increments_description">Hastigheten økes med 0,1 i stedet for forhåndsvalg.</string>
+  <string name="settings_playback_scroll_zones">Rullesoner</string>
+  <string name="settings_playback_scroll_zones_description">Rull til venstre for hastighet, i midten for å spole og til høyre for volum.</string>
   <string name="settings_playback_speed_toggle">Område for hastighetsbryter</string>
   <string name="settings_playback_speed_toggle_description">Trykk R for å bytte mellom disse hastighetene.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Detaljert MPV-logging</string>

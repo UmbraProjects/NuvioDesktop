@@ -1769,6 +1769,8 @@
   <string name="settings_playback_info_panel_description">Mostra un riepilogo delle informazioni sul contenuto durante la riproduzione.</string>
   <string name="settings_playback_fine_speed_increments">Incrementi di velocità fini</string>
   <string name="settings_playback_fine_speed_increments_description">La velocità aumenta di 0,1 invece di usare i valori predefiniti.</string>
+  <string name="settings_playback_scroll_zones">Zone di scorrimento</string>
+  <string name="settings_playback_scroll_zones_description">Scorri a sinistra per la velocità, al centro per avanzare o tornare indietro e a destra per il volume.</string>
   <string name="settings_playback_speed_toggle">Intervallo di velocità alternato</string>
   <string name="settings_playback_speed_toggle_description">Premi R per passare da una all'altra di queste velocità.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Log MPV dettagliato</string>

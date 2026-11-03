@@ -1769,6 +1769,8 @@
   <string name="settings_playback_info_panel_description">Εμφάνιση σύνοψης πληροφοριών πολυμέσου κατά την αναπαραγωγή.</string>
   <string name="settings_playback_fine_speed_increments">Λεπτά βήματα ταχύτητας</string>
   <string name="settings_playback_fine_speed_increments_description">Η ταχύτητα αυξάνεται κατά 0,1 αντί για προκαθορισμένες τιμές.</string>
+  <string name="settings_playback_scroll_zones">Ζώνες κύλισης</string>
+  <string name="settings_playback_scroll_zones_description">Κύλιση αριστερά για ταχύτητα, στο κέντρο για μετακίνηση στο βίντεο και δεξιά για ένταση ήχου.</string>
   <string name="settings_playback_speed_toggle">Εύρος εναλλαγής ταχύτητας</string>
   <string name="settings_playback_speed_toggle_description">Πατήστε R για εναλλαγή μεταξύ αυτών των ταχυτήτων.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Αναλυτική καταγραφή MPV</string>

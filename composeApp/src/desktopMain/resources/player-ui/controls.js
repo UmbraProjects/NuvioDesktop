@@ -369,6 +369,7 @@ let state = {
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
   playbackSpeedFineIncrementsEnabled: false,
+  scrollZonesEnabled: false,
   playbackSpeedToggleLow: 1,
   playbackSpeedToggleHigh: 2,
   subtitlesLabel: "Subs",
@@ -8210,6 +8211,83 @@ const panelWheelScroller = panel => {
   return best;
 };
 
+const stepVolumeFromWheel = event => {
+  const direction = event.deltaY > 0 ? -1 : event.deltaY < 0 ? 1 : 0;
+  if (direction === 0) return;
+  adjustLocalVolume(direction * 5);
+  send("volumeDelta", direction * 0.05);
+};
+
+// Scroll zones: the third of the window under the pointer picks what the wheel does.
+const scrollZoneAt = (clientX, left, width) => {
+  const fraction = (clientX - left) / width;
+  if (fraction < 1 / 3) return "speed";
+  return fraction < 2 / 3 ? "seek" : "volume";
+};
+
+// A mouse notch reads 120 / page zoom in wheelDeltaY, and the native side sets that zoom to
+// (192 / dpi) * UI scale, so a notch can be anything from 40 to several hundred and this page can't
+// tell which. The threshold sits just under the smallest, so every notch is exactly one step, while
+// a touchpad's smaller deltas add up first. Partial travel is dropped when the pointer changes
+// zone, the direction flips, or the wheel rests, so leftovers can't fire a step later.
+const WHEEL_UNITS_PER_STEP = 36;
+const WHEEL_REST_MS = 300;
+const createWheelStepCounter = () => {
+  let zone = "";
+  let units = 0;
+  let lastAt = 0;
+  return (nextZone, wheelUnits, now) => {
+    if (nextZone !== zone || now - lastAt > WHEEL_REST_MS || units * wheelUnits < 0) units = 0;
+    zone = nextZone;
+    lastAt = now;
+    units += wheelUnits;
+    if (Math.abs(units) < WHEEL_UNITS_PER_STEP) return 0;
+    const direction = Math.sign(units);
+    units = 0;
+    return direction;
+  };
+};
+const countWheelSteps = createWheelStepCounter();
+
+// Panels and text fields keep the wheel for themselves. Every other control follows its zone, so
+// the seek reveal can't put a dead spot under the pointer between two notches.
+const scrollZoneExcludedSelector = [
+  ".modal-layer",
+  ".locked-overlay",
+  "#actionOverflowMenu",
+  "#playlistPeek",
+  "input:not([type='range'])",
+  "textarea",
+  "select",
+  "[contenteditable='true']",
+].join(",");
+
+const handleScrollZoneWheel = event => {
+  if (activeModal || contextMenuOpen) return;
+  if (event.target.closest(scrollZoneExcludedSelector) || wheelScrollableAncestor(event.target)) return;
+  event.preventDefault();
+  const bounds = root.getBoundingClientRect();
+  const zone = event.target.closest("#playerVolumeControl")
+    ? "volume"
+    : scrollZoneAt(event.clientX, bounds.left, bounds.width);
+  if (zone === "volume") {
+    stepVolumeFromWheel(event);
+    return;
+  }
+  // Live TV arrives in real time, so a faster speed would only run out of buffer.
+  if (zone === "speed" && state.iptv) return;
+  // The seek buttons are hidden while a title opens; a stray notch must not move its start point.
+  if (zone === "seek" && root.classList.contains("opening-active")) return;
+  const direction = countWheelSteps(zone, event.wheelDeltaY, event.timeStamp);
+  if (direction === 0) return;
+  if (zone === "speed") {
+    stepPlaybackSpeed(direction);
+    return;
+  }
+  revealChromeForPlaybackInteraction();
+  send(direction > 0 ? "seekForward" : "seekBack", 0);
+};
+
 root.addEventListener("wheel", event => {
   if (state.pictureInPictureActive) return;
   // The YouTube watch page: the wheel scrolls the page around the video (volume stays on the controls).
@@ -8234,12 +8312,13 @@ root.addEventListener("wheel", event => {
   }
   if (playbackErrorText()) return;
   if (state.isLocked) return;
+  if (state.scrollZonesEnabled && !isHeroTrailerSurface && !state.heroTrailerMode) {
+    handleScrollZoneWheel(event);
+    return;
+  }
   if (isChromeInteractionTarget(event.target)) return;
   event.preventDefault();
-  const direction = event.deltaY > 0 ? -1 : event.deltaY < 0 ? 1 : 0;
-  if (direction === 0) return;
-  adjustLocalVolume(direction * 5);
-  send("volumeDelta", direction * 0.05);
+  stepVolumeFromWheel(event);
 }, { passive: false });
 
 root.addEventListener("dblclick", event => {

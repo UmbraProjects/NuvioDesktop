@@ -2720,6 +2720,8 @@
     <string name="settings_playback_info_panel_description">Affiche un résumé des infos du média pendant la lecture.</string>
     <string name="settings_playback_fine_speed_increments">Incréments de vitesse fins</string>
     <string name="settings_playback_fine_speed_increments_description">La vitesse augmente de 0,1 au lieu de suivre des préréglages.</string>
+    <string name="settings_playback_scroll_zones">Zones de défilement</string>
+    <string name="settings_playback_scroll_zones_description">Faites défiler à gauche pour la vitesse, au centre pour vous déplacer dans la vidéo et à droite pour le volume.</string>
     <string name="settings_playback_speed_toggle">Plage de bascule de vitesse</string>
     <string name="settings_playback_speed_toggle_description">Appuie sur R pour basculer entre ces vitesses.</string>
     <string name="settings_playback_desktop_verbose_mpv_logging">Journalisation MPV détaillée</string>

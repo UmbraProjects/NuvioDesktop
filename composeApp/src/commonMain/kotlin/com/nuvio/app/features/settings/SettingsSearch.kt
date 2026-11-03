@@ -1520,6 +1520,11 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_seek_step_description),
             ),
             if (isDesktop) PlaybackSearchRow(
+                "scroll-zones",
+                resolve(Res.string.settings_playback_scroll_zones),
+                resolve(Res.string.settings_playback_scroll_zones_description),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "speed-toggle",
                 resolve(Res.string.settings_playback_speed_toggle),
                 resolve(Res.string.settings_playback_speed_toggle_description),
