@@ -38,6 +38,9 @@ import com.nuvio.app.features.preroll.formatDb
 import com.nuvio.app.features.preroll.gainCorrectionDb
 import com.nuvio.app.features.preroll.loudnessAfValue
 import com.nuvio.app.features.preroll.planGainDb
+import com.nuvio.app.features.music.visualiser.LiveTrackMap
+import com.nuvio.app.features.music.visualiser.TrackMapBuilder
+import com.nuvio.app.features.music.visualiser.TrackMapLive
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -95,33 +98,47 @@ private const val MEASURE_START_DELAY_MS = 1_500L
 /** How long to wait for the stream to start playing before giving up on measuring it. */
 private const val MEASURE_WAIT_LIMIT_MS = 60_000L
 
+/** fork:visualiser - the first window is short, so the visualiser has something to draw a second or two into a track. */
+private const val FIRST_WINDOW_SECONDS = 15.0
+
 /**
- * The integrated loudness of the track [controller] is playing, from a headless decode of the same stream, or null when
+ * Reads the track [controller] is playing through a headless decode of the same stream, feeding [meter] (the loudness
+ * measurement) and [map] (the visualiser's track map) with the same samples; [onWindow] runs after each window. False when
  * it could not be read (a refused connection, or a build whose native bridge has no such decode).
  */
-private suspend fun measureTrackLoudness(controller: NativePlayerController, durationMs: Long): Double? {
+private suspend fun decodeTrack(
+    controller: NativePlayerController,
+    durationMs: Long,
+    meter: LoudnessMeter?,
+    map: TrackMapBuilder?,
+    onWindow: suspend () -> Unit,
+): Boolean {
     val total = (durationMs / 1_000.0).coerceAtMost(MEASURE_MAX_SECONDS)
-    if (total < MEASURE_MIN_SECONDS) return null
-    val meter = LoudnessMeter(MEASURE_SAMPLE_RATE, channels = 2)
+    if (total < MEASURE_MIN_SECONDS) return false
     var at = 0.0
     try {
         while (at < total) {
             currentCoroutineContext().ensureActive()
-            val length = minOf(MEASURE_WINDOW_SECONDS, total - at)
+            val window = if (at == 0.0 && map != null) FIRST_WINDOW_SECONDS else MEASURE_WINDOW_SECONDS
+            val length = minOf(window, total - at)
             val pcm = withContext(Dispatchers.IO) {
                 controller.decodeAudioWindow(at, length, MEASURE_SAMPLE_RATE, 2)
-            } ?: return null
-            meter.add(pcm)
+            } ?: return false
+            withContext(Dispatchers.Default) {
+                meter?.add(pcm)
+                map?.add(pcm)
+            }
             at += length
+            onWindow()
         }
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
         // UnsatisfiedLinkError on a native bridge without the decode, or anything the decode itself raised.
-        log.w { "loudness measurement failed: ${error.message}" }
-        return null
+        log.w { "track decode failed: ${error.message}" }
+        return false
     }
-    return meter.integratedLufs()
+    return true
 }
 
 /** Eases mpv's `volume-gain` by [deltaDb] over about three seconds, so a correction is not a step. */
@@ -357,22 +374,52 @@ actual fun MusicPlayerSurface(
     }
 
     // fork:loudness - measure a track that has no kept measurement while it plays, keep the answer, and ease the gain to it.
+    // fork:visualiser - the same decode builds the track's visualiser map when none is kept.
     LaunchedEffect(controller, loadId, forbiddenRetries) {
-        val key = gainPlan.key ?: return@LaunchedEffect
-        if (gainPlan.measured) return@LaunchedEffect
+        val key = gainPlan.key
+        val keptMap = key?.let { TrackMapBook.get(it) }?.takeIf { it.complete }
+        var knownLufs = key?.let { TrackLoudnessBook.get(it) }
+        TrackMapLive.publish(LiveTrackMap(loadId, keptMap, knownLufs, analysing = keptMap == null))
+        val needLoudness = key != null && !gainPlan.measured
+        if (!needLoudness && keptMap != null) return@LaunchedEffect
         var durationMs = 0L
         var waitedMs = 0L
         while (durationMs <= 0L) {
             delay(500L)
             waitedMs += 500L
-            if (waitedMs > MEASURE_WAIT_LIMIT_MS) return@LaunchedEffect
+            if (waitedMs > MEASURE_WAIT_LIMIT_MS) {
+                TrackMapLive.publish(LiveTrackMap(loadId, keptMap, knownLufs, analysing = false, unavailable = keptMap == null))
+                return@LaunchedEffect
+            }
             val snapshot = controller.snapshotOffUiThread()
             if (snapshot.isPlaying) durationMs = snapshot.durationMs
         }
         delay(MEASURE_START_DELAY_MS)
-        val measured = measureTrackLoudness(controller, durationMs) ?: return@LaunchedEffect
+        val meter = if (needLoudness) LoudnessMeter(MEASURE_SAMPLE_RATE, channels = 2) else null
+        val builder = if (keptMap == null) TrackMapBuilder(MEASURE_SAMPLE_RATE) else null
+        val read = decodeTrack(controller, durationMs, meter, builder) {
+            if (builder != null) {
+                val partial = withContext(Dispatchers.Default) { builder.snapshot() }
+                TrackMapLive.publish(LiveTrackMap(loadId, partial, knownLufs, analysing = true))
+            }
+        }
+        if (builder != null) {
+            if (read) {
+                val finished = withContext(Dispatchers.Default) { builder.finish() }
+                key?.let { k -> withContext(Dispatchers.IO) { TrackMapBook.put(k, finished) } }
+                TrackMapLive.publish(LiveTrackMap(loadId, finished, knownLufs, analysing = false))
+                log.i { "visualiser map ${key ?: "(no key)"}: ${finished.frames} frames, beat ${finished.beat?.bpm?.let { "%.1f BPM".format(it) } ?: "none"}" }
+            } else {
+                val partial = builder.snapshot().takeIf { it.frames > 0 }
+                TrackMapLive.publish(LiveTrackMap(loadId, partial, knownLufs, analysing = false, unavailable = partial == null))
+            }
+        }
+        if (key == null || meter == null || !read) return@LaunchedEffect
+        val measured = meter.integratedLufs() ?: return@LaunchedEffect
         val lufs = measured + MEASURED_LOUDNESS_COMPENSATION_LU
         TrackLoudnessBook.put(key, lufs)
+        knownLufs = lufs
+        TrackMapLive.state.value?.takeIf { it.loadId == loadId }?.let { TrackMapLive.publish(it.copy(lufs = lufs)) }
         log.i {
             "loudness $key: measured ${formatDb(lufs)} LUFS; started from " +
                 "${gainPlan.lufs?.let(::formatDb) ?: "the class assumption"} (YouTube said ${gainPlan.youTubeLufs?.let(::formatDb) ?: "nothing"})"

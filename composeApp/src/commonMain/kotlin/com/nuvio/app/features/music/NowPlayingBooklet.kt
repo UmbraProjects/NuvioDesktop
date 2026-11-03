@@ -143,29 +143,6 @@ internal fun rememberBookletUi(album: MusicAlbum?, enabled: Boolean, artist: Lib
     return if (request == null) BookletUi.None else ui
 }
 
-@Composable
-internal fun NowPlayingBooklet(
-    ui: BookletUi,
-    album: MusicAlbum,
-    playingVideoId: String?,
-    reduced: Boolean,
-    onJumpToTrack: (Int) -> Unit,
-    onOpenAlbum: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (ui is BookletUi.None) return
-    val shape = RoundedCornerShape(18.dp)
-    Column(modifier.musicGlass(shape).padding(horizontal = 22.dp, vertical = 18.dp)) {
-        when (ui) {
-            BookletUi.None -> Unit
-            BookletUi.Loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Reading the sleeve notes…", color = Color.White.copy(alpha = 0.6f), fontSize = 15.sp)
-            }
-            is BookletUi.Ready -> BookletDeck(ui.booklet, ui.request, album, playingVideoId, reduced, onJumpToTrack, onOpenAlbum, Modifier.weight(1f).fillMaxWidth())
-        }
-    }
-}
-
 private fun cursorCount(page: LinerPage): Int = when (page) {
     is LinerPage.Guests -> page.guests.size
     is LinerPage.Timeline -> page.timeline.entries.size
@@ -178,7 +155,7 @@ private fun Modifier.onTap(action: () -> Unit): Modifier = pointerInput(action) 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BookletDeck(
+internal fun BookletDeck(
     booklet: AlbumBooklet,
     request: BookletRequest,
     album: MusicAlbum,
@@ -187,6 +164,8 @@ private fun BookletDeck(
     onJumpToTrack: (Int) -> Unit,
     onOpenAlbum: (String) -> Unit,
     modifier: Modifier,
+    /** fork:visualiser - the Notes / Visualiser switch, at the end of the hint line. */
+    switch: @Composable () -> Unit = {},
 ) {
     val accent = MaterialTheme.nuvio.colors.accent
     val playing = bookletTrackNumber(album.tracks.map { it.videoId }, playingVideoId)
@@ -295,18 +274,14 @@ private fun BookletDeck(
             }
             NavPill("›", page < pages.lastIndex) { turn(1) }
         }
-        Text(
+        LinerHintRow(
             when (pages[page]) {
                 is LinerPage.Facts -> "Left and Right turn the page · Select reveals"
-                is LinerPage.Guests -> "Up and Down choose · Select plays · Left and Right turn"
-                is LinerPage.Timeline -> "Up and Down choose · Select opens · Left and Right turn"
+                is LinerPage.Guests -> "Up and Down choose · Select plays"
+                is LinerPage.Timeline -> "Up and Down choose · Select opens"
                 else -> "Left and Right turn the page"
             },
-            color = Color.White.copy(alpha = 0.45f),
-            fontSize = 12.sp,
-            modifier = Modifier.padding(top = 6.dp).fillMaxWidth(),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            switch,
         )
         Text(
             when (booklet.source) {
@@ -320,8 +295,24 @@ private fun BookletDeck(
     }
 }
 
+/** The hint under the page dots, with [switch] at its end. Shared by the notes and the visualiser so the two footers match. */
 @Composable
-private fun NavPill(label: String, enabled: Boolean, onClick: () -> Unit) {
+internal fun LinerHintRow(hint: String, switch: @Composable () -> Unit) {
+    Row(Modifier.padding(top = 6.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            hint,
+            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 12.sp,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        switch()
+    }
+}
+
+@Composable
+internal fun NavPill(label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(CircleShape)
@@ -335,7 +326,7 @@ private fun NavPill(label: String, enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PageLabel(text: String, accent: Color, modifier: Modifier = Modifier) {
+internal fun PageLabel(text: String, accent: Color, modifier: Modifier = Modifier) {
     Text(text, color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, modifier = modifier, maxLines = 1)
 }
 

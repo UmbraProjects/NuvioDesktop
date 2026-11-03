@@ -42,6 +42,10 @@ data class MusicLibrarySettings(
     val fadeQueue: Boolean = true,
     /** fork:booklet - the album's sleeve notes in a glass panel beside the lyrics on a wide Stage. */
     val booklet: Boolean = true,
+    /** fork:visualiser - the right-hand box shows the liner notes or the visualiser (the visualiser whenever there are no notes). */
+    val stageBoxView: com.nuvio.app.features.music.visualiser.StageBoxView = com.nuvio.app.features.music.visualiser.StageBoxView.Notes,
+    /** fork:visualiser - the visualiser style last chosen with Left and Right. */
+    val visualiserStyle: com.nuvio.app.features.music.visualiser.VisualiserStyle = com.nuvio.app.features.music.visualiser.VisualiserStyle.SongMap,
     /** fork:stage - the lyrics on the Now Playing stage; off leaves the middle of the Stage to the artist's art. */
     val lyricsOn: Boolean = true,
     /** How the lyric view sets its lyrics: the scrolling list, one calm marker-pen line, or loud stacked chunks. */

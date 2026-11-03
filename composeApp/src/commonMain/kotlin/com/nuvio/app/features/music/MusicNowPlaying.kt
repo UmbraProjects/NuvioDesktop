@@ -301,6 +301,9 @@ private fun MusicNowPlayingScreen(
     // fork:booklet - the album's sleeve notes for the third panel of a wide Stage.
     val bookletOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.booklet
     val bookletUi = rememberBookletUi(album, bookletOn, libraryArtist)
+    // fork:visualiser - the playing track's map, from the player surface's background analysis (null for another load).
+    val trackMap = com.nuvio.app.features.music.visualiser.TrackMapLive.state.collectAsStateWithLifecycle().value
+        ?.takeIf { it.loadId == state.loadId }
     LaunchedEffect(inputTick, track?.videoId) {
         widgetsVisible = true
         delay(WIDGET_IDLE_MS)
@@ -335,7 +338,6 @@ private fun MusicNowPlayingScreen(
             // fork:stage - three panels (player, lyrics, booklet over the artist) when there is room; each keeps to its own.
             // The layout depends on the window only, never on whether the liner notes have anything to show: nothing on this page
             // may move or resize when the notes are missing (user rule, Nov 3 2026). A missing booklet leaves its slot empty.
-            val showBooklet = album != null && bookletUi !is BookletUi.None
             val threePanels = wide && stageUsesThreePanels(maxWidth.value)
             // The video, lyrics and sync controls sit in the middle of the space right of the player column, except when the
             // full-height cut-out stands beside the lyrics and they keep to the left of it.
@@ -492,32 +494,27 @@ private fun MusicNowPlayingScreen(
                             Modifier.width(STAGE_COLUMN_WIDTH).fillMaxHeight().onGloballyPositioned { rightTopPx = it.positionInRoot().y },
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            if (showBooklet && album != null && glassTop != null && glassHeight != null) {
-                                NowPlayingBooklet(
-                                    ui = bookletUi,
-                                    album = album,
-                                    playingVideoId = track?.videoId,
-                                    reduced = reduced,
-                                    onJumpToTrack = { index -> player.jumpTo(index) },
-                                    onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
-                                    modifier = Modifier.padding(top = glassTop).height(glassHeight).fillMaxWidth(),
-                                )
-                            } else if (showBooklet && album != null) {
-                                NowPlayingBooklet(
-                                    ui = bookletUi,
-                                    album = album,
-                                    playingVideoId = track?.videoId,
-                                    reduced = reduced,
-                                    onJumpToTrack = { index -> player.jumpTo(index) },
-                                    onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
-                                    modifier = Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth(),
-                                )
-                            } else if (glassTop != null && glassHeight != null) {
-                                // No notes: the slot stays, empty and the same size, so the cut-out, video and lyrics do not move.
-                                Spacer(Modifier.padding(top = glassTop).height(glassHeight).fillMaxWidth())
+                            // fork:visualiser - the glass is always there at the same size: the notes, or the visualiser without them.
+                            val boxModifier = if (glassTop != null && glassHeight != null) {
+                                Modifier.padding(top = glassTop).height(glassHeight).fillMaxWidth()
                             } else {
-                                Spacer(Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth())
+                                Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth()
                             }
+                            NowPlayingLinerBox(
+                                bookletUi = bookletUi,
+                                album = album,
+                                playingVideoId = track?.videoId,
+                                reduced = reduced,
+                                live = trackMap,
+                                positionMs = state.positionMs,
+                                playing = state.isPlaying,
+                                durationMs = state.durationMs,
+                                lyricLines = ((shownLyrics as? LyricsUi.Ready)?.lyrics as? Lyrics.Synced)?.lines,
+                                coverUrl = state.coverUrl,
+                                onJumpToTrack = { index -> player.jumpTo(index) },
+                                onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
+                                modifier = boxModifier,
+                            )
                             if (cutout != null) {
                                 StageCutout(cutout, Modifier.weight(1f).fillMaxWidth())
                             }
