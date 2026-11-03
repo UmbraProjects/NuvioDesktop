@@ -1103,17 +1103,22 @@ private fun SyncedLyrics(
                             if (keep >= allWords.size) allWords
                             else allWords.take(keep).let { kept -> kept.dropLast(1) + kept.last().copy(text = withEllipsis(kept.last().text)) }
                         }
-                        ActiveLine(
-                            words = words,
-                            progress = { lineProgress(lines, index, smooth.value) },
-                            accent = accent,
-                            isChorus = index in chorus,
-                            emphasis = false,
-                            effects = !reduced,
-                            entrance = lineEntranceFor(index),
-                            fontSize = sizeSp.sp,
-                            centred = true,
-                        )
+                        // The words are laid out in the width the size was fitted to, not the whole pane: across the whole
+                        // pane a long line's rows ran edge to edge, and the sung line's tenth of growth pushed its outer
+                        // words past the clip (both ends of a two-row line were cut off).
+                        Box(Modifier.width(with(density) { widthPx.toDp() }), contentAlignment = Alignment.Center) {
+                            ActiveLine(
+                                words = words,
+                                progress = { lineProgress(lines, index, smooth.value) },
+                                accent = accent,
+                                isChorus = index in chorus,
+                                emphasis = false,
+                                effects = !reduced,
+                                entrance = lineEntranceFor(index),
+                                fontSize = sizeSp.sp,
+                                centred = true,
+                            )
+                        }
                     } else {
                         Text(
                             text = shownText,
