@@ -290,6 +290,7 @@ fun YouTubeTabScreen(
     }
 
     val gridState = rememberLazyGridState()
+    val columnFocus = rememberGridColumnFocus(gridState)
     LaunchedEffect(kind, searchQuery) { gridState.scrollToItem(0) }
     // Shown again after a while (switched to, the tab reopened, the player closed): a feed that
     // changes by itself is fetched again, the old page staying up until the new one replaces it.
@@ -583,33 +584,35 @@ fun YouTubeTabScreen(
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 300.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().gridColumnKeys(columnFocus) { videos.size },
                 contentPadding = PaddingValues(bottom = 48.dp),
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 itemsIndexed(videos, key = { _, video -> video.videoId }) { index, video ->
                     val inPlaylist = openPlaylist?.takeIf { kind == YouTubeFeedKind.Playlist }
-                    YouTubeVideoCard(
-                        video = video,
-                        opening = openingId == video.videoId,
-                        deArrow = deArrow,
-                        // Inside a playlist a video plays on through the rest of it, as on the website.
-                        onClick = { if (inPlaylist != null) playFromPlaylist(index) else play(video) },
-                        onLike = { liked -> like(video, liked) },
-                        onSaveToWatchLater = { saveTo(WATCH_LATER_PLAYLIST_ID, "Watch later", video, add = true) },
-                        onSaveToPlaylist = { savingVideo = video },
-                        onComments = { commentsVideo = video },
-                        // Liked videos is YouTube's own list: a like taken back leaves it, not a removal.
-                        onRemoveFromPlaylist = inPlaylist?.takeIf { it.playlistId != LIKED_PLAYLIST_ID }?.let { playlist ->
-                            { saveTo(playlist.playlistId, playlist.title, video, add = false) }
-                        },
-                        // Not from the channel's own page, which is where it would go.
-                        onOpenChannel = video.channelId?.takeIf { kind != YouTubeFeedKind.Channel }?.let { id ->
-                            { showChannel(id, video.channel ?: "Channel", null) }
-                        },
-                        focusRequester = firstCardFocus.takeIf { index == 0 },
-                    )
+                    GridColumnItem(columnFocus, index) {
+                        YouTubeVideoCard(
+                            video = video,
+                            opening = openingId == video.videoId,
+                            deArrow = deArrow,
+                            // Inside a playlist a video plays on through the rest of it, as on the website.
+                            onClick = { if (inPlaylist != null) playFromPlaylist(index) else play(video) },
+                            onLike = { liked -> like(video, liked) },
+                            onSaveToWatchLater = { saveTo(WATCH_LATER_PLAYLIST_ID, "Watch later", video, add = true) },
+                            onSaveToPlaylist = { savingVideo = video },
+                            onComments = { commentsVideo = video },
+                            // Liked videos is YouTube's own list: a like taken back leaves it, not a removal.
+                            onRemoveFromPlaylist = inPlaylist?.takeIf { it.playlistId != LIKED_PLAYLIST_ID }?.let { playlist ->
+                                { saveTo(playlist.playlistId, playlist.title, video, add = false) }
+                            },
+                            // Not from the channel's own page, which is where it would go.
+                            onOpenChannel = video.channelId?.takeIf { kind != YouTubeFeedKind.Channel }?.let { id ->
+                                { showChannel(id, video.channel ?: "Channel", null) }
+                            },
+                            focusRequester = firstCardFocus.takeIf { index == 0 },
+                        )
+                    }
                 }
                 if (feed.continuation != null || feed.error != null) {
                     item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
@@ -843,15 +846,22 @@ private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit) {
             action = "Refresh",
             onAction = { YouTubeFeedRepository.loadPlaylists(force = true) },
         )
-        else -> LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 260.dp),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 48.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            items(state.playlists, key = { it.playlistId }) { playlist ->
-                PlaylistTile(playlist = playlist, onClick = { onOpen(playlist) })
+        else -> {
+            val gridState = rememberLazyGridState()
+            val columnFocus = rememberGridColumnFocus(gridState)
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 260.dp),
+                state = gridState,
+                modifier = Modifier.fillMaxSize().gridColumnKeys(columnFocus) { state.playlists.size },
+                contentPadding = PaddingValues(bottom = 48.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                itemsIndexed(state.playlists, key = { _, it -> it.playlistId }) { index, playlist ->
+                    GridColumnItem(columnFocus, index) {
+                        PlaylistTile(playlist = playlist, onClick = { onOpen(playlist) })
+                    }
+                }
             }
         }
     }
@@ -1138,16 +1148,19 @@ private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit) {
                     if (nearEnd) YouTubeFeedRepository.loadMoreSubscribedChannels()
                 }
             }
+            val columnFocus = rememberGridColumnFocus(gridState)
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 180.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().gridColumnKeys(columnFocus) { state.channels.size },
                 contentPadding = PaddingValues(bottom = 48.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                items(state.channels, key = { it.channelId }) { channel ->
-                    ChannelTile(channel = channel, onClick = { onOpen(channel) })
+                itemsIndexed(state.channels, key = { _, it -> it.channelId }) { index, channel ->
+                    GridColumnItem(columnFocus, index) {
+                        ChannelTile(channel = channel, onClick = { onOpen(channel) })
+                    }
                 }
             }
         }
