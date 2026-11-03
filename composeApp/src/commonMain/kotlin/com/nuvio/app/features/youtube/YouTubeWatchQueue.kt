@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.update
  *
  * The YouTube tab's queue: videos put by for watching soon, in the order added, kept for this run of
  * Nuvio only (memory, never saved, never sent to YouTube), as the Music tab's queue is. Played
- * through like a playlist ([YouTubePlayQueue]); a video added while the queue plays joins its end.
+ * through like a playlist ([YouTubePlayQueue]) from the video picked; a video added while the queue
+ * plays joins its end, and each video played to its end there leaves it, as on YouTube.
  */
 object YouTubeWatchQueue {
     private val _videos = MutableStateFlow<List<YouTubeVideo>>(emptyList())
@@ -29,6 +30,15 @@ object YouTubeWatchQueue {
 
     fun remove(videoId: String) {
         _videos.update { list -> list.filterNot { it.videoId == videoId } }
+    }
+
+    /** Moves the queued video [videoId] to [index] (clamped), by a drag in the queue. */
+    fun move(videoId: String, index: Int) {
+        _videos.update { list ->
+            val video = list.firstOrNull { it.videoId == videoId } ?: return@update list
+            val without = list - video
+            without.toMutableList().apply { add(index.coerceIn(0, without.size), video) }
+        }
     }
 
     fun clear() {

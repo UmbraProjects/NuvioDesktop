@@ -50,6 +50,8 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.Refresh
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyGridState
 import androidx.compose.material.icons.rounded.AddToQueue
 import androidx.compose.material.icons.rounded.Queue
 import androidx.compose.material.icons.rounded.RemoveFromQueue
@@ -93,6 +95,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -323,6 +326,10 @@ fun YouTubeTabScreen(
 
     val gridState = rememberLazyGridState()
     val columnFocus = rememberGridColumnFocus(gridState)
+    // In the queue the cards can be dragged into a new order (the grid holds the queue alone there).
+    val queueReorder = rememberReorderableLazyGridState(gridState) { from, to ->
+        YouTubeWatchQueue.move(from.key as? String ?: return@rememberReorderableLazyGridState, to.index)
+    }
     LaunchedEffect(selectedName, searchQuery) { gridState.scrollToItem(0) }
     // Shown again after a while (switched to, the tab reopened, the player closed): a feed that
     // changes by itself is fetched again, the old page staying up until the new one replaces it.
@@ -536,16 +543,6 @@ fun YouTubeTabScreen(
                 YouTubePill(label = "Stop", selected = false, onClick = YouTubePlayQueue::stop)
             }
         }
-        if (showingQueue && watchQueue.isNotEmpty()) {
-            QueueHeader(
-                count = watchQueue.size,
-                onPlayAll = { playFromQueue(0) },
-                onClear = {
-                    YouTubeWatchQueue.clear()
-                    if (queue?.watchQueue == true) YouTubePlayQueue.stop()
-                },
-            )
-        }
         if (kind == YouTubeFeedKind.Channel) {
             openChannel?.let { open ->
                 ChannelHeader(
@@ -649,8 +646,10 @@ fun YouTubeTabScreen(
             ) {
                 itemsIndexed(videos, key = { _, video -> video.videoId }) { index, video ->
                     val inPlaylist = openPlaylist?.takeIf { kind == YouTubeFeedKind.Playlist }
+                    QueueReorderable(showingQueue, queueReorder, video.videoId) { dragModifier ->
                     GridColumnItem(columnFocus, index) {
                         YouTubeVideoCard(
+                            modifier = dragModifier,
                             video = video,
                             opening = openingId == video.videoId,
                             deArrow = deArrow,
@@ -679,6 +678,7 @@ fun YouTubeTabScreen(
                             },
                             focusRequester = firstCardFocus.takeIf { index == 0 },
                         )
+                    }
                     }
                 }
                 if (!showingQueue && (feed.continuation != null || feed.error != null)) {
@@ -963,32 +963,6 @@ private const val PLAYLISTS_VIEW = "Playlists"
 
 /** [YouTubeTabScreen]'s selection for the queue ([YouTubeWatchQueue]). */
 private const val QUEUE_VIEW = "Queue"
-
-/** The queue's title, how long it lasts, Play all and Clear. */
-@Composable
-private fun QueueHeader(count: Int, onPlayAll: () -> Unit, onClear: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f, fill = false)) {
-            Text(
-                text = "Queue",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = "${if (count == 1) "1 video" else "$count videos"} · kept until Nuvio closes, only in Nuvio",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        YouTubePill(label = "Play all", selected = true, onClick = onPlayAll, leadingIcon = Icons.Rounded.PlayArrow)
-        YouTubePill(label = "Clear", selected = false, onClick = onClear)
-    }
-}
 
 /** The open playlist's name, a way back, and Play all. */
 @Composable
@@ -1416,6 +1390,7 @@ private fun YouTubeVideoCard(
     queued: Boolean = false,
     onToggleQueued: () -> Unit = {},
     focusRequester: FocusRequester? = null,
+    modifier: Modifier = Modifier,
 ) {
     // The card's menu, open at this window position (the ⋮ button, the cursor, or beside the card).
     var menuAt by remember { mutableStateOf<IntOffset?>(null) }
@@ -1486,7 +1461,7 @@ private fun YouTubeVideoCard(
         )
     }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .onGloballyPositioned { cardBounds = it.boundsInWindow() }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
@@ -1601,7 +1576,27 @@ private fun YouTubeVideoCard(
                 )
             }
         }
-        listOfNotNull(video.channel, video.details).forEach { line ->
+        // The channel's name opens it, as on the website (the mouse's way; the menu has it for the keyboard).
+        video.channel?.let { name ->
+            val channelInteraction = remember { MutableInteractionSource() }
+            val channelHovered by channelInteraction.collectIsHoveredAsState()
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (channelHovered && onOpenChannel != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (onOpenChannel != null) {
+                    Modifier
+                        .hoverable(channelInteraction)
+                        .focusProperties { canFocus = false }
+                        .clickable(interactionSource = channelInteraction, indication = null, onClick = onOpenChannel)
+                } else {
+                    Modifier
+                },
+            )
+        }
+        video.details?.let { line ->
             Text(
                 text = line,
                 style = MaterialTheme.typography.bodySmall,
@@ -1653,6 +1648,34 @@ private fun YouTubeSectionTab(icon: androidx.compose.ui.graphics.vector.ImageVec
             fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
             color = tint,
             maxLines = 1,
+        )
+    }
+}
+
+/**
+ * A queue card that can be dragged to a new place while [enabled] (the queue is shown); elsewhere the
+ * card as it is. [content] gets the drag handle's modifier, for the whole card.
+ */
+@Composable
+private fun androidx.compose.foundation.lazy.grid.LazyGridItemScope.QueueReorderable(
+    enabled: Boolean,
+    state: sh.calvin.reorderable.ReorderableLazyGridState,
+    key: String,
+    content: @Composable (Modifier) -> Unit,
+) {
+    if (!enabled) {
+        content(Modifier)
+        return
+    }
+    ReorderableItem(state, key = key) { isDragging ->
+        val lift by androidx.compose.animation.core.animateFloatAsState(if (isDragging) 1.03f else 1f)
+        content(
+            Modifier
+                .draggableHandle()
+                .graphicsLayer {
+                    scaleX = lift
+                    scaleY = lift
+                },
         )
     }
 }

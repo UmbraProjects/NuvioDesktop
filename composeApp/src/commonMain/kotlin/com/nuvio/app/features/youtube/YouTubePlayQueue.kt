@@ -73,6 +73,7 @@ internal object YouTubePlayQueue {
     suspend fun handOffNext(videoId: String): PlayerLaunch? {
         val state = _state.value ?: return null
         if (state.current?.videoId != videoId) return null
+        if (state.watchQueue) YouTubeWatchQueue.remove(videoId)
         val nextIndex = state.index + 1
         val upcoming = state.videos.getOrNull(nextIndex)
         if (upcoming == null) {
@@ -166,6 +167,7 @@ internal object YouTubePlayQueue {
     fun onFinished(videoId: String) {
         val state = _state.value ?: return
         if (state.current?.videoId != videoId) return
+        if (state.watchQueue) YouTubeWatchQueue.remove(videoId)
         val nextIndex = state.index + 1
         val upcoming = state.videos.getOrNull(nextIndex)
         if (upcoming == null) {

@@ -1402,8 +1402,9 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
     ) {
         if (playbackSnapshot.durationMs <= 0L) return@LaunchedEffect
         if (playerControllerSourceUrl != activeSourceUrl) return@LaunchedEffect
-        // A YouTube video's own chapters (from its watch page) when the stream reports none.
-        val chapters = playerController?.getChapters().orEmpty().ifEmpty { youTubeChapters }
+        // A YouTube video: its own chapters from the watch page, never mpv's, which for YouTube's
+        // streams are the stream's parts, named by their URLs (the seek preview showed those).
+        val chapters = if (isYouTubeVideoPlayback) youTubeChapters else playerController?.getChapters().orEmpty()
         playerChapters = chapters
         val intervals = ChapterSkipDetector.findIntervals(
             chapters = chapters,
