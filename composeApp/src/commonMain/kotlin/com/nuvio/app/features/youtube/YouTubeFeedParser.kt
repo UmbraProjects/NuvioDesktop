@@ -33,6 +33,8 @@ data class YouTubeVideo(
     val channelId: String? = null,
     /** A past live stream ("Streamed 13 hours ago"); streams still on air are left out of the feeds. */
     val wasLive: Boolean = false,
+    /** What the item's own "Don't recommend channel" sends YouTube ([parseYouTubeFeed]); only recommendations carry one. */
+    val dontRecommendToken: String? = null,
 )
 
 /** A channel, as the subscriptions list shows it. */
@@ -62,6 +64,8 @@ data class YouTubeFeedPage(
     val videos: List<YouTubeVideo>,
     /** Token for the next page, or null at the end of the feed. */
     val continuation: String?,
+    /** The heading of the section each video sits under, by id: History's days ("Today", "Oct 12"). */
+    val sections: Map<String, String> = emptyMap(),
 )
 
 private val feedJson = Json { ignoreUnknownKeys = true }
@@ -107,18 +111,31 @@ internal fun parseYouTubeFeed(body: String): YouTubeFeedPage {
         ?: return YouTubeFeedPage(emptyList(), null)
     val videos = LinkedHashMap<String, YouTubeVideo>()
     var continuation: String? = null
+    val sections = HashMap<String, String>()
+    var section: String? = null
+
+    fun add(video: YouTubeVideo?) {
+        video ?: return
+        if (videos.putIfAbsent(video.videoId, video) == null) section?.let { sections[video.videoId] = it }
+    }
 
     fun walk(element: JsonElement) {
         when (element) {
             is JsonObject -> for ((key, value) in element) {
                 when (key) {
                     in SKIPPED_KEYS -> Unit
-                    "lockupViewModel" -> (value as? JsonObject)?.let(::lockupVideo)
-                        ?.let { videos.putIfAbsent(it.videoId, it) }
+                    // A section of a page; on History, one day's videos under its heading (which the
+                    // skipped "header" key would otherwise leave out).
+                    "itemSectionRenderer" -> (value as? JsonObject)?.let { sectionObject ->
+                        val outer = section
+                        section = sectionHeading(sectionObject) ?: outer
+                        walk(sectionObject)
+                        section = outer
+                    }
+                    "lockupViewModel" -> add((value as? JsonObject)?.let(::lockupVideo))
                     // compactVideoRenderer: the older shape of a watch page's related videos.
                     "videoRenderer", "gridVideoRenderer", "playlistVideoRenderer", "compactVideoRenderer" ->
-                        (value as? JsonObject)?.let(::rendererVideo)
-                        ?.let { videos.putIfAbsent(it.videoId, it) }
+                        add((value as? JsonObject)?.let(::rendererVideo))
                     "continuationItemRenderer" -> findContinuationToken(value)?.let { continuation = it }
                     else -> walk(value)
                 }
@@ -128,7 +145,16 @@ internal fun parseYouTubeFeed(body: String): YouTubeFeedPage {
         }
     }
     walk(root)
-    return YouTubeFeedPage(videos.values.toList(), continuation)
+    return YouTubeFeedPage(videos.values.toList(), continuation, sections)
+}
+
+/** A section's heading text (`itemSectionHeaderRenderer.title`, or a view model's `headline`), or null. */
+private fun sectionHeading(section: JsonObject): String? {
+    val header = section["header"] ?: return null
+    return (collectObjects(header, "title") + collectObjects(header, "headline"))
+        .firstNotNullOfOrNull(::text)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
 }
 
 private fun lockupVideo(lockup: JsonObject): YouTubeVideo? {
@@ -178,6 +204,7 @@ private fun lockupVideo(lockup: JsonObject): YouTubeVideo? {
         // The avatar and the channel name both open the channel; either carries its browse id.
         channelId = findChannelId(metadata),
         wasLive = rows.flatten().any(::isPastStream),
+        dontRecommendToken = dontRecommendChannelToken(lockup),
     )
 }
 
@@ -216,8 +243,22 @@ private fun rendererVideo(renderer: JsonObject): YouTubeVideo? {
         ),
         channelId = byline?.let(::findChannelId),
         wasLive = details?.split(" • ")?.any(::isPastStream) == true,
+        dontRecommendToken = dontRecommendChannelToken(renderer),
     )
 }
+
+/**
+ * The feedback token behind a feed item's "Don't recommend channel": a `feedbackEndpoint` under the
+ * menu row of that name (a sheet's `listItemViewModel` today, a `menuServiceItemRenderer` in the older
+ * layout). Matched by its English label, which the requests ask for (`hl=en`). Null where the menu has
+ * no such row (subscriptions, a channel's page, a playlist).
+ */
+private fun dontRecommendChannelToken(item: JsonObject): String? =
+    (collectObjects(item, "listItemViewModel").map { it.obj("title")?.let(::text) to it } +
+        collectObjects(item, "menuServiceItemRenderer").map { text(it["text"]) to it })
+        .firstOrNull { (label, _) -> label?.replace('\u2019', '\'')?.contains("don't recommend channel", ignoreCase = true) == true }
+        ?.second
+        ?.let { row -> collectObjects(row, "feedbackEndpoint").firstNotNullOfOrNull { it.string("feedbackToken") } }
 
 /** The first channel (`UC...`) browse id under [element]. */
 private fun findChannelId(element: JsonElement): String? =

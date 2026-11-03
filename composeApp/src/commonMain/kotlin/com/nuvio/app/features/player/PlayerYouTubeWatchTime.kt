@@ -46,8 +46,10 @@ internal fun PlayerScreenRuntime.BindYouTubeWatchTimeEffect() {
             // The feed shows the new bar straight away; YouTube's own copy catches up on the next load.
             session.close()?.let { percent ->
                 YouTubeFeedRepository.noteWatched(videoId, percent)
-                // 100 only when it was played to its end (see YouTubeWatchSession.close).
-                if (percent == 100) com.nuvio.app.features.youtube.YouTubePlayQueue.onFinished(videoId)
+                com.nuvio.app.features.youtube.YouTubeWatchHistory.noteWatched(videoId)
+                // 100 also when it was closed in its last moments (see YouTubeWatchSession.close): watched,
+                // but left by hand, so it does not move on. A real end has already handed over (App).
+                if (percent == 100) com.nuvio.app.features.youtube.YouTubePlayQueue.onClosedNearEnd(videoId)
             }
         }
     }

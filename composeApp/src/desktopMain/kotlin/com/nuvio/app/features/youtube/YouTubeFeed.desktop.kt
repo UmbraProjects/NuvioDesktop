@@ -81,6 +81,13 @@ internal actual suspend fun youTubePlaylistOptions(videoId: String, pageId: Stri
 internal actual suspend fun youTubeNext(videoId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("next", mapOf("videoId" to videoId, "continuation" to continuation), pageId)
 
+internal actual suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        "feedback",
+        mapOf("feedbackTokens" to listOf(token), "isFeedbackTokenUnencrypted" to false, "shouldMerge" to false),
+        pageId,
+    )
+
 internal actual suspend fun youTubeAccountsList(): YouTubeBrowseResult =
     signedWebRequest(
         "account/accounts_list",
@@ -304,8 +311,17 @@ internal actual suspend fun youTubeStatsPing(url: String, pageId: String?): Int 
 private const val STATS_USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 
-internal actual suspend fun youTubeOpenVideo(videoId: String): TrailerPlaybackSource? =
-    withContext(YouTubeCaller("youtube tab", urgent = true, preferHdr = true)) {
+internal actual suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): TrailerPlaybackSource? =
+    // Ahead of a click (the card under the cursor): not a lookup anyone waits on yet, so it waits out a pause.
+    withContext(
+        YouTubeCaller(
+            label = if (ahead) "youtube tab ahead" else "youtube tab",
+            urgent = !ahead,
+            preferHdr = true,
+            skipManifestLadder = true,
+            maxShortSide = YouTubeFeedRepository.maxQuality.value,
+        ),
+    ) {
         MusicResolver.openVideo(videoId)
     }
 
@@ -357,6 +373,24 @@ internal actual object YouTubeModeStorage {
     actual fun loadSkyBackground(): Boolean = store.getBoolean(SKY_BACKGROUND_KEY) ?: false
 
     actual fun saveSkyBackground(enabled: Boolean) = store.putBoolean(SKY_BACKGROUND_KEY, enabled)
+
+    private const val MAX_QUALITY_KEY = "max_quality"
+
+    actual fun loadMaxQuality(): Int? = store.getString(MAX_QUALITY_KEY)?.toIntOrNull()
+
+    actual fun saveMaxQuality(shortSide: Int) = store.putString(MAX_QUALITY_KEY, shortSide.toString())
+
+    private const val WATCHED_DATE_MODE_KEY = "watched_date_mode"
+
+    actual fun loadWatchedDateMode(): String? = store.getString(WATCHED_DATE_MODE_KEY)
+
+    actual fun saveWatchedDateMode(mode: String) = store.putString(WATCHED_DATE_MODE_KEY, mode)
+
+    private const val DATE_FORMAT_KEY = "date_format"
+
+    actual fun loadDateFormat(): String? = store.getString(DATE_FORMAT_KEY)
+
+    actual fun saveDateFormat(format: String) = store.putString(DATE_FORMAT_KEY, format)
 
     private const val CHANNEL_CHOICE_KEY = "channel_page_id"
 

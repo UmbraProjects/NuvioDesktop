@@ -82,4 +82,13 @@ class YouTubeWatchTimeTest {
     fun baseWithoutQueryGetsOne() {
         assertTrue(youTubePlaybackPingUrl("https://s.youtube.com/api/stats/playback", "X").contains("playback?ver=2"))
     }
+
+    @Test
+    fun feedLengthsReadAsSeconds() {
+        assertEquals(754.0, youTubeDurationSeconds("12:34"))
+        assertEquals(3723.0, youTubeDurationSeconds("1:02:03"))
+        assertEquals(null, youTubeDurationSeconds("LIVE"))
+        assertEquals(null, youTubeDurationSeconds(null))
+        assertEquals(null, youTubeDurationSeconds("0:00"))
+    }
 }

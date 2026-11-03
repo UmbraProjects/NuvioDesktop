@@ -52,9 +52,9 @@ import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.Refresh
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
-import androidx.compose.material.icons.rounded.AddToQueue
+import androidx.compose.material.icons.rounded.PlaylistAddCheck
+import androidx.compose.material.icons.rounded.QueuePlayNext
 import androidx.compose.material.icons.rounded.Queue
-import androidx.compose.material.icons.rounded.RemoveFromQueue
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.foundation.layout.widthIn
@@ -71,6 +71,9 @@ import com.nuvio.app.features.music.library.musicKeyFocusRing
 import com.nuvio.app.features.settings.settingsSkyBackground
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Done
+import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.WatchLater
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -177,21 +180,36 @@ fun YouTubeTabScreen(
     // The pages a channel or playlist page was opened from, newest last: Back (the arrow, Esc, a
     // pad's B) steps through them inside the tab instead of leaving it.
     var backStack by rememberSaveable { mutableStateOf(listOf<String>()) }
-    fun push(next: String) {
-        if (selectedName != next) backStack = (backStack + selectedName).takeLast(MAX_BACK_STEPS)
+    // Where each page on the back stack was left (by its depth): Back scrolls there and focuses the
+    // card or tile the next page was opened from, which has left the screen by then.
+    val returnPoints = remember { HashMap<Int, YouTubeReturnPoint>() }
+    var pendingReturn by remember { mutableStateOf<YouTubeReturnPoint?>(null) }
+    // Read in push(), which comes before the grid in this function.
+    var mainGrid: androidx.compose.foundation.lazy.grid.LazyGridState? = null
+    fun push(next: String, from: String? = null) {
+        if (selectedName == next) return
+        backStack = (backStack + selectedName).takeLast(MAX_BACK_STEPS)
+        returnPoints[backStack.lastIndex] = YouTubeReturnPoint(
+            page = selectedName,
+            itemKey = from,
+            index = mainGrid?.firstVisibleItemIndex ?: 0,
+            offset = mainGrid?.firstVisibleItemScrollOffset ?: 0,
+        )
         selectedName = next
     }
     fun goBack() {
-        selectedName = backStack.lastOrNull() ?: YouTubeFeedKind.Home.name
+        val page = backStack.lastOrNull() ?: YouTubeFeedKind.Home.name
+        pendingReturn = returnPoints.remove(backStack.lastIndex)?.takeIf { it.page == page }
+        selectedName = page
         backStack = backStack.dropLast(1)
     }
-    fun showChannel(channelId: String, name: String, avatarUrl: String?) {
+    fun showChannel(channelId: String, name: String, avatarUrl: String?, from: String?) {
         YouTubeFeedRepository.openChannel(channelId, name, avatarUrl)
-        push(YouTubeFeedKind.Channel.name)
+        push(YouTubeFeedKind.Channel.name, from)
     }
     fun showPlaylist(playlist: YouTubePlaylist) {
         YouTubeFeedRepository.openPlaylist(playlist)
-        push(YouTubeFeedKind.Playlist.name)
+        push(YouTubeFeedKind.Playlist.name, from = playlist.playlistId)
     }
     // TabBackHandler, not PlatformBackHandler (which does nothing on desktop): the app asks it before
     // walking its tab history, as the Music tab's pages do.
@@ -280,6 +298,39 @@ fun YouTubeTabScreen(
             }
         }
     }
+    val watchLater by YouTubeFeedRepository.watchLater.collectAsStateWithLifecycle()
+    val watchedDateMode by remember { YouTubeFeedRepository.watchedDateMode }.collectAsStateWithLifecycle()
+    val dateFormat by remember { YouTubeFeedRepository.dateFormat }.collectAsStateWithLifecycle()
+    val watchHistory by remember { YouTubeWatchHistory.entries }.collectAsStateWithLifecycle()
+    val showWatchedDates = when (watchedDateMode) {
+        YouTubeWatchedDateMode.Everywhere -> true
+        YouTubeWatchedDateMode.HistoryOnly -> kind == YouTubeFeedKind.History && !showingQueue && !showingChannelList && !showingPlaylists
+        YouTubeWatchedDateMode.Off -> false
+    }
+    LaunchedEffect(auth.signedIn, channel.pageId) {
+        if (auth.signedIn) YouTubeFeedRepository.loadWatchLater()
+    }
+    fun toggleWatchLater(video: YouTubeVideo) =
+        saveTo(WATCH_LATER_PLAYLIST_ID, "Watch later", video, add = video.videoId !in watchLater)
+    fun markWatched(video: YouTubeVideo) {
+        scope.launch {
+            if (YouTubeFeedRepository.markWatched(video)) {
+                confirm("Marked as watched", youTubeDisplayTitle(video))
+            } else {
+                confirm("Mark as watched", "YouTube didn't take that. Try again shortly.")
+            }
+        }
+    }
+    fun dontRecommendChannel(video: YouTubeVideo) {
+        scope.launch {
+            val name = video.channel ?: "this channel"
+            if (YouTubeFeedRepository.dontRecommendChannel(video)) {
+                confirm("Channel hidden", "YouTube won't recommend $name any more.")
+            } else {
+                confirm("Don't recommend channel", "YouTube didn't take that. Try again shortly.")
+            }
+        }
+    }
     fun play(video: YouTubeVideo) {
         // Anything opened outside the playlist being played through ends it.
         YouTubePlayQueue.onOpened(video.videoId)
@@ -325,12 +376,17 @@ fun YouTubeTabScreen(
     }
 
     val gridState = rememberLazyGridState()
+    mainGrid = gridState
     val columnFocus = rememberGridColumnFocus(gridState)
     // In the queue the cards can be dragged into a new order (the grid holds the queue alone there).
     val queueReorder = rememberReorderableLazyGridState(gridState) { from, to ->
         YouTubeWatchQueue.move(from.key as? String ?: return@rememberReorderableLazyGridState, to.index)
     }
-    LaunchedEffect(selectedName, searchQuery) { gridState.scrollToItem(0) }
+    LaunchedEffect(selectedName, searchQuery) {
+        // Back to a feed: where it was left. Anywhere else starts at the top.
+        val back = pendingReturn?.takeIf { it.page == selectedName && !it.ownGrid }
+        gridState.scrollToItem(back?.index ?: 0, back?.offset ?: 0)
+    }
     // Shown again after a while (switched to, the tab reopened, the player closed): a feed that
     // changes by itself is fetched again, the old page staying up until the new one replaces it.
     // Not while scrolled down it, where the new page would pull the list out from under the reader.
@@ -359,8 +415,23 @@ fun YouTubeTabScreen(
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var tabHasFocus by remember { mutableStateOf(false) }
     val firstVideoId = videos.firstOrNull()?.videoId
+    // The card a page was opened from, when Back returns to it.
+    val returnFocus = remember { FocusRequester() }
+    val returnKey = pendingReturn?.takeIf { it.page == selectedName }?.itemKey
+    LaunchedEffect(pendingReturn, selectedName, firstVideoId) {
+        val back = pendingReturn ?: return@LaunchedEffect
+        if (back.page != selectedName || back.ownGrid) return@LaunchedEffect
+        if (firstVideoId == null && feed.loading) return@LaunchedEffect // the page is still coming
+        kotlinx.coroutines.delay(50L) // the grid's first frame
+        val index = videos.indexOfFirst { it.videoId == back.itemKey }
+        if (index >= 0 && gridState.layoutInfo.visibleItemsInfo.none { it.key == back.itemKey }) gridState.scrollToItem(index)
+        if (index < 0 || runCatching { returnFocus.requestFocus() }.isFailure) {
+            if (firstVideoId != null) runCatching { firstCardFocus.requestFocus() }
+        }
+        pendingReturn = null
+    }
     LaunchedEffect(KeyboardInputMode.active, selectedName, firstVideoId) {
-        if (KeyboardInputMode.active && !tabHasFocus && firstVideoId != null) {
+        if (KeyboardInputMode.active && !tabHasFocus && firstVideoId != null && pendingReturn == null) {
             kotlinx.coroutines.delay(50L) // the grid's first frame
             runCatching { firstCardFocus.requestFocus() }
         }
@@ -403,6 +474,30 @@ fun YouTubeTabScreen(
                 top = if (barHosted) ((topChromePadding ?: 24.dp) - BAR_HOSTED_TRIM).coerceAtLeast(8.dp) else topChromePadding ?: 24.dp,
             ),
     ) {
+        // A window too narrow for every pill's name shows them as icons alone (named on hover) rather
+        // than cutting the row off: what the names need is measured against the room there is.
+        val headerLabels = buildList {
+            YouTubeFeedKind.entries.filter { it.inHeader }.forEach { add(it.label) }
+            add("Channels")
+            add("Playlists")
+            if (watchQueue.isNotEmpty() || showingQueue) add("Queue · ${watchQueue.size}")
+            if (auth.signedIn) addAll(listOf("Hide watched", "Hide streams", "Autoplay", "Refresh"))
+        }
+        val headerText = androidx.compose.ui.text.rememberTextMeasurer()
+        val headerStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val labelledWidth = remember(headerLabels, headerStyle, density) {
+            with(density) {
+                headerLabels.sumOf { label ->
+                    SECTION_TAB_CHROME.toPx().toDouble() + headerText.measure(label, headerStyle, maxLines = 1).size.width
+                }.toFloat().toDp()
+            }
+        } + 4.dp * (headerLabels.size - 1) +
+            (if (auth.signedIn && !barHosted) 352.dp else 0.dp) +
+            (if (auth.signedIn && channel.resolved) 42.dp else 0.dp) +
+            16.dp
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalCompactSectionTabs provides (labelledWidth > maxWidth)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -512,6 +607,8 @@ fun YouTubeTabScreen(
                 }
             }
         }
+        }
+        }
 
         openError?.let { message ->
             Text(
@@ -587,9 +684,15 @@ fun YouTubeTabScreen(
                 },
             )
             showingChannelList && auth.signedIn -> SubscribedChannels(
-                onOpen = { showChannel(it.channelId, it.name, it.avatarUrl) },
+                onOpen = { showChannel(it.channelId, it.name, it.avatarUrl, from = it.channelId) },
+                returnTo = pendingReturn?.takeIf { it.page == CHANNELS_VIEW }?.itemKey,
+                onReturned = { pendingReturn = null },
             )
-            showingPlaylists && auth.signedIn -> PlaylistLibrary(onOpen = ::showPlaylist)
+            showingPlaylists && auth.signedIn -> PlaylistLibrary(
+                onOpen = ::showPlaylist,
+                returnTo = pendingReturn?.takeIf { it.page == PLAYLISTS_VIEW }?.itemKey,
+                onReturned = { pendingReturn = null },
+            )
             !auth.signedIn && !showingQueue -> FeedMessage(
                 text = "Sign in to your YouTube account to see your home feed and subscriptions.",
                 action = "Open YouTube account settings",
@@ -665,7 +768,15 @@ fun YouTubeTabScreen(
                             queued = video.videoId in queuedIds,
                             onToggleQueued = { toggleQueued(video) },
                             onLike = { liked -> like(video, liked) },
-                            onSaveToWatchLater = { saveTo(WATCH_LATER_PLAYLIST_ID, "Watch later", video, add = true) },
+                            inWatchLater = video.videoId in watchLater,
+                            watchedOn = if (showWatchedDates) {
+                                watchHistory[video.videoId]?.watchedOn?.let { formatYouTubeWatchDate(it, dateFormat) }
+                            } else {
+                                null
+                            },
+                            onToggleWatchLater = { toggleWatchLater(video) },
+                            onMarkWatched = { markWatched(video) },
+                            onDontRecommendChannel = video.dontRecommendToken?.let { { dontRecommendChannel(video) } },
                             onSaveToPlaylist = { savingVideo = video },
                             onComments = { commentsVideo = video },
                             // Liked videos is YouTube's own list: a like taken back leaves it, not a removal.
@@ -674,9 +785,13 @@ fun YouTubeTabScreen(
                             },
                             // Not from the channel's own page, which is where it would go.
                             onOpenChannel = video.channelId?.takeIf { kind != YouTubeFeedKind.Channel }?.let { id ->
-                                { showChannel(id, video.channel ?: "Channel", null) }
+                                { showChannel(id, video.channel ?: "Channel", null, from = video.videoId) }
                             },
-                            focusRequester = firstCardFocus.takeIf { index == 0 },
+                            focusRequester = when {
+                                video.videoId == returnKey -> returnFocus
+                                index == 0 -> firstCardFocus
+                                else -> null
+                            },
                         )
                     }
                     }
@@ -958,6 +1073,39 @@ private const val MAX_BACK_STEPS = 12
 /** [YouTubeTabScreen]'s selection for the subscribed-channels list, beside the feed kinds' names. */
 private const val CHANNELS_VIEW = "Channels"
 
+/**
+ * Where a page on the tab's back stack was left: its scroll position and the card or tile ([itemKey]: a
+ * video, channel or playlist id) the next page was opened from. The channel list and the playlist library
+ * scroll themselves ([ownGrid]); the feeds share the tab's grid.
+ */
+private data class YouTubeReturnPoint(val page: String, val itemKey: String?, val index: Int, val offset: Int) {
+    val ownGrid: Boolean get() = page == CHANNELS_VIEW || page == PLAYLISTS_VIEW
+}
+
+/**
+ * For a grid Back has returned to: scrolls to the tile at [index] ([key]'s, -1 when it is gone) and
+ * focuses it through the returned requester, once, then calls [onDone].
+ */
+@Composable
+private fun rememberReturnFocus(
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    key: String?,
+    index: Int,
+    onDone: () -> Unit,
+): FocusRequester {
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(key) {
+        if (key == null) return@LaunchedEffect
+        if (index >= 0) {
+            gridState.scrollToItem(index)
+            kotlinx.coroutines.delay(50L) // the tile's first frame
+            runCatching { requester.requestFocus() }
+        }
+        onDone()
+    }
+    return requester
+}
+
 /** [YouTubeTabScreen]'s selection for the playlist library. */
 private const val PLAYLISTS_VIEW = "Playlists"
 
@@ -994,7 +1142,7 @@ private fun PlaylistHeader(playlist: YouTubePlaylist, canPlay: Boolean, onBack: 
 
 /** The account's playlists, Watch Later and Liked videos first; picking one opens it. */
 @Composable
-private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit) {
+private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit, returnTo: String?, onReturned: () -> Unit) {
     val state by YouTubeFeedRepository.playlists.collectAsStateWithLifecycle()
     LaunchedEffect(state.loaded) { YouTubeFeedRepository.loadPlaylists() }
     when {
@@ -1010,6 +1158,7 @@ private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit) {
         else -> {
             val gridState = rememberLazyGridState()
             val columnFocus = rememberGridColumnFocus(gridState)
+            val returnFocus = rememberReturnFocus(gridState, returnTo, state.playlists.indexOfFirst { it.playlistId == returnTo }, onReturned)
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 260.dp),
                 state = gridState,
@@ -1020,7 +1169,11 @@ private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit) {
             ) {
                 itemsIndexed(state.playlists, key = { _, it -> it.playlistId }) { index, playlist ->
                     GridColumnItem(columnFocus, index) {
-                        PlaylistTile(playlist = playlist, onClick = { onOpen(playlist) })
+                        PlaylistTile(
+                            playlist = playlist,
+                            onClick = { onOpen(playlist) },
+                            modifier = if (playlist.playlistId == returnTo) Modifier.focusRequester(returnFocus) else Modifier,
+                        )
                     }
                 }
             }
@@ -1029,13 +1182,13 @@ private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit) {
 }
 
 @Composable
-private fun PlaylistTile(playlist: YouTubePlaylist, onClick: () -> Unit) {
+private fun PlaylistTile(playlist: YouTubePlaylist, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val hovered by interaction.collectIsHoveredAsState()
     val shape = RoundedCornerShape(12.dp)
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
@@ -1286,7 +1439,7 @@ private fun ChannelHeader(channel: YouTubeOpenChannel, onBack: () -> Unit, onSub
 
 /** The channels the account subscribes to, as a grid of avatars; picking one opens its page. */
 @Composable
-private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit) {
+private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit, returnTo: String?, onReturned: () -> Unit) {
     val state by YouTubeFeedRepository.subscribedChannels.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { YouTubeFeedRepository.loadSubscribedChannels() }
     when {
@@ -1310,6 +1463,7 @@ private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit) {
                 }
             }
             val columnFocus = rememberGridColumnFocus(gridState)
+            val returnFocus = rememberReturnFocus(gridState, returnTo, state.channels.indexOfFirst { it.channelId == returnTo }, onReturned)
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 180.dp),
                 state = gridState,
@@ -1320,7 +1474,11 @@ private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit) {
             ) {
                 itemsIndexed(state.channels, key = { _, it -> it.channelId }) { index, channel ->
                     GridColumnItem(columnFocus, index) {
-                        ChannelTile(channel = channel, onClick = { onOpen(channel) })
+                        ChannelTile(
+                            channel = channel,
+                            onClick = { onOpen(channel) },
+                            modifier = if (channel.channelId == returnTo) Modifier.focusRequester(returnFocus) else Modifier,
+                        )
                     }
                 }
             }
@@ -1329,12 +1487,12 @@ private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit) {
 }
 
 @Composable
-private fun ChannelTile(channel: YouTubeChannel, onClick: () -> Unit) {
+private fun ChannelTile(channel: YouTubeChannel, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val hovered by interaction.collectIsHoveredAsState()
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(if (focused || hovered) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
@@ -1381,7 +1539,14 @@ private fun YouTubeVideoCard(
     onClick: () -> Unit,
     /** Likes the video (true) or takes the like back (false). */
     onLike: (Boolean) -> Unit,
-    onSaveToWatchLater: () -> Unit,
+    /** Whether it is in the account's Watch later, as far as [YouTubeFeedRepository.watchLater] knows. */
+    inWatchLater: Boolean,
+    /** The day it was last watched, written out, when the cards show it (Settings > Watched date). */
+    watchedOn: String?,
+    onToggleWatchLater: () -> Unit,
+    onMarkWatched: () -> Unit,
+    /** Null where YouTube's own menu has no "Don't recommend channel" (anything but recommendations). */
+    onDontRecommendChannel: (() -> Unit)?,
     onSaveToPlaylist: () -> Unit,
     onComments: () -> Unit,
     onRemoveFromPlaylist: (() -> Unit)?,
@@ -1416,8 +1581,19 @@ private fun YouTubeVideoCard(
     // take a like back. Until YouTube answers it reads "Like", and turns into "Remove like" in place.
     val likeStatus by YouTubeFeedRepository.likeStatus.collectAsStateWithLifecycle()
     val liked = likeStatus[video.videoId]
-    LaunchedEffect(menuAt != null, video.videoId) {
-        if (menuAt != null && liked == null) YouTubeFeedRepository.loadLikeStatus(video.videoId)
+    // The thumbnail's buttons opened out ask the same, for the like button.
+    var actionsOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(menuAt != null || actionsOpen, video.videoId) {
+        if ((menuAt != null || actionsOpen) && liked == null) YouTubeFeedRepository.loadLikeStatus(video.videoId)
+    }
+    val watched = isYouTubeVideoWatched(video)
+    // A card under the cursor (or the keyboard's focus) for a moment is likely the next one opened:
+    // its streams are looked up now, so the click starts it at once (YouTubeStreamsAhead).
+    LaunchedEffect(highlight, video.videoId) {
+        if (highlight) {
+            kotlinx.coroutines.delay(STREAMS_AHEAD_DWELL_MS)
+            YouTubeStreamsAhead.warm(video.videoId)
+        }
     }
     menuAt?.let { position ->
         NuvioContextMenu(
@@ -1434,16 +1610,26 @@ private fun YouTubeVideoCard(
                 )
                 add(
                     PosterZoomOverlayAction(
-                        icon = if (queued) Icons.Rounded.RemoveFromQueue else Icons.Rounded.AddToQueue,
+                        icon = if (queued) Icons.Rounded.PlaylistAddCheck else Icons.Rounded.QueuePlayNext,
                         label = if (queued) "Remove from queue" else "Add to queue",
                         onSelected = onToggleQueued,
                     ),
                 )
-                add(PosterZoomOverlayAction(icon = Icons.Rounded.WatchLater, label = "Save to Watch later", onSelected = onSaveToWatchLater))
+                add(
+                    PosterZoomOverlayAction(
+                        icon = if (inWatchLater) Icons.Rounded.Done else Icons.Rounded.WatchLater,
+                        label = if (inWatchLater) "Remove from Watch later" else "Save to Watch later",
+                        onSelected = onToggleWatchLater,
+                    ),
+                )
+                if (!watched) add(PosterZoomOverlayAction(icon = Icons.Rounded.TaskAlt, label = "Mark as watched", onSelected = onMarkWatched))
                 add(PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Save to playlist…", onSelected = onSaveToPlaylist))
                 add(PosterZoomOverlayAction(icon = Icons.AutoMirrored.Rounded.Comment, label = "Comments", onSelected = onComments, group = 1))
                 onOpenChannel?.let {
                     add(PosterZoomOverlayAction(icon = Icons.Rounded.AccountCircle, label = "Go to channel", onSelected = it, group = 1))
+                }
+                onDontRecommendChannel?.let {
+                    add(PosterZoomOverlayAction(icon = Icons.Rounded.Block, label = "Don't recommend channel", onSelected = it, group = 1))
                 }
                 onRemoveFromPlaylist?.let {
                     add(
@@ -1540,6 +1726,24 @@ private fun YouTubeVideoCard(
                     )
                 }
             }
+            watchedOn?.let { day ->
+                WatchedDateBadge(day, Modifier.align(Alignment.TopStart).padding(8.dp))
+            }
+            YouTubeCardActions(
+                // Always there while it is in Watch later (the green says so); otherwise on the card's hover or focus.
+                shown = highlight || inWatchLater,
+                inWatchLater = inWatchLater,
+                watched = watched,
+                liked = liked,
+                queued = queued,
+                onToggleWatchLater = onToggleWatchLater,
+                onMarkWatched = onMarkWatched,
+                onToggleQueued = onToggleQueued,
+                onLike = onLike,
+                onSaveToPlaylist = onSaveToPlaylist,
+                onOpenChanged = { actionsOpen = it },
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+            )
             if (opening) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)),
@@ -1596,7 +1800,11 @@ private fun YouTubeVideoCard(
                 },
             )
         }
-        video.details?.let { line ->
+        // Likes go between the views and the age; the feeds leave them out, so each card asks (YouTubeLikeCounts).
+        val likes by produceState(YouTubeLikeCounts.cached(video.videoId), video.videoId) {
+            if (value == null) value = YouTubeLikeCounts.likes(video.videoId)
+        }
+        youTubeDetailsWithLikes(video.details, likes)?.let { line ->
             Text(
                 text = line,
                 style = MaterialTheme.typography.bodySmall,
@@ -1608,12 +1816,171 @@ private fun YouTubeVideoCard(
     }
 }
 
+/** How long a card is under the cursor or focused before its streams are looked up ahead of a click. */
+private const val STREAMS_AHEAD_DWELL_MS = 350L
+
+/** The green a thumbnail button takes while what it stands for is on (in Watch later, queued, liked). */
+private val CardActionOn = Color(0xFF2FA866)
+
+/**
+ * The thumbnail's top-right buttons, for the mouse: Watch later, green while the video is in it, and
+ * to its left, while the pointer is over them, mark watched, queue, like and save to a playlist. The
+ * keyboard and a pad have the same in the card's menu, so none of them takes focus.
+ */
+@Composable
+private fun YouTubeCardActions(
+    shown: Boolean,
+    inWatchLater: Boolean,
+    watched: Boolean,
+    liked: Boolean?,
+    queued: Boolean,
+    onToggleWatchLater: () -> Unit,
+    onMarkWatched: () -> Unit,
+    onToggleQueued: () -> Unit,
+    onLike: (Boolean) -> Unit,
+    onSaveToPlaylist: () -> Unit,
+    onOpenChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    LaunchedEffect(hovered) { onOpenChanged(hovered) }
+    if (!shown && !hovered) return
+    // A row opening out to the left of Watch later: a thumbnail is wider than it is tall.
+    Row(
+        modifier = modifier.hoverable(interaction),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = hovered,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(expandFrom = Alignment.End),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally(shrinkTowards = Alignment.End),
+        ) {
+            // Nearest Watch later first, so the order reads outward from it.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                CardGlassButton(Icons.Rounded.PlaylistAdd, "Save to playlist…", on = false, onClick = onSaveToPlaylist)
+                CardGlassButton(
+                    icon = Icons.Rounded.ThumbUp,
+                    label = if (liked == true) "Remove like" else "Like",
+                    on = liked == true,
+                    onClick = { onLike(liked != true) },
+                )
+                CardGlassButton(
+                    icon = if (queued) Icons.Rounded.PlaylistAddCheck else Icons.Rounded.QueuePlayNext,
+                    label = if (queued) "Remove from queue" else "Add to queue",
+                    on = queued,
+                    onClick = onToggleQueued,
+                )
+                if (!watched) CardGlassButton(Icons.Rounded.TaskAlt, "Mark as watched", on = false, onClick = onMarkWatched)
+            }
+        }
+        CardGlassButton(
+            icon = if (inWatchLater) Icons.Rounded.Done else Icons.Rounded.WatchLater,
+            label = if (inWatchLater) "Remove from Watch later" else "Save to Watch later",
+            on = inWatchLater,
+            size = 34.dp,
+            onClick = onToggleWatchLater,
+        )
+    }
+}
+
+/** The day a video was watched, top left of its thumbnail, in the same dark glass as the buttons. */
+@Composable
+private fun WatchedDateBadge(day: String, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(percent = 50)
+    Text(
+        text = day,
+        style = MaterialTheme.typography.labelMedium,
+        color = Color.White,
+        maxLines = 1,
+        modifier = modifier
+            .clip(shape)
+            .background(Color.Black.copy(alpha = 0.64f))
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.18f),
+                    1f to Color.White.copy(alpha = 0.03f),
+                ),
+            )
+            .border(1.dp, Color.White.copy(alpha = 0.30f), shape)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+/** A round frosted button over a thumbnail: dark glass with a light edge, [CardActionOn] green while [on]. */
+@Composable
+private fun CardGlassButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    on: Boolean,
+    onClick: () -> Unit,
+    size: androidx.compose.ui.unit.Dp = 30.dp,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val shape = androidx.compose.foundation.shape.CircleShape
+    com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = label) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(shape)
+                .background(
+                    when {
+                        // Solid enough to read on a bright or busy thumbnail.
+                        on -> CardActionOn.copy(alpha = if (hovered) 1f else 0.92f)
+                        hovered -> Color.Black.copy(alpha = 0.80f)
+                        else -> Color.Black.copy(alpha = 0.64f)
+                    },
+                )
+                // The glass's sheen: lighter at the top, as if lit from above.
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.18f),
+                        1f to Color.White.copy(alpha = 0.03f),
+                    ),
+                )
+                .border(1.dp, Color.White.copy(alpha = if (hovered) 0.45f else 0.30f), shape)
+                .hoverable(interaction)
+                .focusProperties { canFocus = false }
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(size * 0.55f))
+        }
+    }
+}
+
 /**
  * A section (or filter, or Refresh) in the tab's header: its icon and name, white at rest and lit in the accent glass while
  * it is the one shown, like the settings bar's pages; the keyboard ring follows the pill.
  */
 @Composable
 private fun YouTubeSectionTab(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+    if (LocalCompactSectionTabs.current) {
+        com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = label) { YouTubeSectionTabPill(icon, label, on, showLabel = false, onClick) }
+    } else {
+        YouTubeSectionTabPill(icon, label, on, showLabel = true, onClick)
+    }
+}
+
+/** Whether the header's pills show their icons alone: the window is too narrow for their names. */
+private val LocalCompactSectionTabs = androidx.compose.runtime.compositionLocalOf { false }
+
+/** A pill's width beside its name's: 12dp padding each side, the 20dp icon and the 8dp gap. */
+private val SECTION_TAB_CHROME = 52.dp
+
+@Composable
+private fun YouTubeSectionTabPill(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    on: Boolean,
+    showLabel: Boolean,
+    onClick: () -> Unit,
+) {
     val tokens = MaterialTheme.nuvio
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -1637,18 +2004,20 @@ private fun YouTubeSectionTab(icon: androidx.compose.ui.graphics.vector.ImageVec
             .musicKeyFocusRing(shape)
             .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = if (showLabel) 12.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
-            color = tint,
-            maxLines = 1,
-        )
+        Icon(icon, contentDescription = if (showLabel) null else label, tint = tint, modifier = Modifier.size(20.dp))
+        if (showLabel) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium,
+                color = tint,
+                maxLines = 1,
+            )
+        }
     }
 }
 

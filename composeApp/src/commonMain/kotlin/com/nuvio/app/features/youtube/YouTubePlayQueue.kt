@@ -81,7 +81,7 @@ internal object YouTubePlayQueue {
             stop()
             return null
         }
-        // Moved on before the old player goes, so its own end report (onFinished) finds nothing to do.
+        // Moved on before the old player goes, so its own close report (onClosedNearEnd) finds nothing to do.
         _state.value = state.copy(index = nextIndex)
         val ready = prepared?.takeIf { it.first == upcoming.videoId }?.second
         prepared = null
@@ -163,20 +163,17 @@ internal object YouTubePlayQueue {
         if (_state.value?.current?.videoId != videoId) stop()
     }
 
-    /** [videoId] was played to its end. Moves on to the next video, or ends the queue after the last. */
-    fun onFinished(videoId: String) {
+    /**
+     * [videoId]'s player was closed by hand within its last moments ([youTubeWatchFinished]): it counts as
+     * watched, so it leaves the watch queue, but nothing plays next. A real end never comes here: the app
+     * hands over through [handOffNext], which has moved the queue on before this player goes. An autoplay
+     * pick set up for it is dropped, as the person stopped watching; a playlist stays where it was.
+     */
+    fun onClosedNearEnd(videoId: String) {
         val state = _state.value ?: return
         if (state.current?.videoId != videoId) return
         if (state.watchQueue) YouTubeWatchQueue.remove(videoId)
-        val nextIndex = state.index + 1
-        val upcoming = state.videos.getOrNull(nextIndex)
-        if (upcoming == null) {
-            log.i { "queue finished" }
-            stop()
-            return
-        }
-        _state.value = state.copy(index = nextIndex)
-        _next.value = upcoming
+        if (state.oneOff) stop()
     }
 
     /** The video to open now, handed out once. */

@@ -100,6 +100,25 @@ internal fun youTubeFullWatchPingUrl(base: String, cpn: String, lengthSec: Doubl
 internal fun youTubeWatchFinished(positionMs: Long, lengthMs: Long): Boolean =
     lengthMs > 0L && positionMs >= lengthMs - minOf(15_000L, lengthMs / 20)
 
+/**
+ * Marks [videoId] watched in the account's history without playing it, as yt-dlp's `--mark-watched`
+ * does: a playback ping, then one watch-time ping covering the whole length. [fallbackLengthSec] is
+ * used when the stats URL carries no length. True when YouTube took both.
+ */
+internal suspend fun markYouTubeVideoWatched(videoId: String, pageId: String?, fallbackLengthSec: Double?): Boolean {
+    val tracking = runCatching { youTubePlaybackTracking(videoId, pageId) }.getOrNull() ?: return false
+    val lengthSec = youTubeStatsLengthSec(tracking.watchtimeUrl) ?: fallbackLengthSec?.takeIf { it > 0.0 } ?: return false
+    val cpn = newYouTubeCpn()
+    if (youTubeStatsPing(youTubePlaybackPingUrl(tracking.playbackUrl, cpn), pageId) !in 200..299) return false
+    return youTubeStatsPing(youTubeFullWatchPingUrl(tracking.watchtimeUrl, cpn, lengthSec, lengthSec), pageId) in 200..299
+}
+
+/** A length as the feeds show it ("12:34", "1:02:03") in seconds, or null when it is not one. */
+internal fun youTubeDurationSeconds(text: String?): Double? {
+    val parts = text?.trim()?.split(':')?.takeIf { it.size in 2..3 } ?: return null
+    return parts.fold(0.0) { total, part -> total * 60 + (part.toIntOrNull() ?: return null) }.takeIf { it > 0.0 }
+}
+
 /** The video length YouTube put in a stats URL (`len`), in seconds. */
 internal fun youTubeStatsLengthSec(url: String): Double? =
     url.substringAfter('?', "").split('&')

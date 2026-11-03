@@ -43,13 +43,13 @@ class YouTubeWatchQueueTest {
     }
 
     @Test
-    fun videosPlayedToTheEndLeaveTheQueueAndTheOnesBeforeTheStartStay() {
+    fun aVideoClosedAtItsEndLeavesTheQueueAndNothingPlaysNext() {
         listOf("a", "b", "c", "d").forEach { YouTubeWatchQueue.add(video(it)) }
-        // Started at the third; it and the fourth are watched to the end.
+        // Started at the third, which is closed by hand in its last seconds.
         YouTubePlayQueue.start(WATCH_QUEUE_NAME, YouTubeWatchQueue.videos.value, 2, watchQueue = true)
-        YouTubePlayQueue.onFinished("c")
-        YouTubePlayQueue.onFinished("d")
-        assertEquals(listOf("a", "b"), YouTubeWatchQueue.videos.value.map { it.videoId })
+        YouTubePlayQueue.onClosedNearEnd("c")
+        assertEquals(listOf("a", "b", "d"), YouTubeWatchQueue.videos.value.map { it.videoId })
+        assertEquals(null, YouTubePlayQueue.takeNext())
     }
 
     @Test

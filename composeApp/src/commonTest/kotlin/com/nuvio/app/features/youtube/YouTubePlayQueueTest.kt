@@ -14,19 +14,19 @@ class YouTubePlayQueueTest {
     fun reset() = YouTubePlayQueue.stop()
 
     @Test
-    fun aFinishedVideoHandsOutTheNextOnce() {
+    fun closingAVideoNearItsEndDoesNotPlayTheNext() {
         YouTubePlayQueue.start("List", list, 0)
-        YouTubePlayQueue.onFinished("a")
+        YouTubePlayQueue.onClosedNearEnd("a")
 
-        assertEquals("b", YouTubePlayQueue.takeNext()?.videoId)
         assertNull(YouTubePlayQueue.takeNext())
-        assertEquals(1, YouTubePlayQueue.state.value?.index)
+        // The playlist stays where it was, for its banner and the next video opened from it.
+        assertEquals(0, YouTubePlayQueue.state.value?.index)
     }
 
     @Test
-    fun theLastVideoEndsTheQueue() {
-        YouTubePlayQueue.start("List", list, 2)
-        YouTubePlayQueue.onFinished("c")
+    fun closingNearTheEndDropsAnAutoplayPick() {
+        YouTubePlayQueue.handOverFromPlayer("a", video("b"))
+        YouTubePlayQueue.onClosedNearEnd("a")
 
         assertNull(YouTubePlayQueue.state.value)
         assertNull(YouTubePlayQueue.takeNext())
@@ -35,8 +35,8 @@ class YouTubePlayQueueTest {
     @Test
     fun anotherVideoEndingOrOpeningLeavesOrStopsIt() {
         YouTubePlayQueue.start("List", list, 0)
-        // Something else finished (not the queue's current video): nothing moves.
-        YouTubePlayQueue.onFinished("b")
+        // Something else closed (not the queue's current video): nothing moves.
+        YouTubePlayQueue.onClosedNearEnd("b")
         assertEquals(0, YouTubePlayQueue.state.value?.index)
         // The queue's own video opening keeps it; anything else ends it.
         YouTubePlayQueue.onOpened("a")

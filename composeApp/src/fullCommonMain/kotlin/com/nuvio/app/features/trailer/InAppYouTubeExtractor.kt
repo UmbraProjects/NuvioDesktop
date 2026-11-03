@@ -11,6 +11,9 @@ import com.nuvio.app.features.music.youTubeCaller
 import com.nuvio.app.features.music.youTubeCallerLabel
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -484,20 +487,30 @@ class InAppYouTubeExtractor internal constructor(
 
         val callerLabel = youTubeCallerLabel()
         val clients = if (useAccount) ACCOUNT_CLIENTS else CLIENTS
-        for ((clientIndex, client) in clients.withIndex()) {
-            // fork:youtube-pause - once YouTube is refusing this address the remaining clients would only lengthen the block.
-            if (clientIndex >= playerClientsToTry(MusicRateLimit.isBlocked(), clients.size)) {
-                log.i { "[$callerLabel] YouTube is refusing requests; not trying player client ${client.key} for $videoId" }
-                break
-            }
+        // fork:youtube-pause - while YouTube is refusing this address the other clients would only lengthen the block.
+        val clientsToAsk = clients.take(playerClientsToTry(MusicRateLimit.isBlocked(), clients.size))
+        if (clientsToAsk.size < clients.size) {
+            log.i { "[$callerLabel] YouTube is refusing requests; asking only player client ${clientsToAsk.firstOrNull()?.key} for $videoId" }
+        }
+        // All clients at once, read in their order: asked one after another they added ~0.3 s to every start.
+        val playerResponses = coroutineScope {
+            clientsToAsk.map { client ->
+                async {
+                    client to runCatching {
+                        fetchPlayerResponse(
+                            apiKey = apiKey,
+                            videoId = videoId,
+                            client = client,
+                            visitorData = watchConfig.visitorData,
+                            useAccount = useAccount,
+                        )
+                    }
+                }
+            }.awaitAll()
+        }
+        for ((client, answer) in playerResponses) {
             runCatching {
-                val playerResponse = fetchPlayerResponse(
-                    apiKey = apiKey,
-                    videoId = videoId,
-                    client = client,
-                    visitorData = watchConfig.visitorData,
-                    useAccount = useAccount,
-                )
+                val playerResponse = answer.getOrThrow()
 
                 val streamingData = playerResponse.objectValue("streamingData")
                 if (streamingData == null) {
@@ -625,9 +638,26 @@ class InAppYouTubeExtractor internal constructor(
         }
 
         var bestManifest: ManifestCandidate? = null
-        for ((clientKey, priority, manifestUrl) in manifestUrls) {
+        // fork:youtube-quick-start - a caller that plays the adaptive pair keeps the manifest only as a fallback URL, so its
+        // ladder is not fetched (one more round trip before playback); the quality figure then comes from the adaptive video.
+        val skipLadder = com.nuvio.app.features.music.youTubeCaller()?.skipManifestLadder == true &&
+            !singleUrl && adaptiveVideo.isNotEmpty() && adaptiveAudio.isNotEmpty()
+        if (skipLadder) {
+            manifestUrls.minByOrNull { it.second }?.let { (clientKey, priority, manifestUrl) ->
+                bestManifest = ManifestCandidate(clientKey, priority, manifestUrl, selectedVariantUrl = manifestUrl, height = 0, bandwidth = 0L)
+            }
+        }
+        val ladders = if (skipLadder) {
+            emptyList()
+        } else {
+            coroutineScope {
+                manifestUrls.map { (_, _, manifestUrl) -> async { runCatching { parseHlsManifest(manifestUrl) }.getOrNull() } }.awaitAll()
+            }
+        }
+        for ((index, variant) in ladders.withIndex()) {
+            val (clientKey, priority, manifestUrl) = manifestUrls[index]
             runCatching {
-                val variant = parseHlsManifest(manifestUrl) ?: return@runCatching
+                variant ?: return@runCatching
                 val candidate = ManifestCandidate(
                     client = clientKey,
                     priority = priority,
@@ -667,6 +697,7 @@ class InAppYouTubeExtractor internal constructor(
             preferredHeights = TrailerExtractionPlatform.preferredSeparateVideoHeights,
             preferClient = TrailerExtractionPlatform.preferSeparateVideoClient,
             preferHdr = preferHdr,
+            maxShortSide = com.nuvio.app.features.music.youTubeCaller()?.maxShortSide,
         )
         // Multi-language uploads (studio trailers, and anything YouTube has auto-dubbed) carry one
         // audio format per language, and the highest-bitrate one was as likely to be a dub as the
@@ -992,9 +1023,18 @@ class InAppYouTubeExtractor internal constructor(
         preferredHeights: List<Int>,
         preferClient: Boolean,
         preferHdr: Boolean = false,
+        maxShortSide: Int? = null,
     ): StreamCandidate? {
         val availableHeights = items.map { it.height }.filter { it > 0 }.distinct()
-        val targetHeight = preferredHeights.firstOrNull { it in availableHeights }
+        // The sharpest encode up to [maxShortSide], measured on the short side so a 3840x1600 scope upload
+        // or a vertical 2160x3840 one counts as 4K (the height list below only knows 16:9 heights). An
+        // upload with nothing that small plays its smallest.
+        val cappedHeight = maxShortSide?.let { cap ->
+            items.filter { minOf(it.width.takeIf { w -> w > 0 } ?: it.height, it.height) in 1..cap }.maxOfOrNull { it.height }
+                ?: availableHeights.minOrNull()
+        }
+        val targetHeight = cappedHeight
+            ?: preferredHeights.firstOrNull { it in availableHeights }
             ?: availableHeights.filter { it < (preferredHeights.lastOrNull() ?: 1080) }.maxOrNull()
             ?: availableHeights.maxOrNull()
             ?: return null

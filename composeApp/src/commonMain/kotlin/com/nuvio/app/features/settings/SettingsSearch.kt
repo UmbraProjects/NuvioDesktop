@@ -2473,6 +2473,39 @@ private fun settingsSearchEntries(
             icon = Icons.Rounded.Link,
             anchor = SettingsScrollAnchor.searchKey("youtube-account"),
         )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-max-quality",
+            title = "Max video quality",
+            description = "The sharpest a YouTube tab video plays at: 8K, 4K, 1440p, 1080p or 720p",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-max-quality"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-watched-date",
+            title = "Watched date",
+            description = "The day a YouTube video was watched, on its thumbnail; date format",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-watched-date"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-history-export",
+            title = "Watch history on this PC",
+            description = "Nuvio's copy of your YouTube history; export as CSV",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-history-export"),
+        )
     }
 
     if (isDesktop) {

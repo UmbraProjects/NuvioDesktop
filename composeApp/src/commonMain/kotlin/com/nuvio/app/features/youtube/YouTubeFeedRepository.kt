@@ -47,6 +47,15 @@ internal const val WATCH_LATER_PLAYLIST_ID = "WL"
 /** Liked videos' playlist id; YouTube keeps it, so nothing is removed from it by hand. */
 internal const val LIKED_PLAYLIST_ID = "LL"
 
+/** The tab's max quality choices, as the short side in pixels: 8K, 4K, 1440p, 1080p, 720p. */
+internal val YOUTUBE_MAX_QUALITY_CHOICES = listOf(4320, 2160, 1440, 1080, 720)
+
+/** 4K: an 8K encode is a heavy decode for little gain on most screens. */
+internal const val YOUTUBE_DEFAULT_MAX_QUALITY = 2160
+
+/** How much of Watch later is read for the cards' button: 100 videos a page. */
+private const val WATCH_LATER_MAX_PAGES = 10
+
 data class YouTubePlaylistListState(
     val playlists: List<YouTubePlaylist> = emptyList(),
     val loading: Boolean = false,
@@ -135,11 +144,14 @@ internal expect suspend fun youTubePlaylistOptions(videoId: String, pageId: Stri
 /** The WEB `next` answer: for [videoId] (its page, which names the comments section), or a [continuation] of it. */
 internal expect suspend fun youTubeNext(videoId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult
 
+/** Sends a feed item's feedback token (`feedback`), as its menu rows do on the website: "Don't recommend channel". */
+internal expect suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult
+
 /** The account's channel list (`account/accounts_list`), as a raw body like [youTubeBrowse]. */
 internal expect suspend fun youTubeAccountsList(): YouTubeBrowseResult
 
 /** A playable, probed source for a full-length video (video and audio), or null when none opens. */
-internal expect suspend fun youTubeOpenVideo(videoId: String): TrailerPlaybackSource?
+internal expect suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): TrailerPlaybackSource?
 
 internal expect object YouTubeModeStorage {
     fun loadTabEnabled(): Boolean
@@ -174,6 +186,15 @@ internal expect object YouTubeModeStorage {
     fun saveSkyBackground(enabled: Boolean)
 
     /** The chosen channel: a page id, "" for the account's own profile, null when never chosen. */
+    fun loadMaxQuality(): Int?
+    fun saveMaxQuality(shortSide: Int)
+
+    fun loadWatchedDateMode(): String?
+    fun saveWatchedDateMode(mode: String)
+
+    fun loadDateFormat(): String?
+    fun saveDateFormat(format: String)
+
     fun loadChannelChoice(): String?
     fun saveChannelChoice(choice: String?)
 }
@@ -300,6 +321,51 @@ object YouTubeFeedRepository {
     fun setSkyBackground(enabled: Boolean) {
         YouTubeModeStorage.saveSkyBackground(enabled)
         _skyBackground.value = enabled
+    }
+
+    private val _maxQuality by lazy {
+        MutableStateFlow(YouTubeModeStorage.loadMaxQuality()?.takeIf { it in YOUTUBE_MAX_QUALITY_CHOICES } ?: YOUTUBE_DEFAULT_MAX_QUALITY)
+    }
+
+    /** Settings > YouTube account > Max video quality: the short side, in pixels, the tab's videos play at most at. */
+    val maxQuality: StateFlow<Int>
+        get() = _maxQuality.asStateFlow()
+
+    fun setMaxQuality(shortSide: Int) {
+        _maxQuality.value = shortSide
+        YouTubeModeStorage.saveMaxQuality(shortSide)
+    }
+
+    private val _watchedDateMode by lazy {
+        MutableStateFlow(
+            YouTubeModeStorage.loadWatchedDateMode()?.let { saved -> YouTubeWatchedDateMode.entries.firstOrNull { it.name == saved } }
+                ?: YouTubeWatchedDateMode.HistoryOnly,
+        )
+    }
+
+    /** Settings > YouTube account > Watched date: where the cards show the day a video was watched. */
+    val watchedDateMode: StateFlow<YouTubeWatchedDateMode>
+        get() = _watchedDateMode.asStateFlow()
+
+    fun setWatchedDateMode(mode: YouTubeWatchedDateMode) {
+        _watchedDateMode.value = mode
+        YouTubeModeStorage.saveWatchedDateMode(mode.name)
+    }
+
+    private val _dateFormat by lazy {
+        MutableStateFlow(
+            YouTubeModeStorage.loadDateFormat()?.let { saved -> YouTubeDateFormat.entries.firstOrNull { it.name == saved } }
+                ?: YouTubeDateFormat.DayMonthYear,
+        )
+    }
+
+    /** Settings > YouTube account > Date format. */
+    val dateFormat: StateFlow<YouTubeDateFormat>
+        get() = _dateFormat.asStateFlow()
+
+    fun setDateFormat(format: YouTubeDateFormat) {
+        _dateFormat.value = format
+        YouTubeModeStorage.saveDateFormat(format.name)
     }
 
     private val _searchQuery = MutableStateFlow("")
@@ -453,6 +519,83 @@ object YouTubeFeedRepository {
         }
         // The library's counts and thumbnails changed.
         if (ok) _playlists.update { it.copy(loaded = false) }
+        if (ok && playlistId == WATCH_LATER_PLAYLIST_ID) {
+            _watchLater.update { ids -> if (add) ids + video.videoId else ids - video.videoId }
+        }
+        return ok
+    }
+
+    /**
+     * Tells YouTube to stop recommending [video]'s channel (the item's own feedback token), and takes the
+     * channel's videos off the home feed at once. True when YouTube took it.
+     */
+    suspend fun dontRecommendChannel(video: YouTubeVideo): Boolean {
+        val token = video.dontRecommendToken ?: return false
+        val ok = youTubeSendFeedback(token, _channel.value.pageId) is YouTubeBrowseResult.Ok
+        log.i { "don't recommend channel: ok=$ok" }
+        if (ok) {
+            fun sameChannel(other: YouTubeVideo) = other.videoId == video.videoId ||
+                (video.channelId != null && other.channelId == video.channelId) ||
+                (video.channelId == null && video.channel != null && other.channel == video.channel)
+            _feeds.update { feeds ->
+                val home = feeds.getValue(YouTubeFeedKind.Home)
+                feeds + (YouTubeFeedKind.Home to home.copy(videos = home.videos.filterNot(::sameChannel)))
+            }
+        }
+        return ok
+    }
+
+    private val _watchLater = MutableStateFlow<Set<String>>(emptySet())
+
+    /** The videos in the account's Watch later as far as known: its first pages ([loadWatchLater]) and what was saved or removed here. */
+    val watchLater: StateFlow<Set<String>> = _watchLater.asStateFlow()
+
+    @Volatile
+    private var watchLaterAsked = false
+
+    /** Reads the account's Watch later once per session (its first [WATCH_LATER_MAX_PAGES] pages), for the cards' Watch later button. */
+    fun loadWatchLater() {
+        if (watchLaterAsked || !YouTubeMusicAuth.isSignedIn) return
+        watchLaterAsked = true
+        val generation = feedGeneration
+        scope.launch {
+            val ids = LinkedHashSet<String>()
+            var continuation: String? = null
+            var pages = 0
+            do {
+                val result = youTubeBrowse(
+                    browseId = "VL$WATCH_LATER_PLAYLIST_ID".takeIf { continuation == null },
+                    continuation = continuation,
+                    pageId = _channel.value.pageId,
+                ) as? YouTubeBrowseResult.Ok ?: break
+                val page = parseYouTubeFeed(result.body)
+                page.videos.mapTo(ids) { it.videoId }
+                continuation = page.continuation
+                pages++
+            } while (continuation != null && pages < WATCH_LATER_MAX_PAGES)
+            if (generation != feedGeneration) return@launch
+            if (pages == 0) {
+                // Asked again next time the tab shows.
+                watchLaterAsked = false
+                return@launch
+            }
+            log.i { "Watch later: ${ids.size} videos${if (continuation != null) " (the first $pages pages)" else ""}" }
+            // Anything saved here while the pages loaded is kept.
+            _watchLater.update { it + ids }
+        }
+    }
+
+    /**
+     * Marks [video] watched in the account's history without playing it ([markYouTubeVideoWatched]); its
+     * card shows it finished at once. True when YouTube took it.
+     */
+    suspend fun markWatched(video: YouTubeVideo): Boolean {
+        val ok = markYouTubeVideoWatched(video.videoId, _channel.value.pageId, youTubeDurationSeconds(video.duration))
+        log.i { "mark watched: ok=$ok" }
+        if (ok) {
+            noteWatched(video.videoId, 100)
+            YouTubeWatchHistory.noteMarkedWatched(video)
+        }
         return ok
     }
 
@@ -591,6 +734,12 @@ object YouTubeFeedRepository {
         _subscribedChannels.value = YouTubeChannelListState()
         _playlists.value = YouTubePlaylistListState()
         _openChannel.update { it?.copy(subscribed = null, changing = false) }
+        forgetWatchLater()
+    }
+
+    private fun forgetWatchLater() {
+        _watchLater.value = emptySet()
+        watchLaterAsked = false
     }
 
     /** Fetches the channel list once per session (again after a failure) and settles which channel the feeds act as. */
@@ -649,6 +798,7 @@ object YouTubeFeedRepository {
         _channel.update { it.copy(pageId = pageId, needsChoice = false) }
         feedGeneration++
         _feeds.value = YouTubeFeedKind.entries.associateWith { YouTubeFeedState() }
+        forgetWatchLater()
     }
 
     private fun fetch(kind: YouTubeFeedKind, continuation: String?) {
@@ -696,6 +846,8 @@ object YouTubeFeedRepository {
                 val next = when (result) {
                     is YouTubeBrowseResult.Ok -> {
                         val page = parseYouTubeFeed(result.body)
+                        // Each History page goes into this PC's copy of the history, under its days.
+                        if (kind == YouTubeFeedKind.History) YouTubeWatchHistory.noteHistoryPage(page)
                         // The label only: a search query stays out of the log.
                         log.i { "${kind.label}: ${page.videos.size} videos, more=${page.continuation != null}" }
                         val videos = if (continuation == null) {
