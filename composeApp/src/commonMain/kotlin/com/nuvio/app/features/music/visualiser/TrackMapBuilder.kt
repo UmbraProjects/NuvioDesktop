@@ -398,9 +398,9 @@ internal fun estimateBeat(kick: FloatArray, snare: FloatArray, hats: FloatArray,
     // tried on a gentler bar, and last with the hats added: a steady pulse of any kind is better than none.
     beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms }, frames, 1.3)?.let { return it }
     beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + 0.5f * hats[it] / mh }, frames, 1.25)?.let { return it }
-    // Last: every struck and sustained onset together (a riff, stabs and hats all fall on the pulse), at the lowest bar.
+    // Last: every struck and sustained onset together (a riff, stabs and hats all fall on the pulse), with no bar at all: in a dense mix (hats, riff and stabs on every eighth) the widened hits cover most frames, so a ratio to the track's mean can never clear any bar, yet the best comb still finds the pulse.
     val mm = melody?.let(::meanOf) ?: 1f
-    return beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + hats[it] / mh + (melody?.get(it) ?: 0f) / mm }, frames, 1.12)
+    return beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + hats[it] / mh + (melody?.get(it) ?: 0f) / mm }, frames, 0.0)
 }
 
 private fun beatFrom(kick: FloatArray, snare: FloatArray, mk: Float, ms: Float, raw: FloatArray, frames: Int, gate: Double): BeatGrid? {
