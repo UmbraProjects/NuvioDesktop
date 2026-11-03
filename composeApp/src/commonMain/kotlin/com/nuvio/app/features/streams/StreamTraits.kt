@@ -159,7 +159,7 @@ object StreamTraitDetector {
         return StreamTraits(
             resolution = streamResolution(parsed?.resolution, parsed?.quality, searchText),
             quality = streamQuality(parsed?.quality, searchText),
-            visualTags = streamVisualTags(parsed?.hdr.orEmpty(), searchText),
+            visualTags = streamVisualTags(parsed?.hdr.orEmpty(), searchText, releaseNameText(stream) ?: searchText),
             audioTags = streamAudioTags(parsed?.audio.orEmpty(), searchText),
             audioChannels = streamAudioChannels(parsed?.channels.orEmpty(), searchText),
             encode = streamEncode(parsed?.codec, searchText),
@@ -605,7 +605,15 @@ object StreamTraitDetector {
         }
     }
 
-    private fun streamVisualTags(parsedHdr: List<String>, searchText: String): List<DebridStreamVisualTag> {
+    /**
+     * [releaseNameText] carries the 3D markers: formatter names and descriptions print a release's
+     * age as "3d" (three days old), which a whole-text scan read as a 3D release.
+     */
+    private fun streamVisualTags(
+        parsedHdr: List<String>,
+        searchText: String,
+        releaseNameText: String,
+    ): List<DebridStreamVisualTag> {
         val text = (parsedHdr + searchText).joinToString(" ").lowercase()
         val tags = mutableListOf<DebridStreamVisualTag>()
         val hasDv = parsedHdr.any { it.isDolbyVisionToken() } ||
@@ -621,12 +629,12 @@ object StreamTraitDetector {
         if (hasHdr) tags += DebridStreamVisualTag.HDR
         if (text.hasToken("hlg")) tags += DebridStreamVisualTag.HLG
         if (text.contains("10bit") || text.contains("10 bit")) tags += DebridStreamVisualTag.TEN_BIT
-        if (text.hasToken("3d")) tags += DebridStreamVisualTag.THREE_D
+        if (releaseNameText.hasToken("3d")) tags += DebridStreamVisualTag.THREE_D
         if (text.hasToken("imax")) tags += DebridStreamVisualTag.IMAX
         if (text.hasToken("ai")) tags += DebridStreamVisualTag.AI
         if (text.hasToken("sdr")) tags += DebridStreamVisualTag.SDR
-        if (text.contains("h-ou")) tags += DebridStreamVisualTag.H_OU
-        if (text.contains("h-sbs")) tags += DebridStreamVisualTag.H_SBS
+        if (releaseNameText.contains("h-ou")) tags += DebridStreamVisualTag.H_OU
+        if (releaseNameText.contains("h-sbs")) tags += DebridStreamVisualTag.H_SBS
         return tags.distinct().ifEmpty { listOf(DebridStreamVisualTag.UNKNOWN) }
     }
 
@@ -858,6 +866,23 @@ object StreamTraitDetector {
         "\\[\\s*(rd|ad|pm|tb|trb|dl|ed|oc|pkp|pp)\\s*\\+\\s*\\]",
         RegexOption.IGNORE_CASE,
     )
+
+    /** The file and torrent names alone, without formatter text; null when the addon sent none. */
+    private fun releaseNameText(stream: StreamItem): String? {
+        val resolve = stream.clientResolve
+        val raw = resolve?.stream?.raw
+        return listOfNotNull(
+            stream.behaviorHints.filename,
+            stream.debridCacheStatus?.cachedName,
+            resolve?.torrentName,
+            resolve?.filename,
+            raw?.torrentName,
+            raw?.filename,
+        ).filter { it.isNotBlank() }
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(" ")
+            ?.lowercase()
+    }
 
     private fun streamSearchText(stream: StreamItem): String {
         val resolve = stream.clientResolve

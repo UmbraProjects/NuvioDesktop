@@ -115,6 +115,22 @@ class StreamReleaseFlagScoringTest {
     // --- 3D ---
 
     @Test
+    fun releaseAgeInDescriptionIsNotThreeD() {
+        val filename = "The.Celebrity.Traitors.Uncloaked.S02E09.1080p.iP.WEB-DL.AAC2.0.H.264-Kitsune.mkv"
+        val stream = StreamItem(
+            name = "AIOStreams RD+ 1080p",
+            description = "$filename\n📦 1.2 GB ⏳ 3d",
+            addonName = "addon",
+            addonId = "addon",
+            url = "http://example.invalid/x",
+            behaviorHints = StreamBehaviorHints(filename = filename),
+        )
+        val profile = StreamScoreProfile(enabled = true, points = mapOf(StreamScoreTrait.THREE_D.id to 10))
+        val components = StreamScorer.score(stream, profile, StreamScoreContext.EPISODE).components
+        assertFalse(components.any { it.trait == StreamScoreTrait.THREE_D })
+    }
+
+    @Test
     fun threeDIsDetected() {
         assertTrue(fires(StreamScoreTrait.THREE_D, "Movie.2024.1080p.BluRay.3D.Half-SBS.x264-GROUP"))
         assertTrue(fires(StreamScoreTrait.THREE_D, "Movie.2024.1080p.3D.H-OU.x264-GROUP"))
