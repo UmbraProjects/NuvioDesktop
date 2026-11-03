@@ -200,7 +200,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
     private fun build(frames: Int, complete: Boolean): TrackMap {
         val n = minOf(frames, level.size, analysed)
         val beat = if (n >= BEAT_MIN_FRAMES) {
-            estimateBeat(kick = flux[0].data, snare = flux[1].data, hats = flux[2].data, frames = n)
+            estimateBeat(kick = flux[0].data, snare = flux[1].data, hats = flux[2].data, frames = n, melody = flux[3].data)
         } else null
         return TrackMap(
             frames = n,
@@ -390,14 +390,17 @@ private fun median(a: FloatArray, n: Int): Float {
  * loses. Hats are left out: off-beat and sixteenth hats (garage, house, funk) made an autocorrelation find a beat and a half
  * as steady as one beat, and a four-on-the-floor track at 130 BPM read as 87.
  */
-internal fun estimateBeat(kick: FloatArray, snare: FloatArray, hats: FloatArray, frames: Int): BeatGrid? {
+internal fun estimateBeat(kick: FloatArray, snare: FloatArray, hats: FloatArray, frames: Int, melody: FloatArray? = null): BeatGrid? {
     if (frames < BEAT_MIN_FRAMES) return null
     fun meanOf(a: FloatArray): Float { var s = 0f; for (i in 0 until frames) s += a[i]; return (s / frames).takeIf { it > 1e-6f } ?: 1f }
     val mk = meanOf(kick); val ms = meanOf(snare); val mh = meanOf(hats)
     // A clear kick-and-snare pulse first. Busy mixes (a loud bass riff, gated reverb snares) bury it, so then the same fit is
     // tried on a gentler bar, and last with the hats added: a steady pulse of any kind is better than none.
     beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms }, frames, 1.3)?.let { return it }
-    return beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + 0.5f * hats[it] / mh }, frames, 1.25)
+    beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + 0.5f * hats[it] / mh }, frames, 1.25)?.let { return it }
+    // Last: every struck and sustained onset together (a riff, stabs and hats all fall on the pulse), at the lowest bar.
+    val mm = melody?.let(::meanOf) ?: 1f
+    return beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + hats[it] / mh + (melody?.get(it) ?: 0f) / mm }, frames, 1.12)
 }
 
 private fun beatFrom(kick: FloatArray, snare: FloatArray, mk: Float, ms: Float, raw: FloatArray, frames: Int, gate: Double): BeatGrid? {
