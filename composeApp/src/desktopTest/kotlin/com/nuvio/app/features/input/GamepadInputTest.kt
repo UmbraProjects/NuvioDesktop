@@ -164,6 +164,8 @@ class GamepadInputTest {
                 AppShortcutAction.OpenLiveTv,
                 // The same: Music is a top-bar tab the D-pad reaches, and only there while it is turned on.
                 AppShortcutAction.OpenMusic,
+                // And YouTube, likewise a top-bar tab while it is turned on.
+                AppShortcutAction.OpenYouTube,
                 // On a music page the pad's Y (the trailer key) does this; elsewhere the player is a D-pad stop away.
                 AppShortcutAction.FocusMusicPlayer,
             ),

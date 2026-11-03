@@ -11,6 +11,7 @@ internal object IptvSources {
     suspend fun loadPlaylist(playlist: IptvPlaylist): IptvPlaylistContent = when (playlist.type) {
         IptvPlaylistType.Xtream -> XtreamClient.load(playlist)
         IptvPlaylistType.M3u -> loadM3u(playlist)
+        IptvPlaylistType.Stalker -> StalkerClient.load(playlist)
     }
 
     private suspend fun loadM3u(playlist: IptvPlaylist): IptvPlaylistContent {

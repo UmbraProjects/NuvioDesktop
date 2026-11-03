@@ -188,6 +188,9 @@ internal object NativePlayerBridge {
     external fun toggleStatsOverlay(handle: Long)
     external fun forceVideoRedraw(handle: Long)
 
+    /** Fits the video and the HUD to the host window now, after the host was resized (not on the bridge's next timer tick). */
+    external fun layoutToHost(handle: Long)
+
     /**
      * Polls the XInput controller slots selected by [slotMask] (bit N = slot N) and returns a
      * bitmask of the slots that answered. [out] must hold at least `4 * 8` ints and is filled per

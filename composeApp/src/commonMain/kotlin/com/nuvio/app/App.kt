@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.MusicNote // fork:music
 import androidx.compose.material.icons.rounded.SmartDisplay // fork:youtube-mode
+import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -680,12 +681,9 @@ internal fun rootTabHistoryAfterNavigation(
     return (history + current).takeLast(16)
 }
 
-// Width of the floating top bar pill *and* the picker panel that hangs off its bottom edge — the
-// two must stay identical or the panel's rounded top corners stop lining up with the bar. Sized so
-// the five nav quadrants keep the 80.dp rhythm they had when there were four. Quadrants divide the
-// bar by weight, so hiding Discover subtracts one quadrant instead of stretching the other four.
-private val FloatingTopBarQuadrantWidth = 64.dp
-private val FloatingTopBarWidth = 384.dp // fork:music (320.dp + one quadrant for Music)
+// The floating top bar pill and the picker panel that hangs off its bottom edge share one width
+// (topBarWidth, from navBarSlotWidth) or the panel's rounded top corners stop lining up with the bar.
+// Quadrants divide the bar by weight, so hiding an entry takes its slot away instead of stretching the rest.
 
 // The sidebar's nav glyphs sit alone in a wide rail rather than in a dense pill, so they carry
 // 15% more than the standard 20.dp icon step to stop them reading as undersized.
@@ -1434,9 +1432,12 @@ private fun MainAppContent(
         val hapticFeedback = LocalHapticFeedback.current
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
-        // fork:music-navbar - where the Music bar's swap button returns to.
+        // fork:music-navbar - where the Music and YouTube bars' swap button returns to: the last tab that
+        // shows the main bar, so going from one of them to the other and back still lands on the tabs.
         var lastTabBeforeMusic by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
-        LaunchedEffect(selectedTab) { if (selectedTab != AppScreenTab.Music) lastTabBeforeMusic = selectedTab }
+        LaunchedEffect(selectedTab) {
+            if (selectedTab != AppScreenTab.Music && selectedTab != AppScreenTab.YouTube) lastTabBeforeMusic = selectedTab
+        }
         var rootTabBackStack by remember { mutableStateOf<List<AppScreenTab>>(emptyList()) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
         var navigateToContentCount by remember { mutableStateOf(0) }
@@ -1742,6 +1743,23 @@ private fun MainAppContent(
     // The collector below outlives compositions; the click handler it calls must be the current
     // one, or a tab shown since launch (Discover, Live TV) would still look hidden to it.
     val latestRootTabClick = rememberUpdatedState<(AppScreenTab) -> Unit>(::handleRootTabClick)
+
+    // A bar outside the tab host (the Settings screen's) asking for an entry it has no callback for.
+    // Through latestRootTabClick, so a tab switched on after launch is not refused by a stale check.
+    LaunchedEffect(Unit) {
+        com.nuvio.app.features.navbar.NavBarNavigation.requests.collect { entry ->
+            when (entry) {
+                com.nuvio.app.features.navbar.NavBarEntry.Home -> latestRootTabClick.value(AppScreenTab.Home)
+                com.nuvio.app.features.navbar.NavBarEntry.Search -> latestRootTabClick.value(AppScreenTab.Search)
+                com.nuvio.app.features.navbar.NavBarEntry.Discover -> latestRootTabClick.value(AppScreenTab.Discover)
+                com.nuvio.app.features.navbar.NavBarEntry.Library -> latestRootTabClick.value(AppScreenTab.Library)
+                com.nuvio.app.features.navbar.NavBarEntry.LiveTv -> latestRootTabClick.value(AppScreenTab.LiveTv)
+                com.nuvio.app.features.navbar.NavBarEntry.YouTube -> latestRootTabClick.value(AppScreenTab.YouTube)
+                com.nuvio.app.features.navbar.NavBarEntry.Music -> latestRootTabClick.value(AppScreenTab.Music)
+                com.nuvio.app.features.navbar.NavBarEntry.Games -> com.nuvio.app.features.games.GameModeController.setActive(true)
+            }
+        }
+    }
     LaunchedEffect(navController) {
         AppShortcutBridge.events.collect { action ->
             if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
@@ -1750,6 +1768,13 @@ private fun MainAppContent(
                 navController.currentDestination?.hasRoute<TabsRoute>() == true
             ) {
                 com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
+                return@collect
+            }
+            // fork:youtube-mode - and on the YouTube tab, to its search box.
+            if (action == AppShortcutAction.OpenSearch && selectedTab == AppScreenTab.YouTube &&
+                navController.currentDestination?.hasRoute<TabsRoute>() == true
+            ) {
+                com.nuvio.app.features.youtube.YouTubeTopBarSearch.requestFocus()
                 return@collect
             }
             when (action) {
@@ -1762,14 +1787,23 @@ private fun MainAppContent(
                     }
                     latestRootTabClick.value(if (selectedTab == AppScreenTab.Music) AppScreenTab.Home else AppScreenTab.Music)
                 }
+                AppShortcutAction.OpenYouTube -> {
+                    // Likewise nothing while the YouTube tab is turned off.
+                    if (com.nuvio.app.features.youtube.YouTubeFeedRepository.tabEnabled.value != true) return@collect
+                    navController.navigate(TabsRoute) {
+                        popUpTo<TabsRoute> { inclusive = false }
+                        launchSingleTop = true
+                    }
+                    latestRootTabClick.value(if (selectedTab == AppScreenTab.YouTube) AppScreenTab.Home else AppScreenTab.YouTube)
+                }
                 AppShortcutAction.GoHome,
                 AppShortcutAction.OpenSearch,
                 AppShortcutAction.OpenDiscover,
                 AppShortcutAction.OpenLiveTv,
                 AppShortcutAction.OpenLibrary -> {
-                    // Live TV only exists once a playlist does; the key then does nothing.
+                    // Live TV only while it is in the navigation; the key then does nothing.
                     if (action == AppShortcutAction.OpenLiveTv &&
-                        com.nuvio.app.features.iptv.IptvRepository.settings.value.playlists.isEmpty()
+                        !com.nuvio.app.features.iptv.IptvRepository.settings.value.tabShown
                     ) {
                         return@collect
                     }
@@ -3408,6 +3442,31 @@ private fun MainAppContent(
                             lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
                             ResumePromptRepository.markPlayerExitedNormally()
                             PlayerLaunchStore.remove(route.launchId)
+                            // fork:youtube-mode - a YouTube playlist being played through: straight on to
+                            // its next video, the way the app's playlists hand over (see handOffPlaylistEntry),
+                            // its streams resolved before this player goes so a failure just returns to the tab.
+                            val youTubeVideoId = launch.parentMetaId
+                                .takeIf { launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE }
+                                ?.removePrefix(com.nuvio.app.features.youtube.YOUTUBE_META_ID_PREFIX)
+                            if (youTubeVideoId != null && com.nuvio.app.features.youtube.YouTubePlayQueue.isPlaying(youTubeVideoId)) {
+                                val entryId = backStackEntry.id
+                                coroutineScope.launch {
+                                    val next = com.nuvio.app.features.youtube.YouTubePlayQueue.handOffNext(youTubeVideoId)
+                                    // Left by Back meanwhile: nothing of this player's to close.
+                                    if (navController.currentBackStackEntry?.id != entryId) return@launch
+                                    if (next == null) {
+                                        navController.popBackStack()
+                                        return@launch
+                                    }
+                                    PlayerHandoff.holdShield()
+                                    navController.popBackStack()
+                                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                                        PlayerHandoff.activeRoutes.first { it == 0 }
+                                    }
+                                    navController.navigateToPlayer(next)
+                                }
+                                return@completed
+                            }
                             val playlistPlayback = PlaylistPlaybackSession.current()
                                 ?.takeIf { launch.autoPlayMode == PlayerAutoPlayMode.Playlist }
                             if (playlistPlayback != null) {
@@ -3992,6 +4051,7 @@ private fun MainAppContent(
                                             selectedTab = selectedTab,
                                             onTabSelected = ::handleRootTabClick,
                                             onLeaveMusic = { handleRootTabClick(lastTabBeforeMusic) }, // fork:music-navbar
+                                            onLeaveYouTube = { handleRootTabClick(lastTabBeforeMusic) }, // fork:youtube-mode
                                             onProfileSelected = onProfileSelected,
                                             onAddProfileRequested = onSwitchProfile,
                                             // TV mode docks the source picker into the home hero, right where
@@ -6098,103 +6158,122 @@ private fun DesktopHoverSidebar(
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                DesktopSidebarItem(
-                    label = stringResource(Res.string.compose_nav_home),
-                    selected = selectedTab == AppScreenTab.Home,
-                    expanded = false,
-                    onClick = { selectTab(AppScreenTab.Home) },
-                ) { color ->
-                    Icon(
-                        imageVector = Icons.Filled.Home,
-                        contentDescription = stringResource(Res.string.compose_nav_home),
-                        modifier = Modifier.size(DesktopSidebarIconSize),
-                        tint = color,
-                    )
-                }
-                DesktopSidebarItem(
-                    label = stringResource(Res.string.compose_nav_search),
-                    selected = selectedTab == AppScreenTab.Search,
-                    expanded = false,
-                    onClick = { selectTab(AppScreenTab.Search) },
-                ) { color ->
-                    Icon(
-                        painter = painterResource(Res.drawable.sidebar_search),
-                        contentDescription = stringResource(Res.string.compose_nav_search),
-                        modifier = Modifier.size(DesktopSidebarIconSize),
-                        tint = color,
-                    )
-                }
-                if (discoverTabVisible) {
-                    DesktopSidebarItem(
-                        label = stringResource(Res.string.compose_nav_discover),
-                        selected = selectedTab == AppScreenTab.Discover,
-                        expanded = false,
-                        onClick = { selectTab(AppScreenTab.Discover) },
-                    ) { color ->
-                        Icon(
-                            imageVector = Icons.Rounded.Explore,
-                            contentDescription = stringResource(Res.string.compose_nav_discover),
-                            modifier = Modifier.size(DesktopSidebarIconSize),
-                            tint = color,
-                        )
+                // In the order set under Settings > Appearance > Navigation order (NavBarLayout.kt);
+                // Settings always comes last.
+                com.nuvio.app.features.navbar.rememberNavBarEntries().forEach { entry ->
+                    key(entry) {
+                        when (entry) {
+                            com.nuvio.app.features.navbar.NavBarEntry.Home -> DesktopSidebarItem(
+                                label = stringResource(Res.string.compose_nav_home),
+                                selected = selectedTab == AppScreenTab.Home,
+                                expanded = false,
+                                onClick = { selectTab(AppScreenTab.Home) },
+                            ) { color ->
+                                Icon(
+                                    imageVector = Icons.Filled.Home,
+                                    contentDescription = stringResource(Res.string.compose_nav_home),
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
+                            com.nuvio.app.features.navbar.NavBarEntry.Search -> DesktopSidebarItem(
+                                label = stringResource(Res.string.compose_nav_search),
+                                selected = selectedTab == AppScreenTab.Search,
+                                expanded = false,
+                                onClick = { selectTab(AppScreenTab.Search) },
+                            ) { color ->
+                                Icon(
+                                    painter = painterResource(Res.drawable.sidebar_search),
+                                    contentDescription = stringResource(Res.string.compose_nav_search),
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
+                            com.nuvio.app.features.navbar.NavBarEntry.Discover -> DesktopSidebarItem(
+                                label = stringResource(Res.string.compose_nav_discover),
+                                selected = selectedTab == AppScreenTab.Discover,
+                                expanded = false,
+                                onClick = { selectTab(AppScreenTab.Discover) },
+                            ) { color ->
+                                Icon(
+                                    imageVector = Icons.Rounded.Explore,
+                                    contentDescription = stringResource(Res.string.compose_nav_discover),
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
+                            com.nuvio.app.features.navbar.NavBarEntry.LiveTv -> DesktopSidebarItem(
+                                label = stringResource(Res.string.iptv_settings_page),
+                                selected = selectedTab == AppScreenTab.LiveTv,
+                                expanded = false,
+                                onClick = { selectTab(AppScreenTab.LiveTv) },
+                            ) { color ->
+                                Icon(
+                                    imageVector = Icons.Rounded.LiveTv,
+                                    contentDescription = stringResource(Res.string.iptv_settings_page),
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
+                            com.nuvio.app.features.navbar.NavBarEntry.Library ->
+                                LibraryNavigationContextMenu(modifier = Modifier.fillMaxWidth()) { contextModifier ->
+                                    DesktopSidebarItem(
+                                        label = stringResource(Res.string.compose_nav_library),
+                                        selected = selectedTab == AppScreenTab.Library,
+                                        expanded = false,
+                                        onClick = { selectTab(AppScreenTab.Library) },
+                                        modifier = contextModifier,
+                                    ) { color ->
+                                        Icon(
+                                            painter = painterResource(Res.drawable.sidebar_library),
+                                            contentDescription = stringResource(Res.string.compose_nav_library),
+                                            modifier = Modifier.size(DesktopSidebarIconSize),
+                                            tint = color,
+                                        )
+                                    }
+                                }
+                            com.nuvio.app.features.navbar.NavBarEntry.YouTube -> DesktopSidebarItem( // fork:youtube-mode
+                                label = "YouTube",
+                                selected = selectedTab == AppScreenTab.YouTube,
+                                expanded = false,
+                                onClick = { selectTab(AppScreenTab.YouTube) },
+                            ) { color ->
+                                Icon(
+                                    imageVector = Icons.Rounded.SmartDisplay,
+                                    contentDescription = "YouTube",
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
+                            com.nuvio.app.features.navbar.NavBarEntry.Music -> DesktopSidebarItem( // fork:music
+                                label = "Music",
+                                selected = selectedTab == AppScreenTab.Music,
+                                expanded = false,
+                                onClick = { selectTab(AppScreenTab.Music) },
+                            ) { color ->
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = "Music",
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
+                            // Not a tab: game mode opens over the app (GameModeController).
+                            com.nuvio.app.features.navbar.NavBarEntry.Games -> DesktopSidebarItem(
+                                label = "Games",
+                                selected = false,
+                                expanded = false,
+                                onClick = { com.nuvio.app.features.games.GameModeController.setActive(true) },
+                            ) { color ->
+                                Icon(
+                                    imageVector = Icons.Rounded.SportsEsports,
+                                    contentDescription = "Games",
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
+                        }
                     }
-                }
-                if (liveTvTabVisible) {
-                    DesktopSidebarItem(
-                        label = stringResource(Res.string.iptv_settings_page),
-                        selected = selectedTab == AppScreenTab.LiveTv,
-                        expanded = false,
-                        onClick = { selectTab(AppScreenTab.LiveTv) },
-                    ) { color ->
-                        Icon(
-                            imageVector = Icons.Rounded.LiveTv,
-                            contentDescription = stringResource(Res.string.iptv_settings_page),
-                            modifier = Modifier.size(DesktopSidebarIconSize),
-                            tint = color,
-                        )
-                    }
-                }
-                LibraryNavigationContextMenu(modifier = Modifier.fillMaxWidth()) { contextModifier ->
-                    DesktopSidebarItem(
-                        label = stringResource(Res.string.compose_nav_library),
-                        selected = selectedTab == AppScreenTab.Library,
-                        expanded = false,
-                        onClick = { selectTab(AppScreenTab.Library) },
-                        modifier = contextModifier,
-                    ) { color ->
-                        Icon(
-                            painter = painterResource(Res.drawable.sidebar_library),
-                            contentDescription = stringResource(Res.string.compose_nav_library),
-                            modifier = Modifier.size(DesktopSidebarIconSize),
-                            tint = color,
-                        )
-                    }
-                }
-                if (com.nuvio.app.features.music.rememberMusicTabVisible()) DesktopSidebarItem( // fork:music
-                    label = "Music",
-                    selected = selectedTab == AppScreenTab.Music,
-                    expanded = false,
-                    onClick = { selectTab(AppScreenTab.Music) },
-                ) { color ->
-                    Icon(
-                        imageVector = Icons.Rounded.MusicNote,
-                        contentDescription = "Music",
-                        modifier = Modifier.size(DesktopSidebarIconSize),
-                        tint = color,
-                    )
-                }
-                if (com.nuvio.app.features.youtube.rememberYouTubeTabVisible()) DesktopSidebarItem( // fork:youtube-mode
-                    label = "YouTube",
-                    selected = selectedTab == AppScreenTab.YouTube,
-                    expanded = false,
-                    onClick = { selectTab(AppScreenTab.YouTube) },
-                ) { color ->
-                    Icon(
-                        imageVector = Icons.Rounded.SmartDisplay,
-                        contentDescription = "YouTube",
-                        modifier = Modifier.size(DesktopSidebarIconSize),
-                        tint = color,
-                    )
                 }
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_settings_page_root),
@@ -6363,6 +6442,7 @@ private fun TabletFloatingTopBar(
     onSearchSubmit: (String) -> Unit = {},
     onNavigateToContent: () -> Unit = {},
     onLeaveMusic: () -> Unit = {}, // fork:music-navbar
+    onLeaveYouTube: () -> Unit = {}, // fork:youtube-mode
 ) {
     val tokens = MaterialTheme.nuvio
     val focusManager = LocalFocusManager.current
@@ -6371,17 +6451,19 @@ private fun TabletFloatingTopBar(
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
     // fork:music-navbar - on the Music tab the bar holds the Music search instead of the tabs.
     val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive
+    // fork:youtube-mode - and on the YouTube tab, the YouTube search.
+    val youTubeBarActive = selectedTab == AppScreenTab.YouTube && !isSearchActive
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsStateWithLifecycle()
     val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
     val musicTabVisible = com.nuvio.app.features.music.rememberMusicTabVisible() // fork:music
     val youTubeTabVisible = com.nuvio.app.features.youtube.rememberYouTubeTabVisible() // fork:youtube-mode
-    val topBarWidth = FloatingTopBarWidth -
-        (if (discoverTabVisible) 0.dp else FloatingTopBarQuadrantWidth) +
-        (if (liveTvTabVisible) FloatingTopBarQuadrantWidth else 0.dp) -
-        (if (musicTabVisible) 0.dp else FloatingTopBarQuadrantWidth) + // fork:music
-        (if (youTubeTabVisible) FloatingTopBarQuadrantWidth else 0.dp) // fork:youtube-mode
+    val navEntries = com.nuvio.app.features.navbar.rememberNavBarEntries()
+    // One slot per entry plus the profile's, each a little narrower as the bar fills (navBarSlotWidth),
+    // so a bar with every entry on grows more slowly instead of running across the window.
+    val topBarSlots = navEntries.size + 1
+    val topBarWidth = com.nuvio.app.features.navbar.navBarSlotWidth(topBarSlots) * topBarSlots
     // Right-clicking the Library quadrant hangs its quick-access menu off the bar the same way the
     // discover picker does. Only the nav row can open it, so entering search closes it.
     var libraryMenuVisible by remember(isSearchActive) { mutableStateOf(false) }
@@ -6390,7 +6472,7 @@ private fun TabletFloatingTopBar(
         // it and the menu is left floating over nothing.
         targetValue = when {
             hidden -> 0f
-            dimUntilHovered && !isSearchActive && !musicBarActive && !activationZoneHovered && !libraryMenuVisible -> 0f // fork:music-navbar
+            dimUntilHovered && !isSearchActive && !musicBarActive && !youTubeBarActive && !activationZoneHovered && !libraryMenuVisible -> 0f // fork:music-navbar
             else -> 1f
         },
         animationSpec = tween(durationMillis = 200),
@@ -6425,7 +6507,9 @@ private fun TabletFloatingTopBar(
     val pickerItemCount = pickerEntries.size
     // fork:music-navbar - the Music box on the bar offers its recent searches through the same attached panel. The
     // last ones shown are kept so the panel fades out on them rather than switching to the video history.
+    // fork:youtube-mode - and the YouTube box its own, through the same panel.
     val musicSuggestions = com.nuvio.app.features.music.MusicTopBarSearch.suggestions.takeIf { musicBarActive }
+        ?: com.nuvio.app.features.youtube.YouTubeTopBarSearch.suggestions.takeIf { youTubeBarActive }
     var lastMusicSuggestions by remember { mutableStateOf<com.nuvio.app.features.music.MusicBarSuggestions?>(null) }
     SideEffect { if (musicSuggestions != null) lastMusicSuggestions = musicSuggestions }
     val panelMusic = musicSuggestions ?: lastMusicSuggestions.takeIf { !isSearchActive }
@@ -6671,93 +6755,111 @@ private fun TabletFloatingTopBar(
                     }
                 } else if (musicBarActive) { // fork:music-navbar
                     com.nuvio.app.features.music.MusicTopBarContent(onLeave = onLeaveMusic, modifier = Modifier.fillMaxSize())
+                } else if (youTubeBarActive) { // fork:youtube-mode
+                    com.nuvio.app.features.youtube.YouTubeTopBarContent(onLeave = onLeaveYouTube, modifier = Modifier.fillMaxSize())
                 } else {
                     Row(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        NavQuadrant(
-                            selected = selectedTab == AppScreenTab.Home,
-                            onClick = { onTabSelected(AppScreenTab.Home) },
-                        ) { iconModifier, iconTint ->
-                            Icon(
-                                imageVector = Icons.Filled.Home,
-                                contentDescription = stringResource(Res.string.compose_nav_home),
-                                modifier = iconModifier,
-                                tint = iconTint,
-                            )
-                        }
-                        NavQuadrant(
-                            selected = isSearchActive,
-                            onClick = onSearchOverlayOpen,
-                        ) { iconModifier, iconTint ->
-                            Icon(
-                                painter = painterResource(Res.drawable.sidebar_search),
-                                contentDescription = stringResource(Res.string.compose_nav_search),
-                                modifier = iconModifier,
-                                tint = iconTint,
-                            )
-                        }
-                        if (discoverTabVisible) {
-                            NavQuadrant(
-                                selected = selectedTab == AppScreenTab.Discover,
-                                onClick = { onTabSelected(AppScreenTab.Discover) },
-                            ) { iconModifier, iconTint ->
-                                Icon(
-                                    imageVector = Icons.Rounded.Explore,
-                                    contentDescription = stringResource(Res.string.compose_nav_discover),
-                                    modifier = iconModifier,
-                                    tint = iconTint,
-                                )
+                        // In the order set under Settings > Appearance > Navigation order (NavBarLayout.kt);
+                        // the profile / Settings slot always comes last.
+                        navEntries.forEach { entry ->
+                            key(entry) {
+                                when (entry) {
+                                    com.nuvio.app.features.navbar.NavBarEntry.Home -> NavQuadrant(
+                                        selected = selectedTab == AppScreenTab.Home,
+                                        onClick = { onTabSelected(AppScreenTab.Home) },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            imageVector = Icons.Filled.Home,
+                                            contentDescription = stringResource(Res.string.compose_nav_home),
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    com.nuvio.app.features.navbar.NavBarEntry.Search -> NavQuadrant(
+                                        selected = isSearchActive,
+                                        onClick = onSearchOverlayOpen,
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            painter = painterResource(Res.drawable.sidebar_search),
+                                            contentDescription = stringResource(Res.string.compose_nav_search),
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    com.nuvio.app.features.navbar.NavBarEntry.Discover -> NavQuadrant(
+                                        selected = selectedTab == AppScreenTab.Discover,
+                                        onClick = { onTabSelected(AppScreenTab.Discover) },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            imageVector = Icons.Rounded.Explore,
+                                            contentDescription = stringResource(Res.string.compose_nav_discover),
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    com.nuvio.app.features.navbar.NavBarEntry.LiveTv -> NavQuadrant(
+                                        selected = selectedTab == AppScreenTab.LiveTv,
+                                        onClick = { onTabSelected(AppScreenTab.LiveTv) },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            imageVector = Icons.Rounded.LiveTv,
+                                            contentDescription = stringResource(Res.string.iptv_settings_page),
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    com.nuvio.app.features.navbar.NavBarEntry.Library -> NavQuadrant(
+                                        selected = selectedTab == AppScreenTab.Library,
+                                        onClick = { onTabSelected(AppScreenTab.Library) },
+                                        onSecondaryClick = { libraryMenuVisible = true },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            painter = painterResource(Res.drawable.sidebar_library),
+                                            contentDescription = stringResource(Res.string.compose_nav_library),
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    com.nuvio.app.features.navbar.NavBarEntry.YouTube -> NavQuadrant( // fork:youtube-mode
+                                        selected = selectedTab == AppScreenTab.YouTube,
+                                        onClick = { onTabSelected(AppScreenTab.YouTube) },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            imageVector = Icons.Rounded.SmartDisplay,
+                                            contentDescription = "YouTube",
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    com.nuvio.app.features.navbar.NavBarEntry.Music -> NavQuadrant( // fork:music
+                                        selected = selectedTab == AppScreenTab.Music,
+                                        onClick = { onTabSelected(AppScreenTab.Music) },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            imageVector = Icons.Rounded.MusicNote,
+                                            contentDescription = "Music",
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    // Not a tab: game mode opens over the app (GameModeController).
+                                    com.nuvio.app.features.navbar.NavBarEntry.Games -> NavQuadrant(
+                                        selected = false,
+                                        onClick = { com.nuvio.app.features.games.GameModeController.setActive(true) },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            imageVector = Icons.Rounded.SportsEsports,
+                                            contentDescription = "Games",
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                }
                             }
-                        }
-                        if (liveTvTabVisible) {
-                            NavQuadrant(
-                                selected = selectedTab == AppScreenTab.LiveTv,
-                                onClick = { onTabSelected(AppScreenTab.LiveTv) },
-                            ) { iconModifier, iconTint ->
-                                Icon(
-                                    imageVector = Icons.Rounded.LiveTv,
-                                    contentDescription = stringResource(Res.string.iptv_settings_page),
-                                    modifier = iconModifier,
-                                    tint = iconTint,
-                                )
-                            }
-                        }
-                        NavQuadrant(
-                            selected = selectedTab == AppScreenTab.Library,
-                            onClick = { onTabSelected(AppScreenTab.Library) },
-                            onSecondaryClick = { libraryMenuVisible = true },
-                        ) { iconModifier, iconTint ->
-                            Icon(
-                                painter = painterResource(Res.drawable.sidebar_library),
-                                contentDescription = stringResource(Res.string.compose_nav_library),
-                                modifier = iconModifier,
-                                tint = iconTint,
-                            )
-                        }
-                        if (musicTabVisible) NavQuadrant( // fork:music
-                            selected = selectedTab == AppScreenTab.Music,
-                            onClick = { onTabSelected(AppScreenTab.Music) },
-                        ) { iconModifier, iconTint ->
-                            Icon(
-                                imageVector = Icons.Rounded.MusicNote,
-                                contentDescription = "Music",
-                                modifier = iconModifier,
-                                tint = iconTint,
-                            )
-                        }
-                        if (youTubeTabVisible) NavQuadrant( // fork:youtube-mode
-                            selected = selectedTab == AppScreenTab.YouTube,
-                            onClick = { onTabSelected(AppScreenTab.YouTube) },
-                        ) { iconModifier, iconTint ->
-                            Icon(
-                                imageVector = Icons.Rounded.SmartDisplay,
-                                contentDescription = "YouTube",
-                                modifier = iconModifier,
-                                tint = iconTint,
-                            )
                         }
                         NavQuadrant(
                             selected = selectedTab == AppScreenTab.Settings,
@@ -6876,7 +6978,7 @@ private fun TabletFloatingTopBar(
                                 modifier = Modifier
                                     .clickable {
                                         if (panelMusic != null) {
-                                            com.nuvio.app.features.music.library.MusicSearchHistory.clear()
+                                            panelMusic.onClear()
                                         } else {
                                             com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
                                             pickerSelectedIndex = -1

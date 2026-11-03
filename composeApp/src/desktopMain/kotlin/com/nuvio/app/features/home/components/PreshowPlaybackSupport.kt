@@ -47,10 +47,18 @@ private val FORBIDDEN_STREAM_RETRY_DELAYS_MS = longArrayOf(1_500L, 4_000L)
  */
 internal fun youtubeStreamMpvOptions(sourceUrl: String): List<String> =
     if ("googlevideo.com" in sourceUrl) {
-        listOf("stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5,request_size=4194304")
+        listOf(
+            "stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5,request_size=4194304",
+            // googlevideo answers in well under a second; a server that does not answer at all held the player
+            // on a black screen for mpv's 60 s default (Nov 3) before the YouTube retry could look up another.
+            "network-timeout=$YOUTUBE_NETWORK_TIMEOUT_SECONDS",
+        )
     } else {
         emptyList()
     }
+
+/** How long a googlevideo connection may go without answering before playback counts it failed. */
+private const val YOUTUBE_NETWORK_TIMEOUT_SECONDS = 15
 
 internal fun forbiddenStreamRetryDelayMs(message: String?, retriesSoFar: Int): Long? =
     if (message?.contains("403") == true) FORBIDDEN_STREAM_RETRY_DELAYS_MS.getOrNull(retriesSoFar) else null

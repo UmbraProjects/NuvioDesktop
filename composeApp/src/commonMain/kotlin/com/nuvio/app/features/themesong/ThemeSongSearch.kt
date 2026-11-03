@@ -18,13 +18,35 @@ internal const val THEME_MIN_SECONDS = 45
 private const val THEME_FULL_TRACK_SECONDS = 90
 internal const val THEME_MAX_SECONDS = 7 * 60
 
+private val TRAILING_QUALIFIER = Regex("""\s*\(([^()]{2,4})\)\s*$""")
+
+/**
+ * A title's own name and the qualifier a catalogue adds to tell remakes apart: "Shameless (US)" is
+ * "Shameless" and "US", "Ghosts (2021)" is "Ghosts" and "2021". Uploads of the theme seldom carry
+ * the qualifier ("Shameless Theme Song"), so it goes into the search and earns a point when an upload
+ * has it, but is not required of one: required, it threw out every upload of Shameless's theme.
+ */
+internal fun splitTitleQualifier(title: String): Pair<String, String?> {
+    val name = title.trim()
+    val match = TRAILING_QUALIFIER.find(name) ?: return name to null
+    val qualifier = match.groupValues[1].trim()
+    val isCountry = qualifier.isNotEmpty() && qualifier.all { it.isLetter() && it.isUpperCase() }
+    val isYear = qualifier.length == 4 && qualifier.all(Char::isDigit)
+    if (!isCountry && !isYear) return name to null
+    val base = name.removeRange(match.range).trim()
+    return if (base.isEmpty()) name to null else base to qualifier
+}
+
 /** What the viewer is looking for, as a YouTube search. Films have a main theme, shows a theme song. */
 internal fun themeSongSearchQuery(title: String, year: String?, isSeries: Boolean): String {
-    val name = title.trim()
+    val (name, qualifier) = splitTitleQualifier(title)
     return if (isSeries) {
-        listOf(name, "theme song").joinToString(" ")
+        listOfNotNull(name, qualifier, "theme song").joinToString(" ")
     } else {
-        listOfNotNull(name.takeIf { it.isNotEmpty() }, year?.trim()?.takeIf { it.isNotEmpty() }, "main theme")
+        // A year qualifier stands in for a missing year; a country one is added as a word.
+        val qualifierYear = qualifier?.takeIf { it.all(Char::isDigit) }
+        val country = qualifier?.takeIf { qualifierYear == null }
+        listOfNotNull(name.takeIf { it.isNotEmpty() }, year?.trim()?.takeIf { it.isNotEmpty() } ?: qualifierYear, country, "main theme")
             .joinToString(" ")
     }
 }
@@ -83,8 +105,10 @@ internal fun rankThemeSongHits(
     year: String?,
     limit: Int = 3,
 ): List<YouTubeSearchHit> {
-    val titleTokens = tokens(title).filterNot { it in ARTICLES }
+    val (name, qualifier) = splitTitleQualifier(title)
+    val titleTokens = tokens(name).filterNot { it in ARTICLES }
     if (titleTokens.isEmpty()) return emptyList()
+    val qualifierToken = qualifier?.lowercase()
     return hits.withIndex()
         .mapNotNull { (index, hit) ->
             if (hit.durationSeconds !in THEME_MIN_SECONDS..THEME_MAX_SECONDS) return@mapNotNull null
@@ -95,6 +119,8 @@ internal fun rankThemeSongHits(
             if (words.any { it in UNWANTED && it !in titleTokens }) return@mapNotNull null
             if (words.none { it in MUSIC_WORDS }) return@mapNotNull null
             var score = keywordScore(words)
+            // The remake the catalogue means ("US"), when the upload says so.
+            if (qualifierToken != null && (qualifierToken in words || qualifierToken in channelWords)) score += 2
             // A full-length track beats a short excerpt of it.
             if (hit.durationSeconds < THEME_FULL_TRACK_SECONDS) score -= 2
             if (hit.verified) score += 2

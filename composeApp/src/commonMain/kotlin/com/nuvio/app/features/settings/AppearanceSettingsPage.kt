@@ -341,6 +341,14 @@ internal fun LazyListScope.appearanceSettingsContent(
                         onSelected = onDesktopNavigationLayoutSelected,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
+                    var navigationOrderOpen by remember { mutableStateOf(false) }
+                    Box(
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("navigation-order")),
+                    ) {
+                        NavigationOrderRow(isTablet = isTablet, onClick = { navigationOrderOpen = true })
+                    }
+                    if (navigationOrderOpen) NavigationOrderDialog(onDismiss = { navigationOrderOpen = false })
+                    SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_appearance_desktop_discover_tab),
                         description = stringResource(

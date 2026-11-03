@@ -5,11 +5,13 @@ import kotlinx.serialization.Serializable
 // Ported from Slokker's GoatTV (GOAThings/GoatTV), used with permission. See Docs/plans/iptv-plan.md.
 
 @Serializable
-enum class IptvPlaylistType { Xtream, M3u }
+enum class IptvPlaylistType { Xtream, M3u, Stalker }
 
 /**
- * A provider the user added. Xtream uses [server]/[username]/[password]; M3U uses [url]. [epgUrl]
- * overrides the guide either type would otherwise use (Xtream's `xmltv.php`, the M3U's `x-tvg-url`).
+ * A provider the user added. Xtream uses [server]/[username]/[password]; M3U uses [url]; a Stalker
+ * portal uses [server] for the portal and [username] for the MAC, and [serial], [deviceId],
+ * [deviceId2] and [signature] are worked out from the MAC when empty. [epgUrl] overrides the guide
+ * the type would otherwise use (Xtream's `xmltv.php`, the M3U's `x-tvg-url`).
  */
 @Serializable
 data class IptvPlaylist(
@@ -21,6 +23,10 @@ data class IptvPlaylist(
     val password: String? = null,
     val url: String? = null,
     val epgUrl: String? = null,
+    val serial: String? = null,
+    val deviceId: String? = null,
+    val deviceId2: String? = null,
+    val signature: String? = null,
 )
 
 @Serializable
@@ -140,5 +146,5 @@ class IptvSourceException(
     val status: String? = null,
     cause: Throwable? = null,
 ) : java.io.IOException(message, cause) {
-    enum class Kind { NoUrl, BadUrl, BadLogin, Inactive, Http, BadResponse, Network }
+    enum class Kind { NoUrl, BadUrl, BadLogin, BadMac, Inactive, Http, BadResponse, Network }
 }

@@ -51,6 +51,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -129,6 +130,8 @@ fun NuvioTextField(
     focusRequester: FocusRequester? = null,
     leadingContent: @Composable (RowScope.() -> Unit)? = null,
     trailingContent: @Composable (RowScope.() -> Unit)? = null,
+    /** The glass pane's outline; a search box among pill buttons passes a pill. */
+    shape: Shape = FieldShape,
 ) {
     val tokens = MaterialTheme.nuvio
     var focused by remember { mutableStateOf(false) }
@@ -215,11 +218,11 @@ fun NuvioTextField(
                 .fillMaxWidth()
                 .heightIn(min = FieldMinHeight)
                 // The glass fill under the focus tint (which is clear while unfocused).
-                .ditheredBackground(NuvioGlass.Fill, FieldShape)
-                .background(containerBrush, FieldShape)
-                .border(borderWidth, borderBrush, FieldShape)
+                .ditheredBackground(NuvioGlass.Fill, shape)
+                .background(containerBrush, shape)
+                .border(borderWidth, borderBrush, shape)
                 // Clipped after the edge: a clip is not anti-aliased here and stair-steps an edge drawn inside it.
-                .clip(FieldShape)
+                .clip(shape)
                 .hoverable(interactionSource, enabled)
                 .alpha(if (enabled) NuvioTokens.Opacity.visible else tokens.opacity.medium)
                 // An icon carries its own optical padding, so a leading one sits closer to the edge

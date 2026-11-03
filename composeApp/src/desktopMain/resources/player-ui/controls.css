@@ -3201,6 +3201,13 @@ button svg * {
   white-space: normal;
 }
 
+/* A YouTube video's Sources panel lists its comments (the subtitle is the comment itself). */
+.youtube-video .source-row .stream-subtitle {
+  -webkit-line-clamp: 10;
+  color: rgba(255, 255, 255, .86);
+  font-size: 13px;
+}
+
 .episode-overview {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -7718,3 +7725,11 @@ svg {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
+
+/* fork:youtube-watch-page - the watch page's corner player: the picture alone; a click goes back up to the video. */
+.player.mini-player > * {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.player.mini-player { cursor: pointer; }

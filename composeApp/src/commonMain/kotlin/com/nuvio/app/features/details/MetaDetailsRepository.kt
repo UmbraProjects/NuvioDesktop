@@ -46,11 +46,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -606,9 +608,12 @@ object MetaDetailsRepository {
                         // for the same ~1,100 titles every launch. Fingerprinted at the start so
                         // the result is filed under the settings it was actually fetched with.
                         val diskContext = lightweightDiskContext()
-                        LightweightMetaDiskCache.get(requestKey, diskContext)?.let { restored ->
-                            cacheLightweightMeta(requestKey, restored)
-                            return@async restored
+                        LightweightMetaDiskCache.get(requestKey, diskContext)?.let { hit ->
+                            cacheLightweightMeta(requestKey, hit.meta)
+                            if (hit.stale) {
+                                scheduleStaleLightweightRefresh(type, id, preferTmdbImages, requestKey, diskContext, hit.meta)
+                            }
+                            return@async hit.meta
                         }
                         runLightweightMetaFetch(
                             type = type,
@@ -633,6 +638,44 @@ object MetaDetailsRepository {
         }
         return request.await()
     }
+
+    /**
+     * Refreshes a disk entry that outlived the Metadata Cache setting, one title at a time with a
+     * pause between, while the stale copy keeps serving. After a long break nearly every entry is
+     * stale at once, so this is what turns a ~3,300-request burst into a background trickle.
+     */
+    private fun scheduleStaleLightweightRefresh(
+        type: String,
+        id: String,
+        preferTmdbImages: Boolean,
+        requestKey: String,
+        diskContext: String,
+        stale: MetaDetails,
+    ) {
+        if (!staleLightweightRefreshes.add(requestKey)) return
+        scope.launch {
+            try {
+                staleLightweightRefreshGate.withPermit {
+                    delay(STALE_LIGHTWEIGHT_REFRESH_SPACING_MS)
+                    runLightweightMetaFetch(type = type, id = id, preferTmdbImages = preferTmdbImages, requestKey = requestKey)
+                    // A failed refresh leaves the stale copy in the session cache; it must not be
+                    // saved again as if it were new.
+                    val cached = lightweightMetaMutex.withLock { lightweightMetaCache[requestKey] }
+                    if (cached != null && cached !== stale) LightweightMetaDiskCache.put(requestKey, diskContext, cached)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.d { "Stale lightweight meta refresh failed for $requestKey: ${e.message}" }
+            } finally {
+                staleLightweightRefreshes.remove(requestKey)
+            }
+        }
+    }
+
+    private val staleLightweightRefreshGate = Semaphore(1)
+    private val staleLightweightRefreshes: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private const val STALE_LIGHTWEIGHT_REFRESH_SPACING_MS = 1_000L
 
     private suspend fun runLightweightMetaFetch(
         type: String,

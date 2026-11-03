@@ -11,6 +11,9 @@ internal class NativePlayerHost : Canvas() {
     var onDisplayableChanged: ((Boolean) -> Unit)? = null
     var onFirstPaint: (() -> Unit)? = null
     var onFirstFullSizePaint: (() -> Unit)? = null
+
+    /** Every resize of the host: the video and the HUD inside it are fitted to the new size at once. */
+    var onResized: (() -> Unit)? = null
     private var firstPaintNotified = false
     private var firstFullSizePaintNotified = false
 
@@ -23,6 +26,7 @@ internal class NativePlayerHost : Canvas() {
         addComponentListener(object : ComponentAdapter() {
             override fun componentResized(e: ComponentEvent) {
                 if (!firstFullSizePaintNotified && width > 1 && height > 1) repaint()
+                onResized?.invoke()
             }
         })
     }

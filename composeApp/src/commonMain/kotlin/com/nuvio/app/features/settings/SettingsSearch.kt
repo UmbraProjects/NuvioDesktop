@@ -604,6 +604,12 @@ private fun settingsSearchEntries(
         icon = Icons.Rounded.LiveTv,
     )
     listOf(
+        PlaybackSearchRow(
+            "iptv-in-navigation",
+            "Show in navigation",
+            "A Live TV button in the sidebar and top bar.",
+            "General",
+        ),
         PlaybackSearchRow("iptv-add-playlist", resolve(Res.string.iptv_settings_add_playlist), resolve(Res.string.iptv_settings_add_playlist_description), resolve(Res.string.iptv_settings_section_playlists)),
         PlaybackSearchRow("iptv-refresh-interval", resolve(Res.string.iptv_settings_refresh_interval), resolve(Res.string.iptv_settings_refresh_interval_description), resolve(Res.string.iptv_settings_section_updates)),
         PlaybackSearchRow("iptv-refresh-now", resolve(Res.string.iptv_settings_refresh_now), resolve(Res.string.iptv_settings_refresh_now_description), resolve(Res.string.iptv_settings_section_updates)),
@@ -1100,6 +1106,15 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.Appearance,
+            key = "navigation-order",
+            title = "Navigation order",
+            description = "The order of the sidebar and top bar, and which of their optional entries show.",
+            pageLabel = layoutPage,
+            section = resolve(Res.string.settings_appearance_section_display),
+            icon = Icons.Rounded.Palette,
+        )
+        addRow(
+            page = SettingsPage.Appearance,
             key = "desktop-discover-tab",
             title = resolve(Res.string.settings_appearance_desktop_discover_tab),
             description = resolve(Res.string.settings_appearance_desktop_discover_tab_description),
@@ -1447,6 +1462,12 @@ private fun settingsSearchEntries(
 
     listOf(
         PlaybackSearchRow("games-shortcut", gamesPage, resolve(Res.string.settings_games_shortcut_hint), resolve(Res.string.settings_games_title)),
+        PlaybackSearchRow(
+            "games-in-navigation",
+            "Show in navigation",
+            "A Games button in the sidebar and top bar that opens game mode.",
+            resolve(Res.string.settings_games_title),
+        ),
         PlaybackSearchRow("games-metadata-source", resolve(Res.string.settings_games_metadata_source), resolve(Res.string.settings_games_metadata_source_description), resolve(Res.string.settings_games_section_metadata)),
         PlaybackSearchRow("games-igdb-client-id", resolve(Res.string.settings_games_igdb_client_id), resolve(Res.string.settings_games_igdb_client_id_description), resolve(Res.string.settings_games_section_metadata)),
         PlaybackSearchRow("games-igdb-client-secret", resolve(Res.string.settings_games_igdb_client_secret), resolve(Res.string.settings_games_igdb_client_secret_description), resolve(Res.string.settings_games_section_metadata)),
@@ -2451,6 +2472,50 @@ private fun settingsSearchEntries(
             category = generalCategory,
             icon = Icons.Rounded.Link,
             anchor = SettingsScrollAnchor.searchKey("youtube-account"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-open-videos",
+            title = "Open videos",
+            description = "YouTube videos open windowed (a watch page with related videos and comments) or full screen",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-open-videos"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-max-quality",
+            title = "Max video quality",
+            description = "The sharpest a YouTube tab video plays at: 8K, 4K, 1440p, 1080p or 720p",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-max-quality"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-watched-date",
+            title = "Watched date",
+            description = "The day a YouTube video was watched, on its thumbnail; date format",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-watched-date"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-history-export",
+            title = "Watch history on this PC",
+            description = "Nuvio's copy of your YouTube history; export as CSV",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-history-export"),
         )
     }
 

@@ -41,6 +41,189 @@ class YouTubeFeedParserTest {
     }
 
     @Test
+    fun readsChaptersFromThePlayerBarPreferringTheCreators() {
+        fun chapter(title: String, ms: Long) = """{"chapterRenderer":{"title":{"simpleText":"$title"},"timeRangeStartMillis":$ms}}"""
+        val body = """
+            {"playerOverlays":{"playerOverlayRenderer":{"decoratedPlayerBarRenderer":{"decoratedPlayerBarRenderer":{"playerBar":{
+              "multiMarkersPlayerBarRenderer":{"markersMap":[
+                {"key":"AUTO_CHAPTERS","value":{"chapters":[${chapter("Auto one", 0)},${chapter("Auto two", 5000)}]}},
+                {"key":"DESCRIPTION_CHAPTERS","value":{"chapters":[${chapter("Intro", 0)},${chapter("The build", 83500)},${chapter("Outro", 600000)}]}}
+              ]}}}}}}}
+        """.trimIndent()
+
+        assertEquals(
+            listOf(YouTubeChapter(0.0, "Intro"), YouTubeChapter(83.5, "The build"), YouTubeChapter(600.0, "Outro")),
+            parseYouTubeChapters(body),
+        )
+    }
+
+    @Test
+    fun readsChaptersFromTheChaptersPanelWhenTheBarHasNone() {
+        fun item(title: String, s: Int) =
+            """{"macroMarkersListItemRenderer":{"title":{"simpleText":"$title"},"onTap":{"watchEndpoint":{"startTimeSeconds":$s}}}}"""
+        val body = """{"engagementPanels":[{"contents":[${item("Start", 0)},${item("Middle", 120)}]}]}"""
+
+        assertEquals(listOf(YouTubeChapter(0.0, "Start"), YouTubeChapter(120.0, "Middle")), parseYouTubeChapters(body))
+        assertEquals(emptyList(), parseYouTubeChapters("""{"engagementPanels":[{"contents":[${item("Only", 0)}]}]}"""))
+    }
+
+    @Test
+    fun readsYouTubesAutoplayPick() {
+        val overlay = """
+            {"playerOverlays":{"playerOverlayRenderer":{"autoplay":{"playerOverlayAutoplayRenderer":{
+              "videoId":"next1","videoTitle":{"simpleText":"Part two"},"byline":{"runs":[{"text":"Chan"}]},
+              "background":{"thumbnails":[{"url":"https://i.ytimg.com/vi/next1/a.jpg"},{"url":"https://i.ytimg.com/vi/next1/b.jpg"}]}
+            }}}}}
+        """.trimIndent()
+        val pick = parseYouTubeAutoplay(overlay)
+        assertEquals("next1", pick?.videoId)
+        assertEquals("Part two", pick?.title)
+        assertEquals("Chan", pick?.channel)
+        assertEquals("https://i.ytimg.com/vi/next1/b.jpg", pick?.thumbnailUrl)
+
+        // Only the watch column's autoplay set: the id alone.
+        val set = """
+            {"contents":{"twoColumnWatchNextResults":{"autoplay":{"autoplay":{"sets":[{"autoplayVideo":{
+              "watchEndpoint":{"videoId":"next2"}}}]}}}}}
+        """.trimIndent()
+        assertEquals("next2", parseYouTubeAutoplay(set)?.videoId)
+
+        assertNull(parseYouTubeAutoplay("""{"contents":{}}"""))
+    }
+
+    @Test
+    fun marksPastLiveStreams() {
+        val page = parseYouTubeFeed(
+            feed(
+                lockup("s1", "Late stream", listOf(listOf("Chan"), listOf("1K views", "Streamed 13 hours ago")), badge = "3:12:40"),
+                lockup("v1", "Upload", listOf(listOf("Chan"), listOf("1K views", "13 hours ago"))),
+            ),
+        )
+
+        assertEquals(listOf(true, false), page.videos.map { it.wasLive })
+    }
+
+    @Test
+    fun readsPlaylistRowsAndSkipsUnplayableOnes() {
+        val body = """
+            {"contents":[{"playlistVideoListRenderer":{"contents":[
+              {"playlistVideoRenderer":{"videoId":"p1","title":{"runs":[{"text":"Saved one"}]},
+                "shortBylineText":{"runs":[{"text":"Chan","navigationEndpoint":{"browseEndpoint":{"browseId":"UCchan"}}}]},
+                "videoInfo":{"runs":[{"text":"1.2M views"},{"text":" • "},{"text":"3 years ago"}]},
+                "lengthText":{"simpleText":"4:05"},"isPlayable":true}},
+              {"playlistVideoRenderer":{"videoId":"p2","title":{"runs":[{"text":"[Private video]"}]},"isPlayable":false}}
+            ]}}]}
+        """.trimIndent()
+
+        val page = parseYouTubeFeed(body)
+
+        assertEquals(listOf("p1"), page.videos.map { it.videoId })
+        assertEquals("1.2M views • 3 years ago", page.videos.single().details)
+        assertEquals("UCchan", page.videos.single().channelId)
+    }
+
+    @Test
+    fun readsThePlaylistLibraryAndTheSaveChoices() {
+        val library = """
+            {"contents":[{"lockupViewModel":{"contentId":"PLabc","contentType":"LOCKUP_CONTENT_TYPE_PLAYLIST",
+              "contentImage":{"collectionThumbnailViewModel":{"primaryThumbnail":{"thumbnailViewModel":{
+                "image":{"sources":[{"url":"https://i.ytimg.com/a.jpg"}]},
+                "overlays":[{"thumbnailOverlayBadgeViewModel":{"thumbnailBadges":[{"thumbnailBadgeViewModel":{"text":"12 videos"}}]}}]}}}},
+              "metadata":{"lockupMetadataViewModel":{"title":{"content":"Mine"}}}}},
+             {"lockupViewModel":{"contentId":"vid","contentType":"LOCKUP_CONTENT_TYPE_VIDEO"}}]}
+        """.trimIndent()
+        val playlists = parseYouTubePlaylists(library)
+        assertEquals(listOf("PLabc"), playlists.map { it.playlistId })
+        assertEquals("Mine", playlists.single().title)
+        assertEquals("https://i.ytimg.com/a.jpg", playlists.single().thumbnailUrl)
+        assertEquals("12 videos", playlists.single().details)
+
+        val choices = """
+            {"contents":[{"addToPlaylistRenderer":{"playlists":[
+              {"playlistAddToOptionRenderer":{"playlistId":"WL","title":{"simpleText":"Watch later"},"containsSelectedVideos":"ALL"}},
+              {"playlistAddToOptionRenderer":{"playlistId":"PLabc","title":{"simpleText":"Mine"},"containsSelectedVideos":"NONE"}}
+            ]}}]}
+        """.trimIndent()
+        val options = parseYouTubePlaylistOptions(choices)
+        assertEquals(listOf(true, false), options.map { it.containsVideo })
+    }
+
+    @Test
+    fun aVideoRendererKeepsItsChannelId() {
+        val body = """
+            {"contents":[{"videoRenderer":{"videoId":"vid1","title":{"simpleText":"T"},
+              "ownerText":{"runs":[{"text":"Some Channel","navigationEndpoint":{"browseEndpoint":{"browseId":"UCabc","canonicalBaseUrl":"/@some"}}}]}}}]}
+        """.trimIndent()
+        assertEquals("UCabc", parseYouTubeFeed(body).videos.single().channelId)
+    }
+
+    @Test
+    fun readsTheSubscribedChannelsList() {
+        val body = """
+            {"contents":{"sectionListRenderer":{"contents":[{"itemSectionRenderer":{"contents":[{"shelfRenderer":{"content":{"expandedShelfContentsRenderer":{"items":[
+              {"channelRenderer":{"channelId":"UC1","title":{"simpleText":"First"},
+                "thumbnail":{"thumbnails":[{"url":"//yt3.ggpht.com/a=s88"},{"url":"//yt3.ggpht.com/a=s176"}]},
+                "videoCountText":{"simpleText":"@first"},"subscriberCountText":{"simpleText":"1.2M subscribers"}}},
+              {"channelRenderer":{"channelId":"UC2","title":{"simpleText":"Second"}}}
+            ]}}}}]}},
+            {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"MORE"}}}}]}}}
+        """.trimIndent()
+
+        val page = parseYouTubeChannelList(body)
+
+        assertEquals(listOf("UC1", "UC2"), page.channels.map { it.channelId })
+        assertEquals("https://yt3.ggpht.com/a=s176", page.channels[0].avatarUrl)
+        assertEquals("@first • 1.2M subscribers", page.channels[0].details)
+        assertEquals("MORE", page.continuation)
+    }
+
+    @Test
+    fun readsWhetherTheAccountLikesTheVideo() {
+        val liked = """{"frameworkUpdates":{"entityBatchUpdate":{"mutations":[{"payload":{"likeStatusEntity":{"key":"k","likeStatus":"LIKE"}}}]}}}"""
+        assertEquals(true, parseYouTubeLikeStatus(liked))
+        val neutral = """{"contents":{"likeButtonRenderer":{"likeStatus":"INDIFFERENT"}}}"""
+        assertEquals(false, parseYouTubeLikeStatus(neutral))
+        assertNull(parseYouTubeLikeStatus("""{"contents":{}}"""))
+    }
+
+    @Test
+    fun readsWhetherTheAccountIsSubscribed() {
+        val entity = """{"frameworkUpdates":{"entityBatchUpdate":{"mutations":[{"payload":{"subscriptionStateEntity":{"key":"k","subscribed":true}}}]}}}"""
+        assertEquals(true, parseYouTubeSubscribed(entity))
+        val button = """{"header":{"c4TabbedHeaderRenderer":{"subscribeButton":{"subscribeButtonRenderer":{"subscribed":false}}}}}"""
+        assertEquals(false, parseYouTubeSubscribed(button))
+        assertNull(parseYouTubeSubscribed("""{"header":{}}"""))
+    }
+
+    @Test
+    fun readsSearchResultsAndSkipsChannelsAndShorts() {
+        // The `search` answer: an item section of video renderers, with a channel result and a
+        // Shorts shelf mixed in, and the next page's token after the section.
+        val body = """
+            {"contents":{"twoColumnSearchResultsRenderer":{"primaryContents":{"sectionListRenderer":{"contents":[
+              {"itemSectionRenderer":{"contents":[
+                {"channelRenderer":{"channelId":"UC1","title":{"simpleText":"Some Channel"}}},
+                {"videoRenderer":{"videoId":"vid1","title":{"runs":[{"text":"First result"}]},
+                  "ownerText":{"runs":[{"text":"Some Channel"}]},
+                  "viewCountText":{"simpleText":"1,234 views"},"publishedTimeText":{"simpleText":"2 days ago"},
+                  "lengthText":{"simpleText":"12:34"},
+                  "thumbnail":{"thumbnails":[{"url":"https://i.ytimg.com/vi/vid1/hq.jpg"}]}}},
+                {"reelShelfRenderer":{"items":[{"videoRenderer":{"videoId":"short1","title":{"simpleText":"A short"}}}]}}
+              ]}},
+              {"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"NEXT"}}}}
+            ]}}}}}
+        """.trimIndent()
+
+        val page = parseYouTubeFeed(body)
+
+        assertEquals(listOf("vid1"), page.videos.map { it.videoId })
+        assertEquals("Some Channel", page.videos.single().channel)
+        assertEquals("1,234 views • 2 days ago", page.videos.single().details)
+        assertEquals("12:34", page.videos.single().duration)
+        assertEquals("NEXT", page.continuation)
+    }
+
+    @Test
     fun readsFeedLockupsWithChannelRow() {
         val page = parseYouTubeFeed(
             feed(

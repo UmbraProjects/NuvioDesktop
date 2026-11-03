@@ -172,6 +172,8 @@ class MusicBarSuggestions(
     val items: List<String>,
     val picked: Int,
     val onPick: (String) -> Unit,
+    /** The panel's "Clear history"; the YouTube box hands its own. */
+    val onClear: () -> Unit = { com.nuvio.app.features.music.library.MusicSearchHistory.clear() },
 )
 
 /**

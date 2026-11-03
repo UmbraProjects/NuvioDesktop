@@ -509,6 +509,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     BindDiscordRichPresenceEffect()
     BindLightsEffect()
     BindYouTubeWatchTimeEffect() // fork:youtube-mode
+    BindYouTubeRelatedEffect() // fork:youtube-mode
     BindStreamFailoverWatchdogEffect()
     BindIptvLiveEffects()
 
@@ -1321,6 +1322,21 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val episode = activeEpisodeNumber
         val vid = activeVideoId ?: return@LaunchedEffect
         if (isIptvPlayback) return@LaunchedEffect // no intro/outro timings exist for live TV
+        // A YouTube tab video: SponsorBlock's segments, by the video's own id, in place of the
+        // title-based providers (which know nothing of it).
+        if (parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE) {
+            launch {
+                val intervals = com.nuvio.app.features.youtube.YouTubeSponsorBlock.intervals(
+                    parentMetaId.removePrefix(com.nuvio.app.features.youtube.YOUTUBE_META_ID_PREFIX),
+                )
+                communitySkipIntervals = intervals
+                skipIntervals = mergeCommunityAndChapterSkipIntervals(
+                    communityIntervals = intervals,
+                    chapterIntervals = chapterSkipIntervals,
+                )
+            }
+            return@LaunchedEffect
+        }
 
         launch {
             // Which provider chain this playback belongs to is decided by its id, before anything
@@ -1382,10 +1398,13 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         playerController,
         playerControllerSourceUrl,
         playbackSnapshot.durationMs,
+        youTubeChapters,
     ) {
         if (playbackSnapshot.durationMs <= 0L) return@LaunchedEffect
         if (playerControllerSourceUrl != activeSourceUrl) return@LaunchedEffect
-        val chapters = playerController?.getChapters().orEmpty()
+        // A YouTube video: its own chapters from the watch page, never mpv's, which for YouTube's
+        // streams are the stream's parts, named by their URLs (the seek preview showed those).
+        val chapters = if (isYouTubeVideoPlayback) youTubeChapters else playerController?.getChapters().orEmpty()
         playerChapters = chapters
         val intervals = ChapterSkipDetector.findIntervals(
             chapters = chapters,
@@ -1480,7 +1499,11 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         // them — there skipping keeps the viewer in the film rather than ending it.
         val acceptsCreditsToScene = playerSettingsUiState.skipMovieCreditsToPostCredits &&
             !isSeries && interval.isOutroKind() && activeSkipLanding(interval).landsOnPostCredits
-        if (!acceptsCreditsToScene && !playerSettingsUiState.skipAutoAcceptMode.accepts(interval)) {
+        // SponsorBlock's sponsors and reminders are skipped on their own setting, as its extension does.
+        val acceptsSponsor = interval.provider == com.nuvio.app.features.youtube.SPONSORBLOCK_SKIP_PROVIDER &&
+            interval.type in com.nuvio.app.features.youtube.YOUTUBE_AUTO_SKIP_TYPES &&
+            com.nuvio.app.features.youtube.YouTubeFeedRepository.sponsorAutoSkip.value
+        if (!acceptsSponsor && !acceptsCreditsToScene && !playerSettingsUiState.skipAutoAcceptMode.accepts(interval)) {
             return@LaunchedEffect
         }
         // A host-only party member follows the host's skips instead of making their own.
@@ -1868,6 +1891,9 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                 durationMs = durationMs,
                 positionMs = positionMs,
                 lastTrustedPositionMs = lastTrustedPlaybackPositionMs,
+                // A YouTube tab video is never a debrid placeholder, and many run under two minutes:
+                // taken for placeholders, their ends never exited, so autoplay sat at the end (Nov 3, a 1:44 video).
+                allowShortContent = isYouTubeVideoPlayback,
             )
             val nextVideoId = nextEpisodeInfo?.videoId
             val hasPlayableNextEpisode = nextEpisodeInfo?.hasAired == true &&
@@ -1989,11 +2015,13 @@ internal fun isTrustworthyPlaybackEnd(
     durationMs: Long,
     positionMs: Long,
     lastTrustedPositionMs: Long,
+    /** A source that cannot be a placeholder clip (a YouTube video): a short one's end is real. */
+    allowShortContent: Boolean = false,
 ): Boolean =
     isEnded &&
         durationMs > 0L &&
         // An error clip or debrid placeholder ending is not the episode ending.
-        !com.nuvio.app.features.watching.domain.isShortPlaceholderDuration(durationMs) &&
+        (allowShortContent || !com.nuvio.app.features.watching.domain.isShortPlaceholderDuration(durationMs)) &&
         positionMs >= (durationMs - NEXT_EPISODE_EOF_POSITION_TOLERANCE_MS).coerceAtLeast(0L) &&
         lastTrustedPositionMs > 0L &&
         lastTrustedPositionMs >=
@@ -2064,6 +2092,8 @@ internal fun PlayerScreenRuntime.removeFailedStreamFromCache() {
 }
 
 internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message: String?): Boolean {
+    // A YouTube tab video has no addon to ask again: its streams are looked up again instead.
+    if (isYouTubeVideoPlayback) return tryReresolveYouTubeAfterError(message)
     val failedUrl = activeSourceUrl
     if (!failedUrl.hasLikelyExpiringPlaybackCredentials()) return false
     if (credentialRefreshJob?.isActive == true) return true

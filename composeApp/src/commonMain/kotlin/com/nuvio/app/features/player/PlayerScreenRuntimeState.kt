@@ -398,6 +398,27 @@ internal class PlayerScreenRuntime(
     /** When the current IPTV stream last dropped and was reopened, to cap reconnect loops. */
     val iptvReconnectTimesMs: ArrayDeque<Long> = ArrayDeque()
 
+    /** Asking a Stalker portal for the link of the channel being switched to; the next switch cancels it. */
+    var iptvLinkJob: kotlinx.coroutines.Job? = null
+
+    // fork:youtube-mode - a YouTube tab video's related videos (shown in the Episodes panel) and its
+    // comments (in the Sources panel, as such a video has no other source); see PlayerScreenRuntimeYouTube.
+    var youTubeRelated by mutableStateOf<List<com.nuvio.app.features.youtube.YouTubeVideo>>(emptyList())
+
+    /** A YouTube video's seek previews (YouTube's storyboard), once looked up; null when it has none. */
+    var youTubeStoryboard by mutableStateOf<com.nuvio.app.features.youtube.YouTubeStoryboard?>(null)
+
+    /** The storyboard lookup for this YouTube video is still running: the native previews wait for it. */
+    var youTubeStoryboardPending by mutableStateOf(false)
+
+    /** A YouTube video's chapters from its watch page, for the seek bar when the stream has none of its own. */
+    var youTubeChapters by mutableStateOf<List<PlayerChapter>>(emptyList())
+    /** The watch page's title, channel and description (fork:youtube-watch-page); null until the watch page answers. */
+    var youTubeDetails by mutableStateOf<com.nuvio.app.features.youtube.YouTubeVideoDetails?>(null)
+    var youTubeComments by mutableStateOf<List<com.nuvio.app.features.youtube.YouTubeComment>>(emptyList())
+    var youTubeCommentsLoading by mutableStateOf(false)
+    var youTubeCommentsLoaded = false
+
     /** The HUD's channel switcher is open: only then is the (possibly long) channel list sent. */
     var iptvPanelOpen by mutableStateOf(false)
 

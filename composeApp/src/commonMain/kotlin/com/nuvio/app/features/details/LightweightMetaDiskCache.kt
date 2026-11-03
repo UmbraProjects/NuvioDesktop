@@ -38,7 +38,14 @@ internal expect object LightweightMetaCacheStorage {
  * key, the enabled addons). An entry made under different settings is a miss, so changing the
  * metadata language or an addon takes effect at once instead of when the entries expire. The
  * lifetime is the Metadata Cache setting in Advanced; Off reads and writes nothing.
+ *
+ * An entry past its lifetime is still served, marked [LightweightDiskHit.stale], and the caller
+ * refreshes it in the background at its own pace. Dropping them instead made the first launch after
+ * a break longer than the lifetime a cold start: a whole prewarm pass shares one save time, so it
+ * all expired at once (Nov 2, 6 h setting, 8.5 h away: 0 of 872 loaded, ~3,300 requests in 90 s).
  */
+internal class LightweightDiskHit(val meta: MetaDetails, val stale: Boolean)
+
 internal object LightweightMetaDiskCache {
     private val log = Logger.withTag("LightweightMetaDisk")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
@@ -49,6 +56,9 @@ internal object LightweightMetaDiskCache {
     private const val MAX_ENTRIES = 5_000
     private const val WRITE_DELAY_MS = 30_000L
     private const val HOUR_MS = 60L * 60L * 1000L
+
+    /** Past this an entry is not worth showing even while it refreshes. */
+    private const val STALE_LIMIT_MS = 30L * 24L * HOUR_MS
 
     private val persister = CoalescingCachePersister(tag = "lightweightMeta", writeDelayMs = WRITE_DELAY_MS) {
         val snapshot = mutex.withLock { entries?.toMap() } ?: return@CoalescingCachePersister
@@ -62,14 +72,14 @@ internal object LightweightMetaDiskCache {
         return ImageCacheSettingsRepository.settings.value.metadataCacheHours * HOUR_MS
     }
 
-    suspend fun get(requestKey: String, context: String): MetaDetails? {
+    suspend fun get(requestKey: String, context: String): LightweightDiskHit? {
         val lifetime = lifetimeMs()
         if (lifetime <= 0L) return null
         val now = System.currentTimeMillis()
         return withContext(Dispatchers.Default) {
             mutex.withLock {
                 val stored = ensureLoaded()[requestKey] ?: return@withLock null
-                if (stored.context != context || now - stored.savedAtMs > lifetime) null else stored.toMetaDetails()
+                if (stored.context != context) null else LightweightDiskHit(stored.toMetaDetails(), stale = now - stored.savedAtMs > lifetime)
             }
         }
     }
@@ -114,10 +124,12 @@ internal object LightweightMetaDiskCache {
         }.onFailure { error ->
             log.w { "Discarding unreadable lightweight meta cache: ${error.message}" }
         }.getOrDefault(emptyMap())
-        // Expired entries are dropped on load; the next write leaves them out of the file too.
-        val live = loaded.filterValues { now - it.savedAtMs <= lifetime }
-        log.i { "Loaded ${live.size} of ${loaded.size} cached lightweight meta entries" }
-        return LinkedHashMap(live).also { entries = it }
+        // Expired entries stay (served stale while they refresh); only very old ones are dropped,
+        // and the next write leaves those out of the file too.
+        val kept = loaded.filterValues { now - it.savedAtMs <= STALE_LIMIT_MS }
+        val fresh = kept.values.count { now - it.savedAtMs <= lifetime }
+        log.i { "Loaded ${kept.size} of ${loaded.size} cached lightweight meta entries ($fresh fresh, ${kept.size - fresh} to refresh)" }
+        return LinkedHashMap(kept).also { entries = it }
     }
 }
 

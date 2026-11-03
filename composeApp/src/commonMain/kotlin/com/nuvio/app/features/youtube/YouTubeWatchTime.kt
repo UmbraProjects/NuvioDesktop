@@ -5,6 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -39,8 +40,11 @@ data class YouTubeTrackingUrls(val playbackUrl: String, val watchtimeUrl: String
 /** The account's stats URLs for [videoId], acting as the brand channel [pageId]; null when YouTube gives none. */
 internal expect suspend fun youTubePlaybackTracking(videoId: String, pageId: String?): YouTubeTrackingUrls?
 
-/** One signed GET to a stats URL. True when YouTube took it. */
-internal expect suspend fun youTubeStatsPing(url: String): Boolean
+/**
+ * One signed GET to a stats URL, acting as the brand channel [pageId] like the request that handed
+ * the URL out. The HTTP status, or 0 when no answer came.
+ */
+internal expect suspend fun youTubeStatsPing(url: String, pageId: String?): Int
 
 private const val CPN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
@@ -51,6 +55,13 @@ internal fun newYouTubeCpn(random: Random = Random.Default): String =
 internal fun youTubePlaybackPingUrl(base: String, cpn: String): String =
     base + separator(base) + "ver=2&cpn=$cpn"
 
+/**
+ * One watch-time ping: the stretch [segmentStartSec]..[positionSec] (media time), the playhead,
+ * and [realTimeSec], the wall-clock seconds since playback began, which the web player sends as
+ * `rt` and which is what sets media time against real time when the speed is not 1x. The stats
+ * URL already carries `el` and `len`, and YouTube's `len` is the one kept: these were appended a
+ * second time before, so YouTube may have read either copy.
+ */
 internal fun youTubeWatchtimePingUrl(
     base: String,
     cpn: String,
@@ -58,12 +69,67 @@ internal fun youTubeWatchtimePingUrl(
     positionSec: Double,
     lengthSec: Double,
     playing: Boolean,
+    realTimeSec: Double,
 ): String {
-    val st = seconds(segmentStartSec)
     val et = seconds(positionSec)
-    return base + separator(base) +
-        "ver=2&cpn=$cpn&el=detailpage&cmt=$et&st=$st&et=$et&len=${seconds(lengthSec)}" +
-        "&state=${if (playing) "playing" else "paused"}"
+    return withYouTubeParams(
+        base,
+        listOfNotNull(
+            "ver" to "2",
+            "cpn" to cpn,
+            "el" to "detailpage",
+            "cmt" to et,
+            "st" to seconds(segmentStartSec),
+            "et" to et,
+            ("len" to seconds(lengthSec)).takeIf { youTubeStatsLengthSec(base) == null && lengthSec > 0.0 },
+            "rt" to seconds(realTimeSec),
+            "state" to if (playing) "playing" else "paused",
+        ),
+    )
+}
+
+/**
+ * The ping that marks a finished video fully watched, as yt-dlp's `--mark-watched` sends it: the
+ * whole length as one stretch with the playhead at the end. Stretch-by-stretch pings alone left
+ * finished videos at ~25% or ~70% on YouTube (Nov 2, played at 2x).
+ */
+internal fun youTubeFullWatchPingUrl(base: String, cpn: String, lengthSec: Double, realTimeSec: Double): String =
+    youTubeWatchtimePingUrl(base, cpn, 0.0, lengthSec, lengthSec, playing = false, realTimeSec = realTimeSec)
+
+/** Stopped within the last 5% (at most the last 15 s): an end card, or mpv stopping a hair short of the end. */
+internal fun youTubeWatchFinished(positionMs: Long, lengthMs: Long): Boolean =
+    lengthMs > 0L && positionMs >= lengthMs - minOf(15_000L, lengthMs / 20)
+
+/**
+ * Marks [videoId] watched in the account's history without playing it, as yt-dlp's `--mark-watched`
+ * does: a playback ping, then one watch-time ping covering the whole length. [fallbackLengthSec] is
+ * used when the stats URL carries no length. True when YouTube took both.
+ */
+internal suspend fun markYouTubeVideoWatched(videoId: String, pageId: String?, fallbackLengthSec: Double?): Boolean {
+    val tracking = runCatching { youTubePlaybackTracking(videoId, pageId) }.getOrNull() ?: return false
+    val lengthSec = youTubeStatsLengthSec(tracking.watchtimeUrl) ?: fallbackLengthSec?.takeIf { it > 0.0 } ?: return false
+    val cpn = newYouTubeCpn()
+    if (youTubeStatsPing(youTubePlaybackPingUrl(tracking.playbackUrl, cpn), pageId) !in 200..299) return false
+    return youTubeStatsPing(youTubeFullWatchPingUrl(tracking.watchtimeUrl, cpn, lengthSec, lengthSec), pageId) in 200..299
+}
+
+/** A length as the feeds show it ("12:34", "1:02:03") in seconds, or null when it is not one. */
+internal fun youTubeDurationSeconds(text: String?): Double? {
+    val parts = text?.trim()?.split(':')?.takeIf { it.size in 2..3 } ?: return null
+    return parts.fold(0.0) { total, part -> total * 60 + (part.toIntOrNull() ?: return null) }.takeIf { it > 0.0 }
+}
+
+/** The video length YouTube put in a stats URL (`len`), in seconds. */
+internal fun youTubeStatsLengthSec(url: String): Double? =
+    url.substringAfter('?', "").split('&')
+        .firstOrNull { it.substringBefore('=') == "len" }
+        ?.substringAfter('=')?.toDoubleOrNull()?.takeIf { it > 0.0 }
+
+/** [base] with [params] set: a name already in its query is replaced, the rest are appended in order. */
+private fun withYouTubeParams(base: String, params: List<Pair<String, String>>): String {
+    val names = params.mapTo(HashSet()) { it.first }
+    val kept = base.substringAfter('?', "").split('&').filter { it.isNotEmpty() && it.substringBefore('=') !in names }
+    return base.substringBefore('?') + "?" + (kept + params.map { (name, value) -> "$name=$value" }).joinToString("&")
 }
 
 private fun separator(url: String) = if ('?' in url) "&" else "?"
@@ -90,6 +156,12 @@ internal class YouTubeWatchSession(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val cpn = newYouTubeCpn()
 
+    /** One pending ping; they go out one at a time, in order, so the last one is the last YouTube sees. */
+    private class Ping(val startMs: Long, val endMs: Long, val playing: Boolean, val realTimeMs: Long, val last: Boolean, val finished: Boolean)
+
+    private val pings = Channel<Ping>(Channel.UNLIMITED)
+    private var startedAtMs = 0L
+
     /** The stats URLs, once the `player` request has answered (null when it gave none). */
     private val urls = CompletableDeferred<YouTubeTrackingUrls?>()
     private var started = false
@@ -108,9 +180,13 @@ internal class YouTubeWatchSession(
         if (!started) {
             if (!playing || positionMs <= 0L) return
             started = true
+            startedAtMs = now
             segmentStartMs = positionMs
             lastPingAt = now
-            scope.launch { begin() }
+            scope.launch {
+                begin()
+                for (ping in pings) send(ping)
+            }
         } else {
             val expected = lastPositionMs + if (wasPlaying) now - lastSampleAt else 0L
             when {
@@ -142,10 +218,16 @@ internal class YouTubeWatchSession(
     fun close(positionMs: Long = lastPositionMs): Int? {
         if (closed) return null
         closed = true
-        if (!started) return null
-        report(segmentStartMs, positionMs, playing = false)
-        val length = durationMs.takeIf { it > 0L } ?: return null
-        return ((positionMs * 100) / length).toInt().coerceIn(1, 100)
+        if (!started) {
+            pings.close()
+            return null
+        }
+        val length = durationMs.takeIf { it > 0L }
+        val finished = length != null && youTubeWatchFinished(positionMs, length)
+        report(segmentStartMs, positionMs, playing = false, last = true, finished = finished)
+        pings.close()
+        if (length == null) return null
+        return if (finished) 100 else ((positionMs * 100) / length).toInt().coerceIn(1, 100)
     }
 
     private suspend fun begin() {
@@ -155,25 +237,63 @@ internal class YouTubeWatchSession(
             log.w { "$videoId: YouTube gave no stats URLs; this playback will not reach the watch history" }
             return
         }
-        val ok = youTubeStatsPing(youTubePlaybackPingUrl(tracking.playbackUrl, cpn))
-        log.i { "$videoId: playback reported to YouTube (ok=$ok)" }
-    }
-
-    private fun report(startMs: Long, endMs: Long, playing: Boolean) {
-        if (endMs <= 0L) return
-        val length = durationMs
-        scope.launch {
-            // The stats URLs may still be on their way for the first stretch.
-            val tracking = withTimeoutOrNull(STATS_URLS_WAIT_MS) { urls.await() } ?: return@launch
-            val url = youTubeWatchtimePingUrl(
-                base = tracking.watchtimeUrl,
-                cpn = cpn,
-                segmentStartSec = startMs / 1000.0,
-                positionSec = endMs / 1000.0,
-                lengthSec = length / 1000.0,
-                playing = playing,
-            )
-            if (!youTubeStatsPing(url)) log.w { "$videoId: watch time ping refused" }
+        val status = youTubeStatsPing(youTubePlaybackPingUrl(tracking.playbackUrl, cpn), pageId)
+        log.i {
+            "$videoId: playback reported to YouTube (HTTP $status, as ${if (pageId != null) "brand channel" else "account profile"};" +
+                " stats params ${queryNames(tracking.watchtimeUrl)})"
         }
     }
+
+    private var pingsSent = 0
+    private var pingsRefused = 0
+    private var reportedSeconds = 0.0
+
+    private fun report(startMs: Long, endMs: Long, playing: Boolean, last: Boolean = false, finished: Boolean = false) {
+        if (endMs <= 0L && !last) return
+        pings.trySend(Ping(startMs, endMs, playing, clock() - startedAtMs, last, finished))
+    }
+
+    /** Runs on the session's one sender coroutine, after [begin]. */
+    private suspend fun send(ping: Ping) {
+        // The stats URLs may still be on their way for the first stretch.
+        val tracking = withTimeoutOrNull(STATS_URLS_WAIT_MS) { urls.await() } ?: return
+        val lengthSec = youTubeStatsLengthSec(tracking.watchtimeUrl) ?: (durationMs / 1000.0)
+        val realTimeSec = ping.realTimeMs / 1000.0
+        val urlsToSend = buildList {
+            if (ping.endMs > 0L) {
+                add(
+                    youTubeWatchtimePingUrl(
+                        base = tracking.watchtimeUrl,
+                        cpn = cpn,
+                        segmentStartSec = ping.startMs / 1000.0,
+                        positionSec = ping.endMs / 1000.0,
+                        lengthSec = lengthSec,
+                        playing = ping.playing,
+                        realTimeSec = realTimeSec,
+                    ),
+                )
+            }
+            if (ping.finished && lengthSec > 0.0) add(youTubeFullWatchPingUrl(tracking.watchtimeUrl, cpn, lengthSec, realTimeSec))
+        }
+        for (url in urlsToSend) {
+            val status = youTubeStatsPing(url, pageId)
+            pingsSent++
+            if (status !in 200..299) {
+                pingsRefused++
+                log.w { "$videoId: watch time ping refused (HTTP $status)" }
+            }
+        }
+        reportedSeconds += (ping.endMs - ping.startMs).coerceAtLeast(0L) / 1000.0
+        if (ping.last) {
+            log.i {
+                "$videoId: watch time reported: $pingsSent pings, $pingsRefused refused," +
+                    " ${reportedSeconds.toInt()} s of ${lengthSec.toInt()} s, ended at ${ping.endMs / 1000} s" +
+                    " after ${realTimeSec.toInt()} s${if (ping.finished) ", marked fully watched" else ""}"
+            }
+        }
+    }
+
+    /** The parameter names of a stats URL (never the values), for the log. */
+    private fun queryNames(url: String): List<String> =
+        url.substringAfter('?', "").split('&').map { it.substringBefore('=') }.filter { it.isNotEmpty() }.sorted()
 }

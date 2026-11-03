@@ -25,4 +25,11 @@ internal actual object YouTubeMusicAuthPlatform {
 
     actual suspend fun interactiveLogin(): YouTubeMusicLoginOutcome =
         withContext(Dispatchers.IO) { YouTubeMusicBrowserLogin.run() }
+
+    actual fun canRenew(): Boolean = YouTubeMusicBrowserLogin.hasKeptProfile()
+
+    actual suspend fun renewSession(cookieHeader: String?): String? =
+        withContext(Dispatchers.IO) { YouTubeMusicBrowserLogin.renew(cookieHeader) }
+
+    actual fun forgetSession() = YouTubeMusicBrowserLogin.forgetProfile()
 }

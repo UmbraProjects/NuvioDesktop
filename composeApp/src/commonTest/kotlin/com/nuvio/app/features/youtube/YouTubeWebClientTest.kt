@@ -65,8 +65,8 @@ class YouTubeWebClientTest {
                 "YSC=new; Domain=.youtube.com; Path=/; Secure",
             ),
         )
-        assertEquals("SID=old; HSID=h; SIDCC=cc2; __Secure-1PSIDTS=ts2; SAPISID=s/x", merge.cookieHeader)
-        assertEquals(listOf("SIDCC", "__Secure-1PSIDTS"), merge.updated)
-        assertTrue(mergeSetCookies(jar, listOf("SIDCC=cc1; Path=/")).updated.isEmpty())
+        assertEquals("SID=old; HSID=h; SIDCC=cc2; __Secure-1PSIDTS=ts2; SAPISID=s/x", merge.first)
+        assertEquals(listOf("SIDCC", "__Secure-1PSIDTS"), merge.second)
+        assertTrue(mergeSetCookies(jar, listOf("SIDCC=cc1; Path=/")).second.isEmpty())
     }
 }

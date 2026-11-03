@@ -241,10 +241,22 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         allLabel = allFilterLabel,
         selectedFilter = null,
     )
-    val sourceItems = buildPlayerControlSourceItems(
-        sortOrder = streamBadgeSettings.listSortOrder,
-        cachedFirst = streamBadgeSettings.listCachedFirst,
-    )
+    // fork:youtube-mode - a YouTube tab video's Sources panel holds its comments, its Episodes its related videos.
+    val youTubeVideo = isYouTubeVideoPlayback
+    // YouTube's own seek previews, unless previews are off or the connection is metered.
+    val youTubeStoryboardShown = youTubeStoryboard?.takeIf {
+        youTubeVideo &&
+            playerSettingsUiState.desktopSeekThumbnailMode != DesktopSeekThumbnailMode.Off &&
+            playerSettingsUiState.desktopBufferPreset != DesktopBufferPreset.Metered
+    }
+    val sourceItems = if (youTubeVideo) {
+        youTubeCommentSourceItems()
+    } else {
+        buildPlayerControlSourceItems(
+            sortOrder = streamBadgeSettings.listSortOrder,
+            cachedFirst = streamBadgeSettings.listCachedFirst,
+        )
+    }
     val sourceSortOptions = remember(streamBadgeSettings.listSortOrder) {
         StreamListSortOrder.entries.map { order ->
             PlayerControlFilterItem(
@@ -254,7 +266,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             )
         }
     }
-    val episodeItems = buildPlayerControlEpisodeItems()
+    val episodeItems = if (youTubeVideo) youTubeRelatedEpisodeItems() else buildPlayerControlEpisodeItems()
     // Same fallback chain the details screen's episode cards use, so an episode whose still is
     // missing or unreachable shows the show's artwork instead of an empty card.
     val episodeFallbackThumbnail = (
@@ -408,6 +420,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         streamTitle = activeStreamTitle,
         streamFilename = activeStreamFilename.orEmpty(),
         providerName = activeProviderName,
+        isYouTubeVideo = parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE,
         pauseOverlayWatchingLabel = stringResource(Res.string.compose_player_youre_watching),
         pauseOverlayLogo = logo,
         // The episode code, or nothing. Movies used to borrow this line for the provider name, which
@@ -439,8 +452,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         playbackSpeedLabel = formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed),
         subtitlesLabel = stringResource(Res.string.compose_player_subs),
         audioLabel = stringResource(Res.string.compose_player_audio),
-        sourcesLabel = stringResource(Res.string.compose_player_sources),
-        episodesLabel = stringResource(Res.string.compose_player_episodes),
+        sourcesLabel = if (youTubeVideo) "Comments" else stringResource(Res.string.compose_player_sources),
+        episodesLabel = if (youTubeVideo) "Related" else stringResource(Res.string.compose_player_episodes),
         externalPlayerLabel = stringResource(Res.string.streams_open_external_player),
         playLabel = stringResource(Res.string.detail_btn_play),
         pauseLabel = stringResource(Res.string.compose_action_pause),
@@ -472,7 +485,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         activeSubtitleLabel = activePlaybackSubtitleLabel(),
         // The native decoder stands down while Seekr has (or is still fetching) this playback's
         // sprites, and takes over again only if Seekr has nothing for it.
-        seekThumbnailsEnabled = seekrTrack == null && !seekrLookupPending && seekThumbnailsAllowed(
+        // Likewise for a YouTube video's storyboard, which comes from YouTube's image servers.
+        seekThumbnailsEnabled = seekrTrack == null && !seekrLookupPending &&
+            youTubeStoryboardShown == null && !(youTubeVideo && youTubeStoryboardPending) && seekThumbnailsAllowed(
             mode = playerSettingsUiState.desktopSeekThumbnailMode,
             bufferPreset = playerSettingsUiState.desktopBufferPreset,
             sourceUrl = activeSourceUrl,
@@ -481,12 +496,19 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         ),
         seekrVttUrl = seekrTrack?.vttUrl.orEmpty(),
         seekrScale = seekrTrack?.scale ?: 1.0,
+        storyboardUrl = youTubeStoryboardShown?.sheetUrl.orEmpty(),
+        storyboardWidth = youTubeStoryboardShown?.width ?: 0,
+        storyboardHeight = youTubeStoryboardShown?.height ?: 0,
+        storyboardColumns = youTubeStoryboardShown?.columns ?: 0,
+        storyboardRows = youTubeStoryboardShown?.rows ?: 0,
+        storyboardCount = youTubeStoryboardShown?.count ?: 0,
+        storyboardIntervalMs = youTubeStoryboardShown?.intervalMs ?: 0L,
         seekStepSeconds = playerSettingsUiState.seekStepSeconds,
         tapToUnlockLabel = stringResource(Res.string.compose_player_tap_to_unlock),
         playbackErrorTitle = stringResource(Res.string.compose_player_playback_error),
         playbackErrorMessage = errorMessage.orEmpty(),
         playbackErrorActionLabel = stringResource(Res.string.compose_player_go_back),
-        sourcesPanelTitle = pendingSourcesEpisode?.let { pending ->
+        sourcesPanelTitle = if (youTubeVideo) "Comments" else pendingSourcesEpisode?.let { pending ->
             stringResource(
                 Res.string.compose_player_panel_sources_for_episode,
                 stringResource(
@@ -497,7 +519,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                 ),
             )
         } ?: stringResource(Res.string.compose_player_panel_sources),
-        episodesPanelTitle = stringResource(Res.string.compose_player_panel_episodes),
+        episodesPanelTitle = if (youTubeVideo) "Related videos" else stringResource(Res.string.compose_player_panel_episodes),
         streamsPanelTitle = stringResource(Res.string.compose_player_panel_streams),
         allFilterLabel = allFilterLabel,
         reloadLabel = stringResource(Res.string.compose_action_reload),
@@ -505,8 +527,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         panelCloseLabel = stringResource(Res.string.action_close),
         cancelLabel = stringResource(Res.string.action_cancel),
         playingLabel = playingLabel,
-        noStreamsLabel = stringResource(Res.string.compose_player_no_streams_found),
-        noEpisodesLabel = stringResource(Res.string.compose_player_no_episodes_available),
+        noStreamsLabel = if (youTubeVideo) {
+            "No comments, or comments are turned off for this video."
+        } else {
+            stringResource(Res.string.compose_player_no_streams_found)
+        },
+        noEpisodesLabel = if (youTubeVideo) "No related videos." else stringResource(Res.string.compose_player_no_episodes_available),
         submitIntroPanelTitle = stringResource(Res.string.submit_intro_title),
         submitIntroSegmentTypeLabel = stringResource(Res.string.submit_intro_segment_type_label),
         submitIntroSegmentIntroLabel = stringResource(Res.string.submit_intro_segment_intro),
@@ -621,16 +647,17 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             !activeSubmitIntroImdbId().isNullOrBlank(),
         showVideoSettings = isIos,
         showSources = activeVideoId != null && !isIptvPlayback,
-        showEpisodes = isSeries && !isIptvPlayback,
+        showEpisodes = (isSeries && !isIptvPlayback) || (youTubeVideo && youTubeRelated.isNotEmpty()),
         showExternalPlayer = args.onOpenInExternalPlayer != null,
         durationMs = playbackSnapshot.durationMs,
         positionMs = displayedPositionMs,
         chapters = playerChapters,
-        sourceIsLoading = sourceStreamsState.isAnyLoading,
+        sourceIsLoading = if (youTubeVideo) youTubeCommentsLoading else sourceStreamsState.isAnyLoading,
         sourceBadgePlacement = streamBadgeSettings.badgePlacement.name.lowercase(),
-        sourceFilters = sourceFilters,
+        // Comments have no addons to filter by and nothing to sort.
+        sourceFilters = if (youTubeVideo) emptyList() else sourceFilters,
         sourceItems = sourceItems,
-        sourceSortOptions = sourceSortOptions,
+        sourceSortOptions = if (youTubeVideo) emptyList() else sourceSortOptions,
         sourceSortLabel = if (streamBadgeSettings.listSortOrder == StreamListSortOrder.DEFAULT) {
             "Sort"
         } else {
@@ -639,7 +666,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         sourceCachedFirst = streamBadgeSettings.listCachedFirst,
         episodeItems = episodeItems,
         episodeFallbackThumbnail = episodeFallbackThumbnail,
-        episodeSeasons = episodeSeasons,
+        episodeSeasons = if (youTubeVideo) emptyList() else episodeSeasons,
         episodeStreamsVisible = episodeStreamsPanelState.showStreams,
         episodeStreamsIsLoading = episodeStreamsRepoState.isAnyLoading,
         selectedEpisodeLabel = selectedEpisodeLabel,
@@ -739,9 +766,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
 
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
 
+    // fork:youtube-watch-page - the player as one piece, so a YouTube video's watch page can size and
+    // place it (YouTubeWatchFrame) without it leaving the composition.
+    val playerBox: @Composable (Modifier) -> Unit = { frameModifier ->
     Box(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = frameModifier
             .onSizeChanged { layoutSize = it }
             .then(
                 if (isDesktop && playerSettingsUiState.mouseMoveRevealsControlsEnabled) {
@@ -1005,6 +1034,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         )
         RenderPlayerModals(displayedPositionMs = displayedPositionMs)
     }
+    }
+    if (isYouTubeVideoPlayback) YouTubeWatchFrame(playerBox) else playerBox(Modifier.fillMaxSize())
 }
 
 private fun PlayerScreenRuntime.presentUnrecoverablePlaybackError(
@@ -1144,6 +1175,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(displayedPositionMs: Long, 
 
 private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControlsAction): Boolean {
     if (handleIptvControlsAction(action)) return true
+    if (handleYouTubeControlsAction(action)) return true
     // Playback and seek actions normally fall through to mpv (return false). In a watch party they
     // run here instead, so they can be shared with the party, or refused when only the host
     // controls playback.
@@ -1260,6 +1292,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
 private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: Double): Boolean {
     if (handlePartyControlsEvent(type, value)) return true
     if (handleIptvControlsEvent(type, value)) return true
+    if (handleYouTubeControlsEvent(type, value)) return true
     when (type) {
         "streamInfoOpened" -> showStreamInfo = true
         "streamInfoClosed" -> showStreamInfo = false
@@ -1608,7 +1641,9 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
                 else -> PlayerResizeMode.Fit
             },
         )
-        "copyStreamUrl" -> activeSourceUrl.takeIf { it.isNotBlank() }?.let(::copyPlainTextToClipboard)
+        // A YouTube tab video copies its public watch link, to share; the stream URL is ours, long-winded and short-lived.
+        "copyStreamUrl" -> (if (isYouTubeVideoPlayback) "https://www.youtube.com/watch?v=$youTubeVideoId" else activeSourceUrl)
+            .takeIf { it.isNotBlank() }?.let(::copyPlainTextToClipboard)
         "toggleMpvDiagnostics" -> playerController?.setDiagnosticsOverlayEnabled(value != 0.0)
         "toggleStreamFailover" -> {
             val enabled = value != 0.0
@@ -1754,6 +1789,12 @@ private fun skipPromptLabel(type: String?, landsOnPostCredits: Boolean, isMovie:
             },
         )
         "recap" -> stringResource(Res.string.player_skip_recap)
+        // SponsorBlock's own categories (YouTube tab videos).
+        "sponsor" -> stringResource(Res.string.player_skip_sponsor)
+        "selfpromo" -> stringResource(Res.string.player_skip_self_promotion)
+        "interaction" -> stringResource(Res.string.player_skip_reminder)
+        "filler" -> stringResource(Res.string.player_skip_filler)
+        "music_offtopic" -> stringResource(Res.string.player_skip_non_music)
         else -> stringResource(Res.string.player_skip)
     }
 

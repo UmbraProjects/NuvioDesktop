@@ -11,6 +11,8 @@ internal fun buildAddonSubtitleFetchKey(
 ): String? {
     val normalizedType = type?.takeIf { it.isNotBlank() } ?: return null
     val normalizedVideoId = videoId?.takeIf { it.isNotBlank() } ?: return null
+    // fork:youtube-mode - YouTube tab videos bring their own subtitles (SubtitleRepository), no addon needed.
+    if (normalizedType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE) return "$normalizedType|$normalizedVideoId|youtube"
     val compatibleSubtitleAddons = addons.enabledAddons().mapNotNull { addon ->
         val manifest = addon.manifest ?: return@mapNotNull null
         val supportsSubtitles = manifest.resources.any { resource ->

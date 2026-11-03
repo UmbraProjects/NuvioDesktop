@@ -23,7 +23,8 @@ import kotlinx.serialization.json.encodeToStream
  * - A playlist with an XMLTV guide (the account's, the M3U's `x-tvg-url`, or the user's override):
  *   downloaded whole, cut to its channels and a window around now, cached on disk, renewed by the
  *   refresh setting.
- * - Xtream channels the guide lacks: `get_short_epg`, asked channel by channel and kept 10 minutes.
+ * - Xtream and Stalker channels the guide lacks: `get_short_epg`, asked channel by channel and kept
+ *   10 minutes.
  *
  * Ported from GoatTV's `EpgRepository`.
  */
@@ -212,13 +213,17 @@ object IptvEpgRepository {
         guides[playlist.id]?.value?.guide?.entriesFor(channel)?.takeIf { it.isNotEmpty() }
             ?: providerEntries(playlist, channel)
 
-    /** Now and next for [channel]: the XMLTV guide, else (Xtream only) a `get_short_epg` request. */
+    /** Now and next for [channel]: the XMLTV guide, else (not M3U) a `get_short_epg` request. */
     suspend fun nowAndNext(playlist: IptvPlaylist, channel: IptvChannel): List<IptvEpgEntry> {
         cached(playlist, channel)?.let { return it }
-        if (playlist.type != IptvPlaylistType.Xtream) return emptyList()
+        if (playlist.type == IptvPlaylistType.M3u) return emptyList()
         val streamId = channel.streamId ?: return emptyList()
         return try {
-            val entries = XtreamClient.shortEpg(playlist, streamId)
+            val entries = if (playlist.type == IptvPlaylistType.Stalker) {
+                StalkerClient.shortEpg(playlist, streamId)
+            } else {
+                XtreamClient.shortEpg(playlist, streamId)
+            }
             shortCache[cacheKey(playlist, channel)] = ShortCached(System.currentTimeMillis(), entries)
             _version.value++
             val now = System.currentTimeMillis()

@@ -1,6 +1,10 @@
 package com.nuvio.app.features.youtube
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.features.player.AddonSubtitle
 import com.nuvio.app.features.music.MusicResolver
 import com.nuvio.app.features.music.YouTubeCaller
 import com.nuvio.app.features.trailer.TrailerExtractionPlatform
@@ -20,6 +24,77 @@ private val log = co.touchlab.kermit.Logger.withTag("YouTubeFeed")
 
 internal actual suspend fun youTubeBrowse(browseId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("browse", mapOf("browseId" to browseId, "continuation" to continuation), pageId)
+
+internal actual suspend fun youTubeSearch(query: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest("search", mapOf("query" to query, "continuation" to continuation), pageId)
+
+/** The `params` that pick a channel page's Videos tab (newest uploads), as the website sends them. */
+private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
+
+internal actual suspend fun youTubeChannelVideos(channelId: String, continuation: String?, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        "browse",
+        if (continuation != null) {
+            mapOf("continuation" to continuation)
+        } else {
+            mapOf("browseId" to channelId, "params" to CHANNEL_VIDEOS_TAB_PARAMS)
+        },
+        pageId,
+    )
+
+internal actual suspend fun youTubeSetSubscribed(channelId: String, subscribed: Boolean, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        if (subscribed) "subscription/subscribe" else "subscription/unsubscribe",
+        mapOf("channelIds" to listOf(channelId)),
+        pageId,
+    )
+
+internal actual suspend fun youTubeSetLiked(videoId: String, liked: Boolean, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        if (liked) "like/like" else "like/removelike",
+        mapOf("target" to mapOf("videoId" to videoId)),
+        pageId,
+    )
+
+internal actual suspend fun youTubeEditPlaylist(playlistId: String, videoId: String, add: Boolean, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        "browse/edit_playlist",
+        mapOf(
+            "playlistId" to playlistId,
+            "actions" to listOf(
+                if (add) {
+                    mapOf("action" to "ACTION_ADD_VIDEO", "addedVideoId" to videoId)
+                } else {
+                    mapOf("action" to "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId" to videoId)
+                },
+            ),
+        ),
+        pageId,
+    )
+
+internal actual suspend fun youTubePlaylistOptions(videoId: String, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        "playlist/get_add_to_playlist",
+        mapOf("videoIds" to listOf(videoId), "excludeWatchLater" to false),
+        pageId,
+    )
+
+internal actual suspend fun youTubeNext(videoId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest("next", mapOf("videoId" to videoId, "continuation" to continuation), pageId)
+
+internal actual suspend fun youTubeCreateComment(params: String, text: String, reply: Boolean, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        if (reply) "comment/create_comment_reply" else "comment/create_comment",
+        mapOf("commentText" to text, (if (reply) "createReplyParams" else "createCommentParams") to params),
+        pageId,
+    )
+
+internal actual suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        "feedback",
+        mapOf("feedbackTokens" to listOf(token), "isFeedbackTokenUnencrypted" to false, "shouldMerge" to false),
+        pageId,
+    )
 
 internal actual suspend fun youTubeAccountsList(): YouTubeBrowseResult =
     signedWebRequest(
@@ -79,8 +154,13 @@ private const val EXPIRED_MESSAGE =
     "YouTube no longer accepts the saved sign-in (it answered as signed out). Sign in again under Settings > YouTube account."
 
 private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>, pageId: String?): YouTubeBrowseResult {
-    val cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: return YouTubeBrowseResult.SignedOut
+    var cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: return YouTubeBrowseResult.SignedOut
     var shell = SignedInShell.get(cookie)
+    if (shell?.loggedIn == false && YouTubeMusicAuth.renewNow()) {
+        // A session gone stale while the app was closed: renewed through the sign-in's browser profile, read again.
+        cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie
+        shell = SignedInShell.get(cookie, fresh = true)
+    }
     if (shell?.loggedIn == false) {
         // The page itself says the cookies are no longer a session: no feed request can help.
         YouTubeMusicAuth.onSessionRejected()
@@ -94,8 +174,18 @@ private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>
         shell = SignedInShell.get(cookie, fresh = true)
         if (shell?.loggedIn != false) response = send(endpoint, params, pageId, shell)
     }
-    val status = response.status
-    val body = response.body
+    var status = response.status
+    var body = response.body
+    // Answered as signed out: the session may only be stale (the app was closed for a while), so
+    // renew it once through the sign-in's browser profile and ask again before calling it expired.
+    if (status in 200..299 && youTubeAnsweredSignedOut(body) && YouTubeMusicAuth.renewNow()) {
+        cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie
+        shell = SignedInShell.get(cookie, fresh = true)
+        val retried = send(endpoint, params, pageId, shell)
+        status = retried.status
+        body = retried.body
+        if (status in 200..299 && !youTubeAnsweredSignedOut(body)) log.i { "$endpoint: signed in again after renewing the session" }
+    }
     return when {
         YouTubeWebClient.isRefusal(status, body) -> {
             SignedInShell.forget()
@@ -122,17 +212,59 @@ private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>
     }
 }
 
+/**
+ * The signed WEB `player` answer for a video, asked once and shared for a couple of minutes: the
+ * watch-time pings, the subtitle tracks and the seek previews all read it as playback starts, and
+ * each used to ask YouTube for it again. Its streams are not used (they came from the extractor).
+ */
+private object WebPlayerAnswers {
+    private const val KEEP_MS = 2 * 60_000L
+    private val lock = Mutex()
+    private val answers = HashMap<String, Pair<Long, CompletableDeferred<YouTubeBrowseResult>>>()
+
+    suspend fun get(videoId: String, pageId: String?): YouTubeBrowseResult {
+        val key = "$videoId|${pageId.orEmpty()}"
+        val (answer, asking) = lock.withLock {
+            val now = System.currentTimeMillis()
+            answers.entries.removeAll { now - it.value.first > KEEP_MS }
+            answers[key]?.let { it.second to false }
+                ?: (CompletableDeferred<YouTubeBrowseResult>().also { answers[key] = now to it } to true)
+        }
+        if (asking) {
+            try {
+                val result = signedWebRequest(
+                    "player",
+                    mapOf(
+                        "videoId" to videoId,
+                        "contentCheckOk" to true,
+                        "racyCheckOk" to true,
+                        "playbackContext" to mapOf("contentPlaybackContext" to mapOf("html5Preference" to "HTML5_PREF_WANTS")),
+                    ),
+                    pageId,
+                )
+                // A failure is not kept: the next reader asks again.
+                if (result !is YouTubeBrowseResult.Ok) lock.withLock { answers.remove(key) }
+                answer.complete(result)
+            } catch (error: Throwable) {
+                lock.withLock { answers.remove(key) }
+                answer.complete(YouTubeBrowseResult.Failed("Couldn't reach YouTube."))
+                throw error
+            }
+        }
+        return answer.await()
+    }
+}
+
+internal actual suspend fun youTubeStoryboard(videoId: String): YouTubeStoryboard? {
+    val player = WebPlayerAnswers.get(videoId, YouTubeFeedRepository.channel.value.pageId) as? YouTubeBrowseResult.Ok
+        ?: return null
+    return parseYouTubeStoryboard(player.body).also { board ->
+        log.i { "$videoId: ${board?.let { "storyboard ${it.width}x${it.height}, ${it.count} frames every ${it.intervalMs} ms" } ?: "no storyboard"}" }
+    }
+}
+
 internal actual suspend fun youTubePlaybackTracking(videoId: String, pageId: String?): YouTubeTrackingUrls? {
-    val result = signedWebRequest(
-        "player",
-        mapOf(
-            "videoId" to videoId,
-            "contentCheckOk" to true,
-            "racyCheckOk" to true,
-            "playbackContext" to mapOf("contentPlaybackContext" to mapOf("html5Preference" to "HTML5_PREF_WANTS")),
-        ),
-        pageId,
-    ) as? YouTubeBrowseResult.Ok ?: return null
+    val result = WebPlayerAnswers.get(videoId, pageId) as? YouTubeBrowseResult.Ok ?: return null
     // Only the stats URLs are wanted here; the streams came from the extractor.
     val tracking = runCatching { Json.parseToJsonElement(result.body).jsonObject["playbackTracking"]?.jsonObject }
         .getOrNull() ?: return null
@@ -142,30 +274,132 @@ internal actual suspend fun youTubePlaybackTracking(videoId: String, pageId: Str
     return YouTubeTrackingUrls(playbackUrl = playback, watchtimeUrl = watchtime)
 }
 
-internal actual suspend fun youTubeStatsPing(url: String): Boolean {
-    val cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: return false
+/** At most this many tracks are fetched per video: the uploaded ones first, then the auto-generated. */
+private const val MAX_CAPTION_TRACKS = 6
+
+internal actual suspend fun youTubeCaptionSubtitles(videoId: String): List<AddonSubtitle> {
+    val player = WebPlayerAnswers.get(videoId, YouTubeFeedRepository.channel.value.pageId) as? YouTubeBrowseResult.Ok
+        ?: return emptyList()
+    val tracks = parseYouTubeCaptionTracks(player.body).take(MAX_CAPTION_TRACKS)
+    if (tracks.isEmpty()) {
+        log.i { "$videoId: no subtitle tracks" }
+        return emptyList()
+    }
+    val visitor = youTubeVisitorData(player.body)
+    // Minted once, only when a track comes back empty without one.
+    var token: String? = null
+    var tokenAsked = false
+    var usedToken = false
+    val dir = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "nuvio-youtube-captions")
+    runCatching { java.nio.file.Files.createDirectories(dir) }
+    val subtitles = tracks.mapIndexedNotNull { index, track ->
+        var vtt = fetchCaptionVtt(youTubeCaptionUrl(track.baseUrl, poToken = null))
+        if (vtt == null) {
+            if (!tokenAsked) {
+                tokenAsked = true
+                token = visitor?.let { YouTubeCaptionTokens.videoToken(videoId, it) }
+            }
+            token?.let { pot ->
+                vtt = fetchCaptionVtt(youTubeCaptionUrl(track.baseUrl, pot))
+                if (vtt != null) usedToken = true
+            }
+        }
+        // Auto-generated tracks roll like karaoke; shown as ordinary subtitles instead.
+        val text = vtt?.let(::plainYouTubeCaptions) ?: return@mapIndexedNotNull null
+        val file = dir.resolve("$videoId-$index.vtt")
+        runCatching { java.nio.file.Files.writeString(file, text) }.getOrNull() ?: return@mapIndexedNotNull null
+        AddonSubtitle(
+            id = "youtube:$videoId:${track.vssId ?: index}",
+            url = file.toString(),
+            language = track.languageCode.substringBefore('-').lowercase(),
+            display = track.label,
+            addonName = "YouTube",
+        )
+    }
+    log.i {
+        "$videoId: ${subtitles.size} of ${tracks.size} subtitle tracks " +
+            "(${if (usedToken) "with a PO token" else if (tokenAsked) "no PO token could be made" else "no token needed"})"
+    }
+    return subtitles
+}
+
+/** The WebVTT at [url], or null when YouTube answered nothing usable (the empty body of a missing PO token). */
+private suspend fun fetchCaptionVtt(url: String): String? =
+    runCatching {
+        TrailerExtractionPlatform.performRequest(
+            url = url,
+            method = "GET",
+            headers = mapOf("user-agent" to STATS_USER_AGENT, "accept-language" to "en-US,en;q=0.9"),
+            body = null,
+            timeoutMillis = 15_000L,
+        )
+    }.getOrNull()?.takeIf { it.ok }?.body?.takeIf { it.trimStart().startsWith("WEBVTT") && it.contains("-->") }
+
+/**
+ * PO tokens for subtitle requests, from the same BotGuard minter music uses (a headless Edge or
+ * Chrome); its own instance, since music's is only built with the InnerTubeX option. Nothing starts
+ * until a video's subtitles come back empty without a token.
+ */
+private object YouTubeCaptionTokens {
+    private val browser: String? by lazy { com.nuvio.app.features.music.potoken.BrowserLocator.find() }
+
+    private val generator by lazy {
+        com.nuvio.app.features.music.potoken.PoTokenGenerator(
+            createMinter = {
+                com.nuvio.app.features.music.potoken.BotGuardMinter.create(requireNotNull(browser) { "No Edge or Chrome was found" })
+            },
+            available = { browser != null },
+        )
+    }
+
+    /** A token bound to [videoId] (what the subtitle endpoint checks), or null when none can be made. */
+    suspend fun videoToken(videoId: String, visitorData: String): String? {
+        if (browser == null) {
+            log.i { "subtitles need a PO token, but no Edge or Chrome was found to make one" }
+            return null
+        }
+        return generator.tokens(videoId, visitorData)?.videoToken
+    }
+}
+
+internal actual suspend fun youTubeStatsPing(url: String, pageId: String?): Int {
+    // Signed like the `player` request that handed the URL out, brand channel included: with the
+    // cookie alone YouTube took the pings (Nov 2) but nothing showed up as watched on the channel
+    // the feeds act as.
+    val accountHeaders = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)
+    if (accountHeaders.isEmpty()) return 0
     return runCatching {
         TrailerExtractionPlatform.performRequest(
             url = url,
             method = "GET",
-            headers = mapOf(
-                "cookie" to cookie,
-                "user-agent" to STATS_USER_AGENT,
-                "origin" to YOUTUBE_ORIGIN,
-                "referer" to "$YOUTUBE_ORIGIN/",
-                "accept-language" to "en-US,en;q=0.9",
-            ),
+            headers = buildMap {
+                putAll(accountHeaders)
+                if (!pageId.isNullOrBlank()) put("x-goog-pageid", pageId)
+                put("user-agent", STATS_USER_AGENT)
+                put("origin", YOUTUBE_ORIGIN)
+                put("referer", "$YOUTUBE_ORIGIN/")
+                put("accept-language", "en-US,en;q=0.9")
+            },
             body = null,
             timeoutMillis = 15_000L,
-        ).also { YouTubeMusicAuth.applySetCookies(it.setCookies) }.status in 200..299
-    }.getOrDefault(false)
+        ).also { YouTubeMusicAuth.applySetCookies(it.setCookies) }.status
+    }.getOrDefault(0)
 }
 
 /** The stats endpoints expect the desktop web player, which is the client the `player` request named; the same browser as every signed request. */
 private const val STATS_USER_AGENT = YouTubeWebClient.USER_AGENT
 
-internal actual suspend fun youTubeOpenVideo(videoId: String): TrailerPlaybackSource? =
-    withContext(YouTubeCaller("youtube tab", urgent = true)) {
+internal actual suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): TrailerPlaybackSource? =
+    // Ahead of a click (the card under the cursor): not a lookup anyone waits on yet, so it waits out a pause.
+    withContext(
+        YouTubeCaller(
+            label = if (ahead) "youtube tab ahead" else "youtube tab",
+            urgent = !ahead,
+            preferHdr = true,
+            skipManifestLadder = true,
+            maxShortSide = YouTubeFeedRepository.maxQuality.value,
+        ),
+    ) {
         MusicResolver.openVideo(videoId)
     }
 
@@ -177,6 +411,76 @@ internal actual object YouTubeModeStorage {
     actual fun loadTabEnabled(): Boolean = store.getBoolean(TAB_ENABLED_KEY) ?: false
 
     actual fun saveTabEnabled(enabled: Boolean) = store.putBoolean(TAB_ENABLED_KEY, enabled)
+
+    private const val SPONSOR_AUTO_SKIP_KEY = "sponsor_auto_skip"
+
+    actual fun loadSponsorAutoSkip(): Boolean? = store.getBoolean(SPONSOR_AUTO_SKIP_KEY)
+
+    actual fun saveSponsorAutoSkip(enabled: Boolean) = store.putBoolean(SPONSOR_AUTO_SKIP_KEY, enabled)
+
+    private const val DEARROW_KEY = "dearrow"
+
+    actual fun loadDeArrow(): Boolean? = store.getBoolean(DEARROW_KEY)
+
+    actual fun saveDeArrow(enabled: Boolean) = store.putBoolean(DEARROW_KEY, enabled)
+
+    private const val HIDE_WATCHED_KEY = "hide_watched"
+
+    actual fun loadHideWatched(): Boolean = store.getBoolean(HIDE_WATCHED_KEY) ?: false
+
+    actual fun saveHideWatched(enabled: Boolean) = store.putBoolean(HIDE_WATCHED_KEY, enabled)
+
+    actual fun loadSearchHistory(profileId: Int): String? = store.getString("search_history_$profileId")
+
+    actual fun saveSearchHistory(profileId: Int, payload: String?) = store.putString("search_history_$profileId", payload)
+
+    private const val AUTOPLAY_KEY = "autoplay"
+
+    actual fun loadAutoplay(): Boolean = store.getBoolean(AUTOPLAY_KEY) ?: false
+
+    actual fun saveAutoplay(enabled: Boolean) = store.putBoolean(AUTOPLAY_KEY, enabled)
+
+    private const val HIDE_STREAMS_KEY = "hide_streams"
+
+    actual fun loadHideStreams(): Boolean = store.getBoolean(HIDE_STREAMS_KEY) ?: false
+
+    actual fun saveHideStreams(enabled: Boolean) = store.putBoolean(HIDE_STREAMS_KEY, enabled)
+
+    private const val SKY_BACKGROUND_KEY = "sky_background"
+
+    actual fun loadSkyBackground(): Boolean = store.getBoolean(SKY_BACKGROUND_KEY) ?: false
+
+    actual fun saveSkyBackground(enabled: Boolean) = store.putBoolean(SKY_BACKGROUND_KEY, enabled)
+
+    private const val MAX_QUALITY_KEY = "max_quality"
+
+    actual fun loadMaxQuality(): Int? = store.getString(MAX_QUALITY_KEY)?.toIntOrNull()
+
+    actual fun saveMaxQuality(shortSide: Int) = store.putString(MAX_QUALITY_KEY, shortSide.toString())
+
+    private const val OPEN_WINDOWED_KEY = "open_windowed"
+
+    actual fun loadOpenWindowed(): Boolean = store.getBoolean(OPEN_WINDOWED_KEY) ?: true
+
+    actual fun saveOpenWindowed(windowed: Boolean) = store.putBoolean(OPEN_WINDOWED_KEY, windowed)
+
+    private const val THEATER_MODE_KEY = "theater_mode"
+
+    actual fun loadTheaterMode(): Boolean = store.getBoolean(THEATER_MODE_KEY) ?: false
+
+    actual fun saveTheaterMode(theater: Boolean) = store.putBoolean(THEATER_MODE_KEY, theater)
+
+    private const val WATCHED_DATE_MODE_KEY = "watched_date_mode"
+
+    actual fun loadWatchedDateMode(): String? = store.getString(WATCHED_DATE_MODE_KEY)
+
+    actual fun saveWatchedDateMode(mode: String) = store.putString(WATCHED_DATE_MODE_KEY, mode)
+
+    private const val DATE_FORMAT_KEY = "date_format"
+
+    actual fun loadDateFormat(): String? = store.getString(DATE_FORMAT_KEY)
+
+    actual fun saveDateFormat(format: String) = store.putString(DATE_FORMAT_KEY, format)
 
     private const val CHANNEL_CHOICE_KEY = "channel_page_id"
 

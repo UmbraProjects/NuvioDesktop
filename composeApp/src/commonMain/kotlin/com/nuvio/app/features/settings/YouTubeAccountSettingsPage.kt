@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -31,6 +32,7 @@ import nuvio.composeapp.generated.resources.settings_youtube_state_rejected
 import nuvio.composeapp.generated.resources.settings_youtube_state_signed_in
 import nuvio.composeapp.generated.resources.settings_youtube_state_signed_out
 import nuvio.composeapp.generated.resources.settings_youtube_state_signing_in
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 
 /*
@@ -137,4 +139,113 @@ private fun YouTubeTabSwitch(isTablet: Boolean) {
         isTablet = isTablet,
         onCheckedChange = YouTubeFeedRepository::setTabEnabled,
     )
+    if (enabled == true) {
+        val openWindowed by remember { YouTubeFeedRepository.openWindowed }.collectAsState()
+        SettingsDropdownChoiceRow(
+            title = "Open videos",
+            description = "Windowed shows a watch page: the video with related videos beside it, and its description and comments " +
+                "below. The player's fullscreen button switches between the two either way.",
+            options = listOf(SettingsChoiceOption(true, "Windowed"), SettingsChoiceOption(false, "Full screen")),
+            selectedValue = openWindowed,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("youtube-open-videos")),
+            onSelected = YouTubeFeedRepository::setOpenWindowed,
+        )
+        val maxQuality by remember { YouTubeFeedRepository.maxQuality }.collectAsState()
+        SettingsDropdownChoiceRow(
+            title = "Max video quality",
+            description = "The sharpest a video plays at, when YouTube has it. Lower it for a slow connection or an older graphics card.",
+            options = com.nuvio.app.features.youtube.YOUTUBE_MAX_QUALITY_CHOICES.map { SettingsChoiceOption(it, youTubeQualityLabel(it)) },
+            selectedValue = maxQuality,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("youtube-max-quality")),
+            onSelected = YouTubeFeedRepository::setMaxQuality,
+        )
+        YouTubeHistoryRows(isTablet = isTablet)
+        val sponsorSkip by remember { YouTubeFeedRepository.sponsorAutoSkip }.collectAsState()
+        SettingsSwitchRow(
+            title = "Skip sponsors",
+            description = "Skips segments SponsorBlock users marked as sponsors, self-promotion or \"like and subscribe\" " +
+                "reminders without asking. Intros, end cards and previews still get a skip button.",
+            checked = sponsorSkip,
+            isTablet = isTablet,
+            onCheckedChange = YouTubeFeedRepository::setSponsorAutoSkip,
+        )
+        val deArrow by remember { YouTubeFeedRepository.deArrow }.collectAsState()
+        SettingsSwitchRow(
+            title = "DeArrow titles and thumbnails",
+            description = "Shows the titles and thumbnails DeArrow users wrote in place of clickbait. " +
+                "Videos nobody has submitted keep YouTube's own.",
+            checked = deArrow,
+            isTablet = isTablet,
+            onCheckedChange = YouTubeFeedRepository::setDeArrow,
+        )
+        val sky by remember { YouTubeFeedRepository.skyBackground }.collectAsState()
+        SettingsSwitchRow(
+            title = "Gradient background",
+            description = "Draws the tab on the same gradient as this screen instead of a plain background.",
+            checked = sky,
+            isTablet = isTablet,
+            onCheckedChange = YouTubeFeedRepository::setSkyBackground,
+        )
+    }
+}
+
+/** A max quality choice as people say it: 8K and 4K by name, the rest by height. */
+private fun youTubeQualityLabel(shortSide: Int): String = when (shortSide) {
+    4320 -> "8K"
+    2160 -> "4K"
+    else -> "${shortSide}p"
+}
+
+/** fork:youtube-history - the watched-date badge on the tab's cards, and this PC's copy of the history. */
+@Composable
+private fun YouTubeHistoryRows(isTablet: Boolean) {
+    val mode by remember { YouTubeFeedRepository.watchedDateMode }.collectAsState()
+    SettingsDropdownChoiceRow(
+        title = "Watched date",
+        description = "Shows the day a video was watched in the top left of its thumbnail.",
+        options = com.nuvio.app.features.youtube.YouTubeWatchedDateMode.entries.map { SettingsChoiceOption(it, it.label) },
+        selectedValue = mode,
+        isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("youtube-watched-date")),
+        onSelected = YouTubeFeedRepository::setWatchedDateMode,
+    )
+    if (mode != com.nuvio.app.features.youtube.YouTubeWatchedDateMode.Off) {
+        val format by remember { YouTubeFeedRepository.dateFormat }.collectAsState()
+        SettingsDropdownChoiceRow(
+            title = "Date format",
+            description = null,
+            options = com.nuvio.app.features.youtube.YouTubeDateFormat.entries.map { SettingsChoiceOption(it, it.example) },
+            selectedValue = format,
+            isTablet = isTablet,
+            onSelected = YouTubeFeedRepository::setDateFormat,
+        )
+    }
+    val history by remember { com.nuvio.app.features.youtube.YouTubeWatchHistory.entries }.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var exported by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    SettingsActionRow(
+        title = "Watch history on this PC",
+        description = buildString {
+            append("${history.size} videos. Nuvio keeps its own copy of your history, since YouTube drops old entries: ")
+            append("what the History tab shows as it loads, and everything played here. It's kept in ")
+            append(com.nuvio.app.features.youtube.YouTubeHistoryFile.location)
+            append(".")
+            exported?.let { append(" Exported to $it.") }
+        },
+        isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("youtube-history-export")),
+    ) {
+        SettingsGlassButton(
+            text = "Export as CSV",
+            enabled = history.isNotEmpty(),
+            onClick = {
+                scope.launch {
+                    val csv = com.nuvio.app.features.youtube.YouTubeWatchHistory.exportCsv()
+                    com.nuvio.app.features.youtube.YouTubeHistoryFile.saveExport("youtube-history.csv", csv)?.let { exported = it }
+                }
+            },
+        )
+    }
 }

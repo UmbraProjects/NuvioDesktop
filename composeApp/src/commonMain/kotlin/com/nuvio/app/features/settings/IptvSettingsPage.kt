@@ -22,6 +22,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioModalDialog
@@ -34,6 +35,7 @@ import com.nuvio.app.features.iptv.IptvSettings
 import com.nuvio.app.features.iptv.IptvSourceException
 import com.nuvio.app.features.iptv.IptvStreamFormat
 import com.nuvio.app.features.iptv.IptvTestResult
+import com.nuvio.app.features.iptv.StalkerIdentity
 import com.nuvio.app.features.iptv.asIptvError
 import com.nuvio.app.features.iptv.iptvErrorText
 import java.net.URI
@@ -50,15 +52,25 @@ import nuvio.composeapp.generated.resources.action_save
 import nuvio.composeapp.generated.resources.iptv_playlist_delete_confirm
 import nuvio.composeapp.generated.resources.iptv_playlist_dialog_add_title
 import nuvio.composeapp.generated.resources.iptv_playlist_dialog_edit_title
+import nuvio.composeapp.generated.resources.iptv_playlist_device_id
+import nuvio.composeapp.generated.resources.iptv_playlist_device_id2
 import nuvio.composeapp.generated.resources.iptv_playlist_epg_url
 import nuvio.composeapp.generated.resources.iptv_playlist_epg_url_description
+import nuvio.composeapp.generated.resources.iptv_playlist_identity_description
+import nuvio.composeapp.generated.resources.iptv_playlist_mac
+import nuvio.composeapp.generated.resources.iptv_playlist_mac_description
 import nuvio.composeapp.generated.resources.iptv_playlist_missing_fields
+import nuvio.composeapp.generated.resources.iptv_playlist_missing_stalker
 import nuvio.composeapp.generated.resources.iptv_playlist_missing_url
 import nuvio.composeapp.generated.resources.iptv_playlist_name
 import nuvio.composeapp.generated.resources.iptv_playlist_name_placeholder
 import nuvio.composeapp.generated.resources.iptv_playlist_password
+import nuvio.composeapp.generated.resources.iptv_playlist_portal
+import nuvio.composeapp.generated.resources.iptv_playlist_portal_description
+import nuvio.composeapp.generated.resources.iptv_playlist_serial
 import nuvio.composeapp.generated.resources.iptv_playlist_server
 import nuvio.composeapp.generated.resources.iptv_playlist_server_description
+import nuvio.composeapp.generated.resources.iptv_playlist_signature
 import nuvio.composeapp.generated.resources.iptv_playlist_summary_channels
 import nuvio.composeapp.generated.resources.iptv_playlist_summary_loading
 import nuvio.composeapp.generated.resources.iptv_playlist_summary_not_loaded
@@ -66,6 +78,7 @@ import nuvio.composeapp.generated.resources.iptv_playlist_test
 import nuvio.composeapp.generated.resources.iptv_playlist_testing
 import nuvio.composeapp.generated.resources.iptv_playlist_type
 import nuvio.composeapp.generated.resources.iptv_playlist_type_m3u
+import nuvio.composeapp.generated.resources.iptv_playlist_type_stalker
 import nuvio.composeapp.generated.resources.iptv_playlist_type_xtream
 import nuvio.composeapp.generated.resources.iptv_playlist_url
 import nuvio.composeapp.generated.resources.iptv_playlist_url_description
@@ -119,6 +132,23 @@ import org.jetbrains.compose.resources.stringResource
 internal fun LazyListScope.iptvSettingsContent(
     isTablet: Boolean,
 ) {
+    item {
+        val settings = rememberIptvSettings()
+        SettingsSection(title = "General", isTablet = isTablet) {
+            SettingsGroup(isTablet = isTablet) {
+                SettingsSwitchRow(
+                    title = "Show in navigation",
+                    description = "A Live TV button in the sidebar and top bar. Its place can be changed under " +
+                        "Appearance > Navigation order.",
+                    checked = settings.tabShown,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-in-navigation")),
+                    onCheckedChange = IptvRepository::setTabEnabled,
+                )
+            }
+        }
+    }
+
     item {
         IptvPlaylistsSection(isTablet = isTablet, settings = rememberIptvSettings())
     }
@@ -358,10 +388,11 @@ private fun IptvPlaylistRow(playlist: IptvPlaylist, isTablet: Boolean, onClick: 
 private fun playlistTypeLabel(type: IptvPlaylistType): String = when (type) {
     IptvPlaylistType.Xtream -> stringResource(Res.string.iptv_playlist_type_xtream)
     IptvPlaylistType.M3u -> stringResource(Res.string.iptv_playlist_type_m3u)
+    IptvPlaylistType.Stalker -> stringResource(Res.string.iptv_playlist_type_stalker)
 }
 
 private fun playlistHost(playlist: IptvPlaylist): String? {
-    val raw = (if (playlist.type == IptvPlaylistType.Xtream) playlist.server else playlist.url)?.trim() ?: return null
+    val raw = (if (playlist.type == IptvPlaylistType.M3u) playlist.url else playlist.server)?.trim() ?: return null
     val withScheme = if ("://" in raw) raw else "http://$raw"
     return runCatching { URI(withScheme).host }.getOrNull()?.takeIf { it.isNotBlank() }
 }
@@ -390,6 +421,10 @@ private fun IptvPlaylistDialog(
     var password by remember { mutableStateOf(initial.password.orEmpty()) }
     var url by remember { mutableStateOf(initial.url.orEmpty()) }
     var epgUrl by remember { mutableStateOf(initial.epgUrl.orEmpty()) }
+    var serial by remember { mutableStateOf(initial.serial.orEmpty()) }
+    var deviceId by remember { mutableStateOf(initial.deviceId.orEmpty()) }
+    var deviceId2 by remember { mutableStateOf(initial.deviceId2.orEmpty()) }
+    var signature by remember { mutableStateOf(initial.signature.orEmpty()) }
     var status by remember { mutableStateOf<IptvDialogStatus?>(null) }
     var confirmingDelete by remember { mutableStateOf(false) }
 
@@ -398,16 +433,21 @@ private fun IptvPlaylistDialog(
         type = type,
         name = name,
         // Only the fields of the chosen type are kept, so switching type leaves nothing stale behind.
-        server = server.takeIf { type == IptvPlaylistType.Xtream },
-        username = username.takeIf { type == IptvPlaylistType.Xtream },
+        server = server.takeIf { type != IptvPlaylistType.M3u },
+        username = username.takeIf { type != IptvPlaylistType.M3u },
         password = password.takeIf { type == IptvPlaylistType.Xtream },
         url = url.takeIf { type == IptvPlaylistType.M3u },
         epgUrl = epgUrl,
+        serial = serial.takeIf { type == IptvPlaylistType.Stalker },
+        deviceId = deviceId.takeIf { type == IptvPlaylistType.Stalker },
+        deviceId2 = deviceId2.takeIf { type == IptvPlaylistType.Stalker },
+        signature = signature.takeIf { type == IptvPlaylistType.Stalker },
     )
 
     fun complete(): Boolean = when (type) {
         IptvPlaylistType.Xtream -> server.isNotBlank() && username.isNotBlank() && password.isNotEmpty()
         IptvPlaylistType.M3u -> url.isNotBlank()
+        IptvPlaylistType.Stalker -> server.isNotBlank() && StalkerIdentity.normalizeMac(username) != null
     }
 
     val testing = status == IptvDialogStatus.Testing
@@ -489,20 +529,35 @@ private fun IptvPlaylistDialog(
                 .padding(bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            SettingsChoiceRow(
-                title = stringResource(Res.string.iptv_playlist_type),
-                description = null,
-                options = listOf(
-                    SettingsChoiceOption(IptvPlaylistType.Xtream, stringResource(Res.string.iptv_playlist_type_xtream)),
-                    SettingsChoiceOption(IptvPlaylistType.M3u, stringResource(Res.string.iptv_playlist_type_m3u)),
-                ),
-                selectedValue = type,
-                isTablet = isTablet,
-                onSelected = {
-                    type = it
-                    status = null
-                },
-            )
+            // Three types do not fit a settings row's control, so it takes the dialog's width.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = if (isTablet) 20.dp else 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.iptv_playlist_type),
+                    style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                    color = settingsRowTitleColor(stringResource(Res.string.iptv_playlist_type)),
+                    fontWeight = FontWeight.Medium,
+                )
+                SettingsSegmentedControl(
+                    options = listOf(
+                        SettingsChoiceOption(IptvPlaylistType.Xtream, stringResource(Res.string.iptv_playlist_type_xtream)),
+                        SettingsChoiceOption(IptvPlaylistType.M3u, stringResource(Res.string.iptv_playlist_type_m3u)),
+                        SettingsChoiceOption(IptvPlaylistType.Stalker, stringResource(Res.string.iptv_playlist_type_stalker)),
+                    ),
+                    selectedValue = type,
+                    enabled = true,
+                    isTablet = isTablet,
+                    modifier = Modifier.fillMaxWidth(),
+                    onSelected = {
+                        type = it
+                        status = null
+                    },
+                )
+            }
             SettingsTextRow(
                 title = stringResource(Res.string.iptv_playlist_name),
                 description = null,
@@ -547,6 +602,52 @@ private fun IptvPlaylistDialog(
                         onValueChange = { url = it; status = null },
                     )
                 }
+                IptvPlaylistType.Stalker -> {
+                    SettingsTextRow(
+                        title = stringResource(Res.string.iptv_playlist_portal),
+                        description = stringResource(Res.string.iptv_playlist_portal_description),
+                        value = server,
+                        isTablet = isTablet,
+                        placeholder = "http://",
+                        onValueChange = { server = it; status = null },
+                    )
+                    SettingsTextRow(
+                        title = stringResource(Res.string.iptv_playlist_mac),
+                        description = stringResource(Res.string.iptv_playlist_mac_description),
+                        value = username,
+                        isTablet = isTablet,
+                        placeholder = "00:1A:79:XX:XX:XX",
+                        onValueChange = { username = it; status = null },
+                    )
+                    SettingsTextRow(
+                        title = stringResource(Res.string.iptv_playlist_serial),
+                        description = stringResource(Res.string.iptv_playlist_identity_description),
+                        value = serial,
+                        isTablet = isTablet,
+                        onValueChange = { serial = it; status = null },
+                    )
+                    SettingsTextRow(
+                        title = stringResource(Res.string.iptv_playlist_device_id),
+                        description = null,
+                        value = deviceId,
+                        isTablet = isTablet,
+                        onValueChange = { deviceId = it; status = null },
+                    )
+                    SettingsTextRow(
+                        title = stringResource(Res.string.iptv_playlist_device_id2),
+                        description = null,
+                        value = deviceId2,
+                        isTablet = isTablet,
+                        onValueChange = { deviceId2 = it; status = null },
+                    )
+                    SettingsTextRow(
+                        title = stringResource(Res.string.iptv_playlist_signature),
+                        description = null,
+                        value = signature,
+                        isTablet = isTablet,
+                        onValueChange = { signature = it; status = null },
+                    )
+                }
             }
             SettingsTextRow(
                 title = stringResource(Res.string.iptv_playlist_epg_url),
@@ -560,7 +661,11 @@ private fun IptvPlaylistDialog(
                 val (text, isError) = when (current) {
                     IptvDialogStatus.Testing -> stringResource(Res.string.iptv_playlist_testing) to false
                     IptvDialogStatus.MissingFields -> stringResource(
-                        if (type == IptvPlaylistType.Xtream) Res.string.iptv_playlist_missing_fields else Res.string.iptv_playlist_missing_url,
+                        when (type) {
+                            IptvPlaylistType.Xtream -> Res.string.iptv_playlist_missing_fields
+                            IptvPlaylistType.M3u -> Res.string.iptv_playlist_missing_url
+                            IptvPlaylistType.Stalker -> Res.string.iptv_playlist_missing_stalker
+                        },
                     ) to true
                     is IptvDialogStatus.Failed -> iptvErrorText(current.error) to true
                     is IptvDialogStatus.Tested -> testResultText(current.result) to false

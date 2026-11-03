@@ -198,4 +198,20 @@ class PlayerProgressFlushTest {
             flushScrobbleStopKind(effectivePercent = 40f, paused = true, sessionRunning = false, completionSent = false),
         )
     }
+
+    @Test
+    fun aShortVideoEndsForRealOnlyWhenItCannotBeAPlaceholder() {
+        // The 1:44 YouTube video autoplay sat at the end of (Nov 3): under two minutes reads as a placeholder clip.
+        val end = { allowShort: Boolean ->
+            isTrustworthyPlaybackEnd(
+                isEnded = true,
+                durationMs = 104_025L,
+                positionMs = 104_025L,
+                lastTrustedPositionMs = 103_320L,
+                allowShortContent = allowShort,
+            )
+        }
+        assertEquals(false, end(false))
+        assertEquals(true, end(true))
+    }
 }

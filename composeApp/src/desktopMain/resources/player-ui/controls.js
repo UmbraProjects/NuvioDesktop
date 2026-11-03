@@ -29,6 +29,13 @@ const isChromelessSurface = (() => {
 })();
 
 const root = document.getElementById("playerRoot");
+// The YouTube watch page's corner player shows the picture alone; a click there goes back up to the video.
+root.addEventListener("click", event => {
+  if (!state.miniPlayer) return;
+  event.preventDefault();
+  event.stopPropagation();
+  send("miniPlayerClick", 0);
+}, true);
 const contextMenu = document.getElementById("contextMenu");
 const seek = document.getElementById("seek");
 const pipSeek = document.getElementById("pipSeek");
@@ -387,6 +394,7 @@ let state = {
   seekThumbnailsEnabled: true,
   seekrVttUrl: "",
   seekrScale: 1,
+  storyboardUrl: "",
   seekStepSeconds: 10,
   tapToUnlockLabel: "Tap to unlock",
   playbackErrorTitle: "Playback error",
@@ -1379,8 +1387,33 @@ const syncSeekrTrack = () => {
   });
 };
 
+// A YouTube video's storyboard: one grid of frames per sheet, frame k on sheet k / (columns x rows).
+// Kotlin sends only the layout; the tile is worked out here, in the shape Seekr's cues take.
+const storyboardCueAt = positionMs => {
+  const url = String(state.storyboardUrl || "");
+  const count = Number(state.storyboardCount) || 0;
+  const interval = Number(state.storyboardIntervalMs) || 0;
+  const columns = Number(state.storyboardColumns) || 0;
+  const rows = Number(state.storyboardRows) || 0;
+  const width = Number(state.storyboardWidth) || 0;
+  const height = Number(state.storyboardHeight) || 0;
+  if (!url || count <= 0 || interval <= 0 || columns <= 0 || rows <= 0 || width <= 0 || height <= 0) return null;
+  const frame = Math.max(0, Math.min(count - 1, Math.floor(positionMs / interval)));
+  const perSheet = columns * rows;
+  const cell = frame % perSheet;
+  return {
+    start: frame * interval,
+    end: (frame + 1) * interval,
+    src: url.replace("$M", String(Math.floor(frame / perSheet))),
+    x: (cell % columns) * width,
+    y: Math.floor(cell / columns) * height,
+    w: width,
+    h: height,
+  };
+};
+
 const seekrCueAt = clientPositionMs => {
-  if (!seekrTrack) return null;
+  if (!seekrTrack) return storyboardCueAt(clientPositionMs);
   const scale = Number(state.seekrScale) > 0 ? Number(state.seekrScale) : 1;
   const sourceMs = clientPositionMs / scale;
   let low = 0;
@@ -5913,6 +5946,7 @@ const renderChrome = () => {
     updateViewportUiScale();
   }
   root.classList.toggle("locked", Boolean(state.isLocked));
+  root.classList.toggle("mini-player", Boolean(state.miniPlayer));
   root.classList.toggle("episode-panel-open", activeModal === "episodes");
   root.classList.toggle("source-panel-open", activeModal === "sources");
   root.classList.toggle("iptv-panel-open", activeModal === "iptvChannels");
@@ -5932,6 +5966,12 @@ const renderChrome = () => {
   root.classList.toggle("seek-handle-hidden", state.seekHandleEnabled === false);
   root.classList.toggle("vignette-hidden", state.hudVignetteEnabled === false);
   applyHiddenHudButtons(state.hiddenHudButtons);
+  // The YouTube watch page hides the comments and related panels it shows itself: their edge notches too.
+  const pageHiddenPanels = state.watchPage
+    ? new Set(String(state.hiddenHudButtons || "").split(",").map(part => part.trim()))
+    : null;
+  document.querySelectorAll(".episode-notch[data-command], .source-notch[data-command]")
+    .forEach(notch => notch.classList.toggle("user-hidden", Boolean(pageHiddenPanels && pageHiddenPanels.has(notch.dataset.command))));
   applyHudButtonOrder(state.hudButtonOrder);
   // The official bar also reads the time as one "position / duration" readout, right-aligned.
   applyMinimalHudTimeLayout(minimalHud || officialHud);
@@ -5980,6 +6020,8 @@ const renderChrome = () => {
   audioLabel.textContent = state.audioLabel || "Audio";
   sourcesLabel.textContent = state.sourcesLabel || "Sources";
   episodesLabel.textContent = state.episodesLabel || "Episodes";
+  // A YouTube video's Sources panel holds its comments: their text gets more than a stream's two lines.
+  root.classList.toggle("youtube-video", Boolean(state.isYouTubeVideo));
   episodeNotchLabel.textContent = state.episodesLabel || "Episodes";
   lockedLabel.textContent = state.tapToUnlockLabel || "Tap to unlock";
   // The Sources sheet leaves the picture uncovered and stays open across a swap, so buffering
@@ -6070,7 +6112,9 @@ const updatePlayerClock = () => {
   const speed = Number.isFinite(parsedSpeed) && parsedSpeed > 0 ? parsedSpeed : 1;
   const remainingWallMs = Math.max(0, durationMs - positionMs) / speed;
   const endTime = new Date(now.getTime() + remainingWallMs);
-  const contentLabel = String(state.episodeText || "").trim() ? hudText("player_hud_episode", "Episode") : hudText("player_hud_movie", "Movie");
+  const contentLabel = String(state.episodeText || "").trim()
+    ? hudText("player_hud_episode", "Episode")
+    : state.isYouTubeVideo ? hudText("player_hud_video", "Video") : hudText("player_hud_movie", "Movie");
   // Live TV never ends; the same spot (and its click, "back") is the way out.
   playerEndTime.textContent = state.iptv
     ? (state.iptv.exitLabel || state.closeLabel || "Exit")
@@ -8039,6 +8083,12 @@ root.addEventListener("click", event => {
 
 root.addEventListener("wheel", event => {
   if (state.pictureInPictureActive) return;
+  // The YouTube watch page: the wheel scrolls the page around the video (volume stays on the controls).
+  if (state.watchPage) {
+    event.preventDefault();
+    if (event.deltaY !== 0) send("watchPageScroll", event.deltaY);
+    return;
+  }
   if (playbackErrorText()) return;
   if (state.isLocked) return;
   if (isChromeInteractionTarget(event.target)) return;

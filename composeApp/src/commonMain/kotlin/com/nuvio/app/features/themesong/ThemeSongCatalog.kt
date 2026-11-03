@@ -248,7 +248,8 @@ object ThemeSongCatalog {
      * when Deezer is unreachable or has no soundtrack for it, so callers can fall back.
      */
     internal suspend fun popularSongs(title: String, year: String?, isSeries: Boolean, limit: Int = 3): List<SoundtrackTrack> {
-        val name = title.trim()
+        // The catalogue's qualifier ("Shameless (US)") is not in a soundtrack album's name.
+        val name = splitTitleQualifier(title).first
         if (name.isEmpty()) return emptyList()
         return try {
             val queries = if (isSeries) {

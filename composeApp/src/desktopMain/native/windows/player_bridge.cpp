@@ -3663,6 +3663,14 @@ public:
     // until the window is resized — which is why minimize/restore "fixes" it. Nudge the
     // container window size by 1px and back on the UI thread to force a VO reconfigure and
     // redraw immediately.
+    // The host window was resized (Kotlin's componentResized): fit the container, mpv and the HUD to it
+    // now rather than on the next 500 ms timer tick, which left the picture at its old size in a corner
+    // of the new area for up to half a second (the YouTube watch page's corner player going back to its
+    // place, a window resize). A no-op when the size already matches.
+    void layoutToHostNow() {
+        postUiTask([self = shared_from_this()]() { self->layoutNativeSubviews(false); });
+    }
+
     void forceVideoRedraw() {
         if (redrawQueued.exchange(true)) return;
         auto self = shared_from_this();
@@ -7670,6 +7678,17 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_toggleStatsOverlay
     auto player = playerFromHandle(handle);
     if (!player) return;
     player->postMpvCall([p = player.get()]() { p->toggleStatsOverlay(); });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_layoutToHost(
+    JNIEnv *,
+    jobject,
+    jlong handle
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->layoutToHostNow();
 }
 
 extern "C" JNIEXPORT void JNICALL

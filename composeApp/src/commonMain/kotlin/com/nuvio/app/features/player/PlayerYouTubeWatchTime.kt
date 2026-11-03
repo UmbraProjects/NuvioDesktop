@@ -34,10 +34,24 @@ internal fun PlayerScreenRuntime.BindYouTubeWatchTimeEffect() {
             playing = snapshot.isPlaying && !snapshot.isLoading,
         )
     }
+    // In a playlist being played through: the next video is resolved during this one's last minute
+    // (or last tenth, but never under 15 s: a short video's tenth is less than the lookup takes), so the
+    // player can be handed straight over to it when this one ends.
+    val nearEnd = snapshot.durationMs > 0L &&
+        snapshot.positionMs >= snapshot.durationMs - minOf(60_000L, maxOf(15_000L, snapshot.durationMs / 10))
+    LaunchedEffect(videoId, nearEnd) {
+        if (nearEnd) com.nuvio.app.features.youtube.YouTubePlayQueue.prepareNext(videoId)
+    }
     DisposableEffect(session) {
         onDispose {
             // The feed shows the new bar straight away; YouTube's own copy catches up on the next load.
-            session.close()?.let { percent -> YouTubeFeedRepository.noteWatched(videoId, percent) }
+            session.close()?.let { percent ->
+                YouTubeFeedRepository.noteWatched(videoId, percent)
+                com.nuvio.app.features.youtube.YouTubeWatchHistory.noteWatched(videoId)
+                // 100 also when it was closed in its last moments (see YouTubeWatchSession.close): watched,
+                // but left by hand, so it does not move on. A real end has already handed over (App).
+                if (percent == 100) com.nuvio.app.features.youtube.YouTubePlayQueue.onClosedNearEnd(videoId)
+            }
         }
     }
 }
