@@ -50,6 +50,9 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.AddToQueue
+import androidx.compose.material.icons.rounded.Queue
+import androidx.compose.material.icons.rounded.RemoveFromQueue
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.foundation.layout.widthIn
@@ -156,13 +159,16 @@ fun YouTubeTabScreen(
         YouTubeMusicAuth.ensureLoaded()
         YouTubeMusicAuth.state
     }.collectAsStateWithLifecycle()
-    // A feed's name, or CHANNELS_VIEW / PLAYLISTS_VIEW for the lists of subscribed channels and of
-    // playlists (not video feeds).
+    // A feed's name, or CHANNELS_VIEW / PLAYLISTS_VIEW / QUEUE_VIEW for the lists of subscribed channels,
+    // of playlists and the queue (not YouTube feeds).
     var selectedName by rememberSaveable { mutableStateOf(YouTubeFeedKind.Home.name) }
     val showingChannelList = selectedName == CHANNELS_VIEW
     val showingPlaylists = selectedName == PLAYLISTS_VIEW
+    val showingQueue = selectedName == QUEUE_VIEW
     // Under a list, the effects keep the Subscriptions feed loaded meanwhile.
-    val kind = if (showingChannelList || showingPlaylists) YouTubeFeedKind.Subscriptions else YouTubeFeedKind.valueOf(selectedName)
+    val kind = if (showingChannelList || showingPlaylists || showingQueue) YouTubeFeedKind.Subscriptions else YouTubeFeedKind.valueOf(selectedName)
+    val watchQueue by YouTubeWatchQueue.videos.collectAsStateWithLifecycle()
+    val queuedIds = remember(watchQueue) { watchQueue.mapTo(HashSet()) { it.videoId } }
     val openChannel by YouTubeFeedRepository.openChannel.collectAsStateWithLifecycle()
     val openPlaylist by YouTubeFeedRepository.openPlaylist.collectAsStateWithLifecycle()
     // The pages a channel or playlist page was opened from, newest last: Back (the arrow, Esc, a
@@ -199,13 +205,16 @@ fun YouTubeTabScreen(
     val autoplay by remember { YouTubeFeedRepository.autoplay }.collectAsStateWithLifecycle()
     // Not on History, which is all watched by definition (a stream watched is history like any other).
     val filtered = kind != YouTubeFeedKind.History
-    val videos = if (filtered && (hideWatched || hideStreams)) {
+    // The queue is shown as it is: the person put each one there.
+    val videos = if (showingQueue) {
+        watchQueue
+    } else if (filtered && (hideWatched || hideStreams)) {
         feed.videos.filterNot { (hideWatched && isYouTubeVideoWatched(it)) || (hideStreams && it.wasLive) }
     } else {
         feed.videos
     }
     // A page that was all watched leaves nothing on screen to scroll to the end of, so ask for the next one here.
-    val allHidden = videos.isEmpty() && feed.videos.isNotEmpty()
+    val allHidden = !showingQueue && videos.isEmpty() && feed.videos.isNotEmpty()
     LaunchedEffect(allHidden, feed.continuation, feed.loading) {
         if (allHidden && feed.continuation != null && !feed.loading && feed.error == null) YouTubeFeedRepository.loadMore(kind)
     }
@@ -297,9 +306,24 @@ fun YouTubeTabScreen(
         play(video)
     }
 
+    fun playFromQueue(index: Int) {
+        val video = watchQueue.getOrNull(index) ?: return
+        YouTubePlayQueue.start(WATCH_QUEUE_NAME, watchQueue, index, watchQueue = true)
+        play(video)
+    }
+    fun toggleQueued(video: YouTubeVideo) {
+        if (YouTubeWatchQueue.contains(video.videoId)) {
+            YouTubeWatchQueue.remove(video.videoId)
+            confirm("Removed from queue", youTubeDisplayTitle(video))
+        } else {
+            YouTubeWatchQueue.add(video)
+            confirm("Added to queue", youTubeDisplayTitle(video))
+        }
+    }
+
     val gridState = rememberLazyGridState()
     val columnFocus = rememberGridColumnFocus(gridState)
-    LaunchedEffect(kind, searchQuery) { gridState.scrollToItem(0) }
+    LaunchedEffect(selectedName, searchQuery) { gridState.scrollToItem(0) }
     // Shown again after a while (switched to, the tab reopened, the player closed): a feed that
     // changes by itself is fetched again, the old page staying up until the new one replaces it.
     // Not while scrolled down it, where the new page would pull the list out from under the reader.
@@ -308,7 +332,9 @@ fun YouTubeTabScreen(
             YouTubeFeedRepository.load(kind, force = true)
         }
     }
-    LaunchedEffect(gridState, kind) {
+    LaunchedEffect(gridState, kind, showingQueue) {
+        // The queue has no next page.
+        if (showingQueue) return@LaunchedEffect
         snapshotFlow {
             val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             last >= gridState.layoutInfo.totalItemsCount - 6
@@ -394,6 +420,12 @@ fun YouTubeTabScreen(
             Box(if (auth.signedIn && !barHosted) Modifier.focusRequester(playlistsFocus).focusProperties { right = searchFocus } else Modifier) {
                 YouTubeSectionTab(Icons.Rounded.VideoLibrary, "Playlists", on = showingPlaylists) {
                     if (showingPlaylists) YouTubeFeedRepository.loadPlaylists() else section(PLAYLISTS_VIEW)
+                }
+            }
+            // Only once something is queued (or while it is shown): an empty queue needs no button.
+            if (watchQueue.isNotEmpty() || showingQueue) {
+                YouTubeSectionTab(Icons.Rounded.Queue, "Queue · ${watchQueue.size}", on = showingQueue) {
+                    if (!showingQueue) section(QUEUE_VIEW)
                 }
             }
             // Without the top bar (the sidebar layout) the search box stays in the tab.
@@ -504,6 +536,16 @@ fun YouTubeTabScreen(
                 YouTubePill(label = "Stop", selected = false, onClick = YouTubePlayQueue::stop)
             }
         }
+        if (showingQueue && watchQueue.isNotEmpty()) {
+            QueueHeader(
+                count = watchQueue.size,
+                onPlayAll = { playFromQueue(0) },
+                onClear = {
+                    YouTubeWatchQueue.clear()
+                    if (queue?.watchQueue == true) YouTubePlayQueue.stop()
+                },
+            )
+        }
         if (kind == YouTubeFeedKind.Channel) {
             openChannel?.let { open ->
                 ChannelHeader(
@@ -539,11 +581,19 @@ fun YouTubeTabScreen(
         }
 
         when {
+            showingQueue && watchQueue.isEmpty() -> FeedMessage(
+                text = "The queue is empty. Add videos from a video's menu (Add to queue); it lasts until Nuvio closes.",
+                action = "Back to Home",
+                onAction = {
+                    backStack = emptyList()
+                    selectedName = YouTubeFeedKind.Home.name
+                },
+            )
             showingChannelList && auth.signedIn -> SubscribedChannels(
                 onOpen = { showChannel(it.channelId, it.name, it.avatarUrl) },
             )
             showingPlaylists && auth.signedIn -> PlaylistLibrary(onOpen = ::showPlaylist)
-            !auth.signedIn -> FeedMessage(
+            !auth.signedIn && !showingQueue -> FeedMessage(
                 text = "Sign in to your YouTube account to see your home feed and subscriptions.",
                 action = "Open YouTube account settings",
                 onAction = onOpenSettings,
@@ -553,7 +603,7 @@ fun YouTubeTabScreen(
                 action = "Back to Home",
                 onAction = { selectedName = YouTubeFeedKind.Home.name },
             )
-            channel.needsChoice -> FeedMessage(
+            channel.needsChoice && !showingQueue -> FeedMessage(
                 text = "This Google account has several YouTube channels. Pick the one to watch as from the picture at the top right.",
                 action = "Reload channels",
                 onAction = { YouTubeFeedRepository.loadChannels(force = true) },
@@ -605,7 +655,16 @@ fun YouTubeTabScreen(
                             opening = openingId == video.videoId,
                             deArrow = deArrow,
                             // Inside a playlist a video plays on through the rest of it, as on the website.
-                            onClick = { if (inPlaylist != null) playFromPlaylist(index) else play(video) },
+                            // And inside the queue, through the rest of the queue.
+                            onClick = {
+                                when {
+                                    showingQueue -> playFromQueue(index)
+                                    inPlaylist != null -> playFromPlaylist(index)
+                                    else -> play(video)
+                                }
+                            },
+                            queued = video.videoId in queuedIds,
+                            onToggleQueued = { toggleQueued(video) },
                             onLike = { liked -> like(video, liked) },
                             onSaveToWatchLater = { saveTo(WATCH_LATER_PLAYLIST_ID, "Watch later", video, add = true) },
                             onSaveToPlaylist = { savingVideo = video },
@@ -622,7 +681,7 @@ fun YouTubeTabScreen(
                         )
                     }
                 }
-                if (feed.continuation != null || feed.error != null) {
+                if (!showingQueue && (feed.continuation != null || feed.error != null)) {
                     item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
                         Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                             when {
@@ -901,6 +960,35 @@ private const val CHANNELS_VIEW = "Channels"
 
 /** [YouTubeTabScreen]'s selection for the playlist library. */
 private const val PLAYLISTS_VIEW = "Playlists"
+
+/** [YouTubeTabScreen]'s selection for the queue ([YouTubeWatchQueue]). */
+private const val QUEUE_VIEW = "Queue"
+
+/** The queue's title, how long it lasts, Play all and Clear. */
+@Composable
+private fun QueueHeader(count: Int, onPlayAll: () -> Unit, onClear: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            Text(
+                text = "Queue",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "${if (count == 1) "1 video" else "$count videos"} · kept until Nuvio closes, only in Nuvio",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        YouTubePill(label = "Play all", selected = true, onClick = onPlayAll, leadingIcon = Icons.Rounded.PlayArrow)
+        YouTubePill(label = "Clear", selected = false, onClick = onClear)
+    }
+}
 
 /** The open playlist's name, a way back, and Play all. */
 @Composable
@@ -1324,6 +1412,9 @@ private fun YouTubeVideoCard(
     onComments: () -> Unit,
     onRemoveFromPlaylist: (() -> Unit)?,
     onOpenChannel: (() -> Unit)?,
+    /** Whether it is in [YouTubeWatchQueue]; the menu offers to add it or take it out. */
+    queued: Boolean = false,
+    onToggleQueued: () -> Unit = {},
     focusRequester: FocusRequester? = null,
 ) {
     // The card's menu, open at this window position (the ⋮ button, the cursor, or beside the card).
@@ -1364,6 +1455,13 @@ private fun YouTubeVideoCard(
                         icon = Icons.Rounded.ThumbUp,
                         label = if (liked == true) "Remove like" else "Like",
                         onSelected = { onLike(liked != true) },
+                    ),
+                )
+                add(
+                    PosterZoomOverlayAction(
+                        icon = if (queued) Icons.Rounded.RemoveFromQueue else Icons.Rounded.AddToQueue,
+                        label = if (queued) "Remove from queue" else "Add to queue",
+                        onSelected = onToggleQueued,
                     ),
                 )
                 add(PosterZoomOverlayAction(icon = Icons.Rounded.WatchLater, label = "Save to Watch later", onSelected = onSaveToWatchLater))

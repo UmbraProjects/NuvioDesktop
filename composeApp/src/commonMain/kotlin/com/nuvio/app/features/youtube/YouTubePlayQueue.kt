@@ -96,8 +96,17 @@ internal object YouTubePlayQueue {
         return launch
     }
 
-    /** [oneOff]: a single hand-over from the player (a related video), not a playlist; no banner, ends after it. */
-    data class State(val name: String, val videos: List<YouTubeVideo>, val index: Int, val oneOff: Boolean = false) {
+    /**
+     * [oneOff]: a single hand-over from the player (a related video), not a playlist; no banner, ends after it.
+     * [watchQueue]: a play-through of [YouTubeWatchQueue], which grows as videos are added to it.
+     */
+    data class State(
+        val name: String,
+        val videos: List<YouTubeVideo>,
+        val index: Int,
+        val oneOff: Boolean = false,
+        val watchQueue: Boolean = false,
+    ) {
         val current: YouTubeVideo? get() = videos.getOrNull(index)
     }
 
@@ -111,12 +120,19 @@ internal object YouTubePlayQueue {
     /** The video the tab should open next, once the one before it finished. */
     val next: StateFlow<YouTubeVideo?> = _next.asStateFlow()
 
-    /** Plays [videos] from [index]; the caller opens that first one itself. */
-    fun start(name: String, videos: List<YouTubeVideo>, index: Int) {
+    /** Plays [videos] from [index]; the caller opens that first one itself. [watchQueue]: see [State]. */
+    fun start(name: String, videos: List<YouTubeVideo>, index: Int, watchQueue: Boolean = false) {
         if (index !in videos.indices) return
         _next.value = null
-        _state.value = State(name, videos, index)
+        _state.value = State(name, videos, index, watchQueue = watchQueue)
         log.i { "queue started: ${videos.size} videos from ${index + 1}" }
+    }
+
+    /** A video added to [YouTubeWatchQueue] while it is being played through joins the play-through's end. */
+    fun onWatchQueueAdded(video: YouTubeVideo) {
+        val state = _state.value?.takeIf { it.watchQueue } ?: return
+        if (state.videos.any { it.videoId == video.videoId }) return
+        _state.value = state.copy(videos = state.videos + video)
     }
 
     fun stop() {
