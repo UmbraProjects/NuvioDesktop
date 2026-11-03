@@ -101,6 +101,13 @@ private const val MEASURE_WAIT_LIMIT_MS = 60_000L
 /** fork:visualiser - the first window is short, so the visualiser has something to draw a second or two into a track. */
 private const val FIRST_WINDOW_SECONDS = 15.0
 
+/** A window that decodes nothing is asked again this many times, a little later each time, before the read gives up. */
+private const val DECODE_RETRIES = 3
+private const val DECODE_RETRY_DELAY_MS = 2_000L
+
+/** The stream can end a little before the length mpv reported; that much short of it counts as the end. */
+private const val DECODE_END_SLACK_SECONDS = 1.5
+
 /**
  * Reads the track [controller] is playing through a headless decode of the same stream, feeding [meter] (the loudness
  * measurement) and [map] (the visualiser's track map) with the same samples; [onWindow] runs after each window. False when
@@ -116,19 +123,35 @@ private suspend fun decodeTrack(
     val total = (durationMs / 1_000.0).coerceAtMost(MEASURE_MAX_SECONDS)
     if (total < MEASURE_MIN_SECONDS) return false
     var at = 0.0
+    var failures = 0
     try {
-        while (at < total) {
+        while (at < total - DECODE_END_SLACK_SECONDS) {
             currentCoroutineContext().ensureActive()
             val window = if (at == 0.0 && map != null) FIRST_WINDOW_SECONDS else MEASURE_WINDOW_SECONDS
             val length = minOf(window, total - at)
             val pcm = withContext(Dispatchers.IO) {
                 controller.decodeAudioWindow(at, length, MEASURE_SAMPLE_RATE, 2)
-            } ?: return false
+            }
+            // fork:visualiser - what was actually decoded, which can be less than asked for (a slow connection, the native
+            // side's time limit). The next window starts where this one stopped, so the map stays in time with the song;
+            // moving on by the full window shrank the song and left the map short of its end.
+            val got = (pcm?.size ?: 0) / 2.0 / MEASURE_SAMPLE_RATE
+            if (pcm == null || got < 0.5) {
+                if (++failures > DECODE_RETRIES) {
+                    log.w { "track decode stopped at ${at.toInt()}s of ${total.toInt()}s after $DECODE_RETRIES retries" }
+                    return false
+                }
+                log.i { "track decode window at ${at.toInt()}s gave nothing; retry $failures of $DECODE_RETRIES" }
+                delay(DECODE_RETRY_DELAY_MS * failures)
+                continue
+            }
+            failures = 0
             withContext(Dispatchers.Default) {
                 meter?.add(pcm)
                 map?.add(pcm)
             }
-            at += length
+            if (got < length - 0.5) log.i { "track decode window at ${at.toInt()}s gave ${got.toInt()}s of ${length.toInt()}s; continuing from there" }
+            at += got
             onWindow()
         }
     } catch (error: CancellationException) {
