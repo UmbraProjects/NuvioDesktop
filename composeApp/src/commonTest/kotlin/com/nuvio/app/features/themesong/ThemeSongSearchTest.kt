@@ -162,4 +162,22 @@ class ThemeSongSearchTest {
         )
         assertEquals(listOf("full", "snippet"), ranked.map { it.videoId })
     }
+
+    @Test
+    fun aCatalogueQualifierIsSearchedForButNotRequired() {
+        assertEquals("Shameless" to "US", splitTitleQualifier("Shameless (US)"))
+        assertEquals("Ghosts" to "2021", splitTitleQualifier("Ghosts (2021)"))
+        // Not a qualifier: part of the name.
+        assertEquals("The Office (An American Workplace)" to null, splitTitleQualifier("The Office (An American Workplace)"))
+        assertEquals("Shameless US theme song", themeSongSearchQuery("Shameless (US)", "2011", isSeries = true))
+        assertEquals("Ghosts 2021 main theme", themeSongSearchQuery("Ghosts (2021)", null, isSeries = false))
+
+        val hits = listOf(
+            hit("plain", "Shameless Theme Song", seconds = 95),
+            hit("us", "Shameless (US) - Opening Theme", seconds = 95),
+        )
+        val ranked = rankThemeSongHits(hits, "Shameless (US)", "2011")
+        // Neither upload was thrown out for lacking "US"; the one that has it comes first.
+        assertEquals(listOf("us", "plain"), ranked.map { it.videoId })
+    }
 }

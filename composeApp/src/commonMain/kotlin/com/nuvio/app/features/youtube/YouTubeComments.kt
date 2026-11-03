@@ -27,12 +27,17 @@ data class YouTubeComment(
     val published: String?,
     /** "1.2K", as YouTube words it; null for none. */
     val likes: String?,
-    /** How many replies, as YouTube words it ("12"); null for none. Replies are not loaded. */
+    /** How many replies, as YouTube words it ("12"); null for none. */
     val replies: String?,
     val pinned: Boolean = false,
+    /** The continuation that loads its replies ([parseYouTubeCommentReplies]); null for none. */
+    val repliesToken: String? = null,
+    /** What a reply to it sends YouTube (`createReplyParams`); null when it cannot be replied to. */
+    val replyParams: String? = null,
 )
 
-data class YouTubeCommentPage(val comments: List<YouTubeComment>, val continuation: String?)
+/** [createParams]: what a new comment on the video sends YouTube (`createCommentParams`), from the first page; null when none can be made. */
+data class YouTubeCommentPage(val comments: List<YouTubeComment>, val continuation: String?, val createParams: String? = null)
 
 private val json = Json { ignoreUnknownKeys = true }
 
@@ -56,21 +61,79 @@ internal fun parseYouTubeCommentsToken(body: String): String? {
 internal fun parseYouTubeComments(body: String): YouTubeCommentPage {
     val root = runCatching { json.parseToJsonElement(body) }.getOrNull() ?: return YouTubeCommentPage(emptyList(), null)
     val payloads = objects(root, "commentEntityPayload").associateBy { it.string("key") }
+    val surfaces = entityPayloads(root)
     val comments = LinkedHashMap<String, YouTubeComment>()
     for (thread in objects(root, "commentThreadRenderer")) {
-        val comment = thread.obj("commentViewModel")?.obj("commentViewModel")?.let { view ->
-            payloads[view.string("commentKey")]?.let(::entityComment)?.let { c ->
+        val view = thread.obj("commentViewModel")?.obj("commentViewModel")
+        val comment = view?.let { v ->
+            payloads[v.string("commentKey")]?.let(::entityComment)?.let { c ->
                 // The pin is shown by the view model, not the entity.
-                c.copy(pinned = view["pinnedText"] != null || c.pinned)
+                c.copy(pinned = v["pinnedText"] != null || c.pinned)
             }
         } ?: thread.obj("comment")?.obj("commentRenderer")?.let(::rendererComment)
-        comment?.let { comments.putIfAbsent(it.id, it) }
+        comment?.let {
+            comments.putIfAbsent(
+                it.id,
+                it.copy(
+                    // The thread's replies section holds the token that loads them.
+                    repliesToken = thread["replies"]?.let(::continuationToken),
+                    replyParams = replyParams(thread, view, surfaces),
+                ),
+            )
+        }
     }
     // The next page's token sits after the threads; reply tokens are inside a thread and the sort
     // menu's in the header, so both are skipped.
     val continuation = objects(root, "continuationItemRenderer", skip = setOf("commentThreadRenderer", "commentsHeaderRenderer"))
         .firstNotNullOfOrNull(::continuationToken)
-    return YouTubeCommentPage(comments.values.toList(), continuation)
+    return YouTubeCommentPage(comments.values.toList(), continuation, createParams = findText(root, "createCommentParams"))
+}
+
+/**
+ * A page of a comment's replies, from `next` with its [YouTubeComment.repliesToken]: each reply is a
+ * bare `commentViewModel` (its comment under the same key in `frameworkUpdates`) or, in the older
+ * shape, a `commentRenderer`. The token, when there is one, loads more of them.
+ */
+internal fun parseYouTubeCommentReplies(body: String): YouTubeCommentPage {
+    val root = runCatching { json.parseToJsonElement(body) }.getOrNull() ?: return YouTubeCommentPage(emptyList(), null)
+    val payloads = objects(root, "commentEntityPayload").associateBy { it.string("key") }
+    val replies = LinkedHashMap<String, YouTubeComment>()
+    objects(root, "commentViewModel")
+        .mapNotNull { view -> view.string("commentKey")?.let { payloads[it] }?.let(::entityComment) }
+        .forEach { replies.putIfAbsent(it.id, it) }
+    objects(root, "commentRenderer").mapNotNull(::rendererComment).forEach { replies.putIfAbsent(it.id, it) }
+    val continuation = objects(root, "continuationItemRenderer").firstNotNullOfOrNull(::continuationToken)
+    return YouTubeCommentPage(replies.values.toList(), continuation)
+}
+
+/** Every `frameworkUpdates` entity's payload, by its key: where the current shape keeps a comment's toolbar. */
+private fun entityPayloads(root: JsonElement): Map<String, JsonObject> {
+    val found = HashMap<String, JsonObject>()
+    fun walk(e: JsonElement) {
+        when (e) {
+            is JsonObject -> {
+                val key = e.string("entityKey")
+                val payload = e.obj("payload")
+                if (key != null && payload != null) found[key] = payload
+                e.values.forEach(::walk)
+            }
+            is JsonArray -> e.forEach(::walk)
+            else -> Unit
+        }
+    }
+    walk(root)
+    return found
+}
+
+/** A thread's `createReplyParams`: in its own reply button (older shape) or its toolbar entity (current shape). */
+private fun replyParams(thread: JsonObject, view: JsonObject?, surfaces: Map<String, JsonObject>): String? =
+    findText(thread, "createReplyParams")
+        ?: view?.string("toolbarSurfaceKey")?.let { surfaces[it] }?.let { findText(it, "createReplyParams") }
+
+private fun findText(element: JsonElement, key: String): String? = when (element) {
+    is JsonObject -> element.string(key) ?: element.values.firstNotNullOfOrNull { findText(it, key) }
+    is JsonArray -> element.firstNotNullOfOrNull { findText(it, key) }
+    else -> null
 }
 
 private fun entityComment(payload: JsonObject): YouTubeComment? {

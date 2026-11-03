@@ -506,3 +506,46 @@ internal fun parseYouTubeChapters(body: String): List<YouTubeChapter> {
     // One chapter marks nothing; and the same start twice (a list read from two places) only once.
     return chapters.distinctBy { it.startSeconds }.sortedBy { it.startSeconds }.takeIf { it.size >= 2 }.orEmpty()
 }
+
+/** What the watch page says about a video, under the player: for the windowed watch page. */
+data class YouTubeVideoDetails(
+    val title: String?,
+    /** "1,234,567 views", as YouTube words it. */
+    val views: String?,
+    /** "Nov 2, 2026" or "Premiered 3 days ago", as YouTube words it. */
+    val published: String?,
+    val description: String?,
+    val channelName: String?,
+    val channelId: String?,
+    val channelAvatarUrl: String?,
+    /** "1.2M subscribers", as YouTube words it. */
+    val subscribers: String?,
+    val subscribed: Boolean?,
+)
+
+/**
+ * The details from a video's WEB `next` answer: `videoPrimaryInfoRenderer` (title, views, date) and
+ * `videoSecondaryInfoRenderer` (the channel, the description). Null when the answer has neither.
+ */
+internal fun parseYouTubeVideoDetails(body: String): YouTubeVideoDetails? {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return null
+    val primary = collectObjects(root, "videoPrimaryInfoRenderer").firstOrNull()
+    val secondary = collectObjects(root, "videoSecondaryInfoRenderer").firstOrNull()
+    if (primary == null && secondary == null) return null
+    val viewCount = primary?.obj("viewCount")?.obj("videoViewCountRenderer")
+    val owner = secondary?.obj("owner")?.obj("videoOwnerRenderer")
+    return YouTubeVideoDetails(
+        title = text(primary?.get("title"))?.takeIf { it.isNotBlank() },
+        views = (text(viewCount?.get("viewCount")) ?: text(viewCount?.get("shortViewCount")))?.takeIf { it.isNotBlank() },
+        published = text(primary?.get("dateText"))?.takeIf { it.isNotBlank() },
+        description = (secondary?.obj("attributedDescription")?.string("content") ?: text(secondary?.get("description")))
+            ?.takeIf { it.isNotBlank() },
+        channelName = text(owner?.get("title"))?.takeIf { it.isNotBlank() },
+        channelId = owner?.let(::findChannelId),
+        channelAvatarUrl = owner?.obj("thumbnail")?.array("thumbnails")
+            ?.mapNotNull { (it as? JsonObject)?.string("url") }?.lastOrNull()
+            ?.let { if (it.startsWith("//")) "https:$it" else it },
+        subscribers = text(owner?.get("subscriberCountText"))?.takeIf { it.isNotBlank() },
+        subscribed = parseYouTubeSubscribed(body),
+    )
+}

@@ -766,9 +766,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
 
     val gestureCallbacks = rememberSurfaceGestureCallbacks()
 
+    // fork:youtube-watch-page - the player as one piece, so a YouTube video's watch page can size and
+    // place it (YouTubeWatchFrame) without it leaving the composition.
+    val playerBox: @Composable (Modifier) -> Unit = { frameModifier ->
     Box(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = frameModifier
             .onSizeChanged { layoutSize = it }
             .then(
                 if (isDesktop && playerSettingsUiState.mouseMoveRevealsControlsEnabled) {
@@ -1032,6 +1034,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         )
         RenderPlayerModals(displayedPositionMs = displayedPositionMs)
     }
+    }
+    if (isYouTubeVideoPlayback) YouTubeWatchFrame(playerBox) else playerBox(Modifier.fillMaxSize())
 }
 
 private fun PlayerScreenRuntime.presentUnrecoverablePlaybackError(
@@ -1637,7 +1641,9 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
                 else -> PlayerResizeMode.Fit
             },
         )
-        "copyStreamUrl" -> activeSourceUrl.takeIf { it.isNotBlank() }?.let(::copyPlainTextToClipboard)
+        // A YouTube tab video copies its public watch link, to share; the stream URL is ours, long-winded and short-lived.
+        "copyStreamUrl" -> (if (isYouTubeVideoPlayback) "https://www.youtube.com/watch?v=$youTubeVideoId" else activeSourceUrl)
+            .takeIf { it.isNotBlank() }?.let(::copyPlainTextToClipboard)
         "toggleMpvDiagnostics" -> playerController?.setDiagnosticsOverlayEnabled(value != 0.0)
         "toggleStreamFailover" -> {
             val enabled = value != 0.0

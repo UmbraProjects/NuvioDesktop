@@ -81,6 +81,13 @@ internal actual suspend fun youTubePlaylistOptions(videoId: String, pageId: Stri
 internal actual suspend fun youTubeNext(videoId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("next", mapOf("videoId" to videoId, "continuation" to continuation), pageId)
 
+internal actual suspend fun youTubeCreateComment(params: String, text: String, reply: Boolean, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest(
+        if (reply) "comment/create_comment_reply" else "comment/create_comment",
+        mapOf("commentText" to text, (if (reply) "createReplyParams" else "createCommentParams") to params),
+        pageId,
+    )
+
 internal actual suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult =
     signedWebRequest(
         "feedback",
@@ -379,6 +386,18 @@ internal actual object YouTubeModeStorage {
     actual fun loadMaxQuality(): Int? = store.getString(MAX_QUALITY_KEY)?.toIntOrNull()
 
     actual fun saveMaxQuality(shortSide: Int) = store.putString(MAX_QUALITY_KEY, shortSide.toString())
+
+    private const val OPEN_WINDOWED_KEY = "open_windowed"
+
+    actual fun loadOpenWindowed(): Boolean = store.getBoolean(OPEN_WINDOWED_KEY) ?: true
+
+    actual fun saveOpenWindowed(windowed: Boolean) = store.putBoolean(OPEN_WINDOWED_KEY, windowed)
+
+    private const val THEATER_MODE_KEY = "theater_mode"
+
+    actual fun loadTheaterMode(): Boolean = store.getBoolean(THEATER_MODE_KEY) ?: false
+
+    actual fun saveTheaterMode(theater: Boolean) = store.putBoolean(THEATER_MODE_KEY, theater)
 
     private const val WATCHED_DATE_MODE_KEY = "watched_date_mode"
 

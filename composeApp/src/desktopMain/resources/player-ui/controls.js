@@ -29,6 +29,13 @@ const isChromelessSurface = (() => {
 })();
 
 const root = document.getElementById("playerRoot");
+// The YouTube watch page's corner player shows the picture alone; a click there goes back up to the video.
+root.addEventListener("click", event => {
+  if (!state.miniPlayer) return;
+  event.preventDefault();
+  event.stopPropagation();
+  send("miniPlayerClick", 0);
+}, true);
 const contextMenu = document.getElementById("contextMenu");
 const seek = document.getElementById("seek");
 const pipSeek = document.getElementById("pipSeek");
@@ -5939,6 +5946,7 @@ const renderChrome = () => {
     updateViewportUiScale();
   }
   root.classList.toggle("locked", Boolean(state.isLocked));
+  root.classList.toggle("mini-player", Boolean(state.miniPlayer));
   root.classList.toggle("episode-panel-open", activeModal === "episodes");
   root.classList.toggle("source-panel-open", activeModal === "sources");
   root.classList.toggle("iptv-panel-open", activeModal === "iptvChannels");
@@ -5958,6 +5966,12 @@ const renderChrome = () => {
   root.classList.toggle("seek-handle-hidden", state.seekHandleEnabled === false);
   root.classList.toggle("vignette-hidden", state.hudVignetteEnabled === false);
   applyHiddenHudButtons(state.hiddenHudButtons);
+  // The YouTube watch page hides the comments and related panels it shows itself: their edge notches too.
+  const pageHiddenPanels = state.watchPage
+    ? new Set(String(state.hiddenHudButtons || "").split(",").map(part => part.trim()))
+    : null;
+  document.querySelectorAll(".episode-notch[data-command], .source-notch[data-command]")
+    .forEach(notch => notch.classList.toggle("user-hidden", Boolean(pageHiddenPanels && pageHiddenPanels.has(notch.dataset.command))));
   applyHudButtonOrder(state.hudButtonOrder);
   // The official bar also reads the time as one "position / duration" readout, right-aligned.
   applyMinimalHudTimeLayout(minimalHud || officialHud);
@@ -8069,6 +8083,12 @@ root.addEventListener("click", event => {
 
 root.addEventListener("wheel", event => {
   if (state.pictureInPictureActive) return;
+  // The YouTube watch page: the wheel scrolls the page around the video (volume stays on the controls).
+  if (state.watchPage) {
+    event.preventDefault();
+    if (event.deltaY !== 0) send("watchPageScroll", event.deltaY);
+    return;
+  }
   if (playbackErrorText()) return;
   if (state.isLocked) return;
   if (isChromeInteractionTarget(event.target)) return;

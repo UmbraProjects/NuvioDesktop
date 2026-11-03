@@ -1891,6 +1891,9 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                 durationMs = durationMs,
                 positionMs = positionMs,
                 lastTrustedPositionMs = lastTrustedPlaybackPositionMs,
+                // A YouTube tab video is never a debrid placeholder, and many run under two minutes:
+                // taken for placeholders, their ends never exited, so autoplay sat at the end (Nov 3, a 1:44 video).
+                allowShortContent = isYouTubeVideoPlayback,
             )
             val nextVideoId = nextEpisodeInfo?.videoId
             val hasPlayableNextEpisode = nextEpisodeInfo?.hasAired == true &&
@@ -2012,11 +2015,13 @@ internal fun isTrustworthyPlaybackEnd(
     durationMs: Long,
     positionMs: Long,
     lastTrustedPositionMs: Long,
+    /** A source that cannot be a placeholder clip (a YouTube video): a short one's end is real. */
+    allowShortContent: Boolean = false,
 ): Boolean =
     isEnded &&
         durationMs > 0L &&
         // An error clip or debrid placeholder ending is not the episode ending.
-        !com.nuvio.app.features.watching.domain.isShortPlaceholderDuration(durationMs) &&
+        (allowShortContent || !com.nuvio.app.features.watching.domain.isShortPlaceholderDuration(durationMs)) &&
         positionMs >= (durationMs - NEXT_EPISODE_EOF_POSITION_TOLERANCE_MS).coerceAtLeast(0L) &&
         lastTrustedPositionMs > 0L &&
         lastTrustedPositionMs >=
@@ -2087,6 +2092,8 @@ internal fun PlayerScreenRuntime.removeFailedStreamFromCache() {
 }
 
 internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message: String?): Boolean {
+    // A YouTube tab video has no addon to ask again: its streams are looked up again instead.
+    if (isYouTubeVideoPlayback) return tryReresolveYouTubeAfterError(message)
     val failedUrl = activeSourceUrl
     if (!failedUrl.hasLikelyExpiringPlaybackCredentials()) return false
     if (credentialRefreshJob?.isActive == true) return true

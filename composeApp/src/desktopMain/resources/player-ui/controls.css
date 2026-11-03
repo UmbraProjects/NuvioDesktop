@@ -7725,3 +7725,11 @@ svg {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
+
+/* fork:youtube-watch-page - the watch page's corner player: the picture alone; a click goes back up to the video. */
+.player.mini-player > * {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.player.mini-player { cursor: pointer; }

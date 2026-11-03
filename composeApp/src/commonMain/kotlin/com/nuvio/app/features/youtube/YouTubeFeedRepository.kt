@@ -144,6 +144,9 @@ internal expect suspend fun youTubePlaylistOptions(videoId: String, pageId: Stri
 /** The WEB `next` answer: for [videoId] (its page, which names the comments section), or a [continuation] of it. */
 internal expect suspend fun youTubeNext(videoId: String?, continuation: String?, pageId: String?): YouTubeBrowseResult
 
+/** Posts [text] as a comment (`comment/create_comment`) or, with [reply], a reply (`comment/create_comment_reply`), with the params YouTube gave for it. */
+internal expect suspend fun youTubeCreateComment(params: String, text: String, reply: Boolean, pageId: String?): YouTubeBrowseResult
+
 /** Sends a feed item's feedback token (`feedback`), as its menu rows do on the website: "Don't recommend channel". */
 internal expect suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult
 
@@ -189,6 +192,12 @@ internal expect object YouTubeModeStorage {
     fun loadMaxQuality(): Int?
     fun saveMaxQuality(shortSide: Int)
 
+    fun loadOpenWindowed(): Boolean
+    fun saveOpenWindowed(windowed: Boolean)
+
+    fun loadTheaterMode(): Boolean
+    fun saveTheaterMode(theater: Boolean)
+
     fun loadWatchedDateMode(): String?
     fun saveWatchedDateMode(mode: String)
 
@@ -200,7 +209,12 @@ internal expect object YouTubeModeStorage {
 }
 
 /** See [YouTubeFeedRepository.watchPage]. */
-data class YouTubeWatchPage(val related: List<YouTubeVideo>, val chapters: List<YouTubeChapter>)
+data class YouTubeWatchPage(
+    val related: List<YouTubeVideo>,
+    val chapters: List<YouTubeChapter>,
+    /** Title, channel and description for the windowed watch page; null when YouTube did not answer. */
+    val details: YouTubeVideoDetails? = null,
+)
 
 data class YouTubeChannelState(
     val channels: List<YouTubeChannelIdentity> = emptyList(),
@@ -334,6 +348,28 @@ object YouTubeFeedRepository {
     fun setMaxQuality(shortSide: Int) {
         _maxQuality.value = shortSide
         YouTubeModeStorage.saveMaxQuality(shortSide)
+    }
+
+    private val _openWindowed by lazy { MutableStateFlow(YouTubeModeStorage.loadOpenWindowed()) }
+
+    /** Settings > YouTube account > Open videos: on the watch page (true) or filling the window. */
+    val openWindowed: StateFlow<Boolean>
+        get() = _openWindowed.asStateFlow()
+
+    fun setOpenWindowed(windowed: Boolean) {
+        _openWindowed.value = windowed
+        YouTubeModeStorage.saveOpenWindowed(windowed)
+    }
+
+    private val _theaterMode by lazy { MutableStateFlow(YouTubeModeStorage.loadTheaterMode()) }
+
+    /** The watch page's wide layout: the video across the page, related videos below it. Remembered. */
+    val theaterMode: StateFlow<Boolean>
+        get() = _theaterMode.asStateFlow()
+
+    fun setTheaterMode(theater: Boolean) {
+        _theaterMode.value = theater
+        YouTubeModeStorage.saveTheaterMode(theater)
     }
 
     private val _watchedDateMode by lazy {
@@ -623,8 +659,36 @@ object YouTubeFeedRepository {
             ?: return YouTubeWatchPage(emptyList(), emptyList())
         val related = parseYouTubeFeed(page.body).videos.filter { it.videoId != videoId }
         val chapters = parseYouTubeChapters(page.body)
+        // The same answer says whether the account likes it: no second request for the like button.
+        parseYouTubeLikeStatus(page.body)?.let { liked -> _likeStatus.update { it + (videoId to liked) } }
         log.i { "Watch page: ${related.size} related, ${chapters.size} chapters" }
-        return YouTubeWatchPage(related, chapters)
+        return YouTubeWatchPage(related, chapters, parseYouTubeVideoDetails(page.body))
+    }
+
+    /** A page of a comment's replies ([YouTubeComment.repliesToken], then each page's own token); null when YouTube did not answer. */
+    suspend fun commentReplies(token: String): YouTubeCommentPage? {
+        val page = youTubeNext(videoId = null, continuation = token, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok ?: return null
+        return parseYouTubeCommentReplies(page.body).also { log.i { "Replies: ${it.comments.size}, more=${it.continuation != null}" } }
+    }
+
+    /** Posts [text] as a comment ([YouTubeCommentPage.createParams]) or a reply ([YouTubeComment.replyParams]). True when YouTube took it. */
+    suspend fun postComment(params: String, text: String, reply: Boolean): Boolean {
+        val ok = youTubeCreateComment(params, text, reply, _channel.value.pageId) is YouTubeBrowseResult.Ok
+        log.i { "${if (reply) "reply" else "comment"} posted: ok=$ok" }
+        return ok
+    }
+
+    /** Subscribes to [channelId] or unsubscribes, from anywhere (the open channel page has [setSubscribed]). True when YouTube took it. */
+    suspend fun setSubscribedTo(channelId: String, subscribed: Boolean): Boolean {
+        val ok = youTubeSetSubscribed(channelId, subscribed, _channel.value.pageId) is YouTubeBrowseResult.Ok
+        log.i { "${if (subscribed) "subscribe" else "unsubscribe"}: ok=$ok" }
+        if (ok) {
+            _openChannel.update { if (it?.channelId == channelId) it.copy(subscribed = subscribed) else it }
+            // The list and the feed no longer match the account.
+            _subscribedChannels.value = YouTubeChannelListState()
+            _feeds.update { it + (YouTubeFeedKind.Subscriptions to YouTubeFeedState()) }
+        }
+        return ok
     }
 
     /**

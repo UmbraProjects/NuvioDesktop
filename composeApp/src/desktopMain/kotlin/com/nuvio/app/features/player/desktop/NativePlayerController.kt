@@ -1,5 +1,7 @@
 package com.nuvio.app.features.player.desktop
 
+import com.nuvio.app.features.iptv.isHlsPlaylistUrl
+
 import com.nuvio.app.features.preroll.PostShowController
 import com.nuvio.app.features.preroll.PostShowKey
 import com.nuvio.app.features.preroll.loudnessFilterExpression
@@ -329,6 +331,7 @@ internal class NativePlayerController(
                 // Add keeps this one, and Full (the user's own configuration only) never gets it.
                 if (PlayerSettingsRepository.uiState.value.desktopMpvConfigMode != DesktopMpvConfigMode.Full) {
                     directMediaNetworkTimeoutOption(sourceUrl)?.let(::add)
+                    hlsDemuxerMpvOption(sourceUrl)?.let(::add)
                     // YouTube tab videos: googlevideo serves one open-ended request at about the
                     // playback rate, so a 1440p video at 2x ran dry every few seconds (Nov 2:
                     // 2.9 s ahead at 1x, four cache pauses in 8 s at 2x). Bounded ranges are not
@@ -509,6 +512,18 @@ internal class NativePlayerController(
         this.onScrubFinished = onScrubFinished
     }
 
+    /**
+     * fork:youtube-watch-page - the watch page's corner player: the HUD shows nothing, and a click sends
+     * `miniPlayerClick`. Kept here rather than in [PlayerControlsState], whose constructor is at the JVM's
+     * limit of 255 parameter slots (one more field and the class no longer loads).
+     */
+    var miniPlayer = false
+    private var lastSentMiniPlayer = false
+
+    /** fork:youtube-watch-page - the page shows around the video: the wheel scrolls it rather than setting the volume. */
+    var watchPage = false
+    private var lastSentWatchPage = false
+
     fun updateControls(state: PlayerControlsState) {
         controlsState = state
         val currentHandle = handle
@@ -539,8 +554,10 @@ internal class NativePlayerController(
                 state.mediaSessionArtwork,
             )
         }
-        if (structureKey == lastSentControlsStructureKey) return
+        if (structureKey == lastSentControlsStructureKey && miniPlayer == lastSentMiniPlayer && watchPage == lastSentWatchPage) return
         lastSentControlsStructureKey = structureKey
+        lastSentMiniPlayer = miniPlayer
+        lastSentWatchPage = watchPage
         AppShortcutsRepository.ensureLoaded()
         PlayerShortcutsRepository.ensureLoaded()
         val controlsJson = state.toControlsJson(
@@ -551,6 +568,8 @@ internal class NativePlayerController(
             skipIntervalKeyLabel = playerShortcutKeyCodeLabel(
                 PlayerShortcutsRepository.keyCode(PlayerShortcutAction.SkipInterval),
             ),
+            miniPlayer = miniPlayer,
+            watchPage = watchPage,
         )
         val payload = if (hudLabelsSent) controlsJson else controlsJson.withHudLabels()
         if (!controlsJsonIsWellFormed(payload)) return
@@ -644,6 +663,16 @@ internal class NativePlayerController(
     }
 
     /** Forces mpv to repaint the embedded video surface (see native forceVideoRedraw). */
+    /** The host was resized: fit the video and the HUD to it now. An older bridge without the call keeps its timer. */
+    fun layoutToHost() {
+        val current = handle.takeIf { it != 0L } ?: return
+        try {
+            NativePlayerBridge.layoutToHost(current)
+        } catch (missing: UnsatisfiedLinkError) {
+            // A player_bridge.dll from before layoutToHost: its 500 ms timer still fits the video.
+        }
+    }
+
     fun forceVideoRedraw() {
         videoProfileBatch.get()?.let { it.redraw = true; return }
         val current = handle
@@ -1104,6 +1133,13 @@ internal class NativePlayerController(
      * The "Escape goes windowed first" shortcut option: in fullscreen (not PiP) Escape leaves
      * fullscreen instead of the player. Already windowed, Escape closes the player as usual.
      */
+    /** Whether the mouse pointer is over the video's own window. */
+    private fun pointerOverHost(): Boolean = runCatching {
+        if (!host.isShowing) return false
+        val pointer = java.awt.MouseInfo.getPointerInfo()?.location ?: return false
+        java.awt.Rectangle(host.locationOnScreen, host.size).contains(pointer)
+    }.getOrDefault(false)
+
     fun escapeShouldGoWindowed(): Boolean =
         PlayerShortcutsRepository.escWindowedFirst() &&
             desktopAppFullscreenState.value &&
@@ -1325,7 +1361,11 @@ internal class NativePlayerController(
                     seekTo(value.toLong())
                 }
             }
-            "toggleFullscreen" -> toggleDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
+            "toggleFullscreen" -> {
+                val window = SwingUtilities.getWindowAncestor(host)
+                // A YouTube video's watch page takes the button: page to filling the screen and back.
+                if (!com.nuvio.app.features.youtube.handleYouTubeFullscreenButton(window)) toggleDesktopAppFullscreen(window)
+            }
             // The HUD's Escape (with nothing of its own to close). The back button still sends "back".
             // A D-pad key while the post-show cards are up (the controls page forwards them: it holds keyboard focus).
             "postShowKey" -> PostShowController.press(value.toInt())
@@ -1333,12 +1373,18 @@ internal class NativePlayerController(
                 if (PostShowController.active.value) {
                     // Escape closes the post-show cards instead of leaving the player.
                     PostShowController.press(PostShowKey.Back)
+                } else if (com.nuvio.app.features.youtube.handleYouTubeEscape(SwingUtilities.getWindowAncestor(host))) {
+                    // Back to the YouTube watch page the video was filling the screen from.
                 } else if (escapeShouldGoWindowed()) {
                     toggleDesktopAppFullscreen(SwingUtilities.getWindowAncestor(host))
                 } else {
                     handlePlayerEvent("back", value)
                 }
             }
+            // The YouTube watch page's corner player was clicked: back up to the video.
+            "miniPlayerClick" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.requestBackToVideo()
+            // The wheel over the video on the watch page, in the page's pixels: the page scrolls by it.
+            "watchPageScroll" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.requestScroll(value.toFloat())
             "pictureInPicture" -> {
                 val actionHandled = onAction(PlayerControlsAction.PictureInPicture)
                 if (!actionHandled) setDesktopPictureInPicture(!desktopPictureInPictureState.value, SwingUtilities.getWindowAncestor(host))
@@ -1355,7 +1401,17 @@ internal class NativePlayerController(
             )
             "cursorVisibility" -> {
                 val current = handle.takeIf { it != 0L } ?: return
-                NativePlayerBridge.setCursorHidden(current, value == 0.0)
+                val hide = value == 0.0
+                // fork:youtube-watch-page - on the watch page the video is only part of the window and the
+                // controls' idle timer only sees movement over it: the cursor is hidden only while it is
+                // over the video, and moving over the page shows it again.
+                if (com.nuvio.app.features.youtube.YouTubeWatchLayout.pageShown) {
+                    com.nuvio.app.features.youtube.YouTubeWatchLayout.revealCursor = {
+                        handle.takeIf { it != 0L }?.let { NativePlayerBridge.setCursorHidden(it, false) }
+                    }
+                    if (hide && !pointerOverHost()) return
+                }
+                NativePlayerBridge.setCursorHidden(current, hide)
             }
             "hudSubtitleClearance" -> {
                 val percent = value.coerceIn(0.0, 100.0)
@@ -2368,6 +2424,22 @@ internal fun withMpvFilenameHint(url: String, title: String): String {
     return "$url#/${java.net.URLEncoder.encode(name, Charsets.UTF_8).replace("+", "%20")}"
 }
 
+/**
+ * HLS from web providers. FFmpeg's HLS reader keeps one connection per host for the playlist's requests
+ * (`http_persistent`). A master that lists its subtitles as bare `.vtt` files rather than subtitle
+ * playlists (a plugin's provider, Nov 2026) makes each one a failed playlist parse that leaves the
+ * subtitle unread on that connection, and the next request over it, the video's own playlist, reads
+ * that text instead and fails too: sound, a black picture and no duration. A connection per request
+ * costs one handshake a segment. `extension_picky=0` also keeps audio segments that are MPEG-TS under
+ * an `.aac` name playing. Not live TV, which sets demuxer options of its own.
+ */
+internal fun hlsDemuxerMpvOption(sourceUrl: String): String? =
+    if (sourceUrl.isHlsPlaylistUrl() && !com.nuvio.app.features.iptv.IptvPlaybackSession.isIptvUrl(sourceUrl)) {
+        "demuxer-lavf-o=http_persistent=0,extension_picky=0"
+    } else {
+        null
+    }
+
 internal fun directMediaNetworkTimeoutOption(sourceUrl: String): String? =
     if (PlaybackRedirectResolver.isDirectMediaHost(sourceUrl)) {
         "network-timeout=$DIRECT_MEDIA_NETWORK_TIMEOUT_SECONDS"
@@ -2489,6 +2561,8 @@ internal fun PlayerControlsState.toControlsJson(
     appFullscreenKeyCode: Int,
     playerShortcutKeyCodes: Map<String, Int>,
     skipIntervalKeyLabel: String,
+    miniPlayer: Boolean = false,
+    watchPage: Boolean = false,
 ): String =
     buildString {
         append('{')
@@ -2547,6 +2621,10 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("pictureInPictureLabel", pictureInPictureLabel)
         append(',')
         appendJsonField("pictureInPictureActive", pictureInPictureActive)
+        append(',')
+        appendJsonField("miniPlayer", miniPlayer)
+        append(',')
+        appendJsonField("watchPage", watchPage)
         append(',')
         appendJsonField("desktopHdrModeLabel", desktopHdrModeLabel)
         append(',')

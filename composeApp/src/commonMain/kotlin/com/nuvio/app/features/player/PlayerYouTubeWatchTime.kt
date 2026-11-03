@@ -35,9 +35,10 @@ internal fun PlayerScreenRuntime.BindYouTubeWatchTimeEffect() {
         )
     }
     // In a playlist being played through: the next video is resolved during this one's last minute
-    // (or last tenth), so the player can be handed straight over to it when this one ends.
+    // (or last tenth, but never under 15 s: a short video's tenth is less than the lookup takes), so the
+    // player can be handed straight over to it when this one ends.
     val nearEnd = snapshot.durationMs > 0L &&
-        snapshot.positionMs >= snapshot.durationMs - minOf(60_000L, snapshot.durationMs / 10)
+        snapshot.positionMs >= snapshot.durationMs - minOf(60_000L, maxOf(15_000L, snapshot.durationMs / 10))
     LaunchedEffect(videoId, nearEnd) {
         if (nearEnd) com.nuvio.app.features.youtube.YouTubePlayQueue.prepareNext(videoId)
     }

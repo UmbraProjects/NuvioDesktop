@@ -273,7 +273,9 @@ private fun NativePlayerSurface(
             hostFirstFullSizePaintComplete.value = true
             DesktopPlayerLaunchShield.hideAfter()
         }
+        host.onResized = { controller.layoutToHost() }
         onDispose {
+            host.onResized = null
             host.onDisplayableChanged = null
             host.onFirstPaint = null
             host.onFirstFullSizePaint = null
@@ -392,6 +394,8 @@ private fun NativePlayerSurface(
             }
             val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
             if (focusOwner is JTextComponent) return@KeyEventDispatcher false
+            // A Compose text field (the YouTube watch page's comment box) is being typed in: its keys are its own.
+            if (com.nuvio.app.core.ui.TextInputFocusTracker.active.value) return@KeyEventDispatcher false
             // Post-show cards are up: a pad's D-pad, A and B (replayed here as arrows, the play/pause key
             // and Escape) and the number keys drive the cards. Anything else, including the skip key,
             // carries on below.
@@ -443,6 +447,13 @@ private fun NativePlayerSurface(
             }
             // Escape reaching AWT (Compose focused, or a pad's B replayed as Escape) would otherwise
             // fall through to back navigation and leave the player.
+            // A YouTube video filling the screen from its watch page: Escape goes back to the page.
+            if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) &&
+                com.nuvio.app.features.youtube.handleYouTubeEscape(javax.swing.SwingUtilities.getWindowAncestor(host))
+            ) {
+                event.consume()
+                return@KeyEventDispatcher true
+            }
             if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) &&
                 controller.escapeShouldGoWindowed()
             ) {
@@ -1027,9 +1038,24 @@ private fun NativePlayerSurface(
         controller.setResizeMode(resizeMode)
     }
 
-    LaunchedEffect(controller, playerControlsState, postShowBoxed) {
+    val youTubeMiniPlayer by com.nuvio.app.features.youtube.YouTubeWatchLayout.mini.collectAsState()
+    val youTubePageWindowed by com.nuvio.app.features.youtube.YouTubeWatchLayout.windowed.collectAsState()
+    val youTubePageAvailable by com.nuvio.app.features.youtube.YouTubeWatchLayout.available.collectAsState()
+    val youTubeTheater by com.nuvio.app.features.youtube.YouTubeFeedRepository.theaterMode.collectAsState()
+    LaunchedEffect(controller, playerControlsState, postShowBoxed, youTubeMiniPlayer, youTubePageWindowed, youTubePageAvailable, youTubeTheater) {
+        val youTubePage = youTubePageAvailable && youTubePageWindowed
+        controller.watchPage = youTubePage
+        controller.miniPlayer = youTubeMiniPlayer && youTubePage
         controller.updateControls(
-            if (postShowBoxed) {
+            if (youTubePage && !youTubeTheater && !postShowBoxed) {
+                // The watch page shows the comments and related videos beside the video, larger than
+                // the HUD's panels: their buttons go. Theater fills the window, so it keeps them.
+                playerControlsState.copy(
+                    hiddenHudButtons = listOf(playerControlsState.hiddenHudButtons, "sources", "episodes")
+                        .filter { it.isNotBlank() }
+                        .joinToString(","),
+                )
+            } else if (postShowBoxed) {
                 // The HUD lives inside the video's container, so it would be squashed into the box.
                 // Its keyboard focus stays, though, so it forwards the D-pad to the cards.
                 // The skip prompt is drawn by the cards screen instead (skipKeyAction stays, so the key works).

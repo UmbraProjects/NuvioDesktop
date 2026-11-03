@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 internal val PlayerScreenRuntime.isYouTubeVideoPlayback: Boolean
     get() = parentMetaType == YOUTUBE_META_TYPE
 
-private val PlayerScreenRuntime.youTubeVideoId: String
+internal val PlayerScreenRuntime.youTubeVideoId: String
     get() = parentMetaId.removePrefix(YOUTUBE_META_ID_PREFIX)
 
 /** Loads the related videos, the chapters and the seek previews when a YouTube tab video opens. */
@@ -29,6 +29,11 @@ private val PlayerScreenRuntime.youTubeVideoId: String
 internal fun PlayerScreenRuntime.BindYouTubeRelatedEffect() {
     if (!isYouTubeVideoPlayback) return
     val videoId = youTubeVideoId
+    // fork:youtube-watch-page - the page can show while this player is up (YouTubeWatchLayout).
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        com.nuvio.app.features.youtube.YouTubeWatchLayout.begin()
+        onDispose { com.nuvio.app.features.youtube.YouTubeWatchLayout.end() }
+    }
     LaunchedEffect(videoId) {
         youTubeStoryboard = null
         youTubeStoryboardPending = true
@@ -41,10 +46,12 @@ internal fun PlayerScreenRuntime.BindYouTubeRelatedEffect() {
     LaunchedEffect(videoId) {
         youTubeRelated = emptyList()
         youTubeChapters = emptyList()
+        youTubeDetails = null
         youTubeComments = emptyList()
         youTubeCommentsLoaded = false
         val page = YouTubeFeedRepository.watchPage(videoId)
         youTubeRelated = page.related
+        youTubeDetails = page.details
         // The stream itself carries no chapters; YouTube's player draws these (see the chapter effect).
         youTubeChapters = page.chapters.map { PlayerChapter(it.startSeconds, it.title) }
     }
@@ -94,8 +101,12 @@ private fun PlayerScreenRuntime.loadYouTubeComments(force: Boolean = false) {
     }
 }
 
-private fun PlayerScreenRuntime.openRelatedYouTubeVideo(index: Int) {
-    val video = youTubeRelated.getOrNull(index) ?: return
+internal fun PlayerScreenRuntime.openRelatedYouTubeVideo(index: Int) {
+    youTubeRelated.getOrNull(index)?.let(::openYouTubeVideoFromPlayer)
+}
+
+/** Hands the player straight over to [video] (a related video, or one from the queue on the watch page). */
+internal fun PlayerScreenRuntime.openYouTubeVideoFromPlayer(video: com.nuvio.app.features.youtube.YouTubeVideo) {
     // Set up as a one-off hand-over, then leave as if this video had ended: the app opens the next
     // player behind the same shield as a playlist moving on (App's playback-completed path).
     YouTubePlayQueue.handOverFromPlayer(youTubeVideoId, video)
@@ -136,3 +147,41 @@ internal fun PlayerScreenRuntime.youTubeCommentSourceItems(): List<PlayerControl
             addonName = comment.likes?.let { "$it likes" }.orEmpty(),
         )
     }
+
+/**
+ * A YouTube tab video that would not open or stopped (a CDN server not answering: Nov 3 a connection to
+ * one timed out after 65 s while the server had served five videos that morning; or a link gone stale):
+ * its streams are looked up again, once, and it carries on from where it was. A fresh lookup almost
+ * always lands on another server. False when this source was already retried, so the error shows.
+ */
+internal fun PlayerScreenRuntime.tryReresolveYouTubeAfterError(message: String?): Boolean {
+    val failedUrl = activeSourceUrl
+    if (credentialRefreshJob?.isActive == true) return true
+    if (credentialRefreshAttemptedSourceUrl == failedUrl) return false
+    credentialRefreshAttemptedSourceUrl = failedUrl
+    val failedAttemptId = playbackAttemptId
+    val savedPositionMs = playbackSnapshot.positionMs.coerceAtLeast(0L)
+    val videoId = youTubeVideoId
+    errorMessage = null
+    controlsVisible = !playerControlsLocked
+    credentialRefreshJob = scope.launch {
+        // Not the streams looked up ahead (YouTubeStreamsAhead): those may be the ones that just failed.
+        val source = runCatching { com.nuvio.app.features.youtube.youTubeOpenVideo(videoId, ahead = false) }.getOrNull()
+        if (playbackAttemptId != failedAttemptId || activeSourceUrl != failedUrl) return@launch
+        if (source == null || source.videoUrl == failedUrl) {
+            errorMessage = message
+            controlsVisible = !playerControlsLocked
+            return@launch
+        }
+        co.touchlab.kermit.Logger.withTag("YouTubeFeed").i { "$videoId: playback failed (${message?.take(80)}); retrying with a fresh lookup" }
+        flushWatchProgress()
+        activeSourceAudioUrl = source.audioUrl
+        activeSourceHeaders = sanitizePlaybackHeaders(source.headers)
+        activeInitialPositionMs = savedPositionMs
+        activeInitialProgressFraction = null
+        controlsVisible = true
+        beginPlaybackAttempt()
+        activeSourceUrl = source.videoUrl
+    }
+    return true
+}

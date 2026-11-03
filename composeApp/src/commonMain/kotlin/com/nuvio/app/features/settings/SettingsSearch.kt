@@ -2475,6 +2475,17 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.YouTubeAccount,
+            key = "youtube-open-videos",
+            title = "Open videos",
+            description = "YouTube videos open windowed (a watch page with related videos and comments) or full screen",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-open-videos"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
             key = "youtube-max-quality",
             title = "Max video quality",
             description = "The sharpest a YouTube tab video plays at: 8K, 4K, 1440p, 1080p or 720p",

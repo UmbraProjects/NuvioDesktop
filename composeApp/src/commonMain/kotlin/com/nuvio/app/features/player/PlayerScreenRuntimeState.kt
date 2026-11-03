@@ -413,6 +413,8 @@ internal class PlayerScreenRuntime(
 
     /** A YouTube video's chapters from its watch page, for the seek bar when the stream has none of its own. */
     var youTubeChapters by mutableStateOf<List<PlayerChapter>>(emptyList())
+    /** The watch page's title, channel and description (fork:youtube-watch-page); null until the watch page answers. */
+    var youTubeDetails by mutableStateOf<com.nuvio.app.features.youtube.YouTubeVideoDetails?>(null)
     var youTubeComments by mutableStateOf<List<com.nuvio.app.features.youtube.YouTubeComment>>(emptyList())
     var youTubeCommentsLoading by mutableStateOf(false)
     var youTubeCommentsLoaded = false

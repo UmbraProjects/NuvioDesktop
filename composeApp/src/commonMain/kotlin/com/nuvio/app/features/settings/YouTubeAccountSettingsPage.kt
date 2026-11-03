@@ -140,6 +140,17 @@ private fun YouTubeTabSwitch(isTablet: Boolean) {
         onCheckedChange = YouTubeFeedRepository::setTabEnabled,
     )
     if (enabled == true) {
+        val openWindowed by remember { YouTubeFeedRepository.openWindowed }.collectAsState()
+        SettingsDropdownChoiceRow(
+            title = "Open videos",
+            description = "Windowed shows a watch page: the video with related videos beside it, and its description and comments " +
+                "below. The player's fullscreen button switches between the two either way.",
+            options = listOf(SettingsChoiceOption(true, "Windowed"), SettingsChoiceOption(false, "Full screen")),
+            selectedValue = openWindowed,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("youtube-open-videos")),
+            onSelected = YouTubeFeedRepository::setOpenWindowed,
+        )
         val maxQuality by remember { YouTubeFeedRepository.maxQuality }.collectAsState()
         SettingsDropdownChoiceRow(
             title = "Max video quality",
