@@ -36,12 +36,14 @@ internal object MusicRateLimit {
  */
 /** [preferHdr]: choose a video's HDR encode when it has one (the YouTube tab; trailers and music do not ask). */
 /** [skipManifestLadder]: the adaptive pair is what plays, so the HLS ladder is not fetched just to measure it (the YouTube tab). */
+/** [parallelClients]: ask the player clients (and read the HLS ladders) at once; only the YouTube tab does. Everything else asks one after another so a refusal can stop the rest. */
 /** [maxShortSide]: the sharpest encode whose short side is at most this (the YouTube tab's max quality); null picks as trailers do. */
 internal class YouTubeCaller(
     val label: String,
     val urgent: Boolean = false,
     val preferHdr: Boolean = false,
     val skipManifestLadder: Boolean = false,
+    val parallelClients: Boolean = false,
     val maxShortSide: Int? = null,
 ) : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<YouTubeCaller>

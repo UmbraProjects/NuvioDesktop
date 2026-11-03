@@ -397,6 +397,7 @@ internal actual suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): T
             urgent = !ahead,
             preferHdr = true,
             skipManifestLadder = true,
+            parallelClients = true,
             maxShortSide = YouTubeFeedRepository.maxQuality.value,
         ),
     ) {

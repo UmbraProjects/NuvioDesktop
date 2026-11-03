@@ -489,28 +489,53 @@ class InAppYouTubeExtractor internal constructor(
 
         val callerLabel = youTubeCallerLabel()
         val clients = if (useAccount) ACCOUNT_CLIENTS else CLIENTS
-        // fork:youtube-pause - while YouTube is refusing this address the other clients would only lengthen the block.
-        val clientsToAsk = clients.take(playerClientsToTry(MusicRateLimit.isBlocked(), clients.size))
-        if (clientsToAsk.size < clients.size) {
-            log.i { "[$callerLabel] YouTube is refusing requests; asking only player client ${clientsToAsk.firstOrNull()?.key} for $videoId" }
-        }
-        // All clients at once, read in their order: asked one after another they added ~0.3 s to every start.
-        val playerResponses = coroutineScope {
-            clientsToAsk.map { client ->
-                async {
-                    client to runCatching {
-                        fetchPlayerResponse(
-                            apiKey = apiKey,
-                            videoId = videoId,
-                            client = client,
-                            visitorData = watchConfig.visitorData,
-                            useAccount = useAccount,
-                        )
+        // fork:youtube-parallel-tab-only - the YouTube tab asks every client at once (it saves ~0.3 s a start). Trailers and
+        // music keep asking one after another: a burst of different client identities from one address is what YouTube
+        // answers with a bot check, and one at a time lets the first refusal stop the rest (the pause below).
+        val parallelClients = com.nuvio.app.features.music.youTubeCaller()?.parallelClients == true
+        val parallelAnswers = if (parallelClients) {
+            // fork:youtube-pause - while YouTube is refusing this address the other clients would only lengthen the block.
+            val clientsToAsk = clients.take(playerClientsToTry(MusicRateLimit.isBlocked(), clients.size))
+            if (clientsToAsk.size < clients.size) {
+                log.i { "[$callerLabel] YouTube is refusing requests; asking only player client ${clientsToAsk.firstOrNull()?.key} for $videoId" }
+            }
+            coroutineScope {
+                clientsToAsk.map { client ->
+                    async {
+                        client to runCatching {
+                            fetchPlayerResponse(
+                                apiKey = apiKey,
+                                videoId = videoId,
+                                client = client,
+                                visitorData = watchConfig.visitorData,
+                                useAccount = useAccount,
+                            )
+                        }
                     }
-                }
-            }.awaitAll()
+                }.awaitAll()
+            }
+        } else {
+            null
         }
-        for ((client, answer) in playerResponses) {
+        for ((clientIndex, client) in clients.withIndex()) {
+            val answer = if (parallelAnswers != null) {
+                (parallelAnswers.getOrNull(clientIndex) ?: break).second
+            } else {
+                // fork:youtube-pause - once YouTube is refusing this address the remaining clients would only lengthen the block.
+                if (clientIndex >= playerClientsToTry(MusicRateLimit.isBlocked(), clients.size)) {
+                    log.i { "[$callerLabel] YouTube is refusing requests; not trying player client ${client.key} for $videoId" }
+                    break
+                }
+                runCatching {
+                    fetchPlayerResponse(
+                        apiKey = apiKey,
+                        videoId = videoId,
+                        client = client,
+                        visitorData = watchConfig.visitorData,
+                        useAccount = useAccount,
+                    )
+                }
+            }
             runCatching {
                 val playerResponse = answer.getOrThrow()
 
@@ -649,12 +674,13 @@ class InAppYouTubeExtractor internal constructor(
                 bestManifest = ManifestCandidate(clientKey, priority, manifestUrl, selectedVariantUrl = manifestUrl, height = 0, bandwidth = 0L)
             }
         }
-        val ladders = if (skipLadder) {
-            emptyList()
-        } else {
-            coroutineScope {
+        val ladders = when {
+            skipLadder -> emptyList()
+            // Trailers and music read the ladders one after another, as before; only the YouTube tab reads them at once.
+            com.nuvio.app.features.music.youTubeCaller()?.parallelClients == true -> coroutineScope {
                 manifestUrls.map { (_, _, manifestUrl) -> async { runCatching { parseHlsManifest(manifestUrl) }.getOrNull() } }.awaitAll()
             }
+            else -> manifestUrls.map { (_, _, manifestUrl) -> runCatching { parseHlsManifest(manifestUrl) }.getOrNull() }
         }
         for ((index, variant) in ladders.withIndex()) {
             val (clientKey, priority, manifestUrl) = manifestUrls[index]
