@@ -313,7 +313,9 @@ private const val MAX_CAPTION_TRACKS = 6
 internal actual suspend fun youTubeCaptionSubtitles(videoId: String): List<AddonSubtitle> {
     val player = WebPlayerAnswers.get(videoId, YouTubeFeedRepository.channel.value.pageId) as? YouTubeBrowseResult.Ok
         ?: return emptyList()
-    val tracks = parseYouTubeCaptionTracks(player.body).take(MAX_CAPTION_TRACKS)
+    // fork:youtube-languages - every track with All languages on (a video subtitled in many languages).
+    val tracks = parseYouTubeCaptionTracks(player.body)
+        .let { if (YouTubeFeedRepository.allLanguages.value) it else it.take(MAX_CAPTION_TRACKS) }
     if (tracks.isEmpty()) {
         log.i { "$videoId: no subtitle tracks" }
         return emptyList()
@@ -431,9 +433,18 @@ internal actual suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): T
             preferHdr = true,
             skipManifestLadder = true,
             maxShortSide = YouTubeFeedRepository.maxQuality.value,
+            allAudioTracks = YouTubeFeedRepository.allLanguages.value,
         ),
     ) {
-        MusicResolver.openVideo(videoId)
+        // fork:youtube-languages - any dubs ride along in the audio source string for the player to open.
+        MusicResolver.openVideo(videoId)?.let { source ->
+            if (source.extraAudioTracks.isEmpty()) {
+                source
+            } else {
+                log.i { "$videoId: ${source.extraAudioTracks.size} more audio languages (${source.extraAudioTracks.joinToString { it.language }})" }
+                source.copy(audioUrl = com.nuvio.app.features.trailer.encodePlayerAudioSources(source.audioUrl, source.extraAudioTracks))
+            }
+        }
     }
 
 internal actual object YouTubeModeStorage {
@@ -508,6 +519,12 @@ internal actual object YouTubeModeStorage {
     actual fun loadTheaterMode(): Boolean = store.getBoolean(THEATER_MODE_KEY) ?: false
 
     actual fun saveTheaterMode(theater: Boolean) = store.putBoolean(THEATER_MODE_KEY, theater)
+
+    private const val ALL_LANGUAGES_KEY = "all_languages"
+
+    actual fun loadAllLanguages(): Boolean = store.getBoolean(ALL_LANGUAGES_KEY) ?: false
+
+    actual fun saveAllLanguages(enabled: Boolean) = store.putBoolean(ALL_LANGUAGES_KEY, enabled)
 
     private const val WATCHED_DATE_MODE_KEY = "watched_date_mode"
 

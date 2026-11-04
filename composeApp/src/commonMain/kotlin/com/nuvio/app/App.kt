@@ -3551,7 +3551,7 @@ private fun MainAppContent(
                                             }
                                         },
                                         onOpenSettings = {
-                                            com.nuvio.app.features.youtube.YouTubeWatchLayout.stopBrowsing()
+                                            com.nuvio.app.features.youtube.YouTubeWatchLayout.closeFromCorner()
                                             latestOnBackFromPlayer()
                                             requestedSettingsPageName = "YouTubeAccount"
                                             handleRootTabClick(AppScreenTab.Settings)

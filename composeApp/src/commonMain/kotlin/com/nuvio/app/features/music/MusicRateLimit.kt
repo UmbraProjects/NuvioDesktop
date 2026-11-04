@@ -43,6 +43,8 @@ internal class YouTubeCaller(
     val preferHdr: Boolean = false,
     val skipManifestLadder: Boolean = false,
     val maxShortSide: Int? = null,
+    /** fork:youtube-languages - also the video's other language tracks (dubs) beside the original. */
+    val allAudioTracks: Boolean = false,
 ) : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<YouTubeCaller>
 }

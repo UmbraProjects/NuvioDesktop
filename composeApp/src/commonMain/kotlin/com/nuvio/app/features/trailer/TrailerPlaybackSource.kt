@@ -51,4 +51,32 @@ data class TrailerPlaybackSource(
      * URL itself expires. Music keeps the loudness it measured under it, so the next play starts at the right level.
      */
     val loudnessKey: String? = null,
+    /**
+     * fork:youtube-languages - the video's other language tracks (dubs) beside [audioUrl], for a caller
+     * that asked for them ([com.nuvio.app.features.music.YouTubeCaller.allAudioTracks]); empty otherwise.
+     */
+    val extraAudioTracks: List<TrailerAudioTrack> = emptyList(),
 )
+
+/** One more language of a video's audio: [language] a code ("es"), [title] as YouTube names it. */
+data class TrailerAudioTrack(val url: String, val language: String, val title: String)
+
+/**
+ * fork:youtube-languages - [audioUrl] with [extra] tracks after it, as the player's audio source
+ * string carries them: one per line, "language<TAB>title<TAB>url" (the desktop player bridge opens
+ * them as further audio tracks). Just [audioUrl] when there are none.
+ */
+fun encodePlayerAudioSources(audioUrl: String?, extra: List<TrailerAudioTrack>): String? {
+    if (audioUrl == null || extra.isEmpty()) return audioUrl
+    return buildString {
+        append(audioUrl)
+        extra.forEach { track ->
+            append('\n').append(track.language.filter { it.isLetterOrDigit() || it == '-' })
+            append('\t').append(track.title.replace('\t', ' ').replace('\n', ' '))
+            append('\t').append(track.url)
+        }
+    }
+}
+
+/** The first audio URL of a source string [encodePlayerAudioSources] built (the original track). */
+fun primaryPlayerAudioUrl(sources: String?): String? = sources?.substringBefore('\n')

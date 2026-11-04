@@ -2499,6 +2499,17 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.YouTubeAccount,
+            key = "youtube-all-languages",
+            title = "All languages",
+            description = "Dubbed audio tracks and every subtitle language for YouTube videos",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-all-languages"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
             key = "youtube-max-quality",
             title = "Max video quality",
             description = "The sharpest a YouTube tab video plays at: 8K, 4K, 1440p, 1080p or 720p",

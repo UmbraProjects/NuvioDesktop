@@ -207,6 +207,10 @@ internal expect object YouTubeModeStorage {
     fun loadTheaterMode(): Boolean
     fun saveTheaterMode(theater: Boolean)
 
+    /** fork:youtube-languages - a video's dubbed audio tracks and every subtitle language, not just the original's. */
+    fun loadAllLanguages(): Boolean
+    fun saveAllLanguages(enabled: Boolean)
+
     fun loadWatchedDateMode(): String?
     fun saveWatchedDateMode(mode: String)
 
@@ -398,6 +402,21 @@ object YouTubeFeedRepository {
     fun setMiniPlayerOnBack(enabled: Boolean) {
         _miniPlayerOnBack.value = enabled
         YouTubeModeStorage.saveMiniPlayerOnBack(enabled)
+    }
+
+    private val _allLanguages by lazy { MutableStateFlow(YouTubeModeStorage.loadAllLanguages()) }
+
+    /**
+     * fork:youtube-languages - Settings > YouTube account > All languages: a dubbed video's other audio
+     * tracks are opened with it, and every subtitle track is fetched rather than the first few. Off by
+     * default, as each extra track is opened before the video starts.
+     */
+    val allLanguages: StateFlow<Boolean>
+        get() = _allLanguages.asStateFlow()
+
+    fun setAllLanguages(enabled: Boolean) {
+        _allLanguages.value = enabled
+        YouTubeModeStorage.saveAllLanguages(enabled)
     }
 
     private val _theaterMode by lazy { MutableStateFlow(YouTubeModeStorage.loadTheaterMode()) }

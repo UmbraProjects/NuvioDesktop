@@ -677,7 +677,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         showParentalGuide = showParentalGuide,
         // Films are submittable too: SkipDB takes them with no season or episode, and holds opening
         // title sequences and end credits for them.
-        showSubmitIntro = playerSettingsUiState.introSubmitEnabled &&
+        // Not for a YouTube tab video: SponsorBlock has its segments, and no intro database holds it.
+        showSubmitIntro = !youTubeVideo && playerSettingsUiState.introSubmitEnabled &&
             (
                 playerSettingsUiState.skipDbApiKey.isNotBlank() ||
                     playerSettingsUiState.introDbApiKey.isNotBlank()
@@ -686,7 +687,8 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         showVideoSettings = isIos,
         showSources = activeVideoId != null && !isIptvPlayback,
         showEpisodes = (isSeries && !isIptvPlayback) || (youTubeVideo && youTubeRelated.isNotEmpty()),
-        showExternalPlayer = args.onOpenInExternalPlayer != null,
+        // A YouTube tab video's picture and sound are two streams another player would not be handed together.
+        showExternalPlayer = args.onOpenInExternalPlayer != null && !youTubeVideo,
         durationMs = playbackSnapshot.durationMs,
         positionMs = displayedPositionMs,
         // A YouTube video's sponsors and self-promotion: coloured on the bar and named as chapters.

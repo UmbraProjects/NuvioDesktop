@@ -64,7 +64,25 @@ internal object YouTubeWatchLayout {
     fun end() {
         _available.value = false
         endedAtMs = com.nuvio.app.features.streams.epochMs()
+        if (closing) {
+            // Closed from the corner: the next video opened is no hand-over and opens as a fresh one does.
+            closing = false
+            _browsing.value = false
+            endedAtMs = 0L
+        }
         if (madeWindowFullscreen) onLeftInFullscreen?.invoke()
+    }
+
+    @kotlin.concurrent.Volatile
+    private var closing = false
+
+    /**
+     * fork:youtube-mini-player - the corner box is being closed (its X, or the tab's settings): the box
+     * stays where it is until the player goes, rather than first going back to the full video as
+     * [stopBrowsing] would have it, and [end] then leaves the mini player.
+     */
+    fun closeFromCorner() {
+        if (_browsing.value) closing = true
     }
 
     /** From the page to the video filling the screen; [madeFullscreen]: the window was made fullscreen for it. */
@@ -125,6 +143,22 @@ internal object YouTubeWatchLayout {
         _browsing.value = false
     }
 
+    private val _channelRequest = MutableStateFlow<YouTubeChannelRequest?>(null)
+
+    /** fork:youtube-mini-player - a channel for the tab to open, set by the watch page; taken by the tab. */
+    val channelRequest: StateFlow<YouTubeChannelRequest?> = _channelRequest.asStateFlow()
+
+    /** The watch page's channel name: the tab around the video in the corner, on that channel's page. */
+    fun openChannel(channelId: String, name: String, avatarUrl: String?) {
+        if (!_available.value) return
+        _channelRequest.value = YouTubeChannelRequest(channelId, name, avatarUrl)
+        _browsing.value = true
+    }
+
+    fun consumeChannelRequest(request: YouTubeChannelRequest) {
+        _channelRequest.compareAndSet(request, null)
+    }
+
     private val _scrollRequests = kotlinx.coroutines.flow.MutableSharedFlow<Float>(extraBufferCapacity = 32)
 
     /** The wheel turned over the video (it takes the wheel): how far to scroll the page, in dp. */
@@ -152,6 +186,8 @@ internal object YouTubeWatchLayout {
     /** Opening the next video right after one ends counts as a hand-over. */
     private const val HAND_OVER_MS = 5_000L
 }
+
+internal data class YouTubeChannelRequest(val channelId: String, val name: String, val avatarUrl: String?)
 
 /** The page's fullscreen button: the video fills the screen until its button or Escape brings the page back. */
 internal expect fun requestYouTubeFullscreen()

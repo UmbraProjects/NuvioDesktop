@@ -251,7 +251,9 @@ internal class NativePlayerController(
         if (enableUserMpvOptions || animeSvpEnabled) mayHostVapourSynth = true
         // A network-share source (\\host\share, file://host/…) from an addon or scraper would make
         // Windows authenticate to that host and hand it the user's NTLM hash.
-        listOfNotNull(sourceUrl, sourceAudioUrl?.takeIf { it.isNotBlank() }).forEach { source ->
+        // fork:youtube-languages - the audio string may carry more tracks, one per line (language, title and URL, tab-separated).
+        val audioSources = sourceAudioUrl?.takeIf { it.isNotBlank() }?.lines()?.map { it.substringAfterLast('\t') }.orEmpty()
+        (listOf(sourceUrl) + audioSources).forEach { source ->
             val verdict = com.nuvio.app.features.player.PlaybackSourcePolicy.checkInProcess(source)
             if (verdict is com.nuvio.app.features.player.PlaybackSourcePolicy.Verdict.Rejected) {
                 Logger.withTag("PlaybackSourcePolicy").w { "Refusing playback source: ${verdict.reason}" }

@@ -182,8 +182,9 @@ internal fun PlayerScreenRuntime.YouTubeWatchFrame(player: @Composable (Modifier
         val miniHeight = miniWidth * 9f / 16f
         val closeMiniPlayer: (() -> Unit)? = if (browsing) {
             {
-                // Closing the box stops the video: the player goes, and the tab it was over stays.
-                YouTubeWatchLayout.stopBrowsing()
+                // Closing the box stops the video: the player goes, and the tab it was over stays. The box
+                // stays in its corner until then, not going back to the full video on its way out.
+                YouTubeWatchLayout.closeFromCorner()
                 flushWatchProgress()
                 args.onBack()
             }
@@ -239,19 +240,34 @@ private fun PlayerScreenRuntime.YouTubeWatchPage(shown: Boolean, onVideoBox: (Re
         YouTubeWatchLayout.backToVideo.collect { if (it != handled) scroll.animateScrollTo(0) }
     }
     LaunchedEffect(comments) { comments.loadMore() }
-    // The next page of comments and of related videos as the end of the page comes near. Keyed on the
-    // list's length too, so a page that arrives while the end is still in sight asks for the one after.
+    // The next page of comments as the end of the page comes near.
     LaunchedEffect(scroll, comments) {
-        snapshotFlow { (scroll.maxValue - scroll.value < 1200) to youTubeRelated.size }
+        snapshotFlow { scroll.maxValue - scroll.value < 1200 }
             .distinctUntilChanged()
-            .collect { (nearEnd, _) ->
-                if (nearEnd) {
-                    comments.loadMore()
-                    loadMoreYouTubeRelated()
-                }
-            }
+            .collect { nearEnd -> if (nearEnd) comments.loadMore() }
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // The related column ends well before the page does when the comments run long, so its next page is
+    // asked for by its own end: once that is within two screens of the bottom of the window, so the page
+    // is in before it is scrolled to. Keyed on the list's length too, so a page that arrives while the
+    // end is still that close asks for the one after.
+    var sideColumnBottom by remember { mutableStateOf(Float.MAX_VALUE) }
+    var pageTop by remember { mutableStateOf(0f) }
+    var pageHeight by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            val nearEnd = pageHeight > 0 && sideColumnBottom - (pageTop + pageHeight) < pageHeight * RELATED_PREFETCH_SCREENS
+            nearEnd to youTubeRelated.size
+        }
+            .distinctUntilChanged()
+            .collect { (nearEnd, _) -> if (nearEnd) loadMoreYouTubeRelated() }
+    }
+    val sideColumnPosition = Modifier.onGloballyPositioned { sideColumnBottom = it.positionInWindow().y + it.size.height }
+    BoxWithConstraints(
+        Modifier.fillMaxSize().onGloballyPositioned {
+            pageTop = it.positionInWindow().y
+            pageHeight = it.size.height
+        },
+    ) {
         val twoColumns = maxWidth >= TWO_COLUMN_MIN_WIDTH
         val viewport = maxHeight
         if (theater) {
@@ -293,9 +309,9 @@ private fun PlayerScreenRuntime.YouTubeWatchPage(shown: Boolean, onVideoBox: (Re
                         horizontalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
                         WatchDetails(comments, Modifier.weight(1f))
-                        if (twoColumns) SideColumn(Modifier.width(SIDE_COLUMN_WIDTH))
+                        if (twoColumns) SideColumn(Modifier.width(SIDE_COLUMN_WIDTH).then(sideColumnPosition))
                     }
-                    if (!twoColumns) SideColumn(Modifier.fillMaxWidth().padding(horizontal = 24.dp))
+                    if (!twoColumns) SideColumn(Modifier.fillMaxWidth().padding(horizontal = 24.dp).then(sideColumnPosition))
                 }
                 twoColumns -> Row(
                     Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 20.dp),
@@ -306,13 +322,13 @@ private fun PlayerScreenRuntime.YouTubeWatchPage(shown: Boolean, onVideoBox: (Re
                         Spacer(Modifier.height(16.dp))
                         WatchDetails(comments, Modifier.fillMaxWidth())
                     }
-                    SideColumn(Modifier.width(SIDE_COLUMN_WIDTH))
+                    SideColumn(Modifier.width(SIDE_COLUMN_WIDTH).then(sideColumnPosition))
                 }
                 else -> Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
                     VideoBox(maxHeight = viewport - DEFAULT_VIDEO_CLEARANCE, placeholder = poster.takeIf { mini }, onVideoBox = onVideoBox)
                     Spacer(Modifier.height(16.dp))
                     WatchDetails(comments, Modifier.fillMaxWidth())
-                    SideColumn(Modifier.fillMaxWidth())
+                    SideColumn(Modifier.fillMaxWidth().then(sideColumnPosition))
                 }
             }
             Spacer(Modifier.height(32.dp))
@@ -566,7 +582,24 @@ private fun ChannelBlock(
 ) {
     val scope = rememberCoroutineScope()
     var subscribed by remember(current.channelId, details?.subscribed) { mutableStateOf(details?.subscribed) }
+    // The picture and name open the channel's page: the tab around the video, which goes to its corner
+    // (fork:youtube-mini-player). Only where the mini player can show the tab.
+    val channelId = current.channelId
+    val openChannel: (() -> Unit)? = if (channelId != null && YouTubeMiniPlayerHost.page != null) {
+        { YouTubeWatchLayout.openChannel(channelId, current.channel.orEmpty(), details?.channelAvatarUrl) }
+    } else {
+        null
+    }
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier
+                .weight(1f, fill = false)
+                .clip(RoundedCornerShape(24.dp))
+                .then(if (openChannel != null) Modifier.clickable(onClick = openChannel) else Modifier)
+                .padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
         NuvioAsyncImage(
             model = details?.channelAvatarUrl,
             contentDescription = current.channel,
@@ -585,7 +618,7 @@ private fun ChannelBlock(
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
         }
-        val channelId = current.channelId
+        }
         if (signedIn && channelId != null && subscribed != null) {
             val isSubscribed = subscribed == true
             WatchPill(
@@ -927,6 +960,9 @@ private fun PlayerScreenRuntime.SideColumn(modifier: Modifier) {
 
 /** With Hide watched on, related pages are fetched until at least this many show (or the column ends). */
 private const val RELATED_MIN_SHOWN = 12
+
+/** How many window heights before the related column's end its next page is fetched. */
+private const val RELATED_PREFETCH_SCREENS = 2f
 
 @Composable
 private fun SideVideoRow(video: YouTubeVideo, highlighted: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)? = null) {

@@ -2716,15 +2716,15 @@ const contextMenuItems = [
       { label: "Seek back 10 seconds", textKey: "player_hud_seek_back_10_seconds", labelKey: "seekBack", action: "send:seekBack", shortcut: "←" },
       { label: "Seek forward 10 seconds", textKey: "player_hud_seek_forward_10_seconds", labelKey: "seekForward", action: "send:seekForward", shortcut: "→" },
       { label: "Playback speed", textKey: "player_hud_playback_speed", children: playbackSpeedMenuItems },
-      { label: "Previous episode", textKey: "player_hud_previous_episode", action: "send:previousEpisode" },
-      { label: "Next episode", textKey: "player_hud_next_episode", action: "send:nextEpisode" },
+      { label: "Previous episode", textKey: "player_hud_previous_episode", action: "send:previousEpisode", youTube: false },
+      { label: "Next episode", textKey: "player_hud_next_episode", action: "send:nextEpisode", youTube: false },
       { label: "Picture in picture", textKey: "player_hud_picture_in_picture", action: "send:pictureInPicture" },
     ],
   },
   {
     label: "Subtitles", textKey: "player_hud_subtitles",
     children: [
-      { label: "Built-in", textKey: "player_hud_built_in", dynamicKey: "subtitleTracks", children: [] },
+      { label: "Built-in", textKey: "player_hud_built_in", dynamicKey: "subtitleTracks", children: [], youTube: false },
       { label: "Addon", textKey: "player_hud_addon", dynamicKey: "addonSubtitles", children: [] },
       {
         label: "Style", textKey: "player_hud_style",
@@ -2835,7 +2835,7 @@ const contextMenuItems = [
     children: [
       { label: "Sources", textKey: "player_hud_sources", action: "modal:sources" },
       { label: "Episodes", textKey: "player_hud_episodes", action: "modal:episodes" },
-      { label: "Submit intro / outro", textKey: "player_hud_submit_intro_outro", action: "modal:submitIntro" },
+      { label: "Submit intro / outro", textKey: "player_hud_submit_intro_outro", action: "modal:submitIntro", youTube: false },
     ],
   },
   {
@@ -2846,7 +2846,7 @@ const contextMenuItems = [
     ],
   },
   { label: "Copy stream link", textKey: "player_hud_copy_stream_link", action: "copyStreamUrl" },
-  { label: "Stream failover", textKey: "player_hud_stream_failover", action: "toggleStreamFailover", toggleKey: "streamFailoverEnabled" },
+  { label: "Stream failover", textKey: "player_hud_stream_failover", action: "toggleStreamFailover", toggleKey: "streamFailoverEnabled", youTube: false },
   { label: "MPV diagnostics", textKey: "player_hud_mpv_diagnostics", action: "toggleMpvDiagnostics", toggleKey: "mpvDiagnosticsEnabled" },
   { label: "Close menu after selecting", textKey: "player_hud_close_menu_after_selecting", action: "toggleCloseOnSelect", toggleKey: "closeMenuOnSelect" },
 ];
@@ -3375,6 +3375,9 @@ const buildContextMenu = (items, parent) => {
   items.forEach(item => {
     const group = document.createElement("div");
     group.className = "context-menu-group";
+    // Rows that do nothing for a YouTube tab video (no episodes, other sources or embedded subtitles):
+    // hidden while one plays (.youtube-video in controls.css).
+    if (item.youTube === false) group.dataset.youtubeHidden = "true";
     const button = document.createElement("button");
     button.type = "button";
     button.className = "context-menu-item";
@@ -8114,10 +8117,55 @@ root.addEventListener("click", event => {
   }, 220);
 });
 
+// The nearest element from [target] up that scrolls with the wheel (a list or panel body with overflow).
+const wheelScrollableAncestor = target => {
+  for (let el = target instanceof Element ? target : null; el && el !== root && el !== document.body; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight + 1) continue;
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow === "auto" || overflow === "scroll") return el;
+  }
+  return null;
+};
+
+// An open panel's main list: the largest element in it that scrolls, down or (the Episodes rail) across.
+const panelWheelScroller = panel => {
+  let best = null;
+  let bestArea = 0;
+  for (const el of panel.querySelectorAll("*")) {
+    const vertical = el.scrollHeight > el.clientHeight + 1;
+    const horizontal = el.scrollWidth > el.clientWidth + 1;
+    if (!vertical && !horizontal) continue;
+    const style = getComputedStyle(el);
+    const scrolls = (vertical && (style.overflowY === "auto" || style.overflowY === "scroll"))
+      || (horizontal && (style.overflowX === "auto" || style.overflowX === "scroll"));
+    if (!scrolls) continue;
+    const area = el.clientWidth * el.clientHeight;
+    if (area > bestArea) {
+      best = el;
+      bestArea = area;
+    }
+  }
+  return best;
+};
+
 root.addEventListener("wheel", event => {
   if (state.pictureInPictureActive) return;
   // The YouTube watch page: the wheel scrolls the page around the video (volume stays on the controls).
+  // An open panel or menu has it instead: over a list it scrolls that list as anywhere else, and over
+  // the rest of the video it scrolls the open panel's list, so the page never moves under a panel.
   if (state.watchPage) {
+    if (event.defaultPrevented) return; // a list's own handler (the Episodes rail) took it
+    if (wheelScrollableAncestor(event.target)) return;
+    const panel = activeModal ? modalByName[activeModal] : null;
+    if (panel || contextMenuOpen) {
+      event.preventDefault();
+      const scroller = panel ? panelWheelScroller(panel) : null;
+      if (!scroller) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (scroller.scrollHeight > scroller.clientHeight + 1) scroller.scrollTop += delta;
+      else scroller.scrollLeft += Math.sign(delta) * 240;
+      return;
+    }
     event.preventDefault();
     if (event.deltaY !== 0) send("watchPageScroll", event.deltaY);
     return;

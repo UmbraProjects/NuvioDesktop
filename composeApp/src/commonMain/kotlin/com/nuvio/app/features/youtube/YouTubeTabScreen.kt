@@ -213,6 +213,14 @@ fun YouTubeTabScreen(
         YouTubeFeedRepository.openPlaylist(playlist)
         push(YouTubeFeedKind.Playlist.name, from = playlist.playlistId)
     }
+    // fork:youtube-mini-player - a channel asked for from the watch page (its name): opened here, as
+    // if picked in the tab, the video going on in the corner.
+    val channelRequest by YouTubeWatchLayout.channelRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(channelRequest) {
+        val request = channelRequest ?: return@LaunchedEffect
+        YouTubeWatchLayout.consumeChannelRequest(request)
+        showChannel(request.channelId, request.name, request.avatarUrl, from = null)
+    }
     // TabBackHandler, not PlatformBackHandler (which does nothing on desktop): the app asks it before
     // walking its tab history, as the Music tab's pages do.
     TabBackHandler(enabled = backStack.isNotEmpty()) { goBack() }

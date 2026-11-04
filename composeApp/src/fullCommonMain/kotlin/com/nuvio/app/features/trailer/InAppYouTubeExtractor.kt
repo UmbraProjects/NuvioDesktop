@@ -91,6 +91,10 @@ internal data class StreamCandidate(
     val isOriginalAudio: Boolean? = null,
     /** Audio only: YouTube's `loudnessDb` for this format (how far above its reference it is), when it sent one. */
     val loudnessDb: Double? = null,
+    /** Audio only: the language track this format belongs to (`audioTrack.id`, "en.4"); null on a one-language video. */
+    val audioTrackId: String? = null,
+    /** Audio only: that track's name as YouTube shows it ("English (United States) original"). */
+    val audioTrackName: String? = null,
     /** Video only: an HDR encode (PQ or HLG; VP9 profile 2 or AV1), listed beside the SDR one of the same height. */
     val isHdr: Boolean = false,
 )
@@ -624,6 +628,8 @@ class InAppYouTubeExtractor internal constructor(
                             ext = if (mimeType.contains("webm")) "webm" else "m4a",
                             isOriginalAudio = format.isOriginalAudioTrack(url),
                             loudnessDb = format.numberValue("loudnessDb"),
+                            audioTrackId = format.objectValue("audioTrack")?.stringValue("id"),
+                            audioTrackName = format.objectValue("audioTrack")?.stringValue("displayName"),
                         )
                     }
                 }
@@ -707,13 +713,32 @@ class InAppYouTubeExtractor internal constructor(
         // competes when YouTube says which one that is.
         val originalAudio = adaptiveAudio.filter { it.isOriginalAudio == true }
         val bestAudio = pickBestForClient(originalAudio.ifEmpty { adaptiveAudio }, PREFERRED_SEPARATE_CLIENT)
+        // fork:youtube-languages - the other language tracks (dubs), for a caller that asked for them: the
+        // best of each from the same client as the original, so they carry the same session.
+        val otherAudioTracks = if (com.nuvio.app.features.music.youTubeCaller()?.allAudioTracks == true && bestAudio != null) {
+            adaptiveAudio
+                .filter { it.client == bestAudio.client && it.audioTrackId != null && it.audioTrackId != bestAudio.audioTrackId }
+                .groupBy { it.audioTrackId }
+                .mapNotNull { (trackId, formats) ->
+                    val best = formats.maxByOrNull { it.score } ?: return@mapNotNull null
+                    TrailerAudioTrack(
+                        url = best.url,
+                        language = trackId.orEmpty().substringBefore('.').substringBefore('-').lowercase(),
+                        title = best.audioTrackName ?: trackId.orEmpty(),
+                    )
+                }
+                .sortedBy { it.title }
+        } else {
+            emptyList()
+        }
 
         log.i {
             "Selected trailer streams adaptive=${bestVideo?.height ?: 0}p/${bestVideo?.fps ?: 0}fps" +
                 (if (preferHdr) " hdr=${bestVideo?.isHdr == true} (offered=${adaptiveVideo.any { it.isHdr }})" else "") + " " +
                 "progressive=${bestProgressive?.height ?: 0}p manifest=${bestManifest?.height ?: 0}p " +
                 "separateAudio=${bestAudio != null} videoClient=${bestVideo?.client} audioClient=${bestAudio?.client} " +
-                "manifestClient=${bestManifest?.client}"
+                "manifestClient=${bestManifest?.client}" +
+                (if (otherAudioTracks.isNotEmpty()) " otherLanguages=${otherAudioTracks.size}" else "")
         }
 
         val source = TrailerExtractionPlatform.buildPlaybackSource(
@@ -736,7 +761,13 @@ class InAppYouTubeExtractor internal constructor(
         val portrait = dimensions.any { (w, h) -> w in 1 until h }
         val reliable = bestVideo?.client == PREFERRED_SEPARATE_CLIENT || bestManifest?.client == PREFERRED_SEPARATE_CLIENT
         return source?.let {
-            val finished = it.copy(heightPx = sharpest, reliable = reliable, portrait = portrait)
+            val finished = it.copy(
+                heightPx = sharpest,
+                reliable = reliable,
+                portrait = portrait,
+                // Only beside a separate original track: a manifest or progressive stream has its own audio.
+                extraAudioTracks = if (it.audioUrl != null && it.audioUrl == bestAudio?.url) otherAudioTracks else emptyList(),
+            )
             // fork:loudness - what YouTube says the audio's loudness is, kept for the player to plan its gain from.
             StreamLoudnessBook.record(finished.streamUrls(), bestAudio?.loudnessDb ?: playerLoudnessDb)
             TrailerResolution.Available(finished)
