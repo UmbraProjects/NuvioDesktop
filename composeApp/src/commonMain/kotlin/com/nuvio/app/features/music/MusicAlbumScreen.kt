@@ -489,6 +489,33 @@ private fun AlbumContent(
         lensStory = runCatching { SongStories.load(lensArtist, storyKey) }.getOrNull()
         lensStoryLoading = false
     }
+    // The album's own note on the song (one AI request for the whole album, or MusicBrainz's credits), for a song with no
+    // article. The classic page asks for these only while the album plays; the lens asks once the page is open.
+    LaunchedEffect(lensesOn, bookletRequest) {
+        if (!lensesOn || bookletRequest == null || songNotes.ai.isNotEmpty() || songNotes.credits.isNotEmpty()) return@LaunchedEffect
+        delay(LENS_STORY_REST_MS)
+        songNotes = runCatching { TrackNotes.load(bookletRequest, booklet?.intro) }.getOrDefault(songNotes)
+    }
+    val lensNote = lensIndex?.let { i ->
+        val n = view.tracks[i].trackNumber.takeIf { it > 0 } ?: (i + 1)
+        booklet?.let { b -> b.trackNotes[n]?.let { LensNote(it, ai = b.source == com.nuvio.app.features.music.booklet.BookletSource.Ai) } }
+            ?: songNotes.ai[n]?.let { LensNote(it, ai = true) }
+            ?: songNotes.credits[n]?.let { LensNote(it, ai = false) }
+    }
+    // A song with no other copies: the artist's best songs instead (not the one in focus), so the box always plays something.
+    val lensSuggestions = remember(lensTrack?.title, essentialSongList, view.tracks) {
+        val focusKey = lensTrack?.let { songKey(it.title) }
+        essentialSongList.filter { songKey(it.title) != focusKey }.take(LENS_SUGGESTIONS).map { song ->
+            val key = songKey(song.title)
+            val here = view.tracks.indexOfFirst { it.isAvailable && songKey(it.title) == key }
+            LensSuggestion(
+                title = song.title,
+                where = if (here >= 0) "This album · track ${here + 1}" else song.albumTitle.ifBlank { "Another record" },
+                tag = if (here >= 0) "ON THIS ALBUM" else "BEST SONG",
+                onClick = if (here >= 0 || song.release?.ytBrowseId != null) ({ onEssentialSong(song) }) else null,
+            )
+        }
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Wide enough for three columns: the object, the record and its songs, then the artist's best down the right. The two
@@ -525,6 +552,7 @@ private fun AlbumContent(
                     AlbumLens.SongBySong -> SongBySongLeft(
                         song = lensSong,
                         story = lensStory,
+                        note = lensNote,
                         storyLoading = lensStoryLoading,
                         onPlay = { lensIndex?.let { tapTrack(it) } },
                         modifier = panelModifier,
@@ -544,7 +572,8 @@ private fun AlbumContent(
                     AlbumLensTabs(selected = lens, onSelect = { lens = it })
                     LazyColumn(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
-                        contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
+                        // The dock stands over the bottom of the middle column: the last song scrolls clear of it.
+                        contentPadding = PaddingValues(top = 16.dp, bottom = LENS_LIST_BOTTOM),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         item(key = "legend") { TrackLegend() }
@@ -559,6 +588,7 @@ private fun AlbumContent(
                                 popularity = popularity.getOrNull(index),
                                 single = songKey(track.title) in singles,
                                 marked = lens == AlbumLens.SongBySong && index in lensMarked,
+                                inlineCredit = true,
                                 onClick = { lensFocus = index; tapTrack(index) },
                             )
                         }
@@ -569,6 +599,7 @@ private fun AlbumContent(
                         title = lensTrack?.title,
                         versions = lensVersions,
                         counts = versionCounts(lensVersions),
+                        suggestions = lensSuggestions,
                         onVersion = { v ->
                             val i = v.trackIndex
                             if (i != null) { lensFocus = i; tapTrack(i) } else v.release?.ytBrowseId?.let(onAlbumClick)
@@ -687,6 +718,12 @@ private const val CASE_WIDTH_FACTOR = 1.3f
 
 /** fork:lenses - how long the cursor rests on a song before its story is asked for. */
 private const val LENS_STORY_REST_MS = 600L
+
+/** fork:lenses - room under the last song for the docked player, so it never covers a row. */
+private val LENS_LIST_BOTTOM = 96.dp
+
+/** fork:lenses - how many of the artist's best songs stand in for a song with no other copies. */
+private const val LENS_SUGGESTIONS = 4
 
 /** fork:lenses - the box under the buttons for the addon line and the notices: up to two lines, never more. */
 private val LENS_NOTE_LINES_HEIGHT = 52.dp
@@ -898,6 +935,8 @@ private fun TrackRow(
     single: Boolean = false,
     /** fork:lenses - another copy of the song in focus (Song by song): a bar in the library tint at its left edge. */
     marked: Boolean = false,
+    /** fork:lenses - the featured artist's chip on the title's line, so every row is the same height. */
+    inlineCredit: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val hoverSource = remember { MutableInteractionSource() }
@@ -960,8 +999,21 @@ private fun TrackRow(
                         modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
                     )
                 }
+                if (credit != null && inlineCredit) {
+                    // fork:lenses - on the title's line (it gives way first when the row is short of room).
+                    Text(
+                        text = credit,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (track.isAvailable) colors.textSecondary else colors.textDisabled,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(8.dp))
+                            .background(Color.White.copy(alpha = 0.10f))
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
+                }
             }
-            if (credit != null) {
+            if (credit != null && !inlineCredit) {
                 // A credit chip for the featured artist(s), as on board 3.
                 val chip = RoundedCornerShape(8.dp)
                 Text(

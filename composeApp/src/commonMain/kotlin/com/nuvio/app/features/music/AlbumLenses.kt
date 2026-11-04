@@ -303,30 +303,20 @@ private fun LensNoteCard(label: String, text: String, tint: Color, footer: Strin
 
 private val LENS_NOTE_HEIGHT = 136.dp
 
-/** The panel's last line: one wide pill button, [primary] in the play colour. */
+/** The panel's last line: one wide glass pill, the same on both sides, edged in the side's [tint]. */
 @Composable
-private fun LensButton(label: String, primary: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun LensButton(label: String, tint: Color, enabled: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(28.dp)
     Box(
         Modifier.padding(top = 16.dp).fillMaxWidth().height(56.dp).clip(shape)
-            .background(if (primary) colors.accent.copy(alpha = if (enabled) 0.85f else 0.3f) else Color.White.copy(alpha = 0.06f))
-            .border(1.dp, if (primary) Color.Transparent else Color.White.copy(alpha = 0.18f), shape)
+            .background(tint.copy(alpha = if (enabled) 0.16f else 0.05f))
+            .border(1.dp, tint.copy(alpha = if (enabled) 0.55f else 0.18f), shape)
             .musicKeyFocusRing(shape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = when {
-                !enabled -> colors.textDisabled
-                primary -> Color.White
-                else -> colors.textPrimary
-            },
-            maxLines = 1,
-        )
+        Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = if (enabled) colors.textPrimary else colors.textDisabled, maxLines = 1)
     }
 }
 
@@ -358,12 +348,30 @@ internal class LensSong(
     val artistName: String,
 )
 
-/** Song by song, left: the song in focus, its four facts, its story (Wikipedia, written up by the AI when a key is set). */
+/** A line about the song from the album's own notes: the AI's (one request for the album) or MusicBrainz's credits. */
+internal class LensNote(val text: String, val ai: Boolean)
+
+/** A count tile's value: "None" rather than a bare 0, which reads like a fault. */
+private fun countText(n: Int): String = if (n == 0) "None" else n.toString()
+
+/**
+ * Song by song, left: the song in focus, its four facts, and its story. The story is the song's Wikipedia article (written
+ * up by the AI when a key is set); a song with no article gets the album's own note on it instead, so the box is never empty.
+ */
 @Composable
-internal fun SongBySongLeft(song: LensSong?, story: SongStory?, storyLoading: Boolean, onPlay: () -> Unit, modifier: Modifier = Modifier) {
+internal fun SongBySongLeft(song: LensSong?, story: SongStory?, note: LensNote?, storyLoading: Boolean, onPlay: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
+    val main = story?.made ?: story?.meaning ?: story?.after
+    // Where the words in this panel come from, always named (the right panel always names its own).
+    val source = when {
+        main != null && story?.ai == true -> "AI"
+        main != null -> "Wikipedia"
+        note != null && note.ai -> "AI"
+        note != null -> "MusicBrainz"
+        else -> "Library"
+    }
     LensPanel(modifier) {
-        LensPanelHeader(Icons.Rounded.AutoAwesome, "ABOUT THIS SONG", pill = if (story?.ai == true) "AI" else null, tint = colors.accent)
+        LensPanelHeader(Icons.Rounded.AutoAwesome, "ABOUT THIS SONG", pill = source, tint = colors.accent)
         LensPanelTitle(song?.title ?: "Pick a song", song?.let { "Track ${it.trackNumber} on this album" } ?: "Move down the track list")
         LensFactGrid(
             listOf(
@@ -373,17 +381,27 @@ internal fun SongBySongLeft(song: LensSong?, story: SongStory?, storyLoading: Bo
                 LensFact("Popularity", if (song != null) "Not ranked" else "–", bar = song?.popularity),
             ),
         )
-        LensSectionLabel("THE STORY", if (story?.ai == true) "Written from Wikipedia" else "From Wikipedia")
-        val main = story?.made ?: story?.meaning ?: story?.after
+        LensSectionLabel(
+            "THE STORY",
+            when {
+                main != null && story?.ai == true -> "Written from Wikipedia"
+                main != null -> "From Wikipedia"
+                note != null && note.ai -> "From the album's notes"
+                note != null -> "From MusicBrainz"
+                storyLoading -> "Looking…"
+                else -> ""
+            },
+        )
+        val body = main?.let { cutAtSentence(it, 420) } ?: note?.text
         LensBody(colors.accent, highlighted = true) {
             Text(
-                main?.let { cutAtSentence(it, 420) } ?: when {
+                body ?: when {
                     song == null -> "Move down the track list to read about each song."
                     storyLoading -> "Looking for this song's story…"
-                    else -> "No Wikipedia article for this song."
+                    else -> "Nothing has been written about this song yet."
                 },
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (main != null) colors.textPrimary else colors.textMuted,
+                color = if (body != null) colors.textPrimary else colors.textMuted,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
@@ -397,7 +415,10 @@ internal fun SongBySongLeft(song: LensSong?, story: SongStory?, storyLoading: Bo
                 )
             }
         }
+        // The small card: the article's other half when there is one, else the album's note (when the story box took the
+        // article), else what is known of the song.
         val second = listOfNotNull(story?.after, story?.meaning).firstOrNull { it != main }
+            ?: note?.text?.takeIf { main != null }
         val fallback = song?.let { s ->
             listOfNotNull(
                 s.rank?.let { "No. $it of ${s.artistName}'s most played songs." },
@@ -410,41 +431,59 @@ internal fun SongBySongLeft(song: LensSong?, story: SongStory?, storyLoading: Bo
             text = second ?: fallback ?: "Nothing more is known about this song yet.",
             tint = colors.accent,
             footer = when {
-                story == null -> null
-                story.ai -> "Written by AI, may contain mistakes"
-                else -> "Text from Wikipedia, CC BY-SA 4.0"
+                main != null && story?.ai == true -> "Written by AI, may contain mistakes"
+                main != null -> "Text from Wikipedia, CC BY-SA 4.0"
+                note != null && note.ai -> "Written by AI, may contain mistakes"
+                else -> null
             },
         )
-        LensButton("Play the song", primary = true, enabled = song != null, onClick = onPlay)
+        LensButton("Play the song", tint = colors.accent, enabled = song != null, onClick = onPlay)
     }
 }
 
-/** Song by song, right: every other copy of the song found in the album, the singles and the artist's other records. */
+/** A song offered when the one in focus has no other copies: the artist's best songs, so the box always plays something. */
+internal class LensSuggestion(val title: String, val where: String, val tag: String, val onClick: (() -> Unit)?)
+
+/**
+ * Song by song, right: every other copy of the song found in the album, the singles and the artist's other records. A song
+ * with none gets the artist's best songs in the same box instead, so the panel is never four zeros over nothing.
+ */
 @Composable
 internal fun SongBySongRight(
     title: String?,
     versions: List<SongVersion>,
     counts: VersionCounts,
+    suggestions: List<LensSuggestion>,
     onVersion: (SongVersion) -> Unit,
     onQueue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
+    val none = versions.isEmpty()
     LensPanel(modifier) {
         LensPanelHeader(Icons.Rounded.LibraryMusic, "IN YOUR LIBRARY", pill = "Library", tint = LENS_LIBRARY_TINT)
         LensPanelTitle("Other versions", title?.let { "Every copy of $it we found" } ?: "Pick a song to find its other copies")
         LensFactGrid(
             listOf(
-                LensFact("Versions found", counts.found.toString()),
-                LensFact("On this album", counts.onThisAlbum.toString()),
-                LensFact("On other records", counts.elsewhere.toString()),
-                LensFact("Remixes and demos", counts.reworks.toString()),
+                LensFact("Versions found", countText(counts.found)),
+                LensFact("On this album", countText(counts.onThisAlbum)),
+                LensFact("On other records", countText(counts.elsewhere)),
+                LensFact("Remixes and demos", countText(counts.reworks)),
             ),
         )
-        LensSectionLabel("FOUND", if (counts.onThisAlbum > 0) "Marked in the list" else "")
+        LensSectionLabel(
+            if (none && suggestions.isNotEmpty()) "NONE FOUND · TRY THESE" else "FOUND",
+            when {
+                !none && counts.onThisAlbum > 0 -> "Marked in the list"
+                none && suggestions.isNotEmpty() -> "The artist's best songs"
+                else -> ""
+            },
+        )
         LensBody(LENS_LIBRARY_TINT, highlighted = false) {
-            if (versions.isEmpty()) {
-                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            when {
+                !none -> versions.forEach { v -> VersionRow(v, onClick = { onVersion(v) }) }
+                suggestions.isNotEmpty() -> suggestions.forEach { s -> LensRow(s.title, s.where, s.tag, s.onClick) }
+                else -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text(
                         if (title == null) "Move down the track list." else "No other versions of this song are in your library.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -452,8 +491,6 @@ internal fun SongBySongRight(
                         textAlign = TextAlign.Center,
                     )
                 }
-            } else {
-                versions.forEach { v -> VersionRow(v, onClick = { onVersion(v) }) }
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -463,34 +500,39 @@ internal fun SongBySongRight(
             tint = LENS_LIBRARY_TINT,
             footer = null,
         )
-        LensButton("Queue the versions here", primary = false, enabled = counts.onThisAlbum > 0, onClick = onQueue)
+        LensButton("Queue the versions here", tint = LENS_LIBRARY_TINT, enabled = counts.onThisAlbum > 0, onClick = onQueue)
     }
 }
 
-/** One found copy: a 64 dp glass row, the title, where it is, and its kind. */
+/** One found copy: where it is and its kind. */
 @Composable
 private fun VersionRow(v: SongVersion, onClick: () -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(14.dp)
     val where = when {
         v.onThisAlbum -> listOfNotNull("This album · track ${v.trackIndex!! + 1}", v.durationSeconds.takeIf { it > 0 }?.let { formatMusicTime(it * 1000L) }).joinToString(" · ")
         else -> v.recordTitle ?: "Another record"
     }
-    val opens = v.onThisAlbum || v.release?.ytBrowseId != null
+    LensRow(v.title, where, v.kind.label, onClick.takeIf { v.onThisAlbum || v.release?.ytBrowseId != null })
+}
+
+/** A 64 dp glass row in the library tint: a title, a line under it, and a tag at the end. Not clickable without [onClick]. */
+@Composable
+private fun LensRow(title: String, where: String, tag: String, onClick: (() -> Unit)?) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(14.dp)
     Row(
         Modifier.fillMaxWidth().height(64.dp).clip(shape).background(LENS_LIBRARY_TINT.copy(alpha = 0.07f))
             .border(1.dp, LENS_LIBRARY_TINT.copy(alpha = 0.4f), shape)
-            .musicKeyFocusRing(shape).clickable(enabled = opens, onClick = onClick)
+            .then(if (onClick != null) Modifier.musicKeyFocusRing(shape).clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(v.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(where, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(
-            v.kind.label,
+            tag,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 1.sp,
