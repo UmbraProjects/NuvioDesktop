@@ -229,11 +229,12 @@ internal sealed interface LinerPage {
     data class Facts(val number: Int, val total: Int, val startIndex: Int, val facts: List<BookletFact>) : LinerPage
     data class Guests(val guests: List<BookletGuest>) : LinerPage
     data class Timeline(val timeline: BookletTimeline) : LinerPage
-    data class Track(val number: Int, val title: String, val note: String) : LinerPage
+    /** [note] is the one line the booklet has; [story] (fork) the song's own story, which comes later than the booklet. */
+    data class Track(val number: Int, val title: String, val note: String, val story: SongStory? = null) : LinerPage
 }
 
 /** The deck for [booklet], in order; a page with nothing to show is left out. [playing] is the track number playing, if any. */
-internal fun linerPages(booklet: AlbumBooklet, request: BookletRequest, playing: Int?): List<LinerPage> {
+internal fun linerPages(booklet: AlbumBooklet, request: BookletRequest, playing: Int?, story: SongStory? = null): List<LinerPage> {
     val pages = ArrayList<LinerPage>()
     pages += LinerPage.Cover
     val groups = booklet.facts.chunked(FACTS_PER_PAGE)
@@ -241,8 +242,8 @@ internal fun linerPages(booklet: AlbumBooklet, request: BookletRequest, playing:
     if (booklet.guests.isNotEmpty()) pages += LinerPage.Guests(booklet.guests)
     timelineFor(request.artistInfo, request.album, request.year)?.let { pages += LinerPage.Timeline(it) }
     val note = playing?.let { booklet.trackNotes[it] }
-    if (playing != null && note != null) {
-        pages += LinerPage.Track(playing, request.tracks.getOrNull(playing - 1)?.title.orEmpty(), note)
+    if (playing != null && (note != null || story != null)) {
+        pages += LinerPage.Track(playing, request.tracks.getOrNull(playing - 1)?.title.orEmpty(), note.orEmpty(), story)
     }
     return pages
 }
@@ -403,7 +404,7 @@ internal const val BOOKLET_AI_MISS_TTL_MS = 2 * HOUR_MS
 internal const val BOOKLET_WIKI_MISS_TTL_MS = 3 * DAY_MS
 
 /** Entries kept; past it the oldest go. A booklet is a few KB. */
-internal const val BOOKLET_CACHE_MAX = 400
+internal const val BOOKLET_CACHE_MAX = 1_500
 internal const val BOOKLET_CACHE_SLACK = 20
 
 internal fun BookletEntry.isFresh(nowMs: Long, hitTtlMs: Long, missTtlMs: Long): Boolean =

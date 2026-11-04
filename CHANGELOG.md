@@ -4,6 +4,7 @@
 
 ### Added
 
+- Stage notes: each song gets its own story page from its Wikipedia article: how it was made, what it means, who sampled or covered it, and up to two quotes copied word for word (the AI writes the summaries from your own key; quotes it cannot find in the article are dropped, and with no key the article's own sections are shown).
 - Stage: the Options menu is wide and short (two columns of two rows), so it no longer covers the visualiser box.
 - Album page: the In brief and Start here cards are the same height and stand on one line, 32 dp from the bottom of their columns, whatever is written in them.
 - Album page: "About this song" now has a note for every song: the AI writes one per track (a single request for the album, from your own key), with the writers and producers from MusicBrainz as the fallback when there is no AI note.

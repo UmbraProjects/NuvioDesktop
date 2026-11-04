@@ -52,6 +52,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,8 @@ import com.nuvio.app.features.music.booklet.BookletTrack
 import com.nuvio.app.features.music.booklet.DeckPosition
 import com.nuvio.app.features.music.booklet.FactKind
 import com.nuvio.app.features.music.booklet.LinerPage
+import com.nuvio.app.features.music.booklet.SongStories
+import com.nuvio.app.features.music.booklet.SongStory
 import com.nuvio.app.features.music.booklet.bookletTrackNumber
 import com.nuvio.app.features.music.booklet.coverStats
 import com.nuvio.app.features.music.booklet.cursorStep
@@ -170,7 +173,15 @@ internal fun BookletDeck(
 ) {
     val accent = MaterialTheme.nuvio.colors.accent
     val playing = bookletTrackNumber(album.tracks.map { it.videoId }, playingVideoId)
-    val pages = remember(booklet, request, playing) { linerPages(booklet, request, playing) }
+    // fork:story - the song's own story (its Wikipedia article, written up by the AI), from the cache at once, else fetched.
+    val songTitle = playing?.let { request.tracks.getOrNull(it - 1)?.title }
+    val story by produceState<SongStory?>(null, request.artist, songTitle) {
+        value = null
+        if (songTitle == null) return@produceState
+        value = SongStories.peek(request.artist, songTitle)
+        if (value == null) value = SongStories.load(request.artist, songTitle)
+    }
+    val pages = remember(booklet, request, playing, story) { linerPages(booklet, request, playing, story) }
     var position by remember(booklet) { mutableStateOf(DeckPosition(0, 0)) }
     var revealed by remember(booklet) { mutableStateOf(emptySet<Int>()) }
     var lastPlaying by remember(booklet) { mutableStateOf(playing) }
@@ -178,11 +189,17 @@ internal fun BookletDeck(
     val page = position.page.coerceIn(0, pages.lastIndex)
 
     // A new song turns the deck to its own note, when the booklet has one.
+    // The story can arrive after the song starts, so a turn that found no Track page yet waits for it.
+    var turnPending by remember(booklet) { mutableStateOf(false) }
     LaunchedEffect(playing, pages.size) {
         if (playing != lastPlaying) {
             lastPlaying = playing
+            turnPending = true
+        }
+        if (turnPending) {
             val at = pages.indexOfLast { it is LinerPage.Track }
             if (at >= 0) {
+                turnPending = false
                 forward = at >= page
                 position = DeckPosition(at, 0)
             }
@@ -455,5 +472,34 @@ private fun TrackPage(page: LinerPage.Track, accent: Color) {
     if (page.title.isNotBlank()) {
         Text(page.title, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 26.sp, lineHeight = 29.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
     }
-    Text(page.note, color = Color.White.copy(alpha = 0.88f), fontSize = 16.sp, lineHeight = 24.sp, modifier = Modifier.padding(top = 12.dp))
+    val story = page.story
+    if (story == null) {
+        Text(page.note, color = Color.White.copy(alpha = 0.88f), fontSize = 16.sp, lineHeight = 24.sp, modifier = Modifier.padding(top = 12.dp))
+        return
+    }
+    // The song's story: how it was made, what it means, what came after, and the words of the people who were there.
+    Column(Modifier.padding(top = 10.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        story.made?.let { StorySection("HOW IT WAS MADE", it, accent) }
+        story.meaning?.let { StorySection("WHAT IT MEANS", it, accent) }
+        story.after?.let { StorySection("SAMPLED, COVERED, REMEMBERED", it, accent) }
+        story.quotes.forEach { quote ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("\u201C${quote.text}\u201D", color = Color.White.copy(alpha = 0.92f), fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic, fontSize = 15.sp, lineHeight = 21.sp)
+                if (quote.who.isNotBlank()) Text("\u2014 ${quote.who}", color = Color.White.copy(alpha = 0.55f), fontSize = 12.sp)
+            }
+        }
+        Text(
+            if (story.ai) "From Wikipedia, written up by AI \u00B7 may contain mistakes" else "From Wikipedia, CC BY-SA 4.0",
+            color = Color.White.copy(alpha = 0.35f),
+            fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
+private fun StorySection(label: String, text: String, accent: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, color = accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp)
+        Text(text, color = Color.White.copy(alpha = 0.88f), fontSize = 14.sp, lineHeight = 20.sp)
+    }
 }

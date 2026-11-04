@@ -333,6 +333,19 @@ internal object WikipediaClient {
         summary(artist.trim().replace(' ', '_').encodeURLParameter())
             ?.takeIf { it.length > 60 && !it.contains("may refer to", ignoreCase = true) }
 
+    /** fork:story - the English Wikipedia article for the song [song] by [artist] (sections kept, "== Heading =="), or null when none fits. */
+    suspend fun songText(song: String, artist: String): String? {
+        val query = "${song.replace(Regex("""\s*[(\[].*?[)\]]"""), "")} $artist song".encodeURLParameter()
+        val title = fetch(
+            "https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=$query&gsrlimit=8" +
+                "&prop=extracts&exintro=1&explaintext=1&exlimit=max&format=json&formatversion=2",
+        )?.let { pickWikipediaSongTitle(it, song, artist) } ?: return null
+        return fetch(
+            "https://en.wikipedia.org/w/api.php?action=query&titles=${title.encodeURLParameter()}" +
+                "&prop=extracts&explaintext=1&exchars=12000&format=json&formatversion=2",
+        )?.let(::parseWikipediaPageExtract)
+    }
+
     /**
      * fork:booklet - the English Wikipedia text for [album] by [artist] (the lead and the sections after it), or null when no
      * page fits. Two requests: a search for the page (intros only, because MediaWiki returns more than one extract only for
