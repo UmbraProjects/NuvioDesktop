@@ -399,23 +399,31 @@ internal fun decodeBookletEntry(raw: String?): BookletEntry? {
 private const val HOUR_MS = 60L * 60L * 1_000L
 private const val DAY_MS = 24L * HOUR_MS
 
-/** How long an AI booklet is trusted, a Wikipedia one, and a "nothing" from each (an AI failure is retried sooner). */
-internal const val BOOKLET_AI_TTL_MS = 180 * DAY_MS
+/**
+ * How long an AI booklet is trusted: for ever (the person does not want AI facts to expire, and each one cost a request), a
+ * Wikipedia one, and a "nothing" from each (an AI failure is retried after two hours).
+ */
+internal const val BOOKLET_AI_TTL_MS = Long.MAX_VALUE
 internal const val BOOKLET_WIKI_TTL_MS = 30 * DAY_MS
 internal const val BOOKLET_AI_MISS_TTL_MS = 2 * HOUR_MS
 internal const val BOOKLET_WIKI_MISS_TTL_MS = 3 * DAY_MS
 
-/** Entries kept; past it the oldest go. A booklet is a few KB. */
+/** Entries kept; past it the oldest go, and the AI's own facts last of all. A booklet is a few KB. */
 internal const val BOOKLET_CACHE_MAX = 1_500
 internal const val BOOKLET_CACHE_SLACK = 20
 
 internal fun BookletEntry.isFresh(nowMs: Long, hitTtlMs: Long, missTtlMs: Long): Boolean =
     nowMs - atEpochMs < (if (booklet != null) hitTtlMs else missTtlMs)
 
-/** The keys to drop so no more than [capacity] remain: the oldest first. [ages] maps each key to when it was cached. */
-internal fun bookletKeysToEvict(ages: Map<String, Long>, capacity: Int): List<String> {
+/**
+ * The keys to drop so no more than [capacity] remain: those not in [kept] first, the oldest first, and only then the oldest
+ * of [kept]. [ages] maps each key to when it was cached; [kept] are the entries that cost a request to make (the AI's facts).
+ */
+internal fun bookletKeysToEvict(ages: Map<String, Long>, capacity: Int, kept: Set<String> = emptySet()): List<String> {
     if (ages.size <= capacity) return emptyList()
-    return ages.entries.sortedBy { it.value }.take(ages.size - capacity).map { it.key }
+    return ages.entries
+        .sortedWith(compareBy<Map.Entry<String, Long>>({ it.key in kept }, { it.value }))
+        .take(ages.size - capacity).map { it.key }
 }
 
 // endregion

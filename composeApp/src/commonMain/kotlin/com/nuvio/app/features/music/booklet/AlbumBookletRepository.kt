@@ -41,8 +41,11 @@ internal object AlbumBookletRepository {
         BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
         val keys = BookletStorage.keys()
         if (keys.size > BOOKLET_CACHE_MAX + BOOKLET_CACHE_SLACK) {
-            val ages = keys.associateWith { read(it)?.atEpochMs ?: 0L }
-            bookletKeysToEvict(ages, BOOKLET_CACHE_MAX).forEach { BookletStorage.put(it, null) }
+            val entries = keys.associateWith { read(it) }
+            val ages = entries.mapValues { it.value?.atEpochMs ?: 0L }
+            // The AI's facts each cost a request and never expire, so they go last; misses and Wikipedia text go first.
+            val kept = entries.filterValues { it?.booklet?.source == BookletSource.Ai }.keys
+            bookletKeysToEvict(ages, BOOKLET_CACHE_MAX, kept).forEach { BookletStorage.put(it, null) }
         }
     }
 

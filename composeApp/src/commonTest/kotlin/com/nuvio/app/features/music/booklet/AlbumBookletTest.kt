@@ -145,8 +145,9 @@ class AlbumBookletTest {
     fun freshnessDependsOnHitOrMiss() {
         val hit = BookletEntry(0L, AlbumBooklet("An intro that is long enough.", emptyList(), emptyMap(), BookletSource.Ai))
         val miss = BookletEntry(0L, null)
-        assertTrue(hit.isFresh(BOOKLET_AI_TTL_MS - 1, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS))
-        assertFalse(hit.isFresh(BOOKLET_AI_TTL_MS, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS))
+        val tenYears = 3_650L * 24 * 60 * 60 * 1_000
+        assertTrue(hit.isFresh(tenYears, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS), "an AI fact never expires")
+        assertTrue(hit.isFresh(Long.MAX_VALUE - 1, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS))
         assertTrue(miss.isFresh(BOOKLET_AI_MISS_TTL_MS - 1, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS))
         assertFalse(miss.isFresh(BOOKLET_AI_MISS_TTL_MS, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS))
     }
@@ -156,6 +157,14 @@ class AlbumBookletTest {
         val ages = mapOf("a" to 5L, "b" to 1L, "c" to 9L, "d" to 3L)
         assertEquals(emptyList(), bookletKeysToEvict(ages, 4))
         assertEquals(listOf("b", "d"), bookletKeysToEvict(ages, 2))
+    }
+
+    @Test
+    fun theAisFactsAreDroppedLast() {
+        val ages = mapOf("a" to 5L, "b" to 1L, "c" to 9L, "d" to 3L)
+        assertEquals(listOf("d", "a"), bookletKeysToEvict(ages, 2, kept = setOf("b", "c")))
+        assertEquals(listOf("a"), bookletKeysToEvict(ages, 3, kept = setOf("b", "c", "d")))
+        assertEquals(listOf("b", "d"), bookletKeysToEvict(ages, 2, kept = setOf("a", "b", "c", "d")), "all kept: oldest still go")
     }
 
     @Test
