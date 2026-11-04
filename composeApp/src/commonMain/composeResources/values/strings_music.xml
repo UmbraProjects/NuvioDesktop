@@ -63,4 +63,15 @@
     <string name="settings_music_facts_check">Check every album again</string>
     <string name="settings_music_facts_check_description">Looks at every album on the next pass instead of skipping the ones already finished. Nothing already written is asked for twice.</string>
     <string name="settings_music_facts_check_button">Check again</string>
+    <string name="settings_music_share_section">Share music facts</string>
+    <string name="settings_music_share_export">Export facts</string>
+    <string name="settings_music_share_export_description">Saves the facts the AI wrote and your own pins to a JSON file you can keep or give to someone. Nothing is sent anywhere.</string>
+    <string name="settings_music_share_export_button">Export</string>
+    <string name="settings_music_share_import">Import facts</string>
+    <string name="settings_music_share_import_description">Adds the facts from a file someone gave you. It only fills gaps: nothing you already have, and none of your own pins, is replaced. You see what it would add first, and can undo it afterwards.</string>
+    <string name="settings_music_share_import_button">Choose file</string>
+    <string name="settings_music_share_undo_button">Undo</string>
+    <string name="settings_music_share_dialog_title">Import music facts</string>
+    <string name="settings_music_share_dialog_apply">Add them</string>
+    <string name="settings_music_share_dialog_cancel">Cancel</string>
 </resources>

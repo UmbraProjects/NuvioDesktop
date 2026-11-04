@@ -4,6 +4,9 @@ package com.nuvio.app.features.settings
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -14,6 +17,25 @@ import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.music.booklet.FILL_CAP_CHOICES
 import com.nuvio.app.features.music.booklet.FactsFiller
 import com.nuvio.app.features.music.booklet.fillProgressLine
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.unit.dp
+import com.nuvio.app.core.ui.NuvioModalDialog
+import com.nuvio.app.features.music.booklet.FactsSharing
+import com.nuvio.app.features.music.booklet.describeCounts
+import kotlinx.coroutines.launch
+import kotlin.time.Instant
+import nuvio.composeapp.generated.resources.settings_music_share_dialog_apply
+import nuvio.composeapp.generated.resources.settings_music_share_dialog_cancel
+import nuvio.composeapp.generated.resources.settings_music_share_dialog_title
+import nuvio.composeapp.generated.resources.settings_music_share_export
+import nuvio.composeapp.generated.resources.settings_music_share_export_button
+import nuvio.composeapp.generated.resources.settings_music_share_export_description
+import nuvio.composeapp.generated.resources.settings_music_share_import
+import nuvio.composeapp.generated.resources.settings_music_share_import_button
+import nuvio.composeapp.generated.resources.settings_music_share_import_description
+import nuvio.composeapp.generated.resources.settings_music_share_section
+import nuvio.composeapp.generated.resources.settings_music_share_undo_button
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_music_facts_cap
 import nuvio.composeapp.generated.resources.settings_music_facts_cap_description
@@ -110,6 +132,81 @@ internal fun LazyListScope.musicFactsSettingsContent(isTablet: Boolean) {
                 SettingsSectionNote(text = lines.joinToString("\n"), isTablet = isTablet)
             }
             AiConsentDialog(target = consentPromptFor, onDismiss = { consentPromptFor = null })
+        }
+    }
+    item {
+        SettingsSection(title = stringResource(Res.string.settings_music_share_section), isTablet = isTablet) {
+            val scope = rememberCoroutineScope()
+            val preview by FactsSharing.preview.collectAsStateWithLifecycle()
+            val message by FactsSharing.message.collectAsStateWithLifecycle()
+            val imports by FactsSharing.imports.collectAsStateWithLifecycle()
+            SettingsGroup(isTablet = isTablet) {
+                SettingsActionRow(
+                    title = stringResource(Res.string.settings_music_share_export),
+                    description = stringResource(Res.string.settings_music_share_export_description),
+                    isTablet = isTablet,
+                    actions = {
+                        SettingsGlassButton(
+                            text = stringResource(Res.string.settings_music_share_export_button),
+                            onClick = { scope.launch { FactsSharing.export() } },
+                        )
+                    },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsActionRow(
+                    title = stringResource(Res.string.settings_music_share_import),
+                    description = stringResource(Res.string.settings_music_share_import_description),
+                    isTablet = isTablet,
+                    actions = {
+                        SettingsGlassButton(
+                            text = stringResource(Res.string.settings_music_share_import_button),
+                            onClick = { scope.launch { FactsSharing.chooseImport() } },
+                        )
+                    },
+                )
+                imports.forEach { record ->
+                    SettingsGroupDivider(isTablet)
+                    SettingsActionRow(
+                        title = "Added from ${record.fileName}",
+                        description = "${record.keys.size} entries, ${Instant.fromEpochMilliseconds(record.atMs).toString().take(10)}",
+                        isTablet = isTablet,
+                        actions = {
+                            SettingsGlassButton(
+                                text = stringResource(Res.string.settings_music_share_undo_button),
+                                onClick = { scope.launch { FactsSharing.undo(record.id) } },
+                            )
+                        },
+                    )
+                }
+            }
+            message?.let { SettingsSectionNote(text = it, isTablet = isTablet) }
+            preview?.let { shown ->
+                NuvioModalDialog(
+                    onDismissRequest = { FactsSharing.cancel() },
+                    title = stringResource(Res.string.settings_music_share_dialog_title),
+                    subtitle = null,
+                    maxWidth = 560.dp,
+                    modifier = Modifier.width(560.dp),
+                    actions = {
+                        TextButton(onClick = { FactsSharing.cancel() }) { Text(stringResource(Res.string.settings_music_share_dialog_cancel)) }
+                        TextButton(onClick = { scope.launch { FactsSharing.apply() } }) { Text(stringResource(Res.string.settings_music_share_dialog_apply)) }
+                    },
+                ) {
+                    val plan = shown.plan
+                    val lines = buildList {
+                        add("${shown.fileName} would add ${describeCounts(plan.counts)}.")
+                        if (plan.alreadyHave > 0) add("${plan.alreadyHave} are already here and stay as they are.")
+                        if (plan.rejected > 0) add("${plan.rejected} entries in the file were not readable and are skipped.")
+                        add("Your own pins are never replaced. Pins from the file are marked as imported.")
+                    }
+                    Text(
+                        text = lines.joinToString("\n"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.nuvio.colors.textMuted,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            }
         }
     }
 }
