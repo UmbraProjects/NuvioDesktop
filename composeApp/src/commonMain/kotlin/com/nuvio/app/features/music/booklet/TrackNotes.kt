@@ -16,7 +16,12 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlin.time.Clock
 
 /** What is known of each song on an album, by its place on the record (1 for the first): [ai] notes and MusicBrainz [credits]. */
-internal data class SongNotes(val ai: Map<Int, String> = emptyMap(), val credits: Map<Int, String> = emptyMap()) {
+internal data class SongNotes(
+    val ai: Map<Int, String> = emptyMap(),
+    val credits: Map<Int, String> = emptyMap(),
+    /** The tracks whose note the person pinned (it is then in [ai]); set when pins are laid over, never cached. */
+    val pinned: Set<Int> = emptySet(),
+) {
     /** The best line for [track]: the AI's note, else who wrote and produced it. */
     fun lineFor(track: Int): String? = ai[track] ?: credits[track]
 }
@@ -83,8 +88,14 @@ internal object TrackNotes {
         BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
     }
 
-    /** What is kept for [request], never making a request. */
-    fun peek(request: BookletRequest): SongNotes {
+    /** What is kept for [request], never making a request, with the person's pinned notes laid over the AI's. */
+    fun peek(request: BookletRequest): SongNotes = peekKept(request).withPins(Pins.forAlbum(request))
+
+    /** Looks up what [peek] does not have: the credits first (they ground the AI's notes), then the notes. [intro] is the album's. */
+    suspend fun load(request: BookletRequest, intro: String?): SongNotes = loadKept(request, intro).withPins(Pins.forAlbum(request))
+
+    /** What is kept for [request], without pins: the cache's own answer, which the lookup rules below go by. */
+    private fun peekKept(request: BookletRequest): SongNotes {
         val at = now()
         val credits = read(creditsKey(request))?.takeIf { it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }?.booklet?.trackNotes.orEmpty()
         val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }
@@ -93,10 +104,9 @@ internal object TrackNotes {
         return SongNotes(ai, credits)
     }
 
-    /** Looks up what [peek] does not have: the credits first (they ground the AI's notes), then the notes. [intro] is the album's. */
-    suspend fun load(request: BookletRequest, intro: String?): SongNotes = lock.withLock {
+    private suspend fun loadKept(request: BookletRequest, intro: String?): SongNotes = lock.withLock {
         val at = now()
-        var have = peek(request)
+        var have = peekKept(request)
         if (read(creditsKey(request))?.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) != true) {
             val credits = runCatching { MusicBrainzClient.trackCredits(request.artist, request.album) }.getOrDefault(emptyMap())
             keep(creditsKey(request), BookletSource.Wikipedia, credits)

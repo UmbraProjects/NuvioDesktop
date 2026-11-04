@@ -31,7 +31,15 @@ internal data class SongQuote(val text: String, val who: String)
  * it is about), [after] (samples, covers, legacy) and up to two [quotes] copied word for word from the article. [ai] when the AI
  * wrote the summaries (the quotes are checked against the article either way).
  */
-internal data class SongStory(val made: String?, val meaning: String?, val after: String?, val quotes: List<SongQuote>, val ai: Boolean) {
+internal data class SongStory(
+    val made: String?,
+    val meaning: String?,
+    val after: String?,
+    val quotes: List<SongQuote>,
+    val ai: Boolean,
+    /** The parts the person pinned over the written text (made, meaning, after); set when pins are laid over, never cached. */
+    val pinned: Set<String> = emptySet(),
+) {
     val isEmpty: Boolean get() = made == null && meaning == null && after == null && quotes.isEmpty()
 }
 
@@ -130,8 +138,15 @@ internal object SongStories {
     /** The cache mode of the AI's story: the model, and ":web" when it searched the web for it (a different, richer story). */
     private fun aiMode(settings: DiscoverAiSettings) = "ai:${settings.effectiveModel}" + if (DiscoverAiClient.canSearchWeb(settings)) ":web" else ""
 
-    /** What is kept for the song, never making a request. */
-    fun peek(artist: String, song: String): SongStory? {
+    /** What is kept for the song, never making a request, with the person's pins laid over it. */
+    fun peek(artist: String, song: String): SongStory? = peekKept(artist, song).withPins(Pins.forSong(artist, song))
+
+    /** The story for the song, asking for it when nothing is kept, with the person's pins laid over it (see [loadKept]). */
+    suspend fun load(artist: String, song: String, wantAi: Boolean = false): SongStory? =
+        loadKept(artist, song, wantAi).withPins(Pins.forSong(artist, song))
+
+    /** What is kept for the song, without pins: the cache's own answer, which the lookup rules below go by. */
+    private fun peekKept(artist: String, song: String): SongStory? {
         val at = now()
         DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }?.let { settings ->
             read(key(artist, song, aiMode(settings)))?.takeIf { it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }?.booklet?.let { return it.toStory() }
@@ -144,8 +159,8 @@ internal object SongStories {
      * from being asked (once; a failed ask is remembered for its usual time), so a story kept before a key was set, or by
      * an earlier failure, is written up when it can be.
      */
-    suspend fun load(artist: String, song: String, wantAi: Boolean = false): SongStory? = lock.withLock {
-        peek(artist, song)?.let { kept ->
+    private suspend fun loadKept(artist: String, song: String, wantAi: Boolean): SongStory? = lock.withLock {
+        peekKept(artist, song)?.let { kept ->
             if (!wantAi || kept.ai || !DiscoverAiSettingsRepository.snapshot().isConfigured) return@withLock kept
         }
         val at = now()

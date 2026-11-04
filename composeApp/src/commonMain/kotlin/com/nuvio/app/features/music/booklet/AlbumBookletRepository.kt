@@ -49,8 +49,17 @@ internal object AlbumBookletRepository {
     /** The AI settings when notes may be written by the AI (a key, a model and the person's consent), else null. */
     private fun aiSettingsOrNull() = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }
 
-    /** What the cache already holds for [request], never making a request: the AI notes if kept, else the Wikipedia ones. */
-    fun peek(request: BookletRequest): AlbumBooklet? {
+    /**
+     * What the cache already holds for [request], never making a request: the AI notes if kept, else the Wikipedia ones,
+     * with the person's pins laid over them.
+     */
+    fun peek(request: BookletRequest): AlbumBooklet? = peekKept(request).withPins(Pins.forAlbum(request))
+
+    /** The booklet for [request] (see [bookletForKept]) with the person's pins laid over it; pinned text stands even with no page. */
+    suspend fun bookletFor(request: BookletRequest): AlbumBooklet? = bookletForKept(request).withPins(Pins.forAlbum(request))
+
+    /** What the cache holds, without pins: the cache's own answer, which the lookup rules below go by. */
+    private fun peekKept(request: BookletRequest): AlbumBooklet? {
         val at = now()
         aiSettingsOrNull()?.let { settings ->
             read(aiCacheKey(request, settings.effectiveModel))
@@ -60,7 +69,7 @@ internal object AlbumBookletRepository {
     }
 
     /** The booklet for [request], null when Wikipedia has no page for the album. Waits for a lookup already under way. */
-    suspend fun bookletFor(request: BookletRequest): AlbumBooklet? {
+    private suspend fun bookletForKept(request: BookletRequest): AlbumBooklet? {
         val at = now()
         val settings = aiSettingsOrNull()
         val aiEntry = settings

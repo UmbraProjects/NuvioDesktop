@@ -33,6 +33,8 @@ internal data class AlbumBooklet(
     val facts: List<BookletFact> = emptyList(),
     /** People who appear on the album, with the track they are on when the text says. */
     val guests: List<BookletGuest> = emptyList(),
+    /** What the person pinned over the written text ("intro", "tnote:3", "fact:2"); set when pins are laid over, never cached. */
+    val pinned: Set<String> = emptySet(),
 )
 
 internal enum class FactKind { Album, Artist }
