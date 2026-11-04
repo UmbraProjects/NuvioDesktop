@@ -49,6 +49,9 @@ import com.nuvio.app.features.music.booklet.cutAtSentence
 import com.nuvio.app.features.music.library.LibraryAlbumInfo
 import com.nuvio.app.features.music.library.SongVersion
 import com.nuvio.app.features.music.library.VersionCounts
+import com.nuvio.app.features.music.library.LensStoryText
+import com.nuvio.app.features.music.library.lensStoryText
+import com.nuvio.app.features.music.library.wholeSentences
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 
 /*
@@ -361,7 +364,9 @@ private fun countText(n: Int): String = if (n == 0) "None" else n.toString()
 @Composable
 internal fun SongBySongLeft(song: LensSong?, story: SongStory?, note: LensNote?, storyLoading: Boolean, onPlay: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.nuvio.colors
-    val main = story?.made ?: story?.meaning ?: story?.after
+    // The box gets whole sentences only: how it was made, then what it means when both fit (never a cut mid-quote).
+    val told = lensStoryText(story?.made, story?.meaning) ?: story?.after?.let { LensStoryText(wholeSentences(it), usedMeaning = false) }
+    val main = told?.text
     // Where the words in this panel come from, always named (the right panel always names its own).
     val source = when {
         main != null && story?.ai == true -> "AI"
@@ -392,7 +397,7 @@ internal fun SongBySongLeft(song: LensSong?, story: SongStory?, note: LensNote?,
                 else -> ""
             },
         )
-        val body = main?.let { cutAtSentence(it, 420) } ?: note?.text
+        val body = main ?: note?.text
         LensBody(colors.accent, highlighted = true) {
             Text(
                 body ?: when {
@@ -417,8 +422,9 @@ internal fun SongBySongLeft(song: LensSong?, story: SongStory?, note: LensNote?,
         }
         // The small card: the article's other half when there is one, else the album's note (when the story box took the
         // article), else what is known of the song.
-        val second = listOfNotNull(story?.after, story?.meaning).firstOrNull { it != main }
-            ?: note?.text?.takeIf { main != null }
+        val afterInCard = story?.let { st -> st.after?.takeIf { st.made != null || st.meaning != null } }?.let(::wholeSentences)
+        val meaningInCard = story?.meaning?.takeIf { told?.usedMeaning == false }?.let(::wholeSentences)
+        val second = afterInCard ?: meaningInCard ?: note?.text?.takeIf { main != null }
         val fallback = song?.let { s ->
             listOfNotNull(
                 s.rank?.let { "No. $it of ${s.artistName}'s most played songs." },
@@ -427,7 +433,11 @@ internal fun SongBySongLeft(song: LensSong?, story: SongStory?, note: LensNote?,
         }
         Spacer(Modifier.height(16.dp))
         LensNoteCard(
-            label = if (story?.after != null && second == story.after) "WHAT CAME AFTER" else "WHY IT MATTERS",
+            label = when {
+                second != null && second == afterInCard -> "WHAT CAME AFTER"
+                second != null && second == meaningInCard -> "WHAT IT MEANS"
+                else -> "WHY IT MATTERS"
+            },
             text = second ?: fallback ?: "Nothing more is known about this song yet.",
             tint = colors.accent,
             footer = when {

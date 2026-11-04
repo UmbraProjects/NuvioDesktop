@@ -139,8 +139,15 @@ internal object SongStories {
         return read(key(artist, song, "wiki"))?.takeIf { it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }?.booklet?.toStory()
     }
 
-    suspend fun load(artist: String, song: String): SongStory? = lock.withLock {
-        peek(artist, song)?.let { return@withLock it }
+    /**
+     * The song's story, asking for it when nothing is kept. With [wantAi], a kept Wikipedia-only story does not stop the AI
+     * from being asked (once; a failed ask is remembered for its usual time), so a story kept before a key was set, or by
+     * an earlier failure, is written up when it can be.
+     */
+    suspend fun load(artist: String, song: String, wantAi: Boolean = false): SongStory? = lock.withLock {
+        peek(artist, song)?.let { kept ->
+            if (!wantAi || kept.ai || !DiscoverAiSettingsRepository.snapshot().isConfigured) return@withLock kept
+        }
         val at = now()
         val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }
         val web = settings != null && DiscoverAiClient.canSearchWeb(settings)

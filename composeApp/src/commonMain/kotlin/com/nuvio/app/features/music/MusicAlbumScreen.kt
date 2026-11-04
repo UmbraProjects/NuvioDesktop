@@ -483,10 +483,15 @@ private fun AlbumContent(
     }
     var lensStoryLoading by remember(lensArtist, storyKey) { mutableStateOf(false) }
     LaunchedEffect(lensesOn, lens, lensArtist, storyKey) {
-        if (!lensesOn || lens != AlbumLens.SongBySong || lensArtist == null || storyKey == null || lensStory != null) return@LaunchedEffect
-        lensStoryLoading = true
+        if (!lensesOn || lens != AlbumLens.SongBySong || lensArtist == null || storyKey == null) return@LaunchedEffect
+        // A kept Wikipedia-only story stays on screen while the AI is asked to write it up (when a key is set); a kept AI
+        // story, or one with no key to improve it, needs nothing.
+        val aiReady = com.nuvio.app.features.discover.DiscoverAiSettingsRepository.snapshot().isConfigured
+        val kept = lensStory
+        if (kept != null && (kept.ai || !aiReady)) return@LaunchedEffect
+        lensStoryLoading = kept == null
         delay(LENS_STORY_REST_MS)
-        lensStory = runCatching { SongStories.load(lensArtist, storyKey) }.getOrNull()
+        runCatching { SongStories.load(lensArtist, storyKey, wantAi = true) }.getOrNull()?.let { lensStory = it }
         lensStoryLoading = false
     }
     // The album's own note on the song (one AI request for the whole album, or MusicBrainz's credits), for a song with no
