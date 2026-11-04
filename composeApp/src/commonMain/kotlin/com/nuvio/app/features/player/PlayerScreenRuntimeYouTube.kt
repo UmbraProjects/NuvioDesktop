@@ -111,17 +111,32 @@ private fun PlayerScreenRuntime.loadYouTubeComments(force: Boolean = false) {
  * leaves Back to close the player as before.
  */
 internal fun PlayerScreenRuntime.handleYouTubeMiniPlayerBack(): Boolean {
-    if (!isYouTubeVideoPlayback || pictureInPictureActive) return false
+    if (!isYouTubeVideoPlayback) return false
     val layout = com.nuvio.app.features.youtube.YouTubeWatchLayout
+    // Why Back closed the video rather than going to the corner, for the times it does (Nov 4: Escape
+    // sometimes closed it, apparently depending on where the video was opened from).
+    fun closing(reason: String): Boolean {
+        miniPlayerLog.i {
+            "Back closes $youTubeVideoId: $reason (available=${layout.available.value} windowed=${layout.windowed.value} " +
+                "fullFromPage=${layout.fullFromPage} pip=$pictureInPictureActive)"
+        }
+        return false
+    }
+    if (pictureInPictureActive) return closing("picture in picture")
     if (layout.browsing.value) {
         com.nuvio.app.core.ui.TabBackInterceptor.handle()
         return true
     }
-    if (!YouTubeFeedRepository.miniPlayerOnBack.value || com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page == null) return false
+    if (!YouTubeFeedRepository.miniPlayerOnBack.value) return closing("mini player off")
+    if (com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page == null) return closing("no tab to show around it")
+    if (!layout.available.value) miniPlayerLog.i { "Back: $youTubeVideoId has no layout yet; nothing done" }
+    miniPlayerLog.i { "Back: $youTubeVideoId to the mini player" }
     playerControlsCloseModalsToken += 1
     layout.startBrowsing()
     return true
 }
+
+private val miniPlayerLog = co.touchlab.kermit.Logger.withTag("YouTubeMiniPlayer")
 
 /**
  * The related videos as shown: those already watched left out when the tab's Hide watched is on (the

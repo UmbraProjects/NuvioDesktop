@@ -185,6 +185,8 @@ internal fun PlayerScreenRuntime.YouTubeWatchFrame(player: @Composable (Modifier
                 // Closing the box stops the video: the player goes, and the tab it was over stays. The box
                 // stays in its corner until then, not going back to the full video on its way out.
                 YouTubeWatchLayout.closeFromCorner()
+                // A still over the swap: the player going and the tab under it coming on screen.
+                PlayerHandoff.coverClose()
                 flushWatchProgress()
                 args.onBack()
             }

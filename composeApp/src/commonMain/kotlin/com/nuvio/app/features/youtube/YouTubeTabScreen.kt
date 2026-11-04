@@ -92,6 +92,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -186,6 +187,15 @@ fun YouTubeTabScreen(
     // card or tile the next page was opened from, which has left the screen by then.
     val returnPoints = remember { HashMap<Int, YouTubeReturnPoint>() }
     var pendingReturn by remember { mutableStateOf<YouTubeReturnPoint?>(null) }
+    // fork:youtube-mini-player - the tab picks up where the mini player's copy of it was left when
+    // the mini player closes: same page, same pages behind it, same scroll (YouTubeTabCarryOver).
+    val carried = remember { if (opensQueueNext) YouTubeTabCarryOver.take() else null }
+    remember(carried) {
+        if (carried != null) {
+            selectedName = carried.selectedName
+            backStack = carried.backStack
+        }
+    }
     // Read in push(), which comes before the grid in this function.
     var mainGrid: androidx.compose.foundation.lazy.grid.LazyGridState? = null
     fun push(next: String, from: String? = null) {
@@ -392,10 +402,38 @@ fun YouTubeTabScreen(
     val queueReorder = rememberReorderableLazyGridState(gridState) { from, to ->
         YouTubeWatchQueue.move(from.key as? String ?: return@rememberReorderableLazyGridState, to.index)
     }
+    // The page and search the grid was last scrolled for. Kept across the tab leaving the screen (a
+    // player opened over it, the mini player's copy between videos), so coming back is not taken for
+    // a change of page and the grid stays where it was rather than jumping to the top.
+    var scrolledFor by rememberSaveable { mutableStateOf<String?>(null) }
+    var carriedApplied by remember { mutableStateOf(false) }
     LaunchedEffect(selectedName, searchQuery) {
+        val key = "$selectedName|$searchQuery"
+        if (carried != null && !carriedApplied) {
+            carriedApplied = true
+            scrolledFor = key
+            gridState.scrollToItem(carried.index, carried.offset)
+            return@LaunchedEffect
+        }
+        if (scrolledFor == key) return@LaunchedEffect
+        val first = scrolledFor == null
+        scrolledFor = key
+        if (first) return@LaunchedEffect
         // Back to a feed: where it was left. Anywhere else starts at the top.
         val back = pendingReturn?.takeIf { it.page == selectedName && !it.ownGrid }
         gridState.scrollToItem(back?.index ?: 0, back?.offset ?: 0)
+    }
+    // The mini player's copy hands its place over as it goes (to the next video, or for good).
+    if (!opensQueueNext) {
+        val latestSelected by rememberUpdatedState(selectedName)
+        val latestBackStack by rememberUpdatedState(backStack)
+        androidx.compose.runtime.DisposableEffect(gridState) {
+            onDispose {
+                YouTubeTabCarryOver.put(
+                    YouTubeTabPlace(latestSelected, latestBackStack, gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset),
+                )
+            }
+        }
     }
     // Shown again after a while (switched to, the tab reopened, the player closed): a feed that
     // changes by itself is fetched again, the old page staying up until the new one replaces it.
@@ -2113,3 +2151,29 @@ private val YouTubeFeedKind.headerIcon: androidx.compose.ui.graphics.vector.Imag
         YouTubeFeedKind.Channel -> Icons.Rounded.AccountCircle
         YouTubeFeedKind.Playlist -> Icons.Rounded.PlaylistPlay
     }
+
+/** fork:youtube-mini-player - where the tab was: its page, the pages behind it, and the grid's scroll. */
+internal data class YouTubeTabPlace(val selectedName: String, val backStack: List<String>, val index: Int, val offset: Int)
+
+/**
+ * fork:youtube-mini-player - the mini player's copy of the tab leaves its place here as it goes; the
+ * tab itself takes it the next time it comes on screen (the player closed), once.
+ */
+internal object YouTubeTabCarryOver {
+    private var place: YouTubeTabPlace? = null
+    private var putAtMs = 0L
+
+    fun put(value: YouTubeTabPlace) {
+        place = value
+        putAtMs = com.nuvio.app.features.streams.epochMs()
+    }
+
+    /** Only straight after the mini player went: the tab opened later (from elsewhere) starts as it was. */
+    fun take(): YouTubeTabPlace? {
+        val value = place?.takeIf { com.nuvio.app.features.streams.epochMs() - putAtMs < CARRY_OVER_MS }
+        place = null
+        return value
+    }
+
+    private const val CARRY_OVER_MS = 10_000L
+}

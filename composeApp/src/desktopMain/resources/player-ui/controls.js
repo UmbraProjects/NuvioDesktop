@@ -7871,6 +7871,68 @@ playerVolumeSlider.addEventListener("pointerdown", () => {
   playerVolumeControl?.classList.remove("dragging");
 }));
 
+// Wiggle room for the volume bar: it is a few pixels tall, so a press a little above or below it
+// (or just past either end) counts as a press on it and drags from there, as a press on the bar does.
+// Caught before anything else sees it, so the near miss does not also pause or show the chrome.
+const VOLUME_SLOP_PX = 10;
+let suppressClickAfterVolumeSlop = false;
+const volumeValueAt = clientX => {
+  const rect = playerVolumeSlider.getBoundingClientRect();
+  const scale = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--user-scale")) || 1;
+  // The thumb's centre travels from half a thumb in from each end, as the range input itself maps it.
+  const thumb = Math.min(rect.width / 4, 13 * scale);
+  const fraction = (clientX - rect.left - thumb / 2) / Math.max(1, rect.width - thumb);
+  return Math.round(Math.max(0, Math.min(1, fraction)) * Number(playerVolumeSlider.max || 200));
+};
+const setVolumeFromPointer = clientX => {
+  const value = String(volumeValueAt(clientX));
+  if (playerVolumeSlider.value === value) return;
+  playerVolumeSlider.value = value;
+  playerVolumeSlider.dispatchEvent(new Event("input", { bubbles: true }));
+};
+document.addEventListener("pointerdown", event => {
+  if (event.button !== 0 || event.target === playerVolumeSlider) return;
+  if (!(event.target instanceof Element) || event.target.closest("button, input, select, textarea, [role='menu']")) return;
+  const rect = playerVolumeSlider.getBoundingClientRect();
+  // Only while the bar is on screen: not with the chrome faded out (a click there shows it), nor in the
+  // minimal layout before the control's hover has opened the slider.
+  if (root.classList.contains("chrome-hidden") || activeModal || contextMenuOpen) return;
+  const sliderStyle = getComputedStyle(playerVolumeSlider);
+  if (rect.width <= 0 || rect.height <= 0 || sliderStyle.visibility === "hidden" ||
+      sliderStyle.pointerEvents === "none" || Number(sliderStyle.opacity) < 0.5) return;
+  const middle = rect.top + rect.height / 2;
+  const reach = rect.height / 2 + VOLUME_SLOP_PX;
+  if (event.clientX < rect.left - VOLUME_SLOP_PX || event.clientX > rect.right + VOLUME_SLOP_PX) return;
+  if (Math.abs(event.clientY - middle) > reach) return;
+  event.preventDefault();
+  event.stopPropagation();
+  suppressClickAfterVolumeSlop = true;
+  playerVolumeControl?.classList.add("dragging");
+  setVolumeFromPointer(event.clientX);
+  const move = moveEvent => {
+    moveEvent.preventDefault();
+    moveEvent.stopPropagation();
+    setVolumeFromPointer(moveEvent.clientX);
+  };
+  const end = () => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    playerVolumeControl?.classList.remove("dragging");
+    // The click that follows the release is part of this press, not a click on what lies under it.
+    window.setTimeout(() => { suppressClickAfterVolumeSlop = false; }, 0);
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+}, true);
+document.addEventListener("click", event => {
+  if (!suppressClickAfterVolumeSlop) return;
+  suppressClickAfterVolumeSlop = false;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
+
 timeline.addEventListener("pointermove", showSeekThumbnailAt);
 timeline.addEventListener("pointerleave", () => {
   hideChapterTooltip();

@@ -3515,6 +3515,14 @@ private fun MainAppContent(
                         navController = navController,
                         backStackEntry = backStackEntry,
                         beforePop = {
+                            // fork:youtube-mini-player - which path closed a YouTube video (Nov 4: Escape
+                            // sometimes closed it instead of going to the mini player).
+                            if (launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE) {
+                                val caller = Throwable().stackTraceToString().lineSequence()
+                                    .filter { "com.nuvio" in it && "rememberGuardedPopBackStack" !in it }
+                                    .drop(1).take(6).joinToString(" < ") { it.trim().removePrefix("at ") }
+                                co.touchlab.kermit.Logger.withTag("YouTubeMiniPlayer").i { "player closed from: $caller" }
+                            }
                             lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
                             ResumePromptRepository.markPlayerExitedNormally()
                             PlayerLaunchStore.remove(route.launchId)

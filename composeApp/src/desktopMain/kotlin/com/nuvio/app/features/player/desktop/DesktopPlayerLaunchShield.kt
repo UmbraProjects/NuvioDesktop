@@ -58,6 +58,26 @@ internal object DesktopPlayerLaunchShield {
         showForActiveWindow()
     }
 
+    /**
+     * fork:youtube-mini-player - the mini player closing: a still of the window (the tab and the video in
+     * its corner) stays up across the player's teardown and the tab underneath coming on screen, then goes
+     * after [ms]. Nothing follows to take it down, so it times itself out.
+     */
+    fun holdStillForClose(ms: Int = STILL_CLOSE_MS) {
+        if (DesktopHostOs.current != DesktopHostOs.WINDOWS) return
+        val capture = {
+            val owner = activeOwnerWindow()
+            val content = owner?.let(::ownerContentBounds)
+            val still = content?.let(::captureScreen)
+            if (owner != null && content != null && still != null) {
+                handoffHold = true
+                showStill(owner, content, still, videoBox = null)
+                hideAfter(ms)
+            }
+        }
+        if (SwingUtilities.isEventDispatchThread()) capture() else SwingUtilities.invokeLater(capture)
+    }
+
     /** A still of the window's content up; [hideAfter] lets it stay a little longer, so the page under it has drawn. */
     @Volatile private var stillShown = false
 
@@ -187,4 +207,5 @@ internal object DesktopPlayerLaunchShield {
     }
 
     private const val STILL_MIN_MS = 220
+    private const val STILL_CLOSE_MS = 300
 }
