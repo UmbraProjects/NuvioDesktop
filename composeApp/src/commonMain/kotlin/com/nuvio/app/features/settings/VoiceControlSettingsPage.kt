@@ -11,22 +11,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.nuvio.app.features.player.AppShortcutAction
+import com.nuvio.app.features.player.appShortcutKeyLabels
+import com.nuvio.app.features.player.ensureAppShortcutBindingsLoaded
 import com.nuvio.app.features.voice.VOICE_TEST_MAX_MS
+import com.nuvio.app.features.voice.VoiceActivityDetector
 import com.nuvio.app.features.voice.VoiceControlRepository
 import com.nuvio.app.features.voice.VoiceControlUiState
-import com.nuvio.app.features.voice.VoiceDestination
-import com.nuvio.app.features.voice.VoiceIntent
 import com.nuvio.app.features.voice.VoiceModel
 import com.nuvio.app.features.voice.VoiceModelState
 import com.nuvio.app.features.voice.VoiceModels
-import com.nuvio.app.features.voice.VoiceSearchScope
 import com.nuvio.app.features.voice.VoiceTestState
+import com.nuvio.app.features.voice.describeVoiceIntent
 
 /*
  * fork:voice-control - Settings > Voice control: download the speech model, pick the microphone,
  * and test what the model hears. English-only for now, like the fork's other pages.
  */
 
+internal const val VOICE_SECTION_GENERAL = "Voice commands"
 internal const val VOICE_SECTION_MODEL = "Speech model"
 internal const val VOICE_SECTION_MICROPHONE = "Microphone"
 
@@ -38,6 +41,69 @@ private fun rememberVoiceControlState(): VoiceControlUiState {
 }
 
 internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
+    item {
+        val state = rememberVoiceControlState()
+        val keyLabels by remember {
+            ensureAppShortcutBindingsLoaded()
+            appShortcutKeyLabels()
+        }.collectAsState()
+        val voiceKey = keyLabels[AppShortcutAction.VoiceCommand] ?: "N"
+        SettingsSection(title = VOICE_SECTION_GENERAL, isTablet = isTablet) {
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsSearchAnchors("voice-enable", "voice-push-to-talk", "voice-end-pause"),
+            ) {
+                SettingsSwitchRow(
+                    title = "Voice commands",
+                    description = if (state.selectedModelInstalled) {
+                        "Say what you want, such as “search YouTube for cat videos”, “search movies for " +
+                            "Midsommar” or “open settings”. Keeps the speech model loaded (about 150 MB of memory)."
+                    } else {
+                        "Download a speech model below first."
+                    },
+                    checked = state.settings.enabled,
+                    isTablet = isTablet,
+                    onCheckedChange = VoiceControlRepository::setEnabled,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsActionRow(
+                    title = "Push to talk",
+                    description = "Press $voiceKey (change it under Keyboard shortcuts), the mic in the sidebar, the " +
+                        "mic button on a DualSense, or hold View on an Xbox controller, then speak. It stops when " +
+                        "you pause; press again to finish sooner, or Escape to cancel. While a video plays the " +
+                        "controller works, but the listening pill is hidden behind the picture.",
+                    isTablet = isTablet,
+                ) {
+                    SettingsGlassButton(
+                        text = "Try it",
+                        enabled = state.ready,
+                        accent = true,
+                        onClick = VoiceControlRepository::toggleListening,
+                    )
+                }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsDropdownChoiceRow(
+                    title = "End of command",
+                    description = "How long a pause means you have finished speaking.",
+                    options = VoiceActivityDetector.END_SILENCE_OPTIONS_MS.map { ms ->
+                        SettingsChoiceOption(
+                            ms,
+                            when (ms) {
+                                VoiceActivityDetector.END_SILENCE_OPTIONS_MS.first() -> "Short pause (${ms / 100 / 10.0} s)"
+                                VoiceActivityDetector.END_SILENCE_OPTIONS_MS.last() -> "Long pause (${ms / 100 / 10.0} s)"
+                                else -> "Normal (${ms / 100 / 10.0} s)"
+                            },
+                        )
+                    },
+                    selectedValue = state.settings.endSilenceMs,
+                    enabled = state.settings.enabled,
+                    isTablet = isTablet,
+                    onSelected = VoiceControlRepository::setEndSilenceMs,
+                )
+            }
+        }
+    }
+
     item {
         val state = rememberVoiceControlState()
         SettingsSection(title = VOICE_SECTION_MODEL, isTablet = isTablet) {
@@ -194,36 +260,3 @@ private fun VoiceTestRow(state: VoiceControlUiState, isTablet: Boolean) {
 private fun megabytes(bytes: Long): Long = (bytes + 500_000) / 1_000_000
 
 private fun seconds(ms: Long): String = "${ms / 1000}.${(ms % 1000) / 100}"
-
-/** What a recognised command would do, in words, for the Test row. */
-internal fun describeVoiceIntent(intent: VoiceIntent): String = when (intent) {
-    is VoiceIntent.Search -> "search ${scopeName(intent.scope)} for \"${intent.query}\""
-    is VoiceIntent.OpenSearch ->
-        if (intent.scope == VoiceSearchScope.All) "open Search" else "open the ${scopeName(intent.scope)} search"
-    is VoiceIntent.Open -> "open ${destinationName(intent.destination)}"
-    VoiceIntent.Play -> "play"
-    VoiceIntent.Pause -> "pause"
-    VoiceIntent.Next -> "next"
-    VoiceIntent.GoBack -> "go back"
-    is VoiceIntent.Unknown -> "not a command"
-}
-
-private fun scopeName(scope: VoiceSearchScope) = when (scope) {
-    VoiceSearchScope.All -> "everything"
-    VoiceSearchScope.Movies -> "movies"
-    VoiceSearchScope.Shows -> "shows"
-    VoiceSearchScope.YouTube -> "YouTube"
-    VoiceSearchScope.Music -> "music"
-}
-
-private fun destinationName(destination: VoiceDestination) = when (destination) {
-    VoiceDestination.Home -> "Home"
-    VoiceDestination.Search -> "Search"
-    VoiceDestination.Discover -> "Discover"
-    VoiceDestination.Library -> "Library"
-    VoiceDestination.LiveTv -> "Live TV"
-    VoiceDestination.Music -> "Music"
-    VoiceDestination.YouTube -> "YouTube"
-    VoiceDestination.Calendar -> "Calendar"
-    VoiceDestination.Settings -> "Settings"
-}

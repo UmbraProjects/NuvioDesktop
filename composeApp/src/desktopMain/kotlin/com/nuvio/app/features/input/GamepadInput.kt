@@ -1,5 +1,7 @@
 package com.nuvio.app.features.input
 
+import com.nuvio.app.features.voice.VoiceControlRepository
+
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.TextInputFocusTracker
 import com.nuvio.app.features.player.AppShortcutAction
@@ -58,6 +60,7 @@ object GamepadInput {
     private const val BIT_RIGHT_THUMB = 0x0080
     private const val BIT_LEFT_SHOULDER = 0x0100
     private const val BIT_RIGHT_SHOULDER = 0x0200
+    private const val BIT_MIC = 0x0800 // DualSense only; see player_bridge.cpp kBtnMic
     private const val BIT_A = 0x1000
     private const val BIT_B = 0x2000
     private const val BIT_X = 0x4000
@@ -107,6 +110,7 @@ object GamepadInput {
         GamepadButton.B to BIT_B,
         GamepadButton.X to BIT_X,
         GamepadButton.Y to BIT_Y,
+        GamepadButton.Mic to BIT_MIC,
     )
 
     private val directions = setOf(
@@ -371,8 +375,54 @@ object GamepadInput {
             if (button !in current) heldKeys.remove(button)?.let(GamepadKeyInjector::release)
         }
         val inPlayer = GamepadContext.playerActive
+        // fork:voice-control - with voice control ready, View is held for push-to-talk, so its own
+        // action waits for the release instead of firing on the press.
+        val holdForVoice = VoiceControlRepository.uiState.value.ready || backHold.pending
+        if (holdForVoice) {
+            when (backHold.update(GamepadButton.Back in current, now)) {
+                BackHold.Result.Talk -> VoiceControlRepository.toggleListening()
+                BackHold.Result.Tap -> send(GamepadButton.Back, inPlayer, heldKeys)
+                BackHold.Result.None -> Unit
+            }
+        }
         resolveFiring(current, previous, repeatDueAt, now, GamepadSettingsRepository.repeatIntervalMs)
-            .forEach { button -> send(button, inPlayer, heldKeys) }
+            .forEach { button ->
+                if (holdForVoice && button == GamepadButton.Back) return@forEach
+                send(button, inPlayer, heldKeys)
+            }
+    }
+
+    private val backHold = BackHold()
+
+    /**
+     * View pressed and held [holdMs] is push-to-talk ([Result.Talk], once per press); let go sooner
+     * and it is an ordinary press of View ([Result.Tap]), sent on the release. Pure, for the test.
+     */
+    internal class BackHold(private val holdMs: Long = 600) {
+        enum class Result { None, Tap, Talk }
+
+        private var pressedAt = -1L
+        private var talked = false
+
+        /** True from the press until it is resolved, so a press in progress finishes the way it started. */
+        val pending: Boolean get() = pressedAt >= 0
+
+        fun update(down: Boolean, now: Long): Result {
+            if (down) {
+                if (pressedAt < 0) {
+                    pressedAt = now
+                    talked = false
+                }
+                if (!talked && now - pressedAt >= holdMs) {
+                    talked = true
+                    return Result.Talk
+                }
+                return Result.None
+            }
+            if (pressedAt < 0) return Result.None
+            pressedAt = -1L
+            return if (talked) Result.None else Result.Tap
+        }
     }
 
     /**
@@ -394,6 +444,12 @@ object GamepadInput {
         if (OnScreenKeyboard.consume(button)) return
         val binding = GamepadDefaults.binding(button)
         val target = if (inPlayer) binding.player else binding.browsing
+        // fork:voice-control - straight to the voice session rather than a synthesized key, so it
+        // also works over the player, whose HUD has the keyboard.
+        if (target == GamepadTarget.AppAction(AppShortcutAction.VoiceCommand)) {
+            VoiceControlRepository.toggleListening()
+            return
+        }
         if (holdsUntilRelease(target)) {
             GamepadKeyInjector.press(target)?.let { keyCode -> heldKeys[button] = keyCode }
         } else {

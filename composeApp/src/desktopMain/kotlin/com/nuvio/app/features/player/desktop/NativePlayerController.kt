@@ -460,6 +460,7 @@ internal class NativePlayerController(
                         } else {
                             handle = newHandle
                             diagnosticsOverlayEnabled = false
+                            NativeAudioDuck.register(newHandle) // fork:voice-control
                             true
                         }
                     }
@@ -497,6 +498,7 @@ internal class NativePlayerController(
     private fun takePlayerHandle(): Long = synchronized(handleLock) {
         val value = handle
         handle = 0L
+        NativeAudioDuck.unregister(value) // fork:voice-control
         value
     }
 
@@ -1645,6 +1647,7 @@ internal class NativePlayerController(
         val current = synchronized(handleLock) {
             val value = handle
             handle = 0L
+            NativeAudioDuck.unregister(value) // fork:voice-control
             value
         }
         keyboardPanelOpen = false

@@ -101,6 +101,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.nuvio.app.core.ui.PosterZoomOverlayAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
@@ -4631,6 +4632,11 @@ private fun MainAppContent(
                 AppLaunchOverlay(modifier = Modifier.fillMaxSize())
             }
 
+            // fork:voice-control - the push-to-talk pill; a bare Box takes no input, so the screen below stays usable.
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                com.nuvio.app.features.voice.VoiceControlOverlay()
+            }
+
             NuvioFloatingPrompt(
                 visible = resumePromptItem != null && !isDesktop,
                 imageUrl = resumePromptItem?.poster ?: resumePromptItem?.imageUrl,
@@ -6367,8 +6373,41 @@ private fun DesktopHoverSidebar(
                         tint = color,
                     )
                 }
+                DesktopSidebarVoiceItem() // fork:voice-control
             }
         }
+    }
+}
+
+/**
+ * fork:voice-control - push-to-talk from the sidebar, under Settings. Only there while voice control
+ * is on and has a model; lit while it listens. Its first composition is also what loads the voice
+ * settings (off the UI thread), which loads the model for the voice key and the controller too.
+ */
+@Composable
+private fun DesktopSidebarVoiceItem() {
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.nuvio.app.features.voice.VoiceControlRepository.ensureLoaded()
+        }
+    }
+    val voice by com.nuvio.app.features.voice.VoiceControlRepository.uiState.collectAsStateWithLifecycle()
+    if (!voice.ready) return
+    val session by com.nuvio.app.features.voice.VoiceControlRepository.session.collectAsStateWithLifecycle()
+    val active = session is com.nuvio.app.features.voice.VoiceSessionState.Listening ||
+        session is com.nuvio.app.features.voice.VoiceSessionState.Transcribing
+    DesktopSidebarItem(
+        label = "Voice command",
+        selected = active,
+        expanded = false,
+        onClick = com.nuvio.app.features.voice.VoiceControlRepository::toggleListening,
+    ) { color ->
+        Icon(
+            imageVector = Icons.Rounded.Mic,
+            contentDescription = "Voice command",
+            modifier = Modifier.size(DesktopSidebarIconSize),
+            tint = color,
+        )
     }
 }
 

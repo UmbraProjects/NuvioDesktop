@@ -39,6 +39,9 @@ enum class GamepadButton(val id: String, val displayNameRes: StringResource) {
     RightStickDown("rs_down", Res.string.gamepad_button_rs_down),
     RightStickLeft("rs_left", Res.string.gamepad_button_rs_left),
     RightStickRight("rs_right", Res.string.gamepad_button_rs_right),
+    // fork:voice-control - only a DualSense has one (the native side reports it on a bit XInput
+    // never sets). An Xbox pad gets push-to-talk by holding View instead (GamepadInput).
+    Mic("mic", Res.string.gamepad_button_mic),
     ;
 
     val displayName: String get() = localizedString(displayNameRes)

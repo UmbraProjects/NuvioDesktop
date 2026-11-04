@@ -1,5 +1,6 @@
 package com.nuvio.app.features.voice
 
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /*
@@ -12,7 +13,10 @@ import kotlinx.coroutines.flow.StateFlow
  * (`nuvio_voice_control` is a machine store).
  *
  * Phase 2: the engine, the model download and a "Test" that records from the microphone and shows
- * what was heard and what [parseVoiceIntent] makes of it. Nothing acts on a command yet.
+ * what was heard and what [parseVoiceIntent] makes of it.
+ * Phase 3: push-to-talk ([VoiceControlRepository.toggleListening], from the voice key, the sidebar
+ * mic or a controller), [VoiceActivityDetector] to end the utterance, the listening overlay, and
+ * [VoiceControlRepository.intents]. Nothing collects the intents yet (phase 4 routes them).
  */
 
 /** A downloadable whisper.cpp model. [sha256] and [sizeBytes] are of the file at [url], which is pinned to a commit. */
@@ -72,7 +76,24 @@ data class VoiceControlSettings(
     val modelId: String = VoiceModels.default.id,
     /** The microphone's mixer name; null = Windows' default recording device. */
     val microphone: String? = null,
+    /** How long a pause ends a command; one of [VoiceActivityDetector.END_SILENCE_OPTIONS_MS]. */
+    val endSilenceMs: Int = VoiceActivityDetector.DEFAULT_END_SILENCE_MS,
 )
+
+/** A push-to-talk command, from the press to what it was understood as. Drives the listening overlay. */
+sealed interface VoiceSessionState {
+    data object Idle : VoiceSessionState
+
+    /** Recording. [transcript] is a rough reading of what has been said so far (may be empty). */
+    data class Listening(val level: Float, val transcript: String, val heardSpeech: Boolean) : VoiceSessionState
+
+    /** The utterance is over; the final reading is being made. */
+    data class Transcribing(val transcript: String) : VoiceSessionState
+
+    data class Heard(val text: String, val intent: VoiceIntent) : VoiceSessionState
+
+    data class Failed(val message: String) : VoiceSessionState
+}
 
 /** Settings > Voice control > Test: record a command and show what the model heard. */
 sealed interface VoiceTestState {
@@ -97,6 +118,9 @@ data class VoiceControlUiState(
     val selectedModel: VoiceModel get() = VoiceModels.byId(settings.modelId) ?: VoiceModels.default
 
     val selectedModelInstalled: Boolean get() = stateOf(selectedModel) == VoiceModelState.Installed
+
+    /** Whether push-to-talk works right now: switched on, with a model and the engine. */
+    val ready: Boolean get() = settings.enabled && selectedModelInstalled && engineProblem == null
 }
 
 /** The longest a Settings test recording runs; Stop ends it sooner. */
@@ -124,4 +148,53 @@ expect object VoiceControlRepository {
 
     /** Ends a test recording early (it is then transcribed), or dismisses a result. */
     fun stopTest()
+
+    fun setEndSilenceMs(ms: Int)
+
+    val session: StateFlow<VoiceSessionState>
+
+    /** Each command understood ([VoiceIntent.Unknown] is not sent). */
+    val intents: SharedFlow<VoiceIntent>
+
+    /**
+     * Push-to-talk: starts listening, or, while listening, ends the utterance now. With voice
+     * control off or no model it shows why in the overlay instead.
+     */
+    fun toggleListening()
+
+    /** Stops listening and drops what was said (Escape / B), or hides a result. */
+    fun cancelListening()
+}
+
+/** What a recognised command does, in words, for the overlay and the Settings test. */
+fun describeVoiceIntent(intent: VoiceIntent): String = when (intent) {
+    is VoiceIntent.Search -> "Search ${scopeName(intent.scope)} for “${intent.query}”"
+    is VoiceIntent.OpenSearch ->
+        if (intent.scope == VoiceSearchScope.All) "Open Search" else "Open the ${scopeName(intent.scope)} search"
+    is VoiceIntent.Open -> "Open ${destinationName(intent.destination)}"
+    VoiceIntent.Play -> "Play"
+    VoiceIntent.Pause -> "Pause"
+    VoiceIntent.Next -> "Next"
+    VoiceIntent.GoBack -> "Go back"
+    is VoiceIntent.Unknown -> "Not a command"
+}
+
+private fun scopeName(scope: VoiceSearchScope) = when (scope) {
+    VoiceSearchScope.All -> "everything"
+    VoiceSearchScope.Movies -> "movies"
+    VoiceSearchScope.Shows -> "shows"
+    VoiceSearchScope.YouTube -> "YouTube"
+    VoiceSearchScope.Music -> "music"
+}
+
+private fun destinationName(destination: VoiceDestination) = when (destination) {
+    VoiceDestination.Home -> "Home"
+    VoiceDestination.Search -> "Search"
+    VoiceDestination.Discover -> "Discover"
+    VoiceDestination.Library -> "Library"
+    VoiceDestination.LiveTv -> "Live TV"
+    VoiceDestination.Music -> "Music"
+    VoiceDestination.YouTube -> "YouTube"
+    VoiceDestination.Calendar -> "Calendar"
+    VoiceDestination.Settings -> "Settings"
 }

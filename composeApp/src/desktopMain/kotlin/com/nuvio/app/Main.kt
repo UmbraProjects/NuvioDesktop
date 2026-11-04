@@ -1098,6 +1098,18 @@ fun main(args: Array<String>) {
                                     DesktopNavigationGestureBridge.requestBack()
                                     true
                                 }
+                                // fork:voice-control - push to talk; a second press ends the command.
+                                AppShortcutAction.VoiceCommand -> {
+                                    com.nuvio.app.features.voice.VoiceControlRepository.toggleListening()
+                                    true
+                                }
+                                // Escape while listening drops the command instead of going back.
+                                AppShortcutAction.DismissOverlay -> {
+                                    val voice = com.nuvio.app.features.voice.VoiceControlRepository
+                                    val active = voice.session.value !is com.nuvio.app.features.voice.VoiceSessionState.Idle
+                                    if (active) voice.cancelListening()
+                                    active
+                                }
                                 else -> false
                             }
                         }

@@ -2,7 +2,8 @@ package com.nuvio.app.features.input
 
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.PlayerShortcutAction
-import java.awt.event.KeyEvent
+import java.awt.event.KeyEvent
+
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.StringResource
 
@@ -24,6 +25,11 @@ internal object GamepadDefaults {
     private fun player(action: PlayerShortcutAction) = GamepadTarget.PlayerAction(action)
 
     val bindings: Map<GamepadButton, GamepadBinding> = mapOf(
+        // fork:voice-control - push-to-talk everywhere, the player included.
+        GamepadButton.Mic to GamepadBinding(
+            browsing = app(AppShortcutAction.VoiceCommand),
+            player = app(AppShortcutAction.VoiceCommand),
+        ),
         // Same key in both contexts, different meaning: the player's dispatcher pins the arrows to
         // volume and seek, while every browsing screen matches them as focus movement.
         GamepadButton.DpadUp to GamepadBinding(

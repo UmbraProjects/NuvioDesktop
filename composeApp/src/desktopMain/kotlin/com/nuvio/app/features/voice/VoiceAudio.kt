@@ -134,6 +134,9 @@ internal object VoiceAudio {
         private val raw = ByteArrayOutputStream()
         private val chunk = ByteArray(((format.sampleRate / 50).toInt()) * format.frameSize)
 
+        /** The rate [readChunk]'s samples are at (the microphone's own). */
+        val sampleRate: Int get() = format.sampleRate.toInt()
+
         /** Reads one chunk (blocking ~20 ms) and returns it converted, for the level meter. */
         fun readChunk(): FloatArray {
             val read = line.read(chunk, 0, chunk.size)

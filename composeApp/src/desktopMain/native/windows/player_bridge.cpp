@@ -7806,6 +7806,8 @@ constexpr USHORT kBtnLeftThumb = 0x0040;
 constexpr USHORT kBtnRightThumb = 0x0080;
 constexpr USHORT kBtnLeftShoulder = 0x0100;
 constexpr USHORT kBtnRightShoulder = 0x0200;
+// Not an XInput bit (XInput leaves 0x0400/0x0800 unset): the DualSense mic button, for voice control.
+constexpr USHORT kBtnMic = 0x0800;
 constexpr USHORT kBtnA = 0x1000;
 constexpr USHORT kBtnB = 0x2000;
 constexpr USHORT kBtnX = 0x4000;
@@ -7881,9 +7883,10 @@ USHORT decodeButtons(unsigned char b0, unsigned char b1, unsigned char b2) {
     if (b1 & 0x20) buttons |= kBtnStart;         // Options
     if (b1 & 0x40) buttons |= kBtnLeftThumb;     // L3
     if (b1 & 0x80) buttons |= kBtnRightThumb;    // R3
-    // b2 carries PS, touchpad click and mute. None is bound: the PS button belongs to the system,
-    // and a touchpad press is far too easy to trigger by accident while holding the pad.
-    (void)b2;
+    // b2 carries PS (0x01), touchpad click (0x02) and the mic button (0x04). The PS button belongs
+    // to the system, and a touchpad press is far too easy to trigger by accident while holding the
+    // pad; the mic button is push-to-talk for voice control.
+    if (b2 & 0x04) buttons |= kBtnMic;
     return buttons;
 }
 
