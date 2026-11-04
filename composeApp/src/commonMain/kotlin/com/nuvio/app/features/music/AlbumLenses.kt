@@ -116,7 +116,8 @@ internal fun LensAlbumHeader(album: MusicAlbum, info: LibraryAlbumInfo?, onArtis
         "$minutes min".takeIf { minutes > 0 },
     ).joinToString(" · ").uppercase()
     val notes = buildLinerNotes(info?.release, album.year)
-    val credit = listOfNotNull(notes.label, notes.date, "Explicit".takeIf { notes.explicit }).joinToString(" · ")
+    // Only the first label ("A / B / C" keeps A), so the date and Explicit always fit the line; the Stage's Liner Notes keep them all.
+    val credit = listOfNotNull(firstLabel(notes.label), notes.date, "Explicit".takeIf { notes.explicit }).joinToString(" · ")
     val chips = (listOfNotNull(notes.mood) + notes.genres).take(4)
     Row(modifier.fillMaxWidth().height(LENS_HEADER_HEIGHT), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
         MusicCover(album.thumbnailUrl, album.title, size = LENS_HEADER_ART)
@@ -833,3 +834,7 @@ internal fun LensComingSoon(lens: AlbumLens, left: Boolean, modifier: Modifier =
         }
     }
 }
+
+/** The first of a release's labels: "JRC Entertainment, LLC / ILH Production Co. LLC / Def Jam" gives "JRC Entertainment, LLC". */
+internal fun firstLabel(label: String?): String? =
+    label?.split(" / ", ";")?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }

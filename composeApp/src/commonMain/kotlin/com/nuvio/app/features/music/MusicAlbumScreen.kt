@@ -680,6 +680,7 @@ private fun AlbumContent(
                                 popularity = popularity.getOrNull(index),
                                 single = songKey(track.title) in singles,
                                 marked = lens == AlbumLens.SongBySong && index in lensMarked,
+                                inFocus = lens == AlbumLens.SongBySong && index == lensIndex,
                                 inlineCredit = true,
                                 cutView = lens == AlbumLens.CutToFit,
                                 cutOrder = if (lens == AlbumLens.CutToFit) cutOrder[index] else null,
@@ -1058,6 +1059,8 @@ private fun TrackRow(
     single: Boolean = false,
     /** fork:lenses - another copy of the song in focus (Song by song): a bar in the library tint at its left edge. */
     marked: Boolean = false,
+    /** fork:lenses - the song the side panels are about (Song by song): a hairline in the accent, kept when focus moves on. */
+    inFocus: Boolean = false,
     /** fork:lenses - the featured artist's chip on the title's line, so every row is the same height. */
     inlineCredit: Boolean = false,
     /** fork:lenses - Cut to fit: the row's place in the cut in the popularity bar's slot; with [cutView] and none, it is dimmed. */
@@ -1086,6 +1089,8 @@ private fun TrackRow(
                 },
             )
             .then(if (marked) Modifier.drawBehind { drawRect(LENS_LIBRARY_TINT, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) } else Modifier)
+            // A border, not a size change: the row is the same size with it or without it.
+            .then(if (inFocus) Modifier.border(1.dp, colors.accent.copy(alpha = 0.6f), RoundedCornerShape(8.dp)) else Modifier)
             .hoverable(hoverSource)
             .musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(enabled = track.isAvailable, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 7.dp),
