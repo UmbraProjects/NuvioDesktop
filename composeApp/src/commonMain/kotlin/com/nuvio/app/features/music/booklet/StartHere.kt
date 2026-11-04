@@ -39,7 +39,7 @@ internal object StartHere {
         if (albums.isEmpty()) return null
         val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured } ?: return null
         val key = key(artist, settings.effectiveModel)
-        return lock.withLock {
+        return FactsPriority.foreground { lock.withLock {
             val kept = read(key)?.takeIf { it.isFresh(now(), BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }
             if (kept != null) return@withLock kept.booklet?.intro
             val reply = DiscoverAiClient.complete(settings, DiscoverAiPromptText(START_HERE_SYSTEM_PROMPT, startHerePrompt(artist, albums, songs))).getOrElse {
@@ -51,6 +51,6 @@ internal object StartHere {
             val booklet = text?.let { AlbumBooklet(it, emptyList(), emptyMap(), BookletSource.Ai) }
             BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
             text
-        }
+        } }
     }
 }

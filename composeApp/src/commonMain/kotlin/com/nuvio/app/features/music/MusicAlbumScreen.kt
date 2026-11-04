@@ -212,6 +212,8 @@ private fun AlbumContent(
     val info = rememberLibraryAlbumInfo(album.browseId)
 
     val loaded = state.holds(album)
+    // fork:lenses - the playing song's row, also while a Cut to fit queue of this album plays.
+    val playingRow = state.playingIndexIn(album)
     // fork:nebula - null unless a music addon link is set; then the album can be played from the addon.
     var nebulaRetry by remember(album.browseId) { mutableStateOf(0) }
     val nebula = rememberNebulaAlbumController(album, player, nebulaRetry)
@@ -450,7 +452,7 @@ private fun AlbumContent(
             TrackRow(
                 album = album,
                 track = track,
-                current = loaded && state.trackIndex == index,
+                current = playingRow == index,
                 modifier = if (index == firstPlayable) Modifier.focusRequester(firstTrackFocus) else Modifier,
                 onAddToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
                 popularity = popularity.getOrNull(index),
@@ -467,7 +469,7 @@ private fun AlbumContent(
     var lens by rememberSaveable(album.browseId) { mutableStateOf(AlbumLens.SongBySong) }
     // The song the lens is about: the one the keyboard or a click is on, else the one playing, else the first that plays.
     var lensFocus by remember(album.browseId) { mutableStateOf<Int?>(null) }
-    val lensIndex = (lensFocus ?: state.trackIndex.takeIf { loaded } ?: firstPlayable).takeIf { it in view.tracks.indices }
+    val lensIndex = (lensFocus ?: playingRow.takeIf { it >= 0 } ?: firstPlayable).takeIf { it in view.tracks.indices }
     val lensTrack = lensIndex?.let { view.tracks[it] }
     val lensArtist = artistName ?: album.artists.firstOrNull()?.name
     val lensSong = lensIndex?.let { i ->
@@ -670,7 +672,7 @@ private fun AlbumContent(
                             TrackRow(
                                 album = album,
                                 track = track,
-                                current = loaded && state.trackIndex == index,
+                                current = playingRow == index,
                                 modifier = (if (index == firstPlayable) Modifier.focusRequester(firstTrackFocus) else Modifier)
                                     .onFocusChanged { if (it.hasFocus) lensFocus = index },
                                 onAddToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },

@@ -44,7 +44,7 @@ internal object CutPicks {
         if (!mood.ai || titles.isEmpty()) return null
         val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured } ?: return null
         val key = key(albumId, mood, settings.effectiveModel)
-        return lock.withLock {
+        return FactsPriority.foreground { lock.withLock {
             read(key)?.takeIf { it.isFresh(now(), BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }?.let { kept ->
                 return@withLock kept.booklet?.intro?.let { parseCutPick(it, titles.size) }
             }
@@ -58,6 +58,6 @@ internal object CutPicks {
             BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), json?.let { AlbumBooklet(it, emptyList(), emptyMap(), BookletSource.Ai) })))
             log.i { "cut for $album ($mood): ${pick?.order?.size ?: 0} songs" }
             pick
-        }
+        } }
     }
 }

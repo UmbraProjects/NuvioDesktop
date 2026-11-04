@@ -149,3 +149,18 @@ internal fun fillProgressLine(albumsDone: Int, albumsTotal: Int, songsKept: Int)
     albumsDone >= albumsTotal -> "All $albumsTotal albums are filled ($songsKept songs)"
     else -> "$albumsDone of $albumsTotal albums filled ($songsKept songs)"
 }
+
+/** fork:facts-filler - the retry list as kept between runs of the app: one step per line, its fields split by tabs. */
+internal fun encodeRetry(steps: List<FillStep>): String = steps.joinToString("\n") { step ->
+    listOf(step.kind.name, step.artist, step.album, step.albumId, step.song.orEmpty())
+        .joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
+}
+
+/** The kept retry list; lines that no longer read (an old shape, an unknown kind) are dropped. */
+internal fun decodeRetry(raw: String?): List<FillStep> = raw.orEmpty().lines().mapNotNull { line ->
+    val f = line.split('\t')
+    if (f.size != 5) return@mapNotNull null
+    val kind = FillKind.entries.firstOrNull { it.name == f[0] } ?: return@mapNotNull null
+    if (f[1].isBlank() || f[3].isBlank()) return@mapNotNull null
+    FillStep(kind, f[1], f[2], f[3], f[4].takeIf { kind == FillKind.Story && it.isNotEmpty() })
+}.distinctBy { it.title }

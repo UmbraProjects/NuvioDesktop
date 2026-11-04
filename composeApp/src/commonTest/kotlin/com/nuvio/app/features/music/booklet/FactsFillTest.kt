@@ -93,4 +93,20 @@ class FactsFillTest {
         assertEquals("3 of 10 albums filled (40 songs)", fillProgressLine(3, 10, 40))
         assertEquals("All 10 albums are filled (120 songs)", fillProgressLine(10, 10, 120))
     }
+
+    @Test
+    fun theRetryListSurvivesARestart() {
+        val steps = listOf(
+            FillStep(FillKind.Notes, "Adele", "21", "MPREb_21"),
+            FillStep(FillKind.Story, "Adele", "21", "MPREb_21", "Rumour\tHas It"),
+            FillStep(FillKind.TrackNotes, "Jamiroquai", "Space Cowboy", "MPREb_sc"),
+        )
+        val back = decodeRetry(encodeRetry(steps))
+        assertEquals(3, back.size)
+        assertEquals("Rumour Has It", back[1].song) // a tab in a title cannot break the line
+        assertEquals(steps[0], back[0])
+        assertEquals(steps[2], back[2])
+        assertEquals(emptyList(), decodeRetry(null))
+        assertEquals(1, decodeRetry("Notes\tA\tB\tid\t\nOddKind\tA\tB\tid\t\nbroken line").size)
+    }
 }

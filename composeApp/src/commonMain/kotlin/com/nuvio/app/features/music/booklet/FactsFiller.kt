@@ -23,6 +23,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
 
@@ -54,7 +55,13 @@ internal object FilmPlaying {
 
 internal object FactsFiller {
     private val log = Logger.withTag("FactsFiller")
-    private val _status = MutableStateFlow(FillStatus(enabled = FillStorage.get("enabled") == "1", cap = decodeCap(FillStorage.get("cap"))))
+    private val _status = MutableStateFlow(
+        FillStatus(
+            enabled = FillStorage.get("enabled") == "1",
+            cap = decodeCap(FillStorage.get("cap")),
+            retry = decodeRetry(FillStorage.get(RETRY_KEY)).map { it.title },
+        ),
+    )
     val status: StateFlow<FillStatus> = _status.asStateFlow()
 
     private fun now(): Long = Clock.System.now().toEpochMilliseconds()
@@ -72,13 +79,23 @@ internal object FactsFiller {
     /** Pass-to-pass sleep that "Retry now" and "Check again" cut short. */
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
-    /** The failed lookups of the last pass, with what is needed to forget their failure. */
+    /** The failed lookups, kept between runs of the app (each step names the artist and album its failure is kept under). */
     @Volatile
-    private var retryItems: List<Pair<FillStep, BookletRequest>> = emptyList()
+    private var retryItems: List<FillStep> = decodeRetry(FillStorage.get(RETRY_KEY))
+
+    private fun keepRetry(steps: List<FillStep>) {
+        retryItems = steps
+        FillStorage.put(RETRY_KEY, encodeRetry(steps).ifEmpty { null })
+        _status.update { it.copy(retry = steps.map { s -> s.title }) }
+    }
+
+    /** What [forgetMiss] needs: the cache keys are the artist's and album's names only. */
+    private fun requestOf(step: FillStep) = BookletRequest(step.artist, step.album, null, emptyList())
 
     /** Asks again now for what failed: forgets each failure (so the loaders no longer believe it) and starts a pass. */
     fun retryNow() {
-        retryItems.forEach { (step, request) ->
+        retryItems.forEach { step ->
+            val request = requestOf(step)
             when (step.kind) {
                 FillKind.Notes -> AlbumBookletRepository.forgetMiss(request)
                 FillKind.TrackNotes -> TrackNotes.forgetMiss(request)
@@ -86,16 +103,46 @@ internal object FactsFiller {
             }
             FillStorage.put("done1|${step.albumId}", null)
         }
-        retryItems = emptyList()
-        _status.update { it.copy(retry = emptyList(), activity = "Retrying") }
+        keepRetry(emptyList())
+        setActivity("Retrying")
         wake.trySend(Unit)
     }
 
-    /** Waits while a film is playing. */
+    /** Waits while a film is playing, and while the person is waiting on a lookup of their own (and a moment after). */
     private suspend fun waitForQuiet() {
-        if (!FilmPlaying.active.value) return
-        setActivity("Waiting while a film is playing")
-        FilmPlaying.active.first { !it }
+        while (true) {
+            if (FilmPlaying.active.value) {
+                setActivity("Waiting while a film is playing")
+                FilmPlaying.active.first { !it }
+                continue
+            }
+            if (FactsPriority.waiting.value > 0) {
+                setActivity("Waiting while you look at an album")
+                FactsPriority.waiting.first { it == 0 }
+                continue
+            }
+            val left = FactsPriority.lastForegroundEndMs + FILL_YIELD_QUIET_MS - now()
+            if (left > 0) { delay(left); continue }
+            return
+        }
+    }
+
+    /**
+     * Runs one step as the filler's own work. If the person starts waiting on a lookup meanwhile, the step is cut short
+     * (which frees the loader's lock for them at once) and false is returned; the caller waits and runs it again.
+     */
+    private suspend fun runYielding(step: FillStep, request: BookletRequest): Boolean = coroutineScope {
+        val work = async(FillerWork()) { runStep(step, request) }
+        val watch = launch { FactsPriority.waiting.first { it > 0 }; work.cancel() }
+        try {
+            work.await()
+            true
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive() // the filler itself was stopped: pass it on
+            false
+        } finally {
+            watch.cancel()
+        }
     }
 
     /** Forgets what the filler has noted as filled, so the next pass looks at every album again. */
@@ -165,7 +212,10 @@ internal object FactsFiller {
         var songs = 0
         var done = order.count { FillStorage.get("done1|${it.albumId}") == model }
         _status.update { it.copy(albumsTotal = order.size, albumsDone = done) }
-        val retry = LinkedHashMap<String, Pair<FillStep, BookletRequest>>()
+        // Starts from the kept list, so what failed before a restart stays listed until it is filled.
+        val retry = LinkedHashMap<String, FillStep>().apply { retryItems.forEach { put(it.title, it) } }
+        val candidateIds = order.map { it.albumId }.toSet()
+        retry.values.removeAll { it.albumId !in candidateIds || FillStorage.get("done1|${it.albumId}") == model }
         val unfillable = HashSet<String>()
         val catalog = defaultMusicCatalog()
         for (c in order) {
@@ -185,21 +235,21 @@ internal object FactsFiller {
                 request.tracks.map { it.title to SongStories.factState(request.artist, it.title) },
             )
             val plan = planAlbum(request.artist, request.album, c.albumId, states)
-            plan.missed.forEach { retry[it.title] = it to request }
+            plan.missed.forEach { retry[it.title] = it }
             for (step in plan.steps) {
                 currentCoroutineContext().ensureActive()
                 if (!_status.value.enabled) return failStreak
                 var budget = decodeBudget(FillStorage.get("budget")).at(now())
                 val cap = _status.value.cap
                 budget.resumesAtMs(cap, now())?.let { until ->
-                    retryItems = retry.values.toList()
-                    _status.update { it.copy(used = budget.used, retry = retry.keys.toList()) }
+                    keepRetry(retry.values.toList())
+                    _status.update { it.copy(used = budget.used) }
                     setActivity("Reached today's limit of $cap lookups; carries on in ${(until - now()) / 3_600_000L + 1} h")
                     return failStreak
                 }
                 waitForQuiet()
                 setActivity("Filling ${step.title}")
-                runStep(step, request)
+                while (!runYielding(step, request)) waitForQuiet()
                 val after = stateOf(step, request)
                 if (after == FactState.Missing) { unfillable += step.title; continue } // nothing to write from (no page); no request was made
                 budget = budget.spend(requestsFor(step.kind), now())
@@ -210,10 +260,9 @@ internal object FactsFiller {
                     retry.remove(step.title)
                 } else {
                     failStreak += 1
-                    retry[step.title] = step to request
+                    retry[step.title] = step
                 }
-                retryItems = retry.values.toList()
-                _status.update { it.copy(retry = retry.keys.toList()) }
+                keepRetry(retry.values.toList())
                 val gap = nextGapMs(failStreak)
                 if (failStreak >= FILL_FAILS_BEFORE_PAUSE) {
                     setActivity("Several lookups failed in a row (rate limit or key?); pausing for 30 minutes")
@@ -233,8 +282,8 @@ internal object FactsFiller {
             }
         }
         setActivity(if (retry.isEmpty()) "Up to date" else "Up to date, except what failed (it is tried again after two hours)")
-        retryItems = retry.values.toList()
-        _status.update { it.copy(retry = retry.keys.toList(), songsKept = songs) }
+        keepRetry(retry.values.toList())
+        _status.update { it.copy(songsKept = songs) }
         return failStreak
     }
 
@@ -252,3 +301,6 @@ internal object FactsFiller {
         }
     }
 }
+
+/** Where the retry list is kept in the filler's store. */
+private const val RETRY_KEY = "retry1"

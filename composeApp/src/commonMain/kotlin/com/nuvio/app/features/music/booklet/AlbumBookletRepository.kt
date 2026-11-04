@@ -57,7 +57,8 @@ internal object AlbumBookletRepository {
     fun peek(request: BookletRequest): AlbumBooklet? = peekKept(request).withPins(Pins.forAlbum(request))
 
     /** The booklet for [request] (see [bookletForKept]) with the person's pins laid over it; pinned text stands even with no page. */
-    suspend fun bookletFor(request: BookletRequest): AlbumBooklet? = bookletForKept(request).withPins(Pins.forAlbum(request))
+    suspend fun bookletFor(request: BookletRequest): AlbumBooklet? =
+        FactsPriority.foreground { bookletForKept(request) }.withPins(Pins.forAlbum(request))
 
     /**
      * Whether the AI's notes for [request] are kept ([FactState.Have]), failed a moment ago ([FactState.Missed]) or have not

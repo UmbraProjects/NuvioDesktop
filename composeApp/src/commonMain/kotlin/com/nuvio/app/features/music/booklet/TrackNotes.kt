@@ -92,7 +92,8 @@ internal object TrackNotes {
     fun peek(request: BookletRequest): SongNotes = peekKept(request).withPins(Pins.forAlbum(request))
 
     /** Looks up what [peek] does not have: the credits first (they ground the AI's notes), then the notes. [intro] is the album's. */
-    suspend fun load(request: BookletRequest, intro: String?): SongNotes = loadKept(request, intro).withPins(Pins.forAlbum(request))
+    suspend fun load(request: BookletRequest, intro: String?): SongNotes =
+        FactsPriority.foreground { loadKept(request, intro) }.withPins(Pins.forAlbum(request))
 
     /** Whether the AI's notes for the album's songs are kept, failed a moment ago or not asked for yet (see [AlbumBookletRepository.factState]). */
     fun factState(request: BookletRequest): FactState {

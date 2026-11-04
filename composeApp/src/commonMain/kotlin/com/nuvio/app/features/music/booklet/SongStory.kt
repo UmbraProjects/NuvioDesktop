@@ -143,7 +143,7 @@ internal object SongStories {
 
     /** The story for the song, asking for it when nothing is kept, with the person's pins laid over it (see [loadKept]). */
     suspend fun load(artist: String, song: String, wantAi: Boolean = false): SongStory? =
-        loadKept(artist, song, wantAi).withPins(Pins.forSong(artist, song))
+        FactsPriority.foreground { loadKept(artist, song, wantAi) }.withPins(Pins.forSong(artist, song))
 
     /**
      * Whether the AI's story for the song is kept, failed a moment ago or not asked for yet (see [AlbumBookletRepository.factState]).
