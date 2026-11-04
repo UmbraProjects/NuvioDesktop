@@ -408,10 +408,16 @@ fun YouTubeTabScreen(
     LaunchedEffect(gridState, kind, showingQueue) {
         // The queue has no next page.
         if (showingQueue) return@LaunchedEffect
+        // Keyed on the item count too: the end is in sight before the first page is even back (an
+        // empty grid), when there is no next page to ask for yet; a short first page (Nov 4: Home
+        // answered 12) left it in sight, and on the end-only key nothing asked again until the
+        // feed was left and come back to. Each page arriving with the end still in sight asks for
+        // the one after.
         snapshotFlow {
+            val total = gridState.layoutInfo.totalItemsCount
             val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            last >= gridState.layoutInfo.totalItemsCount - 6
-        }.distinctUntilChanged().collect { nearEnd ->
+            (last >= total - 6) to total
+        }.distinctUntilChanged().collect { (nearEnd, _) ->
             if (nearEnd) YouTubeFeedRepository.loadMore(kind)
         }
     }
@@ -1501,10 +1507,12 @@ private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit, returnTo: Strin
         else -> {
             val gridState = rememberLazyGridState()
             LaunchedEffect(gridState) {
+                // Keyed on the count as well, as the feeds' grid is: a short page asks for the next.
                 snapshotFlow {
+                    val total = gridState.layoutInfo.totalItemsCount
                     val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                    last >= gridState.layoutInfo.totalItemsCount - 8
-                }.distinctUntilChanged().collect { nearEnd ->
+                    (last >= total - 8) to total
+                }.distinctUntilChanged().collect { (nearEnd, _) ->
                     if (nearEnd) YouTubeFeedRepository.loadMoreSubscribedChannels()
                 }
             }
