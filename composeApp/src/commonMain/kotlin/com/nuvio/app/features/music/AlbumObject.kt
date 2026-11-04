@@ -3,6 +3,7 @@ package com.nuvio.app.features.music
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -84,6 +85,8 @@ internal fun AlbumObject(
     peek: Float = 0.34f,
     onFlip: (() -> Unit)? = null,
     onDisc: ((out: Boolean) -> Unit)? = null,
+    /** fork:case - the disc slides out of the case's top (an upward drag) instead of its side: the object is `size` wide and `size * (1 + peek)` high. */
+    discUp: Boolean = false,
 ) {
     val art = release?.art
     val cover = album.thumbnailUrl ?: art?.cover
@@ -114,24 +117,41 @@ internal fun AlbumObject(
         label = "albumDiscSlide",
     )
 
-    val swipe = if (onDisc == null) Modifier else Modifier.pointerInput(onDisc) {
+    val swipe = if (onDisc == null) Modifier else Modifier.pointerInput(onDisc, discUp) {
         val threshold = SWIPE_THRESHOLD.toPx()
         var travelled = 0f
-        detectHorizontalDragGestures(
-            onDragStart = { travelled = 0f },
-            onDragEnd = { if (travelled > threshold) onDisc(true) else if (travelled < -threshold) onDisc(false) },
-        ) { change, amount ->
-            change.consume()
-            travelled += amount
+        if (discUp) {
+            detectVerticalDragGestures(
+                onDragStart = { travelled = 0f },
+                // Up slides the disc out of the top, down puts it back.
+                onDragEnd = { if (travelled < -threshold) onDisc(true) else if (travelled > threshold) onDisc(false) },
+            ) { change, amount ->
+                change.consume()
+                travelled += amount
+            }
+        } else {
+            detectHorizontalDragGestures(
+                onDragStart = { travelled = 0f },
+                onDragEnd = { if (travelled > threshold) onDisc(true) else if (travelled < -threshold) onDisc(false) },
+            ) { change, amount ->
+                change.consume()
+                travelled += amount
+            }
         }
     }
-    Box(modifier.width(size * (1f + peek)).height(size).then(swipe), contentAlignment = Alignment.CenterStart) {
+    val boxModifier = if (discUp) modifier.width(size).height(size * (1f + peek)) else modifier.width(size * (1f + peek)).height(size)
+    Box(boxModifier.then(swipe), contentAlignment = if (discUp) Alignment.BottomStart else Alignment.CenterStart) {
         MusicCdSpinner(
             coverUrl = cover,
             cdArtUrl = art?.cdArt,
             spinning = discSpinning && !reducedMotion,
             size = discSize,
-            modifier = Modifier.offset(x = out + (size - discSize) / 2),
+            modifier = if (discUp) {
+                // Behind the case, centred across it, its top edge `out` above the case's top.
+                Modifier.align(Alignment.TopStart).offset(x = (size - discSize) / 2, y = size * peek - out)
+            } else {
+                Modifier.offset(x = out + (size - discSize) / 2)
+            },
         )
         Box(
             Modifier

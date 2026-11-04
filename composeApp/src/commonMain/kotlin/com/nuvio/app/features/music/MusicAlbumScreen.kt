@@ -286,7 +286,7 @@ private fun AlbumContent(
     val playPath: (() -> Unit)? =
         if (pathReleases.size >= 2) ({ pathScope.launch { playTopAlbums(catalog, pathReleases, shuffled = false) }; Unit }) else null
     // Board 3: the object (case, disc and its two toggles) on the left, everything about the record on the right.
-    val objectPanel: @Composable (Dp) -> Unit = { caseSize ->
+    val objectPanel: @Composable (Dp, Boolean) -> Unit = { caseSize, discUp ->
         AlbumObjectPanel(
             album = album,
             info = info,
@@ -295,6 +295,7 @@ private fun AlbumContent(
             discSpinning = discOut && playing,
             reducedMotion = reducedMotion,
             caseSize = caseSize,
+            discUp = discUp,
             onFlip = { flipped = !flipped },
             onDisc = { out -> discChoice = out },
         )
@@ -450,7 +451,11 @@ private fun AlbumContent(
         val sideRight = maxWidth >= 1320.dp
         val sideWidth = if (sideRight) minOf(grownColumn, ((maxWidth - 520.dp) / 2).coerceAtLeast(400.dp)) else grownColumn
         // The case and the disc peeking out of it are 1.3 times as wide as the case, and must fit the column's 44 dp of padding.
-        val caseSize = if (sideRight) minOf(grownCase, (sideWidth - 44.dp) / CASE_WIDTH_FACTOR) else grownCase
+        // With three columns the disc comes out of the top, so the case may be as wide as the column and is limited by height
+        // instead: the column's room above the In brief card, less the disc's 30% peeking over the case. Window size only.
+        val caseSize = if (sideRight) {
+            minOf(sideWidth - 44.dp, (maxHeight - 24.dp - 32.dp - AI_CARD_HEIGHT - 14.dp - 8.dp) / 1.3f).coerceAtLeast(minOf(grownCase, sideWidth - 44.dp))
+        } else grownCase
         val essentialsOn = essentialSongList.isNotEmpty() || essentialAlbums.isNotEmpty()
         if (maxWidth >= 840.dp) {
             Row(Modifier.fillMaxSize()) {
@@ -462,7 +467,7 @@ private fun AlbumContent(
                             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                                 .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp + AI_CARD_HEIGHT + 14.dp),
                             verticalArrangement = Arrangement.spacedBy(14.dp),
-                        ) { objectPanel(caseSize) }
+                        ) { objectPanel(caseSize, true) }
                         booklet?.let {
                             AlbumInBriefCard(it, playingNote, Modifier.align(Alignment.BottomCenter).padding(start = 32.dp, end = 12.dp, bottom = 32.dp).height(AI_CARD_HEIGHT))
                         }
@@ -472,7 +477,7 @@ private fun AlbumContent(
                         .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    objectPanel(caseSize)
+                    objectPanel(caseSize, false)
                     booklet?.let { AlbumInBriefCard(it, playingNote) }
                 }
                 LazyColumn(
@@ -522,7 +527,7 @@ private fun AlbumContent(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
             ) {
                 item(key = "object") {
-                    Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { objectPanel(240.dp) }
+                    Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { objectPanel(240.dp, false) }
                 }
                 booklet?.let { item(key = "brief") { AlbumInBriefCard(it, playingNote, Modifier.padding(bottom = 16.dp)) } }
                 item(key = "facts") {
@@ -645,6 +650,7 @@ private fun AlbumObjectPanel(
     discSpinning: Boolean,
     reducedMotion: Boolean,
     caseSize: Dp,
+    discUp: Boolean,
     onFlip: () -> Unit,
     onDisc: (out: Boolean) -> Unit,
 ) {
@@ -661,6 +667,7 @@ private fun AlbumObjectPanel(
             reducedMotion = reducedMotion,
             size = caseSize,
             peek = 0.3f,
+            discUp = discUp,
             onFlip = onFlip,
             onDisc = onDisc,
         )

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Album page: in the three-column layout the album case is as wide as its column (up to what the window's height allows) and the disc slides out of the top of it, with an upward drag, instead of the side; the how-to text under the case is gone.
 - Album page: the two AI cards are shorter (their tops now stand level lower down), and the best albums sit on a line just above the Start here card with the best songs hanging from the top, the gap between them taking up the window's spare height.
 - Song stories with Groq: when the AI is Groq's gpt-oss model, it also searches the web (Groq's built-in search) for interviews and articles about the song; quotes must still appear word for word in a page it read.
 - Stage notes: each song gets its own story page from its Wikipedia article: how it was made, what it means, who sampled or covered it, and up to two quotes copied word for word (the AI writes the summaries from your own key; quotes it cannot find in the article are dropped, and with no key the article's own sections are shown).
