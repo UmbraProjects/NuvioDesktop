@@ -47,6 +47,7 @@ internal val MACHINE_STORE_NAMES = setOf(
     "nuvio_playback_redirect_verdicts_v2",
     "nuvio_library_title_facts",
     "nuvio_binge_group_cache",
+    "nuvio_voice_control", // fork:voice-control - which speech model and microphone this PC uses
 )
 
 /**

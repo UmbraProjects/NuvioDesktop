@@ -65,6 +65,7 @@ import androidx.compose.material.icons.rounded.CollectionsBookmark
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Notifications
@@ -1226,6 +1227,7 @@ private fun MobileSettingsScreen(
                     isTablet = false,
                     settings = screensaverSettings,
                 )
+                SettingsPage.VoiceControl -> voiceControlSettingsContent(isTablet = false) // fork:voice-control
                 SettingsPage.Preshow -> preshowSettingsContent(isTablet = false)
                 SettingsPage.Music -> musicSettingsContent(isTablet = false) // fork:music
                 SettingsPage.Debrid -> debridSettingsContent(
@@ -2111,6 +2113,7 @@ private fun TabletSettingsScreen(
                         isTablet = true,
                         settings = screensaverSettings,
                     )
+                    SettingsPage.VoiceControl -> voiceControlSettingsContent(isTablet = true) // fork:voice-control
                     SettingsPage.Preshow -> preshowSettingsContent(isTablet = true)
                     SettingsPage.Music -> musicSettingsContent(isTablet = true) // fork:music
                     SettingsPage.Debrid -> debridSettingsContent(
@@ -2269,6 +2272,11 @@ private fun desktopSettingsSidebarDefaultItems(): List<DesktopSettingsSidebarIte
         icon = Icons.Rounded.Bedtime,
         page = SettingsPage.Screensaver,
     ),
+    DesktopSettingsSidebarItem( // fork:voice-control
+        label = stringResource(Res.string.compose_settings_page_voice_control),
+        icon = Icons.Rounded.Mic,
+        page = SettingsPage.VoiceControl,
+    ),
     DesktopSettingsSidebarItem(
         label = stringResource(Res.string.compose_settings_page_preshow),
         icon = Icons.Rounded.Theaters,
@@ -2326,6 +2334,7 @@ private fun SettingsPage.desktopSidebarPage(): SettingsPage = when (this) {
     SettingsPage.Discover -> SettingsPage.Discover
     SettingsPage.Appearance -> SettingsPage.Appearance
     SettingsPage.Screensaver -> SettingsPage.Screensaver
+    SettingsPage.VoiceControl -> SettingsPage.VoiceControl
     SettingsPage.Preshow -> SettingsPage.Preshow
     SettingsPage.Music -> SettingsPage.Music // fork:music
     SettingsPage.Homescreen -> SettingsPage.Homescreen

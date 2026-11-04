@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lightbulb
@@ -2564,6 +2565,34 @@ private fun settingsSearchEntries(
             )
         }
 
+        // fork:voice-control
+        val voicePage = resolve(Res.string.compose_settings_page_voice_control)
+        addPage(
+            page = SettingsPage.VoiceControl,
+            key = "voice-control",
+            title = voicePage,
+            description = "Voice commands: speech model, microphone, test (voice, speech, mic, whisper, talk, dictation)",
+            category = generalCategory,
+            icon = Icons.Rounded.Mic,
+        )
+        listOf(
+            PlaybackSearchRow("voice-model", "Speech model", "Download or delete the offline speech recognition model (whisper)", VOICE_SECTION_MODEL),
+            PlaybackSearchRow("voice-models-folder", "Models folder", "Where the speech models are kept", VOICE_SECTION_MODEL),
+            PlaybackSearchRow("voice-microphone", "Microphone", "Which recording device voice commands listen on", VOICE_SECTION_MICROPHONE),
+            PlaybackSearchRow("voice-test", "Test voice commands", "Record a command and see what was heard", VOICE_SECTION_MICROPHONE),
+        ).forEach { row ->
+            addRow(
+                page = SettingsPage.VoiceControl,
+                key = row.key,
+                title = row.title,
+                description = row.description,
+                pageLabel = voicePage,
+                section = row.sectionOverride ?: voicePage,
+                category = generalCategory,
+                icon = Icons.Rounded.Mic,
+            )
+        }
+
         val preshowPage = resolve(Res.string.compose_settings_page_preshow)
         addPage(
             page = SettingsPage.Preshow,
@@ -2699,6 +2728,7 @@ private fun settingsSearchEntries(
         if (!isDesktop) {
             add(SettingsPage.KeyboardShortcuts)
             add(SettingsPage.Screensaver)
+            add(SettingsPage.VoiceControl)
             add(SettingsPage.Preshow)
             add(SettingsPage.Music)
             add(SettingsPage.Seekr)

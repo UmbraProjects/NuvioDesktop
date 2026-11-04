@@ -154,6 +154,10 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.Screensaver, Res.string.settings_screensaver_section_title),
             section(SettingsPage.Screensaver, Res.string.settings_screensaver_section_shutdown),
         )
+        SettingsPage.VoiceControl -> listOf( // fork:voice-control
+            sectionTitled(SettingsPage.VoiceControl, VOICE_SECTION_MODEL),
+            sectionTitled(SettingsPage.VoiceControl, VOICE_SECTION_MICROPHONE),
+        )
         SettingsPage.Music -> listOf( // fork:music
             section(SettingsPage.Music, Res.string.settings_music_section_general),
             section(SettingsPage.Music, Res.string.settings_music_section_sources),
