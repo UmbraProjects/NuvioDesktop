@@ -71,6 +71,8 @@ data class YouTubeOpenChannel(
     val subscribed: Boolean? = null,
     /** A subscribe or unsubscribe is on its way. */
     val changing: Boolean = false,
+    /** Subscriber and video counts from the page's header; null until its first page is back. */
+    val stats: YouTubeChannelStats? = null,
 )
 
 data class YouTubeChannelListState(
@@ -221,6 +223,8 @@ data class YouTubeWatchPage(
     val chapters: List<YouTubeChapter>,
     /** Title, channel and description for the windowed watch page; null when YouTube did not answer. */
     val details: YouTubeVideoDetails? = null,
+    /** Token for more related videos ([YouTubeFeedRepository.moreRelated]); null when the column ends here. */
+    val relatedContinuation: String? = null,
 )
 
 data class YouTubeChannelState(
@@ -692,12 +696,20 @@ object YouTubeFeedRepository {
     suspend fun watchPage(videoId: String): YouTubeWatchPage {
         val page = youTubeNext(videoId, continuation = null, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
             ?: return YouTubeWatchPage(emptyList(), emptyList())
-        val related = parseYouTubeFeed(page.body).videos.filter { it.videoId != videoId }
+        val column = parseYouTubeRelated(page.body)
+        val related = column.videos.filter { it.videoId != videoId }
         val chapters = parseYouTubeChapters(page.body)
         // The same answer says whether the account likes it: no second request for the like button.
         parseYouTubeLikeStatus(page.body)?.let { liked -> _likeStatus.update { it + (videoId to liked) } }
-        log.i { "Watch page: ${related.size} related, ${chapters.size} chapters" }
-        return YouTubeWatchPage(related, chapters, parseYouTubeVideoDetails(page.body))
+        log.i { "Watch page: ${related.size} related (more=${column.continuation != null}), ${chapters.size} chapters" }
+        return YouTubeWatchPage(related, chapters, parseYouTubeVideoDetails(page.body), column.continuation)
+    }
+
+    /** The next page of a watch page's related videos ([YouTubeWatchPage.relatedContinuation]); null when YouTube did not answer. */
+    suspend fun moreRelated(token: String): YouTubeFeedPage? {
+        val page = youTubeNext(videoId = null, continuation = token, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
+            ?: return null
+        return parseYouTubeRelated(page.body).also { log.i { "Related: ${it.videos.size} more, more=${it.continuation != null}" } }
     }
 
     /** A page of a comment's replies ([YouTubeComment.repliesToken], then each page's own token); null when YouTube did not answer. */
@@ -940,12 +952,15 @@ object YouTubeFeedRepository {
             if (kind == YouTubeFeedKind.Search && search != searchGeneration) return@launch
             if (kind == YouTubeFeedKind.Channel && channelPage != channelGeneration) return@launch
             if (kind == YouTubeFeedKind.Playlist && playlistPage != playlistGeneration) return@launch
-            // The first page of a channel also says whether the account is subscribed to it.
+            // The first page of a channel also says whether the account is subscribed to it, and its counts.
             if (kind == YouTubeFeedKind.Channel && continuation == null && result is YouTubeBrowseResult.Ok) {
                 parseYouTubeSubscribed(result.body)?.let { subscribed ->
                     _openChannel.update {
                         if (it != null && it.channelId == openChannelId && !it.changing) it.copy(subscribed = subscribed) else it
                     }
+                }
+                parseYouTubeChannelStats(result.body)?.let { stats ->
+                    _openChannel.update { if (it != null && it.channelId == openChannelId) it.copy(stats = stats) else it }
                 }
             }
             _feeds.update { feeds ->

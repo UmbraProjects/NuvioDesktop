@@ -1445,15 +1445,27 @@ private fun ChannelHeader(channel: YouTubeOpenChannel, onBack: () -> Unit, onSub
                 contentScale = ContentScale.Crop,
             )
         }
-        Text(
-            text = channel.name,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(
+                text = channel.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // "1.2M subscribers · 345 videos", once the page's header has said.
+            val counts = listOfNotNull(channel.stats?.subscribers, channel.stats?.videos).joinToString(" · ")
+            if (counts.isNotEmpty()) {
+                Text(
+                    text = counts,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         when (channel.subscribed) {
             // Not known until the page answers; no button rather than a guess.
             null -> Unit

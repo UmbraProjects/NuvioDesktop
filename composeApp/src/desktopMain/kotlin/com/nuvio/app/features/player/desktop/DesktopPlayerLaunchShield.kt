@@ -2,6 +2,7 @@ package com.nuvio.app.features.player.desktop
 
 import com.nuvio.app.features.player.PlaybackStartTrace
 import java.awt.Color
+import java.awt.Component
 import java.awt.KeyboardFocusManager
 import java.awt.Rectangle
 import java.awt.Window
@@ -19,17 +20,29 @@ internal object DesktopPlayerLaunchShield {
     // paint (hideAfter) or the safety timeout.
     @Volatile private var handoffHold = false
 
-    /** Covers the window until the next player paints, across the outgoing player's teardown. */
-    fun holdForHandoff() {
+    /**
+     * The surface of the player on screen, set by it while it is attached; read by [holdForHandoff] for
+     * a hand-over that should black out only the video's box.
+     */
+    @Volatile var activeVideoHost: Component? = null
+
+    /**
+     * Covers the window until the next player paints, across the outgoing player's teardown. With
+     * [videoOnly] (fork:youtube-mini-player - the video in its corner box over the YouTube tab), only
+     * the outgoing video's box is covered: the tab around it stays in sight, as it does on the website.
+     */
+    fun holdForHandoff(videoOnly: Boolean = false) {
         handoffHold = true
-        showForActiveWindow()
+        val box = if (videoOnly) activeVideoHost?.let(::screenBounds) else null
+        showForActiveWindow(box)
     }
 
-    fun showForActiveWindow() {
+    /** [region]: what to cover, in screen coordinates; the window's content when null. */
+    fun showForActiveWindow(region: Rectangle? = null) {
         if (DesktopHostOs.current != DesktopHostOs.WINDOWS) return
         SwingUtilities.invokeLater {
             val owner = activeOwnerWindow() ?: return@invokeLater
-            val bounds = ownerContentBounds(owner) ?: return@invokeLater
+            val bounds = region ?: ownerContentBounds(owner) ?: return@invokeLater
             hideTimer?.stop()
             hideTimer = null
 
@@ -86,6 +99,12 @@ internal object DesktopPlayerLaunchShield {
             .filter { it.isShowing && it !is JWindow }
             .firstOrNull()
     }
+
+    private fun screenBounds(component: Component): Rectangle? = runCatching {
+        if (!component.isShowing || component.width <= 1 || component.height <= 1) return null
+        val location = component.locationOnScreen
+        Rectangle(location.x, location.y, component.width, component.height)
+    }.getOrNull()
 
     private fun ownerContentBounds(owner: Window): Rectangle? {
         val content = (owner as? RootPaneContainer)?.contentPane

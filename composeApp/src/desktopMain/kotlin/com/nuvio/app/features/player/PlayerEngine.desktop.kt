@@ -217,7 +217,14 @@ private fun NativePlayerSurface(
     }
     val surfaceScope = rememberCoroutineScope()
     LaunchedEffect(playbackAttemptId, sourceUrl) {
-        DesktopPlayerLaunchShield.showForActiveWindow()
+        if (com.nuvio.app.features.youtube.YouTubeWatchLayout.pageShown) {
+            // fork:youtube-watch-page - the video sits in a box on the page (or the mini player's corner):
+            // the page stays in sight and only the box is dark, the surface being black until a frame
+            // comes. A hand-over's shield goes once the page has had a frame to draw.
+            DesktopPlayerLaunchShield.hideAfter()
+        } else {
+            DesktopPlayerLaunchShield.showForActiveWindow()
+        }
     }
     val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
     // What mpv will send, so a TorBox node probe looks like the player it is standing in for.
@@ -274,7 +281,9 @@ private fun NativePlayerSurface(
             DesktopPlayerLaunchShield.hideAfter()
         }
         host.onResized = { controller.layoutToHost() }
+        DesktopPlayerLaunchShield.activeVideoHost = host
         onDispose {
+            if (DesktopPlayerLaunchShield.activeVideoHost === host) DesktopPlayerLaunchShield.activeVideoHost = null
             host.onResized = null
             host.onDisplayableChanged = null
             host.onFirstPaint = null

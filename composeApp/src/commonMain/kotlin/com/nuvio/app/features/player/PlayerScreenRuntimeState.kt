@@ -407,6 +407,10 @@ internal class PlayerScreenRuntime(
     // comments (in the Sources panel, as such a video has no other source); see PlayerScreenRuntimeYouTube.
     var youTubeRelated by mutableStateOf<List<com.nuvio.app.features.youtube.YouTubeVideo>>(emptyList())
 
+    /** Token for the related column's next page; null once it has ended (or before it loads). */
+    var youTubeRelatedContinuation: String? = null
+    var youTubeRelatedLoading by mutableStateOf(false)
+
     /** A YouTube video's seek previews (YouTube's storyboard), once looked up; null when it has none. */
     var youTubeStoryboard by mutableStateOf<com.nuvio.app.features.youtube.YouTubeStoryboard?>(null)
 

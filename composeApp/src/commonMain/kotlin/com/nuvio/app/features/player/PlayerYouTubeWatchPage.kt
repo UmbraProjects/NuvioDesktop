@@ -239,11 +239,17 @@ private fun PlayerScreenRuntime.YouTubeWatchPage(shown: Boolean, onVideoBox: (Re
         YouTubeWatchLayout.backToVideo.collect { if (it != handled) scroll.animateScrollTo(0) }
     }
     LaunchedEffect(comments) { comments.loadMore() }
-    // The next page of comments as the end of the page comes near.
+    // The next page of comments and of related videos as the end of the page comes near. Keyed on the
+    // list's length too, so a page that arrives while the end is still in sight asks for the one after.
     LaunchedEffect(scroll, comments) {
-        snapshotFlow { scroll.maxValue - scroll.value < 1200 }
+        snapshotFlow { (scroll.maxValue - scroll.value < 1200) to youTubeRelated.size }
             .distinctUntilChanged()
-            .collect { nearEnd -> if (nearEnd) comments.loadMore() }
+            .collect { (nearEnd, _) ->
+                if (nearEnd) {
+                    comments.loadMore()
+                    loadMoreYouTubeRelated()
+                }
+            }
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val twoColumns = maxWidth >= TWO_COLUMN_MIN_WIDTH
@@ -894,12 +900,33 @@ private fun PlayerScreenRuntime.SideColumn(modifier: Modifier) {
                 )
             }
             Spacer(Modifier.height(8.dp))
-            SectionHeading("Up next")
         }
-        youTubeRelated.forEach { video -> SideVideoRow(video, highlighted = false, onClick = { openYouTubeVideoFromPlayer(video) }) }
-        if (youTubeRelated.isEmpty()) CircularProgressIndicator(Modifier.padding(16.dp).size(24.dp))
+        val hideWatched by YouTubeFeedRepository.hideWatched.collectAsState()
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { if (queue.isNotEmpty()) SectionHeading("Up next") }
+            // The tab's own Hide watched: one setting for the feeds and this column.
+            WatchPill(null, "Hide watched", on = hideWatched) { YouTubeFeedRepository.setHideWatched(!hideWatched) }
+        }
+        val shown = visibleYouTubeRelated
+        shown.forEach { video -> SideVideoRow(video, highlighted = false, onClick = { openYouTubeVideoFromPlayer(video) }) }
+        // Hide watched can leave only a few: keep fetching until the column fills or YouTube runs out.
+        LaunchedEffect(shown.size, youTubeRelated.size, hideWatched) {
+            if (youTubeRelated.isNotEmpty() && shown.size < RELATED_MIN_SHOWN) loadMoreYouTubeRelated()
+        }
+        when {
+            youTubeRelated.isEmpty() || youTubeRelatedLoading -> CircularProgressIndicator(Modifier.padding(16.dp).size(24.dp))
+            shown.isEmpty() -> Text(
+                "You've watched everything suggested here.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(8.dp),
+            )
+        }
     }
 }
+
+/** With Hide watched on, related pages are fetched until at least this many show (or the column ends). */
+private const val RELATED_MIN_SHOWN = 12
 
 @Composable
 private fun SideVideoRow(video: YouTubeVideo, highlighted: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)? = null) {

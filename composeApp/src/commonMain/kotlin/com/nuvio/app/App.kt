@@ -3535,11 +3535,12 @@ private fun MainAppContent(
                                     com.nuvio.app.features.youtube.YouTubeTabScreen(
                                         onPlay = { next ->
                                             if (navController.currentBackStackEntry?.id == backStackEntry.id) {
+                                                // The shield first: from the corner box it covers only the video.
+                                                PlayerHandoff.holdShield()
                                                 com.nuvio.app.features.youtube.YouTubeWatchLayout.stopBrowsing()
                                                 lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
                                                 ResumePromptRepository.markPlayerExitedNormally()
                                                 PlayerLaunchStore.remove(route.launchId)
-                                                PlayerHandoff.holdShield()
                                                 navController.popBackStack()
                                                 coroutineScope.launch {
                                                     withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
