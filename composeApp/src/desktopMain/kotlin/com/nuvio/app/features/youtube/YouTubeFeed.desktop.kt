@@ -131,10 +131,11 @@ private object SignedInShell {
                 timeoutMillis = 15_000L,
             )
             if (response.ok) YouTubeWebClient.parseShell(response.body) else null
-        }.getOrNull()
+        }.getOrNull()?.let { page -> page.copy(signatureTimestamp = signatureTimestampFor(page.playerJsUrl)) }
         log.i {
             "signed-in page: loggedIn=${read?.loggedIn} visitorData=${read?.visitorData != null} " +
-                "client=${read?.clientVersion} authUser=${read?.sessionIndex}" + if (read == null) " (could not read it)" else ""
+                "client=${read?.clientVersion} authUser=${read?.sessionIndex} sts=${read?.signatureTimestamp}" +
+                if (read == null) " (could not read it)" else ""
         }
         shell = read
         // The cookie may have just been refreshed by the page's answer; key the cache by what is saved now.
@@ -145,6 +146,32 @@ private object SignedInShell {
     }
 
     suspend fun forget() = lock.withLock { readAtMs = 0L }
+
+    /** The last player script read and its signatureTimestamp: the script only changes every few weeks. */
+    private var playerSts: Pair<String, Int>? = null
+
+    /** The signatureTimestamp of the player script at [url] (about 2.5 MB, read once per version). */
+    private suspend fun signatureTimestampFor(url: String?): Int? {
+        url ?: return null
+        playerSts?.takeIf { it.first == url }?.let { return it.second }
+        val sts = runCatching {
+            val response = TrailerExtractionPlatform.performRequest(
+                url = url,
+                method = "GET",
+                headers = YouTubeWebClient.pageHeaders(),
+                body = null,
+                timeoutMillis = 15_000L,
+            )
+            if (response.ok) YouTubeWebClient.signatureTimestamp(response.body) else null
+        }.getOrNull()
+        if (sts == null) log.w { "player script: no signatureTimestamp found in $url" }
+        else playerSts = url to sts
+        return sts
+    }
+
+    /** The signatureTimestamp for the saved sign-in's page, or null when unknown. */
+    suspend fun signatureTimestamp(): Int? =
+        YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"]?.let { get(it)?.signatureTimestamp }
 }
 
 /** One signed request with the cookies as saved now (they may just have been refreshed; the request layer keeps refreshes). */
@@ -226,13 +253,20 @@ private object WebPlayerAnswers {
         }
         if (asking) {
             try {
+                // As youtube.com asks: with the player script's signatureTimestamp. Without it some accounts get a
+                // refusal back, with no playbackTracking, so nothing reaches the watch history.
+                val sts = SignedInShell.signatureTimestamp()
+                val contentPlaybackContext = buildMap<String, Any?> {
+                    put("html5Preference", "HTML5_PREF_WANTS")
+                    if (sts != null) put("signatureTimestamp", sts)
+                }
                 val result = signedWebRequest(
                     "player",
                     mapOf(
                         "videoId" to videoId,
                         "contentCheckOk" to true,
                         "racyCheckOk" to true,
-                        "playbackContext" to mapOf("contentPlaybackContext" to mapOf("html5Preference" to "HTML5_PREF_WANTS")),
+                        "playbackContext" to mapOf("contentPlaybackContext" to contentPlaybackContext),
                     ),
                     pageId,
                 )
@@ -261,7 +295,12 @@ internal actual suspend fun youTubePlaybackTracking(videoId: String, pageId: Str
     val result = WebPlayerAnswers.get(videoId, pageId) as? YouTubeBrowseResult.Ok ?: return null
     // Only the stats URLs are wanted here; the streams came from the extractor.
     val tracking = runCatching { Json.parseToJsonElement(result.body).jsonObject["playbackTracking"]?.jsonObject }
-        .getOrNull() ?: return null
+        .getOrNull()
+    if (tracking == null) {
+        // The answer says why (usually a refusal: LOGIN_REQUIRED "...not a bot", UNPLAYABLE ...).
+        log.w { "$videoId: player answer has no playbackTracking: ${YouTubeWebClient.playabilitySummary(result.body)}" }
+        return null
+    }
     fun url(key: String) = tracking[key]?.jsonObject?.get("baseUrl")?.jsonPrimitive?.contentOrNull
     val playback = url("videostatsPlaybackUrl") ?: return null
     val watchtime = url("videostatsWatchtimeUrl") ?: return null

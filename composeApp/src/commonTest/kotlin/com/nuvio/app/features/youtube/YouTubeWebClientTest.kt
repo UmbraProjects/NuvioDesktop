@@ -69,4 +69,21 @@ class YouTubeWebClientTest {
         assertEquals(listOf("SIDCC", "__Secure-1PSIDTS"), changed)
         assertTrue(mergeSetCookies(jar, listOf("SIDCC=cc1; Path=/")).second.isEmpty())
     }
+
+    @Test
+    fun `player script url and signatureTimestamp are read`() {
+        val html = """ytcfg.set({"PLAYER_JS_URL":"\/s\/player\/6740c111\/player_ias.vflset\/en_US\/base.js","LOGGED_IN":true});"""
+        assertEquals("https://www.youtube.com/s/player/6740c111/player_ias.vflset/en_US/base.js", YouTubeWebClient.playerJsUrl(html))
+        assertEquals("https://www.youtube.com/s/player/6740c111/player_ias.vflset/en_US/base.js", YouTubeWebClient.parseShell(html)?.playerJsUrl)
+        assertEquals(20391, YouTubeWebClient.signatureTimestamp("var a={x:1,signatureTimestamp:20391,y:2}"))
+        assertEquals(20391, YouTubeWebClient.signatureTimestamp("e.sts=1;f={sts:20391}"))
+        assertEquals(null, YouTubeWebClient.signatureTimestamp("nothing here"))
+    }
+
+    @Test
+    fun `playability summary names the refusal`() {
+        val body = """{"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"Sign in to confirm you're not a bot"}}"""
+        assertEquals("LOGIN_REQUIRED \"Sign in to confirm you're not a bot\"", YouTubeWebClient.playabilitySummary(body))
+        assertEquals("no playabilityStatus", YouTubeWebClient.playabilitySummary("{}"))
+    }
 }
