@@ -664,14 +664,6 @@ private fun AlbumObjectPanel(
             onFlip = onFlip,
             onDisc = onDisc,
         )
-        Text(
-            "Click the cover to turn it over, drag sideways to slide the disc out or in. " +
-                "Cover, back and disc come from TheAudioDB and Fanart.tv. Missing art falls back to a drawn back and disc.",
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textMuted,
-            // As wide as the case, not the disc beside it, so the note stays clear of the record column.
-            modifier = Modifier.width(caseSize),
-        )
     }
 }
 
