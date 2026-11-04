@@ -123,6 +123,12 @@ import com.nuvio.app.features.music.library.songVersions
 import com.nuvio.app.features.music.library.versionCounts
 import com.nuvio.app.features.music.booklet.SongStories
 import com.nuvio.app.features.music.booklet.CutPicks
+import com.nuvio.app.features.music.booklet.LineagePicks
+import com.nuvio.app.features.music.library.LINEAGE_ROWS
+import com.nuvio.app.features.music.library.LineageRecord
+import com.nuvio.app.features.music.library.findInLibrary
+import com.nuvio.app.features.music.library.lineageGap
+import com.nuvio.app.features.music.library.lineageYear
 import com.nuvio.app.features.music.library.CUT_DEFAULT_MINUTES
 import com.nuvio.app.features.music.library.CUT_TIMES
 import com.nuvio.app.features.music.library.CutMood
@@ -466,7 +472,8 @@ private fun AlbumContent(
     val moreTitle = "More from ${info?.artist?.name ?: "this artist"}"
 
     // fork:lenses - the redesigned page (Music settings, "New album page"), on a window wide enough for its three columns.
-    val lensesOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.albumLenses
+    val libraryState = MusicLibraryRepository.state.collectAsStateWithLifecycle().value
+    val lensesOn = libraryState.settings.albumLenses
     var lens by rememberSaveable(album.browseId) { mutableStateOf(AlbumLens.SongBySong) }
     // The song the lens is about: the one the keyboard or a click is on, else the one playing, else the first that plays.
     var lensFocus by remember(album.browseId) { mutableStateOf<Int?>(null) }
@@ -563,6 +570,47 @@ private fun AlbumContent(
     val cutOrder = remember(cut) { cut.order }
     val albumSeconds = cutDurations.sum()
 
+    // Lineage: one AI request per album (kept with the facts); each record is looked up in the library, only those found open.
+    val lineageAt = lineageYear(album.year)
+    val lineageReady = LineagePicks.available()
+    var lineage by remember(album.browseId) {
+        mutableStateOf(if (lineageAt != null && lensArtist != null) LineagePicks.peek(album.browseId, lensArtist, lineageAt) else null)
+    }
+    var lineageLoading by remember(album.browseId) { mutableStateOf(false) }
+    var lineageAsked by remember(album.browseId) { mutableStateOf(false) }
+    LaunchedEffect(lensesOn, lens, album.browseId) {
+        if (!lensesOn || lens != AlbumLens.Lineage || lineage != null || !lineageReady || lineageAt == null || lensArtist == null) return@LaunchedEffect
+        lineageLoading = true
+        lineage = runCatching { LineagePicks.load(album.browseId, lensArtist, album.title, lineageAt) }.getOrNull()
+        lineageLoading = false
+        lineageAsked = true
+    }
+    fun lineageRows(records: List<LineageRecord>): Pair<List<LineageRowUi>, List<LibraryRelease>> {
+        val found = ArrayList<LibraryRelease>()
+        val rows = records.map { rec ->
+            val match = findInLibrary(rec, libraryState.artists)
+            match?.release?.let(found::add)
+            LineageRowUi(
+                title = rec.title,
+                line = "${rec.artist} · ${rec.year}",
+                why = rec.why,
+                gap = lineageAt?.let { lineageGap(it, rec.year) } ?: rec.year.toString(),
+                mono = lineageMono(rec.artist),
+                onOpen = match?.release?.ytBrowseId?.let { id -> { onAlbumClick(id) } },
+            )
+        }
+        return rows to found
+    }
+    val (rootRows, rootReleases) = remember(lineage, libraryState.artists) { lineageRows(lineage?.before.orEmpty()) }
+    val (branchRows, branchReleases) = remember(lineage, libraryState.artists) { lineageRows(lineage?.after.orEmpty()) }
+    val lineageEmpty = when {
+        lineageAt == null -> "This album has no year to trace from."
+        !lineageReady -> "Set an AI key to trace this album's lineage."
+        lineageLoading || (lineage == null && !lineageAsked) -> "Asking the AI…"
+        lineage == null -> "The AI could not answer for this album. It is asked again in two hours."
+        else -> "Nothing found on this side."
+    }
+
     // A song with no other copies: the artist's best songs instead (not the one in focus), so the box always plays something.
     val lensSuggestions = remember(lensTrack?.title, essentialSongList, view.tracks) {
         val focusKey = lensTrack?.let { songKey(it.title) }
@@ -649,6 +697,22 @@ private fun AlbumContent(
                         },
                         modifier = panelModifier,
                     )
+                    AlbumLens.Lineage -> LineageSidePanel(
+                        after = false,
+                        tint = colors.accent,
+                        pill = "AI",
+                        title = lineageAt?.let { "Before $it" } ?: "Before",
+                        subtitle = "The records this album grew out of",
+                        rows = rootRows,
+                        rowCount = LINEAGE_ROWS,
+                        empty = lineageEmpty,
+                        thread = lineage?.beforeThread ?: "What the earlier records share with this one shows here.",
+                        threadFooter = if (lineage != null) "Written by AI, may contain mistakes" else null,
+                        button = "Play the roots",
+                        buttonEnabled = rootReleases.isNotEmpty(),
+                        onButton = { pathScope.launch { playTopAlbums(catalog, rootReleases, shuffled = false) } },
+                        modifier = panelModifier,
+                    )
                     else -> LensComingSoon(lens, left = true, modifier = panelModifier)
                 }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -733,6 +797,22 @@ private fun AlbumContent(
                         onButton = {
                             PlaylistPicker.request(cut.indices.mapNotNull { album.tracks.getOrNull(it)?.forPlaylist(album) })
                         },
+                        modifier = panelModifier,
+                    )
+                    AlbumLens.Lineage -> LineageSidePanel(
+                        after = true,
+                        tint = LENS_LIBRARY_TINT,
+                        pill = "AI",
+                        title = lineageAt?.let { "After $it" } ?: "After",
+                        subtitle = "Same family, later records",
+                        rows = branchRows,
+                        rowCount = LINEAGE_ROWS,
+                        empty = lineageEmpty,
+                        thread = lineage?.afterThread ?: "What the later records share with this one shows here.",
+                        threadFooter = if (lineage != null) "Written by AI, may contain mistakes" else null,
+                        button = "Play the branches",
+                        buttonEnabled = branchReleases.isNotEmpty(),
+                        onButton = { pathScope.launch { playTopAlbums(catalog, branchReleases, shuffled = false) } },
                         modifier = panelModifier,
                     )
                     else -> LensComingSoon(lens, left = false, modifier = panelModifier)

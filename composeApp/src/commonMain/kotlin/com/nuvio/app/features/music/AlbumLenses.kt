@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -79,7 +80,7 @@ internal enum class AlbumLens(val label: String, val built: Boolean) {
     History("Your history", false),
     CutToFit("Cut to fit", true),
     SonicMap("Sonic map", false),
-    Lineage("Lineage", false),
+    Lineage("Lineage", true),
     Ask("Ask", false),
 }
 
@@ -818,6 +819,123 @@ private fun CutDial(state: CutDialState, tint: Color) {
 }
 
 private val CUT_DIAL = 200.dp
+
+/** One row of a Lineage panel: a record, its gap from the album, and what opens it when the library has it. */
+internal class LineageRowUi(
+    val title: String,
+    val line: String,
+    val why: String,
+    val gap: String,
+    val mono: String,
+    /** Opens the record's album page; null when the library does not have it. */
+    val onOpen: (() -> Unit)?,
+)
+
+/**
+ * One Lineage panel. Both sides are this one composable, so they are mirrors row for row: header, title, always
+ * [com.nuvio.app.features.music.library.LINEAGE_ROWS] rows sharing the spare height (an empty slot keeps its place), the
+ * thread note, a button. [after] puts each row's gap chip first, so the chips sit on the outer edges of the page.
+ */
+@Composable
+internal fun LineageSidePanel(
+    after: Boolean,
+    tint: Color,
+    pill: String,
+    title: String,
+    subtitle: String,
+    rows: List<LineageRowUi>,
+    rowCount: Int,
+    empty: String,
+    thread: String,
+    threadFooter: String?,
+    button: String,
+    buttonEnabled: Boolean,
+    onButton: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LensPanel(modifier) {
+        LensPanelHeader(Icons.Rounded.AutoAwesome, if (after) "WHERE IT WENT" else "WHERE IT CAME FROM", pill = pill, tint = tint)
+        LensPanelTitle(title, subtitle)
+        Column(Modifier.fillMaxWidth().weight(1f).padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            repeat(rowCount) { i ->
+                val row = rows.getOrNull(i)
+                val slot = Modifier.fillMaxWidth().weight(1f).heightIn(max = 96.dp)
+                if (row != null) LineageRow(row, after, tint, slot)
+                else {
+                    val shape = RoundedCornerShape(14.dp)
+                    Box(slot.clip(shape).border(1.dp, Color.White.copy(alpha = 0.05f), shape), contentAlignment = Alignment.Center) {
+                        if (i == 0 && rows.isEmpty()) Text(empty, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        LensNoteCard(label = "THE THREAD", text = thread, tint = tint, footer = threadFooter)
+        LensButton(button, tint = tint, enabled = buttonEnabled, onClick = onButton)
+    }
+}
+
+@Composable
+private fun LineageRow(row: LineageRowUi, after: Boolean, tint: Color, modifier: Modifier) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(14.dp)
+    val open = row.onOpen
+    val owned = open != null
+    Row(
+        modifier.clip(shape).background(Color.White.copy(alpha = if (owned) 0.06f else 0.03f))
+            .border(1.dp, if (owned) tint.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.07f), shape)
+            .then(if (open != null) Modifier.musicKeyFocusRing(shape).clickable(onClick = open) else Modifier)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val chip: @Composable () -> Unit = {
+            Text(
+                row.gap,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = tint,
+                maxLines = 1,
+                modifier = Modifier.width(LINEAGE_CHIP).clip(RoundedCornerShape(999.dp)).background(tint.copy(alpha = 0.12f))
+                    .border(1.dp, tint.copy(alpha = 0.5f), RoundedCornerShape(999.dp)).padding(vertical = 3.dp),
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (after) chip()
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.08f))
+                .then(if (owned) Modifier.border(1.5.dp, tint, CircleShape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(row.mono, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(row.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = if (owned) colors.textPrimary else colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(row.line, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (owned) row.why else listOf(row.why, "not in your library").filter { it.isNotBlank() }.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (owned) colors.textPrimary else colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (!after) chip()
+    }
+}
+
+private val LINEAGE_CHIP = 72.dp
+
+/** Two letters for a record's circle: "Earth, Wind & Fire" gives "EW", "Prince" gives "PR". */
+internal fun lineageMono(artist: String): String {
+    val words = artist.split(Regex("""[^\p{L}\p{N}]+""")).filter { it.isNotEmpty() && it.lowercase() != "the" }
+    return when {
+        words.size >= 2 -> "${words[0].first()}${words[1].first()}"
+        words.size == 1 -> words[0].take(2)
+        else -> "?"
+    }.uppercase()
+}
 
 /** A lens that is not built yet: the same panel on each side, saying so. */
 @Composable
