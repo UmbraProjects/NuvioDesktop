@@ -70,6 +70,7 @@ import com.nuvio.app.features.music.booklet.DeckPosition
 import com.nuvio.app.features.music.booklet.FactKind
 import com.nuvio.app.features.music.booklet.LinerPage
 import com.nuvio.app.features.music.booklet.SongStories
+import com.nuvio.app.features.music.booklet.stageEditGroups
 import com.nuvio.app.features.music.booklet.SongStory
 import com.nuvio.app.features.music.booklet.bookletTrackNumber
 import com.nuvio.app.features.music.booklet.coverStats
@@ -135,7 +136,11 @@ internal fun rememberBookletUi(album: MusicAlbum?, artist: LibraryArtist? = null
     }
     // A key added or removed in Settings changes who writes the notes, so it starts a new lookup.
     val aiReady = DiscoverAiSettingsRepository.uiState.collectAsState().value.isConfigured
-    val ui by produceState<BookletUi>(BookletUi.Loading, request, aiReady) {
+    // A pin saved or cleared (an edit, an import) changes what is laid over the notes, so they are read again.
+    val pinVersion = com.nuvio.app.features.music.booklet.Pins.version.collectAsState().value
+    // What is kept shows at once (no frame of "loading" between a pin being saved and the notes being read again).
+    val kept = remember(request, aiReady, pinVersion) { request?.let { r -> AlbumBookletRepository.peek(r)?.let { BookletUi.Ready(it, r) } } }
+    val ui by produceState<BookletUi>(kept ?: BookletUi.Loading, request, aiReady, pinVersion) {
         if (request == null) {
             value = BookletUi.None
             return@produceState
@@ -175,22 +180,27 @@ internal fun BookletDeck(
     val playing = bookletTrackNumber(album.tracks.map { it.videoId }, playingVideoId)
     // fork:story - the song's own story (its Wikipedia article, written up by the AI), from the cache at once, else fetched.
     val songTitle = playing?.let { request.tracks.getOrNull(it - 1)?.title }
-    val story by produceState<SongStory?>(null, request.artist, songTitle) {
-        value = null
-        if (songTitle == null) return@produceState
+    // A pin saved from the Edit dialog changes the story laid over the article, so it is read again (the old story stays up meanwhile).
+    val pinVersion = com.nuvio.app.features.music.booklet.Pins.version.collectAsState().value
+    val keptStory = remember(request.artist, songTitle, pinVersion) { songTitle?.let { SongStories.peek(request.artist, it) } }
+    val story by produceState<SongStory?>(keptStory, request.artist, songTitle, pinVersion) {
+        if (songTitle == null) {
+            value = null
+            return@produceState
+        }
         value = SongStories.peek(request.artist, songTitle)
         if (value == null) value = SongStories.load(request.artist, songTitle)
     }
     val pages = remember(booklet, request, playing, story) { linerPages(booklet, request, playing, story) }
-    var position by remember(booklet) { mutableStateOf(DeckPosition(0, 0)) }
-    var revealed by remember(booklet) { mutableStateOf(emptySet<Int>()) }
-    var lastPlaying by remember(booklet) { mutableStateOf(playing) }
+    var position by remember(request) { mutableStateOf(DeckPosition(0, 0)) }
+    var revealed by remember(request) { mutableStateOf(emptySet<Int>()) }
+    var lastPlaying by remember(request) { mutableStateOf(playing) }
     var forward by remember { mutableStateOf(true) }
     val page = position.page.coerceIn(0, pages.lastIndex)
 
     // A new song turns the deck to its own note, when the booklet has one.
     // The story can arrive after the song starts, so a turn that found no Track page yet waits for it.
-    var turnPending by remember(booklet) { mutableStateOf(false) }
+    var turnPending by remember(request) { mutableStateOf(false) }
     LaunchedEffect(playing, pages.size) {
         if (playing != lastPlaying) {
             lastPlaying = playing
@@ -232,6 +242,22 @@ internal fun BookletDeck(
             is LinerPage.Timeline -> current.timeline.entries.getOrNull(position.cursor)?.browseId?.let(onOpenAlbum)
             else -> Unit
         }
+    }
+
+    // The Edit dialog is a window over the stage: the deck underneath does not change while it is open.
+    var editing by remember { mutableStateOf(false) }
+    val editGroups = remember(pages[page], booklet, request) { stageEditGroups(pages[page], booklet, request) }
+    if (editing && editGroups.isNotEmpty()) {
+        StageEditDialog(
+            title = when (pages[page]) {
+                LinerPage.Cover -> "Edit the introduction"
+                is LinerPage.Facts -> "Edit these cards"
+                is LinerPage.Track -> "Edit what is said about this song"
+                else -> "Edit"
+            },
+            groups = editGroups,
+            onDismiss = { editing = false },
+        )
     }
 
     Column(modifier) {
@@ -300,6 +326,7 @@ internal fun BookletDeck(
                 else -> "Left and Right turn the page"
             },
             switch,
+            edit = { PinPill("Edit", accent, { editing = true }, enabled = editGroups.isNotEmpty()) },
         )
         Text(
             when (booklet.source) {
@@ -315,7 +342,7 @@ internal fun BookletDeck(
 
 /** The hint under the page dots, with [switch] at its end. Shared by the notes and the visualiser so the two footers match. */
 @Composable
-internal fun LinerHintRow(hint: String, switch: @Composable () -> Unit) {
+internal fun LinerHintRow(hint: String, switch: @Composable () -> Unit, edit: (@Composable () -> Unit)? = null) {
     Row(Modifier.padding(top = 6.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             hint,
@@ -325,6 +352,7 @@ internal fun LinerHintRow(hint: String, switch: @Composable () -> Unit) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        if (edit != null) Box(Modifier.padding(start = 8.dp)) { edit() }
         switch()
     }
 }

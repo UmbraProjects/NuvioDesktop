@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.booklet.SONG_PART_AFTER
 import com.nuvio.app.features.music.booklet.SONG_PART_MADE
 import com.nuvio.app.features.music.booklet.SongStory
 import com.nuvio.app.features.music.booklet.cutAtSentence
@@ -58,7 +59,9 @@ import com.nuvio.app.features.music.library.LibraryAlbumInfo
 import com.nuvio.app.features.music.library.SongVersion
 import com.nuvio.app.features.music.library.VersionCounts
 import com.nuvio.app.features.music.library.LensStoryText
+import com.nuvio.app.features.music.library.LensCardKind
 import com.nuvio.app.features.music.library.isPinChange
+import com.nuvio.app.features.music.library.lensCard
 import com.nuvio.app.features.music.library.lensStoryBox
 import com.nuvio.app.features.music.library.wholeSentences
 import com.nuvio.app.features.music.library.musicKeyFocusRing
@@ -307,18 +310,35 @@ private fun LensSectionLabel(label: String, note: String, trailing: (@Composable
 
 private val LENS_LABEL_HEIGHT = 26.dp
 
-/** The small card above the panel's button: fixed height, a label in [tint] and up to three lines. */
+/**
+ * The small card above the panel's button: fixed height, a label in [tint] and up to three lines. [trailing] is the Edit
+ * pills, on the label's line (a fixed height, so they change nothing); [editor] stands in the text's place while editing.
+ */
 @Composable
-private fun LensNoteCard(label: String, text: String, tint: Color, footer: String?) {
+private fun LensNoteCard(
+    label: String,
+    text: String,
+    tint: Color,
+    footer: String?,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+    editor: (@Composable ColumnScope.() -> Unit)? = null,
+) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(14.dp)
     Column(
         Modifier.fillMaxWidth().height(LENS_NOTE_HEIGHT).clip(shape).background(Color.White.copy(alpha = 0.04f))
             .border(1.dp, Color.White.copy(alpha = 0.08f), shape).padding(horizontal = 18.dp, vertical = 14.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = tint, maxLines = 1)
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-        Spacer(Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().height(LENS_LABEL_HEIGHT), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = tint, maxLines = 1, modifier = Modifier.weight(1f))
+            trailing?.invoke(this)
+        }
+        if (editor != null) {
+            editor()
+        } else {
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.weight(1f))
+        }
         if (footer != null) Text(footer, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)
     }
 }
@@ -395,18 +415,22 @@ internal fun SongBySongLeft(
     // person pinned stands alone, word for word.
     val told = lensStoryBox(story)
     val main = told?.text
-    val madePinned = story?.pinned?.contains(SONG_PART_MADE) == true
+    val boxPart = told?.part ?: SONG_PART_MADE
+    val madePinned = story?.pinned?.contains(boxPart) == true
     // True when the words in the box are the person's own: a pinned story, or a pinned note when there is no story.
     val youWrote = (main != null && madePinned) || (main == null && note?.pinned == true)
     // Editing: the box is a text field while it lasts. It edits the story's first part, or the song's note when the box is
     // showing that (a song with no article). Reset is offered only when a pin is there.
     var isEditing by remember(song?.title) { mutableStateOf(false) }
     var draft by remember(song?.title) { mutableStateOf("") }
+    // The small card has its own editor; only one of the two is open at a time.
+    var cardEditing by remember(song?.title) { mutableStateOf(false) }
+    var cardDraft by remember(song?.title) { mutableStateOf("") }
     val target: LensEditTarget? = if (edit != null && song != null && !storyLoading) {
         if (main == null && note != null) {
             edit.noteKey(song.trackNumber)?.let { LensEditTarget(it, pinned = note.pinned) }
         } else {
-            LensEditTarget(edit.madeKey(song.title), pinned = madePinned)
+            LensEditTarget(edit.partKey(song.title, boxPart), pinned = madePinned)
         }
     } else null
     val shown = main ?: note?.text
@@ -431,7 +455,7 @@ internal fun SongBySongLeft(
             if (target?.pinned == true) PinPill("Reset", colors.textSecondary, resetEdit)
             PinPill("Save", colors.accent, saveEdit)
         } else {
-            PinPill("Edit", colors.accent, { draft = shown.orEmpty(); isEditing = true })
+            PinPill("Edit", colors.accent, { cardEditing = false; draft = shown.orEmpty(); isEditing = true })
         }
     }
     // Where the words in this panel come from, always named (the right panel always names its own).
@@ -502,32 +526,75 @@ internal fun SongBySongLeft(
                 }
             }
         }
-        // The small card: the article's other half when there is one, else the album's note (when the story box took the
-        // article), else what is known of the song.
-        val afterInCard = story?.let { st -> st.after?.takeIf { st.made != null || st.meaning != null } }?.let(::wholeSentences)
-        val meaningInCard = story?.meaning?.takeIf { told?.usedMeaning == false }?.let(::wholeSentences)
-        val second = afterInCard ?: meaningInCard ?: note?.text?.takeIf { main != null }
+        // The small card: what the person wrote, else the article's other half, else the album's note (when the story box took
+        // the article), else what is known of the song.
+        val card = lensCard(story, told, note?.text, boxHasStory = main != null)
         val fallback = song?.let { s ->
             listOfNotNull(
                 s.rank?.let { "No. $it of ${s.artistName}'s most played songs." },
                 "Released as a single.".takeIf { s.single },
             ).joinToString(" ").ifEmpty { null }
         }
+        // Editing the card writes the story part it shows (the album's note and the empty card write "what came after").
+        // It is left alone when the box is already showing that part, so one text never has two editors.
+        val cardKey = if (edit != null && song != null && !storyLoading && main != null && told?.part != SONG_PART_AFTER) {
+            edit.partKey(song.title, card?.part ?: SONG_PART_AFTER)
+        } else null
+        val cardPinned = card?.pinned == true
+        val finishCard: () -> Unit = { cardEditing = false }
+        val saveCard: () -> Unit = {
+            if (cardKey != null && isPinChange(card?.text, cardDraft)) {
+                com.nuvio.app.features.music.booklet.Pins.save(cardKey, cardDraft)
+                edit?.onChanged?.invoke()
+            }
+            cardEditing = false
+        }
+        val resetCard: () -> Unit = {
+            if (cardKey != null) {
+                com.nuvio.app.features.music.booklet.Pins.clear(cardKey)
+                edit?.onChanged?.invoke()
+            }
+            cardEditing = false
+        }
+        val cardPills: @Composable RowScope.() -> Unit = {
+            if (cardEditing) {
+                PinPill("Cancel", colors.textSecondary, finishCard)
+                if (cardPinned) PinPill("Reset", colors.textSecondary, resetCard)
+                PinPill("Save", colors.accent, saveCard)
+            } else {
+                PinPill("Edit", colors.accent, { isEditing = false; cardDraft = card?.text.orEmpty(); cardEditing = true })
+            }
+        }
         Spacer(Modifier.height(16.dp))
         LensNoteCard(
-            label = when {
-                second != null && second == afterInCard -> "WHAT CAME AFTER"
-                second != null && second == meaningInCard -> "WHAT IT MEANS"
+            label = when (card?.kind) {
+                LensCardKind.After -> "WHAT CAME AFTER"
+                LensCardKind.Meaning -> "WHAT IT MEANS"
                 else -> "WHY IT MATTERS"
             },
-            text = second ?: fallback ?: "Nothing more is known about this song yet.",
+            text = card?.text ?: fallback ?: "Nothing more is known about this song yet.",
             tint = colors.accent,
             footer = when {
+                cardPinned -> "Edited by you"
                 main != null && story?.ai == true -> "Written by AI, may contain mistakes"
                 main != null -> "Text from Wikipedia, CC BY-SA 4.0"
                 note != null && note.ai -> "Written by AI, may contain mistakes"
                 else -> null
             },
+            trailing = if (cardKey != null) cardPills else null,
+            editor = if (cardEditing && cardKey != null) {
+                {
+                    PinEditField(
+                        value = cardDraft,
+                        onValueChange = { cardDraft = it },
+                        tint = colors.accent,
+                        onSave = saveCard,
+                        onCancel = finishCard,
+                        modifier = Modifier.weight(1f),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            } else null,
         )
         LensButton("Play the song", tint = colors.accent, enabled = song != null, onClick = onPlay)
     }

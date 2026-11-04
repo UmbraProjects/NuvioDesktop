@@ -178,6 +178,13 @@ internal fun SongNotes.withPins(pins: AlbumPins): SongNotes =
 internal object Pins {
     private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
+    /** Counts every change to the pins, so a screen showing the facts can read them again; see [changed]. */
+    private val _version = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val version: kotlinx.coroutines.flow.StateFlow<Int> = _version
+
+    /** Call after pins were written or removed outside [save] and [clear] (an import or its undo). */
+    fun changed() { _version.value += 1 }
+
     fun read(key: String): PinEntry? = decodePin(PinStorage.get(key))
 
     /** Pins [text] under [key]; blank text clears the pin instead. Returns true when a pin is now kept. */
@@ -188,10 +195,14 @@ internal object Pins {
             return false
         }
         PinStorage.put(key, encodePin(PinEntry(now(), clean, question?.let(::cleanPinText), kind, origin)))
+        changed()
         return true
     }
 
-    fun clear(key: String) = PinStorage.put(key, null)
+    fun clear(key: String) {
+        PinStorage.put(key, null)
+        changed()
+    }
 
     fun forAlbum(artist: String, album: String, trackCount: Int): AlbumPins = albumPinsFrom(artist, album, trackCount, PinStorage::get)
 

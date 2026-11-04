@@ -1,7 +1,9 @@
 package com.nuvio.app.features.music.library
 // FORK UI (Spyder): Nick's album page lenses, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import com.nuvio.app.features.music.booklet.SONG_PART_AFTER
 import com.nuvio.app.features.music.booklet.SONG_PART_MADE
+import com.nuvio.app.features.music.booklet.SONG_PART_MEANING
 import com.nuvio.app.features.music.booklet.SongStory
 
 /*
@@ -53,7 +55,7 @@ private fun openQuoteAt(t: String): Int {
  * The box's text from a story's [made] and [meaning] parts: whole sentences of each, [meaning] added only when both fit in
  * [max]. [usedMeaning] says the meaning is in the box, so the small card below shows something else.
  */
-internal data class LensStoryText(val text: String, val usedMeaning: Boolean)
+internal data class LensStoryText(val text: String, val usedMeaning: Boolean, val part: String = SONG_PART_MADE)
 
 internal fun lensStoryText(made: String?, meaning: String?, max: Int = LENS_STORY_MAX): LensStoryText? {
     val first = made?.let(::wholeSentences)?.takeIf { it.isNotBlank() }
@@ -73,11 +75,46 @@ internal fun lensStoryText(made: String?, meaning: String?, max: Int = LENS_STOR
  */
 internal fun lensStoryBox(story: SongStory?): LensStoryText? {
     if (story == null) return null
-    if (SONG_PART_MADE in story.pinned) {
-        story.made?.takeIf { it.isNotBlank() }?.let { return LensStoryText(it, usedMeaning = false) }
+    val made = story.made?.takeIf { it.isNotBlank() }
+    val meaning = story.meaning?.takeIf { it.isNotBlank() }
+    val after = story.after?.takeIf { it.isNotBlank() }
+    return when {
+        // The person's own made part stands alone, word for word.
+        made != null && SONG_PART_MADE in story.pinned -> LensStoryText(made, usedMeaning = false)
+        // A meaning the person wrote is shown whole in the small card, so it is never run together with the made part here.
+        made != null && meaning != null && SONG_PART_MEANING in story.pinned ->
+            lensStoryText(made, null)?.copy(usedMeaning = false)
+        made != null -> lensStoryText(made, meaning)
+        meaning != null -> LensStoryText(if (SONG_PART_MEANING in story.pinned) meaning else wholeSentences(meaning), usedMeaning = true, part = SONG_PART_MEANING)
+        after != null -> LensStoryText(if (SONG_PART_AFTER in story.pinned) after else wholeSentences(after), usedMeaning = false, part = SONG_PART_AFTER)
+        else -> null
     }
-    return lensStoryText(story.made, story.meaning)
-        ?: story.after?.let { LensStoryText(wholeSentences(it), usedMeaning = false) }
+}
+
+/** What the small card under the story box says: the article's "what came after" or "what it means", or the album's note on the song. */
+internal enum class LensCardKind { After, Meaning, Note }
+
+/** The small card's [text], what it is ([kind]), the story part an Edit would write ([part]) and whether the person wrote it. */
+internal data class LensCard(val kind: LensCardKind, val text: String, val part: String, val pinned: Boolean)
+
+/**
+ * The small card for [story] when the box showed [told]: a part the person pinned (the later part first), shown word for
+ * word; else the article's "after" (when there is a made or meaning part above it), else the meaning when the box left it
+ * out, else the album's [noteText] on the song when the box has the article. Null when none of those apply. A card that
+ * is not a story part (the note) writes the "after" part when edited.
+ */
+internal fun lensCard(story: SongStory?, told: LensStoryText?, noteText: String?, boxHasStory: Boolean): LensCard? {
+    if (story != null) {
+        story.after?.takeIf { SONG_PART_AFTER in story.pinned && it.isNotBlank() && told?.part != SONG_PART_AFTER }
+            ?.let { return LensCard(LensCardKind.After, it, SONG_PART_AFTER, pinned = true) }
+        story.meaning?.takeIf { SONG_PART_MEANING in story.pinned && it.isNotBlank() && told?.part != SONG_PART_MEANING }
+            ?.let { return LensCard(LensCardKind.Meaning, it, SONG_PART_MEANING, pinned = true) }
+        story.after?.takeIf { story.made != null || story.meaning != null }?.let(::wholeSentences)?.takeIf { it.isNotBlank() }
+            ?.let { return LensCard(LensCardKind.After, it, SONG_PART_AFTER, pinned = false) }
+        story.meaning?.takeIf { told?.usedMeaning == false }?.let(::wholeSentences)?.takeIf { it.isNotBlank() }
+            ?.let { return LensCard(LensCardKind.Meaning, it, SONG_PART_MEANING, pinned = false) }
+    }
+    return noteText?.takeIf { boxHasStory && it.isNotBlank() }?.let { LensCard(LensCardKind.Note, it, SONG_PART_AFTER, pinned = false) }
 }
 
 /** True when [draft] is a change worth pinning: not blank-for-blank and different from what the box showed, ignoring edge space. */

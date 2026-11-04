@@ -102,6 +102,7 @@ internal object FactsSharing {
             }
             keys
         }
+        Pins.changed()
         if (written.isEmpty()) { _message.value = "Nothing was added"; return }
         val record = ImportRecord(id, now(), shown.fileName, written)
         FillStorage.put("imp1|$id", encodeImportRecord(record))
@@ -120,6 +121,7 @@ internal object FactsSharing {
             keys.forEach { key -> if (shareKindOf(key) == ShareKind.Pin) PinStorage.put(key, null) else BookletCache.put(key, null) }
             keys.size
         }
+        Pins.changed()
         FillStorage.put("imp1|$id", null)
         _imports.update { list -> list.filter { it.id != id } }
         _message.value = "Removed $removed entries added from ${record.fileName}"

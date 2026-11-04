@@ -9,6 +9,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import com.nuvio.app.features.music.booklet.Pins
+import com.nuvio.app.features.music.library.isPinChange
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -56,9 +64,10 @@ internal fun AlbumGlassCard(modifier: Modifier = Modifier, content: @Composable 
 
 /** Sparkle, the card's label in the accent, and an "AI" pill at the end when the AI wrote it. */
 @Composable
-internal fun BriefHeader(label: String, ai: Boolean) {
+internal fun BriefHeader(label: String, ai: Boolean, trailing: (@Composable RowScope.() -> Unit)? = null) {
     val colors = MaterialTheme.nuvio.colors
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // A fixed height (room for the Edit pills), so the card is the same whether or not they are there.
+    Row(Modifier.fillMaxWidth().height(BRIEF_HEADER_HEIGHT), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = colors.accent, modifier = Modifier.size(16.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.accent)
         Spacer(Modifier.weight(1f))
@@ -71,8 +80,11 @@ internal fun BriefHeader(label: String, ai: Boolean) {
                 modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(999.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
             )
         }
+        trailing?.invoke(this)
     }
 }
+
+private val BRIEF_HEADER_HEIGHT = 26.dp
 
 /**
  * The album in brief: the notes' opening, a few credits, and a line about the song playing ([playingNote]): the notes' own
@@ -80,15 +92,68 @@ internal fun BriefHeader(label: String, ai: Boolean) {
  * fixed height, so the card does not change size from song to song.
  */
 @Composable
-internal fun AlbumInBriefCard(booklet: AlbumBooklet, playingNote: String?, modifier: Modifier = Modifier) {
+internal fun AlbumInBriefCard(
+    booklet: AlbumBooklet,
+    playingNote: String?,
+    modifier: Modifier = Modifier,
+    /** The pin key of the album's introduction, or null when it cannot be edited here. */
+    introKey: String? = null,
+    onIntroChanged: () -> Unit = {},
+) {
     val colors = MaterialTheme.nuvio.colors
+    val introPinned = "intro" in booklet.pinned
+    var editing by remember(booklet.intro) { mutableStateOf(false) }
+    var draft by remember(booklet.intro) { mutableStateOf("") }
+    val finish: () -> Unit = { editing = false }
+    val save: () -> Unit = {
+        if (introKey != null && isPinChange(booklet.intro, draft)) {
+            Pins.save(introKey, draft)
+            onIntroChanged()
+        }
+        editing = false
+    }
+    val reset: () -> Unit = {
+        if (introKey != null) {
+            Pins.clear(introKey)
+            onIntroChanged()
+        }
+        editing = false
+    }
+    val pills: @Composable RowScope.() -> Unit = {
+        if (editing) {
+            PinPill("Cancel", colors.textSecondary, finish)
+            if (introPinned) PinPill("Reset", colors.textSecondary, reset)
+            PinPill("Save", colors.accent, save)
+        } else {
+            PinPill("Edit", colors.accent, { draft = booklet.intro; editing = true })
+        }
+    }
+    val lineHeight = MaterialTheme.typography.bodyMedium.lineHeight.takeIf { it.isSp } ?: 20.sp
+    val introHeight = with(LocalDensity.current) { (lineHeight * INTRO_LINES).toDp() }
     val credits = (
         booklet.credits.take(2).map { it.role to it.names } +
             listOfNotNull(booklet.guests.takeIf { it.isNotEmpty() }?.let { "Guests" to it.take(4).joinToString(", ") { guest -> guest.name } })
         ).take(1)
     AlbumGlassCard(modifier) {
-        BriefHeader("IN BRIEF", ai = booklet.source == BookletSource.Ai)
-        Text(cutAtSentence(booklet.intro, 190), style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        BriefHeader("IN BRIEF", ai = booklet.source == BookletSource.Ai && !introPinned, trailing = if (introKey != null) pills else null)
+        // Three lines, edited or not, so the card does not change size while the person types.
+        if (editing && introKey != null) {
+            PinEditField(
+                value = draft,
+                onValueChange = { draft = it },
+                tint = colors.accent,
+                onSave = save,
+                onCancel = finish,
+                modifier = Modifier.fillMaxWidth().height(introHeight),
+                textStyle = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            Text(
+                if (introPinned) booklet.intro else cutAtSentence(booklet.intro, 190),
+                style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = INTRO_LINES, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().height(introHeight),
+            )
+        }
         if (credits.isNotEmpty()) {
             CardRule()
             credits.forEach { (role, names) ->
@@ -112,15 +177,18 @@ internal fun AlbumInBriefCard(booklet: AlbumBooklet, playingNote: String?, modif
         // Where a fixed height leaves room, it is here: the footer rests on the card's bottom edge, as in the Start here card.
         Spacer(Modifier.weight(1f))
         Text(
-            when (booklet.source) {
-                BookletSource.Ai -> "Written by AI, may contain mistakes"
-                BookletSource.Wikipedia -> "Text from Wikipedia, CC BY-SA 4.0"
+            when {
+                introPinned -> "Intro edited by you"
+                booklet.source == BookletSource.Ai -> "Written by AI, may contain mistakes"
+                else -> "Text from Wikipedia, CC BY-SA 4.0"
             },
             style = MaterialTheme.typography.bodySmall,
             color = colors.textMuted,
         )
     }
 }
+
+private const val INTRO_LINES = 3
 
 @Composable
 private fun CardRule() {

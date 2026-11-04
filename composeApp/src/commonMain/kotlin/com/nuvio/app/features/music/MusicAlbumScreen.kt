@@ -106,7 +106,6 @@ import com.nuvio.app.features.music.booklet.AlbumBookletRepository
 import com.nuvio.app.features.music.booklet.SongNotes
 import com.nuvio.app.features.music.booklet.PinKeys
 import com.nuvio.app.features.music.booklet.Pins
-import com.nuvio.app.features.music.booklet.SONG_PART_MADE
 import com.nuvio.app.features.music.booklet.TrackNotes
 import com.nuvio.app.features.music.booklet.StartHere
 import com.nuvio.app.features.music.library.ArtistTopSongs
@@ -279,6 +278,8 @@ private fun AlbumContent(
     val bookletRequest = remember(album.browseId, artistInfo) { bookletRequestFor(album, artistInfo) }
     // Bumped after a pin is saved or cleared, so what is kept (and the pins laid over it) is read again.
     var pinTick by remember { mutableStateOf(0) }
+    // The pin key of the album's introduction, edited from the In brief card.
+    val introKey = bookletRequest?.let { PinKeys.intro(it.artist, it.album) }
     val cachedBooklet = remember(bookletRequest, loaded, pinTick) { bookletRequest?.let { AlbumBookletRepository.peek(it) } }
     val liveUi = if (loaded) rememberBookletUi(album, artistInfo) else null
     val liveBooklet = liveUi as? BookletUi.Ready
@@ -529,7 +530,7 @@ private fun AlbumContent(
     // Editing the song panel's words: which pins its Edit control writes, and what to read again once one is saved.
     val lensEditing = if (lensArtist != null) {
         LensEditing(
-            madeKey = { title -> PinKeys.songPart(lensArtist, title, SONG_PART_MADE) },
+            partKey = { title, part -> PinKeys.songPart(lensArtist, title, part) },
             noteKey = { n -> bookletRequest?.let { PinKeys.trackNote(it.artist, it.album, n) } },
             onChanged = {
                 lensStory = if (storyKey != null) SongStories.peek(lensArtist, storyKey) else null
@@ -748,7 +749,7 @@ private fun AlbumContent(
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) { objectPanel(caseSize, true) }
                         booklet?.let {
-                            AlbumInBriefCard(it, playingNote, Modifier.align(Alignment.BottomCenter).padding(start = 32.dp, end = 12.dp, bottom = 32.dp).height(AI_CARD_HEIGHT))
+                            AlbumInBriefCard(it, playingNote, Modifier.align(Alignment.BottomCenter).padding(start = 32.dp, end = 12.dp, bottom = 32.dp).height(AI_CARD_HEIGHT), introKey = introKey, onIntroChanged = { pinTick++ })
                         }
                     }
                 } else Column(
@@ -757,7 +758,7 @@ private fun AlbumContent(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     objectPanel(caseSize, false)
-                    booklet?.let { AlbumInBriefCard(it, playingNote) }
+                    booklet?.let { AlbumInBriefCard(it, playingNote, introKey = introKey, onIntroChanged = { pinTick++ }) }
                 }
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -808,7 +809,7 @@ private fun AlbumContent(
                 item(key = "object") {
                     Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { objectPanel(240.dp, false) }
                 }
-                booklet?.let { item(key = "brief") { AlbumInBriefCard(it, playingNote, Modifier.padding(bottom = 16.dp)) } }
+                booklet?.let { item(key = "brief") { AlbumInBriefCard(it, playingNote, Modifier.padding(bottom = 16.dp), introKey = introKey, onIntroChanged = { pinTick++ }) } }
                 item(key = "facts") {
                     Column(
                         Modifier.fillMaxWidth().padding(bottom = 16.dp),

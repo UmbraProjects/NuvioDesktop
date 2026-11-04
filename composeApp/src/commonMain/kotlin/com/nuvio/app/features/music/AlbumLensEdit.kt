@@ -27,6 +27,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.nuvio
@@ -41,12 +42,12 @@ import com.nuvio.app.features.music.library.musicKeyFocusRing
  */
 
 /**
- * What the song panel needs to edit a fact: the pin key of the story's "made" part for a song [madeKey], the pin key of a
+ * What the song panel needs to edit a fact: the pin key of one of a song's story parts ([partKey]), the pin key of a
  * track's note [noteKey] (null when the album's tracks are not known), and [onChanged], called after a pin is saved or
  * cleared so the page reads what is kept again.
  */
 internal class LensEditing(
-    val madeKey: (songTitle: String) -> String,
+    val partKey: (songTitle: String, part: String) -> String,
     val noteKey: (trackNumber: Int) -> String?,
     val onChanged: () -> Unit,
 )
@@ -56,19 +57,20 @@ internal class LensEditTarget(val key: String, val pinned: Boolean)
 
 /** A small outlined pill that does one thing when pressed: the same height whatever it says. */
 @Composable
-internal fun PinPill(label: String, tint: Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun PinPill(label: String, tint: Color, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     val shape = RoundedCornerShape(999.dp)
+    // A pill that cannot be used stays in place, dimmed, so a page without one looks the same as a page with one.
+    val shown = if (enabled) tint else tint.copy(alpha = 0.35f)
     Text(
         label,
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold,
-        color = tint,
+        color = shown,
         maxLines = 1,
         modifier = modifier
             .clip(shape)
-            .border(1.dp, tint.copy(alpha = 0.5f), shape)
-            .musicKeyFocusRing(shape)
-            .clickable(onClick = onClick)
+            .border(1.dp, shown.copy(alpha = if (enabled) 0.5f else 0.25f), shape)
+            .then(if (enabled) Modifier.musicKeyFocusRing(shape).clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 10.dp, vertical = 3.dp),
     )
 }
@@ -86,6 +88,7 @@ internal fun PinEditField(
     onSave: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val focus = remember { FocusRequester() }
@@ -94,7 +97,7 @@ internal fun PinEditField(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.textPrimary),
+            textStyle = textStyle.copy(color = colors.textPrimary),
             cursorBrush = SolidColor(tint),
             modifier = Modifier
                 .fillMaxWidth()
