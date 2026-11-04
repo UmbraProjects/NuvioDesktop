@@ -58,6 +58,9 @@ import com.nuvio.app.features.music.booklet.SongStory
 import com.nuvio.app.features.music.booklet.cutAtSentence
 import com.nuvio.app.features.music.library.LibraryAlbumInfo
 import com.nuvio.app.features.music.library.SongVersion
+import com.nuvio.app.features.music.library.SonicPoint
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.key
 import com.nuvio.app.features.music.library.VersionCounts
 import com.nuvio.app.features.music.library.LensStoryText
 import com.nuvio.app.features.music.library.LensCardKind
@@ -79,7 +82,7 @@ internal enum class AlbumLens(val label: String, val built: Boolean) {
     SongBySong("Song by song", true),
     History("Your history", true),
     CutToFit("Cut to fit", true),
-    SonicMap("Sonic map", false),
+    SonicMap("Sonic map", true),
     Lineage("Lineage", true),
     Ask("Ask", false),
 }
@@ -1004,6 +1007,205 @@ internal fun HistorySidePanel(
         LensButton(button, tint = tint, enabled = buttonEnabled, onClick = onButton)
     }
 }
+
+/** One tile of a Sonic map panel: a small kind line, a name, a count, and its glyph (a lit corner, or a walk's shape). */
+internal class SonicTileUi(val small: String, val big: String, val count: String, val selected: Boolean, val glyph: Int, val corner: Boolean, val onClick: () -> Unit)
+
+/**
+ * One Sonic map panel. Both sides are this one composable, so they mirror row for row: header, title, a 2 by 2 grid of
+ * tiles in the spare height, a fixed "how" card, a note, a button.
+ */
+@Composable
+internal fun SonicSidePanel(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    tiles: List<SonicTileUi>,
+    infoLabel: String,
+    info: String,
+    noteLabel: String,
+    note: String,
+    noteFooter: String?,
+    button: String,
+    buttonEnabled: Boolean,
+    onButton: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LensPanel(modifier) {
+        LensPanelHeader(icon, label, pill = "Library", tint = tint)
+        LensPanelTitle(title, subtitle)
+        Column(Modifier.fillMaxWidth().weight(1f).padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            tiles.chunked(2).forEach { row ->
+                Row(Modifier.fillMaxWidth().weight(1f).heightIn(max = 168.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { t ->
+                        val shape = RoundedCornerShape(16.dp)
+                        Column(
+                            Modifier.weight(1f).fillMaxHeight().clip(shape)
+                                .background(if (t.selected) tint.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.04f))
+                                .border(1.dp, if (t.selected) tint else Color.White.copy(alpha = 0.12f), shape)
+                                .musicKeyFocusRing(shape)
+                                .semantics { this.selected = t.selected }
+                                .clickable(onClick = t.onClick)
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            SonicGlyph(t.glyph, t.corner, if (t.selected) tint else colors.textSecondary)
+                            Column {
+                                Text(t.small, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(t.big, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(t.count, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = tint, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val shape = RoundedCornerShape(14.dp)
+        Column(
+            Modifier.padding(top = 16.dp).fillMaxWidth().height(104.dp).clip(shape).background(Color.White.copy(alpha = 0.04f))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), shape).padding(horizontal = 18.dp, vertical = 14.dp),
+        ) {
+            Text(infoLabel, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.textSecondary, maxLines = 1)
+            Text(info, style = MaterialTheme.typography.bodySmall, color = colors.textPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        LensNoteCard(label = noteLabel, text = note, tint = tint, footer = noteFooter)
+        LensButton(button, tint = tint, enabled = buttonEnabled, onClick = onButton)
+    }
+}
+
+/** A tile's glyph: a 2 by 2 grid with corner [index] lit, or the shape of walk [index] (rise, fall, loop, drift). */
+@Composable
+private fun SonicGlyph(index: Int, corner: Boolean, tint: Color) {
+    val dim = Color.White.copy(alpha = 0.22f)
+    Canvas(Modifier.size(28.dp)) {
+        val w = size.width
+        if (corner) {
+            val c = w * 0.42f
+            val g = w - 2 * c
+            repeat(4) { i ->
+                val x = if (i % 2 == 0) 0f else c + g
+                val y = if (i < 2) 0f else c + g
+                drawRoundRect(if (i == index) tint else dim, topLeft = androidx.compose.ui.geometry.Offset(x, y), size = androidx.compose.ui.geometry.Size(c, c), cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f, 3f))
+            }
+        } else {
+            val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.4.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            val path = androidx.compose.ui.graphics.Path()
+            when (index) {
+                0 -> { path.moveTo(w * 0.12f, w * 0.85f); path.lineTo(w * 0.45f, w * 0.6f); path.lineTo(w * 0.65f, w * 0.42f); path.lineTo(w * 0.88f, w * 0.15f) }
+                1 -> { path.moveTo(w * 0.12f, w * 0.15f); path.lineTo(w * 0.45f, w * 0.4f); path.lineTo(w * 0.65f, w * 0.58f); path.lineTo(w * 0.88f, w * 0.85f) }
+                2 -> path.addOval(androidx.compose.ui.geometry.Rect(w * 0.15f, w * 0.15f, w * 0.85f, w * 0.85f))
+                else -> { path.moveTo(w * 0.08f, w * 0.5f); path.cubicTo(w * 0.3f, w * 0.1f, w * 0.4f, w * 0.1f, w * 0.5f, w * 0.5f); path.cubicTo(w * 0.6f, w * 0.9f, w * 0.7f, w * 0.9f, w * 0.92f, w * 0.5f) }
+            }
+            drawPath(path, tint, style = stroke)
+        }
+    }
+}
+
+/** One song on the Sonic map. */
+internal class SonicDotUi(val index: Int, val title: String, val minutes: Float, val point: SonicPoint, val playing: Boolean, val onPick: () -> Unit)
+
+/**
+ * The map: energy up, warm to bright across, the axis names on its edges, each song a dot sized by its length (solid when
+ * measured, a ring when estimated, white with a halo while it plays), the chosen walk as a dashed path. It fills the
+ * middle column's list area, so switching to it moves nothing. A dot whose place changes (an estimate measured) glides
+ * there over a second, or jumps when [reducedMotion].
+ */
+@Composable
+internal fun SonicMapCentre(
+    dots: List<SonicDotUi>,
+    walk: List<Int>,
+    unplaced: Int,
+    estimated: Int,
+    tint: Color,
+    walkTint: Color,
+    reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(20.dp)
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier.clip(shape).background(Color.White.copy(alpha = 0.035f)).border(1.dp, Color.White.copy(alpha = 0.09f), shape),
+    ) {
+        val w = maxWidth
+        val h = maxHeight
+        val byIndex = dots.associateBy { it.index }
+        Canvas(Modifier.fillMaxSize()) {
+            val cx = size.width / 2
+            val cy = size.height / 2
+            val ring = Color.White.copy(alpha = 0.07f)
+            val r = minOf(size.width, size.height) / 2
+            for (k in 1..3) drawCircle(ring, radius = r * k / 3f, center = androidx.compose.ui.geometry.Offset(cx, cy), style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+            val axis = Color.White.copy(alpha = 0.14f)
+            drawLine(axis, androidx.compose.ui.geometry.Offset(0f, cy), androidx.compose.ui.geometry.Offset(size.width, cy), 1f)
+            drawLine(axis, androidx.compose.ui.geometry.Offset(cx, 0f), androidx.compose.ui.geometry.Offset(cx, size.height), 1f)
+            val pts = walk.mapNotNull { byIndex[it]?.point }
+            if (pts.size >= 2) {
+                val path = androidx.compose.ui.graphics.Path()
+                pts.forEachIndexed { i, p ->
+                    val x = p.bright * size.width
+                    val y = (1 - p.energy) * size.height
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(
+                    path, walkTint,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = 2.dp.toPx(),
+                        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 12f)),
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                    ),
+                )
+            }
+        }
+        val axisStyle = MaterialTheme.typography.labelMedium
+        Text("ENERGETIC", style = axisStyle, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, color = colors.textSecondary, modifier = Modifier.align(Alignment.TopCenter).padding(top = 14.dp))
+        Text("CALM", style = axisStyle, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, color = colors.textSecondary, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp))
+        Text("WARM", style = axisStyle, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, color = colors.textSecondary, modifier = Modifier.align(Alignment.CenterStart).padding(start = 16.dp, bottom = 22.dp))
+        Text("BRIGHT", style = axisStyle, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, color = colors.textSecondary, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp, bottom = 22.dp))
+        dots.forEach { d -> key(d.index) {
+            val spec = if (reducedMotion) androidx.compose.animation.core.snap<Float>() else androidx.compose.animation.core.tween(1_000)
+            val ax by androidx.compose.animation.core.animateFloatAsState(d.point.bright, spec, label = "sonic-x")
+            val ay by androidx.compose.animation.core.animateFloatAsState(1 - d.point.energy, spec, label = "sonic-y")
+            val size = (10f + d.minutes.coerceIn(0f, 12f) * 1.8f).dp
+            val labelLeft = d.point.bright > 0.72f
+            val fill = when {
+                d.playing -> Color.White
+                d.point.measured -> tint
+                else -> Color.Transparent
+            }
+            Box(
+                Modifier.offset(x = w * ax - size / 2, y = h * ay - size / 2).size(size).clip(CircleShape)
+                    .background(fill)
+                    .then(if (!d.point.measured && !d.playing) Modifier.border(2.dp, tint, CircleShape) else Modifier)
+                    .then(if (d.playing) Modifier.border(4.dp, tint.copy(alpha = 0.35f), CircleShape) else Modifier)
+                    .musicKeyFocusRing(CircleShape)
+                    .clickable(onClick = d.onPick),
+            )
+            Text(
+                d.title,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (d.playing || walk.contains(d.index)) colors.textPrimary else colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = if (labelLeft) TextAlign.End else TextAlign.Start,
+                modifier = Modifier.width(SONIC_LABEL).offset(
+                    x = if (labelLeft) w * ax - size / 2 - 8.dp - SONIC_LABEL else w * ax + size / 2 + 8.dp,
+                    y = h * ay - 9.dp,
+                ),
+            )
+        } }
+        val foot = listOfNotNull(
+            "$unplaced song${if (unplaced == 1) "" else "s"} not placed yet: play them to place them".takeIf { unplaced > 0 },
+            "Ring: an AI estimate until you play it".takeIf { estimated > 0 },
+        ).joinToString(" · ").ifEmpty { "Size shows length · placed for this album" }
+        Text(foot, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 14.dp).width(w * 0.42f))
+    }
+}
+
+private val SONIC_LABEL = 150.dp
 
 /** A lens that is not built yet: the same panel on each side, saying so. */
 @Composable

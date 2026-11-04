@@ -429,7 +429,13 @@ actual fun MusicPlayerSurface(
         if (builder != null) {
             if (read) {
                 val finished = withContext(Dispatchers.Default) { builder.finish() }
-                key?.let { k -> withContext(Dispatchers.IO) { TrackMapBook.put(k, finished) } }
+                key?.let { k ->
+                    withContext(Dispatchers.IO) {
+                        TrackMapBook.put(k, finished)
+                        // fork:sonic-map - the album page's Sonic map places the song by this, long after the map file is gone.
+                        com.nuvio.app.features.music.library.keepSoundPrint(k, finished)
+                    }
+                }
                 TrackMapLive.publish(LiveTrackMap(loadId, finished, knownLufs, analysing = false))
                 log.i { "visualiser map ${key ?: "(no key)"}: ${finished.frames} frames, beat ${finished.beat?.bpm?.let { "%.1f BPM".format(it) } ?: "none"}" }
             } else {

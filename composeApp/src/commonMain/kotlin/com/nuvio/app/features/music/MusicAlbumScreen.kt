@@ -124,6 +124,18 @@ import com.nuvio.app.features.music.library.versionCounts
 import com.nuvio.app.features.music.booklet.SongStories
 import com.nuvio.app.features.music.booklet.CutPicks
 import com.nuvio.app.features.music.booklet.LineagePicks
+import com.nuvio.app.features.music.booklet.SonicGuesses
+import com.nuvio.app.features.music.library.SonicCorner
+import com.nuvio.app.features.music.library.SonicWalk
+import com.nuvio.app.features.music.library.SoundPrintEvents
+import com.nuvio.app.features.music.library.WALK_MAX
+import com.nuvio.app.features.music.library.cornerSongs
+import com.nuvio.app.features.music.library.loadSoundPrint
+import com.nuvio.app.features.music.library.sonicPlaces
+import com.nuvio.app.features.music.library.walkSongs
+import com.nuvio.app.features.music.visualiser.SoundPrint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.nuvio.app.features.music.library.SongHistory
 import com.nuvio.app.features.music.library.albumHistory
 import com.nuvio.app.features.music.library.listenedText
@@ -585,6 +597,39 @@ private fun AlbumContent(
     val historyMax = historyPlays.maxOrNull() ?: 0
     val nowMs = remember(historyTick) { kotlin.time.Clock.System.now().toEpochMilliseconds() }
 
+    // Sonic map: each song's measured print (from its kept map, YouTube's or the addon's copy, whichever has one), else the
+    // AI's estimate (one request per album, asked when the tab is opened). Read again when a new print is kept.
+    val printTick = SoundPrintEvents.changes.collectAsStateWithLifecycle().value
+    val sonicKeys = remember(album, view) {
+        album.tracks.indices.map { i ->
+            val yt = album.tracks[i].videoId
+            listOfNotNull("yt:$yt", view.tracks.getOrNull(i)?.videoId?.takeIf { it != yt }?.let { "addon:$it" })
+        }
+    }
+    var sonicPrints by remember(album.browseId) { mutableStateOf<List<SoundPrint?>>(emptyList()) }
+    LaunchedEffect(lensesOn, lens, album.browseId, printTick, historyTick) {
+        if (!lensesOn || lens != AlbumLens.SonicMap) return@LaunchedEffect
+        sonicPrints = withContext(Dispatchers.Default) { sonicKeys.map { keys -> keys.firstNotNullOfOrNull { loadSoundPrint(it) } } }
+    }
+    var sonicGuesses by remember(album.browseId) { mutableStateOf(SonicGuesses.peek(album.browseId, view.tracks.size)) }
+    var sonicLoading by remember(album.browseId) { mutableStateOf(false) }
+    LaunchedEffect(lensesOn, lens, album.browseId) {
+        if (!lensesOn || lens != AlbumLens.SonicMap || sonicGuesses != null || !SonicGuesses.available() || lensArtist == null) return@LaunchedEffect
+        sonicLoading = true
+        sonicGuesses = runCatching { SonicGuesses.load(album.browseId, lensArtist, album.title, view.tracks.map { it.title }) }.getOrNull()
+        sonicLoading = false
+    }
+    val sonic = remember(sonicPrints, sonicGuesses, view.tracks) {
+        val prints = view.tracks.indices.map { sonicPrints.getOrNull(it) }
+        sonicPlaces(prints, sonicGuesses.orEmpty())
+    }
+    var sonicCorner by rememberSaveable(album.browseId) { mutableStateOf(SonicCorner.EnergeticWarm) }
+    var sonicWalk by rememberSaveable(album.browseId) { mutableStateOf(SonicWalk.Rise) }
+    val cornerList = remember(sonic, sonicCorner) { cornerSongs(sonic, sonicCorner) }
+    val walkList = remember(sonic, sonicWalk) { walkSongs(sonic, sonicWalk) }
+    val sonicPlaced = sonic.count { it != null }
+    val sonicEstimated = sonic.count { it != null && !it.measured }
+
     // Lineage: one AI request per album (kept with the facts); each record is looked up in the library, only those found open.
     val lineageAt = lineageYear(album.year)
     val lineageReady = LineagePicks.available()
@@ -752,6 +797,45 @@ private fun AlbumContent(
                             modifier = panelModifier,
                         )
                     }
+                    AlbumLens.SonicMap -> {
+                        val biggest = SonicCorner.entries.maxByOrNull { cornerSongs(sonic, it).size }
+                        val biggestCount = biggest?.let { cornerSongs(sonic, it).size } ?: 0
+                        SonicSidePanel(
+                            icon = Icons.Rounded.AutoAwesome,
+                            label = "CORNERS",
+                            tint = colors.accent,
+                            title = "Pick a corner",
+                            subtitle = "Play one mood of this album",
+                            tiles = SonicCorner.entries.mapIndexed { i, c ->
+                                val n = cornerSongs(sonic, c).size
+                                SonicTileUi(
+                                    small = if (c.energetic) "ENERGETIC" else "CALM",
+                                    big = if (c.bright) "Bright" else "Warm",
+                                    count = "$n song${if (n == 1) "" else "s"}",
+                                    selected = c == sonicCorner,
+                                    glyph = i,
+                                    corner = true,
+                                    onClick = { sonicCorner = c },
+                                )
+                            },
+                            infoLabel = "HOW THE MAP IS MADE",
+                            info = "Up is energy (loudness, drums, tempo); across is warm to bright, from how each song sounds as Nuvio plays it. Placed for this album only.",
+                            noteLabel = "WHAT IT SHOWS",
+                            note = when {
+                                sonicPlaced == 0 && sonicLoading -> "Asking the AI where this album's songs sit…"
+                                sonicPlaced == 0 -> "Play a song from this album to start its map" + (if (!SonicGuesses.available()) ", or set an AI key to estimate the rest." else ".")
+                                else -> "Most of this album sits ${biggest?.label} ($biggestCount of $sonicPlaced placed songs)."
+                            },
+                            noteFooter = if (sonicEstimated > 0) "$sonicEstimated of $sonicPlaced places are AI estimates" else null,
+                            button = "Shuffle this corner",
+                            buttonEnabled = cornerList.isNotEmpty(),
+                            onButton = {
+                                val tracks = cornerList.mapNotNull { view.tracks.getOrNull(it) }.filter { it.isAvailable }
+                                if (tracks.isNotEmpty()) player.play(view.copy(tracks = tracks), trackIndex = 0, mode = chosenMode, shuffled = true)
+                            },
+                            modifier = panelModifier,
+                        )
+                    }
                     AlbumLens.Lineage -> LineageSidePanel(
                         after = false,
                         tint = colors.accent,
@@ -781,7 +865,23 @@ private fun AlbumContent(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) { noteLines() }
                     AlbumLensTabs(selected = lens, onSelect = { lens = it })
-                    LazyColumn(
+                    if (lens == AlbumLens.SonicMap) {
+                        SonicMapCentre(
+                            dots = sonic.mapIndexedNotNull { i, p ->
+                                p?.let {
+                                    SonicDotUi(i, view.tracks[i].title, view.tracks[i].durationSeconds / 60f, it, playing = playingRow == i, onPick = { lensFocus = i; tapTrack(i) })
+                                }
+                            },
+                            walk = walkList,
+                            unplaced = view.tracks.size - sonicPlaced,
+                            estimated = sonicEstimated,
+                            tint = colors.accent,
+                            walkTint = LENS_LIBRARY_TINT,
+                            reducedMotion = reducedMotion,
+                            // The dock stands over the bottom of the middle column: the map ends clear of it.
+                            modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = LENS_MAP_BOTTOM),
+                        )
+                    } else LazyColumn(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         // The dock stands over the bottom of the middle column: the last song scrolls clear of it.
                         contentPadding = PaddingValues(top = 16.dp, bottom = LENS_LIST_BOTTOM),
@@ -899,6 +999,50 @@ private fun AlbumContent(
                             buttonEnabled = tryNext.isNotEmpty(),
                             onButton = {
                                 val tracks = history.never.mapNotNull { view.tracks.getOrNull(it) }
+                                if (tracks.isNotEmpty()) player.play(view.copy(tracks = tracks), trackIndex = 0, mode = chosenMode, shuffled = false)
+                            },
+                            modifier = panelModifier,
+                        )
+                    }
+                    AlbumLens.SonicMap -> {
+                        val first = walkList.firstOrNull()?.let { view.tracks[it].title }
+                        val last = walkList.lastOrNull()?.let { view.tracks[it].title }
+                        SonicSidePanel(
+                            icon = Icons.Rounded.AutoAwesome,
+                            label = "WALKS",
+                            tint = LENS_LIBRARY_TINT,
+                            title = "Pick a walk",
+                            subtitle = "A path through the map, in order",
+                            tiles = SonicWalk.entries.mapIndexed { i, wk ->
+                                val n = walkSongs(sonic, wk).size
+                                SonicTileUi(
+                                    small = wk.brief,
+                                    big = wk.label,
+                                    count = "$n song${if (n == 1) "" else "s"}",
+                                    selected = wk == sonicWalk,
+                                    glyph = i,
+                                    corner = false,
+                                    onClick = { sonicWalk = wk },
+                                )
+                            },
+                            infoLabel = "HOW A WALK IS CHOSEN",
+                            info = when (sonicWalk) {
+                                SonicWalk.Rise -> "From the calmest song to the most energetic, up to $WALK_MAX songs."
+                                SonicWalk.Fall -> "From the most energetic song down to the calmest, up to $WALK_MAX songs."
+                                SonicWalk.Loop -> "Once around the map, clockwise from the top, up to $WALK_MAX songs."
+                                SonicWalk.Drift -> "From the calmest song, each step to the nearest one not yet played, up to $WALK_MAX songs."
+                            },
+                            noteLabel = "THIS WALK",
+                            note = when {
+                                first == null -> "Nothing placed yet, so there is no walk."
+                                walkList.size == 1 -> "Only $first is placed so far."
+                                else -> "Starts with $first and ends with $last: ${walkList.size} songs, drawn on the map."
+                            },
+                            noteFooter = walkList.count { sonic.getOrNull(it)?.measured == false }.takeIf { it > 0 }?.let { "$it of these places are AI estimates" },
+                            button = "Play the walk",
+                            buttonEnabled = walkList.isNotEmpty(),
+                            onButton = {
+                                val tracks = walkList.mapNotNull { view.tracks.getOrNull(it) }.filter { it.isAvailable }
                                 if (tracks.isNotEmpty()) player.play(view.copy(tracks = tracks), trackIndex = 0, mode = chosenMode, shuffled = false)
                             },
                             modifier = panelModifier,
@@ -1030,6 +1174,9 @@ private const val LENS_STORY_REST_MS = 600L
 
 /** fork:lenses - room under the last song for the docked player, so it never covers a row. */
 private val LENS_LIST_BOTTOM = 96.dp
+
+/** fork:sonic-map - room under the map for the docked player, as for the track list. */
+private val LENS_MAP_BOTTOM = 88.dp
 
 /** fork:history - how many songs each Your history list shows. */
 private const val HISTORY_ROWS = 5
