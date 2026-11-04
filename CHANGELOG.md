@@ -4,6 +4,7 @@
 
 ### Added
 
+- Song stories with Groq: when the AI is Groq's gpt-oss model, it also searches the web (Groq's built-in search) for interviews and articles about the song; quotes must still appear word for word in a page it read.
 - Stage notes: each song gets its own story page from its Wikipedia article: how it was made, what it means, who sampled or covered it, and up to two quotes copied word for word (the AI writes the summaries from your own key; quotes it cannot find in the article are dropped, and with no key the article's own sections are shown).
 - Stage: the Options menu is wide and short (two columns of two rows), so it no longer covers the visualiser box.
 - Album page: the In brief and Start here cards are the same height and stand on one line, 32 dp from the bottom of their columns, whatever is written in them.

@@ -36,4 +36,14 @@ class SongStoryTest {
         assertEquals(story, track.story)
         assertTrue(linerPages(booklet, request, playing = 1).none { it is LinerPage.Track })
     }
+
+    @Test
+    fun aWebSearchReplyMayQuotePagesItReadButNotItsOwnAnswer() {
+        val reply = "Snippet from an interview: Jackson told the magazine \"I wrote the bassline first and the words came after\" in 1983.\n\n" +
+            "{\"made\": \"Jackson wrote the bassline first and the words followed, in 1982.\", \"quotes\": [" +
+            "{\"text\": \"I wrote the bassline first and the words came after\", \"who\": \"Michael Jackson\"}," +
+            "{\"text\": \"This is a line only the answer ever says out loud\", \"who\": \"Michael Jackson\"}]}"
+        val story = assertNotNull(parseSongStory(reply, article = ""))
+        assertEquals(listOf("I wrote the bassline first and the words came after"), story.quotes.map { it.text })
+    }
 }

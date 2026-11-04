@@ -4,6 +4,7 @@ package com.nuvio.app.features.music.booklet
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.discover.DiscoverAiClient
 import com.nuvio.app.features.discover.DiscoverAiPromptText
+import com.nuvio.app.features.discover.DiscoverAiSettings
 import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.music.library.WikipediaClient
 import com.nuvio.app.features.music.library.quoteIsVerbatim
@@ -37,9 +38,9 @@ internal data class SongStory(val made: String?, val meaning: String?, val after
 private val STORY_JSON = Json { ignoreUnknownKeys = true; isLenient = true }
 
 internal const val SONG_STORY_SYSTEM_PROMPT =
-    "You write the story of one song for a music player, from the Wikipedia article you are given. Use only what the article " +
-        "says: never add a name, date, quote, sample, cover or chart position it does not state. Leave out anything the article " +
-        "does not cover. Write plain text with no markdown. Reply with one JSON object and nothing else."
+    "You write the story of one song for a music player, from the Wikipedia article you are given and any pages you search for. " +
+        "Use only what those say: never add a name, date, quote, sample, cover or chart position they do not state. Leave out " +
+        "anything they do not cover. Write plain text with no markdown. Reply with one JSON object and nothing else."
 
 internal fun songStoryPrompt(song: String, artist: String, article: String): String = buildString {
     append("Song: ").append(song).append('\n')
@@ -52,20 +53,38 @@ internal fun songStoryPrompt(song: String, artist: String, article: String): Str
     append("Up to two quotes, each copied word for word from the article. Leave out any key the article does not support.")
 }
 
+/** The prompt when the model can search the web: it looks for the song's story itself, with the Wikipedia [article] (when there is one) as a start. */
+internal fun songStoryWebPrompt(song: String, artist: String, article: String): String = buildString {
+    append("Search the web for the song \"").append(song).append("\" by ").append(artist).append(". Find how it was written and recorded, ")
+    append("what it is about, who has sampled or covered it, and what the people involved have said about it in interviews or articles. ")
+    append("Prefer the artist's own words, reliable music journalism and Wikipedia.\n")
+    if (article.isNotBlank()) append("\nWikipedia article, as a start:\n<<<\n").append(article).append("\n>>>\n")
+    append("\nThen answer with JSON of this shape and nothing else:\n")
+    append("{\"made\": \"2 to 3 sentences: who wrote and produced it, when and where, how it came together\",\n")
+    append(" \"meaning\": \"1 to 2 sentences: what the song is about\",\n")
+    append(" \"after\": \"1 to 2 sentences: who has sampled or covered it, and its legacy; name them only if a page says so\",\n")
+    append(" \"quotes\": [{\"text\": \"words copied exactly from a page you read\", \"who\": \"who said them\"}]}\n")
+    append("Up to two quotes, each copied word for word. Never add a name, date, sample or quote you did not read. Leave out any key you cannot support.")
+}
+
 private fun JsonElement?.line(max: Int): String? =
     (this as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.replace(Regex("""\s+"""), " ")?.trim()?.takeIf { it.length >= 20 }?.let { cutAtSentence(it, max) }
 
-/** The story in the model's [reply], with quotes kept only when they stand word for word in [article]; null when unreadable or empty. */
+/** The story in the model's [reply], with quotes kept only when they stand word for word in [article] (or in the pages a web search read); null when unreadable or empty. */
 internal fun parseSongStory(reply: String, article: String): SongStory? {
     val start = reply.indexOf('{')
     val end = reply.lastIndexOf('}')
     if (start < 0 || end <= start) return null
     val root = runCatching { STORY_JSON.parseToJsonElement(reply.substring(start, end + 1)) }.getOrNull() as? JsonObject ?: return null
+    // A reply from a web search holds the pages' snippets before the answer: quotes may come from those, never from the answer
+    // itself (a quote the AI made up would otherwise vouch for itself).
+    val answerAt = Regex("""\{\s*"(made|meaning|after|quotes)"""").find(reply)?.range?.first ?: start
+    val source = article + "\n" + reply.substring(0, answerAt)
     val quotes = (root["quotes"] as? JsonArray).orEmpty().mapNotNull { element ->
         val obj = element as? JsonObject ?: return@mapNotNull null
         val text = (obj["text"] as? JsonPrimitive)?.content?.trim()?.trim('"', '“', '”')?.trim() ?: return@mapNotNull null
         val who = (obj["who"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.trim().orEmpty()
-        if (text.length > 240 || !quoteIsVerbatim(text, article)) null else SongQuote(text, who.take(80))
+        if (text.length > 240 || !quoteIsVerbatim(text, source)) null else SongQuote(text, who.take(80))
     }.take(2)
     val story = SongStory(root["made"].line(420), root["meaning"].line(300), root["after"].line(300), quotes, ai = true)
     return story.takeUnless { it.isEmpty }
@@ -93,7 +112,7 @@ private fun AlbumBooklet.toStory(): SongStory {
 }
 
 /**
- * fork:story - looks the song's article up once, writes its story with the person's own AI key (one request per song; with
+ * fork:story - looks the song's article up once (and, with Groq's gpt-oss, lets the model search the web for interviews and articles too), writes its story with the person's own AI key (one request per song; with
  * no key, or if it fails, the article's own sections stand in) and keeps it with the booklets. A song with no article is
  * remembered for three days.
  */
@@ -108,11 +127,14 @@ internal object SongStories {
     private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletStorage.get(key))
     private fun keep(key: String, story: SongStory?) = BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), story?.toBooklet())))
 
+    /** The cache mode of the AI's story: the model, and ":web" when it searched the web for it (a different, richer story). */
+    private fun aiMode(settings: DiscoverAiSettings) = "ai:${settings.effectiveModel}" + if (DiscoverAiClient.canSearchWeb(settings)) ":web" else ""
+
     /** What is kept for the song, never making a request. */
     fun peek(artist: String, song: String): SongStory? {
         val at = now()
         DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }?.let { settings ->
-            read(key(artist, song, "ai:${settings.effectiveModel}"))?.takeIf { it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }?.booklet?.let { return it.toStory() }
+            read(key(artist, song, aiMode(settings)))?.takeIf { it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }?.booklet?.let { return it.toStory() }
         }
         return read(key(artist, song, "wiki"))?.takeIf { it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }?.booklet?.toStory()
     }
@@ -120,30 +142,31 @@ internal object SongStories {
     suspend fun load(artist: String, song: String): SongStory? = lock.withLock {
         peek(artist, song)?.let { return@withLock it }
         val at = now()
+        val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }
+        val web = settings != null && DiscoverAiClient.canSearchWeb(settings)
         val wikiKey = key(artist, song, "wiki")
-        // A recent "no article" is believed.
-        read(wikiKey)?.takeIf { it.booklet == null && it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }?.let { return@withLock null }
+        // A recent "no article" is believed, unless the AI can search the web for the story instead.
+        if (!web && read(wikiKey)?.let { it.booklet == null && it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) } == true) return@withLock null
         val text = runCatching { WikipediaClient.songText(song, artist) }.getOrNull()
         val sections = text?.let(::songSections).orEmpty()
-        if (sections.isEmpty()) {
-            keep(wikiKey, null)
-            log.i { "no Wikipedia article for $artist - $song" }
-            return@withLock null
-        }
         val plain = extractiveSongStory(sections)
-        keep(wikiKey, plain)
-        val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured } ?: return@withLock plain
-        val aiKey = key(artist, song, "ai:${settings.effectiveModel}")
+        if (read(wikiKey) == null || plain != null) keep(wikiKey, plain)
+        if (settings == null || (sections.isEmpty() && !web)) {
+            if (sections.isEmpty()) log.i { "no Wikipedia article for $artist - $song" }
+            return@withLock plain
+        }
+        val aiKey = key(artist, song, aiMode(settings))
         if (read(aiKey)?.let { it.booklet == null && it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) } == true) return@withLock plain
-        val article = songArticleText(sections, 9_000)
-        val reply = DiscoverAiClient.complete(settings, DiscoverAiPromptText(SONG_STORY_SYSTEM_PROMPT, songStoryPrompt(song, artist, article))).getOrElse {
+        val article = songArticleText(sections, if (web) 5_000 else 9_000)
+        val prompt = if (web) songStoryWebPrompt(song, artist, article) else songStoryPrompt(song, artist, article)
+        val reply = DiscoverAiClient.complete(settings, DiscoverAiPromptText(SONG_STORY_SYSTEM_PROMPT, prompt), webSearch = web).getOrElse {
             log.w { "story for $song failed: $it" }
             keep(aiKey, null)
             return@withLock plain
         }
         val story = parseSongStory(reply, article)
         keep(aiKey, story)
-        log.i { "story for $song: ${story?.quotes?.size ?: 0} quotes" }
+        log.i { "story for $song (web=$web): ${story?.quotes?.size ?: 0} quotes" }
         story ?: plain
     }
 }

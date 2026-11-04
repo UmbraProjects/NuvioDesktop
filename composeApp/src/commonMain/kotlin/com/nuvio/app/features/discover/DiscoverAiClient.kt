@@ -67,9 +67,18 @@ object DiscoverAiClient {
 
     private const val ANTHROPIC_VERSION = "2023-06-01"
 
+    /**
+     * fork:story - true when [settings] can search the web inside the request: Groq's gpt-oss models have a server-side
+     * `browser_search` tool (powered by Exa), which the answer then draws on. Nothing else here does.
+     */
+    fun canSearchWeb(settings: DiscoverAiSettings): Boolean =
+        settings.provider == DiscoverAiProvider.Groq && settings.effectiveModel.startsWith("openai/gpt-oss")
+
     suspend fun complete(
         settings: DiscoverAiSettings,
         prompt: DiscoverAiPromptText,
+        /** fork:story - let the model search the web first (see [canSearchWeb]); ignored where it cannot. The reply then holds the pages' snippets before the answer. */
+        webSearch: Boolean = false,
     ): Result<String> {
         // `isConfigured`, not `isReady`: this checks that a request *can* be made, and leaves
         // "should this feature make one" to the caller. Recaps and Discover rows share the
@@ -87,7 +96,7 @@ object DiscoverAiClient {
                     when (settings.provider) {
                         DiscoverAiProvider.Anthropic -> callAnthropic(settings, prompt)
                         DiscoverAiProvider.OpenAiCompat,
-                        DiscoverAiProvider.Groq -> callOpenAiCompat(settings, prompt)
+                        DiscoverAiProvider.Groq -> callOpenAiCompat(settings, prompt, webSearch && canSearchWeb(settings))
                     }
                 }
             }
@@ -181,9 +190,16 @@ object DiscoverAiClient {
     private suspend fun callOpenAiCompat(
         settings: DiscoverAiSettings,
         prompt: DiscoverAiPromptText,
+        webSearch: Boolean = false,
     ): String {
         val body = buildJsonObject {
             put("model", settings.effectiveModel)
+            if (webSearch) {
+                // Groq runs the search itself. Low effort: higher levels make long browsing sessions and burn tokens.
+                put("tools", buildJsonArray { add(buildJsonObject { put("type", "browser_search") }) })
+                put("tool_choice", "required")
+                put("reasoning_effort", "low")
+            }
             // `max_tokens` rather than `max_completion_tokens`: this field is what every
             // OpenAI-compatible server implements. OpenAI's own newest reasoning models want the
             // other name — if someone points this at one, that is the setting to revisit.
