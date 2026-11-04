@@ -291,8 +291,8 @@ private fun AlbumContent(
             album = album,
             info = info,
             flipped = flipped,
-            discOut = discOut,
-            discSpinning = discOut && playing,
+            discOut = discOut || discUp,
+            discSpinning = (discOut || discUp) && playing,
             reducedMotion = reducedMotion,
             caseSize = caseSize,
             discUp = discUp,
@@ -451,10 +451,12 @@ private fun AlbumContent(
         val sideRight = maxWidth >= 1320.dp
         val sideWidth = if (sideRight) minOf(grownColumn, ((maxWidth - 520.dp) / 2).coerceAtLeast(400.dp)) else grownColumn
         // The case and the disc peeking out of it are 1.3 times as wide as the case, and must fit the column's 44 dp of padding.
-        // With three columns the disc comes out of the top, so the case may be as wide as the column and is limited by height
-        // instead: the column's room above the In brief card, less the disc's 30% peeking over the case. Window size only.
+        // Three columns: the flat case is as wide as the cards below it (edge to edge), its top level with the first of the best
+        // songs opposite and its foot a gap above the In brief card; the disc is always out, a crescent over its top. When the
+        // window is too short for that the case shrinks. Window size only, never content.
+        val caseTop = ESSENTIALS_FIRST_ROW_TOP
         val caseSize = if (sideRight) {
-            minOf(sideWidth - 44.dp, (maxHeight - 24.dp - 32.dp - AI_CARD_HEIGHT - 14.dp - 8.dp) / 1.3f).coerceAtLeast(minOf(grownCase, sideWidth - 44.dp))
+            minOf(sideWidth - 44.dp, maxHeight - 32.dp - AI_CARD_HEIGHT - 24.dp - caseTop).coerceAtLeast(300.dp)
         } else grownCase
         val essentialsOn = essentialSongList.isNotEmpty() || essentialAlbums.isNotEmpty()
         if (maxWidth >= 840.dp) {
@@ -465,7 +467,7 @@ private fun AlbumContent(
                     Box(Modifier.width(sideWidth).fillMaxHeight()) {
                         Column(
                             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                                .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp + AI_CARD_HEIGHT + 14.dp),
+                                .padding(start = 32.dp, end = 12.dp, top = (caseTop - caseSize * DISC_PEEK).coerceAtLeast(8.dp), bottom = 32.dp + AI_CARD_HEIGHT + 14.dp),
                             verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) { objectPanel(caseSize, true) }
                         booklet?.let {
@@ -558,6 +560,12 @@ private val CASE_SIZE_MAX = 420.dp
 private val CASE_GROWS_FROM = 1500.dp
 /** The case plus the disc that slides out of it (see the `peek` passed to AlbumObject), as a share of the case's height. */
 private const val CASE_WIDTH_FACTOR = 1.3f
+
+/** fork:case - how far the always-out disc stands over the case's top, as a share of the case's height. */
+private const val DISC_PEEK = 0.22f
+
+/** fork:case - where the first of the Essentials' best songs starts down the page; the case's top stands level with it. */
+private val ESSENTIALS_FIRST_ROW_TOP = 165.dp
 
 /**
  * The album case's height for a window [width]: 340 dp up to 1500 dp wide (as before), then growing to 420 dp by about
@@ -666,7 +674,7 @@ private fun AlbumObjectPanel(
             discSpinning = discSpinning,
             reducedMotion = reducedMotion,
             size = caseSize,
-            peek = 0.3f,
+            peek = if (discUp) DISC_PEEK else 0.3f,
             discUp = discUp,
             onFlip = onFlip,
             onDisc = onDisc,

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Album page: the cover lies flat (no tilt). In the three-column layout the case runs edge to edge with the cards below it, its top level with the first best song, and the disc is always out as a crescent over its top (it no longer slides).
 - Album page: in the three-column layout the album case is as wide as its column (up to what the window's height allows) and the disc slides out of the top of it, with an upward drag, instead of the side; the how-to text under the case is gone.
 - Album page: the two AI cards are shorter (their tops now stand level lower down), and the best albums sit on a line just above the Start here card with the best songs hanging from the top, the gap between them taking up the window's spare height.
 - Song stories with Groq: when the AI is Groq's gpt-oss model, it also searches the web (Groq's built-in search) for interviews and articles about the song; quotes must still appear word for word in a page it read.

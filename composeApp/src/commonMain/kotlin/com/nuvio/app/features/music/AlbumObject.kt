@@ -107,7 +107,8 @@ internal fun AlbumObject(
     )
     // The resting tilt eases to nothing as the case turns, so the back cover is read square on.
     // A 3D render is already in perspective, so it only leans a little.
-    val restingTilt = if (use3d) 6f else 20f
+    // fork:case - the cover lies flat: no resting tilt (it still turns about its edge when flipped).
+    val restingTilt = 0f
     val showBack = flip > 90f
 
     val discSize = size * 0.96f
