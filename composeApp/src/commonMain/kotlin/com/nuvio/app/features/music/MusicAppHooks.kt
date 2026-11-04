@@ -132,6 +132,8 @@ fun BoxScope.MusicRootHosts(
     onOpenMusicTab: () -> Unit = {},
 ) {
     MusicAudioKeepAlive(hidden)
+    // fork:facts-filler - the background filler for the album page's facts lives as long as the app (off until switched on).
+    androidx.compose.runtime.LaunchedEffect(Unit) { com.nuvio.app.features.music.booklet.FactsFiller.run() }
     MusicNowPlayingHost(
         hidden = hidden,
         onOpenArtist = onOpenArtist,

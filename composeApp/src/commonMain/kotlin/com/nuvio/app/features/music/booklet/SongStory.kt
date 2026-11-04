@@ -145,6 +145,20 @@ internal object SongStories {
     suspend fun load(artist: String, song: String, wantAi: Boolean = false): SongStory? =
         loadKept(artist, song, wantAi).withPins(Pins.forSong(artist, song))
 
+    /**
+     * Whether the AI's story for the song is kept, failed a moment ago or not asked for yet (see [AlbumBookletRepository.factState]).
+     * A song Wikipedia has no article for still counts as Missing while the AI can search the web for it.
+     */
+    fun factState(artist: String, song: String): FactState {
+        val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured } ?: return FactState.Missed
+        val entry = read(key(artist, song, aiMode(settings)))?.takeIf { it.isFresh(now(), BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }
+        return when {
+            entry == null -> FactState.Missing
+            entry.booklet != null -> FactState.Have
+            else -> FactState.Missed
+        }
+    }
+
     /** What is kept for the song, without pins: the cache's own answer, which the lookup rules below go by. */
     private fun peekKept(artist: String, song: String): SongStory? {
         val at = now()

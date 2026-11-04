@@ -94,6 +94,17 @@ internal object TrackNotes {
     /** Looks up what [peek] does not have: the credits first (they ground the AI's notes), then the notes. [intro] is the album's. */
     suspend fun load(request: BookletRequest, intro: String?): SongNotes = loadKept(request, intro).withPins(Pins.forAlbum(request))
 
+    /** Whether the AI's notes for the album's songs are kept, failed a moment ago or not asked for yet (see [AlbumBookletRepository.factState]). */
+    fun factState(request: BookletRequest): FactState {
+        val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured } ?: return FactState.Missed
+        val entry = read(notesKey(request, settings.effectiveModel))?.takeIf { it.isFresh(now(), BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }
+        return when {
+            entry == null -> FactState.Missing
+            entry.booklet != null -> FactState.Have
+            else -> FactState.Missed
+        }
+    }
+
     /** What is kept for [request], without pins: the cache's own answer, which the lookup rules below go by. */
     private fun peekKept(request: BookletRequest): SongNotes {
         val at = now()

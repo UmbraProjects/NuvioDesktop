@@ -61,6 +61,21 @@ internal object AlbumBookletRepository {
     /** The booklet for [request] (see [bookletForKept]) with the person's pins laid over it; pinned text stands even with no page. */
     suspend fun bookletFor(request: BookletRequest): AlbumBooklet? = bookletForKept(request).withPins(Pins.forAlbum(request))
 
+    /**
+     * Whether the AI's notes for [request] are kept ([FactState.Have]), failed a moment ago ([FactState.Missed]) or have not
+     * been asked for ([FactState.Missing]); the background filler goes by this. Never makes a request. With no AI key set,
+     * nothing can be filled, so everything reads as Missed (not worth asking).
+     */
+    fun factState(request: BookletRequest): FactState {
+        val settings = aiSettingsOrNull() ?: return FactState.Missed
+        val entry = read(aiCacheKey(request, settings.effectiveModel))?.takeIf { it.isFresh(now(), BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }
+        return when {
+            entry == null -> FactState.Missing
+            entry.booklet != null -> FactState.Have
+            else -> FactState.Missed
+        }
+    }
+
     /** What the cache holds, without pins: the cache's own answer, which the lookup rules below go by. */
     private fun peekKept(request: BookletRequest): AlbumBooklet? {
         val at = now()
