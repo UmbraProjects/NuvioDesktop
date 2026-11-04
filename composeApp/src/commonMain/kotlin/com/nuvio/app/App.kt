@@ -1534,6 +1534,29 @@ private fun MainAppContent(
             val entry = currentBackStackEntry ?: return@LaunchedEffect
             PerfTelemetry.markScreen(perfScreenName(entry, selectedTab, searchOverlayActive))
         }
+        // fork:youtube-mini-player - diagnostics: what took a YouTube video's player off screen. Nov 4 one
+        // closed on Escape with neither Back nor the route's own pop logged and mpv not at its end, so
+        // the listener (called inside whatever popped it) records the caller.
+        DisposableEffect(navController) {
+            var onYouTubePlayer = false
+            val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
+                val nowPlayer = destination.hasRoute<PlayerRoute>()
+                // available is still set here: the player's end() comes with its dispose, after this.
+                if (onYouTubePlayer && !nowPlayer && com.nuvio.app.features.youtube.YouTubeWatchLayout.available.value) {
+                    val caller = Throwable().stackTraceToString().lineSequence()
+                        .map { it.trim().removePrefix("at ") }
+                        .filter { it.startsWith("com.nuvio") && "OnDestinationChangedListener" !in it }
+                        .drop(1).take(10).joinToString(" < ")
+                    co.touchlab.kermit.Logger.withTag("YouTubeMiniPlayer").i {
+                        "player route left (browsing=${com.nuvio.app.features.youtube.YouTubeWatchLayout.browsing.value} " +
+                            "windowed=${com.nuvio.app.features.youtube.YouTubeWatchLayout.windowed.value}) from: $caller"
+                    }
+                }
+                onYouTubePlayer = nowPlayer
+            }
+            navController.addOnDestinationChangedListener(listener)
+            onDispose { navController.removeOnDestinationChangedListener(listener) }
+        }
         LaunchedEffect(navController, selectedTab, rootTabBackStack, searchOverlayActive) {
             DesktopNavigationGestureBridge.backRequests.collect { source ->
                 // Back leaves game mode rather than navigating the app hidden behind it. Read
