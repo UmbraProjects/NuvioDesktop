@@ -27,7 +27,7 @@ internal object CutPicks {
 
     private fun key(album: String, mood: CutMood, model: String) = "cut1|$album|${mood.name}|$model"
 
-    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletStorage.get(key))
+    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletCache.get(key))
 
     /** True when there is a key to ask with. */
     fun available(): Boolean = DiscoverAiSettingsRepository.snapshot().isConfigured
@@ -50,12 +50,12 @@ internal object CutPicks {
             }
             val reply = DiscoverAiClient.complete(settings, DiscoverAiPromptText(CUT_SYSTEM_PROMPT, cutPrompt(artist, album, titles, durations, mood))).getOrElse {
                 log.w { "cut for $album ($mood) failed: $it" }
-                BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), null)))
+                BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), null)))
                 return@withLock null
             }
             val pick = parseCutPick(reply, titles.size)
             val json = pick?.let { reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1) }
-            BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), json?.let { AlbumBooklet(it, emptyList(), emptyMap(), BookletSource.Ai) })))
+            BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), json?.let { AlbumBooklet(it, emptyList(), emptyMap(), BookletSource.Ai) })))
             log.i { "cut for $album ($mood): ${pick?.order?.size ?: 0} songs" }
             pick
         }

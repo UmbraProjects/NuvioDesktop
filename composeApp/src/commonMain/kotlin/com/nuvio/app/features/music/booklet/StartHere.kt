@@ -25,7 +25,7 @@ internal object StartHere {
 
     private fun key(artist: String, model: String) = "start1|${artist.lowercase().filter { it.isLetterOrDigit() }}|$model"
 
-    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletStorage.get(key))
+    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletCache.get(key))
 
     /** What is kept for [artist], never making a request; null when nothing is kept or there is no AI key. */
     fun peek(artist: String): String? {
@@ -44,12 +44,12 @@ internal object StartHere {
             if (kept != null) return@withLock kept.booklet?.intro
             val reply = DiscoverAiClient.complete(settings, DiscoverAiPromptText(START_HERE_SYSTEM_PROMPT, startHerePrompt(artist, albums, songs))).getOrElse {
                 log.w { "start here for $artist failed: $it" }
-                BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), null)))
+                BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), null)))
                 return@withLock null
             }
             val text = cleanStartHere(reply)
             val booklet = text?.let { AlbumBooklet(it, emptyList(), emptyMap(), BookletSource.Ai) }
-            BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
+            BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
             text
         }
     }

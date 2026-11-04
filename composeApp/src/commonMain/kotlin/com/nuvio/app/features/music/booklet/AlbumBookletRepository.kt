@@ -35,17 +35,15 @@ internal object AlbumBookletRepository {
     // "wiki2": the edition-word fix (Nov 3, 2026) asks again for albums the older matcher had marked as having no page.
     private fun wikiCacheKey(request: BookletRequest) = bookletKey(request, "wiki2")
 
-    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletStorage.get(key))
+    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletCache.get(key))
 
     private fun write(key: String, booklet: AlbumBooklet?) {
-        BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
-        val keys = BookletStorage.keys()
+        BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
+        // Only the capped store is trimmed (Wikipedia text, "no page" and failures); the AI's facts live in their own store.
+        val keys = BookletCache.cappedKeys()
         if (keys.size > BOOKLET_CACHE_MAX + BOOKLET_CACHE_SLACK) {
-            val entries = keys.associateWith { read(it) }
-            val ages = entries.mapValues { it.value?.atEpochMs ?: 0L }
-            // The AI's facts each cost a request and never expire, so they go last; misses and Wikipedia text go first.
-            val kept = entries.filterValues { it?.booklet?.source == BookletSource.Ai }.keys
-            bookletKeysToEvict(ages, BOOKLET_CACHE_MAX, kept).forEach { BookletStorage.put(it, null) }
+            val ages = keys.associateWith { decodeBookletEntry(BookletCache.cappedGet(it))?.atEpochMs ?: 0L }
+            bookletKeysToEvict(ages, BOOKLET_CACHE_MAX).forEach { BookletCache.drop(it) }
         }
     }
 

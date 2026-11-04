@@ -82,10 +82,10 @@ internal object TrackNotes {
     private fun creditsKey(r: BookletRequest) = "tcred1|${norm(r.artist)}|${norm(r.album)}"
     private fun notesKey(r: BookletRequest, model: String) = "tnotes1|${norm(r.artist)}|${norm(r.album)}|$model"
 
-    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletStorage.get(key))
+    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletCache.get(key))
     private fun keep(key: String, source: BookletSource, notes: Map<Int, String>) {
         val booklet = if (notes.isEmpty()) null else AlbumBooklet("notes", emptyList(), notes, source)
-        BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
+        BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
     }
 
     /** What is kept for [request], never making a request, with the person's pinned notes laid over the AI's. */

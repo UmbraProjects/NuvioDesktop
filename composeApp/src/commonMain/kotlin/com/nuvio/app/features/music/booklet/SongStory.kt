@@ -132,8 +132,8 @@ internal object SongStories {
 
     private fun norm(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
     private fun key(artist: String, song: String, mode: String) = "story1|${norm(artist)}|${norm(song)}|$mode"
-    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletStorage.get(key))
-    private fun keep(key: String, story: SongStory?) = BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), story?.toBooklet())))
+    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletCache.get(key))
+    private fun keep(key: String, story: SongStory?) = BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), story?.toBooklet())))
 
     /** The cache mode of the AI's story: the model, and ":web" when it searched the web for it (a different, richer story). */
     private fun aiMode(settings: DiscoverAiSettings) = "ai:${settings.effectiveModel}" + if (DiscoverAiClient.canSearchWeb(settings)) ":web" else ""
