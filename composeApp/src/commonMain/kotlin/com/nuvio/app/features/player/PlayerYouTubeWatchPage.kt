@@ -27,7 +27,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
@@ -77,11 +76,13 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.NuvioTextField
@@ -128,7 +129,7 @@ import kotlin.math.roundToInt
 
 /** Below this the page stacks in one column: the queue and related videos go under the comments. */
 private val TWO_COLUMN_MIN_WIDTH = 1000.dp
-private val SIDE_COLUMN_WIDTH = 400.dp
+private val SIDE_COLUMN_WIDTH = 428.dp
 
 /** The corner player: its margin from the window's edges and the range it can be resized in. */
 private val MINI_MARGIN = 24.dp
@@ -683,7 +684,7 @@ private fun WatchDescription(views: String?, published: String?, description: St
 /** The comments: a box to add one, then each with its replies (opened on demand) and a box to reply. */
 @Composable
 private fun WatchComments(comments: YouTubeWatchComments, signedIn: Boolean) {
-    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         SectionHeading("Comments")
         if (signedIn && comments.createParams != null) {
             CommentBox(placeholder = "Add a comment…") { text -> comments.post(text, parent = null) }
@@ -710,15 +711,16 @@ private fun WatchComments(comments: YouTubeWatchComments, signedIn: Boolean) {
 private fun CommentThread(comment: YouTubeComment, comments: YouTubeWatchComments, signedIn: Boolean) {
     var replying by remember(comment.id) { mutableStateOf(false) }
     val open = comments.repliesOpen[comment.id] == true
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         CommentRow(
             comment = comment,
-            avatarSize = 36.dp,
+            avatarSize = 40.dp,
             onReply = if (signedIn && comment.replyParams != null) ({ replying = !replying }) else null,
             comments = comments,
             signedIn = signedIn,
         )
-        Column(Modifier.padding(start = 48.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Indented to the comment's text: the 40dp avatar plus its 14dp gap.
+        Column(Modifier.padding(start = 54.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (replying) {
                 CommentBox(placeholder = "Add a reply…", autoFocus = true) { text ->
                     comments.post(text, parent = comment).also { if (it) replying = false }
@@ -726,7 +728,7 @@ private fun CommentThread(comment: YouTubeComment, comments: YouTubeWatchComment
             }
             if (comment.repliesToken != null && comment.replies != null) {
                 Row(
-                    Modifier.clip(RoundedCornerShape(50)).clickable { comments.toggleReplies(comment) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                    Modifier.offset(x = (-8).dp).clip(RoundedCornerShape(50)).clickable { comments.toggleReplies(comment) }.padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -741,7 +743,7 @@ private fun CommentThread(comment: YouTubeComment, comments: YouTubeWatchComment
             }
             if (open || comments.replies[comment.id]?.any { it.id.startsWith(LOCAL_COMMENT_PREFIX) } == true) {
                 comments.replies[comment.id].orEmpty().forEach { reply ->
-                    CommentRow(reply, avatarSize = 26.dp, onReply = null, comments = comments, signedIn = signedIn)
+                    CommentRow(reply, avatarSize = 28.dp, onReply = null, comments = comments, signedIn = signedIn)
                 }
                 when {
                     comments.repliesLoading[comment.id] == true -> CircularProgressIndicator(Modifier.size(20.dp))
@@ -768,54 +770,79 @@ private fun CommentRow(
     val liked = comments.isLiked(comment)
     val likes = com.nuvio.app.features.youtube.youTubeCommentLikes(comment, liked)
     val canLike = signedIn && (if (liked) comment.unlikeAction else comment.likeAction) != null
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    // YouTube's proportions: name bold and white with the time in grey, body at 14/20 with no extra
+    // tracking (the theme's label styles are letter-spaced, which made names hard to read), and
+    // the actions a clear step below the text.
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         NuvioAsyncImage(
             model = comment.avatarUrl,
             contentDescription = comment.author,
             modifier = Modifier.size(avatarSize).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
             contentScale = ContentScale.Crop,
         )
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = listOfNotNull("Pinned".takeIf { comment.pinned }, comment.author.takeIf { it.isNotBlank() }, comment.published).joinToString(" · "),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(comment.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (comment.pinned) {
+                    Text("Pinned", style = CommentMetaStyle, color = muted)
+                }
+                if (comment.author.isNotBlank()) {
+                    Text(
+                        comment.author,
+                        style = CommentMetaStyle,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+                comment.published?.let { Text(it, style = CommentMetaStyle, color = muted, maxLines = 1) }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(comment.text, style = CommentBodyStyle, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(6.dp))
+            // The pills' padding is pulled back by the same amount so the thumb lines up with the text.
+            Row(
+                Modifier.offset(x = (-8).dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 if (likes != null || canLike) {
-                    val tint = if (liked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    val tint = if (liked) MaterialTheme.colorScheme.primary else muted
                     Row(
                         Modifier
                             .clip(RoundedCornerShape(50))
                             .then(if (canLike) Modifier.clickable { comments.toggleLike(comment) } else Modifier)
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Icon(
                             if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
                             contentDescription = if (liked) "Unlike" else "Like",
-                            tint = tint,
-                            modifier = Modifier.size(14.dp),
+                            tint = if (liked) tint else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp),
                         )
-                        likes?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = tint) }
+                        likes?.let { Text(it, style = CommentMetaStyle, color = tint) }
                     }
                 }
                 onReply?.let {
-                    Row(
-                        Modifier.clip(RoundedCornerShape(50)).clickable(onClick = it).padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Icon(Icons.AutoMirrored.Rounded.Reply, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                        Text("Reply", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text(
+                        "Reply",
+                        style = CommentMetaStyle,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = it).padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
                 }
             }
         }
     }
 }
+
+private val CommentMetaStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 0.sp)
+private val CommentBodyStyle = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
 
 /** A text box with a send button; [onSend] returns whether it went, and the box clears when it did. */
 @Composable
@@ -894,7 +921,7 @@ private fun SideVideoRow(video: YouTubeVideo, highlighted: Boolean, onClick: () 
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.width(168.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+        Box(Modifier.width(196.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
             NuvioAsyncImage(model = video.thumbnailUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             video.duration?.let {
                 Text(
