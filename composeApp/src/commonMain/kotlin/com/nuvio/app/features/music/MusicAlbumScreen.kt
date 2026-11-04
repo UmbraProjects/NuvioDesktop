@@ -454,7 +454,20 @@ private fun AlbumContent(
         val essentialsOn = essentialSongList.isNotEmpty() || essentialAlbums.isNotEmpty()
         if (maxWidth >= 840.dp) {
             Row(Modifier.fillMaxSize()) {
-                Column(
+                if (sideRight) {
+                    // The In brief card stands on the column's bottom edge, level with Start here opposite it: the same height
+                    // and the same 32 dp from the bottom, so the two lines match whatever is in them.
+                    Box(Modifier.width(sideWidth).fillMaxHeight()) {
+                        Column(
+                            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                                .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp + AI_CARD_HEIGHT + 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) { objectPanel(caseSize) }
+                        booklet?.let {
+                            AlbumInBriefCard(it, playingNote, Modifier.align(Alignment.BottomCenter).padding(start = 32.dp, end = 12.dp, bottom = 32.dp).height(AI_CARD_HEIGHT))
+                        }
+                    }
+                } else Column(
                     Modifier.width(sideWidth).fillMaxHeight().verticalScroll(rememberScrollState())
                         .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),

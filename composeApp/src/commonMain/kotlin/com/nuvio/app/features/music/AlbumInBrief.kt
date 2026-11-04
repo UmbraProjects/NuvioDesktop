@@ -37,6 +37,9 @@ import com.nuvio.app.features.music.booklet.cutAtSentence
 // fork:essentials - the card under the album's case: what the album's notes say, in brief. It reads the same booklet the
 // Now Playing stage shows (the AI's, or Wikipedia's when there is no key), so no new request is made for it.
 
+/** The height of the two cards that close the side columns: equal, and standing on one line (see [MusicAlbumScreen]). */
+internal val AI_CARD_HEIGHT = 360.dp
+
 /** The glass the page's cards share: dark, translucent, a hairline edge. */
 @Composable
 internal fun AlbumGlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
@@ -82,10 +85,10 @@ internal fun AlbumInBriefCard(booklet: AlbumBooklet, playingNote: String?, modif
     val credits = (
         booklet.credits.take(2).map { it.role to it.names } +
             listOfNotNull(booklet.guests.takeIf { it.isNotEmpty() }?.let { "Guests" to it.take(4).joinToString(", ") { guest -> guest.name } })
-        ).take(3)
+        ).take(2)
     AlbumGlassCard(modifier) {
         BriefHeader("IN BRIEF", ai = booklet.source == BookletSource.Ai)
-        Text(cutAtSentence(booklet.intro, 300), style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 8, overflow = TextOverflow.Ellipsis)
+        Text(cutAtSentence(booklet.intro, 260), style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 5, overflow = TextOverflow.Ellipsis)
         if (credits.isNotEmpty()) {
             CardRule()
             credits.forEach { (role, names) ->
@@ -97,7 +100,7 @@ internal fun AlbumInBriefCard(booklet: AlbumBooklet, playingNote: String?, modif
         }
         CardRule()
         Text("ABOUT THIS SONG", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.textMuted)
-        Box(Modifier.fillMaxWidth().height(60.dp)) {
+        Box(Modifier.fillMaxWidth().height(48.dp)) {
             Text(
                 playingNote ?: "Play a song to read about it.",
                 style = MaterialTheme.typography.bodySmall,
@@ -106,6 +109,8 @@ internal fun AlbumInBriefCard(booklet: AlbumBooklet, playingNote: String?, modif
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        // Where a fixed height leaves room, it is here: the footer rests on the card's bottom edge, as in the Start here card.
+        Spacer(Modifier.weight(1f))
         Text(
             when (booklet.source) {
                 BookletSource.Ai -> "Written by AI, may contain mistakes"

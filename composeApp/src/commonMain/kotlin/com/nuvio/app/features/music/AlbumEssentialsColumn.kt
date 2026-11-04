@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -61,34 +63,40 @@ internal fun EssentialsColumn(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    Column(
-        modifier.verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 32.dp, top = 24.dp, bottom = 40.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Essentials", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-            Text("$artist, best first. Ranked by listeners.", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-        }
-        if (songs.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                EssentialsLabel("BEST SONGS")
-                songs.forEachIndexed { index, song ->
-                    EssentialSongRow(index + 1, song, here = songKey(song.title) in hereKeys, onClick = { onSongClick(song) })
+    // The Start here card stands on the bottom edge of the column, level with the In brief card opposite it (the same height,
+    // the same 32 dp from the bottom); what is above it scrolls in the room that is left.
+    Box(modifier) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(start = 12.dp, end = 32.dp, top = 24.dp, bottom = 32.dp + AI_CARD_HEIGHT + 14.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Essentials", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                Text("$artist, best first. Ranked by listeners.", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+            }
+            if (songs.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    EssentialsLabel("BEST SONGS")
+                    songs.forEachIndexed { index, song ->
+                        EssentialSongRow(index + 1, song, here = songKey(song.title) in hereKeys, onClick = { onSongClick(song) })
+                    }
                 }
             }
-        }
-        if (albums.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                EssentialsLabel("BEST ALBUMS")
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    albums.forEach { EssentialAlbumTile(it, tile, onAlbumClick) }
+            if (albums.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    EssentialsLabel("BEST ALBUMS")
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        albums.forEach { EssentialAlbumTile(it, tile, onAlbumClick) }
+                    }
                 }
             }
         }
         if (startHere != null) {
-            AlbumGlassCard {
+            AlbumGlassCard(Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 32.dp, bottom = 32.dp).height(AI_CARD_HEIGHT)) {
                 BriefHeader("START HERE", ai = true)
                 Text(startHere, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+                Spacer(Modifier.weight(1f))
                 Text("Written by AI, may contain mistakes", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
                 if (onPlayPath != null) {
                     val pill = RoundedCornerShape(20.dp)
