@@ -4,6 +4,7 @@
 
 ### Added
 
+- Stage: the Options menu is wide and short (two columns of two rows), so it no longer covers the visualiser box.
 - Album page: the In brief and Start here cards are the same height and stand on one line, 32 dp from the bottom of their columns, whatever is written in them.
 - Album page: "About this song" now has a note for every song: the AI writes one per track (a single request for the album, from your own key), with the writers and producers from MusicBrainz as the fallback when there is no AI note.
 - Beat Grid: locks onto busy mixes too (a loud steady bass riff such as Billie Jean's) by trying a gentler confidence bar and then adding the hats; the status reads "Listening for the beat" while the track is still being analysed.

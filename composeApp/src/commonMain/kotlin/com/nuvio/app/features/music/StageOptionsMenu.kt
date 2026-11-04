@@ -59,7 +59,8 @@ import kotlinx.coroutines.delay
 /** How long the open menu waits for input before closing. */
 private const val OPTIONS_IDLE_MS = 8_000L
 
-private val MENU_WIDTH = 320.dp
+// Wide and short, two columns of two rows: opened from the top bar it ends above the visualiser box instead of covering it.
+private val MENU_WIDTH = 600.dp
 private val ROW_HEIGHT = 48.dp
 private val PILL_WIDTH = 84.dp
 
@@ -148,21 +149,27 @@ internal fun StageOptionsMenu(
                         letterSpacing = 1.5.sp,
                         modifier = Modifier.padding(start = 14.dp, bottom = 6.dp, top = 2.dp),
                     )
-                    OptionRow("Lyrics", if (lyricsOn) "On" else "Off", on = lyricsOn, modifier = Modifier.focusRequester(firstRow)) {
-                        touched++
-                        onToggleLyrics()
-                    }
-                    OptionRow("Lyric style", lyricStyle.label.replaceFirstChar { it.uppercase() }, on = null, enabled = lyricsOn) {
-                        touched++
-                        onCycleLyricStyle()
-                    }
-                    OptionRow("Fade queue", if (fadeQueue) "On" else "Off", on = fadeQueue) {
-                        touched++
-                        onToggleFadeQueue()
-                    }
-                    OptionRow("Motion", if (reduced) "Reduced" else "Full", on = !reduced) {
-                        touched++
-                        onToggleMotion()
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            OptionRow("Lyrics", if (lyricsOn) "On" else "Off", on = lyricsOn, modifier = Modifier.focusRequester(firstRow)) {
+                                touched++
+                                onToggleLyrics()
+                            }
+                            OptionRow("Lyric style", lyricStyle.label.replaceFirstChar { it.uppercase() }, on = null, enabled = lyricsOn) {
+                                touched++
+                                onCycleLyricStyle()
+                            }
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            OptionRow("Fade queue", if (fadeQueue) "On" else "Off", on = fadeQueue) {
+                                touched++
+                                onToggleFadeQueue()
+                            }
+                            OptionRow("Motion", if (reduced) "Reduced" else "Full", on = !reduced) {
+                                touched++
+                                onToggleMotion()
+                            }
+                        }
                     }
                 }
             }
