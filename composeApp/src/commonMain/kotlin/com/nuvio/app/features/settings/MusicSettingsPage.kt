@@ -48,6 +48,8 @@ import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive_desc
 import nuvio.composeapp.generated.resources.settings_music_skip_non_music
 import nuvio.composeapp.generated.resources.settings_music_skip_non_music_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
+import nuvio.composeapp.generated.resources.settings_music_album_lenses
+import nuvio.composeapp.generated.resources.settings_music_album_lenses_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
 import nuvio.composeapp.generated.resources.settings_music_section_general
 import nuvio.composeapp.generated.resources.settings_music_lyrics_amll
@@ -87,7 +89,7 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
             val settings = state.settings
             SettingsGroup(
                 isTablet = isTablet,
-                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion"),
+                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion", "music-album-lenses"),
             ) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_music_show_tab),
@@ -107,6 +109,14 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     checked = settings.reducedMotion,
                     isTablet = isTablet,
                     onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(reducedMotion = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_album_lenses),
+                    description = stringResource(Res.string.settings_music_album_lenses_description),
+                    checked = settings.albumLenses,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(albumLenses = it)) },
                 )
             }
         }

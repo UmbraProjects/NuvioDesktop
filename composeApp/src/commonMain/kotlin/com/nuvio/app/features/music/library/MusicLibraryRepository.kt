@@ -71,6 +71,8 @@ data class MusicLibrarySettings(
     val lrcMuxLyrics: Boolean = false,
     /** Word-by-word lyrics from LyricsPlus, a third-party service that relays Apple Music's lyrics. Off until chosen. */
     val lyricsPlusLyrics: Boolean = false,
+    /** fork:lenses - the redesigned album page (header cover, lens tabs, mirrored side panels). Off until chosen. */
+    val albumLenses: Boolean = false,
     /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
     val skipNonMusic: Boolean = false,
 )
