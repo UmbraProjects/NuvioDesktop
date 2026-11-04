@@ -120,6 +120,15 @@ import com.nuvio.app.features.music.library.trackPopularity
 import com.nuvio.app.features.music.library.songVersions
 import com.nuvio.app.features.music.library.versionCounts
 import com.nuvio.app.features.music.booklet.SongStories
+import com.nuvio.app.features.music.booklet.CutPicks
+import com.nuvio.app.features.music.library.CUT_DEFAULT_MINUTES
+import com.nuvio.app.features.music.library.CUT_TIMES
+import com.nuvio.app.features.music.library.CutMood
+import com.nuvio.app.features.music.library.bestOfPick
+import com.nuvio.app.features.music.library.cutLength
+import com.nuvio.app.features.music.library.cutToFit
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Schedule
 
 /**
  * An album: cover, a Play/Shuffle pair, the Audio/Video choice, the track list, and more from the artist.
@@ -507,6 +516,30 @@ private fun AlbumContent(
             ?: songNotes.ai[n]?.let { LensNote(it, ai = true) }
             ?: songNotes.credits[n]?.let { LensNote(it, ai = false) }
     }
+    // Cut to fit: the time and mood chosen (per album, kept while the page is), the mood's pick, and the cut it gives.
+    var cutMinutes by rememberSaveable(album.browseId) { mutableStateOf<Int?>(CUT_DEFAULT_MINUTES) }
+    var cutMood by rememberSaveable(album.browseId) { mutableStateOf(CutMood.BestOf) }
+    val cutAiReady = CutPicks.available()
+    val cutTitles = remember(view.tracks) { view.tracks.map { it.title } }
+    val cutDurations = remember(view.tracks) { view.tracks.map { it.durationSeconds } }
+    val bestOf = remember(cutTitles, popularity) { bestOfPick(cutTitles, popularity) }
+    var cutAiPick by remember(album.browseId, cutMood) { mutableStateOf(CutPicks.peek(album.browseId, cutMood, cutTitles.size)) }
+    var cutLoading by remember(album.browseId, cutMood) { mutableStateOf(false) }
+    LaunchedEffect(lensesOn, lens, cutMood, album.browseId) {
+        if (!lensesOn || lens != AlbumLens.CutToFit || !cutMood.ai || cutAiPick != null || !cutAiReady) return@LaunchedEffect
+        cutLoading = true
+        cutAiPick = runCatching {
+            CutPicks.load(album.browseId, lensArtist ?: "", album.title, cutTitles, cutDurations, cutMood)
+        }.getOrNull()
+        cutLoading = false
+    }
+    // Only songs that can play are cut; a mood the AI could not answer falls back to Best of (said so in its note).
+    val cutPick = (if (cutMood.ai) cutAiPick else bestOf) ?: bestOf
+    val cutPlayable = remember(cutPick, view.tracks) { cutPick.order.filter { view.tracks.getOrNull(it)?.isAvailable == true } }
+    val cut = remember(cutPlayable, cutDurations, cutMinutes) { cutToFit(cutPlayable, cutDurations, cutMinutes) }
+    val cutOrder = remember(cut) { cut.order }
+    val albumSeconds = cutDurations.sum()
+
     // A song with no other copies: the artist's best songs instead (not the one in focus), so the box always plays something.
     val lensSuggestions = remember(lensTrack?.title, essentialSongList, view.tracks) {
         val focusKey = lensTrack?.let { songKey(it.title) }
@@ -562,6 +595,36 @@ private fun AlbumContent(
                         onPlay = { lensIndex?.let { tapTrack(it) } },
                         modifier = panelModifier,
                     )
+                    AlbumLens.CutToFit -> CutSidePanel(
+                        icon = Icons.Rounded.Schedule,
+                        label = "YOUR TIME",
+                        pill = "Library",
+                        tint = colors.accent,
+                        title = "How long have you got?",
+                        subtitle = "The cut keeps the album's own order",
+                        dial = CutDialState(
+                            big = cutMinutes?.toString() ?: "All",
+                            small = if (cutMinutes != null) "minutes" else "of the pick",
+                            fraction = if (albumSeconds > 0) cut.seconds.toFloat() / albumSeconds else 0f,
+                        ),
+                        choices = CUT_TIMES.map { m ->
+                            CutChoice(m?.let { "$it min" } ?: "Full", selected = m == cutMinutes, enabled = true, onClick = { cutMinutes = m })
+                        },
+                        facts = listOf(
+                            "Songs in the cut" to "${cut.indices.size} of ${view.tracks.size}",
+                            "Running time" to cutLength(cut.seconds),
+                        ),
+                        noteLabel = "HOW THE TIME IS SPENT",
+                        note = "Songs are taken from the top of the mood's list while they fit; a long one that doesn't is passed over for a shorter one.",
+                        noteFooter = null,
+                        button = "Play the cut",
+                        buttonEnabled = cut.indices.isNotEmpty(),
+                        onButton = {
+                            val tracks = cut.indices.mapNotNull { view.tracks.getOrNull(it) }
+                            if (tracks.isNotEmpty()) player.play(view.copy(tracks = tracks), trackIndex = 0, mode = chosenMode, shuffled = false)
+                        },
+                        modifier = panelModifier,
+                    )
                     else -> LensComingSoon(lens, left = true, modifier = panelModifier)
                 }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -581,7 +644,7 @@ private fun AlbumContent(
                         contentPadding = PaddingValues(top = 16.dp, bottom = LENS_LIST_BOTTOM),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        item(key = "legend") { TrackLegend() }
+                        item(key = "legend") { TrackLegend(if (lens == AlbumLens.CutToFit) "IN CUT" else "POPULAR") }
                         itemsIndexed(view.tracks) { index, track ->
                             TrackRow(
                                 album = album,
@@ -594,6 +657,8 @@ private fun AlbumContent(
                                 single = songKey(track.title) in singles,
                                 marked = lens == AlbumLens.SongBySong && index in lensMarked,
                                 inlineCredit = true,
+                                cutView = lens == AlbumLens.CutToFit,
+                                cutOrder = if (lens == AlbumLens.CutToFit) cutOrder[index] else null,
                                 onClick = { lensFocus = index; tapTrack(index) },
                             )
                         }
@@ -613,6 +678,35 @@ private fun AlbumContent(
                             val picks = (listOfNotNull(lensIndex) + lensVersions.mapNotNull { it.trackIndex }).distinct().sorted()
                             val tracks = picks.mapNotNull { view.tracks.getOrNull(it) }.filter { it.isAvailable }
                             if (tracks.isNotEmpty()) player.enqueue(view.copy(tracks = tracks))
+                        },
+                        modifier = panelModifier,
+                    )
+                    AlbumLens.CutToFit -> CutSidePanel(
+                        icon = Icons.Rounded.AutoAwesome,
+                        label = "YOUR MOOD",
+                        pill = if (cutMood.ai) "AI" else "Library",
+                        tint = LENS_LIBRARY_TINT,
+                        title = "What's it for?",
+                        subtitle = if (cutAiReady) "The AI picks what fits" else "Set an AI key for the moods",
+                        dial = CutDialState(big = cutMood.label, small = "mood", segments = CutMood.entries.size, lit = cutMood.ordinal),
+                        choices = CutMood.entries.map { m ->
+                            CutChoice(m.label, selected = m == cutMood, enabled = !m.ai || cutAiReady, onClick = { cutMood = m })
+                        },
+                        facts = listOf(
+                            "Energy" to (cutPick.energy ?: if (cutMood.ai && cutLoading) "Asking…" else "As the album goes"),
+                            "Leaves out" to (cutPick.leavesOut ?: "Nothing"),
+                        ),
+                        noteLabel = "WHY ${cutMood.label.uppercase()}",
+                        note = when {
+                            cutMood.ai && cutLoading -> "Asking the AI which songs suit this…"
+                            cutMood.ai && cutAiPick == null -> "The AI could not answer for this mood, so the cut uses Best of for now."
+                            else -> cutPick.why ?: "Picked for the mood."
+                        },
+                        noteFooter = if (cutPick.ai) "Written by AI, may contain mistakes" else null,
+                        button = "Save as playlist",
+                        buttonEnabled = cut.indices.isNotEmpty(),
+                        onButton = {
+                            PlaylistPicker.request(cut.indices.mapNotNull { album.tracks.getOrNull(it)?.forPlaylist(album) })
                         },
                         modifier = panelModifier,
                     )
@@ -910,7 +1004,7 @@ private fun AlbumFacts(album: MusicAlbum, info: LibraryAlbumInfo?, onArtistClick
 
 /** The column names above the songs, on the same columns as [TrackRow]: number, title, how played, length. */
 @Composable
-private fun TrackLegend() {
+private fun TrackLegend(popularLabel: String = "POPULAR") {
     val colors = MaterialTheme.nuvio.colors
     val label = MaterialTheme.typography.labelSmall
     Row(
@@ -920,7 +1014,7 @@ private fun TrackLegend() {
         Text("#", Modifier.width(32.dp), style = label, letterSpacing = 1.2.sp, color = colors.textMuted)
         Text("TITLE", Modifier.weight(1f), style = label, letterSpacing = 1.2.sp, color = colors.textMuted)
         Spacer(Modifier.width(28.dp + 12.dp)) // the add button's place, and the gap after it
-        Text("POPULAR", Modifier.width(56.dp), style = label, letterSpacing = 0.6.sp, color = colors.textMuted, maxLines = 1, softWrap = false)
+        Text(popularLabel, Modifier.width(56.dp), style = label, letterSpacing = 0.6.sp, color = colors.textMuted, maxLines = 1, softWrap = false)
         Spacer(Modifier.width(14.dp))
         Text("TIME", Modifier.width(44.dp), style = label, letterSpacing = 1.2.sp, color = colors.textMuted, textAlign = TextAlign.End)
     }
@@ -942,6 +1036,9 @@ private fun TrackRow(
     marked: Boolean = false,
     /** fork:lenses - the featured artist's chip on the title's line, so every row is the same height. */
     inlineCredit: Boolean = false,
+    /** fork:lenses - Cut to fit: the row's place in the cut in the popularity bar's slot; with [cutView] and none, it is dimmed. */
+    cutOrder: Int? = null,
+    cutView: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val hoverSource = remember { MutableInteractionSource() }
@@ -955,6 +1052,7 @@ private fun TrackRow(
         modifier = modifier
             .widthIn(max = TRACK_ROW_MAX_WIDTH) // the length stays near the title however wide the column gets
             .fillMaxWidth()
+            .alpha(if (cutView && cutOrder == null) 0.42f else 1f)
             .clip(RoundedCornerShape(8.dp))
             .background(
                 when {
@@ -1051,10 +1149,28 @@ private fun TrackRow(
             Spacer(Modifier.size(28.dp)) // keeps the bar and the length in their columns on a song with no add button
         }
         Spacer(Modifier.width(12.dp))
-        // Always laid out, so the lengths line up whether or not Deezer knows how played the song is.
-        Box(Modifier.width(56.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.12f))) {
-            if (popularity != null) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(popularity.coerceIn(0f, 1f)).background(if (current) colors.accent else colors.accent.copy(alpha = 0.7f)))
+        if (cutView) {
+            // fork:lenses - the same 56 dp slot as the bar, so the lengths stay in their column.
+            Box(Modifier.width(56.dp), contentAlignment = Alignment.CenterStart) {
+                if (cutOrder != null) {
+                    Text(
+                        cutOrder.toString(),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.accent,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(30.dp).clip(RoundedCornerShape(10.dp)).background(colors.accent.copy(alpha = 0.18f)).padding(vertical = 2.dp),
+                    )
+                } else {
+                    Text("Out", style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1)
+                }
+            }
+        } else {
+            // Always laid out, so the lengths line up whether or not Deezer knows how played the song is.
+            Box(Modifier.width(56.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.12f))) {
+                if (popularity != null) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(popularity.coerceIn(0f, 1f)).background(if (current) colors.accent else colors.accent.copy(alpha = 0.7f)))
+                }
             }
         }
         Spacer(Modifier.width(14.dp))

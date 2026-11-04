@@ -1,6 +1,7 @@
 package com.nuvio.app.features.music
 // FORK UI (Spyder): Nick's album page lenses, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,7 +68,7 @@ import com.nuvio.app.features.music.library.musicKeyFocusRing
 internal enum class AlbumLens(val label: String, val built: Boolean) {
     SongBySong("Song by song", true),
     History("Your history", false),
-    CutToFit("Cut to fit", false),
+    CutToFit("Cut to fit", true),
     SonicMap("Sonic map", false),
     Lineage("Lineage", false),
     Ask("Ask", false),
@@ -552,6 +555,122 @@ private fun LensRow(title: String, where: String, tag: String, onClick: (() -> U
         )
     }
 }
+
+/** One choice in a Cut to fit grid. */
+internal class CutChoice(val label: String, val selected: Boolean, val enabled: Boolean, val onClick: () -> Unit)
+
+/** What a Cut to fit panel's dial shows: [segments] of the ring (one lit at [lit]) or one arc filled to [fraction]. */
+internal class CutDialState(val big: String, val small: String, val fraction: Float? = null, val segments: Int = 0, val lit: Int = -1)
+
+/**
+ * One Cut to fit panel. Both sides are this one composable with different words, so they are mirrors row for row: header,
+ * title, the dial (in the box that takes the window's spare height), a 3 by 2 grid of choices, two facts, a note, a button.
+ */
+@Composable
+internal fun CutSidePanel(
+    icon: ImageVector,
+    label: String,
+    pill: String,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    dial: CutDialState,
+    choices: List<CutChoice>,
+    facts: List<Pair<String, String>>,
+    noteLabel: String,
+    note: String,
+    noteFooter: String?,
+    button: String,
+    buttonEnabled: Boolean,
+    onButton: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LensPanel(modifier) {
+        LensPanelHeader(icon, label, pill = pill, tint = tint)
+        LensPanelTitle(title, subtitle)
+        Box(Modifier.fillMaxWidth().weight(1f).padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+            CutDial(dial, tint)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            choices.chunked(3).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { c ->
+                        val shape = RoundedCornerShape(14.dp)
+                        Box(
+                            Modifier.weight(1f).height(48.dp).clip(shape)
+                                .background(if (c.selected) tint.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.05f))
+                                .border(1.dp, if (c.selected) tint else Color.White.copy(alpha = 0.14f), shape)
+                                .musicKeyFocusRing(shape)
+                                .semantics { this.selected = c.selected }
+                                .clickable(enabled = c.enabled, onClick = c.onClick),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                c.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = when {
+                                    !c.enabled -> colors.textDisabled
+                                    c.selected -> colors.textPrimary
+                                    else -> colors.textSecondary
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Column(Modifier.padding(top = 12.dp)) {
+            facts.forEachIndexed { i, (k, v) ->
+                if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.08f)))
+                Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(k, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1, modifier = Modifier.weight(1f))
+                    Text(v, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        LensNoteCard(label = noteLabel, text = note, tint = tint, footer = noteFooter)
+        LensButton(button, tint = tint, enabled = buttonEnabled, onClick = onButton)
+    }
+}
+
+/** The dial: a ring with its big word in the middle; a filled arc for the time, or one lit segment of six for the mood. */
+@Composable
+private fun CutDial(state: CutDialState, tint: Color) {
+    val colors = MaterialTheme.nuvio.colors
+    val track = Color.White.copy(alpha = 0.10f)
+    // As big as the box allows up to 200 dp, always round: the window decides its size, never what it says.
+    Box(Modifier.sizeIn(maxWidth = CUT_DIAL, maxHeight = CUT_DIAL).aspectRatio(1f), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 14.dp.toPx()
+            val inset = stroke / 2
+            val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+            val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+            val style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            if (state.segments > 0) {
+                val gap = 10f
+                val sweep = 360f / state.segments - gap
+                repeat(state.segments) { i ->
+                    drawArc(if (i == state.lit) tint else track, -90f + i * (360f / state.segments) + gap / 2, sweep, false, topLeft, arcSize, style = style)
+                }
+            } else {
+                drawArc(track, 0f, 360f, false, topLeft, arcSize, style = style)
+                val f = (state.fraction ?: 0f).coerceIn(0f, 1f)
+                if (f > 0f) drawArc(tint, -90f, 360f * f, false, topLeft, arcSize, style = style)
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(state.big, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 28.dp))
+            Text(state.small, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1)
+        }
+    }
+}
+
+private val CUT_DIAL = 200.dp
 
 /** A lens that is not built yet: the same panel on each side, saying so. */
 @Composable
