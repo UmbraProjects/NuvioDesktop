@@ -205,6 +205,19 @@ internal object MusicBrainzClient {
         return parseMbTrackCredits(body)
     }
 
+    /**
+     * fork:credits - everyone credited on [album] by [artist] (see [parseMbPeople]): the same two calls as [trackCredits].
+     * An empty list when MusicBrainz has no such release; null when it could not be reached (so the caller asks again later).
+     */
+    suspend fun peopleCredits(artist: String, album: String): List<Credit>? {
+        fun quote(v: String) = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        val query = "release:${quote(album)} AND artist:${quote(artist)}".encodeURLParameter()
+        val search = paced("$BASE/release?query=$query&limit=3&fmt=json") ?: return null
+        val id = parseMbReleaseSearchId(search) ?: return emptyList()
+        val body = paced("$BASE/release/$id?inc=recordings+recording-rels+work-rels+work-level-rels+artist-rels&fmt=json") ?: return null
+        return parseMbPeople(body)
+    }
+
     suspend fun artist(mbid: String): MbArtist? =
         offline { it.artist(mbid) }?.let(::parseMbArtist)
             ?: paced("$BASE/artist/$mbid?inc=url-rels+tags+genres+ratings&fmt=json")?.let(::parseMbArtist)

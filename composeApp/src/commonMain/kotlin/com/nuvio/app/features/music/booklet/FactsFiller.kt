@@ -7,6 +7,8 @@ import com.nuvio.app.features.music.defaultMusicCatalog
 import com.nuvio.app.features.music.MusicPlayback
 import com.nuvio.app.features.music.bookletRequestFor
 import com.nuvio.app.features.music.library.LibraryArtist
+import com.nuvio.app.features.music.library.BackgroundWork
+import com.nuvio.app.features.music.library.PeopleCreditsBook
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.ReleaseKind
 import kotlinx.coroutines.CancellationException
@@ -23,6 +25,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
@@ -221,6 +224,13 @@ internal object FactsFiller {
         for (c in order) {
             currentCoroutineContext().ensureActive()
             if (!_status.value.enabled) return failStreak
+            // fork:credits - the album's MusicBrainz credits for the Who made it lens (no AI, nothing from the daily limit),
+            // looked up even for albums whose AI facts are done, so its "elsewhere" panel can search the whole library.
+            if (PeopleCreditsBook.missing(c.artist, c.album)) {
+                waitForQuiet()
+                setActivity("Looking up credits for ${c.artist} - ${c.album}")
+                withContext(FillerWork() + BackgroundWork()) { PeopleCreditsBook.load(c.artist, c.album, c.albumId) }
+            }
             if (FillStorage.get("done1|${c.albumId}") == model) continue
             waitForQuiet()
             val ai = DiscoverAiSettingsRepository.snapshot()

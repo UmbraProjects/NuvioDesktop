@@ -118,6 +118,7 @@ import com.nuvio.app.features.music.library.songRank
 import com.nuvio.app.features.music.library.starterPath
 import com.nuvio.app.features.music.library.singleKeys
 import com.nuvio.app.features.music.library.songKey
+import com.nuvio.app.features.music.library.ReleaseKind
 import com.nuvio.app.features.music.library.trackPopularity
 import com.nuvio.app.features.music.library.songVersions
 import com.nuvio.app.features.music.library.versionCounts
@@ -125,6 +126,14 @@ import com.nuvio.app.features.music.booklet.SongStories
 import com.nuvio.app.features.music.booklet.CutPicks
 import com.nuvio.app.features.music.booklet.LineagePicks
 import com.nuvio.app.features.music.booklet.SonicGuesses
+import com.nuvio.app.features.music.library.AlbumCredits
+import com.nuvio.app.features.music.library.CreditKind
+import com.nuvio.app.features.music.library.PeopleCreditsBook
+import com.nuvio.app.features.music.library.creditCounts
+import com.nuvio.app.features.music.library.creditPeople
+import com.nuvio.app.features.music.library.creditsKey
+import com.nuvio.app.features.music.library.elsewhere
+import androidx.compose.material.icons.rounded.LibraryMusic
 import com.nuvio.app.features.music.library.SonicCorner
 import com.nuvio.app.features.music.library.SonicWalk
 import com.nuvio.app.features.music.library.SoundPrintEvents
@@ -630,6 +639,45 @@ private fun AlbumContent(
     val sonicPlaced = sonic.count { it != null }
     val sonicEstimated = sonic.count { it != null && !it.measured }
 
+    // Who made it: the album's MusicBrainz credits (asked when the tab opens; the facts filler asks for every library album
+    // in the background), the people on it, and where the chosen one turns up on the rest of the library.
+    val creditsTick = PeopleCreditsBook.changes.collectAsStateWithLifecycle().value
+    val creditsArtist = lensArtist
+    var albumCredits by remember(album.browseId, creditsTick) {
+        mutableStateOf(creditsArtist?.let { PeopleCreditsBook.peek(it, album.title) })
+    }
+    var creditsLoading by remember(album.browseId) { mutableStateOf(false) }
+    var creditsAsked by remember(album.browseId) { mutableStateOf(false) }
+    LaunchedEffect(lensesOn, lens, album.browseId) {
+        if (!lensesOn || lens != AlbumLens.Credits || albumCredits != null || creditsArtist == null) return@LaunchedEffect
+        creditsLoading = true
+        albumCredits = PeopleCreditsBook.load(creditsArtist, album.title, album.browseId)
+        creditsLoading = false
+        creditsAsked = true
+    }
+    val people = remember(albumCredits) { creditPeople(albumCredits?.credits.orEmpty()) }
+    val peopleCounts = remember(people) { creditCounts(people) }
+    var creditKind by rememberSaveable(album.browseId) { mutableStateOf<CreditKind?>(null) }
+    var creditPerson by rememberSaveable(album.browseId) { mutableStateOf<String?>(null) }
+    val shownPeople = remember(people, creditKind) { people.filter { p -> creditKind == null || creditKind in p.kinds } }
+    val chosen = people.firstOrNull { it.key == creditPerson } ?: shownPeople.firstOrNull()
+    val chosenTracks = remember(chosen, view.tracks) {
+        chosen?.let { p -> if (p.wholeAlbum) view.tracks.indices.toSet() else p.tracks.map { it - 1 }.filter { it in view.tracks.indices }.toSet() }.orEmpty()
+    }
+    var keptCredits by remember { mutableStateOf<Map<String, AlbumCredits>>(emptyMap()) }
+    LaunchedEffect(lensesOn, lens, creditsTick) {
+        if (!lensesOn || lens != AlbumLens.Credits) return@LaunchedEffect
+        keptCredits = withContext(Dispatchers.Default) { PeopleCreditsBook.allKept() }
+    }
+    val hereKey = creditsArtist?.let { creditsKey(it, album.title) }
+    val theirRecords = remember(chosen, keptCredits, hereKey) { chosen?.let { elsewhere(it, keptCredits, hereKey.orEmpty()) }.orEmpty() }
+    val theirArtist = remember(chosen, libraryState.artists) {
+        chosen?.let { p -> libraryState.artists.firstOrNull { a -> (p.mbid != null && a.musicBrainzId == p.mbid) || (p.mbid == null && songKey(a.name) == songKey(p.name)) } }
+    }
+    val libraryAlbumCount = remember(libraryState.artists) {
+        libraryState.artists.sumOf { a -> a.releases.count { (it.kind == ReleaseKind.Album || it.kind == ReleaseKind.EP) && it.ytBrowseId != null } }
+    }
+
     // Lineage: one AI request per album (kept with the facts); each record is looked up in the library, only those found open.
     val lineageAt = lineageYear(album.year)
     val lineageReady = LineagePicks.available()
@@ -836,6 +884,39 @@ private fun AlbumContent(
                             modifier = panelModifier,
                         )
                     }
+                    AlbumLens.Credits -> CreditsSidePanel(
+                        icon = Icons.Rounded.AutoAwesome,
+                        label = "WHO MADE IT",
+                        pill = "MusicBrainz",
+                        tint = colors.accent,
+                        title = "Who made it",
+                        subtitle = if (people.isEmpty()) "From MusicBrainz's credits" else "${people.size} people on this album",
+                        tiles = CreditKind.entries.map { k ->
+                            val n = peopleCounts[k] ?: 0
+                            CreditTileUi(k.plural, if (n == 0) "None" else n.toString(), selected = creditKind == k, onClick = if (n > 0) ({ creditKind = if (creditKind == k) null else k }) else null)
+                        },
+                        listLabel = creditKind?.plural?.uppercase() ?: "EVERYONE",
+                        listNote = if (creditKind != null) "Select the tile again for everyone" else "Songs",
+                        rows = shownPeople.map { p ->
+                            CreditRowUi(p.key, p.name, p.what, p.songsText(view.tracks.size), selected = p.key == chosen?.key, onClick = { creditPerson = p.key })
+                        },
+                        empty = when {
+                            creditsArtist == null -> "This album has no artist to look up."
+                            creditsLoading || (albumCredits == null && !creditsAsked) -> "Asking MusicBrainz…"
+                            albumCredits == null -> "MusicBrainz could not be reached. It is asked again next time."
+                            else -> "MusicBrainz has no credits for this album."
+                        },
+                        noteLabel = "MOST CREDITED",
+                        note = people.firstOrNull()?.let { top -> "${top.name}: ${top.what.lowercase()} on ${top.songsText(view.tracks.size).lowercase()}." }
+                            ?: "Credits come from MusicBrainz, a free music encyclopedia anyone can add to.",
+                        button = "Play their songs here",
+                        buttonEnabled = chosenTracks.isNotEmpty(),
+                        onButton = {
+                            val tracks = chosenTracks.sorted().mapNotNull { view.tracks.getOrNull(it) }.filter { it.isAvailable }
+                            if (tracks.isNotEmpty()) player.play(view.copy(tracks = tracks), trackIndex = 0, mode = chosenMode, shuffled = false)
+                        },
+                        modifier = panelModifier,
+                    )
                     AlbumLens.Lineage -> LineageSidePanel(
                         after = false,
                         tint = colors.accent,
@@ -906,7 +987,7 @@ private fun AlbumContent(
                                 onAddToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
                                 popularity = popularity.getOrNull(index),
                                 single = songKey(track.title) in singles,
-                                marked = lens == AlbumLens.SongBySong && index in lensMarked,
+                                marked = (lens == AlbumLens.SongBySong && index in lensMarked) || (lens == AlbumLens.Credits && index in chosenTracks),
                                 inFocus = lens == AlbumLens.SongBySong && index == lensIndex,
                                 inlineCredit = true,
                                 cutView = lens == AlbumLens.CutToFit,
@@ -1048,6 +1129,32 @@ private fun AlbumContent(
                             modifier = panelModifier,
                         )
                     }
+                    AlbumLens.Credits -> CreditsSidePanel(
+                        icon = Icons.Rounded.LibraryMusic,
+                        label = "ELSEWHERE IN YOUR LIBRARY",
+                        pill = "Library",
+                        tint = LENS_LIBRARY_TINT,
+                        title = chosen?.name ?: "Pick a person",
+                        subtitle = chosen?.let { "Their other credits in your library" } ?: "Their other records show here",
+                        tiles = listOf(
+                            CreditTileUi("Other records", if (theirRecords.isEmpty()) "None" else theirRecords.size.toString(), false, null),
+                            CreditTileUi("An artist of yours", if (theirArtist != null) "Yes" else "No", false, null),
+                            CreditTileUi("On this album", chosen?.let { it.what.substringBefore(",") } ?: "–", false, null),
+                            CreditTileUi("Albums checked", "${keptCredits.size} of $libraryAlbumCount", false, null),
+                        ),
+                        listLabel = "RECORDS",
+                        listNote = "What they did",
+                        rows = theirRecords.map { r ->
+                            CreditRowUi("${r.artist}|${r.album}", r.album, r.artist, r.what, selected = false, onClick = r.albumId?.let { id -> { onAlbumClick(id) } })
+                        },
+                        empty = if (chosen == null) "Select someone on the left." else "Not found on any other album of yours yet.",
+                        noteLabel = "HOW THESE WERE FOUND",
+                        note = "From MusicBrainz's credits of ${keptCredits.size} of your $libraryAlbumCount albums. Music facts looks up the rest in the background.",
+                        button = "Open their artist page",
+                        buttonEnabled = theirArtist != null,
+                        onButton = { theirArtist?.let { onArtistClick(it.id) } },
+                        modifier = panelModifier,
+                    )
                     AlbumLens.Lineage -> LineageSidePanel(
                         after = true,
                         tint = LENS_LIBRARY_TINT,

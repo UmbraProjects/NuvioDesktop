@@ -84,7 +84,7 @@ internal enum class AlbumLens(val label: String, val built: Boolean) {
     CutToFit("Cut to fit", true),
     SonicMap("Sonic map", true),
     Lineage("Lineage", true),
-    Ask("Ask", false),
+    Credits("Who made it", true),
 }
 
 /** The tint of what comes from the person's own library, opposite the accent's AI side. */
@@ -1206,6 +1206,97 @@ internal fun SonicMapCentre(
 }
 
 private val SONIC_LABEL = 150.dp
+
+/** One tile of a Who made it panel: a figure, chosen when [selected], doing [onClick] when there is one. */
+internal class CreditTileUi(val label: String, val value: String, val selected: Boolean, val onClick: (() -> Unit)?)
+
+/** One row of a Who made it list: a name, a line under it, a figure at its end. */
+internal class CreditRowUi(val key: String, val title: String, val line: String, val trailing: String, val selected: Boolean, val onClick: (() -> Unit)?)
+
+/**
+ * One Who made it panel. Both sides are this one composable, so they mirror row for row: header, title, four tiles, a
+ * labelled list that scrolls inside a box of fixed size (the window's spare height), a note, a button.
+ */
+@Composable
+internal fun CreditsSidePanel(
+    icon: ImageVector,
+    label: String,
+    pill: String,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    tiles: List<CreditTileUi>,
+    listLabel: String,
+    listNote: String,
+    rows: List<CreditRowUi>,
+    empty: String,
+    noteLabel: String,
+    note: String,
+    button: String,
+    buttonEnabled: Boolean,
+    onButton: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LensPanel(modifier) {
+        LensPanelHeader(icon, label, pill = pill, tint = tint)
+        LensPanelTitle(title, subtitle)
+        Column(Modifier.fillMaxWidth().padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            tiles.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { t ->
+                        val shape = RoundedCornerShape(12.dp)
+                        val click = t.onClick
+                        Column(
+                            Modifier.weight(1f).height(76.dp).clip(shape)
+                                .background(if (t.selected) tint.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.04f))
+                                .border(1.dp, if (t.selected) tint else Color.White.copy(alpha = 0.07f), shape)
+                                .then(if (click != null) Modifier.musicKeyFocusRing(shape).semantics { this.selected = t.selected }.clickable(onClick = click) else Modifier)
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                            Text(t.label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.CenterStart) {
+                                Text(t.value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        LensSectionLabel(listLabel, listNote)
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            if (rows.isEmpty()) {
+                Text(empty, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(horizontal = 16.dp))
+            } else {
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(rows.size, key = { rows[it].key }) { i ->
+                        val r = rows[i]
+                        val shape = RoundedCornerShape(12.dp)
+                        val click = r.onClick
+                        Row(
+                            Modifier.fillMaxWidth().height(56.dp).clip(shape)
+                                .background(if (r.selected) tint.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.04f))
+                                .border(1.dp, if (r.selected) tint else Color.White.copy(alpha = 0.08f), shape)
+                                .then(if (click != null) Modifier.musicKeyFocusRing(shape).semantics { this.selected = r.selected }.clickable(onClick = click) else Modifier)
+                                .padding(horizontal = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(r.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(r.line, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Text(r.trailing, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = tint, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        LensNoteCard(label = noteLabel, text = note, tint = tint, footer = null)
+        LensButton(button, tint = tint, enabled = buttonEnabled, onClick = onButton)
+    }
+}
 
 /** A lens that is not built yet: the same panel on each side, saying so. */
 @Composable
