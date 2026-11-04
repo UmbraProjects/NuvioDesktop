@@ -5,8 +5,8 @@ package com.nuvio.app.features.music.library
  * fork:history - per-song listening history for the Your history lens. Nuvio counted only albums (the facts filler's play
  * counts); this counts each song. A song counts as played once it has been heard for 30 seconds or half its length,
  * whichever comes first; one left before that, after at least a second, counts as skipped. Time heard is measured while it
- * plays, so seeking ahead does not count as listening. Songs are keyed by album and title (brackets aside), so the addon's
- * copy and YouTube's count as the same song. Pure, so it is tested without Compose or storage.
+ * plays, so seeking ahead does not count as listening. Songs are keyed by album and whole title, so each version (a remix,
+ * a live take) counts on its own. Pure, so it is tested without Compose or storage.
  */
 
 /** One song's history. */
@@ -22,8 +22,13 @@ internal fun decodeSongStat(raw: String?): SongStat? {
     return SongStat(p.coerceAtLeast(0), s.coerceAtLeast(0), f[2].toLongOrNull() ?: 0L, f[3].toLongOrNull() ?: 0L)
 }
 
-/** The song's key in the history: its album and its title with brackets and case aside. */
-internal fun songHistoryKey(albumId: String, title: String): String = "song1|$albumId|${songKey(title)}"
+/**
+ * The song's key in the history: its album and its whole title, case and punctuation aside. The brackets are kept, so a
+ * remix, a live take or a demo ("Virtual Insanity (Salaam Remi Remix)") counts apart from the song itself. A title with no
+ * brackets keys exactly as before this rule, so its counts carry over.
+ */
+internal fun songHistoryKey(albumId: String, title: String): String =
+    "song1|$albumId|${title.lowercase().filter { it.isLetterOrDigit() }.ifEmpty { songKey(title) }}"
 
 /** [stat] with one more play or skip at [atMs]. */
 internal fun SongStat?.plus(played: Boolean, atMs: Long): SongStat {

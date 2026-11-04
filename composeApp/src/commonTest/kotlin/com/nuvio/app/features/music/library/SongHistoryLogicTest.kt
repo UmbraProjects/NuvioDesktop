@@ -58,7 +58,10 @@ class SongHistoryLogicTest {
         assertEquals(SongStat(2, 1, 100, 300), s)
         assertEquals(s, decodeSongStat(encodeSongStat(s)))
         assertEquals(null, decodeSongStat("junk"))
-        assertEquals("song1|MPREb_x|spacecowboy", songHistoryKey("MPREb_x", "Space Cowboy (Remastered)"))
+        // Each version counts on its own; the plain title keys as it always did, so its plays carry over.
+        assertEquals("song1|MPREb_x|virtualinsanity", songHistoryKey("MPREb_x", "Virtual Insanity"))
+        assertEquals("song1|MPREb_x|virtualinsanitysalaamremiremix", songHistoryKey("MPREb_x", "Virtual Insanity (Salaam Remi Remix)"))
+        assertEquals("song1|MPREb_x|virtualinsanityliveattheverona", songHistoryKey("MPREb_x", "Virtual Insanity - Live at the Verona"))
     }
 
     @Test
