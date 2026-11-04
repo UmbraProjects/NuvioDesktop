@@ -134,11 +134,14 @@ internal object InnerTubeXFallback : MusicStreamFallback {
         account?.takeIf { it.cookie == cookie && System.currentTimeMillis() - it.atMs < SESSION_TTL_MS }?.let { return it }
         val names = cookie.split(';').map { it.substringBefore('=').trim() }.filter { it.isNotEmpty() }
         val session = try {
-            val html = http.get("https://www.youtube.com/") {
+            val response = http.get("https://www.youtube.com/") {
                 header("cookie", cookie)
                 header("user-agent", BROWSER_UA)
                 header("accept-language", "en-US,en;q=0.9")
-            }.bodyAsText()
+            }
+            // fork:youtube-cookie-upkeep — keep the cookies Google refreshes, as the YouTube tab does.
+            YouTubeMusicAuth.absorbSetCookies(response.headers.getAll("Set-Cookie").orEmpty())
+            val html = response.bodyAsText()
             val loggedIn = Regex(""""LOGGED_IN":\s*(true|false)""").find(html)?.groupValues?.get(1) == "true"
             val visitor = Regex(""""VISITOR_DATA":\s*"([^"]+)"""").find(html)?.groupValues?.get(1)
             log.i { "account check: loggedIn=$loggedIn visitorData=${visitor != null} cookies=${names.sorted()}" }
@@ -154,8 +157,8 @@ internal object InnerTubeXFallback : MusicStreamFallback {
     }
 
     private const val SESSION_TTL_MS = 30 * 60 * 1000L
-    private const val BROWSER_UA =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    // fork:youtube-web — the same browser as every other signed request (one session, one device).
+    private const val BROWSER_UA = com.nuvio.app.features.youtube.YouTubeWebClient.USER_AGENT
 
     override suspend fun resolve(videoId: String): TrailerPlaybackSource? {
         // Start the browser now if it is not up: it takes a few seconds the first time, and the library

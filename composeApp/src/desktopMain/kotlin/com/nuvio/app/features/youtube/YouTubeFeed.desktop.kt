@@ -11,6 +11,7 @@ import com.nuvio.app.features.trailer.TrailerExtractionPlatform
 import com.nuvio.app.features.trailer.TrailerPlaybackResolver
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
@@ -108,26 +109,88 @@ internal actual suspend fun youTubeAccountsList(): YouTubeBrowseResult =
         pageId = null,
     )
 
+/**
+ * fork:youtube-web — what youtube.com's own page says about the saved session (see [YouTubeWebClient]),
+ * read with the account's cookies at most every [YouTubeWebClient.SHELL_TTL_MS] and again after a refusal.
+ */
+private object SignedInShell {
+    private val lock = kotlinx.coroutines.sync.Mutex()
+    private var shell: YouTubeWebShell? = null
+    private var forCookie: String? = null
+    private var readAtMs = 0L
+
+    suspend fun get(cookie: String, fresh: Boolean = false): YouTubeWebShell? = lock.withLock {
+        val now = System.currentTimeMillis()
+        if (!fresh && forCookie == cookie && now - readAtMs < YouTubeWebClient.SHELL_TTL_MS) return@withLock shell
+        val read = runCatching {
+            val response = TrailerExtractionPlatform.performRequest(
+                url = "$YOUTUBE_ORIGIN/",
+                method = "GET",
+                headers = YouTubeWebClient.pageHeaders() + ("cookie" to cookie),
+                body = null,
+                timeoutMillis = 15_000L,
+            )
+            if (response.ok) YouTubeWebClient.parseShell(response.body) else null
+        }.getOrNull()
+        log.i {
+            "signed-in page: loggedIn=${read?.loggedIn} visitorData=${read?.visitorData != null} " +
+                "client=${read?.clientVersion} authUser=${read?.sessionIndex}" + if (read == null) " (could not read it)" else ""
+        }
+        shell = read
+        // The cookie may have just been refreshed by the page's answer; key the cache by what is saved now.
+        forCookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie
+        // A page that could not be read is tried again in two minutes rather than half an hour.
+        readAtMs = if (read == null) now - YouTubeWebClient.SHELL_TTL_MS + 120_000L else now
+        read
+    }
+
+    suspend fun forget() = lock.withLock { readAtMs = 0L }
+}
+
+/** One signed request with the cookies as saved now (they may just have been refreshed; the request layer keeps refreshes). */
+private suspend fun send(endpoint: String, params: Map<String, Any?>, pageId: String?, shell: YouTubeWebShell?) =
+    TrailerPlaybackResolver.webRequest(endpoint, params, YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN), pageId, shell)
+
+private const val EXPIRED_MESSAGE =
+    "YouTube no longer accepts the saved sign-in (it answered as signed out). Sign in again under Settings > YouTube account."
+
 private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>, pageId: String?): YouTubeBrowseResult {
-    val accountHeaders = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)
-    if (accountHeaders.isEmpty()) return YouTubeBrowseResult.SignedOut
-    var (status, body) = TrailerPlaybackResolver.webRequest(endpoint, params, accountHeaders, pageId)
+    val cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: return YouTubeBrowseResult.SignedOut
+    var shell = SignedInShell.get(cookie)
+    if (shell?.loggedIn == false) {
+        // The page itself says the cookies are no longer a session: no feed request can help.
+        YouTubeMusicAuth.onSessionRejected()
+        log.w { "$endpoint: youtube.com says the saved sign-in is signed out" }
+        return YouTubeBrowseResult.Failed(EXPIRED_MESSAGE)
+    }
+    var response = send(endpoint, params, pageId, shell)
+    if (YouTubeWebClient.isRefusal(response.status, response.body)) {
+        // As for YouTube Music: a fresh visitor id once (re-read from the page), then one more ask.
+        log.w { "$endpoint refused (${response.status}); asking once more with a fresh read of the signed-in page" }
+        shell = SignedInShell.get(cookie, fresh = true)
+        if (shell?.loggedIn != false) response = send(endpoint, params, pageId, shell)
+    }
     // Answered as signed out: the session may only be stale (the app was closed for a while), so
     // renew it once and ask again before calling the sign-in expired.
-    if (status in 200..299 && youTubeAnsweredSignedOut(body) && YouTubeMusicAuth.renewNow()) {
-        val retried = TrailerPlaybackResolver.webRequest(endpoint, params, YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN), pageId)
-        status = retried.first
-        body = retried.second
-        if (status in 200..299 && !youTubeAnsweredSignedOut(body)) log.i { "$endpoint: signed in again after renewing the session" }
+    if (response.ok && youTubeAnsweredSignedOut(response.body) && YouTubeMusicAuth.renewNow()) {
+        SignedInShell.forget()
+        val renewedCookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie
+        response = send(endpoint, params, pageId, SignedInShell.get(renewedCookie))
+        if (response.ok && !youTubeAnsweredSignedOut(response.body)) log.i { "$endpoint: signed in again after renewing the session" }
     }
+    val status = response.status
+    val body = response.body
     return when {
+        YouTubeWebClient.isRefusal(status, body) -> {
+            SignedInShell.forget()
+            YouTubeBrowseResult.Failed("YouTube is limiting requests right now. Try again in a few minutes.")
+        }
         // fork:youtube-signin-expired — Google answers cookies it no longer accepts with 200 and the signed-out page.
         status in 200..299 && youTubeAnsweredSignedOut(body) -> {
             YouTubeMusicAuth.onSessionRejected()
             log.w { "$endpoint: YouTube answered as signed out; the saved sign-in has expired" }
-            YouTubeBrowseResult.Failed(
-                "YouTube no longer accepts the saved sign-in (it answered as signed out). Sign in again under Settings > YouTube account.",
-            )
+            SignedInShell.forget()
+            YouTubeBrowseResult.Failed(EXPIRED_MESSAGE)
         }
         status in 200..299 -> {
             YouTubeMusicAuth.onSessionAccepted()
@@ -317,9 +380,8 @@ internal actual suspend fun youTubeStatsPing(url: String, pageId: String?): Int 
     }.getOrDefault(0)
 }
 
-/** The stats endpoints expect the desktop web player, which is the client the `player` request named. */
-private const val STATS_USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+/** The stats endpoints expect the desktop web player, which is the client the `player` request named; the same browser as every signed request. */
+private const val STATS_USER_AGENT = YouTubeWebClient.USER_AGENT
 
 internal actual suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): TrailerPlaybackSource? =
     // Ahead of a click (the card under the cursor): not a lookup anyone waits on yet, so it waits out a pause.

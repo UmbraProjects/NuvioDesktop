@@ -319,6 +319,16 @@ private val SAPISID_NAMES = listOf("SAPISID", "__Secure-3PAPISID", "__Secure-1PA
  * cleared (empty value, `Max-Age=0`, a 1970 expiry) and one for a domain other than youtube.com
  * leave the jar alone.
  */
+/** The four-digit year in an `Expires=` value. */
+private val EXPIRY_YEAR = Regex("""\b(\d{4})\b""")
+
+/** An `Expires=` year before the current one: the cookie is being deleted (Google uses 1990 and the like). */
+private fun expiredInThePast(expires: String): Boolean {
+    val year = EXPIRY_YEAR.find(expires)?.groupValues?.get(1)?.toIntOrNull() ?: return false
+    val currentYear = 1970 + (YouTubeMusicAuthPlatform.nowEpochSeconds() / 31_556_952L).toInt()
+    return year < currentYear
+}
+
 internal fun mergeSetCookies(jar: String, setCookies: List<String>): Pair<String, List<String>> {
     val entries = jar.split(';').mapNotNull { entry ->
         val name = entry.substringBefore('=').trim()
@@ -337,7 +347,7 @@ internal fun mergeSetCookies(jar: String, setCookies: List<String>): Pair<String
         val domain = attributes["domain"]?.trimStart('.')?.lowercase()
         if (domain != null && domain != "youtube.com" && !domain.endsWith(".youtube.com")) continue
         if (attributes["max-age"]?.toLongOrNull()?.let { it <= 0 } == true) continue
-        if (attributes["expires"]?.contains("1970") == true) continue
+        if (attributes["expires"]?.let(::expiredInThePast) == true) continue
         if (values[name] != value) {
             values[name] = value
             changed += name

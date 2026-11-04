@@ -88,6 +88,7 @@ internal object TrailerExtractionPlatform {
             statusText = "HTTP $status",
             url = response.uri().toString(),
             body = response.body().orEmpty(),
+            setCookies = response.headers().allValues("set-cookie"),
         )
     }
 
