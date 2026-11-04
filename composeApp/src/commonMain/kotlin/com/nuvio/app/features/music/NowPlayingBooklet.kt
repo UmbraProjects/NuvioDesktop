@@ -478,7 +478,8 @@ private fun TrackPage(page: LinerPage.Track, accent: Color) {
         return
     }
     // The song's story: how it was made, what it means, what came after, and the words of the people who were there.
-    Column(Modifier.padding(top = 10.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // The page itself scrolls (the deck's Column above), so this one must not: a scroll inside a scroll is measured without a height and crashes.
+    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         story.made?.let { StorySection("HOW IT WAS MADE", it, accent) }
         story.meaning?.let { StorySection("WHAT IT MEANS", it, accent) }
         story.after?.let { StorySection("SAMPLED, COVERED, REMEMBERED", it, accent) }
