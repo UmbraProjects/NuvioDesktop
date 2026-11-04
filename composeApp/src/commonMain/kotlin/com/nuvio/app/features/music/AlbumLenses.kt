@@ -77,7 +77,7 @@ import com.nuvio.app.features.music.library.musicKeyFocusRing
 /** The lenses, in tab order. [built] lenses have panels; the rest show "Coming soon". */
 internal enum class AlbumLens(val label: String, val built: Boolean) {
     SongBySong("Song by song", true),
-    History("Your history", false),
+    History("Your history", true),
     CutToFit("Cut to fit", true),
     SonicMap("Sonic map", false),
     Lineage("Lineage", true),
@@ -935,6 +935,74 @@ internal fun lineageMono(artist: String): String {
         words.size == 1 -> words[0].take(2)
         else -> "?"
     }.uppercase()
+}
+
+/** One row of a Your history list: a song, a figure, an optional bar (0..1), and what plays it. */
+internal class HistoryRowUi(val number: Int, val title: String, val value: String, val bar: Float?, val onClick: (() -> Unit)?)
+
+/**
+ * One Your history panel. Both sides are this one composable, so they mirror row for row: header, title, four facts, a
+ * labelled list of up to [rowCount] songs in the spare height (empty slots keep their place), a note, a button.
+ */
+@Composable
+internal fun HistorySidePanel(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    facts: List<LensFact>,
+    listLabel: String,
+    listNote: String,
+    rows: List<HistoryRowUi>,
+    rowCount: Int,
+    empty: String,
+    noteLabel: String,
+    note: String,
+    button: String,
+    buttonEnabled: Boolean,
+    onButton: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LensPanel(modifier) {
+        LensPanelHeader(icon, label, pill = "Library", tint = tint)
+        LensPanelTitle(title, subtitle)
+        LensFactGrid(facts)
+        LensSectionLabel(listLabel, listNote)
+        Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            repeat(rowCount) { i ->
+                val row = rows.getOrNull(i)
+                val slot = Modifier.fillMaxWidth().weight(1f).heightIn(max = 56.dp)
+                val shape = RoundedCornerShape(12.dp)
+                if (row == null) {
+                    Box(slot.clip(shape).border(1.dp, Color.White.copy(alpha = 0.05f), shape), contentAlignment = Alignment.Center) {
+                        if (i == 0 && rows.isEmpty()) Text(empty, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, textAlign = TextAlign.Center, maxLines = 2, modifier = Modifier.padding(horizontal = 12.dp))
+                    }
+                } else {
+                    val click = row.onClick
+                    Row(
+                        slot.clip(shape).background(tint.copy(alpha = 0.06f)).border(1.dp, tint.copy(alpha = 0.35f), shape)
+                            .then(if (click != null) Modifier.musicKeyFocusRing(shape).clickable(onClick = click) else Modifier)
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(row.number.toString(), style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, modifier = Modifier.width(22.dp))
+                        Text(row.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(row.value, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1)
+                        val bar = row.bar
+                        Box(Modifier.width(56.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(if (bar != null) Color.White.copy(alpha = 0.12f) else Color.Transparent)) {
+                            if (bar != null) Box(Modifier.fillMaxHeight().fillMaxWidth(bar.coerceIn(0f, 1f)).background(tint))
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        LensNoteCard(label = noteLabel, text = note, tint = tint, footer = null)
+        LensButton(button, tint = tint, enabled = buttonEnabled, onClick = onButton)
+    }
 }
 
 /** A lens that is not built yet: the same panel on each side, saying so. */

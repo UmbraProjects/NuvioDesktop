@@ -124,6 +124,11 @@ import com.nuvio.app.features.music.library.versionCounts
 import com.nuvio.app.features.music.booklet.SongStories
 import com.nuvio.app.features.music.booklet.CutPicks
 import com.nuvio.app.features.music.booklet.LineagePicks
+import com.nuvio.app.features.music.library.SongHistory
+import com.nuvio.app.features.music.library.albumHistory
+import com.nuvio.app.features.music.library.listenedText
+import com.nuvio.app.features.music.library.monthYear
+import com.nuvio.app.features.music.library.whenText
 import com.nuvio.app.features.music.library.LINEAGE_ROWS
 import com.nuvio.app.features.music.library.LineageRecord
 import com.nuvio.app.features.music.library.findInLibrary
@@ -570,6 +575,16 @@ private fun AlbumContent(
     val cutOrder = remember(cut) { cut.order }
     val albumSeconds = cutDurations.sum()
 
+    // Your history: each song's plays and skips, kept by SongHistory as the player plays (read again when one is kept).
+    val historyTick = SongHistory.changes.collectAsStateWithLifecycle().value
+    val historyStats = remember(view, historyTick) { SongHistory.forAlbum(view) }
+    val history = remember(historyStats, view.tracks) {
+        albumHistory(historyStats, view.tracks.map { it.durationSeconds }, view.tracks.map { it.isAvailable })
+    }
+    val historyPlays = remember(historyStats) { historyStats.map { it?.plays ?: 0 } }
+    val historyMax = historyPlays.maxOrNull() ?: 0
+    val nowMs = remember(historyTick) { kotlin.time.Clock.System.now().toEpochMilliseconds() }
+
     // Lineage: one AI request per album (kept with the facts); each record is looked up in the library, only those found open.
     val lineageAt = lineageYear(album.year)
     val lineageReady = LineagePicks.available()
@@ -697,6 +712,46 @@ private fun AlbumContent(
                         },
                         modifier = panelModifier,
                     )
+                    AlbumLens.History -> {
+                        val top = history.top.take(HISTORY_ROWS)
+                        val leader = history.top.firstOrNull()
+                        HistorySidePanel(
+                            icon = Icons.Rounded.Schedule,
+                            label = "YOUR TIME WITH IT",
+                            tint = colors.accent,
+                            title = "What you've played",
+                            subtitle = "From your own listening in Nuvio",
+                            facts = listOf(
+                                LensFact("Total plays", if (history.totalPlays == 0) "None" else history.totalPlays.toString()),
+                                LensFact("Time listened", listenedText(history.listenedSeconds)),
+                                LensFact("First played", history.firstAtMs?.let(::monthYear) ?: "Not yet"),
+                                LensFact("Last played", history.lastAtMs?.let { whenText(it, nowMs) } ?: "Not yet"),
+                            ),
+                            listLabel = "YOUR TOP SONGS",
+                            listNote = "Plays",
+                            rows = top.mapIndexed { i, t ->
+                                HistoryRowUi(i + 1, view.tracks[t].title, historyPlays[t].toString(), historyPlays[t].toFloat() / historyMax.coerceAtLeast(1), onClick = { lensFocus = t; tapTrack(t) })
+                            },
+                            rowCount = HISTORY_ROWS,
+                            empty = "Nothing played yet. Songs count once heard for 30 seconds.",
+                            noteLabel = "YOUR PATTERN",
+                            note = when {
+                                leader == null -> "Nuvio starts counting from now: a song counts once you have heard 30 seconds of it (or half, if it is short)."
+                                history.top.size == 1 -> "So far you have only played ${view.tracks[leader].title}."
+                                else -> {
+                                    val share = historyPlays[leader] * 100 / history.totalPlays.coerceAtLeast(1)
+                                    "${view.tracks[leader].title} is $share% of your plays. You have played ${history.top.size} of ${view.tracks.size} songs."
+                                }
+                            },
+                            button = "Play my favourites",
+                            buttonEnabled = history.top.isNotEmpty(),
+                            onButton = {
+                                val tracks = history.top.mapNotNull { view.tracks.getOrNull(it) }.filter { it.isAvailable }
+                                if (tracks.isNotEmpty()) player.play(view.copy(tracks = tracks), trackIndex = 0, mode = chosenMode, shuffled = false)
+                            },
+                            modifier = panelModifier,
+                        )
+                    }
                     AlbumLens.Lineage -> LineageSidePanel(
                         after = false,
                         tint = colors.accent,
@@ -732,7 +787,15 @@ private fun AlbumContent(
                         contentPadding = PaddingValues(top = 16.dp, bottom = LENS_LIST_BOTTOM),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        item(key = "legend") { TrackLegend(if (lens == AlbumLens.CutToFit) "IN CUT" else "POPULAR") }
+                        item(key = "legend") {
+                            TrackLegend(
+                                when (lens) {
+                                    AlbumLens.CutToFit -> "IN CUT"
+                                    AlbumLens.History -> "YOU"
+                                    else -> "POPULAR"
+                                },
+                            )
+                        }
                         itemsIndexed(view.tracks) { index, track ->
                             TrackRow(
                                 album = album,
@@ -748,6 +811,9 @@ private fun AlbumContent(
                                 inlineCredit = true,
                                 cutView = lens == AlbumLens.CutToFit,
                                 cutOrder = if (lens == AlbumLens.CutToFit) cutOrder[index] else null,
+                                historyView = lens == AlbumLens.History,
+                                historyPlays = historyPlays.getOrElse(index) { 0 },
+                                historyMax = historyMax,
                                 onClick = { lensFocus = index; tapTrack(index) },
                             )
                         }
@@ -799,6 +865,45 @@ private fun AlbumContent(
                         },
                         modifier = panelModifier,
                     )
+                    AlbumLens.History -> {
+                        // Try next: the never-played songs, the most played by everyone first (else album order).
+                        val tryNext = history.never.sortedWith(compareByDescending<Int> { popularity.getOrNull(it) ?: -1f }.thenBy { it })
+                        val nextUp = tryNext.firstOrNull()
+                        HistorySidePanel(
+                            icon = Icons.Rounded.AutoAwesome,
+                            label = "STILL TO HEAR",
+                            tint = LENS_LIBRARY_TINT,
+                            title = "What's left",
+                            subtitle = "Songs you haven't played yet",
+                            facts = listOf(
+                                LensFact("Never played", "${history.never.size} of ${view.tracks.size}"),
+                                LensFact("Unheard time", if (history.neverSeconds == 0) "None" else cutLength(history.neverSeconds)),
+                                LensFact("Played once", if (history.playedOnce == 0) "None" else history.playedOnce.toString()),
+                                LensFact("Often skipped", if (history.oftenSkipped.isEmpty()) "None" else history.oftenSkipped.size.toString()),
+                            ),
+                            listLabel = "TRY NEXT",
+                            listNote = "Time",
+                            rows = tryNext.take(HISTORY_ROWS).mapIndexed { i, t ->
+                                HistoryRowUi(i + 1, view.tracks[t].title, formatMusicTime(view.tracks[t].durationSeconds * 1000L), null, onClick = { lensFocus = t; tapTrack(t) })
+                            },
+                            rowCount = HISTORY_ROWS,
+                            empty = "You have played every song on this album.",
+                            noteLabel = "WHAT TO TRY",
+                            note = when {
+                                nextUp == null -> history.oftenSkipped.firstOrNull()?.let { "You often skip ${view.tracks[it].title}. Give it one full listen?" }
+                                    ?: "Nothing left to hear here. Try the Lineage tab for where to go next."
+                                popularity.getOrNull(nextUp) != null -> "${view.tracks[nextUp].title} is the most played song here that you haven't heard yet."
+                                else -> "${view.tracks[nextUp].title} is the first song on the album you haven't heard yet."
+                            },
+                            button = "Play what's left",
+                            buttonEnabled = tryNext.isNotEmpty(),
+                            onButton = {
+                                val tracks = history.never.mapNotNull { view.tracks.getOrNull(it) }
+                                if (tracks.isNotEmpty()) player.play(view.copy(tracks = tracks), trackIndex = 0, mode = chosenMode, shuffled = false)
+                            },
+                            modifier = panelModifier,
+                        )
+                    }
                     AlbumLens.Lineage -> LineageSidePanel(
                         after = true,
                         tint = LENS_LIBRARY_TINT,
@@ -925,6 +1030,9 @@ private const val LENS_STORY_REST_MS = 600L
 
 /** fork:lenses - room under the last song for the docked player, so it never covers a row. */
 private val LENS_LIST_BOTTOM = 96.dp
+
+/** fork:history - how many songs each Your history list shows. */
+private const val HISTORY_ROWS = 5
 
 /** fork:lenses - how many of the artist's best songs stand in for a song with no other copies. */
 private const val LENS_SUGGESTIONS = 4
@@ -1146,6 +1254,10 @@ private fun TrackRow(
     /** fork:lenses - Cut to fit: the row's place in the cut in the popularity bar's slot; with [cutView] and none, it is dimmed. */
     cutOrder: Int? = null,
     cutView: Boolean = false,
+    /** fork:history - Your history: the row's own play count in the popularity bar's slot ("Not yet" when never played). */
+    historyView: Boolean = false,
+    historyPlays: Int = 0,
+    historyMax: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val hoverSource = remember { MutableInteractionSource() }
@@ -1258,7 +1370,28 @@ private fun TrackRow(
             Spacer(Modifier.size(28.dp)) // keeps the bar and the length in their columns on a song with no add button
         }
         Spacer(Modifier.width(12.dp))
-        if (cutView) {
+        if (historyView) {
+            // fork:history - the same 56 dp slot as the bar: your plays as a bar and a number, or "Not yet".
+            Box(Modifier.width(56.dp), contentAlignment = Alignment.CenterStart) {
+                if (historyPlays > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.width(28.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.12f))) {
+                            Box(Modifier.fillMaxHeight().fillMaxWidth((historyPlays.toFloat() / historyMax.coerceAtLeast(1)).coerceIn(0f, 1f)).background(colors.accent))
+                        }
+                        Text(historyPlays.toString(), style = MaterialTheme.typography.labelMedium, color = colors.textSecondary, maxLines = 1)
+                    }
+                } else {
+                    Text(
+                        "Not yet",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = LENS_LIBRARY_TINT,
+                        maxLines = 1,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(LENS_LIBRARY_TINT.copy(alpha = 0.12f)).padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
+            }
+        } else if (cutView) {
             // fork:lenses - the same 56 dp slot as the bar, so the lengths stay in their column.
             Box(Modifier.width(56.dp), contentAlignment = Alignment.CenterStart) {
                 if (cutOrder != null) {
