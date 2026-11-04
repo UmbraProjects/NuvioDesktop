@@ -2,6 +2,8 @@ package com.nuvio.app.features.music.booklet
 // FORK UI (Spyder): Nick's album page facts, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.discover.DiscoverAiClient
+import com.nuvio.app.features.discover.DiscoverAiProvider
 import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.music.defaultMusicCatalog
 import com.nuvio.app.features.music.MusicPlayback
@@ -45,8 +47,9 @@ internal data class FillStatus(
     val albumsDone: Int = 0,
     val albumsTotal: Int = 0,
     val songsKept: Int = 0,
-    val used: Int = 0,
-    val cap: Int = FILL_CAP_DEFAULT,
+    /** Tokens used in the last 24 hours, and the most the filler may use in that time. */
+    val used: Long = 0L,
+    val cap: Long = FILL_CAP_DEFAULT,
     /** Lookups that failed a moment ago; each is tried again by itself after two hours. */
     val retry: List<String> = emptyList(),
 )
@@ -74,7 +77,7 @@ internal object FactsFiller {
         _status.update { it.copy(enabled = on, activity = if (on) "Starting" else "") }
     }
 
-    fun setCap(cap: Int) {
+    fun setCap(cap: Long) {
         FillStorage.put("cap", cap.toString())
         _status.update { it.copy(cap = cap) }
     }
@@ -254,15 +257,20 @@ internal object FactsFiller {
                 budget.resumesAtMs(cap, now())?.let { until ->
                     keepRetry(retry.values.toList())
                     _status.update { it.copy(used = budget.used) }
-                    setActivity("Reached today's limit of $cap lookups; carries on in ${(until - now()) / 3_600_000L + 1} h")
+                    setActivity("Reached today's allowance of ${capLabel(cap)}; carries on in ${(until - now()) / 3_600_000L + 1} h")
                     return failStreak
                 }
                 waitForQuiet()
                 setActivity("Filling ${step.title}")
+                val tokensBefore = DiscoverAiClient.tokensUsed
                 while (!runYielding(step, request)) waitForQuiet()
                 val after = stateOf(step, request)
+                // What the provider said the step cost (cut-short attempts included, they were real requests). A provider that
+                // does not report tokens (Anthropic here) is charged the usual cost of the step.
+                val spent = (DiscoverAiClient.tokensUsed - tokensBefore).takeIf { it > 0L }
+                    ?: if (ai.provider == DiscoverAiProvider.Anthropic) estimateTokens(step.kind) else 0L
                 if (after == FactState.Missing) { unfillable += step.title; continue } // nothing to write from (no page); no request was made
-                budget = budget.spend(requestsFor(step.kind), now())
+                budget = budget.spend(spent, now())
                 FillStorage.put("budget", encodeBudget(budget))
                 _status.update { it.copy(used = budget.used) }
                 if (after == FactState.Have) {
@@ -273,7 +281,8 @@ internal object FactsFiller {
                     retry[step.title] = step
                 }
                 keepRetry(retry.values.toList())
-                val gap = nextGapMs(failStreak)
+                // Wait long enough that the minute's token limit holds, and longer after failures.
+                val gap = maxOf(nextGapMs(failStreak), paceMs(spent))
                 if (failStreak >= FILL_FAILS_BEFORE_PAUSE) {
                     setActivity("Several lookups failed in a row (rate limit or key?); pausing for 30 minutes")
                     delay(gap)

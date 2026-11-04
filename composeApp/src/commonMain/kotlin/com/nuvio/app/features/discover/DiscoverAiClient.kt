@@ -2,6 +2,8 @@ package com.nuvio.app.features.discover
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpRequestRaw
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -37,6 +39,15 @@ object DiscoverAiClient {
      * account. Waiting is the cheaper answer.
      */
     private val inFlight = Mutex()
+
+    private val tokenCount = MutableStateFlow(0L)
+
+    /**
+     * fork:facts-filler - tokens the provider has reported for answered requests since the app started (OpenAI-compatible
+     * replies only, which is what Groq speaks). The filler reads it before and after a step to learn what the step cost,
+     * because a free key is limited by tokens (a day's and a minute's), not by how many requests it makes.
+     */
+    val tokensUsed: Long get() = tokenCount.value
 
     /**
      * The ceiling on one request.
@@ -251,6 +262,9 @@ object DiscoverAiClient {
                 },
             )
         }
+
+        ((parsed["usage"] as? JsonObject)?.get("total_tokens") as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
+            ?.takeIf { it > 0 }?.let { used -> tokenCount.update { it + used } }
 
         val message = (parsed["choices"] as? JsonArray)
             ?.firstNotNullOfOrNull { choice -> (choice as? JsonObject)?.get("message") as? JsonObject }

@@ -29,10 +29,25 @@ class FactsFillTest {
     }
 
     @Test
-    fun notesCostTwoRequestsTheRestOne() {
-        assertEquals(2, requestsFor(FillKind.Notes))
-        assertEquals(1, requestsFor(FillKind.TrackNotes))
-        assertEquals(1, requestsFor(FillKind.Story))
+    fun everyKindHasAnEstimateAndTheStoryCostsMost() {
+        assertTrue(estimateTokens(FillKind.Story) >= estimateTokens(FillKind.Notes))
+        assertTrue(estimateTokens(FillKind.TrackNotes) > 0)
+    }
+
+    @Test
+    fun pacingKeepsTheAverageUnderTheMinuteLimit() {
+        assertEquals(FILL_GAP_MS, paceMs(0))
+        assertEquals(FILL_GAP_MS, paceMs(100))
+        assertEquals(50_000L, paceMs(5_000))
+        assertEquals(60_000L, paceMs(FILL_TOKENS_PER_MIN))
+        assertTrue(FILL_TOKENS_PER_MIN < 8_000L)
+    }
+
+    @Test
+    fun capsAreInTokensAndLabelled() {
+        assertEquals("150k tokens", capLabel(150_000L))
+        assertTrue(FILL_CAP_DEFAULT in FILL_CAP_CHOICES)
+        assertTrue(FILL_CAP_DEFAULT < 200_000L, "leaves some of a free key's day for the person")
     }
 
     @Test
@@ -54,17 +69,17 @@ class FactsFillTest {
     }
 
     @Test
-    fun budgetResetsAfterADayAndCountsRequests() {
+    fun budgetResetsAfterADayAndCountsTokens() {
         val start = 1_000L
-        var b = FillBudget().spend(2, start)
-        assertEquals(2, b.used)
-        assertEquals(148, b.left(150, start + 1))
-        b = b.spend(148, start + 5)
-        assertEquals(0, b.left(150, start + 10))
-        assertEquals(start + FILL_WINDOW_MS, b.resumesAtMs(150, start + 10))
-        assertEquals(150, b.left(150, start + FILL_WINDOW_MS), "a new window starts empty")
-        assertNull(b.resumesAtMs(150, start + FILL_WINDOW_MS))
-        assertNull(FillBudget().resumesAtMs(150, 5L))
+        var b = FillBudget().spend(2_000L, start)
+        assertEquals(2_000L, b.used)
+        assertEquals(148_000L, b.left(150_000L, start + 1))
+        b = b.spend(148_000L, start + 5)
+        assertEquals(0L, b.left(150_000L, start + 10))
+        assertEquals(start + FILL_WINDOW_MS, b.resumesAtMs(150_000L, start + 10))
+        assertEquals(150_000L, b.left(150_000L, start + FILL_WINDOW_MS), "a new window starts empty")
+        assertNull(b.resumesAtMs(150_000L, start + FILL_WINDOW_MS))
+        assertNull(FillBudget().resumesAtMs(150_000L, 5L))
     }
 
     @Test
@@ -80,10 +95,10 @@ class FactsFillTest {
         assertEquals(PlayStat(3, 77L), decodePlayStat(encodePlayStat(PlayStat(3, 77L))))
         assertNull(decodePlayStat("junk"))
         assertNull(decodePlayStat(null))
-        assertEquals(FillBudget(5L, 7), decodeBudget(encodeBudget(FillBudget(5L, 7))))
+        assertEquals(FillBudget(5L, 7L), decodeBudget(encodeBudget(FillBudget(5L, 7L))))
         assertEquals(FillBudget(), decodeBudget("junk"))
-        assertEquals(300, decodeCap("300"))
-        assertEquals(FILL_CAP_DEFAULT, decodeCap("7"))
+        assertEquals(300_000L, decodeCap("300000"))
+        assertEquals(FILL_CAP_DEFAULT, decodeCap("150"))
         assertEquals(FILL_CAP_DEFAULT, decodeCap(null))
     }
 

@@ -15,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.music.booklet.FILL_CAP_CHOICES
+import com.nuvio.app.features.music.booklet.capLabel
 import com.nuvio.app.features.music.booklet.FactsFiller
 import com.nuvio.app.features.music.booklet.fillProgressLine
 import androidx.compose.foundation.layout.padding
@@ -84,7 +85,7 @@ internal fun LazyListScope.musicFactsSettingsContent(isTablet: Boolean) {
                     description = stringResource(Res.string.settings_music_facts_cap_description),
                     isTablet = isTablet,
                     trailingContent = {
-                        Text("${status.cap}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.nuvio.colors.textPrimary)
+                        Text(capLabel(status.cap), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.nuvio.colors.textPrimary)
                     },
                     onClick = {
                         val at = FILL_CAP_CHOICES.indexOf(status.cap)
@@ -121,7 +122,7 @@ internal fun LazyListScope.musicFactsSettingsContent(isTablet: Boolean) {
             if (status.enabled || status.albumsTotal > 0) {
                 val lines = buildList {
                     add(fillProgressLine(status.albumsDone, status.albumsTotal, status.songsKept))
-                    add("Last 24 hours: ${status.used} of ${status.cap} lookups used")
+                    add("Last 24 hours: ${status.used} of ${status.cap} tokens used")
                     if (status.activity.isNotBlank() && status.enabled) add(status.activity)
                     if (status.retry.isNotEmpty()) {
                         add("Failed a moment ago, tried again by itself after two hours (${status.retry.size}):")

@@ -51,8 +51,15 @@ internal fun planAlbum(artist: String, album: String, albumId: String, states: A
     )
 }
 
-/** How many requests a step costs the free AI key: the notes ask twice (the notes, then the trivia), the others once. */
-internal fun requestsFor(kind: FillKind): Int = if (kind == FillKind.Notes) 2 else 1
+/**
+ * What a step is assumed to cost in tokens when the provider did not say (about a quarter of a character each; a song story
+ * that searches the web reads pages and costs the most). The filler uses what the provider reports whenever it does.
+ */
+internal fun estimateTokens(kind: FillKind): Long = when (kind) {
+    FillKind.Notes -> 4_500L
+    FillKind.TrackNotes -> 2_500L
+    FillKind.Story -> 5_000L
+}
 
 /** An album the filler may work on, as the library knows it. */
 internal data class FillCandidate(val albumId: String, val artistId: String, val artist: String, val album: String, val favourite: Boolean, val year: Int?)
@@ -78,21 +85,25 @@ internal fun fillOrder(albums: List<FillCandidate>, plays: Map<String, PlayStat>
 
 internal const val FILL_WINDOW_MS = 24L * 60L * 60L * 1_000L
 
-/** Lookups made since [windowStartMs]; the window is 24 hours long and starts at the first lookup after the last one ended. */
-internal data class FillBudget(val windowStartMs: Long = 0L, val used: Int = 0) {
+/** Tokens spent since [windowStartMs] (a free Groq key allows 200,000 a day); the window is 24 hours long and starts at the first lookup after the last one ended. */
+internal data class FillBudget(val windowStartMs: Long = 0L, val used: Long = 0L) {
     /** This budget as of [nowMs]: a window that has run its 24 hours starts again empty. */
     fun at(nowMs: Long): FillBudget = if (windowStartMs == 0L || nowMs - windowStartMs >= FILL_WINDOW_MS) FillBudget(nowMs, 0) else this
 
-    fun left(cap: Int, nowMs: Long): Int = (cap - at(nowMs).used).coerceAtLeast(0)
+    fun left(cap: Long, nowMs: Long): Long = (cap - at(nowMs).used).coerceAtLeast(0L)
 
-    fun spend(requests: Int, nowMs: Long): FillBudget = at(nowMs).let { it.copy(used = it.used + requests) }
+    fun spend(tokens: Long, nowMs: Long): FillBudget = at(nowMs).let { it.copy(used = it.used + tokens.coerceAtLeast(0L)) }
 
     /** When more may be asked for after the cap was reached; null while there is allowance left. */
-    fun resumesAtMs(cap: Int, nowMs: Long): Long? = at(nowMs).let { if (it.used >= cap) it.windowStartMs + FILL_WINDOW_MS else null }
+    fun resumesAtMs(cap: Long, nowMs: Long): Long? = at(nowMs).let { if (it.used >= cap) it.windowStartMs + FILL_WINDOW_MS else null }
 }
 
-internal const val FILL_CAP_DEFAULT = 150
-internal val FILL_CAP_CHOICES = listOf(50, 100, 150, 300, 600)
+/** The daily allowance in tokens. The default leaves a quarter of a free key's 200,000 for the person's own requests. */
+internal const val FILL_CAP_DEFAULT = 150_000L
+internal val FILL_CAP_CHOICES = listOf(50_000L, 100_000L, 150_000L, 300_000L, 600_000L)
+
+/** "150k" for the settings page. */
+internal fun capLabel(cap: Long): String = if (cap >= 1_000L) "${cap / 1_000L}k tokens" else "$cap tokens"
 
 // endregion
 
@@ -103,8 +114,14 @@ internal const val FILL_FAIL_GAP_MS = 10_000L
 internal const val FILL_PAUSE_MS = 30L * 60L * 1_000L
 internal const val FILL_FAILS_BEFORE_PAUSE = 3
 
+/** The most tokens a minute the filler aims to use. A free Groq key allows 8,000; this leaves room for the person's own requests. */
+internal const val FILL_TOKENS_PER_MIN = 6_000L
+
+/** How long to wait after a lookup that cost [tokens], so the average stays under [FILL_TOKENS_PER_MIN] (never less than [FILL_GAP_MS]). */
+internal fun paceMs(tokens: Long): Long = maxOf(FILL_GAP_MS, tokens.coerceAtLeast(0L) * 60_000L / FILL_TOKENS_PER_MIN)
+
 /**
- * How long to wait before the next lookup: a few seconds when the last one worked (the free key has a per-minute limit),
+ * How long to wait before the next lookup after a failure: a few seconds when the last one worked (the free key has a per-minute limit),
  * longer after one that failed, and half an hour once [failStreak] lookups in a row failed, which is what a rate limit or a
  * dead key looks like. The cache already forgets a failure after two hours, so nothing is lost by waiting.
  */
@@ -134,12 +151,12 @@ internal fun encodeBudget(budget: FillBudget): String = buildJsonObject { put("s
 internal fun decodeBudget(text: String?): FillBudget {
     val obj = text?.let { runCatching { FILL_JSON.parseToJsonElement(it) }.getOrNull() } as? JsonObject ?: return FillBudget()
     val start = (obj["start"] as? JsonPrimitive)?.longOrNull ?: 0L
-    val used = (obj["used"] as? JsonPrimitive)?.intOrNull ?: 0
-    return FillBudget(start, used.coerceAtLeast(0))
+    val used = (obj["used"] as? JsonPrimitive)?.longOrNull ?: 0L
+    return FillBudget(start, used.coerceAtLeast(0L))
 }
 
 /** A cap read back from storage: one of the offered choices, else the default. */
-internal fun decodeCap(text: String?): Int = text?.toIntOrNull()?.takeIf { it in FILL_CAP_CHOICES } ?: FILL_CAP_DEFAULT
+internal fun decodeCap(text: String?): Long = text?.toLongOrNull()?.takeIf { it in FILL_CAP_CHOICES } ?: FILL_CAP_DEFAULT
 
 // endregion
 
