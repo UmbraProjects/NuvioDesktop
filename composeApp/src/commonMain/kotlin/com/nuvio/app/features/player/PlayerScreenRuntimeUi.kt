@@ -79,6 +79,17 @@ import com.nuvio.app.core.i18n.localizedString
 @Composable
 internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val runtime = this
+    // Compose's own back on desktop: Escape reaching the window (keyboard focus in Compose rather than
+    // the HUD - the YouTube watch page or mini player clicked, or the tab a video was just opened from)
+    // pops the route straight away, past the player's Back. Taken here so it is the player's Back:
+    // the mini player for a YouTube video (Nov 4: Escape sometimes closed one outright), and the
+    // progress flushed before leaving for anything else.
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Suppress("DEPRECATION")
+    androidx.compose.ui.backhandler.BackHandler(enabled = true) {
+        co.touchlab.kermit.Logger.withTag("YouTubeMiniPlayer").i { "window back in the player: taken as the player's Back" }
+        handlePlayerControlsAction(PlayerControlsAction.Back)
+    }
     // Tells the post-show what is playing and where its credits are: a film, or the finale of a
     // season or series that the viewer has watched their way to (see postShowScopeFor).
     val postShowTitle = title
