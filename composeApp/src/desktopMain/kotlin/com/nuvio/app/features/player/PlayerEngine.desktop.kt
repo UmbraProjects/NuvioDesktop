@@ -392,6 +392,11 @@ private fun NativePlayerSurface(
                         if (!wouldPlay) latestOnPlayerControlsAction.value(PlayerControlsAction.TogglePlayback)
                     com.nuvio.app.features.voice.VoicePlaybackCommand.Next ->
                         latestOnPlayerControlsEvent.value("nextEpisode", 0.0)
+                    // Through the screen, so a watch party seeks together and the HUD shows the jump.
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.Seek ->
+                        latestOnPlayerControlsEvent.value("voiceSeekBy", command.deltaMs.toDouble())
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.Speed ->
+                        latestOnPlayerControlsEvent.value("setPlaybackSpeed", command.rate.toDouble())
                 }
                 return null
             }

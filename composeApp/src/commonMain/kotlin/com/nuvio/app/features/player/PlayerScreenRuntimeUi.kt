@@ -1471,6 +1471,8 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             ) ?: return true
             autoPlaySelectedEpisode(previous)
         }
+        // fork:voice-control - "skip forward 30 seconds": any distance, not the seek step.
+        "voiceSeekBy" -> seekBy(value.toLong())
         "setPlaybackSpeed" -> {
             if (partyBlocksControl()) return true
             applyUserPlaybackSpeed(value.toFloat().coerceIn(0.5f, 4f))

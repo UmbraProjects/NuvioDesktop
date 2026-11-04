@@ -33,6 +33,12 @@ sealed interface VoiceIntent {
     data object Next : VoiceIntent
     data object GoBack : VoiceIntent
 
+    /** Jump [deltaMs] forward (positive) or back (negative): "skip forward 30 seconds", "rewind a minute". */
+    data class Seek(val deltaMs: Long) : VoiceIntent
+
+    /** "playback speed 1.5", "normal speed", "double speed". */
+    data class Speed(val rate: Float) : VoiceIntent
+
     /** Not a command. [text] is what was heard, tidied; empty when nothing (or only noise) was. */
     data class Unknown(val text: String) : VoiceIntent
 }
@@ -174,15 +180,210 @@ private fun Words.withoutFillers(): Words {
     }
 }
 
-/** What the spoken [transcript] asks for. */
-fun parseVoiceIntent(transcript: String): VoiceIntent {
+/**
+ * What the spoken [transcript] asks for. [phrases] are the person's own (Settings > Voice control >
+ * Commands): tried before the built-in ones, and an action whose built-in phrases are turned off
+ * answers only to its own.
+ */
+fun parseVoiceIntent(transcript: String, phrases: VoiceCommandPhrases = VoiceCommandPhrases.None): VoiceIntent {
     val all = words(transcript)
     if (all.size == 0 || all.matchText() in SILENCE_HALLUCINATIONS) return VoiceIntent.Unknown("")
     val words = all.withoutFillers()
+    parseCustom(words, phrases)?.let { return it }
+    val builtIn = parseBuiltIn(words) ?: return VoiceIntent.Unknown(words.text())
+    return if (VoiceCommandKind.of(builtIn) in phrases.builtInOff) VoiceIntent.Unknown(words.text()) else builtIn
+}
+
+private fun parseBuiltIn(words: Words): VoiceIntent? {
     EXACT_COMMANDS[words.matchText()]?.let { return it }
+    parseSpeed(words)?.let { return it }
+    parseSeek(words)?.let { return it }
     parseSearch(words)?.let { return it }
-    parseOpen(words)?.let { return it }
-    return VoiceIntent.Unknown(words.text())
+    return parseOpen(words)
+}
+
+// ---- The person's own phrases ---------------------------------------------------------------------
+
+/** A phrase as the parser compares it: lower case, word edges' punctuation off. Empty when there are no words. */
+fun normalizeVoicePhrase(phrase: String): String = words(phrase).matchText()
+
+private fun parseCustom(words: Words, phrases: VoiceCommandPhrases): VoiceIntent? {
+    if (phrases.custom.isEmpty()) return null
+    val candidates = phrases.custom.flatMap { (kind, list) ->
+        list.map(::normalizeVoicePhrase).filter { it.isNotEmpty() }.map { kind to it.split(' ') }
+    }.sortedByDescending { it.second.size }
+    for ((kind, phrase) in candidates) {
+        if (!words.startsWith(phrase)) continue
+        intentFor(kind, words.slice(phrase.size))?.let { return it }
+    }
+    return null
+}
+
+/** [kind] said with [rest] after its phrase; null when [rest] does not fit (words after "pause"). */
+private fun intentFor(kind: VoiceCommandKind, rest: Words): VoiceIntent? = when (kind.takes) {
+    VoiceCommandKind.Takes.Nothing -> if (rest.size == 0) kind.fixedIntent() else null
+    VoiceCommandKind.Takes.Query -> {
+        val query = if (rest.startsWith(listOf("for"))) rest.slice(1) else rest
+        searchFor(kind.scope!!, query)
+    }
+    VoiceCommandKind.Takes.Duration -> {
+        val ms = if (rest.size == 0) DEFAULT_SEEK_MS else parseDurationMs(rest.match) ?: return null
+        VoiceIntent.Seek(if (kind == VoiceCommandKind.SeekBack) -ms else ms)
+    }
+    VoiceCommandKind.Takes.Rate -> parseRate(rest.match)?.let { VoiceIntent.Speed(it) }
+}
+
+// ---- Seek and speed -------------------------------------------------------------------------------
+
+/** "skip forward" with no amount. */
+const val DEFAULT_SEEK_MS = 10_000L
+
+private val SEEK_FORWARD = phrases(
+    "seek forward", "seek ahead", "skip forward", "skip ahead", "jump forward", "jump ahead", "fast forward",
+    "go forward", "move forward", "forward", "ahead", "skip", "seek",
+)
+private val SEEK_BACK = phrases(
+    "seek back", "seek backward", "seek backwards", "skip back", "skip backward", "skip backwards", "jump back",
+    "jump backward", "jump backwards", "rewind", "go back", "move back", "back", "backward", "backwards",
+)
+
+/** Verbs that mean a seek even with no amount ("rewind"). "back", "go back" and "skip" alone are other commands. */
+private val SEEK_WITHOUT_AMOUNT = setOf(
+    "seek forward", "seek ahead", "skip forward", "skip ahead", "jump forward", "jump ahead", "fast forward",
+    "seek back", "seek backward", "seek backwards", "skip back", "skip backward", "skip backwards", "jump back",
+    "jump backward", "jump backwards", "rewind",
+)
+
+private fun parseSeek(words: Words): VoiceIntent? {
+    for ((verbs, sign) in listOf(SEEK_FORWARD to 1L, SEEK_BACK to -1L)) {
+        val verb = words.firstOf(verbs) ?: continue
+        var rest = words.slice(verb.size)
+        if (rest.startsWith(listOf("by"))) rest = rest.slice(1)
+        val ms = when {
+            rest.size == 0 -> if (verb.joinToString(" ") in SEEK_WITHOUT_AMOUNT) DEFAULT_SEEK_MS else null
+            else -> parseDurationMs(rest.match)
+        } ?: continue
+        return VoiceIntent.Seek(sign * ms)
+    }
+    return null
+}
+
+private val SPEED_PREFIXES = phrases(
+    "set the playback speed to", "set playback speed to", "set the speed to", "set speed to", "change the speed to",
+    "change speed to", "playback speed to", "playback speed", "speed to", "speed", "play at",
+)
+private val SPEED_SUFFIXES = phrases("times speed", "x speed", "speed", "times", "x")
+
+private fun parseSpeed(words: Words): VoiceIntent? {
+    when (words.matchText()) {
+        "normal speed", "regular speed", "normal playback speed", "reset speed", "reset the speed", "speed normal" ->
+            return VoiceIntent.Speed(1f)
+        "double speed" -> return VoiceIntent.Speed(2f)
+        "half speed" -> return VoiceIntent.Speed(0.5f)
+    }
+    words.firstOf(SPEED_PREFIXES)?.let { prefix ->
+        return parseRate(words.slice(prefix.size).match)?.let { VoiceIntent.Speed(it) }
+    }
+    // "1.5x speed", "one and a half times speed": a number first only counts with "speed" after it.
+    if (words.size >= 2 && words.endsWith(listOf("speed"))) {
+        return parseRate(words.match)?.let { VoiceIntent.Speed(it) }
+    }
+    return null
+}
+
+/** A rate such as "1.5", "1.5x", "one and a half", "two times"; null when the words are not one. */
+internal fun parseRate(tokens: List<String>): Float? {
+    var rest = tokens
+    SPEED_SUFFIXES.firstOrNull { rest.size > it.size && rest.takeLast(it.size) == it }?.let { rest = rest.dropLast(it.size) }
+    if (rest.isEmpty()) return null
+    val (value, used) = parseNumber(rest) ?: return null
+    if (used != rest.size || value <= 0) return null
+    return value.toFloat()
+}
+
+/** "30 seconds", "a minute", "1 minute 30 seconds", "half a minute", "90"; null when the words are not a duration. */
+internal fun parseDurationMs(tokens: List<String>): Long? {
+    val rest = tokens.flatMap { it.split('-') }.filter { it.isNotEmpty() }.toMutableList()
+    if (rest.isEmpty()) return null
+    var total = 0.0
+    while (rest.isNotEmpty()) {
+        val (value, used) = parseNumber(rest) ?: return null
+        repeat(used) { rest.removeAt(0) }
+        val unit = rest.firstOrNull()
+        val seconds = when (unit) {
+            "second", "seconds", "sec", "secs", "s" -> 1.0
+            "minute", "minutes", "min", "mins", "m" -> 60.0
+            null -> 1.0
+            else -> return null
+        }
+        if (unit != null) rest.removeAt(0)
+        total += value * seconds
+        if (rest.firstOrNull() == "and") rest.removeAt(0)
+    }
+    return if (total > 0) (total * 1000).toLong() else null
+}
+
+private val SMALL_NUMBERS = listOf(
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+    "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+).withIndex().associate { (i, word) -> word to i } + mapOf("a" to 1, "an" to 1)
+private val TENS = listOf("twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+    .withIndex().associate { (i, word) -> word to (i + 2) * 10 }
+private fun smallNumber(token: String?): Int? = token?.let { SMALL_NUMBERS[it] }
+private val DIGITS = Regex("""^(\d+(?:[.,]\d+)?)(x|s|m)?$""")
+
+/** A number at the start of [tokens] and how many tokens it took: "30", "1.5x", "forty five", "one point five", "two and a half", "half". */
+internal fun parseNumber(tokens: List<String>): Pair<Double, Int>? {
+    if (tokens.isEmpty()) return null
+    DIGITS.matchEntire(tokens[0])?.let { match ->
+        val value = match.groupValues[1].replace(',', '.').toDouble()
+        var used = 1
+        if (tokens.getOrNull(1) == "and" && tokens.getOrNull(2) == "a" && tokens.getOrNull(3) == "half") {
+            return value + 0.5 to used + 3
+        }
+        return value to used
+    }
+    var at = 0
+    var value: Double
+    when {
+        tokens[0] == "half" -> {
+            // "half a minute", "half speed" (the caller reads what follows)
+            return 0.5 to if (tokens.getOrNull(1) == "a" || tokens.getOrNull(1) == "an") 2 else 1
+        }
+        tokens[0] in TENS -> {
+            value = TENS.getValue(tokens[0]).toDouble()
+            at = 1
+            smallNumber(tokens.getOrNull(1))?.takeIf { it in 1..9 && tokens[1] != "a" && tokens[1] != "an" }?.let {
+                value += it
+                at = 2
+            }
+        }
+        tokens[0] in SMALL_NUMBERS -> {
+            value = SMALL_NUMBERS.getValue(tokens[0]).toDouble()
+            at = 1
+        }
+        else -> return null
+    }
+    // "one point five", "one point two five"
+    if (tokens.getOrNull(at) == "point") {
+        var scale = 0.1
+        var digits = 0
+        while (true) {
+            val digit = smallNumber(tokens.getOrNull(at + 1 + digits))?.takeIf { it in 0..9 } ?: break
+            if (tokens[at + 1 + digits] == "a" || tokens[at + 1 + digits] == "an") break
+            value += digit * scale
+            scale /= 10
+            digits++
+        }
+        if (digits == 0) return null
+        at += 1 + digits
+    }
+    // "two and a half"
+    if (tokens.getOrNull(at) == "and" && tokens.getOrNull(at + 1) == "a" && tokens.getOrNull(at + 2) == "half") {
+        value += 0.5
+        at += 3
+    }
+    return value to at
 }
 
 private fun Words.scopeAt(at: Int): Pair<Phrase, VoiceSearchScope>? =

@@ -18,7 +18,19 @@ data class VoiceRouteContext(
     val discoverShown: Boolean,
 )
 
-enum class VoicePlaybackCommand { Play, Pause, Next }
+sealed interface VoicePlaybackCommand {
+    data object Play : VoicePlaybackCommand
+    data object Pause : VoicePlaybackCommand
+    data object Next : VoicePlaybackCommand
+
+    /** [deltaMs] forward (positive) or back. */
+    data class Seek(val deltaMs: Long) : VoicePlaybackCommand
+
+    data class Speed(val rate: Float) : VoicePlaybackCommand
+}
+
+/** The speeds the player offers (its own clamp, PlayerScreenRuntimeUi "setPlaybackSpeed"). */
+val VOICE_SPEED_RANGE = 0.5f..4f
 
 /** The video player while it is on screen, for spoken play / pause / next. */
 interface VoicePlaybackTarget {
@@ -82,6 +94,12 @@ fun routeVoiceIntent(intent: VoiceIntent, context: VoiceRouteContext): VoiceActi
             VoiceIntent.Play -> VoiceAction.Player(VoicePlaybackCommand.Play)
             VoiceIntent.Pause -> VoiceAction.Player(VoicePlaybackCommand.Pause)
             VoiceIntent.Next -> VoiceAction.Player(VoicePlaybackCommand.Next)
+            is VoiceIntent.Seek -> VoiceAction.Player(VoicePlaybackCommand.Seek(intent.deltaMs))
+            is VoiceIntent.Speed -> if (intent.rate in VOICE_SPEED_RANGE) {
+                VoiceAction.Player(VoicePlaybackCommand.Speed(intent.rate))
+            } else {
+                VoiceAction.Refuse("Playback speed goes from 0.5\u00D7 to 4\u00D7")
+            }
             VoiceIntent.GoBack -> VoiceAction.Back
             is VoiceIntent.Unknown -> VoiceAction.Refuse("That isn’t a command I know")
             else -> VoiceAction.Refuse("Say “go back” to leave the player first")
@@ -102,6 +120,11 @@ fun routeVoiceIntent(intent: VoiceIntent, context: VoiceRouteContext): VoiceActi
             }
             if (context.musicLoaded) VoiceAction.Music(command) else VoiceAction.Refuse("Nothing is playing")
         }
+        is VoiceIntent.Seek ->
+            if (context.musicLoaded) VoiceAction.Music(VoicePlaybackCommand.Seek(intent.deltaMs))
+            else VoiceAction.Refuse("Nothing is playing")
+        is VoiceIntent.Speed ->
+            VoiceAction.Refuse(if (context.musicLoaded) "Music plays at normal speed" else "Nothing is playing")
         VoiceIntent.GoBack -> VoiceAction.Back
         is VoiceIntent.Unknown -> VoiceAction.Refuse("That isn’t a command I know")
     }

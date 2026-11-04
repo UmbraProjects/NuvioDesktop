@@ -8,7 +8,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.features.player.AppShortcutAction
@@ -82,14 +84,19 @@ internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
                     )
                 }
                 SettingsGroupDivider(isTablet = isTablet)
+                var commandsOpen by remember { mutableStateOf(false) }
+                val ownCount = state.phrases.custom.values.sumOf { it.size }
                 SettingsActionRow(
                     title = "Commands",
-                    description = "“Search YouTube / movies / shows / music for …”, “Search for …”, " +
-                        "“Open settings / library / home / YouTube / music / calendar / live TV”, " +
-                        "“Play”, “Pause”, “Next”, “Go back”. " +
-                        "During a video only play, pause, next and go back act.",
+                    description = "Search YouTube / movies / shows / music for …, open a tab, play, pause, next, " +
+                        "skip forward or back by an amount, playback speed, go back. Give any of them a phrase of " +
+                        "your own, or replace its built-in ones." +
+                        if (ownCount > 0) " $ownCount of your own so far." else "",
                     isTablet = isTablet,
-                ) {}
+                ) {
+                    SettingsGlassButton(text = "Edit commands", onClick = { commandsOpen = true })
+                }
+                if (commandsOpen) VoiceCommandsDialog(state.phrases, onDismiss = { commandsOpen = false })
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsDropdownChoiceRow(
                     title = "End of command",
@@ -98,9 +105,10 @@ internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
                         SettingsChoiceOption(
                             ms,
                             when (ms) {
-                                VoiceActivityDetector.END_SILENCE_OPTIONS_MS.first() -> "Short pause (${ms / 100 / 10.0} s)"
-                                VoiceActivityDetector.END_SILENCE_OPTIONS_MS.last() -> "Long pause (${ms / 100 / 10.0} s)"
-                                else -> "Normal (${ms / 100 / 10.0} s)"
+                                300 -> "Very short (0.3 s)"
+                                500 -> "Short (0.5 s)"
+                                VoiceActivityDetector.DEFAULT_END_SILENCE_MS -> "Normal (${ms / 100 / 10.0} s)"
+                                else -> "Long (${ms / 100 / 10.0} s)"
                             },
                         )
                     },

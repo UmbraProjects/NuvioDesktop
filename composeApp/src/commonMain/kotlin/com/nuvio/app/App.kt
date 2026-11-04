@@ -1883,6 +1883,9 @@ private fun MainAppContent(
                         com.nuvio.app.features.voice.VoicePlaybackCommand.Play -> music.resume()
                         com.nuvio.app.features.voice.VoicePlaybackCommand.Pause -> music.pause()
                         com.nuvio.app.features.voice.VoicePlaybackCommand.Next -> music.next()
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.Seek ->
+                            music.seekTo((music.state.value.positionMs + action.command.deltaMs).coerceAtLeast(0L))
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.Speed -> Unit // refused by the router
                     }
                 }
                 com.nuvio.app.features.voice.VoiceAction.Back -> {

@@ -46,6 +46,12 @@ actual object VoiceControlRepository {
 
     private val log = Logger.withTag("Voice")
     private val store by lazy { DesktopStorage.store(STORE_NAME) }
+
+    /** Not in MACHINE_STORE_NAMES: the phrases someone chose are theirs, so they follow the account. */
+    internal const val PHRASES_STORE_NAME = "nuvio_voice_phrases"
+    private const val KEY_PHRASES = "phrases"
+    private val phrasesStore by lazy { DesktopStorage.store(PHRASES_STORE_NAME) }
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val downloader = VoiceModelDownloader()
 
@@ -96,6 +102,7 @@ actual object VoiceControlRepository {
                 models = VoiceModels.all.associate { model -> model.id to installedState(model) },
                 engineProblem = if (WhisperLibrary.resolve() == null) ENGINE_MISSING else null,
                 modelsFolder = modelsDir.absolutePath,
+                phrases = loadPhrases(),
             )
         }
         refreshMicrophones()
@@ -242,11 +249,11 @@ actual object VoiceControlRepository {
                     return@launch
                 }
                 val started = System.nanoTime()
-                val text = engine.transcribe(samples)
+                val text = engine.transcribe(samples, prompt())
                 val decodeMs = (System.nanoTime() - started) / 1_000_000
                 val audioMs = samples.size * 1000L / VoiceAudio.SAMPLE_RATE
                 log.i { "Test: ${audioMs}ms of audio decoded in ${decodeMs}ms with ${model.id}" }
-                setTest(VoiceTestState.Heard(text, parseVoiceIntent(text), audioMs, decodeMs))
+                setTest(VoiceTestState.Heard(text, parseVoiceIntent(text, _uiState.value.phrases), audioMs, decodeMs))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -378,7 +385,7 @@ actual object VoiceControlRepository {
                     val soFar = recorder.samples()
                     preview = scope.launch {
                         val started = System.currentTimeMillis()
-                        val text = engine.transcribe(soFar)
+                        val text = engine.transcribe(soFar, prompt())
                         if (System.currentTimeMillis() - started > PREVIEW_TOO_SLOW_MS) previewAllowed.set(false)
                         transcript.set(text)
                     }
@@ -402,9 +409,9 @@ actual object VoiceControlRepository {
         preview?.join()
         val samples = recorder.samples()
         val started = System.nanoTime()
-        val text = engine.transcribe(samples)
+        val text = engine.transcribe(samples, prompt())
         val decodeMs = (System.nanoTime() - started) / 1_000_000
-        val intent = scopeVoiceIntent(parseVoiceIntent(text), searchScope)
+        val intent = scopeVoiceIntent(parseVoiceIntent(text, _uiState.value.phrases), searchScope)
         log.i { "Heard ${samples.size * 1000L / VoiceAudio.SAMPLE_RATE}ms in ${decodeMs}ms: ${describeVoiceIntent(intent)}" }
         if (intent is VoiceIntent.Unknown && intent.text.isEmpty()) {
             showResult(VoiceSessionState.Failed("Didn't catch that"))
@@ -415,6 +422,42 @@ actual object VoiceControlRepository {
     }
 
     actual fun showOutcome(message: String) = showResult(VoiceSessionState.Failed(message))
+
+    private fun loadPhrases(): VoiceCommandPhrases =
+        phrasesStore.getString(KEY_PHRASES)
+            ?.let { runCatching { json.decodeFromString(VoiceCommandPhrases.serializer(), it) }.getOrNull() }
+            ?: VoiceCommandPhrases.None
+
+    private fun updatePhrases(transform: (VoiceCommandPhrases) -> VoiceCommandPhrases) {
+        ensureLoaded()
+        val next = transform(_uiState.value.phrases)
+        phrasesStore.putString(KEY_PHRASES, json.encodeToString(VoiceCommandPhrases.serializer(), next))
+        _uiState.update { it.copy(phrases = next) }
+    }
+
+    @Synchronized
+    actual fun addPhrase(kind: VoiceCommandKind, phrase: String): String? {
+        ensureLoaded()
+        VoiceCommandPhrases.problemWith(phrase, kind, _uiState.value.phrases)?.let { return it }
+        updatePhrases { it.withPhrase(kind, phrase) }
+        return null
+    }
+
+    @Synchronized
+    actual fun removePhrase(kind: VoiceCommandKind, phrase: String) = updatePhrases { it.withoutPhrase(kind, phrase) }
+
+    @Synchronized
+    actual fun setBuiltInPhrases(kind: VoiceCommandKind, enabled: Boolean) = updatePhrases { it.withBuiltIn(kind, enabled) }
+
+    @Synchronized
+    actual fun resetPhrases() = updatePhrases { VoiceCommandPhrases.None }
+
+    /** whisper's prompt: the command words, and the person's own so they come out spelled as typed. */
+    private fun prompt(): String {
+        val own = _uiState.value.phrases.all
+        return if (own.isEmpty()) WhisperTranscriber.COMMAND_PROMPT
+        else WhisperTranscriber.COMMAND_PROMPT + " " + own.joinToString(". ", postfix = ".")
+    }
 
     /** Shows [state] in the overlay, then hides it. */
     private fun showResult(state: VoiceSessionState) {

@@ -88,8 +88,8 @@ class VoiceActivityDetector(
     companion object {
         const val DEFAULT_END_SILENCE_MS = 700
 
-        /** The end-of-speech pauses Settings offers (short / normal / long). */
-        val END_SILENCE_OPTIONS_MS = listOf(500, DEFAULT_END_SILENCE_MS, 1_000)
+        /** The end-of-speech pauses Settings offers (very short / short / normal / long). */
+        val END_SILENCE_OPTIONS_MS = listOf(300, 500, DEFAULT_END_SILENCE_MS, 1_000)
 
         private const val START_FRAMES = 3
         private const val SPEECH_RATIO = 3.0 // ≈ +9.5 dB over the floor

@@ -54,7 +54,18 @@ object VoiceModels {
         sha256 = "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b",
     )
 
-    val all: List<VoiceModel> = listOf(BaseEn, TinyEn)
+    val SmallEn = VoiceModel(
+        id = "small.en-q5_1",
+        label = "Accurate",
+        description = "Best with strong accents and noisy rooms. About three times slower than Standard " +
+            "(around a second per command) and uses more memory.",
+        fileName = "ggml-small.en-q5_1.bin",
+        url = SOURCE + "ggml-small.en-q5_1.bin",
+        sizeBytes = 190_098_681L,
+        sha256 = "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30",
+    )
+
+    val all: List<VoiceModel> = listOf(BaseEn, SmallEn, TinyEn)
     val default: VoiceModel = BaseEn
 
     fun byId(id: String?): VoiceModel? = all.firstOrNull { it.id == id }
@@ -119,6 +130,8 @@ data class VoiceControlUiState(
     val microphones: List<String> = emptyList(),
     /** Null when nuvio_whisper.dll is present and loads; otherwise why voice control cannot run. */
     val engineProblem: String? = null,
+    /** The person's own command phrases (per account: they are the person's, not the PC's). */
+    val phrases: VoiceCommandPhrases = VoiceCommandPhrases.None,
     val modelsFolder: String = "",
 ) {
     fun stateOf(model: VoiceModel): VoiceModelState = models[model.id] ?: VoiceModelState.NotInstalled
@@ -176,6 +189,17 @@ expect object VoiceControlRepository {
 
     /** Replaces what the overlay shows with [message] (why a command could not be carried out). */
     fun showOutcome(message: String)
+
+    /** Adds [phrase] to [kind]; the reason it was not added, or null. */
+    fun addPhrase(kind: VoiceCommandKind, phrase: String): String?
+
+    fun removePhrase(kind: VoiceCommandKind, phrase: String)
+
+    /** Whether [kind] still answers to its built-in phrases (off = rebound to the person's own). */
+    fun setBuiltInPhrases(kind: VoiceCommandKind, enabled: Boolean)
+
+    /** Every action back to its built-in phrases only. */
+    fun resetPhrases()
 }
 
 /** What a recognised command does, in words, for the overlay and the Settings test. */
@@ -188,8 +212,22 @@ fun describeVoiceIntent(intent: VoiceIntent): String = when (intent) {
     VoiceIntent.Pause -> "Pause"
     VoiceIntent.Next -> "Next"
     VoiceIntent.GoBack -> "Go back"
+    is VoiceIntent.Seek -> (if (intent.deltaMs < 0) "Back " else "Forward ") + spokenDuration(kotlin.math.abs(intent.deltaMs))
+    is VoiceIntent.Speed -> "Playback speed ${spokenRate(intent.rate)}\u00D7"
     is VoiceIntent.Unknown -> "Not a command"
 }
+
+private fun spokenDuration(ms: Long): String {
+    val seconds = ms / 1000
+    return when {
+        seconds < 60 -> "$seconds s"
+        seconds % 60 == 0L -> "${seconds / 60} min"
+        else -> "${seconds / 60} min ${seconds % 60} s"
+    }
+}
+
+private fun spokenRate(rate: Float): String =
+    if (rate == rate.toInt().toFloat()) rate.toInt().toString() else ((rate * 100).toInt() / 100.0).toString()
 
 private fun scopeName(scope: VoiceSearchScope) = when (scope) {
     VoiceSearchScope.All -> "everything"
