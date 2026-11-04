@@ -2028,7 +2028,12 @@ private fun MainAppContent(
     val streamPickerOpen by remember {
         StreamPickerController.request.map { it != null }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = StreamPickerController.isOpen)
-    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive, startupOverlayVisible, streamPickerOpen) {
+    // And the playlist windows: an open playlist, and the add-to-playlist picker.
+    val playlistAddOpen by remember {
+        com.nuvio.app.features.playlist.PlaylistAddController.target.map { it != null }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+    val playlistWindowOpen = openPlaylistId != null || playlistAddOpen
+    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive, startupOverlayVisible, streamPickerOpen, playlistWindowOpen) {
         val onTabsWithHomeStyleTab = (
             selectedTab == AppScreenTab.Home ||
                 selectedTab == AppScreenTab.Search ||
@@ -2041,7 +2046,7 @@ private fun MainAppContent(
         // that would paint straight over it — so the hero must count as "not home" while it is up.
         HomeHeroTrailerGate.setHomeActive(
             (onTabsWithHomeStyleTab || onFolderDetail) && !gameModeActive && startupOverlayVisible == null &&
-                !streamPickerOpen,
+                !streamPickerOpen && !playlistWindowOpen,
         )
     }
 
