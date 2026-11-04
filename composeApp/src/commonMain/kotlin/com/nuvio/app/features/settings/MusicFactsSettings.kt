@@ -14,6 +14,19 @@ import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import com.nuvio.app.features.music.booklet.FILL_CAP_CHOICES
 import com.nuvio.app.features.music.booklet.FactsFiller
 import com.nuvio.app.features.music.booklet.fillProgressLine
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.settings_music_facts_cap
+import nuvio.composeapp.generated.resources.settings_music_facts_cap_description
+import nuvio.composeapp.generated.resources.settings_music_facts_check
+import nuvio.composeapp.generated.resources.settings_music_facts_check_button
+import nuvio.composeapp.generated.resources.settings_music_facts_check_description
+import nuvio.composeapp.generated.resources.settings_music_facts_retry
+import nuvio.composeapp.generated.resources.settings_music_facts_retry_button
+import nuvio.composeapp.generated.resources.settings_music_facts_retry_description
+import nuvio.composeapp.generated.resources.settings_music_facts_section
+import nuvio.composeapp.generated.resources.settings_music_facts_switch
+import nuvio.composeapp.generated.resources.settings_music_facts_switch_description
+import org.jetbrains.compose.resources.stringResource
 
 /*
  * fork:facts-filler - Settings > Music > Music facts: the switch for the background filler (off by default), how many AI
@@ -25,14 +38,14 @@ private const val RETRY_SHOWN = 8
 
 internal fun LazyListScope.musicFactsSettingsContent(isTablet: Boolean) {
     item {
-        SettingsSection(title = "Music facts", isTablet = isTablet) {
+        SettingsSection(title = stringResource(Res.string.settings_music_facts_section), isTablet = isTablet) {
             val status by FactsFiller.status.collectAsStateWithLifecycle()
             val ai by DiscoverAiSettingsRepository.uiState.collectAsStateWithLifecycle()
             var consentPromptFor by remember { mutableStateOf<AiConsentTarget?>(null) }
             SettingsGroup(isTablet = isTablet) {
                 SettingsSwitchRow(
-                    title = "Fill album facts in the background",
-                    description = "Writes Liner Notes, track notes and song stories for your whole library ahead of time, most played albums first, so an album opens with its facts already there. Uses your own AI key; nothing is sent until you switch this on.",
+                    title = stringResource(Res.string.settings_music_facts_switch),
+                    description = stringResource(Res.string.settings_music_facts_switch_description),
                     checked = status.enabled,
                     isTablet = isTablet,
                     onCheckedChange = { on ->
@@ -45,8 +58,8 @@ internal fun LazyListScope.musicFactsSettingsContent(isTablet: Boolean) {
                 )
                 SettingsGroupDivider(isTablet)
                 SettingsNavigationRow(
-                    title = "Lookups per day",
-                    description = "The most AI requests the filler makes in 24 hours. Press to change. A free key may allow fewer than the higher choices; if it runs into the limit the filler pauses by itself.",
+                    title = stringResource(Res.string.settings_music_facts_cap),
+                    description = stringResource(Res.string.settings_music_facts_cap_description),
                     isTablet = isTablet,
                     trailingContent = {
                         Text("${status.cap}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.nuvio.colors.textPrimary)
@@ -58,10 +71,29 @@ internal fun LazyListScope.musicFactsSettingsContent(isTablet: Boolean) {
                 )
                 SettingsGroupDivider(isTablet)
                 SettingsActionRow(
-                    title = "Check every album again",
-                    description = "Looks at every album on the next pass instead of skipping the ones already finished. Nothing already written is asked for twice.",
+                    title = stringResource(Res.string.settings_music_facts_retry),
+                    description = stringResource(Res.string.settings_music_facts_retry_description),
                     isTablet = isTablet,
-                    actions = { SettingsGlassButton(text = "Check again", onClick = FactsFiller::checkAgain, enabled = status.enabled) },
+                    actions = {
+                        SettingsGlassButton(
+                            text = stringResource(Res.string.settings_music_facts_retry_button),
+                            onClick = FactsFiller::retryNow,
+                            enabled = status.enabled && status.retry.isNotEmpty(),
+                        )
+                    },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsActionRow(
+                    title = stringResource(Res.string.settings_music_facts_check),
+                    description = stringResource(Res.string.settings_music_facts_check_description),
+                    isTablet = isTablet,
+                    actions = {
+                        SettingsGlassButton(
+                            text = stringResource(Res.string.settings_music_facts_check_button),
+                            onClick = FactsFiller::checkAgain,
+                            enabled = status.enabled,
+                        )
+                    },
                 )
             }
             if (status.enabled || status.albumsTotal > 0) {

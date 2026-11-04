@@ -105,6 +105,13 @@ internal object TrackNotes {
         }
     }
 
+    /** Forgets a failed ask for the album's AI track notes so the next lookup asks again; a kept answer is left alone. */
+    fun forgetMiss(request: BookletRequest) {
+        val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured } ?: return
+        val key = notesKey(request, settings.effectiveModel)
+        if (read(key)?.booklet == null) BookletCache.put(key, null)
+    }
+
     /** What is kept for [request], without pins: the cache's own answer, which the lookup rules below go by. */
     private fun peekKept(request: BookletRequest): SongNotes {
         val at = now()

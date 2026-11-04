@@ -74,6 +74,13 @@ internal object AlbumBookletRepository {
         }
     }
 
+    /** Forgets a failed ask for [request]'s AI notes so the next lookup asks again; a kept answer is left alone. */
+    fun forgetMiss(request: BookletRequest) {
+        val settings = aiSettingsOrNull() ?: return
+        val key = aiCacheKey(request, settings.effectiveModel)
+        if (read(key)?.booklet == null) BookletCache.put(key, null)
+    }
+
     /** What the cache holds, without pins: the cache's own answer, which the lookup rules below go by. */
     private fun peekKept(request: BookletRequest): AlbumBooklet? {
         val at = now()

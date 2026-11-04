@@ -533,8 +533,10 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         // Speculative stream searching must not compete with the playback it exists to make feel
         // instant, so it stays parked for as long as the player owns the screen.
         StreamPrefetchService.setPlaybackActive(true)
+        com.nuvio.app.features.music.booklet.FilmPlaying.active.value = true // fork:facts-filler - the filler waits while the player is up
         onDispose {
             StreamPrefetchService.setPlaybackActive(false)
+            com.nuvio.app.features.music.booklet.FilmPlaying.active.value = false // fork:facts-filler
             PluginRepository.setPlaybackStartupHold(false)
             P2pStreamingEngine.stopStream()
             PlayerStreamsRepository.clearAll()

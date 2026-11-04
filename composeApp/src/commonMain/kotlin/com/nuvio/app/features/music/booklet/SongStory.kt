@@ -159,6 +159,13 @@ internal object SongStories {
         }
     }
 
+    /** Forgets a failed ask for the song's AI story so the next lookup asks again; a kept answer is left alone. */
+    fun forgetMiss(artist: String, song: String) {
+        val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured } ?: return
+        val key = key(artist, song, aiMode(settings))
+        if (read(key)?.booklet == null) BookletCache.put(key, null)
+    }
+
     /** What is kept for the song, without pins: the cache's own answer, which the lookup rules below go by. */
     private fun peekKept(artist: String, song: String): SongStory? {
         val at = now()
