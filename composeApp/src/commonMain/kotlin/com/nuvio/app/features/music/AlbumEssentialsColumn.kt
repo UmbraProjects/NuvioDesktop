@@ -6,6 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -65,21 +67,25 @@ internal fun EssentialsColumn(
     val colors = MaterialTheme.nuvio.colors
     // The Start here card stands on the bottom edge of the column, level with the In brief card opposite it (the same height,
     // the same 32 dp from the bottom); what is above it scrolls in the room that is left.
-    Box(modifier) {
+    BoxWithConstraints(modifier) {
+        // The best songs hang from the top and the best albums stand on the Start here card's line, 22 dp above it, so what
+        // is left over is the gap between them, whatever the window's height. A short window scrolls instead.
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(start = 12.dp, end = 32.dp, top = 24.dp, bottom = 32.dp + AI_CARD_HEIGHT + 14.dp),
-            verticalArrangement = Arrangement.spacedBy(22.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).heightIn(min = maxHeight)
+                .padding(start = 12.dp, end = 32.dp, top = 24.dp, bottom = 32.dp + AI_CARD_HEIGHT + 22.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Essentials", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                Text("$artist, best first. Ranked by listeners.", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-            }
-            if (songs.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    EssentialsLabel("BEST SONGS")
-                    songs.forEachIndexed { index, song ->
-                        EssentialSongRow(index + 1, song, here = songKey(song.title) in hereKeys, onClick = { onSongClick(song) })
+            Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Essentials", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                    Text("$artist, best first. Ranked by listeners.", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                }
+                if (songs.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        EssentialsLabel("BEST SONGS")
+                        songs.forEachIndexed { index, song ->
+                            EssentialSongRow(index + 1, song, here = songKey(song.title) in hereKeys, onClick = { onSongClick(song) })
+                        }
                     }
                 }
             }
