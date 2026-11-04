@@ -528,6 +528,7 @@ let state = {
   durationMs: 0,
   positionMs: 0,
   chapters: [],
+  seekSegments: [],
   audioTracks: [],
   subtitleTracks: [],
   sourceIsLoading: false,
@@ -1239,6 +1240,13 @@ const setProgress = (positionMs, durationMs) => {
 // fill, buffered and unplayed as lighter and darker see-through white) and a highlight band across
 // the top half. Kept in the background rather than a mask so the thumb is never sliced by a gap.
 let seekChapterPercents = [];
+// SponsorBlock's marked stretches of a YouTube video, as { from, to, colour } in percent: painted
+// over the bar in its own colour whether played or not, as SponsorBlock's extension does.
+let seekSegmentRanges = [];
+const SEEK_SEGMENT_COLOURS = {
+  sponsor: "rgba(0, 212, 0, .9)",
+  selfpromo: "rgba(255, 221, 0, .9)",
+};
 let seekTrackProgress = 0;
 let seekTrackBuffered = 0;
 
@@ -1268,6 +1276,10 @@ const applySeekTrack = (progress, buffered) => {
     events.push({ at, offset: -1, kind: "gapStart" });
     events.push({ at, offset: 1, kind: "gapEnd" });
   });
+  seekSegmentRanges.forEach((range, index) => {
+    events.push({ at: range.from, offset: 0, kind: "segStart", index });
+    events.push({ at: range.to, offset: 0, kind: "segEnd", index });
+  });
   events.push({ at: 100, offset: 0, kind: "end" });
   events.sort((a, b) => a.at - b.at || a.offset - b.offset);
 
@@ -1276,17 +1288,24 @@ const applySeekTrack = (progress, buffered) => {
   let from = seekStop(0, 0);
   let fromAt = 0;
   let inGap = 0;
+  const openSegments = [];
   events.forEach(event => {
     const to = seekStop(event.at, event.offset);
     // The segment's colour is decided by where it sits against played/buffered, by its middle.
     const middle = (fromAt + event.at) / 2;
     const played = middle < progress;
-    const colour = inGap > 0 ? "transparent" : played ? SEEK_PLAYED : middle < buffered ? SEEK_BUFFERED : SEEK_UNPLAYED;
+    const marked = openSegments.length ? seekSegmentRanges[openSegments[openSegments.length - 1]].colour : null;
+    const colour = inGap > 0 ? "transparent" : marked ? marked : played ? SEEK_PLAYED : middle < buffered ? SEEK_BUFFERED : SEEK_UNPLAYED;
     const shine = inGap > 0 ? "transparent" : played ? SEEK_SHEEN_PLAYED : SEEK_SHEEN_REST;
     colours.push(`${colour} ${from} ${to}`);
     sheen.push(`${shine} ${from} ${to}`);
     if (event.kind === "gapStart") inGap += 1;
     if (event.kind === "gapEnd") inGap = Math.max(0, inGap - 1);
+    if (event.kind === "segStart") openSegments.push(event.index);
+    if (event.kind === "segEnd") {
+      const open = openSegments.indexOf(event.index);
+      if (open >= 0) openSegments.splice(open, 1);
+    }
     from = to;
     fromAt = event.at;
   });
@@ -1310,12 +1329,26 @@ const displayChapters = () => {
   return chapters.length > 1 ? chapters : [];
 };
 
+const normalizedSeekSegments = () => (Array.isArray(state.seekSegments) ? state.seekSegments : [])
+  .map(segment => ({
+    start: Number(segment?.start),
+    end: Number(segment?.end),
+    colour: SEEK_SEGMENT_COLOURS[String(segment?.kind || "")],
+  }))
+  .filter(segment => Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end > segment.start && segment.colour);
+
 const renderChapterMarkers = durationMs => {
   const chapters = normalizedChapters();
-  const signature = `${Math.round(durationMs)}:${chapters.map(chapter => `${chapter.startTime}:${chapter.title}`).join("|")}`;
+  const segments = normalizedSeekSegments();
+  const signature = `${Math.round(durationMs)}:${chapters.map(chapter => `${chapter.startTime}:${chapter.title}`).join("|")}` +
+    `#${segments.map(segment => `${segment.start}-${segment.end}:${segment.colour}`).join("|")}`;
   if (signature === chapterMarkersSignature) return;
   chapterMarkersSignature = signature;
   chapterMarkers.textContent = "";
+  const toPercent = seconds => Math.max(0, Math.min(100, seconds * 1000 / durationMs * 100));
+  seekSegmentRanges = durationMs <= 0 ? [] : segments
+    .map(segment => ({ from: toPercent(segment.start), to: toPercent(segment.end), colour: segment.colour }))
+    .filter(range => range.to > range.from);
   // The same chapter starts, as gaps cut into the seek track.
   seekChapterPercents = durationMs <= 0 ? [] : chapters
     .filter(chapter => chapter.startTime > 0 && chapter.startTime * 1000 < durationMs)
@@ -2683,15 +2716,15 @@ const contextMenuItems = [
       { label: "Seek back 10 seconds", textKey: "player_hud_seek_back_10_seconds", labelKey: "seekBack", action: "send:seekBack", shortcut: "←" },
       { label: "Seek forward 10 seconds", textKey: "player_hud_seek_forward_10_seconds", labelKey: "seekForward", action: "send:seekForward", shortcut: "→" },
       { label: "Playback speed", textKey: "player_hud_playback_speed", children: playbackSpeedMenuItems },
-      { label: "Previous episode", textKey: "player_hud_previous_episode", action: "send:previousEpisode" },
-      { label: "Next episode", textKey: "player_hud_next_episode", action: "send:nextEpisode" },
+      { label: "Previous episode", textKey: "player_hud_previous_episode", action: "send:previousEpisode", youTube: false },
+      { label: "Next episode", textKey: "player_hud_next_episode", action: "send:nextEpisode", youTube: false },
       { label: "Picture in picture", textKey: "player_hud_picture_in_picture", action: "send:pictureInPicture" },
     ],
   },
   {
     label: "Subtitles", textKey: "player_hud_subtitles",
     children: [
-      { label: "Built-in", textKey: "player_hud_built_in", dynamicKey: "subtitleTracks", children: [] },
+      { label: "Built-in", textKey: "player_hud_built_in", dynamicKey: "subtitleTracks", children: [], youTube: false },
       { label: "Addon", textKey: "player_hud_addon", dynamicKey: "addonSubtitles", children: [] },
       {
         label: "Style", textKey: "player_hud_style",
@@ -2802,7 +2835,7 @@ const contextMenuItems = [
     children: [
       { label: "Sources", textKey: "player_hud_sources", action: "modal:sources" },
       { label: "Episodes", textKey: "player_hud_episodes", action: "modal:episodes" },
-      { label: "Submit intro / outro", textKey: "player_hud_submit_intro_outro", action: "modal:submitIntro" },
+      { label: "Submit intro / outro", textKey: "player_hud_submit_intro_outro", action: "modal:submitIntro", youTube: false },
     ],
   },
   {
@@ -2813,7 +2846,7 @@ const contextMenuItems = [
     ],
   },
   { label: "Copy stream link", textKey: "player_hud_copy_stream_link", action: "copyStreamUrl" },
-  { label: "Stream failover", textKey: "player_hud_stream_failover", action: "toggleStreamFailover", toggleKey: "streamFailoverEnabled" },
+  { label: "Stream failover", textKey: "player_hud_stream_failover", action: "toggleStreamFailover", toggleKey: "streamFailoverEnabled", youTube: false },
   { label: "MPV diagnostics", textKey: "player_hud_mpv_diagnostics", action: "toggleMpvDiagnostics", toggleKey: "mpvDiagnosticsEnabled" },
   { label: "Close menu after selecting", textKey: "player_hud_close_menu_after_selecting", action: "toggleCloseOnSelect", toggleKey: "closeMenuOnSelect" },
 ];
@@ -3342,6 +3375,9 @@ const buildContextMenu = (items, parent) => {
   items.forEach(item => {
     const group = document.createElement("div");
     group.className = "context-menu-group";
+    // Rows that do nothing for a YouTube tab video (no episodes, other sources or embedded subtitles):
+    // hidden while one plays (.youtube-video in controls.css).
+    if (item.youTube === false) group.dataset.youtubeHidden = "true";
     const button = document.createElement("button");
     button.type = "button";
     button.className = "context-menu-item";
@@ -7835,6 +7871,68 @@ playerVolumeSlider.addEventListener("pointerdown", () => {
   playerVolumeControl?.classList.remove("dragging");
 }));
 
+// Wiggle room for the volume bar: it is a few pixels tall, so a press a little above or below it
+// (or just past either end) counts as a press on it and drags from there, as a press on the bar does.
+// Caught before anything else sees it, so the near miss does not also pause or show the chrome.
+const VOLUME_SLOP_PX = 10;
+let suppressClickAfterVolumeSlop = false;
+const volumeValueAt = clientX => {
+  const rect = playerVolumeSlider.getBoundingClientRect();
+  const scale = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--user-scale")) || 1;
+  // The thumb's centre travels from half a thumb in from each end, as the range input itself maps it.
+  const thumb = Math.min(rect.width / 4, 13 * scale);
+  const fraction = (clientX - rect.left - thumb / 2) / Math.max(1, rect.width - thumb);
+  return Math.round(Math.max(0, Math.min(1, fraction)) * Number(playerVolumeSlider.max || 200));
+};
+const setVolumeFromPointer = clientX => {
+  const value = String(volumeValueAt(clientX));
+  if (playerVolumeSlider.value === value) return;
+  playerVolumeSlider.value = value;
+  playerVolumeSlider.dispatchEvent(new Event("input", { bubbles: true }));
+};
+document.addEventListener("pointerdown", event => {
+  if (event.button !== 0 || event.target === playerVolumeSlider) return;
+  if (!(event.target instanceof Element) || event.target.closest("button, input, select, textarea, [role='menu']")) return;
+  const rect = playerVolumeSlider.getBoundingClientRect();
+  // Only while the bar is on screen: not with the chrome faded out (a click there shows it), nor in the
+  // minimal layout before the control's hover has opened the slider.
+  if (root.classList.contains("chrome-hidden") || activeModal || contextMenuOpen) return;
+  const sliderStyle = getComputedStyle(playerVolumeSlider);
+  if (rect.width <= 0 || rect.height <= 0 || sliderStyle.visibility === "hidden" ||
+      sliderStyle.pointerEvents === "none" || Number(sliderStyle.opacity) < 0.5) return;
+  const middle = rect.top + rect.height / 2;
+  const reach = rect.height / 2 + VOLUME_SLOP_PX;
+  if (event.clientX < rect.left - VOLUME_SLOP_PX || event.clientX > rect.right + VOLUME_SLOP_PX) return;
+  if (Math.abs(event.clientY - middle) > reach) return;
+  event.preventDefault();
+  event.stopPropagation();
+  suppressClickAfterVolumeSlop = true;
+  playerVolumeControl?.classList.add("dragging");
+  setVolumeFromPointer(event.clientX);
+  const move = moveEvent => {
+    moveEvent.preventDefault();
+    moveEvent.stopPropagation();
+    setVolumeFromPointer(moveEvent.clientX);
+  };
+  const end = () => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    playerVolumeControl?.classList.remove("dragging");
+    // The click that follows the release is part of this press, not a click on what lies under it.
+    window.setTimeout(() => { suppressClickAfterVolumeSlop = false; }, 0);
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+}, true);
+document.addEventListener("click", event => {
+  if (!suppressClickAfterVolumeSlop) return;
+  suppressClickAfterVolumeSlop = false;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
+
 timeline.addEventListener("pointermove", showSeekThumbnailAt);
 timeline.addEventListener("pointerleave", () => {
   hideChapterTooltip();
@@ -8081,10 +8179,55 @@ root.addEventListener("click", event => {
   }, 220);
 });
 
+// The nearest element from [target] up that scrolls with the wheel (a list or panel body with overflow).
+const wheelScrollableAncestor = target => {
+  for (let el = target instanceof Element ? target : null; el && el !== root && el !== document.body; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight + 1) continue;
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow === "auto" || overflow === "scroll") return el;
+  }
+  return null;
+};
+
+// An open panel's main list: the largest element in it that scrolls, down or (the Episodes rail) across.
+const panelWheelScroller = panel => {
+  let best = null;
+  let bestArea = 0;
+  for (const el of panel.querySelectorAll("*")) {
+    const vertical = el.scrollHeight > el.clientHeight + 1;
+    const horizontal = el.scrollWidth > el.clientWidth + 1;
+    if (!vertical && !horizontal) continue;
+    const style = getComputedStyle(el);
+    const scrolls = (vertical && (style.overflowY === "auto" || style.overflowY === "scroll"))
+      || (horizontal && (style.overflowX === "auto" || style.overflowX === "scroll"));
+    if (!scrolls) continue;
+    const area = el.clientWidth * el.clientHeight;
+    if (area > bestArea) {
+      best = el;
+      bestArea = area;
+    }
+  }
+  return best;
+};
+
 root.addEventListener("wheel", event => {
   if (state.pictureInPictureActive) return;
   // The YouTube watch page: the wheel scrolls the page around the video (volume stays on the controls).
+  // An open panel or menu has it instead: over a list it scrolls that list as anywhere else, and over
+  // the rest of the video it scrolls the open panel's list, so the page never moves under a panel.
   if (state.watchPage) {
+    if (event.defaultPrevented) return; // a list's own handler (the Episodes rail) took it
+    if (wheelScrollableAncestor(event.target)) return;
+    const panel = activeModal ? modalByName[activeModal] : null;
+    if (panel || contextMenuOpen) {
+      event.preventDefault();
+      const scroller = panel ? panelWheelScroller(panel) : null;
+      if (!scroller) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (scroller.scrollHeight > scroller.clientHeight + 1) scroller.scrollTop += delta;
+      else scroller.scrollLeft += Math.sign(delta) * 240;
+      return;
+    }
     event.preventDefault();
     if (event.deltaY !== 0) send("watchPageScroll", event.deltaY);
     return;

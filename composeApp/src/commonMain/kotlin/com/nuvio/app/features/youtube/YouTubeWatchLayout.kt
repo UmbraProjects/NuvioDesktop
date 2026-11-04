@@ -1,5 +1,7 @@
 package com.nuvio.app.features.youtube
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +46,7 @@ internal object YouTubeWatchLayout {
         val handOver = com.nuvio.app.features.streams.epochMs() - endedAtMs < HAND_OVER_MS
         _available.value = true
         if (!handOver) {
+            _browsing.value = false
             _windowed.value = YouTubeFeedRepository.openWindowed.value
             fullFromPage = false
             madeWindowFullscreen = false
@@ -61,7 +64,25 @@ internal object YouTubeWatchLayout {
     fun end() {
         _available.value = false
         endedAtMs = com.nuvio.app.features.streams.epochMs()
+        if (closing) {
+            // Closed from the corner: the next video opened is no hand-over and opens as a fresh one does.
+            closing = false
+            _browsing.value = false
+            endedAtMs = 0L
+        }
         if (madeWindowFullscreen) onLeftInFullscreen?.invoke()
+    }
+
+    @kotlin.concurrent.Volatile
+    private var closing = false
+
+    /**
+     * fork:youtube-mini-player - the corner box is being closed (its X, or the tab's settings): the box
+     * stays where it is until the player goes, rather than first going back to the full video as
+     * [stopBrowsing] would have it, and [end] then leaves the mini player.
+     */
+    fun closeFromCorner() {
+        if (_browsing.value) closing = true
     }
 
     /** From the page to the video filling the screen; [madeFullscreen]: the window was made fullscreen for it. */
@@ -95,7 +116,47 @@ internal object YouTubeWatchLayout {
     val backToVideo: StateFlow<Int> = _backToVideo.asStateFlow()
 
     fun requestBackToVideo() {
+        if (_browsing.value) {
+            _browsing.value = false
+            return
+        }
         _backToVideo.value += 1
+    }
+
+    private val _browsing = MutableStateFlow(false)
+
+    /**
+     * The mini player: the YouTube tab fills the window around the video, which keeps playing in the
+     * corner box, so the person can search, browse, queue and pick playlists meanwhile. The player route
+     * stays where it is (leaving it would end playback); the tab is drawn inside it ([YouTubeMiniPlayerHost]).
+     * Kept through a hand-over, so the queue's next video carries on in the box.
+     */
+    val browsing: StateFlow<Boolean> = _browsing.asStateFlow()
+
+    /** Back from a YouTube tab video: to the tab, the video carrying on in the corner. */
+    fun startBrowsing() {
+        if (_available.value) _browsing.value = true
+    }
+
+    /** From the tab back to the video, laid out as it was (the page, or filling the window). */
+    fun stopBrowsing() {
+        _browsing.value = false
+    }
+
+    private val _channelRequest = MutableStateFlow<YouTubeChannelRequest?>(null)
+
+    /** fork:youtube-mini-player - a channel for the tab to open, set by the watch page; taken by the tab. */
+    val channelRequest: StateFlow<YouTubeChannelRequest?> = _channelRequest.asStateFlow()
+
+    /** The watch page's channel name: the tab around the video in the corner, on that channel's page. */
+    fun openChannel(channelId: String, name: String, avatarUrl: String?) {
+        if (!_available.value) return
+        _channelRequest.value = YouTubeChannelRequest(channelId, name, avatarUrl)
+        _browsing.value = true
+    }
+
+    fun consumeChannelRequest(request: YouTubeChannelRequest) {
+        _channelRequest.compareAndSet(request, null)
     }
 
     private val _scrollRequests = kotlinx.coroutines.flow.MutableSharedFlow<Float>(extraBufferCapacity = 32)
@@ -112,7 +173,7 @@ internal object YouTubeWatchLayout {
     var miniWidthDp = 420f
 
     /** The page is on screen around the video (not filling the window). */
-    val pageShown: Boolean get() = _available.value && _windowed.value
+    val pageShown: Boolean get() = _available.value && (_windowed.value || _browsing.value)
 
     /**
      * Shows the cursor the player hid. The player's controls hide it after a while without movement, but
@@ -126,5 +187,19 @@ internal object YouTubeWatchLayout {
     private const val HAND_OVER_MS = 5_000L
 }
 
+internal data class YouTubeChannelRequest(val channelId: String, val name: String, val avatarUrl: String?)
+
 /** The page's fullscreen button: the video fills the screen until its button or Escape brings the page back. */
 internal expect fun requestYouTubeFullscreen()
+
+/*
+ * fork:youtube-mini-player
+ *
+ * The YouTube tab as the mini player draws it around the video ([YouTubeWatchLayout.browsing]). The app
+ * sets it from the player route, which owns what the tab's actions do there (a video picked hands the
+ * player over to it; settings close the player first) and keeps the tab's place between videos.
+ */
+internal object YouTubeMiniPlayerHost {
+    var page: (@androidx.compose.runtime.Composable (androidx.compose.ui.Modifier) -> Unit)? by
+        androidx.compose.runtime.mutableStateOf(null)
+}

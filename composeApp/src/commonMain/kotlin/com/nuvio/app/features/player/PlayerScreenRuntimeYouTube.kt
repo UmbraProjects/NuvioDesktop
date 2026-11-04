@@ -45,12 +45,14 @@ internal fun PlayerScreenRuntime.BindYouTubeRelatedEffect() {
     }
     LaunchedEffect(videoId) {
         youTubeRelated = emptyList()
+        youTubeRelatedContinuation = null
         youTubeChapters = emptyList()
         youTubeDetails = null
         youTubeComments = emptyList()
         youTubeCommentsLoaded = false
         val page = YouTubeFeedRepository.watchPage(videoId)
         youTubeRelated = page.related
+        youTubeRelatedContinuation = page.relatedContinuation
         youTubeDetails = page.details
         // The stream itself carries no chapters; YouTube's player draws these (see the chapter effect).
         youTubeChapters = page.chapters.map { PlayerChapter(it.startSeconds, it.title) }
@@ -65,7 +67,8 @@ internal fun PlayerScreenRuntime.handleYouTubeControlsAction(action: PlayerContr
             showSourcesPanel = true
             loadYouTubeComments()
         }
-        PlayerControlsAction.Episodes -> Unit
+        // The panel has no end to scroll to here; each opening brings in one more page.
+        PlayerControlsAction.Episodes -> loadMoreYouTubeRelated()
         else -> return false
     }
     return true
@@ -101,8 +104,69 @@ private fun PlayerScreenRuntime.loadYouTubeComments(force: Boolean = false) {
     }
 }
 
+/**
+ * fork:youtube-mini-player - the player's Back on a YouTube tab video. Over the tab (the mini player) it
+ * steps back inside the tab and never closes the video, which the box's X does; otherwise, with
+ * Settings > YouTube account > Mini player on, it goes to the tab with the video in the corner. False
+ * leaves Back to close the player as before.
+ */
+internal fun PlayerScreenRuntime.handleYouTubeMiniPlayerBack(): Boolean {
+    if (!isYouTubeVideoPlayback) return false
+    val layout = com.nuvio.app.features.youtube.YouTubeWatchLayout
+    // Why Back closed the video rather than going to the corner, for the times it does (Nov 4: Escape
+    // sometimes closed it, apparently depending on where the video was opened from).
+    fun closing(reason: String): Boolean {
+        miniPlayerLog.i {
+            "Back closes $youTubeVideoId: $reason (available=${layout.available.value} windowed=${layout.windowed.value} " +
+                "fullFromPage=${layout.fullFromPage} pip=$pictureInPictureActive)"
+        }
+        return false
+    }
+    if (pictureInPictureActive) return closing("picture in picture")
+    if (layout.browsing.value) {
+        com.nuvio.app.core.ui.TabBackInterceptor.handle()
+        return true
+    }
+    if (!YouTubeFeedRepository.miniPlayerOnBack.value) return closing("mini player off")
+    if (com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page == null) return closing("no tab to show around it")
+    if (!layout.available.value) miniPlayerLog.i { "Back: $youTubeVideoId has no layout yet; nothing done" }
+    miniPlayerLog.i { "Back: $youTubeVideoId to the mini player" }
+    playerControlsCloseModalsToken += 1
+    layout.startBrowsing()
+    return true
+}
+
+private val miniPlayerLog = co.touchlab.kermit.Logger.withTag("YouTubeMiniPlayer")
+
+/**
+ * The related videos as shown: those already watched left out when the tab's Hide watched is on (the
+ * one setting for the feeds and this column). The HUD's Episodes panel and the watch page both read
+ * this, so a panel row's index points at the video it shows.
+ */
+internal val PlayerScreenRuntime.visibleYouTubeRelated: List<com.nuvio.app.features.youtube.YouTubeVideo>
+    get() = if (YouTubeFeedRepository.hideWatched.value) youTubeRelated.filterNot(::isYouTubeVideoWatched) else youTubeRelated
+
+/** The related column's next page, appended; nothing when one is on its way or the column has ended. */
+internal fun PlayerScreenRuntime.loadMoreYouTubeRelated() {
+    val token = youTubeRelatedContinuation ?: return
+    if (youTubeRelatedLoading) return
+    val videoId = youTubeVideoId
+    youTubeRelatedLoading = true
+    scope.launch {
+        try {
+            val page = YouTubeFeedRepository.moreRelated(token) ?: return@launch
+            if (youTubeVideoId != videoId || youTubeRelatedContinuation != token) return@launch
+            youTubeRelated = (youTubeRelated + page.videos.filter { it.videoId != videoId }).distinctBy { it.videoId }
+            // A page that added nothing new ends it, so a token YouTube keeps handing back is not asked forever.
+            youTubeRelatedContinuation = page.continuation?.takeIf { page.videos.isNotEmpty() && it != token }
+        } finally {
+            youTubeRelatedLoading = false
+        }
+    }
+}
+
 internal fun PlayerScreenRuntime.openRelatedYouTubeVideo(index: Int) {
-    youTubeRelated.getOrNull(index)?.let(::openYouTubeVideoFromPlayer)
+    visibleYouTubeRelated.getOrNull(index)?.let(::openYouTubeVideoFromPlayer)
 }
 
 /** Hands the player straight over to [video] (a related video, or one from the queue on the watch page). */
@@ -118,7 +182,7 @@ internal fun PlayerScreenRuntime.openYouTubeVideoFromPlayer(video: com.nuvio.app
 
 /** Related videos as the Episodes panel's cards: title, channel in the code line, views and age below. */
 internal fun PlayerScreenRuntime.youTubeRelatedEpisodeItems(): List<PlayerControlEpisodeItem> =
-    youTubeRelated.mapIndexed { index, video ->
+    visibleYouTubeRelated.mapIndexed { index, video ->
         PlayerControlEpisodeItem(
             index = index,
             id = video.videoId,

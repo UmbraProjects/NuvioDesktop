@@ -71,6 +71,8 @@ data class YouTubeOpenChannel(
     val subscribed: Boolean? = null,
     /** A subscribe or unsubscribe is on its way. */
     val changing: Boolean = false,
+    /** Subscriber and video counts from the page's header; null until its first page is back. */
+    val stats: YouTubeChannelStats? = null,
 )
 
 data class YouTubeChannelListState(
@@ -147,6 +149,9 @@ internal expect suspend fun youTubeNext(videoId: String?, continuation: String?,
 /** Posts [text] as a comment (`comment/create_comment`) or, with [reply], a reply (`comment/create_comment_reply`), with the params YouTube gave for it. */
 internal expect suspend fun youTubeCreateComment(params: String, text: String, reply: Boolean, pageId: String?): YouTubeBrowseResult
 
+/** Runs a comment's `performCommentActionEndpoint` action (its like, or taking it back) as the account. */
+internal expect suspend fun youTubePerformCommentAction(action: String, pageId: String?): YouTubeBrowseResult
+
 /** Sends a feed item's feedback token (`feedback`), as its menu rows do on the website: "Don't recommend channel". */
 internal expect suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult
 
@@ -195,8 +200,16 @@ internal expect object YouTubeModeStorage {
     fun loadOpenWindowed(): Boolean
     fun saveOpenWindowed(windowed: Boolean)
 
+    /** fork:youtube-mini-player - Back from a video goes to the tab, the video playing on in the corner. */
+    fun loadMiniPlayerOnBack(): Boolean
+    fun saveMiniPlayerOnBack(enabled: Boolean)
+
     fun loadTheaterMode(): Boolean
     fun saveTheaterMode(theater: Boolean)
+
+    /** fork:youtube-languages - a video's dubbed audio tracks and every subtitle language, not just the original's. */
+    fun loadAllLanguages(): Boolean
+    fun saveAllLanguages(enabled: Boolean)
 
     fun loadWatchedDateMode(): String?
     fun saveWatchedDateMode(mode: String)
@@ -214,6 +227,8 @@ data class YouTubeWatchPage(
     val chapters: List<YouTubeChapter>,
     /** Title, channel and description for the windowed watch page; null when YouTube did not answer. */
     val details: YouTubeVideoDetails? = null,
+    /** Token for more related videos ([YouTubeFeedRepository.moreRelated]); null when the column ends here. */
+    val relatedContinuation: String? = null,
 )
 
 data class YouTubeChannelState(
@@ -262,6 +277,19 @@ object YouTubeFeedRepository {
             YouTubeMusicAuth.state.map { it.sessionEpoch }.distinctUntilChanged().drop(1).collect {
                 log.i { "New YouTube sign-in; reloading the feeds" }
                 clear()
+            }
+        }
+        // A session that was answered as signed out and then renewed (the app closed for hours): the
+        // channel lookup that failed meanwhile left the feeds acting as the account profile, not the
+        // chosen brand channel. Look the channels up again and reload, as a new sign-in would.
+        scope.launch {
+            YouTubeMusicAuth.state.map { it.sessionRejected }.distinctUntilChanged().drop(1).collect { rejected ->
+                if (rejected) return@collect
+                val failed = _channel.value.error != null || _feeds.value.values.any { it.error != null }
+                if (failed) {
+                    log.i { "YouTube sign-in accepted again; reloading the channels and feeds" }
+                    clear()
+                }
             }
         }
     }
@@ -359,6 +387,36 @@ object YouTubeFeedRepository {
     fun setOpenWindowed(windowed: Boolean) {
         _openWindowed.value = windowed
         YouTubeModeStorage.saveOpenWindowed(windowed)
+    }
+
+    private val _miniPlayerOnBack by lazy { MutableStateFlow(YouTubeModeStorage.loadMiniPlayerOnBack()) }
+
+    /**
+     * fork:youtube-mini-player - Settings > YouTube account > Mini player: Back from a YouTube tab video
+     * returns to the tab with the video playing on in a corner box (YouTubeWatchLayout.browsing) rather
+     * than closing it.
+     */
+    val miniPlayerOnBack: StateFlow<Boolean>
+        get() = _miniPlayerOnBack.asStateFlow()
+
+    fun setMiniPlayerOnBack(enabled: Boolean) {
+        _miniPlayerOnBack.value = enabled
+        YouTubeModeStorage.saveMiniPlayerOnBack(enabled)
+    }
+
+    private val _allLanguages by lazy { MutableStateFlow(YouTubeModeStorage.loadAllLanguages()) }
+
+    /**
+     * fork:youtube-languages - Settings > YouTube account > All languages: a dubbed video's other audio
+     * tracks are opened with it, and every subtitle track is fetched rather than the first few. Off by
+     * default, as each extra track is opened before the video starts.
+     */
+    val allLanguages: StateFlow<Boolean>
+        get() = _allLanguages.asStateFlow()
+
+    fun setAllLanguages(enabled: Boolean) {
+        _allLanguages.value = enabled
+        YouTubeModeStorage.saveAllLanguages(enabled)
     }
 
     private val _theaterMode by lazy { MutableStateFlow(YouTubeModeStorage.loadTheaterMode()) }
@@ -657,12 +715,20 @@ object YouTubeFeedRepository {
     suspend fun watchPage(videoId: String): YouTubeWatchPage {
         val page = youTubeNext(videoId, continuation = null, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
             ?: return YouTubeWatchPage(emptyList(), emptyList())
-        val related = parseYouTubeFeed(page.body).videos.filter { it.videoId != videoId }
+        val column = parseYouTubeRelated(page.body)
+        val related = column.videos.filter { it.videoId != videoId }
         val chapters = parseYouTubeChapters(page.body)
         // The same answer says whether the account likes it: no second request for the like button.
         parseYouTubeLikeStatus(page.body)?.let { liked -> _likeStatus.update { it + (videoId to liked) } }
-        log.i { "Watch page: ${related.size} related, ${chapters.size} chapters" }
-        return YouTubeWatchPage(related, chapters, parseYouTubeVideoDetails(page.body))
+        log.i { "Watch page: ${related.size} related (more=${column.continuation != null}), ${chapters.size} chapters" }
+        return YouTubeWatchPage(related, chapters, parseYouTubeVideoDetails(page.body), column.continuation)
+    }
+
+    /** The next page of a watch page's related videos ([YouTubeWatchPage.relatedContinuation]); null when YouTube did not answer. */
+    suspend fun moreRelated(token: String): YouTubeFeedPage? {
+        val page = youTubeNext(videoId = null, continuation = token, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
+            ?: return null
+        return parseYouTubeRelated(page.body).also { log.i { "Related: ${it.videos.size} more, more=${it.continuation != null}" } }
     }
 
     /** A page of a comment's replies ([YouTubeComment.repliesToken], then each page's own token); null when YouTube did not answer. */
@@ -675,6 +741,14 @@ object YouTubeFeedRepository {
     suspend fun postComment(params: String, text: String, reply: Boolean): Boolean {
         val ok = youTubeCreateComment(params, text, reply, _channel.value.pageId) is YouTubeBrowseResult.Ok
         log.i { "${if (reply) "reply" else "comment"} posted: ok=$ok" }
+        return ok
+    }
+
+    /** Likes [comment] as the account, or takes the like back. True when YouTube took it. */
+    suspend fun setCommentLiked(comment: YouTubeComment, liked: Boolean): Boolean {
+        val action = (if (liked) comment.likeAction else comment.unlikeAction) ?: return false
+        val ok = youTubePerformCommentAction(action, _channel.value.pageId) is YouTubeBrowseResult.Ok
+        log.i { "comment ${if (liked) "like" else "remove like"}: ok=$ok" }
         return ok
     }
 
@@ -897,12 +971,15 @@ object YouTubeFeedRepository {
             if (kind == YouTubeFeedKind.Search && search != searchGeneration) return@launch
             if (kind == YouTubeFeedKind.Channel && channelPage != channelGeneration) return@launch
             if (kind == YouTubeFeedKind.Playlist && playlistPage != playlistGeneration) return@launch
-            // The first page of a channel also says whether the account is subscribed to it.
+            // The first page of a channel also says whether the account is subscribed to it, and its counts.
             if (kind == YouTubeFeedKind.Channel && continuation == null && result is YouTubeBrowseResult.Ok) {
                 parseYouTubeSubscribed(result.body)?.let { subscribed ->
                     _openChannel.update {
                         if (it != null && it.channelId == openChannelId && !it.changing) it.copy(subscribed = subscribed) else it
                     }
+                }
+                parseYouTubeChannelStats(result.body)?.let { stats ->
+                    _openChannel.update { if (it != null && it.channelId == openChannelId) it.copy(stats = stats) else it }
                 }
             }
             _feeds.update { feeds ->

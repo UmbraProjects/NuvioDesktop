@@ -50,7 +50,17 @@ object SubtitleRepository {
 
     private var activeFetchJob: Job? = null
 
-    fun fetchAddonSubtitles(type: String, videoId: String): Job {
+    /**
+     * [extras] tells the addons which file is playing (see [SubtitleRequestExtras]). [resolveExtras],
+     * when given, is asked first for a fuller set (the player computes the file's hash there); it
+     * falls back to [extras] when it returns null or fails.
+     */
+    fun fetchAddonSubtitles(
+        type: String,
+        videoId: String,
+        extras: SubtitleRequestExtras? = null,
+        resolveExtras: (suspend () -> SubtitleRequestExtras?)? = null,
+    ): Job {
         activeFetchJob?.cancel()
         activeFetchJob = scope.launch {
             val requestType = canonicalSubtitleType(type)
@@ -72,6 +82,15 @@ object SubtitleRepository {
                 return@launch
             }
 
+            val requestExtras = resolveExtras?.let { resolve ->
+                try {
+                    resolve()
+                } catch (error: Throwable) {
+                    if (error is CancellationException) throw error
+                    null
+                }
+            } ?: extras
+
             val addons = AddonRepository.uiState.value.addons.enabledAddons()
             val subtitleAddons = addons.filter { addon ->
                 val manifest = addon.manifest ?: return@filter false
@@ -85,7 +104,7 @@ object SubtitleRepository {
             // tie-breaks auto-selection makes over it, do not depend on which addon answered first.
             val allSubs = coroutineScope {
                 subtitleAddons.map { addon ->
-                    async { fetchFromAddon(addon, requestType, videoId) }
+                    async { fetchFromAddon(addon, requestType, videoId, requestExtras) }
                 }.awaitAll().flatten()
             }
 
@@ -105,6 +124,7 @@ object SubtitleRepository {
         addon: ManagedAddon,
         requestType: String,
         videoId: String,
+        extras: SubtitleRequestExtras?,
     ): List<AddonSubtitle> {
         val manifest = addon.manifest ?: return emptyList()
         val subtitleUrl = buildAddonResourceUrl(
@@ -112,6 +132,7 @@ object SubtitleRepository {
             resource = "subtitles",
             type = requestType,
             id = videoId,
+            extraPathSegment = extras?.toPathSegment(),
         )
         return try {
             // Bounded so one hung addon cannot hold the whole list back now that they are joined.

@@ -1468,6 +1468,7 @@
     <string name="settings_lights_webhook_url_placeholder">https://…</string>
     <string name="settings_lights_webhook_url_description">The full URL to call for this event. Leave blank to skip it</string>
     <string name="compose_settings_page_screensaver">Screensaver</string>
+    <string name="compose_settings_page_voice_control">Voice control</string>
     <string name="settings_screensaver_description">Dim the screen after a period of no input, and optionally shut the PC down</string>
     <string name="settings_screensaver_section_title">Screensaver</string>
     <string name="settings_screensaver_enable">Enable screensaver</string>
@@ -4171,6 +4172,7 @@
     <string name="shortcut_app_select_focused">Select / open focused item</string>
     <string name="shortcut_app_go_back">Go back</string>
     <string name="shortcut_app_dismiss_overlay">Close / dismiss overlay</string>
+    <string name="shortcut_app_voice_command">Voice command (push to talk)</string>
     <string name="settings_shortcuts_gamepad_in_player">In player: %1$s</string>
     <string name="settings_shortcuts_page_down">Page down (row in TV mode, page otherwise)</string>
     <string name="settings_shortcuts_page_up">Page up (row in TV mode, page otherwise)</string>
@@ -4217,6 +4219,7 @@
     <string name="gamepad_button_rs_down">Right stick down</string>
     <string name="gamepad_button_rs_left">Right stick back</string>
     <string name="gamepad_button_rs_right">Right stick forward</string>
+    <string name="gamepad_button_mic">Mic button (DualSense)</string>
     <string name="gamepad_target_move_up">Move up</string>
     <string name="gamepad_target_volume_up">Volume up</string>
     <string name="gamepad_target_move_down">Move down</string>

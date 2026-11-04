@@ -140,7 +140,7 @@ internal object InnerTubeXFallback : MusicStreamFallback {
                 header("accept-language", "en-US,en;q=0.9")
             }
             // fork:youtube-cookie-upkeep — keep the cookies Google refreshes, as the YouTube tab does.
-            YouTubeMusicAuth.applySetCookies(response.headers.getAll("Set-Cookie").orEmpty())
+            YouTubeMusicAuth.absorbSetCookies(response.headers.getAll("Set-Cookie").orEmpty())
             val html = response.bodyAsText()
             val loggedIn = Regex(""""LOGGED_IN":\s*(true|false)""").find(html)?.groupValues?.get(1) == "true"
             val visitor = Regex(""""VISITOR_DATA":\s*"([^"]+)"""").find(html)?.groupValues?.get(1)

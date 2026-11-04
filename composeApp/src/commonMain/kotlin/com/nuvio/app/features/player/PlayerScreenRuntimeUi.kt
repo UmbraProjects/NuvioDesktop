@@ -79,6 +79,17 @@ import com.nuvio.app.core.i18n.localizedString
 @Composable
 internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val runtime = this
+    // Compose's own back on desktop: Escape reaching the window (keyboard focus in Compose rather than
+    // the HUD - the YouTube watch page or mini player clicked, or the tab a video was just opened from)
+    // pops the route straight away, past the player's Back. Taken here so it is the player's Back:
+    // the mini player for a YouTube video (Nov 4: Escape sometimes closed one outright), and the
+    // progress flushed before leaving for anything else.
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Suppress("DEPRECATION")
+    androidx.compose.ui.backhandler.BackHandler(enabled = true) {
+        co.touchlab.kermit.Logger.withTag("YouTubeMiniPlayer").i { "window back in the player: taken as the player's Back" }
+        handlePlayerControlsAction(PlayerControlsAction.Back)
+    }
     // Tells the post-show what is playing and where its credits are: a film, or the finale of a
     // season or series that the viewer has watched their way to (see postShowScopeFor).
     val postShowTitle = title
@@ -421,225 +432,264 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         streamFilename = activeStreamFilename.orEmpty(),
         providerName = activeProviderName,
         isYouTubeVideo = parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE,
-        pauseOverlayWatchingLabel = stringResource(Res.string.compose_player_youre_watching),
-        pauseOverlayLogo = logo,
-        // The episode code, or nothing. Movies used to borrow this line for the provider name, which
-        // put the addon (AIOUmbra) on the pause card exactly when "Show source while paused" was
-        // off; the provider now only ever appears in the source row that setting controls.
-        pauseOverlayEpisodeInfo = if (seasonNumber != null && episodeNumber != null) {
-            stringResource(Res.string.compose_player_episode_code_full, seasonNumber, episodeNumber)
-        } else {
-            ""
-        },
-        pauseOverlayEpisodeTitle = activeEpisodeTitle.orEmpty(),
-        // Only a real synopsis belongs here — the raw stream/release name (activeStreamSubtitle)
-        // reads as messy clutter in the pause card, so it is intentionally not used as a fallback.
-        pauseOverlayDescription = activePauseDescription.orEmpty(),
-        pauseOverlaySourceEnabled = playerSettingsUiState.desktopPauseOverlaySourceEnabled,
-        pauseOverlayCast = remember(playerMetaCast) {
-            playerMetaCast
-                .filter { it.name.isNotBlank() }
-                .take(PauseOverlayCastLimit)
-                .map { person ->
-                    PlayerControlCastItem(
-                        name = person.name,
-                        role = person.role.orEmpty(),
-                        photo = person.photo.orEmpty(),
-                    )
-                }
-        },
+        pauseOverlay = PlayerPauseOverlayState(
+            pauseOverlayWatchingLabel = stringResource(Res.string.compose_player_youre_watching),
+            pauseOverlayLogo = logo,
+            // The episode code, or nothing. Movies used to borrow this line for the provider name, which
+            // put the addon (AIOUmbra) on the pause card exactly when "Show source while paused" was
+            // off; the provider now only ever appears in the source row that setting controls.
+            pauseOverlayEpisodeInfo = if (seasonNumber != null && episodeNumber != null) {
+                stringResource(Res.string.compose_player_episode_code_full, seasonNumber, episodeNumber)
+            } else {
+                ""
+            },
+            pauseOverlayEpisodeTitle = activeEpisodeTitle.orEmpty(),
+            // Only a real synopsis belongs here — the raw stream/release name (activeStreamSubtitle)
+            // reads as messy clutter in the pause card, so it is intentionally not used as a fallback.
+            pauseOverlayDescription = activePauseDescription.orEmpty(),
+            pauseOverlaySourceEnabled = playerSettingsUiState.desktopPauseOverlaySourceEnabled,
+            pauseOverlayCast = remember(playerMetaCast) {
+                playerMetaCast
+                    .filter { it.name.isNotBlank() }
+                    .take(PauseOverlayCastLimit)
+                    .map { person ->
+                        PlayerControlCastItem(
+                            name = person.name,
+                            role = person.role.orEmpty(),
+                            photo = person.photo.orEmpty(),
+                        )
+                    }
+            },
+        ),
         resizeModeLabel = stringResource(resizeMode.labelRes),
         playbackSpeedLabel = formatPlaybackSpeedLabel(playbackSnapshot.playbackSpeed),
-        subtitlesLabel = stringResource(Res.string.compose_player_subs),
-        audioLabel = stringResource(Res.string.compose_player_audio),
-        sourcesLabel = if (youTubeVideo) "Comments" else stringResource(Res.string.compose_player_sources),
-        episodesLabel = if (youTubeVideo) "Related" else stringResource(Res.string.compose_player_episodes),
-        externalPlayerLabel = stringResource(Res.string.streams_open_external_player),
-        playLabel = stringResource(Res.string.detail_btn_play),
-        pauseLabel = stringResource(Res.string.compose_action_pause),
-        closeLabel = stringResource(Res.string.compose_player_close),
-        lockLabel = stringResource(Res.string.compose_player_lock_controls),
-        unlockLabel = stringResource(Res.string.compose_player_unlock_controls),
-        submitIntroLabel = stringResource(Res.string.submit_intro_action),
-        videoSettingsLabel = stringResource(Res.string.player_action_video_settings),
-        pictureInPictureLabel = stringResource(Res.string.compose_player_picture_in_picture),
-        pictureInPictureActive = pictureInPictureActive,
-        desktopHdrModeLabel = stringResource(playerSettingsUiState.desktopHdrMode.labelRes),
-        desktopColorProfileLabel = stringResource(playerSettingsUiState.desktopColorProfile.labelRes),
-        desktopColorContrast = playerSettingsUiState.desktopColorContrast,
-        desktopColorBrightness = playerSettingsUiState.desktopColorBrightness,
-        desktopColorSaturation = playerSettingsUiState.desktopColorSaturation,
-        desktopColorGamma = playerSettingsUiState.desktopColorGamma,
-        // Shows what is actually in effect: a session force wins; otherwise the persisted preset
-        // only counts when it would auto-apply (auto-detect on + detected anime), else "Off".
-        desktopAnimeModeLabel = playerSettingsUiState.desktopAnimeSessionOverride?.label
-            ?: if (playerSettingsUiState.desktopAnimeModeAutoEnabled && isAnimeContent) {
-                stringResource(playerSettingsUiState.desktopAnimeMode.labelRes)
-            } else {
-                stringResource(DesktopAnimeMode.Off.labelRes)
-            },
-        desktopAnimeSvpEnabled = playerSettingsUiState.desktopAnimeSvpEnabled,
-        rtxVsrEnabled = playerSettingsUiState.effectiveRtxVsrEnabled,
-        rtxTrueHdrEnabled = playerSettingsUiState.effectiveRtxTrueHdrEnabled,
-        playbackInfoPanelEnabled = playerSettingsUiState.desktopPlaybackInfoPanelEnabled,
-        activeSubtitleLabel = activePlaybackSubtitleLabel(),
-        // The native decoder stands down while Seekr has (or is still fetching) this playback's
-        // sprites, and takes over again only if Seekr has nothing for it.
-        // Likewise for a YouTube video's storyboard, which comes from YouTube's image servers.
-        seekThumbnailsEnabled = seekrTrack == null && !seekrLookupPending &&
-            youTubeStoryboardShown == null && !(youTubeVideo && youTubeStoryboardPending) && seekThumbnailsAllowed(
-            mode = playerSettingsUiState.desktopSeekThumbnailMode,
-            bufferPreset = playerSettingsUiState.desktopBufferPreset,
-            sourceUrl = activeSourceUrl,
-            isTorrent = activeTorrentInfoHash != null,
-            seekrServiceOff = SeekrPreviews.serviceDisabled,
-        ),
-        seekrVttUrl = seekrTrack?.vttUrl.orEmpty(),
-        seekrScale = seekrTrack?.scale ?: 1.0,
-        storyboardUrl = youTubeStoryboardShown?.sheetUrl.orEmpty(),
-        storyboardWidth = youTubeStoryboardShown?.width ?: 0,
-        storyboardHeight = youTubeStoryboardShown?.height ?: 0,
-        storyboardColumns = youTubeStoryboardShown?.columns ?: 0,
-        storyboardRows = youTubeStoryboardShown?.rows ?: 0,
-        storyboardCount = youTubeStoryboardShown?.count ?: 0,
-        storyboardIntervalMs = youTubeStoryboardShown?.intervalMs ?: 0L,
-        seekStepSeconds = playerSettingsUiState.seekStepSeconds,
-        tapToUnlockLabel = stringResource(Res.string.compose_player_tap_to_unlock),
-        playbackErrorTitle = stringResource(Res.string.compose_player_playback_error),
-        playbackErrorMessage = errorMessage.orEmpty(),
-        playbackErrorActionLabel = stringResource(Res.string.compose_player_go_back),
-        sourcesPanelTitle = if (youTubeVideo) "Comments" else pendingSourcesEpisode?.let { pending ->
-            stringResource(
-                Res.string.compose_player_panel_sources_for_episode,
+        labels = PlayerControlLabels(
+            subtitlesLabel = stringResource(Res.string.compose_player_subs),
+            audioLabel = stringResource(Res.string.compose_player_audio),
+            sourcesLabel = if (youTubeVideo) "Comments" else stringResource(Res.string.compose_player_sources),
+            episodesLabel = if (youTubeVideo) "Related" else stringResource(Res.string.compose_player_episodes),
+            externalPlayerLabel = stringResource(Res.string.streams_open_external_player),
+            playLabel = stringResource(Res.string.detail_btn_play),
+            pauseLabel = stringResource(Res.string.compose_action_pause),
+            closeLabel = stringResource(Res.string.compose_player_close),
+            lockLabel = stringResource(Res.string.compose_player_lock_controls),
+            unlockLabel = stringResource(Res.string.compose_player_unlock_controls),
+            submitIntroLabel = stringResource(Res.string.submit_intro_action),
+            videoSettingsLabel = stringResource(Res.string.player_action_video_settings),
+            pictureInPictureLabel = stringResource(Res.string.compose_player_picture_in_picture),
+            tapToUnlockLabel = stringResource(Res.string.compose_player_tap_to_unlock),
+            playbackErrorTitle = stringResource(Res.string.compose_player_playback_error),
+            playbackErrorActionLabel = stringResource(Res.string.compose_player_go_back),
+            sourcesPanelTitle = if (youTubeVideo) "Comments" else pendingSourcesEpisode?.let { pending ->
                 stringResource(
-                    Res.string.compose_player_episode_title_format,
-                    pending.playbackSeasonNumber() ?: 1,
-                    pending.playbackEpisodeNumber() ?: 0,
-                    pending.title.orEmpty(),
-                ),
-            )
-        } ?: stringResource(Res.string.compose_player_panel_sources),
-        episodesPanelTitle = if (youTubeVideo) "Related videos" else stringResource(Res.string.compose_player_panel_episodes),
-        streamsPanelTitle = stringResource(Res.string.compose_player_panel_streams),
-        allFilterLabel = allFilterLabel,
-        reloadLabel = stringResource(Res.string.compose_action_reload),
-        backLabel = stringResource(Res.string.action_back),
-        panelCloseLabel = stringResource(Res.string.action_close),
-        cancelLabel = stringResource(Res.string.action_cancel),
-        playingLabel = playingLabel,
-        noStreamsLabel = if (youTubeVideo) {
-            "No comments, or comments are turned off for this video."
-        } else {
-            stringResource(Res.string.compose_player_no_streams_found)
-        },
-        noEpisodesLabel = if (youTubeVideo) "No related videos." else stringResource(Res.string.compose_player_no_episodes_available),
-        submitIntroPanelTitle = stringResource(Res.string.submit_intro_title),
-        submitIntroSegmentTypeLabel = stringResource(Res.string.submit_intro_segment_type_label),
-        submitIntroSegmentIntroLabel = stringResource(Res.string.submit_intro_segment_intro),
-        submitIntroSegmentRecapLabel = stringResource(Res.string.submit_intro_segment_recap),
-        submitIntroSegmentOutroLabel = stringResource(Res.string.submit_intro_segment_outro),
-        submitIntroSegmentPreviewLabel = stringResource(Res.string.submit_intro_segment_preview),
-        submitIntroStartTimeLabel = stringResource(Res.string.submit_intro_start_time_label),
-        submitIntroEndTimeLabel = stringResource(Res.string.submit_intro_end_time_label),
-        submitIntroCaptureLabel = stringResource(Res.string.submit_intro_capture_button),
-        submitIntroSubmitLabel = stringResource(Res.string.submit_intro_button_submit),
-        p2pConsentTitle = stringResource(Res.string.p2p_consent_title),
-        p2pConsentBody = stringResource(Res.string.p2p_consent_body),
-        p2pConsentEnableLabel = stringResource(Res.string.p2p_consent_enable),
-        p2pConsentCancelLabel = stringResource(Res.string.p2p_consent_cancel),
-        subtitlesPanelTitle = stringResource(Res.string.compose_player_subtitles),
-        subtitleBuiltInTabLabel = stringResource(Res.string.compose_player_built_in),
-        subtitleAddonsTabLabel = stringResource(Res.string.addon_title),
-        subtitleStyleTabLabel = stringResource(Res.string.compose_player_style),
-        noneLabel = stringResource(Res.string.compose_player_none),
-        fetchSubtitlesLabel = stringResource(Res.string.compose_player_fetch_subtitles),
-        downloadSubtitleLabel = stringResource(Res.string.compose_player_download_subtitle),
-        autoSyncedSubtitleLabel = stringResource(Res.string.compose_player_subtitle_auto_synced),
-        subtitleDelayLabel = stringResource(Res.string.compose_player_subtitle_delay),
-        resetLabel = stringResource(Res.string.compose_player_reset),
-        autoSyncLabel = stringResource(Res.string.compose_player_auto_sync),
-        reloadSmallLabel = stringResource(Res.string.compose_player_reload),
-        captureLineLabel = stringResource(Res.string.compose_player_capture_line),
-        selectAddonSubtitleFirstLabel = stringResource(Res.string.compose_player_select_addon_subtitle_first),
-        loadingSubtitleLinesLabel = stringResource(Res.string.compose_player_loading_lines),
-        fontSizeLabel = stringResource(Res.string.compose_player_font_size),
-        outlineLabel = stringResource(Res.string.compose_player_outline),
-        outlineWidthLabel = stringResource(Res.string.compose_player_outline_width),
-        shadowLabel = stringResource(Res.string.compose_player_shadow),
-        shadowOffsetLabel = stringResource(Res.string.compose_player_shadow_offset),
-        shadowColorLabel = stringResource(Res.string.compose_player_shadow_color),
-        shadowIntensityLabel = stringResource(Res.string.compose_player_shadow_intensity),
-        blurLabel = stringResource(Res.string.compose_player_blur),
-        boldLabel = stringResource(Res.string.compose_player_bold),
-        italicLabel = stringResource(Res.string.compose_player_italic),
-        bottomOffsetLabel = stringResource(Res.string.compose_player_bottom_offset),
-        assStyleModeLabel = stringResource(Res.string.player_subtitle_ass_mode),
-        assScaleLabel = stringResource(Res.string.player_subtitle_ass_scale),
-        assStyleModeValueLabel = subtitleStyle.assStyleMode.label,
-        colorLabel = stringResource(Res.string.compose_player_color),
-        textOpacityLabel = stringResource(Res.string.compose_player_text_opacity),
-        outlineColorLabel = stringResource(Res.string.compose_player_outline_color),
-        backgroundColorLabel = stringResource(Res.string.compose_player_background_color),
-        resetDefaultsLabel = stringResource(Res.string.compose_player_reset_defaults),
-        onLabel = stringResource(Res.string.compose_action_on),
-        offLabel = stringResource(Res.string.compose_action_off),
-        themeAccentColor = themeColors.accent.toCssColorString(),
-        posterHighlightMode = posterCardStyle.posterHighlightMode.name,
-        themeAccentStrongColor = themeColors.accentStrong.toCssColorString(),
-        // Angle and stops both come from the same place the Compose brush gets them, so the HUD
-        // turns with the rest of the app and shares its perceptual spacing rather than falling back
-        // to the browser's own two-stop sRGB ramp.
-        themeAccentFill = themeColors.accentGradientEnd
-            ?.let { end ->
-                val stops = accentGradientStops(themeColors.accent, end)
-                val css = stops.mapIndexed { index, color ->
-                    val percent = index * 100 / (stops.size - 1)
-                    "${color.toCssColorString()} $percent%"
-                }.joinToString()
-                "linear-gradient(${themeColors.accentGradientDirection.cssAngle}deg, $css)"
-            }
-            ?: themeColors.accent.toCssColorString(),
-        themeOnAccentColor = themeColors.onAccent.toCssColorString(),
-        themeFocusColor = themeColors.focusRing.toCssColorString(),
-        themeSelectedSurfaceColor = themeColors.accent.copy(alpha = 0.24f).toCssColorString(),
-        themeSelectedSurfaceHoverColor = themeColors.accent.copy(alpha = 0.34f).toCssColorString(),
-        themeSelectedRingColor = themeColors.accent.copy(alpha = 0.35f).toCssColorString(),
-        themeTimelineFillColor = themeColors.playerTimelineFill.toCssColorString(),
-        themeTimelineTrackColor = themeColors.playerTimelineTrack.toCssColorString(),
-        themeBufferingColor = themeColors.playerBuffering.toCssColorString(),
-        themeBufferingTrackColor = themeColors.playerBuffering.copy(alpha = 0.28f).toCssColorString(),
-        themeControlForegroundColor = themeColors.playerControlsForeground.toCssColorString(),
+                    Res.string.compose_player_panel_sources_for_episode,
+                    stringResource(
+                        Res.string.compose_player_episode_title_format,
+                        pending.playbackSeasonNumber() ?: 1,
+                        pending.playbackEpisodeNumber() ?: 0,
+                        pending.title.orEmpty(),
+                    ),
+                )
+            } ?: stringResource(Res.string.compose_player_panel_sources),
+            episodesPanelTitle = if (youTubeVideo) "Related videos" else stringResource(Res.string.compose_player_panel_episodes),
+            streamsPanelTitle = stringResource(Res.string.compose_player_panel_streams),
+            allFilterLabel = allFilterLabel,
+            reloadLabel = stringResource(Res.string.compose_action_reload),
+            backLabel = stringResource(Res.string.action_back),
+            panelCloseLabel = stringResource(Res.string.action_close),
+            cancelLabel = stringResource(Res.string.action_cancel),
+            playingLabel = playingLabel,
+            noStreamsLabel = if (youTubeVideo) {
+                "No comments, or comments are turned off for this video."
+            } else {
+                stringResource(Res.string.compose_player_no_streams_found)
+            },
+            noEpisodesLabel = if (youTubeVideo) "No related videos." else stringResource(Res.string.compose_player_no_episodes_available),
+            p2pConsentTitle = stringResource(Res.string.p2p_consent_title),
+            p2pConsentBody = stringResource(Res.string.p2p_consent_body),
+            p2pConsentEnableLabel = stringResource(Res.string.p2p_consent_enable),
+            p2pConsentCancelLabel = stringResource(Res.string.p2p_consent_cancel),
+            onLabel = stringResource(Res.string.compose_action_on),
+            offLabel = stringResource(Res.string.compose_action_off),
+        ),
+        pictureInPictureActive = pictureInPictureActive,
+        video = PlayerControlVideoState(
+            desktopHdrModeLabel = stringResource(playerSettingsUiState.desktopHdrMode.labelRes),
+            desktopColorProfileLabel = stringResource(playerSettingsUiState.desktopColorProfile.labelRes),
+            desktopColorContrast = playerSettingsUiState.desktopColorContrast,
+            desktopColorBrightness = playerSettingsUiState.desktopColorBrightness,
+            desktopColorSaturation = playerSettingsUiState.desktopColorSaturation,
+            desktopColorGamma = playerSettingsUiState.desktopColorGamma,
+            // Shows what is actually in effect: a session force wins; otherwise the persisted preset
+            // only counts when it would auto-apply (auto-detect on + detected anime), else "Off".
+            desktopAnimeModeLabel = playerSettingsUiState.desktopAnimeSessionOverride?.label
+                ?: if (playerSettingsUiState.desktopAnimeModeAutoEnabled && isAnimeContent) {
+                    stringResource(playerSettingsUiState.desktopAnimeMode.labelRes)
+                } else {
+                    stringResource(DesktopAnimeMode.Off.labelRes)
+                },
+            desktopAnimeSvpEnabled = playerSettingsUiState.desktopAnimeSvpEnabled,
+            rtxVsrEnabled = playerSettingsUiState.effectiveRtxVsrEnabled,
+            rtxTrueHdrEnabled = playerSettingsUiState.effectiveRtxTrueHdrEnabled,
+        ),
+        hud = PlayerHudSettings(
+            playbackInfoPanelEnabled = playerSettingsUiState.desktopPlaybackInfoPanelEnabled,
+            seekStepSeconds = playerSettingsUiState.seekStepSeconds,
+            posterHighlightMode = posterCardStyle.posterHighlightMode.name,
+            mouseMoveRevealsControlsEnabled = playerSettingsUiState.mouseMoveRevealsControlsEnabled,
+            streamFailoverEnabled = playerSettingsUiState.streamFailoverEnabled,
+            legacyHudEnabled = playerSettingsUiState.desktopLegacyHudEnabled,
+            minimalHudEnabled = playerSettingsUiState.desktopMinimalHudEnabled,
+            minimalHudPillsEnabled = playerSettingsUiState.desktopMinimalHudPillsEnabled,
+            ultraHudEnabled = playerSettingsUiState.desktopUltraHudEnabled,
+            officialHudEnabled = playerSettingsUiState.desktopOfficialHudEnabled,
+            seekHandleEnabled = playerSettingsUiState.desktopSeekHandleEnabled,
+            hudVignetteEnabled = playerSettingsUiState.desktopHudVignetteEnabled,
+            hiddenHudButtons = playerSettingsUiState.desktopHiddenHudButtons.sorted().joinToString(","),
+            hudButtonOrder = playerSettingsUiState.desktopHudButtonOrder.joinToString(","),
+            alwaysShowClock = playerSettingsUiState.desktopAlwaysShowClockEnabled,
+            playbackSpeedFineIncrementsEnabled = playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled,
+            playbackSpeedToggleLow = playerSettingsUiState.playbackSpeedToggleLow,
+            playbackSpeedToggleHigh = playerSettingsUiState.playbackSpeedToggleHigh,
+            uiScalePercent = playerSettingsUiState.desktopUiScalePercent,
+            controlIconScalePercent = playerSettingsUiState.desktopControlIconScalePercent,
+            uiFontFamily = MaterialTheme.appFontFamilyName,
+            sourceNotchPosition = playerSettingsUiState.desktopSourceNotchPosition.name.lowercase(),
+            sourceNotchHoverEnabled = playerSettingsUiState.desktopSourceNotchHoverEnabled,
+            notificationPosition = playerSettingsUiState.desktopPlayerNotificationPosition.webValue,
+        ),
+        subtitles = PlayerControlSubtitlesState(
+            activeSubtitleLabel = activePlaybackSubtitleLabel(),
+            assStyleModeValueLabel = subtitleStyle.assStyleMode.label,
+            subtitleActiveTab = activeSubtitleTab.name,
+            addonSubtitleItems = playerControlAddonSubtitles,
+            builtInSubtitleFilterActive = builtInSubtitleFilterActive,
+            builtInSubtitleItems = playerControlBuiltInSubtitles,
+            isLoadingAddonSubtitles = isLoadingAddonSubtitles,
+            selectedAddonSubtitleId = selectedAddonSubtitleId.orEmpty(),
+            useCustomSubtitles = useCustomSubtitles,
+            subtitleStyle = subtitleStyle,
+            subtitleFontFamilies = availableSubtitleFontFamilies(),
+            subtitleDelayMs = subtitleDelayMs,
+            hasSelectedAddonSubtitle = selectedAddonSubtitle != null,
+            subtitleAutoSyncCapturedPositionMs = subtitleAutoSyncState.capturedPositionMs ?: -1L,
+            subtitleAutoSyncCues = playerControlAutoSyncCues,
+            subtitleAutoSyncIsLoading = subtitleAutoSyncState.isLoading,
+            subtitleAutoSyncErrorMessage = subtitleAutoSyncState.errorMessage.orEmpty(),
+        ),
+        seekPreview = PlayerSeekPreviewState(
+            // The native decoder stands down while Seekr has (or is still fetching) this playback's
+            // sprites, and takes over again only if Seekr has nothing for it.
+            // Likewise for a YouTube video's storyboard, which comes from YouTube's image servers.
+            seekThumbnailsEnabled = seekrTrack == null && !seekrLookupPending &&
+                youTubeStoryboardShown == null && !(youTubeVideo && youTubeStoryboardPending) && seekThumbnailsAllowed(
+                mode = playerSettingsUiState.desktopSeekThumbnailMode,
+                bufferPreset = playerSettingsUiState.desktopBufferPreset,
+                sourceUrl = activeSourceUrl,
+                isTorrent = activeTorrentInfoHash != null,
+                seekrServiceOff = SeekrPreviews.serviceDisabled,
+            ),
+            seekrVttUrl = seekrTrack?.vttUrl.orEmpty(),
+            seekrScale = seekrTrack?.scale ?: 1.0,
+            storyboardUrl = youTubeStoryboardShown?.sheetUrl.orEmpty(),
+            storyboardWidth = youTubeStoryboardShown?.width ?: 0,
+            storyboardHeight = youTubeStoryboardShown?.height ?: 0,
+            storyboardColumns = youTubeStoryboardShown?.columns ?: 0,
+            storyboardRows = youTubeStoryboardShown?.rows ?: 0,
+            storyboardCount = youTubeStoryboardShown?.count ?: 0,
+            storyboardIntervalMs = youTubeStoryboardShown?.intervalMs ?: 0L,
+        ),
+        playbackErrorMessage = errorMessage.orEmpty(),
+        submitIntro = PlayerSubmitIntroState(
+            submitIntroPanelTitle = stringResource(Res.string.submit_intro_title),
+            submitIntroSegmentTypeLabel = stringResource(Res.string.submit_intro_segment_type_label),
+            submitIntroSegmentIntroLabel = stringResource(Res.string.submit_intro_segment_intro),
+            submitIntroSegmentRecapLabel = stringResource(Res.string.submit_intro_segment_recap),
+            submitIntroSegmentOutroLabel = stringResource(Res.string.submit_intro_segment_outro),
+            submitIntroSegmentPreviewLabel = stringResource(Res.string.submit_intro_segment_preview),
+            submitIntroStartTimeLabel = stringResource(Res.string.submit_intro_start_time_label),
+            submitIntroEndTimeLabel = stringResource(Res.string.submit_intro_end_time_label),
+            submitIntroCaptureLabel = stringResource(Res.string.submit_intro_capture_button),
+            submitIntroSubmitLabel = stringResource(Res.string.submit_intro_button_submit),
+            submitIntroSegmentType = submitIntroSegmentType,
+            submitIntroStartTime = submitIntroStartTimeStr,
+            submitIntroEndTime = submitIntroEndTimeStr,
+            isSubmitIntroSubmitting = isSubmitIntroSubmitting,
+            submitIntroStatusMessage = submitIntroStatusMessage.orEmpty(),
+        ),
+        subtitleLabels = PlayerControlSubtitleLabels(
+            subtitlesPanelTitle = stringResource(Res.string.compose_player_subtitles),
+            subtitleBuiltInTabLabel = stringResource(Res.string.compose_player_built_in),
+            subtitleAddonsTabLabel = stringResource(Res.string.addon_title),
+            subtitleStyleTabLabel = stringResource(Res.string.compose_player_style),
+            noneLabel = stringResource(Res.string.compose_player_none),
+            fetchSubtitlesLabel = stringResource(Res.string.compose_player_fetch_subtitles),
+            downloadSubtitleLabel = stringResource(Res.string.compose_player_download_subtitle),
+            autoSyncedSubtitleLabel = stringResource(Res.string.compose_player_subtitle_auto_synced),
+            subtitleDelayLabel = stringResource(Res.string.compose_player_subtitle_delay),
+            resetLabel = stringResource(Res.string.compose_player_reset),
+            autoSyncLabel = stringResource(Res.string.compose_player_auto_sync),
+            reloadSmallLabel = stringResource(Res.string.compose_player_reload),
+            captureLineLabel = stringResource(Res.string.compose_player_capture_line),
+            selectAddonSubtitleFirstLabel = stringResource(Res.string.compose_player_select_addon_subtitle_first),
+            loadingSubtitleLinesLabel = stringResource(Res.string.compose_player_loading_lines),
+            fontSizeLabel = stringResource(Res.string.compose_player_font_size),
+            outlineLabel = stringResource(Res.string.compose_player_outline),
+            outlineWidthLabel = stringResource(Res.string.compose_player_outline_width),
+            shadowLabel = stringResource(Res.string.compose_player_shadow),
+            shadowOffsetLabel = stringResource(Res.string.compose_player_shadow_offset),
+            shadowColorLabel = stringResource(Res.string.compose_player_shadow_color),
+            shadowIntensityLabel = stringResource(Res.string.compose_player_shadow_intensity),
+            blurLabel = stringResource(Res.string.compose_player_blur),
+            boldLabel = stringResource(Res.string.compose_player_bold),
+            italicLabel = stringResource(Res.string.compose_player_italic),
+            bottomOffsetLabel = stringResource(Res.string.compose_player_bottom_offset),
+            assStyleModeLabel = stringResource(Res.string.player_subtitle_ass_mode),
+            assScaleLabel = stringResource(Res.string.player_subtitle_ass_scale),
+            colorLabel = stringResource(Res.string.compose_player_color),
+            textOpacityLabel = stringResource(Res.string.compose_player_text_opacity),
+            outlineColorLabel = stringResource(Res.string.compose_player_outline_color),
+            backgroundColorLabel = stringResource(Res.string.compose_player_background_color),
+            resetDefaultsLabel = stringResource(Res.string.compose_player_reset_defaults),
+        ),
+        theme = PlayerControlTheme(
+            themeAccentColor = themeColors.accent.toCssColorString(),
+            themeAccentStrongColor = themeColors.accentStrong.toCssColorString(),
+            // Angle and stops both come from the same place the Compose brush gets them, so the HUD
+            // turns with the rest of the app and shares its perceptual spacing rather than falling back
+            // to the browser's own two-stop sRGB ramp.
+            themeAccentFill = themeColors.accentGradientEnd
+                ?.let { end ->
+                    val stops = accentGradientStops(themeColors.accent, end)
+                    val css = stops.mapIndexed { index, color ->
+                        val percent = index * 100 / (stops.size - 1)
+                        "${color.toCssColorString()} $percent%"
+                    }.joinToString()
+                    "linear-gradient(${themeColors.accentGradientDirection.cssAngle}deg, $css)"
+                }
+                ?: themeColors.accent.toCssColorString(),
+            themeOnAccentColor = themeColors.onAccent.toCssColorString(),
+            themeFocusColor = themeColors.focusRing.toCssColorString(),
+            themeSelectedSurfaceColor = themeColors.accent.copy(alpha = 0.24f).toCssColorString(),
+            themeSelectedSurfaceHoverColor = themeColors.accent.copy(alpha = 0.34f).toCssColorString(),
+            themeSelectedRingColor = themeColors.accent.copy(alpha = 0.35f).toCssColorString(),
+            themeTimelineFillColor = themeColors.playerTimelineFill.toCssColorString(),
+            themeTimelineTrackColor = themeColors.playerTimelineTrack.toCssColorString(),
+            themeBufferingColor = themeColors.playerBuffering.toCssColorString(),
+            themeBufferingTrackColor = themeColors.playerBuffering.copy(alpha = 0.28f).toCssColorString(),
+            themeControlForegroundColor = themeColors.playerControlsForeground.toCssColorString(),
+        ),
         isPlaying = playbackSnapshot.isPlaying,
         isLoading = playbackSnapshot.isLoading,
         isLocked = playerControlsLocked,
         lockedOverlayVisible = lockedOverlayVisible,
         controlsVisible = controlsVisible && !playerControlsLocked,
-        mouseMoveRevealsControlsEnabled = playerSettingsUiState.mouseMoveRevealsControlsEnabled,
-        streamFailoverEnabled = playerSettingsUiState.streamFailoverEnabled,
-        legacyHudEnabled = playerSettingsUiState.desktopLegacyHudEnabled,
-        minimalHudEnabled = playerSettingsUiState.desktopMinimalHudEnabled,
-        minimalHudPillsEnabled = playerSettingsUiState.desktopMinimalHudPillsEnabled,
-        ultraHudEnabled = playerSettingsUiState.desktopUltraHudEnabled,
-        officialHudEnabled = playerSettingsUiState.desktopOfficialHudEnabled,
-        seekHandleEnabled = playerSettingsUiState.desktopSeekHandleEnabled,
-        hudVignetteEnabled = playerSettingsUiState.desktopHudVignetteEnabled,
-        hiddenHudButtons = playerSettingsUiState.desktopHiddenHudButtons.sorted().joinToString(","),
-        hudButtonOrder = playerSettingsUiState.desktopHudButtonOrder.joinToString(","),
-        alwaysShowClock = playerSettingsUiState.desktopAlwaysShowClockEnabled,
-        playbackSpeedFineIncrementsEnabled = playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled,
-        playbackSpeedToggleLow = playerSettingsUiState.playbackSpeedToggleLow,
-        playbackSpeedToggleHigh = playerSettingsUiState.playbackSpeedToggleHigh,
-        uiScalePercent = playerSettingsUiState.desktopUiScalePercent,
-        controlIconScalePercent = playerSettingsUiState.desktopControlIconScalePercent,
-        uiFontFamily = MaterialTheme.appFontFamilyName,
-        sourceNotchPosition = playerSettingsUiState.desktopSourceNotchPosition.name.lowercase(),
-        sourceNotchHoverEnabled = playerSettingsUiState.desktopSourceNotchHoverEnabled,
-        notificationPosition = playerSettingsUiState.desktopPlayerNotificationPosition.webValue,
         parentalWarnings = parentalWarnings,
         showParentalGuide = showParentalGuide,
         // Films are submittable too: SkipDB takes them with no season or episode, and holds opening
         // title sequences and end credits for them.
-        showSubmitIntro = playerSettingsUiState.introSubmitEnabled &&
+        // Not for a YouTube tab video: SponsorBlock has its segments, and no intro database holds it.
+        showSubmitIntro = !youTubeVideo && playerSettingsUiState.introSubmitEnabled &&
             (
                 playerSettingsUiState.skipDbApiKey.isNotBlank() ||
                     playerSettingsUiState.introDbApiKey.isNotBlank()
@@ -648,74 +698,73 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         showVideoSettings = isIos,
         showSources = activeVideoId != null && !isIptvPlayback,
         showEpisodes = (isSeries && !isIptvPlayback) || (youTubeVideo && youTubeRelated.isNotEmpty()),
-        showExternalPlayer = args.onOpenInExternalPlayer != null,
+        // A YouTube tab video's picture and sound are two streams another player would not be handed together.
+        showExternalPlayer = args.onOpenInExternalPlayer != null && !youTubeVideo,
         durationMs = playbackSnapshot.durationMs,
         positionMs = displayedPositionMs,
-        chapters = playerChapters,
-        sourceIsLoading = if (youTubeVideo) youTubeCommentsLoading else sourceStreamsState.isAnyLoading,
-        sourceBadgePlacement = streamBadgeSettings.badgePlacement.name.lowercase(),
-        // Comments have no addons to filter by and nothing to sort.
-        sourceFilters = if (youTubeVideo) emptyList() else sourceFilters,
-        sourceItems = sourceItems,
-        sourceSortOptions = if (youTubeVideo) emptyList() else sourceSortOptions,
-        sourceSortLabel = if (streamBadgeSettings.listSortOrder == StreamListSortOrder.DEFAULT) {
-            "Sort"
+        // A YouTube video's sponsors and self-promotion: coloured on the bar and named as chapters.
+        seekBar = if (youTubeVideo) {
+            PlayerSeekBarState(
+                chapters = com.nuvio.app.features.youtube.withSponsorChapters(playerChapters, communitySkipIntervals),
+                segments = com.nuvio.app.features.youtube.sponsorSeekSegments(communitySkipIntervals),
+            )
         } else {
-            streamBadgeSettings.listSortOrder.label
+            PlayerSeekBarState(chapters = playerChapters)
         },
-        sourceCachedFirst = streamBadgeSettings.listCachedFirst,
-        episodeItems = episodeItems,
-        episodeFallbackThumbnail = episodeFallbackThumbnail,
-        episodeSeasons = if (youTubeVideo) emptyList() else episodeSeasons,
-        episodeStreamsVisible = episodeStreamsPanelState.showStreams,
-        episodeStreamsIsLoading = episodeStreamsRepoState.isAnyLoading,
-        selectedEpisodeLabel = selectedEpisodeLabel,
-        episodeStreamFilters = episodeStreamFilters,
-        episodeStreamItems = episodeStreamItems,
-        submitIntroSegmentType = submitIntroSegmentType,
-        submitIntroStartTime = submitIntroStartTimeStr,
-        submitIntroEndTime = submitIntroEndTimeStr,
-        isSubmitIntroSubmitting = isSubmitIntroSubmitting,
-        submitIntroStatusMessage = submitIntroStatusMessage.orEmpty(),
+        sources = PlayerControlSourcesState(
+            sourceIsLoading = if (youTubeVideo) youTubeCommentsLoading else sourceStreamsState.isAnyLoading,
+            sourceBadgePlacement = streamBadgeSettings.badgePlacement.name.lowercase(),
+            // Comments have no addons to filter by and nothing to sort.
+            sourceFilters = if (youTubeVideo) emptyList() else sourceFilters,
+            sourceItems = sourceItems,
+            sourceSortOptions = if (youTubeVideo) emptyList() else sourceSortOptions,
+            sourceSortLabel = if (streamBadgeSettings.listSortOrder == StreamListSortOrder.DEFAULT) {
+                "Sort"
+            } else {
+                streamBadgeSettings.listSortOrder.label
+            },
+            sourceCachedFirst = streamBadgeSettings.listCachedFirst,
+        ),
+        episodes = PlayerControlEpisodesState(
+            episodeItems = episodeItems,
+            episodeFallbackThumbnail = episodeFallbackThumbnail,
+            episodeSeasons = if (youTubeVideo) emptyList() else episodeSeasons,
+            episodeStreamsVisible = episodeStreamsPanelState.showStreams,
+            episodeStreamsIsLoading = episodeStreamsRepoState.isAnyLoading,
+            selectedEpisodeLabel = selectedEpisodeLabel,
+            episodeStreamFilters = episodeStreamFilters,
+            episodeStreamItems = episodeStreamItems,
+        ),
         showP2pConsent = playerControlsPendingP2pSwitch != null,
-        subtitleActiveTab = activeSubtitleTab.name,
-        addonSubtitleItems = playerControlAddonSubtitles,
-        builtInSubtitleFilterActive = builtInSubtitleFilterActive,
-        builtInSubtitleItems = playerControlBuiltInSubtitles,
-        audioTrackFilterActive = audioTrackFilterActive,
-        audioTrackItems = playerControlAudioTracks,
-        isLoadingAddonSubtitles = isLoadingAddonSubtitles,
-        selectedAddonSubtitleId = selectedAddonSubtitleId.orEmpty(),
-        useCustomSubtitles = useCustomSubtitles,
-        subtitleStyle = subtitleStyle,
-        subtitleFontFamilies = availableSubtitleFontFamilies(),
-        subtitleDelayMs = subtitleDelayMs,
-        hasSelectedAddonSubtitle = selectedAddonSubtitle != null,
-        subtitleAutoSyncCapturedPositionMs = subtitleAutoSyncState.capturedPositionMs ?: -1L,
-        subtitleAutoSyncCues = playerControlAutoSyncCues,
-        subtitleAutoSyncIsLoading = subtitleAutoSyncState.isLoading,
-        subtitleAutoSyncErrorMessage = subtitleAutoSyncState.errorMessage.orEmpty(),
+        audioTracks = PlayerControlAudioTracksState(
+            audioTrackFilterActive = audioTrackFilterActive,
+            audioTrackItems = playerControlAudioTracks,
+        ),
         closeModalsToken = playerControlsCloseModalsToken,
         openSourcesToken = playerControlsOpenSourcesToken,
         sourcesPanelOpen = showSourcesPanel,
-        showOpeningOverlay = openingOverlayWanted,
-        openingArtwork = background ?: poster,
+        opening = PlayerOpeningOverlayState(
+            showOpeningOverlay = openingOverlayWanted,
+            openingArtwork = background ?: poster,
+            openingLogo = logo,
+            openingTitle = title,
+            openingMessage = p2pInitialLoadingMessage,
+            openingProgress = p2pInitialLoadingProgress,
+        ),
         // Poster first here, unlike openingArtwork: the flyout thumbnail is a small near-square
         // tile, which a portrait poster survives better than a cropped 16:9 backdrop.
         mediaSessionArtwork = poster ?: background ?: "",
-        openingLogo = logo,
-        openingTitle = title,
-        openingMessage = p2pInitialLoadingMessage,
-        openingProgress = p2pInitialLoadingProgress,
-        skipPromptVisible = nativeSkipInterval != null && !playerControlsLocked,
-        skipPromptLabel = skipPromptLabel(
-            type = nativeSkipInterval?.type,
-            landsOnPostCredits = nativeSkipInterval?.let { activeSkipLanding(it).landsOnPostCredits } == true,
-            isMovie = !isSeries,
+        skipPrompt = PlayerSkipPromptState(
+            skipPromptVisible = nativeSkipInterval != null && !playerControlsLocked,
+            skipPromptLabel = skipPromptLabel(
+                type = nativeSkipInterval?.type,
+                landsOnPostCredits = nativeSkipInterval?.let { activeSkipLanding(it).landsOnPostCredits } == true,
+                isMovie = !isSeries,
+            ),
+            skipPromptStartMs = ((nativeSkipInterval?.startTime ?: 0.0) * 1000).toLong().coerceAtLeast(0L),
+            skipPromptEndMs = ((nativeSkipInterval?.endTime ?: 0.0) * 1000).toLong().coerceAtLeast(0L),
+            skipPromptDismissed = skipIntervalDismissed,
         ),
-        skipPromptStartMs = ((nativeSkipInterval?.startTime ?: 0.0) * 1000).toLong().coerceAtLeast(0L),
-        skipPromptEndMs = ((nativeSkipInterval?.endTime ?: 0.0) * 1000).toLong().coerceAtLeast(0L),
-        skipPromptDismissed = skipIntervalDismissed,
         skipKeyAction = resolveSkipKeyAction(
             skipPromptActionable = nativeSkipInterval != null && !playerControlsLocked && !skipIntervalDismissed,
             nextEpisodeActionable = !playerControlsLocked && (
@@ -727,37 +776,39 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         ),
         skipSubmitToast = skipSubmitToastCopy(),
         skipSubmitToastDismissible = isSkipSubmitToastDismissible(),
-        nextEpisodeVisible = (nextEpisodeForControls != null || playlistCardEntry != null) && !playerControlsLocked,
-        nextEpisodeHeaderLabel = if (playlistCardEntry != null) {
-            playlistUpNextHeader
-        } else {
-            stringResource(Res.string.player_next_episode)
-        },
-        nextEpisodeTitle = if (playlistCardEntry != null) {
-            playlistCardEntry.displayTitle()
-        } else {
-            nextEpisodeForControls?.let {
-                stringResource(
-                    Res.string.compose_player_episode_title_format,
-                    it.season,
-                    it.episode,
-                    it.title,
-                )
-            }.orEmpty()
-        },
-        nextEpisodeThumbnail = if (playlistCardEntry != null) {
-            (playlistCardEntry.episodeThumbnail ?: playlistCardEntry.background ?: playlistCardEntry.poster).orEmpty()
-        } else {
-            nextEpisodeForControls?.thumbnail.orEmpty()
-        },
-        nextEpisodeStatus = if (playlistCardEntry != null) playlistStatus else nextEpisodeStatus,
-        nextEpisodeActionLabel = if (playlistCardEntry != null || nextEpisodeForControls?.hasAired == true) {
-            stringResource(Res.string.detail_btn_play)
-        } else {
-            stringResource(Res.string.player_next_episode_unaired)
-        },
-        nextEpisodePlayable = playlistCardEntry != null ||
-            (nextEpisodeForControls?.hasAired == true && !manualSwitchIsNonSequential),
+        nextEpisode = PlayerNextEpisodeState(
+            nextEpisodeVisible = (nextEpisodeForControls != null || playlistCardEntry != null) && !playerControlsLocked,
+            nextEpisodeHeaderLabel = if (playlistCardEntry != null) {
+                playlistUpNextHeader
+            } else {
+                stringResource(Res.string.player_next_episode)
+            },
+            nextEpisodeTitle = if (playlistCardEntry != null) {
+                playlistCardEntry.displayTitle()
+            } else {
+                nextEpisodeForControls?.let {
+                    stringResource(
+                        Res.string.compose_player_episode_title_format,
+                        it.season,
+                        it.episode,
+                        it.title,
+                    )
+                }.orEmpty()
+            },
+            nextEpisodeThumbnail = if (playlistCardEntry != null) {
+                (playlistCardEntry.episodeThumbnail ?: playlistCardEntry.background ?: playlistCardEntry.poster).orEmpty()
+            } else {
+                nextEpisodeForControls?.thumbnail.orEmpty()
+            },
+            nextEpisodeStatus = if (playlistCardEntry != null) playlistStatus else nextEpisodeStatus,
+            nextEpisodeActionLabel = if (playlistCardEntry != null || nextEpisodeForControls?.hasAired == true) {
+                stringResource(Res.string.detail_btn_play)
+            } else {
+                stringResource(Res.string.player_next_episode_unaired)
+            },
+            nextEpisodePlayable = playlistCardEntry != null ||
+                (nextEpisodeForControls?.hasAired == true && !manualSwitchIsNonSequential),
+        ),
         playlistPeekTitle = playlistPeek.first,
         playlistPeekItems = playlistPeek.second,
         party = rememberPartyControlsState(),
@@ -1194,6 +1245,8 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
                 dismissSkipSubmitToast()
                 return true
             }
+            // fork:youtube-mini-player - a YouTube tab video goes to the corner, the tab around it.
+            if (handleYouTubeMiniPlayerBack()) return true
             flushWatchProgress()
             args.onBack()
         }
@@ -1431,6 +1484,8 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
             ) ?: return true
             autoPlaySelectedEpisode(previous)
         }
+        // fork:voice-control - "skip forward 30 seconds": any distance, not the seek step.
+        "voiceSeekBy" -> seekBy(value.toLong())
         "setPlaybackSpeed" -> {
             if (partyBlocksControl()) return true
             applyUserPlaybackSpeed(value.toFloat().coerceIn(0.5f, 4f))

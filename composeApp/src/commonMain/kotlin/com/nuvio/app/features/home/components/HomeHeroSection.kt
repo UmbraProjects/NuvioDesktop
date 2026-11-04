@@ -638,6 +638,10 @@ fun HomeHeroSection(
                     immersiveFullBackdrop = immersiveFullBackdrop,
                     adaptiveHeroMode = adaptiveHeroMode,
                     pagedHero = pagedHero && focusedItem == null,
+                    // Several pages are laid out whenever no item is focused (a TV-mode hero with its
+                    // CW preview dismissed too, not only Basic's carousel), and a swipe across them
+                    // must keep each title in its own layer.
+                    pagesKeyed = focusedItem == null,
                     ambientBackground = ambientBackground,
                     ambientUnderlay = ambientUnderlay,
                     viewportHeight = viewportHeight,
@@ -1227,6 +1231,7 @@ private fun DesktopHomeHeroFrame(
     immersiveFullBackdrop: Boolean = false,
     adaptiveHeroMode: Boolean = false,
     pagedHero: Boolean = false,
+    pagesKeyed: Boolean = pagedHero,
     ambientBackground: Boolean = false,
     ambientUnderlay: (@Composable () -> Unit)? = null,
     viewportHeight: Dp? = null,
@@ -1586,7 +1591,7 @@ private fun DesktopHomeHeroFrame(
                         onItemClick?.invoke(currentItem)
                     },
             ) {
-                visiblePages.forEachPage(keyedByPage = pagedHero) { layer ->
+                visiblePages.forEachPage(keyedByPage = pagesKeyed) { layer ->
                     Box(
                         modifier = Modifier
                             .matchParentSize()
@@ -1613,7 +1618,7 @@ private fun DesktopHomeHeroFrame(
                                         Modifier
                                     },
                                 ),
-                            crossfade = !pagedHero,
+                            crossfade = !pagesKeyed,
                             alignment = when {
                                 immersiveMode -> ImmersiveHeroBackdropAlignment
                                 adaptiveHeroMode -> BiasAlignment(horizontalBias = 0f, verticalBias = adaptiveHeroVerticalBias)
@@ -1785,7 +1790,7 @@ private fun DesktopHomeHeroFrame(
                     .widthIn(max = 600.dp),
                 contentAlignment = Alignment.TopStart,
             ) {
-                visiblePages.forEachPage(keyedByPage = pagedHero) { layer ->
+                visiblePages.forEachPage(keyedByPage = pagesKeyed) { layer ->
                     val item = items[layer.page]
                     val cast = heroDisplayCast(item, maxCount = immersivePeopleMaxCount)
                     val production = productionCache["${item.type}:${item.id}"].orEmpty()
@@ -1844,7 +1849,7 @@ private fun DesktopHomeHeroFrame(
                     ),
                 contentAlignment = Alignment.TopStart,
             ) {
-                visiblePages.forEachPage(keyedByPage = pagedHero) { layer ->
+                visiblePages.forEachPage(keyedByPage = pagesKeyed) { layer ->
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1896,7 +1901,7 @@ private fun DesktopHomeHeroFrame(
                 ).graphicsLayer { alpha = 1f - heroFrost },
                 contentAlignment = heroBadgePlacement.heroDiscoveryMedalAlignment(),
             ) {
-                visiblePages.forEachPage(keyedByPage = pagedHero) { layer ->
+                visiblePages.forEachPage(keyedByPage = pagesKeyed) { layer ->
                     val itemKey = "${items[layer.page].type}:${items[layer.page].id}"
                     val discoveryKey = "$itemKey:heroDiscoveryV${HeroDiscoveryMetadataService.CACHE_VERSION}"
                     val facts = discoveryCache[discoveryKey].orEmpty()

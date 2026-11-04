@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Lightbulb
@@ -61,6 +62,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -2486,6 +2488,28 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.YouTubeAccount,
+            key = "youtube-mini-player",
+            title = "Mini player",
+            description = "Back from a YouTube video keeps it playing in a corner box while you browse the YouTube tab",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-mini-player"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
+            key = "youtube-all-languages",
+            title = "All languages",
+            description = "Dubbed audio tracks and every subtitle language for YouTube videos",
+            pageLabel = youTubePage,
+            section = youTubePage,
+            category = generalCategory,
+            icon = Icons.Rounded.Link,
+            anchor = SettingsScrollAnchor.searchKey("youtube-all-languages"),
+        )
+        addRow(
+            page = SettingsPage.YouTubeAccount,
             key = "youtube-max-quality",
             title = "Max video quality",
             description = "The sharpest a YouTube tab video plays at: 8K, 4K, 1440p, 1080p or 720p",
@@ -2549,6 +2573,37 @@ private fun settingsSearchEntries(
                 section = row.sectionOverride ?: screensaverSection,
                 category = generalCategory,
                 icon = Icons.Rounded.Bedtime,
+            )
+        }
+
+        // fork:voice-control
+        val voicePage = resolve(Res.string.compose_settings_page_voice_control)
+        addPage(
+            page = SettingsPage.VoiceControl,
+            key = "voice-control",
+            title = voicePage,
+            description = "Voice commands: speech model, microphone, test (voice, speech, mic, whisper, talk, dictation)",
+            category = generalCategory,
+            icon = Icons.Rounded.Mic,
+        )
+        listOf(
+            PlaybackSearchRow("voice-enable", "Voice commands", "Turn push-to-talk voice commands on or off", VOICE_SECTION_GENERAL),
+            PlaybackSearchRow("voice-push-to-talk", "Push to talk", "The voice key, the sidebar mic and the controller buttons that start listening", VOICE_SECTION_GENERAL),
+            PlaybackSearchRow("voice-end-pause", "End of command", "How long a pause ends a voice command", VOICE_SECTION_GENERAL),
+            PlaybackSearchRow("voice-model", "Speech model", "Download or delete the offline speech recognition model (whisper)", VOICE_SECTION_MODEL),
+            PlaybackSearchRow("voice-models-folder", "Models folder", "Where the speech models are kept", VOICE_SECTION_MODEL),
+            PlaybackSearchRow("voice-microphone", "Microphone", "Which recording device voice commands listen on", VOICE_SECTION_MICROPHONE),
+            PlaybackSearchRow("voice-test", "Test voice commands", "Record a command and see what was heard", VOICE_SECTION_MICROPHONE),
+        ).forEach { row ->
+            addRow(
+                page = SettingsPage.VoiceControl,
+                key = row.key,
+                title = row.title,
+                description = row.description,
+                pageLabel = voicePage,
+                section = row.sectionOverride ?: voicePage,
+                category = generalCategory,
+                icon = Icons.Rounded.Mic,
             )
         }
 
@@ -2687,6 +2742,7 @@ private fun settingsSearchEntries(
         if (!isDesktop) {
             add(SettingsPage.KeyboardShortcuts)
             add(SettingsPage.Screensaver)
+            add(SettingsPage.VoiceControl)
             add(SettingsPage.Preshow)
             add(SettingsPage.Music)
             add(SettingsPage.Seekr)
@@ -2908,12 +2964,16 @@ internal fun SettingsSearchField(
     val tokens = MaterialTheme.nuvio
     val focused = remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val fieldFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    // Searches as it is typed in, so a spoken "search" is only taken off the end.
+    com.nuvio.app.core.ui.VoiceSearchCommands(owner = "settings-search", text = query, onTextChange = onQueryChange)
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = modifier
             .fillMaxWidth()
             .height(38.dp)
+            .focusRequester(fieldFocus)
             // The section cards' frosted glass, so the field belongs to the page under it.
             .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
             .border(
@@ -2981,6 +3041,12 @@ internal fun SettingsSearchField(
                             .clickable { onQueryChange("") },
                     )
                 }
+                com.nuvio.app.core.ui.VoiceSearchButton(
+                    owner = "settings-search",
+                    focusField = { runCatching { fieldFocus.requestFocus() } },
+                    tint = tokens.colors.textMuted,
+                    size = 28.dp,
+                )
             }
         },
     )

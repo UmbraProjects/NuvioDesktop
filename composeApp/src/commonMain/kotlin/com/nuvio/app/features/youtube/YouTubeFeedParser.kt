@@ -148,6 +148,19 @@ internal fun parseYouTubeFeed(body: String): YouTubeFeedPage {
     return YouTubeFeedPage(videos.values.toList(), continuation, sections)
 }
 
+/**
+ * A watch page's related videos (a `next` answer for a video, or a continuation of its column): only
+ * the side column (`secondaryResults`) is read on the first page, so the token is the column's own and
+ * not the comments' (whose `continuationItemRenderer` sits in the primary results). A continuation
+ * answer (`appendContinuationItemsAction`) carries nothing else and is read whole.
+ */
+internal fun parseYouTubeRelated(body: String): YouTubeFeedPage {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull()
+        ?: return YouTubeFeedPage(emptyList(), null)
+    val column = collectObjects(root, "secondaryResults").firstOrNull() ?: return parseYouTubeFeed(body)
+    return parseYouTubeFeed(column.toString())
+}
+
 /** A section's heading text (`itemSectionHeaderRenderer.title`, or a view model's `headline`), or null. */
 private fun sectionHeading(section: JsonObject): String? {
     val header = section["header"] ?: return null
@@ -394,6 +407,39 @@ internal fun parseYouTubeSubscribed(body: String): Boolean? {
     collectObjects(root, "subscriptionStateEntity").firstNotNullOfOrNull { it.boolean("subscribed") }?.let { return it }
     return collectObjects(root, "subscribeButtonRenderer").firstNotNullOfOrNull { it.boolean("subscribed") }
 }
+
+/** A channel page's counts as YouTube words them ("1.2M subscribers", "345 videos"); either may be missing. */
+data class YouTubeChannelStats(val subscribers: String?, val videos: String?)
+
+/**
+ * The subscriber and video counts in a channel page's header: the current page header's metadata
+ * rows (`pageHeaderViewModel` … `metadataParts`, beside the @handle) or the older
+ * `c4TabbedHeaderRenderer`'s own fields. Null when the page carries neither.
+ */
+internal fun parseYouTubeChannelStats(body: String): YouTubeChannelStats? {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return null
+    val parts = collectObjects(root, "pageHeaderViewModel")
+        .flatMap { collectObjects(it, "contentMetadataViewModel") }
+        .flatMap { metadata ->
+            metadata.array("metadataRows").orEmpty().flatMap { row ->
+                (row as? JsonObject)?.array("metadataParts").orEmpty().mapNotNull { part ->
+                    text((part as? JsonObject)?.get("text"))?.trim()
+                }
+            }
+        }
+    var subscribers = parts.firstOrNull { it.contains("subscriber", ignoreCase = true) }
+    var videos = parts.firstOrNull { YOUTUBE_VIDEO_COUNT.matches(it) }
+    if (subscribers == null || videos == null) {
+        collectObjects(root, "c4TabbedHeaderRenderer").firstOrNull()?.let { header ->
+            subscribers = subscribers ?: text(header["subscriberCountText"])
+            videos = videos ?: text(header["videosCountText"])
+        }
+    }
+    if (subscribers == null && videos == null) return null
+    return YouTubeChannelStats(subscribers, videos)
+}
+
+private val YOUTUBE_VIDEO_COUNT = Regex("""^[\d.,\s]+[KMB]?\s+videos?$""", RegexOption.IGNORE_CASE)
 
 private fun watchedPercent(raw: Int?): Int? = raw?.takeIf { it > 0 }?.coerceAtMost(100)
 

@@ -34,6 +34,37 @@ internal object YouTubePlayQueue {
     /** Whether [videoId] is the video the queue is playing now. */
     fun isPlaying(videoId: String): Boolean = _state.value?.current?.videoId == videoId
 
+    /**
+     * [videoId] ended: whether something follows it here ([handOffNext]). Videos queued meanwhile
+     * ([YouTubeWatchQueue]) come first when nothing else was set to follow it, see [adoptWatchQueue].
+     */
+    fun followsOn(videoId: String): Boolean {
+        adoptWatchQueue(videoId)
+        return isPlaying(videoId)
+    }
+
+    /**
+     * fork:youtube-mini-player - videos put in the queue while [videoId] plays outside it (from a feed, a
+     * search, the mini player's tab) play after it, as on YouTube: the queue's play-through starts from
+     * here. Only when nothing else was set to follow it, apart from autoplay's pick, which the queue
+     * replaces; a playlist, a related video picked in the player or a play-through already going keep theirs.
+     */
+    private fun adoptWatchQueue(videoId: String) {
+        val state = _state.value
+        if (state != null && !state.autoplay) return
+        if (state != null && state.current?.videoId != videoId) return
+        val queued = YouTubeWatchQueue.videos.value.filterNot { it.videoId == videoId }
+        if (queued.isEmpty()) return
+        prepared?.second?.cancel()
+        prepared = null
+        _next.value = null
+        _state.value = State(WATCH_QUEUE_NAME, listOf(placeholder(videoId)) + queued, index = 0, watchQueue = true)
+        log.i { "queued videos play after $videoId: ${queued.size}" }
+    }
+
+    private fun placeholder(videoId: String) =
+        YouTubeVideo(videoId = videoId, title = "", channel = null, details = null, duration = null, thumbnailUrl = null)
+
     /** The video autoplay was last looked up for, so it is asked once per video. */
     @Volatile
     private var autoplayAskedFor: String? = null
@@ -50,13 +81,16 @@ internal object YouTubePlayQueue {
             val pick = runCatching { YouTubeFeedRepository.autoplayPick(videoId) }.getOrNull() ?: return@launch
             // A playlist or a related video picked in the player took over meanwhile: that comes first.
             if (_state.value != null || !YouTubeFeedRepository.autoplay.value) return@launch
-            handOverFromPlayer(videoId, pick)
+            // Queued meanwhile: the queue plays next instead (adoptWatchQueue).
+            if (YouTubeWatchQueue.videos.value.any { it.videoId != videoId }) return@launch
+            handOverFromPlayer(videoId, pick, autoplay = true)
             prepareNext(videoId)
         }
     }
 
     /** Resolves the video after [videoId] ahead of time, once; its stream URLs outlast any video's end. */
     fun prepareNext(videoId: String) {
+        adoptWatchQueue(videoId)
         val state = _state.value ?: return prepareAutoplay(videoId)
         if (state.current?.videoId != videoId) return
         val upcoming = state.videos.getOrNull(state.index + 1) ?: return
@@ -107,6 +141,8 @@ internal object YouTubePlayQueue {
         val index: Int,
         val oneOff: Boolean = false,
         val watchQueue: Boolean = false,
+        /** A one-off hand-over to autoplay's pick, which videos queued meanwhile replace. */
+        val autoplay: Boolean = false,
     ) {
         val current: YouTubeVideo? get() = videos.getOrNull(index)
     }
@@ -149,12 +185,11 @@ internal object YouTubePlayQueue {
      * set up as a two-video queue so the app hands the player over exactly as at a playlist's end
      * ([handOffNext]); any playlist being played through ends here.
      */
-    fun handOverFromPlayer(currentVideoId: String, next: YouTubeVideo) {
+    fun handOverFromPlayer(currentVideoId: String, next: YouTubeVideo, autoplay: Boolean = false) {
         prepared?.second?.cancel()
         prepared = null
         _next.value = null
-        val current = YouTubeVideo(videoId = currentVideoId, title = "", channel = null, details = null, duration = null, thumbnailUrl = null)
-        _state.value = State(name = "", videos = listOf(current, next), index = 0, oneOff = true)
+        _state.value = State(name = "", videos = listOf(placeholder(currentVideoId), next), index = 0, oneOff = true, autoplay = autoplay)
         log.i { "handing over to ${next.videoId} next" }
     }
 

@@ -89,6 +89,9 @@ internal actual suspend fun youTubeCreateComment(params: String, text: String, r
         pageId,
     )
 
+internal actual suspend fun youTubePerformCommentAction(action: String, pageId: String?): YouTubeBrowseResult =
+    signedWebRequest("comment/perform_comment_action", mapOf("actions" to listOf(action)), pageId)
+
 internal actual suspend fun youTubeSendFeedback(token: String, pageId: String?): YouTubeBrowseResult =
     signedWebRequest(
         "feedback",
@@ -127,12 +130,12 @@ private object SignedInShell {
                 body = null,
                 timeoutMillis = 15_000L,
             )
-            YouTubeMusicAuth.applySetCookies(response.setCookies)
             if (response.ok) YouTubeWebClient.parseShell(response.body) else null
-        }.getOrNull()
+        }.getOrNull()?.let { page -> page.copy(signatureTimestamp = signatureTimestampFor(page.playerJsUrl)) }
         log.i {
             "signed-in page: loggedIn=${read?.loggedIn} visitorData=${read?.visitorData != null} " +
-                "client=${read?.clientVersion} authUser=${read?.sessionIndex}" + if (read == null) " (could not read it)" else ""
+                "client=${read?.clientVersion} authUser=${read?.sessionIndex} sts=${read?.signatureTimestamp}" +
+                if (read == null) " (could not read it)" else ""
         }
         shell = read
         // The cookie may have just been refreshed by the page's answer; key the cache by what is saved now.
@@ -143,12 +146,37 @@ private object SignedInShell {
     }
 
     suspend fun forget() = lock.withLock { readAtMs = 0L }
+
+    /** The last player script read and its signatureTimestamp: the script only changes every few weeks. */
+    private var playerSts: Pair<String, Int>? = null
+
+    /** The signatureTimestamp of the player script at [url] (about 2.5 MB, read once per version). */
+    private suspend fun signatureTimestampFor(url: String?): Int? {
+        url ?: return null
+        playerSts?.takeIf { it.first == url }?.let { return it.second }
+        val sts = runCatching {
+            val response = TrailerExtractionPlatform.performRequest(
+                url = url,
+                method = "GET",
+                headers = YouTubeWebClient.pageHeaders(),
+                body = null,
+                timeoutMillis = 15_000L,
+            )
+            if (response.ok) YouTubeWebClient.signatureTimestamp(response.body) else null
+        }.getOrNull()
+        if (sts == null) log.w { "player script: no signatureTimestamp found in $url" }
+        else playerSts = url to sts
+        return sts
+    }
+
+    /** The signatureTimestamp for the saved sign-in's page, or null when unknown. */
+    suspend fun signatureTimestamp(): Int? =
+        YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"]?.let { get(it)?.signatureTimestamp }
 }
 
-/** One signed request: the cookies as saved now (they may just have been refreshed), and their refreshes kept. */
+/** One signed request with the cookies as saved now (they may just have been refreshed; the request layer keeps refreshes). */
 private suspend fun send(endpoint: String, params: Map<String, Any?>, pageId: String?, shell: YouTubeWebShell?) =
     TrailerPlaybackResolver.webRequest(endpoint, params, YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN), pageId, shell)
-        .also { YouTubeMusicAuth.applySetCookies(it.setCookies) }
 
 private const val EXPIRED_MESSAGE =
     "YouTube no longer accepts the saved sign-in (it answered as signed out). Sign in again under Settings > YouTube account."
@@ -232,13 +260,20 @@ private object WebPlayerAnswers {
         }
         if (asking) {
             try {
+                // As youtube.com asks: with the player script's signatureTimestamp. Without it some accounts get a
+                // refusal back, with no playbackTracking, so nothing reaches the watch history.
+                val sts = SignedInShell.signatureTimestamp()
+                val contentPlaybackContext = buildMap<String, Any?> {
+                    put("html5Preference", "HTML5_PREF_WANTS")
+                    if (sts != null) put("signatureTimestamp", sts)
+                }
                 val result = signedWebRequest(
                     "player",
                     mapOf(
                         "videoId" to videoId,
                         "contentCheckOk" to true,
                         "racyCheckOk" to true,
-                        "playbackContext" to mapOf("contentPlaybackContext" to mapOf("html5Preference" to "HTML5_PREF_WANTS")),
+                        "playbackContext" to mapOf("contentPlaybackContext" to contentPlaybackContext),
                     ),
                     pageId,
                 )
@@ -267,7 +302,12 @@ internal actual suspend fun youTubePlaybackTracking(videoId: String, pageId: Str
     val result = WebPlayerAnswers.get(videoId, pageId) as? YouTubeBrowseResult.Ok ?: return null
     // Only the stats URLs are wanted here; the streams came from the extractor.
     val tracking = runCatching { Json.parseToJsonElement(result.body).jsonObject["playbackTracking"]?.jsonObject }
-        .getOrNull() ?: return null
+        .getOrNull()
+    if (tracking == null) {
+        // The answer says why (usually a refusal: LOGIN_REQUIRED "...not a bot", UNPLAYABLE ...).
+        log.w { "$videoId: player answer has no playbackTracking: ${YouTubeWebClient.playabilitySummary(result.body)}" }
+        return null
+    }
     fun url(key: String) = tracking[key]?.jsonObject?.get("baseUrl")?.jsonPrimitive?.contentOrNull
     val playback = url("videostatsPlaybackUrl") ?: return null
     val watchtime = url("videostatsWatchtimeUrl") ?: return null
@@ -280,7 +320,9 @@ private const val MAX_CAPTION_TRACKS = 6
 internal actual suspend fun youTubeCaptionSubtitles(videoId: String): List<AddonSubtitle> {
     val player = WebPlayerAnswers.get(videoId, YouTubeFeedRepository.channel.value.pageId) as? YouTubeBrowseResult.Ok
         ?: return emptyList()
-    val tracks = parseYouTubeCaptionTracks(player.body).take(MAX_CAPTION_TRACKS)
+    // fork:youtube-languages - every track with All languages on (a video subtitled in many languages).
+    val tracks = parseYouTubeCaptionTracks(player.body)
+        .let { if (YouTubeFeedRepository.allLanguages.value) it else it.take(MAX_CAPTION_TRACKS) }
     if (tracks.isEmpty()) {
         log.i { "$videoId: no subtitle tracks" }
         return emptyList()
@@ -399,9 +441,18 @@ internal actual suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): T
             skipManifestLadder = true,
             parallelClients = true,
             maxShortSide = YouTubeFeedRepository.maxQuality.value,
+            allAudioTracks = YouTubeFeedRepository.allLanguages.value,
         ),
     ) {
-        MusicResolver.openVideo(videoId)
+        // fork:youtube-languages - any dubs ride along in the audio source string for the player to open.
+        MusicResolver.openVideo(videoId)?.let { source ->
+            if (source.extraAudioTracks.isEmpty()) {
+                source
+            } else {
+                log.i { "$videoId: ${source.extraAudioTracks.size} more audio languages (${source.extraAudioTracks.joinToString { it.language }})" }
+                source.copy(audioUrl = com.nuvio.app.features.trailer.encodePlayerAudioSources(source.audioUrl, source.extraAudioTracks))
+            }
+        }
     }
 
 internal actual object YouTubeModeStorage {
@@ -465,11 +516,23 @@ internal actual object YouTubeModeStorage {
 
     actual fun saveOpenWindowed(windowed: Boolean) = store.putBoolean(OPEN_WINDOWED_KEY, windowed)
 
+    private const val MINI_PLAYER_ON_BACK_KEY = "mini_player_on_back"
+
+    actual fun loadMiniPlayerOnBack(): Boolean = store.getBoolean(MINI_PLAYER_ON_BACK_KEY) ?: true
+
+    actual fun saveMiniPlayerOnBack(enabled: Boolean) = store.putBoolean(MINI_PLAYER_ON_BACK_KEY, enabled)
+
     private const val THEATER_MODE_KEY = "theater_mode"
 
     actual fun loadTheaterMode(): Boolean = store.getBoolean(THEATER_MODE_KEY) ?: false
 
     actual fun saveTheaterMode(theater: Boolean) = store.putBoolean(THEATER_MODE_KEY, theater)
+
+    private const val ALL_LANGUAGES_KEY = "all_languages"
+
+    actual fun loadAllLanguages(): Boolean = store.getBoolean(ALL_LANGUAGES_KEY) ?: false
+
+    actual fun saveAllLanguages(enabled: Boolean) = store.putBoolean(ALL_LANGUAGES_KEY, enabled)
 
     private const val WATCHED_DATE_MODE_KEY = "watched_date_mode"
 

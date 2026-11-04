@@ -92,6 +92,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -160,6 +161,8 @@ fun YouTubeTabScreen(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     topChromePadding: Dp? = null,
+    /** Opens a playlist's next video once the player gave up on it; off in the mini player's copy of the tab. */
+    opensQueueNext: Boolean = true,
 ) {
     val auth by remember {
         YouTubeMusicAuth.ensureLoaded()
@@ -184,6 +187,15 @@ fun YouTubeTabScreen(
     // card or tile the next page was opened from, which has left the screen by then.
     val returnPoints = remember { HashMap<Int, YouTubeReturnPoint>() }
     var pendingReturn by remember { mutableStateOf<YouTubeReturnPoint?>(null) }
+    // fork:youtube-mini-player - the tab picks up where the mini player's copy of it was left when
+    // the mini player closes: same page, same pages behind it, same scroll (YouTubeTabCarryOver).
+    val carried = remember { if (opensQueueNext) YouTubeTabCarryOver.take() else null }
+    remember(carried) {
+        if (carried != null) {
+            selectedName = carried.selectedName
+            backStack = carried.backStack
+        }
+    }
     // Read in push(), which comes before the grid in this function.
     var mainGrid: androidx.compose.foundation.lazy.grid.LazyGridState? = null
     fun push(next: String, from: String? = null) {
@@ -210,6 +222,14 @@ fun YouTubeTabScreen(
     fun showPlaylist(playlist: YouTubePlaylist) {
         YouTubeFeedRepository.openPlaylist(playlist)
         push(YouTubeFeedKind.Playlist.name, from = playlist.playlistId)
+    }
+    // fork:youtube-mini-player - a channel asked for from the watch page (its name): opened here, as
+    // if picked in the tab, the video going on in the corner.
+    val channelRequest by YouTubeWatchLayout.channelRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(channelRequest) {
+        val request = channelRequest ?: return@LaunchedEffect
+        YouTubeWatchLayout.consumeChannelRequest(request)
+        showChannel(request.channelId, request.name, request.avatarUrl, from = null)
     }
     // TabBackHandler, not PlatformBackHandler (which does nothing on desktop): the app asks it before
     // walking its tab history, as the Music tab's pages do.
@@ -351,7 +371,7 @@ fun YouTubeTabScreen(
 
     // The playlist being played through: its previous video ended, so open the next.
     LaunchedEffect(queueNext) {
-        if (queueNext != null) YouTubePlayQueue.takeNext()?.let(::play)
+        if (opensQueueNext && queueNext != null) YouTubePlayQueue.takeNext()?.let(::play)
     }
     fun playFromPlaylist(index: Int) {
         val playlist = openPlaylist ?: return
@@ -382,10 +402,38 @@ fun YouTubeTabScreen(
     val queueReorder = rememberReorderableLazyGridState(gridState) { from, to ->
         YouTubeWatchQueue.move(from.key as? String ?: return@rememberReorderableLazyGridState, to.index)
     }
+    // The page and search the grid was last scrolled for. Kept across the tab leaving the screen (a
+    // player opened over it, the mini player's copy between videos), so coming back is not taken for
+    // a change of page and the grid stays where it was rather than jumping to the top.
+    var scrolledFor by rememberSaveable { mutableStateOf<String?>(null) }
+    var carriedApplied by remember { mutableStateOf(false) }
     LaunchedEffect(selectedName, searchQuery) {
+        val key = "$selectedName|$searchQuery"
+        if (carried != null && !carriedApplied) {
+            carriedApplied = true
+            scrolledFor = key
+            gridState.scrollToItem(carried.index, carried.offset)
+            return@LaunchedEffect
+        }
+        if (scrolledFor == key) return@LaunchedEffect
+        val first = scrolledFor == null
+        scrolledFor = key
+        if (first) return@LaunchedEffect
         // Back to a feed: where it was left. Anywhere else starts at the top.
         val back = pendingReturn?.takeIf { it.page == selectedName && !it.ownGrid }
         gridState.scrollToItem(back?.index ?: 0, back?.offset ?: 0)
+    }
+    // The mini player's copy hands its place over as it goes (to the next video, or for good).
+    if (!opensQueueNext) {
+        val latestSelected by rememberUpdatedState(selectedName)
+        val latestBackStack by rememberUpdatedState(backStack)
+        androidx.compose.runtime.DisposableEffect(gridState) {
+            onDispose {
+                YouTubeTabCarryOver.put(
+                    YouTubeTabPlace(latestSelected, latestBackStack, gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset),
+                )
+            }
+        }
     }
     // Shown again after a while (switched to, the tab reopened, the player closed): a feed that
     // changes by itself is fetched again, the old page staying up until the new one replaces it.
@@ -398,10 +446,16 @@ fun YouTubeTabScreen(
     LaunchedEffect(gridState, kind, showingQueue) {
         // The queue has no next page.
         if (showingQueue) return@LaunchedEffect
+        // Keyed on the item count too: the end is in sight before the first page is even back (an
+        // empty grid), when there is no next page to ask for yet; a short first page (Nov 4: Home
+        // answered 12) left it in sight, and on the end-only key nothing asked again until the
+        // feed was left and come back to. Each page arriving with the end still in sight asks for
+        // the one after.
         snapshotFlow {
+            val total = gridState.layoutInfo.totalItemsCount
             val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            last >= gridState.layoutInfo.totalItemsCount - 6
-        }.distinctUntilChanged().collect { nearEnd ->
+            (last >= total - 6) to total
+        }.distinctUntilChanged().collect { (nearEnd, _) ->
             if (nearEnd) YouTubeFeedRepository.loadMore(kind)
         }
     }
@@ -438,6 +492,13 @@ fun YouTubeTabScreen(
     }
     // The bar's box: Enter searches, its clear button leaves the results. Requests made before this
     // screen existed are not replayed.
+    // fork:voice-control - a search said while elsewhere, run once the tab is here.
+    LaunchedEffect(searchBox.pendingSearch) {
+        val query = searchBox.pendingSearch ?: return@LaunchedEffect
+        searchBox.pendingSearch = null
+        searchBox.text = query
+        submitSearch()
+    }
     var handledSubmits by remember { mutableStateOf(searchBox.submits) }
     LaunchedEffect(searchBox.submits) {
         if (searchBox.submits != handledSubmits) submitSearch()
@@ -533,6 +594,15 @@ fun YouTubeTabScreen(
             // Without the top bar (the sidebar layout) the search box stays in the tab.
             if (auth.signedIn && !barHosted) {
                 Spacer(Modifier.width(12.dp))
+                com.nuvio.app.core.ui.VoiceSearchCommands(
+                    owner = "youtube-tab",
+                    text = searchBox.text,
+                    onTextChange = { searchBox.text = it },
+                    onSubmit = { query ->
+                        searchBox.text = query
+                        submitSearch()
+                    },
+                )
                 NuvioTextField(
                     value = searchBox.text,
                     onValueChange = { searchBox.text = it },
@@ -569,20 +639,28 @@ fun YouTubeTabScreen(
                             modifier = Modifier.padding(start = 8.dp).size(18.dp).clip(CircleShape).clickable(onClick = ::submitSearch),
                         )
                     },
-                    trailingContent = if (searchBox.text.isNotEmpty() || kind == YouTubeFeedKind.Search) {
-                        {
+                    trailingContent = {
+                        if (searchBox.text.isNotEmpty() || kind == YouTubeFeedKind.Search) {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
                                 contentDescription = "Clear search",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(end = 8.dp).size(18.dp).clip(CircleShape).clickable {
+                                modifier = Modifier.size(18.dp).clip(CircleShape).clickable {
                                     searchBox.text = ""
                                     if (kind == YouTubeFeedKind.Search) goBack()
                                 },
                             )
                         }
-                    } else {
-                        null
+                        // Clear of the pill's rounded end, as the search icon is at the other.
+                        com.nuvio.app.core.ui.VoiceSearchButton(
+                            owner = "youtube-tab",
+                            voiceScope = com.nuvio.app.features.voice.VoiceSearchScope.YouTube,
+                            focusField = { runCatching { searchFocus.requestFocus() } },
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 4.dp),
+                            size = 28.dp,
+                            iconSize = 18.dp,
+                        )
                     },
                 )
             }
@@ -1419,15 +1497,27 @@ private fun ChannelHeader(channel: YouTubeOpenChannel, onBack: () -> Unit, onSub
                 contentScale = ContentScale.Crop,
             )
         }
-        Text(
-            text = channel.name,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(
+                text = channel.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // "1.2M subscribers · 345 videos", once the page's header has said.
+            val counts = listOfNotNull(channel.stats?.subscribers, channel.stats?.videos).joinToString(" · ")
+            if (counts.isNotEmpty()) {
+                Text(
+                    text = counts,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         when (channel.subscribed) {
             // Not known until the page answers; no button rather than a guess.
             null -> Unit
@@ -1455,10 +1545,12 @@ private fun SubscribedChannels(onOpen: (YouTubeChannel) -> Unit, returnTo: Strin
         else -> {
             val gridState = rememberLazyGridState()
             LaunchedEffect(gridState) {
+                // Keyed on the count as well, as the feeds' grid is: a short page asks for the next.
                 snapshotFlow {
+                    val total = gridState.layoutInfo.totalItemsCount
                     val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                    last >= gridState.layoutInfo.totalItemsCount - 8
-                }.distinctUntilChanged().collect { nearEnd ->
+                    (last >= total - 8) to total
+                }.distinctUntilChanged().collect { (nearEnd, _) ->
                     if (nearEnd) YouTubeFeedRepository.loadMoreSubscribedChannels()
                 }
             }
@@ -2059,3 +2151,29 @@ private val YouTubeFeedKind.headerIcon: androidx.compose.ui.graphics.vector.Imag
         YouTubeFeedKind.Channel -> Icons.Rounded.AccountCircle
         YouTubeFeedKind.Playlist -> Icons.Rounded.PlaylistPlay
     }
+
+/** fork:youtube-mini-player - where the tab was: its page, the pages behind it, and the grid's scroll. */
+internal data class YouTubeTabPlace(val selectedName: String, val backStack: List<String>, val index: Int, val offset: Int)
+
+/**
+ * fork:youtube-mini-player - the mini player's copy of the tab leaves its place here as it goes; the
+ * tab itself takes it the next time it comes on screen (the player closed), once.
+ */
+internal object YouTubeTabCarryOver {
+    private var place: YouTubeTabPlace? = null
+    private var putAtMs = 0L
+
+    fun put(value: YouTubeTabPlace) {
+        place = value
+        putAtMs = com.nuvio.app.features.streams.epochMs()
+    }
+
+    /** Only straight after the mini player went: the tab opened later (from elsewhere) starts as it was. */
+    fun take(): YouTubeTabPlace? {
+        val value = place?.takeIf { com.nuvio.app.features.streams.epochMs() - putAtMs < CARRY_OVER_MS }
+        place = null
+        return value
+    }
+
+    private const val CARRY_OVER_MS = 10_000L
+}

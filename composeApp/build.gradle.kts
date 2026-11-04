@@ -847,6 +847,96 @@ val buildWindowsQuickJs = tasks.register("buildWindowsQuickJs") {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// fork:voice-control - nuvio_whisper.dll: whisper.cpp + ggml (CPU) + the JNI bridge, one static DLL
+// (src/desktopMain/native/whisper-jni/CMakeLists.txt says why static). Same toolchain as the engine
+// (MSYS2 UCRT64 GCC + Visual Studio's CMake) and the same kind of sibling checkout:
+// ggml-org/whisper.cpp at the tag below beside NuvioDesktop, or -Pnuvio.whisper.sourceDir.
+// Best-effort like the engine: without it the Voice control page says the engine is missing, and
+// only createDistributable insists (unless -Pnuvio.engine.optional=true).
+// ---------------------------------------------------------------------------------------------
+val whisperSourceDir = providers.gradleProperty("nuvio.whisper.sourceDir").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?.let(::File)
+    ?: rootProject.projectDir.resolve("../whisper.cpp")
+val whisperExpectedTag = "v1.9.5"
+val whisperCMakeProject = layout.projectDirectory.dir("src/desktopMain/native/whisper-jni")
+val whisperBuildDir = layout.buildDirectory.dir("native/whisper/build")
+val whisperOutput = layout.buildDirectory.file("native/windows/nuvio_whisper.dll")
+
+fun missingWhisperInputs(cmake: File?): List<String> = listOfNotNull(
+    "whisper.cpp checkout ${whisperSourceDir.absolutePath} (git clone --depth 1 --branch $whisperExpectedTag https://github.com/ggml-org/whisper.cpp beside NuvioDesktop, or pass -Pnuvio.whisper.sourceDir)"
+        .takeUnless { whisperSourceDir.resolve("include/whisper.h").isFile },
+    "MSYS2 UCRT64 g++ under ${nuvioEngineMsys2Root.absolutePath} (pass -Pnuvio.windows.msys2.ucrt64)"
+        .takeUnless { nuvioEngineMsys2Root.resolve("bin/g++.exe").isFile },
+    "CMake (Visual Studio 'C++ CMake tools' component, or -Pnuvio.windows.cmake=C:/path/cmake.exe)"
+        .takeUnless { cmake?.isFile == true },
+    "jni.h under ${nuvioEngineJniIncludeDir.absolutePath}"
+        .takeUnless { nuvioEngineJniIncludeDir.resolve("jni.h").isFile },
+)
+
+val buildWindowsWhisper = tasks.register("buildWindowsWhisper") {
+    notCompatibleWithConfigurationCache("Builds the host-local whisper.cpp DLL with the MSYS2 toolchain.")
+    enabled = isWindowsHost
+    inputs.dir(whisperCMakeProject)
+    if (whisperSourceDir.resolve("src").isDirectory) {
+        inputs.dir(whisperSourceDir.resolve("src"))
+        inputs.dir(whisperSourceDir.resolve("include"))
+        inputs.dir(whisperSourceDir.resolve("ggml/src")).withPropertyName("ggmlSources")
+        inputs.file(whisperSourceDir.resolve("CMakeLists.txt"))
+    }
+    outputs.file(whisperOutput)
+    doLast {
+        val output = whisperOutput.get().asFile
+        val cmake = resolveNuvioEngineCMake()
+        val missing = missingWhisperInputs(cmake)
+        if (missing.isNotEmpty()) {
+            logger.warn("Skipping whisper.cpp build; voice control will be unavailable. Missing: " + missing.joinToString("; "))
+            output.delete()
+            return@doLast
+        }
+        checkNotNull(cmake)
+        val buildDir = whisperBuildDir.get().asFile.apply { mkdirs() }
+        val msysBin = nuvioEngineMsys2Root.resolve("bin")
+        fun run(vararg command: String) {
+            val process = ProcessBuilder(*command)
+                .directory(buildDir)
+                .redirectErrorStream(true)
+                .apply { environment()["PATH"] = "${msysBin.absolutePath};${System.getenv("PATH").orEmpty()}" }
+                .start()
+            val log = process.inputStream.bufferedReader().readText()
+            val code = process.waitFor()
+            if (code != 0) {
+                throw GradleException("whisper.cpp build step failed (exit $code): ${command.joinToString(" ")}\n${log.takeLast(6000)}")
+            }
+        }
+        val commonFlags = "-D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -ffunction-sections -fdata-sections"
+        run(
+            cmake.absolutePath,
+            "-S", whisperCMakeProject.asFile.absolutePath,
+            "-B", buildDir.absolutePath,
+            "-G", "Ninja",
+            "-DCMAKE_C_COMPILER=${msysBin.resolve("gcc.exe").absolutePath.replace('\\', '/')}",
+            "-DCMAKE_CXX_COMPILER=${msysBin.resolve("g++.exe").absolutePath.replace('\\', '/')}",
+            "-DCMAKE_MAKE_PROGRAM=${msysBin.resolve("ninja.exe").absolutePath.replace('\\', '/')}",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_C_FLAGS=$commonFlags",
+            "-DCMAKE_CXX_FLAGS=$commonFlags",
+            // Fully static, as the engine: the JVM must not need MSYS2 on PATH to load it.
+            "-DCMAKE_SHARED_LINKER_FLAGS=-static -s -Wl,--dynamicbase,--nxcompat,--high-entropy-va,--gc-sections,--exclude-all-symbols",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+            "-DNUVIO_WHISPER_ROOT=${whisperSourceDir.absolutePath.replace('\\', '/')}",
+            "-DNUVIO_JNI_INCLUDE_DIR=${nuvioEngineJniIncludeDir.absolutePath.replace('\\', '/')}",
+        )
+        run(cmake.absolutePath, "--build", buildDir.absolutePath, "--parallel", "--target", "nuvio_whisper")
+        val built = buildDir.resolve("nuvio_whisper.dll")
+        check(built.isFile) { "whisper.cpp build finished but ${built.absolutePath} is missing" }
+        output.parentFile.mkdirs()
+        built.copyTo(output, overwrite = true)
+        logger.lifecycle("Whisper DLL: ${output.absolutePath} (${output.length() / 1024} KB)")
+    }
+}
+
 val windowsPlaybackStartupTestSource = layout.projectDirectory.file("src/desktopTest/native/windows/playback_startup_test.cpp")
 val windowsPlaybackStartupTestOutput = layout.buildDirectory.file("native/windows/player_startup_test.exe")
 val buildWindowsPlaybackStartupTests = tasks.register<Exec>("buildWindowsPlaybackStartupTests") {
@@ -1150,6 +1240,7 @@ if (isWindowsHost) {
             buildWindowsPlayerBridge,
             buildWindowsNuvioEngine,
             buildWindowsQuickJs,
+            buildWindowsWhisper,
             prepareWindowsPlayerRuntime,
             generateWindowsPlayerRuntimeIndex,
             prepareWindowsPythonLib,
@@ -1176,6 +1267,7 @@ if (isWindowsHost) {
             // input here or a rebuilt DLL never reaches an otherwise up-to-date app image.
             inputs.files(nuvioEngineOutput).optional()
             inputs.files(quickJsOutput).optional()
+            inputs.files(whisperOutput).optional()
             inputs.files(
                 fileTree(desktopResourcesSourceDir) { include(externalDesktopResources) },
             )
@@ -1206,6 +1298,7 @@ if (isWindowsHost) {
                     from(windowsPlayerRuntimeOutput)
                     from(nuvioEngineOutput)
                     from(quickJsOutput)
+                    from(whisperOutput)
                     into(imageDir)
                 }
                 check(nuvioEngineOptional || nuvioEngineOutput.get().asFile.isFile) {
@@ -1214,6 +1307,10 @@ if (isWindowsHost) {
                 }
                 check(nuvioEngineOptional || quickJsOutput.get().asFile.isFile) {
                     "libquickjs.dll was not built (see buildWindowsQuickJs); a distributable must not fall back to quickjs-kt's unpatched copy."
+                }
+                check(nuvioEngineOptional || whisperOutput.get().asFile.isFile) {
+                    "nuvio_whisper.dll was not built; a distributable must not ship without voice control. " +
+                        "Missing inputs: ${missingWhisperInputs(resolveNuvioEngineCMake()).joinToString("; ").ifBlank { "(build failed, see buildWindowsWhisper output)" }}"
                 }
                 copy {
                     from(windowsPythonLibOutput)
@@ -1773,6 +1870,7 @@ kotlin {
             implementation(libs.compose.material3)
             implementation(compose.materialIconsExtended)
             implementation(libs.compose.ui)
+            implementation(libs.compose.ui.backhandler)
             implementation(libs.compose.components.resources)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
@@ -1828,6 +1926,17 @@ tasks.withType<Test>().configureEach {
             systemProperty("com.dokar.quickjs.library.path", dll.parentFile.absolutePath)
         }
     }
+    // fork:voice-control - WhisperTranscriberTest runs on the built DLL with a model passed as
+    // -Pnuvio.whisperTestModel=<path to a ggml .bin>; without both it skips.
+    val whisperDll = whisperOutput
+    inputs.files(whisperDll).optional()
+    doFirst {
+        whisperDll.get().asFile.takeIf(File::isFile)?.let { dll ->
+            systemProperty("nuvio.whisper.library", dll.absolutePath)
+        }
+    }
+    systemProperty("nuvio.whisperTestModel", providers.gradleProperty("nuvio.whisperTestModel").orNull ?: "")
+    systemProperty("nuvio.whisperTestAudio", whisperSourceDir.resolve("samples/jfk.wav").absolutePath)
     // Opt-in live-swarm probe for the P2P engine (NuvioEngineNetworkProbeTest); off by default.
     systemProperty("nuvio.p2pProbeHash", providers.gradleProperty("nuvio.p2pProbeHash").orNull ?: "")
     systemProperty("nuvio.p2pProbePreloadMb", providers.gradleProperty("nuvio.p2pProbePreloadMb").orNull ?: "")
@@ -2106,6 +2215,7 @@ fun isRunningFrom(exe: File): Boolean {
 val nativeImageGeneratedDir = layout.buildDirectory.dir("native-image/generated")
 val nativeJniSources = fileTree("src/desktopMain/native") {
     include("windows/**/*.cpp", "windows/**/*.c", "nuvio-engine/**/*.cpp", "nuvio-engine/**/*.c")
+    include("whisper-jni/**/*.cpp") // fork:voice-control - String(byte[], String) for the transcript
 }
 
 /** One `reflection` entry of a reachability-metadata.json. */

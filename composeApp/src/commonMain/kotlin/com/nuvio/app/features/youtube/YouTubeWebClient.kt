@@ -60,6 +60,29 @@ internal object YouTubeWebClient {
     private val VISITOR_DATA = Regex(""""VISITOR_DATA"\s*:\s*"([^"]+)"""")
     private val CLIENT_VERSION = Regex(""""INNERTUBE_CLIENT_VERSION"\s*:\s*"([^"]+)"""")
     private val SESSION_INDEX = Regex(""""SESSION_INDEX"\s*:\s*"?(\d+)""")
+    private val PLAYER_JS_URL = Regex(""""(?:PLAYER_JS_URL|jsUrl)"\s*:\s*"([^"]+base\.js)"""")
+    private val SIGNATURE_TIMESTAMP = Regex("""(?:signatureTimestamp|sts)\s*:\s*(\d{5})""")
+
+    /** The player script's absolute URL, from the page's `PLAYER_JS_URL` (JSON-escaped, site-relative). */
+    fun playerJsUrl(html: String): String? =
+        PLAYER_JS_URL.find(html)?.groupValues?.get(1)
+            ?.replace("\\/", "/")
+            ?.let { if (it.startsWith("http")) it else ORIGIN + it }
+
+    /**
+     * fork:youtube-web — the player script's `signatureTimestamp`: the version of the stream-URL cipher it
+     * deciphers. youtube.com's own `player` requests carry it (`contentPlaybackContext.signatureTimestamp`);
+     * one without it can come back as a refusal, without the `playbackTracking` URLs watch history needs.
+     */
+    fun signatureTimestamp(playerJs: String): Int? =
+        SIGNATURE_TIMESTAMP.find(playerJs)?.groupValues?.get(1)?.toIntOrNull()
+
+    /** Why a `player` answer carries no stats URLs: its `playabilityStatus` status and reason, for the log. */
+    fun playabilitySummary(playerJson: String): String {
+        val status = Regex(""""playabilityStatus"\s*:\s*\{\s*"status"\s*:\s*"([^"]+)"""").find(playerJson)?.groupValues?.get(1)
+        val reason = Regex(""""reason"\s*:\s*"([^"]{0,160})"""").find(playerJson)?.groupValues?.get(1)
+        return listOfNotNull(status ?: "no playabilityStatus", reason?.let { "\"$it\"" }).joinToString(" ")
+    }
 
     /**
      * What the signed-in page says about the session, or null when it is not the YouTube page at all
@@ -75,6 +98,7 @@ internal object YouTubeWebClient {
             visitorData = visitor,
             clientVersion = version,
             sessionIndex = SESSION_INDEX.find(html)?.groupValues?.get(1),
+            playerJsUrl = playerJsUrl(html),
         )
     }
 }
@@ -87,4 +111,8 @@ internal data class YouTubeWebShell(
     val clientVersion: String?,
     /** Which account in the cookie jar ("0" is the first). */
     val sessionIndex: String?,
+    /** The page's player script, where [signatureTimestamp] is read from. */
+    val playerJsUrl: String? = null,
+    /** See [YouTubeWebClient.signatureTimestamp]; null until read (or when it could not be). */
+    val signatureTimestamp: Int? = null,
 )

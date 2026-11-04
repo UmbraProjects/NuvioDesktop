@@ -26,6 +26,11 @@ object PlayerHandoff {
 
     /** Black-out the window until the next player's first frame. */
     fun holdShield() = holdPlayerHandoffShield()
+
+    /** fork:youtube-mini-player - a still of the window over the mini player's close, for a moment. */
+    fun coverClose() = coverPlayerClose()
 }
 
 internal expect fun holdPlayerHandoffShield()
+
+internal expect fun coverPlayerClose()

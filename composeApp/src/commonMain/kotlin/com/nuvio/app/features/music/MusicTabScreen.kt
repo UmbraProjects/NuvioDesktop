@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.shadow
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material.icons.rounded.FilterList
@@ -191,6 +192,18 @@ object MusicTopBarSearch {
     fun requestFocus() {
         focusRequests++
     }
+
+    /**
+     * fork:voice-control - a search asked for by voice: into the box, on the Search section, with the
+     * keyboard sent to the results when they arrive (as Enter does). The tab searches when the text changes.
+     */
+    fun searchFor(query: String) {
+        if (query.isBlank()) return
+        MusicTabState.filtering = false
+        MusicTabState.section = MusicSection.Search
+        MusicTabState.query = query
+        MusicTabState.focusResultsWhenReady = true
+    }
 }
 
 /**
@@ -260,17 +273,24 @@ private fun MusicSearchBox(chromeless: Boolean, modifier: Modifier = Modifier) {
                 else -> false
             }
         }
+    fun setText(it: String) {
+        if (filterMode) {
+            state.libraryFilter = it
+        } else {
+            state.query = it
+            // Typing from the Library goes back to Search: outside filter mode the box searches.
+            if (it.isNotBlank()) state.section = MusicSection.Search
+        }
+    }
+    // Searches as it is typed in, so a spoken "search" is only taken off the end.
+    com.nuvio.app.core.ui.VoiceSearchCommands(
+        owner = "music-search",
+        text = if (filterMode) state.libraryFilter else state.query,
+        onTextChange = ::setText,
+    )
     MusicGlassField(
         value = if (filterMode) state.libraryFilter else state.query,
-        onValueChange = {
-            if (filterMode) {
-                state.libraryFilter = it
-            } else {
-                state.query = it
-                // Typing from the Library goes back to Search: outside filter mode the box searches.
-                if (it.isNotBlank()) state.section = MusicSection.Search
-            }
-        },
+        onValueChange = ::setText,
         placeholder = if (filterMode) "Filter by name or genre" else "Search albums and artists",
         leadingIcon = if (filterMode) Icons.Rounded.FilterList else Icons.Rounded.Search,
         modifier = modifier,
@@ -283,6 +303,15 @@ private fun MusicSearchBox(chromeless: Boolean, modifier: Modifier = Modifier) {
         fieldFocus = fieldFocus,
         trailingFocus = trailingFocus,
     ) {
+        MusicFieldIconButton(
+            icon = Icons.Rounded.Mic,
+            description = "Search by voice",
+            active = com.nuvio.app.core.ui.VoiceSearch.owner.collectAsState().value == "music-search",
+            onClick = {
+                runCatching { fieldFocus.requestFocus() }
+                com.nuvio.app.core.ui.VoiceSearch.start("music-search")
+            },
+        )
         MusicFieldDivider()
         if (library) {
             val libraryState by MusicLibraryRepository.state.collectAsState()

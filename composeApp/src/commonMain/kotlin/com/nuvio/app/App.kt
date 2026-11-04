@@ -101,6 +101,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.nuvio.app.core.ui.PosterZoomOverlayAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
@@ -446,6 +447,7 @@ import com.nuvio.app.features.watchprogress.nextUpDismissKey
 import com.nuvio.app.features.watchprogress.opensDetails
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingActions
+import com.nuvio.app.features.watching.application.canMarkWatched
 import com.nuvio.app.features.watching.application.WatchingState
 import io.ktor.http.Url
 import kotlinx.coroutines.CancellationException
@@ -1532,6 +1534,29 @@ private fun MainAppContent(
             val entry = currentBackStackEntry ?: return@LaunchedEffect
             PerfTelemetry.markScreen(perfScreenName(entry, selectedTab, searchOverlayActive))
         }
+        // fork:youtube-mini-player - diagnostics: what took a YouTube video's player off screen. Nov 4 one
+        // closed on Escape with neither Back nor the route's own pop logged and mpv not at its end, so
+        // the listener (called inside whatever popped it) records the caller.
+        DisposableEffect(navController) {
+            var onYouTubePlayer = false
+            val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
+                val nowPlayer = destination.hasRoute<PlayerRoute>()
+                // available is still set here: the player's end() comes with its dispose, after this.
+                if (onYouTubePlayer && !nowPlayer && com.nuvio.app.features.youtube.YouTubeWatchLayout.available.value) {
+                    val caller = Throwable().stackTraceToString().lineSequence()
+                        .map { it.trim().removePrefix("at ") }
+                        .filter { it.startsWith("com.nuvio") && "OnDestinationChangedListener" !in it }
+                        .drop(1).take(10).joinToString(" < ")
+                    co.touchlab.kermit.Logger.withTag("YouTubeMiniPlayer").i {
+                        "player route left (browsing=${com.nuvio.app.features.youtube.YouTubeWatchLayout.browsing.value} " +
+                            "windowed=${com.nuvio.app.features.youtube.YouTubeWatchLayout.windowed.value}) from: $caller"
+                    }
+                }
+                onYouTubePlayer = nowPlayer
+            }
+            navController.addOnDestinationChangedListener(listener)
+            onDispose { navController.removeOnDestinationChangedListener(listener) }
+        }
         LaunchedEffect(navController, selectedTab, rootTabBackStack, searchOverlayActive) {
             DesktopNavigationGestureBridge.backRequests.collect { source ->
                 // Back leaves game mode rather than navigating the app hidden behind it. Read
@@ -1539,6 +1564,25 @@ private fun MainAppContent(
                 if (GameModeController.active.value) {
                     GameModeController.setActive(false)
                     return@collect
+                }
+                // fork:youtube-mini-player - over the tab the mini player draws, Back steps back inside the
+                // tab and never closes the video (the box's X does). From a YouTube tab video's page, Back
+                // goes to the mini player, as the player's own Back does (handleYouTubeMiniPlayerBack).
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    val youTubeLayout = com.nuvio.app.features.youtube.YouTubeWatchLayout
+                    if (youTubeLayout.available.value && youTubeLayout.browsing.value) {
+                        com.nuvio.app.core.ui.TabBackInterceptor.handle()
+                        return@collect
+                    }
+                    if (
+                        source == DesktopBackRequestSource.Keyboard &&
+                        youTubeLayout.available.value &&
+                        com.nuvio.app.features.youtube.YouTubeFeedRepository.miniPlayerOnBack.value &&
+                        com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page != null
+                    ) {
+                        youTubeLayout.startBrowsing()
+                        return@collect
+                    }
                 }
                 if (
                     StreamPickerController.isOpen &&
@@ -1705,6 +1749,30 @@ private fun MainAppContent(
         }
     }
 
+    /**
+     * Runs the main search for [query], as Enter in the top bar's box does. Results load as usual; if
+     * [confidentQuery] (the query, or the query with a type word from a voice command) can only mean
+     * one title, its details open on top once that is known, so Back lands on the full results.
+     */
+    fun submitSearch(query: String, confidentQuery: String = query) {
+        val trimmed = query.trim()
+        submittedSearchQuery = trimmed
+        searchOverlayActive = false
+        handleRootTabClick(AppScreenTab.Search)
+        navigateToContentCount++
+        confidentSearchJob[0]?.cancel()
+        confidentSearchJob[0] = coroutineScope.launch {
+            val match = com.nuvio.app.features.search.ConfidentSearch.resolve(confidentQuery.trim())
+                ?: return@launch
+            // Not if the user has already opened something or moved on.
+            val onResults = navController.currentBackStackEntry
+                ?.destination?.hasRoute<TabsRoute>() == true
+            if (onResults && selectedTab == AppScreenTab.Search && submittedSearchQuery == trimmed) {
+                navController.navigateIfResumed(DetailRoute(type = match.type, id = match.id))
+            }
+        }
+    }
+
     // The last playlist removed while the tab is open: same as hiding Discover.
     LaunchedEffect(liveTvTabVisible) {
         if (liveTvTabVisible) return@LaunchedEffect
@@ -1757,6 +1825,97 @@ private fun MainAppContent(
                 com.nuvio.app.features.navbar.NavBarEntry.YouTube -> latestRootTabClick.value(AppScreenTab.YouTube)
                 com.nuvio.app.features.navbar.NavBarEntry.Music -> latestRootTabClick.value(AppScreenTab.Music)
                 com.nuvio.app.features.navbar.NavBarEntry.Games -> com.nuvio.app.features.games.GameModeController.setActive(true)
+            }
+        }
+    }
+    // fork:voice-control - phase 4: carry out each understood command (VoiceCommandRouter decides what).
+    val latestSubmitSearch = rememberUpdatedState<(String, String) -> Unit> { q, confident -> submitSearch(q, confident) }
+    LaunchedEffect(navController) {
+        val voice = com.nuvio.app.features.voice.VoiceControlRepository
+        voice.intents.collect { intent ->
+            val context = com.nuvio.app.features.voice.VoiceRouteContext(
+                playerActive = navController.currentDestination?.hasRoute<PlayerRoute>() == true,
+                musicLoaded = com.nuvio.app.features.music.MusicPlayback.player.state.value.isActive,
+                youTubeTabEnabled = com.nuvio.app.features.youtube.YouTubeFeedRepository.tabEnabled.value == true,
+                musicTabEnabled = com.nuvio.app.features.music.library.MusicLibraryRepository.state.value.settings.tabEnabled,
+                liveTvShown = com.nuvio.app.features.iptv.IptvRepository.settings.value.tabShown,
+                discoverShown = ThemeSettingsRepository.desktopDiscoverTabVisible.value,
+            )
+            fun showTabs() {
+                if (navController.currentDestination?.hasRoute<TabsRoute>() != true) {
+                    navController.navigate(TabsRoute) {
+                        popUpTo<TabsRoute> { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            }
+            fun openTab(tab: AppScreenTab) {
+                showTabs()
+                if (selectedTab != tab) latestRootTabClick.value(tab)
+            }
+            when (val action = com.nuvio.app.features.voice.routeVoiceIntent(intent, context)) {
+                is com.nuvio.app.features.voice.VoiceAction.OpenTab -> openTab(
+                    when (action.destination) {
+                        com.nuvio.app.features.voice.VoiceDestination.Home -> AppScreenTab.Home
+                        com.nuvio.app.features.voice.VoiceDestination.Search -> AppScreenTab.Search
+                        com.nuvio.app.features.voice.VoiceDestination.Discover -> AppScreenTab.Discover
+                        com.nuvio.app.features.voice.VoiceDestination.Library -> AppScreenTab.Library
+                        com.nuvio.app.features.voice.VoiceDestination.LiveTv -> AppScreenTab.LiveTv
+                        com.nuvio.app.features.voice.VoiceDestination.Music -> AppScreenTab.Music
+                        com.nuvio.app.features.voice.VoiceDestination.YouTube -> AppScreenTab.YouTube
+                        com.nuvio.app.features.voice.VoiceDestination.Settings -> AppScreenTab.Settings
+                        com.nuvio.app.features.voice.VoiceDestination.Calendar -> AppScreenTab.Home // routed as OpenCalendar
+                    },
+                )
+                com.nuvio.app.features.voice.VoiceAction.OpenCalendar -> navController.navigateIfResumed(CalendarRoute)
+                is com.nuvio.app.features.voice.VoiceAction.SearchVideos -> {
+                    showTabs()
+                    searchQuery = action.query
+                    latestSubmitSearch.value(action.query, action.confidentQuery)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.SearchYouTube -> {
+                    openTab(AppScreenTab.YouTube)
+                    com.nuvio.app.features.youtube.YouTubeTopBarSearch.searchFor(action.query)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.SearchMusic -> {
+                    openTab(AppScreenTab.Music)
+                    com.nuvio.app.features.music.MusicTopBarSearch.searchFor(action.query)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.FocusSearch -> when (action.scope) {
+                    com.nuvio.app.features.voice.VoiceSearchScope.YouTube -> {
+                        openTab(AppScreenTab.YouTube)
+                        com.nuvio.app.features.youtube.YouTubeTopBarSearch.requestFocus()
+                    }
+                    com.nuvio.app.features.voice.VoiceSearchScope.Music -> {
+                        openTab(AppScreenTab.Music)
+                        com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
+                    }
+                    else -> {
+                        showTabs()
+                        latestRootTabClick.value(AppScreenTab.Search)
+                    }
+                }
+                is com.nuvio.app.features.voice.VoiceAction.Player -> {
+                    val player = com.nuvio.app.features.voice.VoicePlayback.player
+                    if (player == null) voice.showOutcome("The player is not ready")
+                    else player.control(action.command)?.let(voice::showOutcome)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.Music -> {
+                    val music = com.nuvio.app.features.music.MusicPlayback.player
+                    when (action.command) {
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.Play -> music.resume()
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.Pause -> music.pause()
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.Next -> music.next()
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.Seek ->
+                            music.seekTo((music.state.value.positionMs + action.command.deltaMs).coerceAtLeast(0L))
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.Speed -> Unit // refused by the router
+                    }
+                }
+                com.nuvio.app.features.voice.VoiceAction.Back -> {
+                    val player = com.nuvio.app.features.voice.VoicePlayback.player.takeIf { context.playerActive }
+                    if (player != null) player.goBack() else com.nuvio.app.core.ui.DesktopNavigationGestureBridge.requestBack()
+                }
+                is com.nuvio.app.features.voice.VoiceAction.Refuse -> voice.showOutcome(action.message)
             }
         }
     }
@@ -1869,7 +2028,12 @@ private fun MainAppContent(
     val streamPickerOpen by remember {
         StreamPickerController.request.map { it != null }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = StreamPickerController.isOpen)
-    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive, startupOverlayVisible, streamPickerOpen) {
+    // And the playlist windows: an open playlist, and the add-to-playlist picker.
+    val playlistAddOpen by remember {
+        com.nuvio.app.features.playlist.PlaylistAddController.target.map { it != null }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+    val playlistWindowOpen = openPlaylistId != null || playlistAddOpen
+    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive, startupOverlayVisible, streamPickerOpen, playlistWindowOpen) {
         val onTabsWithHomeStyleTab = (
             selectedTab == AppScreenTab.Home ||
                 selectedTab == AppScreenTab.Search ||
@@ -1882,7 +2046,7 @@ private fun MainAppContent(
         // that would paint straight over it — so the hero must count as "not home" while it is up.
         HomeHeroTrailerGate.setHomeActive(
             (onTabsWithHomeStyleTab || onFolderDetail) && !gameModeActive && startupOverlayVisible == null &&
-                !streamPickerOpen,
+                !streamPickerOpen && !playlistWindowOpen,
         )
     }
 
@@ -3098,6 +3262,9 @@ private fun MainAppContent(
                     com.nuvio.app.features.music.LocalMusicBarInset provides
                         (if (musicPageTakesInset) musicBarInset else 0.dp), // fork:music
                 ) {
+                // fork:youtube-mini-player - where the tab the mini player draws was left, kept from one
+                // video's player to the next (each player route has its own saved state, gone with it).
+                val youTubeMiniStateHolder = rememberSaveableStateHolder()
                 NavHost(
                     navController = navController,
                     startDestination = TabsRoute,
@@ -3376,6 +3543,14 @@ private fun MainAppContent(
                         navController = navController,
                         backStackEntry = backStackEntry,
                         beforePop = {
+                            // fork:youtube-mini-player - which path closed a YouTube video (Nov 4: Escape
+                            // sometimes closed it instead of going to the mini player).
+                            if (launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE) {
+                                val caller = Throwable().stackTraceToString().lineSequence()
+                                    .filter { "com.nuvio" in it && "rememberGuardedPopBackStack" !in it }
+                                    .drop(1).take(6).joinToString(" < ") { it.trim().removePrefix("at ") }
+                                co.touchlab.kermit.Logger.withTag("YouTubeMiniPlayer").i { "player closed from: $caller" }
+                            }
                             lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
                             ResumePromptRepository.markPlayerExitedNormally()
                             PlayerLaunchStore.remove(route.launchId)
@@ -3384,6 +3559,55 @@ private fun MainAppContent(
                             }
                         },
                     )
+                    // fork:youtube-mini-player - the YouTube tab the player draws around the video while it
+                    // plays on in its corner box (YouTubeWatchLayout.browsing). A video picked there hands this
+                    // player over to it, behind the same shield as a playlist moving on, and opens it in full;
+                    // the tab's settings button closes the player first (a route pushed over it would end it).
+                    if (launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE) {
+                        val latestOnBackFromPlayer by rememberUpdatedState(onBackFromPlayer)
+                        val miniPlayerPage: @Composable (Modifier) -> Unit = remember(route.launchId) {
+                            { pageModifier ->
+                                youTubeMiniStateHolder.SaveableStateProvider("youtube-mini-player") {
+                                    com.nuvio.app.features.youtube.YouTubeTabScreen(
+                                        onPlay = { next ->
+                                            if (navController.currentBackStackEntry?.id == backStackEntry.id) {
+                                                // The shield first: from the corner box it covers only the video.
+                                                PlayerHandoff.holdShield()
+                                                com.nuvio.app.features.youtube.YouTubeWatchLayout.stopBrowsing()
+                                                lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
+                                                ResumePromptRepository.markPlayerExitedNormally()
+                                                PlayerLaunchStore.remove(route.launchId)
+                                                navController.popBackStack()
+                                                coroutineScope.launch {
+                                                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                                                        PlayerHandoff.activeRoutes.first { it == 0 }
+                                                    }
+                                                    navController.navigateToPlayer(next)
+                                                }
+                                            }
+                                        },
+                                        onOpenSettings = {
+                                            com.nuvio.app.features.youtube.YouTubeWatchLayout.closeFromCorner()
+                                            latestOnBackFromPlayer()
+                                            requestedSettingsPageName = "YouTubeAccount"
+                                            handleRootTabClick(AppScreenTab.Settings)
+                                        },
+                                        modifier = pageModifier,
+                                        // The tab back on screen once this player goes opens it, not this one.
+                                        opensQueueNext = false,
+                                    )
+                                }
+                            }
+                        }
+                        DisposableEffect(miniPlayerPage) {
+                            com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page = miniPlayerPage
+                            onDispose {
+                                if (com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page === miniPlayerPage) {
+                                    com.nuvio.app.features.youtube.YouTubeMiniPlayerHost.page = null
+                                }
+                            }
+                        }
+                    }
                     // fork:preroll - the pre-show owns the screen until it finishes (module hook, no re-indent).
                     if (!com.nuvio.app.features.preroll.prerollGateCleared(route.launchId.toString(), launch)) {
                         return@composable
@@ -3448,7 +3672,7 @@ private fun MainAppContent(
                             val youTubeVideoId = launch.parentMetaId
                                 .takeIf { launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE }
                                 ?.removePrefix(com.nuvio.app.features.youtube.YOUTUBE_META_ID_PREFIX)
-                            if (youTubeVideoId != null && com.nuvio.app.features.youtube.YouTubePlayQueue.isPlaying(youTubeVideoId)) {
+                            if (youTubeVideoId != null && com.nuvio.app.features.youtube.YouTubePlayQueue.followsOn(youTubeVideoId)) {
                                 val entryId = backStackEntry.id
                                 coroutineScope.launch {
                                     val next = com.nuvio.app.features.youtube.YouTubePlayQueue.handOffNext(youTubeVideoId)
@@ -4078,27 +4302,7 @@ private fun MainAppContent(
                                             searchQuery = searchQuery,
                                             onSearchQueryChange = { searchQuery = it },
                                             searchFocusRequestCount = searchFocusRequestCount,
-                                            onSearchSubmit = { q ->
-                                                val trimmed = q.trim()
-                                                submittedSearchQuery = trimmed
-                                                searchOverlayActive = false
-                                                handleRootTabClick(AppScreenTab.Search)
-                                                navigateToContentCount++
-                                                // Results load as usual; if the query can only mean one
-                                                // title, its details open on top once that's known, so
-                                                // Back lands on the full results.
-                                                confidentSearchJob[0]?.cancel()
-                                                confidentSearchJob[0] = coroutineScope.launch {
-                                                    val match = com.nuvio.app.features.search.ConfidentSearch.resolve(trimmed)
-                                                        ?: return@launch
-                                                    // Not if the user has already opened something or moved on.
-                                                    val onResults = navController.currentBackStackEntry
-                                                        ?.destination?.hasRoute<TabsRoute>() == true
-                                                    if (onResults && selectedTab == AppScreenTab.Search && submittedSearchQuery == trimmed) {
-                                                        navController.navigateIfResumed(DetailRoute(type = match.type, id = match.id))
-                                                    }
-                                                }
-                                            },
+                                            onSearchSubmit = { q -> submitSearch(q) },
                                             onNavigateToContent = { navigateToContentCount++ },
                                         )
                                     }
@@ -4482,6 +4686,9 @@ private fun MainAppContent(
                 onRemove = {
                     selectedContinueWatchingForActions?.let(WatchProgressRepository::dismissContinueWatchingCard)
                 },
+                onMarkWatched = selectedContinueWatchingForActions
+                    ?.takeIf { it.canMarkWatched() }
+                    ?.let { item -> { WatchingActions.markContinueWatchingWatched(item) } },
                 zoomAnchor = selectedContinueWatchingAnchor,
                 zoomHazeState = posterOverlayHazeState,
                 contextMenuPosition = selectedContinueWatchingMenuPosition,
@@ -4555,6 +4762,11 @@ private fun MainAppContent(
                 exit = fadeOut(androidx.compose.animation.core.tween(400)),
             ) {
                 AppLaunchOverlay(modifier = Modifier.fillMaxSize())
+            }
+
+            // fork:voice-control - the push-to-talk pill; a bare Box takes no input, so the screen below stays usable.
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                com.nuvio.app.features.voice.VoiceControlOverlay()
             }
 
             NuvioFloatingPrompt(
@@ -4735,6 +4947,7 @@ private fun MainAppContent(
                             responseHeaders = emptyMap(),
                             filename = stream.behaviorHints.filename,
                             videoSize = stream.behaviorHints.videoSize,
+                            videoHash = stream.behaviorHints.videoHash,
                             infoHash = infoHash,
                             fileIdx = stream.p2pFileIdx,
                             sources = stream.sources,
@@ -4860,6 +5073,7 @@ private fun MainAppContent(
                                 behaviorHints = StreamBehaviorHints(
                                     filename = cached.filename,
                                     videoSize = cached.videoSize,
+                                    videoHash = cached.videoHash,
                                     bingeGroup = cached.bingeGroup,
                                 ),
                             )
@@ -4883,6 +5097,7 @@ private fun MainAppContent(
                             behaviorHints = StreamBehaviorHints(
                                 filename = cached.filename,
                                 videoSize = cached.videoSize,
+                                videoHash = cached.videoHash,
                                 bingeGroup = cached.bingeGroup,
                             ),
                         )
@@ -5032,6 +5247,7 @@ private fun MainAppContent(
                             responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
                             filename = stream.behaviorHints.filename,
                             videoSize = stream.behaviorHints.videoSize,
+                            videoHash = stream.behaviorHints.videoHash,
                             bingeGroup = stream.behaviorHints.bingeGroup,
                             streamType = stream.streamType,
                             sourceIdentityKey = selectedSourceIdentityKey,
@@ -5234,6 +5450,7 @@ private fun MainAppContent(
                             responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
                             filename = stream.behaviorHints.filename,
                             videoSize = stream.behaviorHints.videoSize,
+                            videoHash = stream.behaviorHints.videoHash,
                             bingeGroup = stream.behaviorHints.bingeGroup,
                             streamType = stream.streamType,
                             sourceIdentityKey = sourceIdentityKey,
@@ -6288,8 +6505,41 @@ private fun DesktopHoverSidebar(
                         tint = color,
                     )
                 }
+                DesktopSidebarVoiceItem() // fork:voice-control
             }
         }
+    }
+}
+
+/**
+ * fork:voice-control - push-to-talk from the sidebar, under Settings. Only there while voice control
+ * is on and has a model; lit while it listens. Its first composition is also what loads the voice
+ * settings (off the UI thread), which loads the model for the voice key and the controller too.
+ */
+@Composable
+private fun DesktopSidebarVoiceItem() {
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.nuvio.app.features.voice.VoiceControlRepository.ensureLoaded()
+        }
+    }
+    val voice by com.nuvio.app.features.voice.VoiceControlRepository.uiState.collectAsStateWithLifecycle()
+    if (!voice.ready) return
+    val session by com.nuvio.app.features.voice.VoiceControlRepository.session.collectAsStateWithLifecycle()
+    val active = session is com.nuvio.app.features.voice.VoiceSessionState.Listening ||
+        session is com.nuvio.app.features.voice.VoiceSessionState.Transcribing
+    DesktopSidebarItem(
+        label = "Voice command",
+        selected = active,
+        expanded = false,
+        onClick = com.nuvio.app.features.voice.VoiceControlRepository::toggleListening,
+    ) { color ->
+        Icon(
+            imageVector = Icons.Rounded.Mic,
+            contentDescription = "Voice command",
+            modifier = Modifier.size(DesktopSidebarIconSize),
+            tint = color,
+        )
     }
 }
 
@@ -6722,6 +6972,24 @@ private fun TabletFloatingTopBar(
                             },
                         )
                     }
+                        // Voice search: Windows voice typing types what is said into the field.
+                        com.nuvio.app.core.ui.VoiceSearchCommands(
+                            owner = "app-search",
+                            text = searchQuery,
+                            onTextChange = { text ->
+                                searchFieldState = TextFieldValue(text, TextRange(text.length))
+                                onSearchQueryChange(text)
+                            },
+                            onSubmit = { query -> onSearchSubmit(query) },
+                        )
+                        com.nuvio.app.core.ui.VoiceSearchButton(
+                            owner = "app-search",
+                            voiceScope = com.nuvio.app.features.voice.VoiceSearchScope.All,
+                            focusField = { try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {} },
+                            tint = inactiveIconTint,
+                            size = NuvioTokens.Space.s32,
+                            iconSize = 16.dp,
+                        )
                         // Mirrors the Tab key inside the field: toggles the discover-catalog
                         // picker so discovery mode is reachable by mouse as well.
                         if (discoverTabVisible) {

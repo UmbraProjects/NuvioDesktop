@@ -151,6 +151,28 @@ private fun YouTubeTabSwitch(isTablet: Boolean) {
             modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("youtube-open-videos")),
             onSelected = YouTubeFeedRepository::setOpenWindowed,
         )
+        // fork:youtube-mini-player
+        val miniPlayer by remember { YouTubeFeedRepository.miniPlayerOnBack }.collectAsState()
+        SettingsSwitchRow(
+            title = "Mini player",
+            description = "Back from a video returns to the tab with the video still playing in a small box in the corner, " +
+                "so you can search, browse and queue meanwhile. Click the box to go back to the video; its X stops it.",
+            checked = miniPlayer,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("youtube-mini-player")),
+            onCheckedChange = YouTubeFeedRepository::setMiniPlayerOnBack,
+        )
+        // fork:youtube-languages
+        val allLanguages by remember { YouTubeFeedRepository.allLanguages }.collectAsState()
+        SettingsSwitchRow(
+            title = "All languages",
+            description = "Opens a dubbed video's other audio languages with it, and every subtitle language a video has " +
+                "rather than the first few. Videos with dubs take a little longer to start.",
+            checked = allLanguages,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("youtube-all-languages")),
+            onCheckedChange = YouTubeFeedRepository::setAllLanguages,
+        )
         val maxQuality by remember { YouTubeFeedRepository.maxQuality }.collectAsState()
         SettingsDropdownChoiceRow(
             title = "Max video quality",

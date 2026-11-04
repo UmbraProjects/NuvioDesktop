@@ -1562,7 +1562,37 @@ public:
         // Set before spawning the UI/mpv thread so it is visible there. When present
         // (e.g. a YouTube trailer with separate hi-res video + audio tracks) it is
         // attached via the audio-add command once the main file has loaded.
-        externalAudioUrl = audioUrl;
+        // fork:youtube-languages - the first line is the audio track; any further lines are more
+        // language tracks (a dubbed YouTube video), "lang<TAB>title<TAB>url", opened as further streams.
+        {
+            externalAudioUrl.clear();
+            extraAudioTracks.clear();
+            size_t start = 0;
+            bool first = true;
+            while (start <= audioUrl.size()) {
+                size_t end = audioUrl.find('\n', start);
+                if (end == std::string::npos) end = audioUrl.size();
+                std::string line = audioUrl.substr(start, end - start);
+                if (first) {
+                    externalAudioUrl = line;
+                    first = false;
+                } else if (!line.empty()) {
+                    ExtraAudioTrack track;
+                    size_t tab1 = line.find('\t');
+                    size_t tab2 = tab1 == std::string::npos ? std::string::npos : line.find('\t', tab1 + 1);
+                    if (tab2 != std::string::npos) {
+                        track.lang = line.substr(0, tab1);
+                        track.title = line.substr(tab1 + 1, tab2 - tab1 - 1);
+                        track.url = line.substr(tab2 + 1);
+                    } else {
+                        track.url = line;
+                    }
+                    if (!track.url.empty()) extraAudioTracks.push_back(std::move(track));
+                }
+                if (end == audioUrl.size()) break;
+                start = end + 1;
+            }
+        }
         extraMpvOptions = extraMpvOptionsIn;
         for (const auto &option : extraMpvOptions) {
             const std::string prefix = "@nuvio-trace-id=";
@@ -4129,6 +4159,13 @@ private:
     std::atomic<std::chrono::steady_clock::time_point> eofSuppressedUntil{std::chrono::steady_clock::time_point{}};
 
     std::string externalAudioUrl;
+    struct ExtraAudioTrack {
+        std::string lang;
+        std::string title;
+        std::string url;
+    };
+    // fork:youtube-languages - more audio languages beside externalAudioUrl, each its own EDL stream.
+    std::vector<ExtraAudioTrack> extraAudioTracks;
     // Subtitle URLs the app itself injected via addSubtitleUrl (addon / network subtitles). mpv
     // exposes both these and its own sibling-file autoloads (sub-auto) as "external" tracks, but
     // only the app-injected ones should be kept out of the built-in track list — a local-library
@@ -4972,6 +5009,19 @@ private:
                 playbackSource =
                     "edl://%" + std::to_string(sourceUrl.size()) + "%" + sourceUrl +
                     ";!new_stream;%" + std::to_string(externalAudioUrl.size()) + "%" + externalAudioUrl;
+                // EDL values are length-quoted (%n%), so a title's commas or semicolons stay in it.
+                auto quoted = [](const std::string &value) {
+                    return "%" + std::to_string(value.size()) + "%" + value;
+                };
+                for (const auto &track : extraAudioTracks) {
+                    playbackSource += ";!new_stream;!track_meta";
+                    if (!track.lang.empty()) playbackSource += ",lang=" + quoted(track.lang);
+                    if (!track.title.empty()) playbackSource += ",title=" + quoted(track.title);
+                    playbackSource += ";" + quoted(track.url);
+                }
+                if (!extraAudioTracks.empty()) {
+                    nuvioBridgeLog(("mpv edl extra audio tracks=" + std::to_string(extraAudioTracks.size())).c_str());
+                }
             }
 
             // Resume is applied at FILE_LOADED, once mpv exposes the real duration. Passing a
@@ -7806,6 +7856,8 @@ constexpr USHORT kBtnLeftThumb = 0x0040;
 constexpr USHORT kBtnRightThumb = 0x0080;
 constexpr USHORT kBtnLeftShoulder = 0x0100;
 constexpr USHORT kBtnRightShoulder = 0x0200;
+// Not an XInput bit (XInput leaves 0x0400/0x0800 unset): the DualSense mic button, for voice control.
+constexpr USHORT kBtnMic = 0x0800;
 constexpr USHORT kBtnA = 0x1000;
 constexpr USHORT kBtnB = 0x2000;
 constexpr USHORT kBtnX = 0x4000;
@@ -7881,9 +7933,10 @@ USHORT decodeButtons(unsigned char b0, unsigned char b1, unsigned char b2) {
     if (b1 & 0x20) buttons |= kBtnStart;         // Options
     if (b1 & 0x40) buttons |= kBtnLeftThumb;     // L3
     if (b1 & 0x80) buttons |= kBtnRightThumb;    // R3
-    // b2 carries PS, touchpad click and mute. None is bound: the PS button belongs to the system,
-    // and a touchpad press is far too easy to trigger by accident while holding the pad.
-    (void)b2;
+    // b2 carries PS (0x01), touchpad click (0x02) and the mic button (0x04). The PS button belongs
+    // to the system, and a touchpad press is far too easy to trigger by accident while holding the
+    // pad; the mic button is push-to-talk for voice control.
+    if (b2 & 0x04) buttons |= kBtnMic;
     return buttons;
 }
 

@@ -27,7 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Reply
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
 import androidx.compose.material.icons.rounded.Close
@@ -76,11 +76,13 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.core.ui.NuvioTextField
@@ -89,6 +91,7 @@ import com.nuvio.app.features.youtube.WATCH_LATER_PLAYLIST_ID
 import com.nuvio.app.features.youtube.YouTubeComment
 import com.nuvio.app.features.youtube.YouTubeFeedRepository
 import com.nuvio.app.features.youtube.YouTubeLikeCounts
+import com.nuvio.app.features.youtube.YouTubeMiniPlayerHost
 import com.nuvio.app.features.youtube.YouTubePlaylistOption
 import com.nuvio.app.features.youtube.YouTubeVideo
 import com.nuvio.app.features.youtube.YouTubeVideoDetails
@@ -126,7 +129,7 @@ import kotlin.math.roundToInt
 
 /** Below this the page stacks in one column: the queue and related videos go under the comments. */
 private val TWO_COLUMN_MIN_WIDTH = 1000.dp
-private val SIDE_COLUMN_WIDTH = 400.dp
+private val SIDE_COLUMN_WIDTH = 428.dp
 
 /** The corner player: its margin from the window's edges and the range it can be resized in. */
 private val MINI_MARGIN = 24.dp
@@ -147,11 +150,13 @@ private val DEFAULT_VIDEO_CLEARANCE = 150.dp
 @Composable
 internal fun PlayerScreenRuntime.YouTubeWatchFrame(player: @Composable (Modifier) -> Unit) {
     val windowed by YouTubeWatchLayout.windowed.collectAsState()
-    val pageShown = windowed && !pictureInPictureActive
+    // fork:youtube-mini-player - the tab around the video in its corner (YouTubeWatchLayout.browsing).
+    val browsing by YouTubeWatchLayout.browsing.collectAsState()
+    val pageShown = (windowed || browsing) && !pictureInPictureActive
     var frameOrigin by remember { mutableStateOf(Offset.Zero) }
     var videoBox by remember { mutableStateOf<Rect?>(null) }
     val mini by YouTubeWatchLayout.mini.collectAsState()
-    val inCorner = pageShown && mini
+    val inCorner = pageShown && (mini || browsing)
     var miniWidthDp by remember { mutableStateOf(YouTubeWatchLayout.miniWidthDp) }
     val density = LocalDensity.current
     BoxWithConstraints(
@@ -170,11 +175,25 @@ internal fun PlayerScreenRuntime.YouTubeWatchFrame(player: @Composable (Modifier
             },
     ) {
         // Always called, and first: the player below keeps its place whether or not the page shows.
-        YouTubeWatchPage(shown = pageShown, onVideoBox = { videoBox = it })
+        YouTubeWatchPage(shown = pageShown && !browsing, onVideoBox = { videoBox = it })
+        YouTubeMiniPlayerBrowsePage(shown = pageShown && browsing)
         val maxMiniWidth = (maxWidth.value * MINI_MAX_FRACTION).coerceAtLeast(MINI_MIN_WIDTH_DP)
         val miniWidth = miniWidthDp.coerceIn(MINI_MIN_WIDTH_DP, maxMiniWidth).dp
         val miniHeight = miniWidth * 9f / 16f
-        if (inCorner) MiniPlayerHandles(miniWidth, miniHeight) { dragX, dragY ->
+        val closeMiniPlayer: (() -> Unit)? = if (browsing) {
+            {
+                // Closing the box stops the video: the player goes, and the tab it was over stays. The box
+                // stays in its corner until then, not going back to the full video on its way out.
+                YouTubeWatchLayout.closeFromCorner()
+                // A still over the swap: the player going and the tab under it coming on screen.
+                PlayerHandoff.coverClose()
+                flushWatchProgress()
+                args.onBack()
+            }
+        } else {
+            null
+        }
+        if (inCorner) MiniPlayerHandles(miniWidth, miniHeight, onClose = closeMiniPlayer) { dragX, dragY ->
             // Dragging the top left corner out (left or up) makes it bigger, along the 16:9 diagonal.
             val grow = with(density) { -(dragX + dragY * 16f / 9f).toDp().value } / 2f
             miniWidthDp = (miniWidthDp.coerceIn(MINI_MIN_WIDTH_DP, maxMiniWidth) + grow).coerceIn(MINI_MIN_WIDTH_DP, maxMiniWidth)
@@ -229,7 +248,28 @@ private fun PlayerScreenRuntime.YouTubeWatchPage(shown: Boolean, onVideoBox: (Re
             .distinctUntilChanged()
             .collect { nearEnd -> if (nearEnd) comments.loadMore() }
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // The related column ends well before the page does when the comments run long, so its next page is
+    // asked for by its own end: once that is within two screens of the bottom of the window, so the page
+    // is in before it is scrolled to. Keyed on the list's length too, so a page that arrives while the
+    // end is still that close asks for the one after.
+    var sideColumnBottom by remember { mutableStateOf(Float.MAX_VALUE) }
+    var pageTop by remember { mutableStateOf(0f) }
+    var pageHeight by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        snapshotFlow {
+            val nearEnd = pageHeight > 0 && sideColumnBottom - (pageTop + pageHeight) < pageHeight * RELATED_PREFETCH_SCREENS
+            nearEnd to youTubeRelated.size
+        }
+            .distinctUntilChanged()
+            .collect { (nearEnd, _) -> if (nearEnd) loadMoreYouTubeRelated() }
+    }
+    val sideColumnPosition = Modifier.onGloballyPositioned { sideColumnBottom = it.positionInWindow().y + it.size.height }
+    BoxWithConstraints(
+        Modifier.fillMaxSize().onGloballyPositioned {
+            pageTop = it.positionInWindow().y
+            pageHeight = it.size.height
+        },
+    ) {
         val twoColumns = maxWidth >= TWO_COLUMN_MIN_WIDTH
         val viewport = maxHeight
         if (theater) {
@@ -271,9 +311,9 @@ private fun PlayerScreenRuntime.YouTubeWatchPage(shown: Boolean, onVideoBox: (Re
                         horizontalArrangement = Arrangement.spacedBy(24.dp),
                     ) {
                         WatchDetails(comments, Modifier.weight(1f))
-                        if (twoColumns) SideColumn(Modifier.width(SIDE_COLUMN_WIDTH))
+                        if (twoColumns) SideColumn(Modifier.width(SIDE_COLUMN_WIDTH).then(sideColumnPosition))
                     }
-                    if (!twoColumns) SideColumn(Modifier.fillMaxWidth().padding(horizontal = 24.dp))
+                    if (!twoColumns) SideColumn(Modifier.fillMaxWidth().padding(horizontal = 24.dp).then(sideColumnPosition))
                 }
                 twoColumns -> Row(
                     Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 20.dp),
@@ -284,13 +324,13 @@ private fun PlayerScreenRuntime.YouTubeWatchPage(shown: Boolean, onVideoBox: (Re
                         Spacer(Modifier.height(16.dp))
                         WatchDetails(comments, Modifier.fillMaxWidth())
                     }
-                    SideColumn(Modifier.width(SIDE_COLUMN_WIDTH))
+                    SideColumn(Modifier.width(SIDE_COLUMN_WIDTH).then(sideColumnPosition))
                 }
                 else -> Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
                     VideoBox(maxHeight = viewport - DEFAULT_VIDEO_CLEARANCE, placeholder = poster.takeIf { mini }, onVideoBox = onVideoBox)
                     Spacer(Modifier.height(16.dp))
                     WatchDetails(comments, Modifier.fillMaxWidth())
-                    SideColumn(Modifier.fillMaxWidth())
+                    SideColumn(Modifier.fillMaxWidth().then(sideColumnPosition))
                 }
             }
             Spacer(Modifier.height(32.dp))
@@ -326,7 +366,12 @@ private fun VideoBox(maxHeight: Dp, placeholder: String?, onVideoBox: (Rect) -> 
  * a bare chevron over its top right that goes back up. Faint until the pointer is on them.
  */
 @Composable
-private fun androidx.compose.foundation.layout.BoxScope.MiniPlayerHandles(width: Dp, height: Dp, onDrag: (Float, Float) -> Unit) {
+private fun androidx.compose.foundation.layout.BoxScope.MiniPlayerHandles(
+    width: Dp,
+    height: Dp,
+    onClose: (() -> Unit)? = null,
+    onDrag: (Float, Float) -> Unit,
+) {
     val gripInteraction = remember { MutableInteractionSource() }
     val gripHovered by gripInteraction.collectIsHoveredAsState()
     // The grip moves as the player grows, so the drag is measured in the window, not on the grip.
@@ -379,6 +424,26 @@ private fun androidx.compose.foundation.layout.BoxScope.MiniPlayerHandles(width:
     }
     val backInteraction = remember { MutableInteractionSource() }
     val backHovered by backInteraction.collectIsHoveredAsState()
+    // fork:youtube-mini-player - over the tab the box also closes, from an X beside the chevron.
+    if (onClose != null) {
+        val closeInteraction = remember { MutableInteractionSource() }
+        val closeHovered by closeInteraction.collectIsHoveredAsState()
+        NuvioPosterHoverTooltip(
+            title = "Close",
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = MINI_MARGIN + 30.dp, bottom = MINI_MARGIN + height + 2.dp),
+        ) {
+            Icon(
+                Icons.Rounded.Close,
+                contentDescription = "Close",
+                tint = Color.White.copy(alpha = if (closeHovered) 0.95f else 0.45f),
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .hoverable(closeInteraction)
+                    .clickable(interactionSource = closeInteraction, indication = null, onClick = onClose),
+            )
+        }
+    }
     NuvioPosterHoverTooltip(
         title = "Back to the video",
         modifier = Modifier.align(Alignment.BottomEnd).padding(end = MINI_MARGIN, bottom = MINI_MARGIN + height + 2.dp),
@@ -394,6 +459,20 @@ private fun androidx.compose.foundation.layout.BoxScope.MiniPlayerHandles(width:
                 .clickable(interactionSource = backInteraction, indication = null, onClick = YouTubeWatchLayout::requestBackToVideo),
         )
     }
+}
+
+/**
+ * fork:youtube-mini-player - the YouTube tab filling the window while the video plays on in its corner
+ * box: what the app put in [YouTubeMiniPlayerHost]. Called always, like the watch page, so the player
+ * after it keeps its place in the composition.
+ */
+@Composable
+private fun YouTubeMiniPlayerBrowsePage(shown: Boolean) {
+    if (!shown) return
+    val page = YouTubeMiniPlayerHost.page ?: return
+    // The bar's keys and the mouse's back button step back inside the tab (TabBackInterceptor); with
+    // nothing to step back to they leave the tab where it is, as the video is still playing.
+    page(Modifier.fillMaxSize())
 }
 
 /** Under the video: title, channel and actions, description, then the comments. */
@@ -505,7 +584,24 @@ private fun ChannelBlock(
 ) {
     val scope = rememberCoroutineScope()
     var subscribed by remember(current.channelId, details?.subscribed) { mutableStateOf(details?.subscribed) }
+    // The picture and name open the channel's page: the tab around the video, which goes to its corner
+    // (fork:youtube-mini-player). Only where the mini player can show the tab.
+    val channelId = current.channelId
+    val openChannel: (() -> Unit)? = if (channelId != null && YouTubeMiniPlayerHost.page != null) {
+        { YouTubeWatchLayout.openChannel(channelId, current.channel.orEmpty(), details?.channelAvatarUrl) }
+    } else {
+        null
+    }
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier
+                .weight(1f, fill = false)
+                .clip(RoundedCornerShape(24.dp))
+                .then(if (openChannel != null) Modifier.clickable(onClick = openChannel) else Modifier)
+                .padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
         NuvioAsyncImage(
             model = details?.channelAvatarUrl,
             contentDescription = current.channel,
@@ -524,7 +620,7 @@ private fun ChannelBlock(
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
         }
-        val channelId = current.channelId
+        }
         if (signedIn && channelId != null && subscribed != null) {
             val isSubscribed = subscribed == true
             WatchPill(
@@ -629,7 +725,7 @@ private fun WatchDescription(views: String?, published: String?, description: St
 /** The comments: a box to add one, then each with its replies (opened on demand) and a box to reply. */
 @Composable
 private fun WatchComments(comments: YouTubeWatchComments, signedIn: Boolean) {
-    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         SectionHeading("Comments")
         if (signedIn && comments.createParams != null) {
             CommentBox(placeholder = "Add a comment…") { text -> comments.post(text, parent = null) }
@@ -656,13 +752,16 @@ private fun WatchComments(comments: YouTubeWatchComments, signedIn: Boolean) {
 private fun CommentThread(comment: YouTubeComment, comments: YouTubeWatchComments, signedIn: Boolean) {
     var replying by remember(comment.id) { mutableStateOf(false) }
     val open = comments.repliesOpen[comment.id] == true
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         CommentRow(
             comment = comment,
-            avatarSize = 36.dp,
+            avatarSize = 40.dp,
             onReply = if (signedIn && comment.replyParams != null) ({ replying = !replying }) else null,
+            comments = comments,
+            signedIn = signedIn,
         )
-        Column(Modifier.padding(start = 48.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Indented to the comment's text: the 40dp avatar plus its 14dp gap.
+        Column(Modifier.padding(start = 54.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (replying) {
                 CommentBox(placeholder = "Add a reply…", autoFocus = true) { text ->
                     comments.post(text, parent = comment).also { if (it) replying = false }
@@ -670,7 +769,7 @@ private fun CommentThread(comment: YouTubeComment, comments: YouTubeWatchComment
             }
             if (comment.repliesToken != null && comment.replies != null) {
                 Row(
-                    Modifier.clip(RoundedCornerShape(50)).clickable { comments.toggleReplies(comment) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                    Modifier.offset(x = (-8).dp).clip(RoundedCornerShape(50)).clickable { comments.toggleReplies(comment) }.padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -684,7 +783,9 @@ private fun CommentThread(comment: YouTubeComment, comments: YouTubeWatchComment
                 }
             }
             if (open || comments.replies[comment.id]?.any { it.id.startsWith(LOCAL_COMMENT_PREFIX) } == true) {
-                comments.replies[comment.id].orEmpty().forEach { reply -> CommentRow(reply, avatarSize = 26.dp, onReply = null) }
+                comments.replies[comment.id].orEmpty().forEach { reply ->
+                    CommentRow(reply, avatarSize = 28.dp, onReply = null, comments = comments, signedIn = signedIn)
+                }
                 when {
                     comments.repliesLoading[comment.id] == true -> CircularProgressIndicator(Modifier.size(20.dp))
                     open && comments.repliesNext[comment.id] != null -> Text(
@@ -700,42 +801,89 @@ private fun CommentThread(comment: YouTubeComment, comments: YouTubeWatchComment
 }
 
 @Composable
-private fun CommentRow(comment: YouTubeComment, avatarSize: Dp, onReply: (() -> Unit)?) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun CommentRow(
+    comment: YouTubeComment,
+    avatarSize: Dp,
+    onReply: (() -> Unit)?,
+    comments: YouTubeWatchComments,
+    signedIn: Boolean,
+) {
+    val liked = comments.isLiked(comment)
+    val likes = com.nuvio.app.features.youtube.youTubeCommentLikes(comment, liked)
+    val canLike = signedIn && (if (liked) comment.unlikeAction else comment.likeAction) != null
+    // YouTube's proportions: name bold and white with the time in grey, body at 14/20 with no extra
+    // tracking (the theme's label styles are letter-spaced, which made names hard to read), and
+    // the actions a clear step below the text.
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         NuvioAsyncImage(
             model = comment.avatarUrl,
             contentDescription = comment.author,
             modifier = Modifier.size(avatarSize).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
             contentScale = ContentScale.Crop,
         )
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = listOfNotNull("Pinned".takeIf { comment.pinned }, comment.author.takeIf { it.isNotBlank() }, comment.published).joinToString(" · "),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(comment.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                comment.likes?.let {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Rounded.ThumbUp, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                        Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (comment.pinned) {
+                    Text("Pinned", style = CommentMetaStyle, color = muted)
+                }
+                if (comment.author.isNotBlank()) {
+                    Text(
+                        comment.author,
+                        style = CommentMetaStyle,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+                comment.published?.let { Text(it, style = CommentMetaStyle, color = muted, maxLines = 1) }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(comment.text, style = CommentBodyStyle, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(6.dp))
+            // The pills' padding is pulled back by the same amount so the thumb lines up with the text.
+            Row(
+                Modifier.offset(x = (-8).dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (likes != null || canLike) {
+                    val tint = if (liked) MaterialTheme.colorScheme.primary else muted
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .then(if (canLike) Modifier.clickable { comments.toggleLike(comment) } else Modifier)
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            if (liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp,
+                            contentDescription = if (liked) "Unlike" else "Like",
+                            tint = if (liked) tint else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        likes?.let { Text(it, style = CommentMetaStyle, color = tint) }
                     }
                 }
                 onReply?.let {
-                    Row(
-                        Modifier.clip(RoundedCornerShape(50)).clickable(onClick = it).padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Icon(Icons.AutoMirrored.Rounded.Reply, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                        Text("Reply", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text(
+                        "Reply",
+                        style = CommentMetaStyle,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = it).padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
                 }
             }
         }
     }
 }
+
+private val CommentMetaStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 0.sp)
+private val CommentBodyStyle = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
 
 /** A text box with a send button; [onSend] returns whether it went, and the box clears when it did. */
 @Composable
@@ -787,12 +935,36 @@ private fun PlayerScreenRuntime.SideColumn(modifier: Modifier) {
                 )
             }
             Spacer(Modifier.height(8.dp))
-            SectionHeading("Up next")
         }
-        youTubeRelated.forEach { video -> SideVideoRow(video, highlighted = false, onClick = { openYouTubeVideoFromPlayer(video) }) }
-        if (youTubeRelated.isEmpty()) CircularProgressIndicator(Modifier.padding(16.dp).size(24.dp))
+        val hideWatched by YouTubeFeedRepository.hideWatched.collectAsState()
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { if (queue.isNotEmpty()) SectionHeading("Up next") }
+            // The tab's own Hide watched: one setting for the feeds and this column.
+            WatchPill(null, "Hide watched", on = hideWatched) { YouTubeFeedRepository.setHideWatched(!hideWatched) }
+        }
+        val shown = visibleYouTubeRelated
+        shown.forEach { video -> SideVideoRow(video, highlighted = false, onClick = { openYouTubeVideoFromPlayer(video) }) }
+        // Hide watched can leave only a few: keep fetching until the column fills or YouTube runs out.
+        LaunchedEffect(shown.size, youTubeRelated.size, hideWatched) {
+            if (youTubeRelated.isNotEmpty() && shown.size < RELATED_MIN_SHOWN) loadMoreYouTubeRelated()
+        }
+        when {
+            youTubeRelated.isEmpty() || youTubeRelatedLoading -> CircularProgressIndicator(Modifier.padding(16.dp).size(24.dp))
+            shown.isEmpty() -> Text(
+                "You've watched everything suggested here.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(8.dp),
+            )
+        }
     }
 }
+
+/** With Hide watched on, related pages are fetched until at least this many show (or the column ends). */
+private const val RELATED_MIN_SHOWN = 12
+
+/** How many window heights before the related column's end its next page is fetched. */
+private const val RELATED_PREFETCH_SCREENS = 2f
 
 @Composable
 private fun SideVideoRow(video: YouTubeVideo, highlighted: Boolean, onClick: () -> Unit, onRemove: (() -> Unit)? = null) {
@@ -814,7 +986,7 @@ private fun SideVideoRow(video: YouTubeVideo, highlighted: Boolean, onClick: () 
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.width(168.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+        Box(Modifier.width(196.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
             NuvioAsyncImage(model = video.thumbnailUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             video.duration?.let {
                 Text(
@@ -972,6 +1144,25 @@ private class YouTubeWatchComments(val videoId: String, private val scope: Corou
     val repliesNext = mutableStateMapOf<String, String?>()
     val repliesOpen = mutableStateMapOf<String, Boolean>()
     val repliesLoading = mutableStateMapOf<String, Boolean>()
+    /** The account's like on a comment as changed here, over what the page said. */
+    private val likedHere = mutableStateMapOf<String, Boolean>()
+    private val likeSending = mutableSetOf<String>()
+
+    fun isLiked(comment: YouTubeComment): Boolean = likedHere[comment.id] ?: comment.liked
+
+    /** Likes [comment] or takes the like back: shown at once, put back if YouTube refuses. */
+    fun toggleLike(comment: YouTubeComment) {
+        if (!likeSending.add(comment.id)) return
+        val liked = !isLiked(comment)
+        likedHere[comment.id] = liked
+        scope.launch {
+            try {
+                if (!YouTubeFeedRepository.setCommentLiked(comment, liked)) likedHere[comment.id] = !liked
+            } finally {
+                likeSending.remove(comment.id)
+            }
+        }
+    }
 
     suspend fun loadMore() {
         if (loading || failed || (loaded && continuation == null)) return

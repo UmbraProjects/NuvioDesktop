@@ -217,7 +217,14 @@ private fun NativePlayerSurface(
     }
     val surfaceScope = rememberCoroutineScope()
     LaunchedEffect(playbackAttemptId, sourceUrl) {
-        DesktopPlayerLaunchShield.showForActiveWindow()
+        if (com.nuvio.app.features.youtube.YouTubeWatchLayout.pageShown) {
+            // fork:youtube-watch-page - the video sits in a box on the page (or the mini player's corner):
+            // the page stays in sight and only the box is dark, the surface being black until a frame
+            // comes. A hand-over's shield goes once the page has had a frame to draw.
+            DesktopPlayerLaunchShield.hideAfter()
+        } else {
+            DesktopPlayerLaunchShield.showForActiveWindow()
+        }
     }
     val playbackHeaders = remember(sourceHeaders) { sanitizePlaybackHeaders(sourceHeaders) }
     // What mpv will send, so a TorBox node probe looks like the player it is standing in for.
@@ -274,7 +281,9 @@ private fun NativePlayerSurface(
             DesktopPlayerLaunchShield.hideAfter()
         }
         host.onResized = { controller.layoutToHost() }
+        DesktopPlayerLaunchShield.activeVideoHost = host
         onDispose {
+            if (DesktopPlayerLaunchShield.activeVideoHost === host) DesktopPlayerLaunchShield.activeVideoHost = null
             host.onResized = null
             host.onDisplayableChanged = null
             host.onFirstPaint = null
@@ -377,6 +386,59 @@ private fun NativePlayerSurface(
             onScrubChange = { positionMs -> latestOnPlayerControlsScrubChange.value(positionMs) },
             onScrubFinished = { positionMs -> latestOnPlayerControlsScrubFinished.value(positionMs) },
         )
+    }
+
+    // fork:voice-control - spoken play / pause / next while this player is up, through the same
+    // paths as its buttons, so the screen's own state (watch party, next-episode rules) applies.
+    DisposableEffect(controller) {
+        val target = object : com.nuvio.app.features.voice.VoicePlaybackTarget {
+            override fun control(command: com.nuvio.app.features.voice.VoicePlaybackCommand): String? {
+                val wouldPlay = controller.toggleWouldPlay() ?: return "The player is not ready"
+                when (command) {
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.Play ->
+                        if (wouldPlay) latestOnPlayerControlsAction.value(PlayerControlsAction.TogglePlayback)
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.Pause ->
+                        if (!wouldPlay) latestOnPlayerControlsAction.value(PlayerControlsAction.TogglePlayback)
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.Next ->
+                        latestOnPlayerControlsEvent.value("nextEpisode", 0.0)
+                    // Through the screen, so a watch party seeks together and the HUD shows the jump.
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.Seek ->
+                        latestOnPlayerControlsEvent.value("voiceSeekBy", command.deltaMs.toDouble())
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.Speed ->
+                        latestOnPlayerControlsEvent.value("setPlaybackSpeed", command.rate.toDouble())
+                }
+                return null
+            }
+
+            override fun goBack() {
+                latestOnPlayerControlsAction.value(PlayerControlsAction.Back)
+            }
+        }
+        com.nuvio.app.features.voice.VoicePlayback.player = target
+        onDispose {
+            if (com.nuvio.app.features.voice.VoicePlayback.player === target) {
+                com.nuvio.app.features.voice.VoicePlayback.player = null
+            }
+        }
+    }
+
+    // fork:voice-control - the app's listening pill is drawn under the video, so the HUD's own pill
+    // stands in for it here.
+    LaunchedEffect(controller) {
+        var shown = false
+        com.nuvio.app.features.voice.VoiceControlRepository.session
+            .map(::voicePillText)
+            .distinctUntilChanged()
+            .collect { pill ->
+                if (pill == null) {
+                    // Cancelled mid-command: take the long-lived "Listening" pill down.
+                    if (shown) controller.showPresetPill("Voice", "Cancelled", 600)
+                    shown = false
+                    return@collect
+                }
+                controller.showPresetPill(pill.first, pill.second, pill.third)
+                shown = pill.third > VOICE_PILL_RESULT_MS
+            }
     }
 
     DisposableEffect(controller) {
@@ -484,6 +546,24 @@ private fun NativePlayerSurface(
                 PlayerShortcutsRepository.actionForKeyCode(event.keyCode) == null
             ) {
                 controller.dispatchIptvDigit(digit)
+                event.consume()
+                return@KeyEventDispatcher true
+            }
+            // fork:voice-control - the voice key works over the player too (the HUD has the keyboard, so
+            // the window's own handler never sees it), and while listening Escape / a pad's B cancels
+            // the command instead of closing the film.
+            val voice = com.nuvio.app.features.voice.VoiceControlRepository
+            if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.VoiceCommand) &&
+                PlayerShortcutsRepository.actionForKeyCode(event.keyCode) == null
+            ) {
+                voice.toggleListening()
+                event.consume()
+                return@KeyEventDispatcher true
+            }
+            if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) &&
+                voice.session.value !is com.nuvio.app.features.voice.VoiceSessionState.Idle
+            ) {
+                voice.cancelListening()
                 event.consume()
                 return@KeyEventDispatcher true
             }
@@ -1042,18 +1122,23 @@ private fun NativePlayerSurface(
     val youTubePageWindowed by com.nuvio.app.features.youtube.YouTubeWatchLayout.windowed.collectAsState()
     val youTubePageAvailable by com.nuvio.app.features.youtube.YouTubeWatchLayout.available.collectAsState()
     val youTubeTheater by com.nuvio.app.features.youtube.YouTubeFeedRepository.theaterMode.collectAsState()
-    LaunchedEffect(controller, playerControlsState, postShowBoxed, youTubeMiniPlayer, youTubePageWindowed, youTubePageAvailable, youTubeTheater) {
-        val youTubePage = youTubePageAvailable && youTubePageWindowed
+    // fork:youtube-mini-player - the tab drawn around the video in its corner box: the HUD shows nothing there either.
+    val youTubeBrowsing by com.nuvio.app.features.youtube.YouTubeWatchLayout.browsing.collectAsState()
+    LaunchedEffect(controller, playerControlsState, postShowBoxed, youTubeMiniPlayer, youTubePageWindowed, youTubePageAvailable, youTubeTheater, youTubeBrowsing) {
+        val youTubeBrowse = youTubePageAvailable && youTubeBrowsing
+        val youTubePage = (youTubePageAvailable && youTubePageWindowed) || youTubeBrowse
         controller.watchPage = youTubePage
-        controller.miniPlayer = youTubeMiniPlayer && youTubePage
+        controller.miniPlayer = (youTubeMiniPlayer && youTubePage) || youTubeBrowse
         controller.updateControls(
             if (youTubePage && !youTubeTheater && !postShowBoxed) {
                 // The watch page shows the comments and related videos beside the video, larger than
                 // the HUD's panels: their buttons go. Theater fills the window, so it keeps them.
                 playerControlsState.copy(
-                    hiddenHudButtons = listOf(playerControlsState.hiddenHudButtons, "sources", "episodes")
-                        .filter { it.isNotBlank() }
-                        .joinToString(","),
+                    hud = playerControlsState.hud.copy(
+                        hiddenHudButtons = listOf(playerControlsState.hud.hiddenHudButtons, "sources", "episodes")
+                            .filter { it.isNotBlank() }
+                            .joinToString(","),
+                    ),
                 )
             } else if (postShowBoxed) {
                 // The HUD lives inside the video's container, so it would be squashed into the box.
@@ -1061,8 +1146,8 @@ private fun NativePlayerSurface(
                 // The skip prompt is drawn by the cards screen instead (skipKeyAction stays, so the key works).
                 playerControlsState.copy(
                     controlsVisible = false,
-                    mouseMoveRevealsControlsEnabled = false,
-                    skipPromptVisible = false,
+                    hud = playerControlsState.hud.copy(mouseMoveRevealsControlsEnabled = false),
+                    skipPrompt = playerControlsState.skipPrompt.copy(skipPromptVisible = false),
                     heroTrailer = playerControlsState.heroTrailer.copy(postShowInput = true),
                 )
             } else {
@@ -1352,12 +1437,12 @@ private fun NativePlayerSurface(
     ) {
         // Drawn first, so the SwingPanel's corner box sits on top of it.
         if (postShowBoxed) {
-            val skipOffered = playerControlsState.skipPromptVisible &&
-                !playerControlsState.skipPromptDismissed &&
+            val skipOffered = playerControlsState.skipPrompt.skipPromptVisible &&
+                !playerControlsState.skipPrompt.skipPromptDismissed &&
                 playerControlsState.skipKeyAction.isNotEmpty()
             PostShowScreen(
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = postShowProgress },
-                skipLabel = if (skipOffered) playerControlsState.skipPromptLabel else null,
+                skipLabel = if (skipOffered) playerControlsState.skipPrompt.skipPromptLabel else null,
                 skipKeyLabel = playerShortcutKeyCodeLabel(
                     PlayerShortcutsRepository.keyCode(PlayerShortcutAction.SkipInterval),
                 ),
@@ -2091,3 +2176,21 @@ private const val POST_SHOW_SHRINK_MS = 500
 /** The box's gap from the bottom and right edges, and its width as a share of the space left. */
 private const val POST_SHOW_BOX_MARGIN_DP = 64
 private const val POST_SHOW_BOX_WIDTH = 0.3f
+
+// fork:voice-control - the HUD pill's title, value and how long it stays, for each listening state.
+private const val VOICE_PILL_RESULT_MS = 3_000
+private const val VOICE_PILL_LISTENING_MS = 12_000
+
+private fun voicePillText(state: com.nuvio.app.features.voice.VoiceSessionState): Triple<String, String, Int>? {
+    fun quoted(text: String) = "\u201C${text.trim().trimEnd('.')}\u201D"
+    return when (state) {
+        is com.nuvio.app.features.voice.VoiceSessionState.Listening ->
+            Triple("Listening\u2026", state.transcript.takeIf { it.isNotBlank() }?.let(::quoted) ?: "Say a command", VOICE_PILL_LISTENING_MS)
+        is com.nuvio.app.features.voice.VoiceSessionState.Transcribing ->
+            Triple("Listening\u2026", state.transcript.takeIf { it.isNotBlank() }?.let(::quoted) ?: "\u2026", VOICE_PILL_LISTENING_MS)
+        is com.nuvio.app.features.voice.VoiceSessionState.Heard ->
+            Triple(com.nuvio.app.features.voice.describeVoiceIntent(state.intent), quoted(state.text), VOICE_PILL_RESULT_MS)
+        is com.nuvio.app.features.voice.VoiceSessionState.Failed -> Triple("Voice", state.message, VOICE_PILL_RESULT_MS)
+        com.nuvio.app.features.voice.VoiceSessionState.Idle -> null
+    }
+}

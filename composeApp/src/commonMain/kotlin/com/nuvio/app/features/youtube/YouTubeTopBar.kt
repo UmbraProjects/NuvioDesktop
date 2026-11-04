@@ -108,6 +108,19 @@ object YouTubeTopBarSearch {
     fun requestFocus() {
         focusRequests++
     }
+
+    /**
+     * fork:voice-control - a search asked for by voice, run by the tab as soon as it is on screen. Not
+     * [submits]: the tab takes the count it first sees as handled, so a submit made while switching
+     * to the tab would be lost.
+     */
+    internal var pendingSearch by mutableStateOf<String?>(null)
+
+    fun searchFor(query: String) {
+        if (query.isBlank()) return
+        text = query
+        pendingSearch = query
+    }
 }
 
 /** What the floating top bar shows while the YouTube tab is open: the swap button back to the tabs and the search box. */
@@ -181,6 +194,15 @@ private fun YouTubeBarSearchField(fieldFocus: FocusRequester, swapFocus: FocusRe
     val published = if (showRecent) MusicBarSuggestions(offered, picked, ::pick, onClear = YouTubeSearchHistory::clear) else null
     SideEffect { YouTubeTopBarSearch.suggestions = published }
     DisposableEffect(Unit) { onDispose { YouTubeTopBarSearch.suggestions = null } }
+    com.nuvio.app.core.ui.VoiceSearchCommands(
+        owner = "youtube-bar",
+        text = state.text,
+        onTextChange = { state.text = it },
+        onSubmit = { query ->
+            state.text = query
+            state.submit()
+        },
+    )
     BasicTextField(
         value = shown,
         onValueChange = { next ->
@@ -282,6 +304,16 @@ private fun YouTubeBarSearchField(fieldFocus: FocusRequester, swapFocus: FocusRe
                         modifier = Modifier.size(20.dp).clip(CircleShape).musicKeyFocusRing(CircleShape).clickable { state.clear() },
                     )
                 }
+                // Voice search: Windows voice typing types what is said into the box. A 32dp square
+                // like the swap button at the other end, so both icons sit the same way in the pill's
+                // rounded ends (a bare 20dp icon here sat closer to the edge than the swap icon).
+                com.nuvio.app.core.ui.VoiceSearchButton(
+                    owner = "youtube-bar",
+                    voiceScope = com.nuvio.app.features.voice.VoiceSearchScope.YouTube,
+                    focusField = { runCatching { fieldFocus.requestFocus() } },
+                    tint = tokens.colors.textMuted,
+                    modifier = Modifier.musicKeyFocusRing(CircleShape),
+                )
             }
         },
     )
