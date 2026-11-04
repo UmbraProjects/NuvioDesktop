@@ -30,6 +30,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,13 +51,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.music.booklet.SONG_PART_MADE
 import com.nuvio.app.features.music.booklet.SongStory
 import com.nuvio.app.features.music.booklet.cutAtSentence
 import com.nuvio.app.features.music.library.LibraryAlbumInfo
 import com.nuvio.app.features.music.library.SongVersion
 import com.nuvio.app.features.music.library.VersionCounts
 import com.nuvio.app.features.music.library.LensStoryText
-import com.nuvio.app.features.music.library.lensStoryText
+import com.nuvio.app.features.music.library.isPinChange
+import com.nuvio.app.features.music.library.lensStoryBox
 import com.nuvio.app.features.music.library.wholeSentences
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 
@@ -281,15 +287,25 @@ private fun RowScope.LensFactTile(fact: LensFact) {
     }
 }
 
-/** A section label with a note at its end, on one line. */
+/**
+ * A section label with a note at its end, on one line. The line is the same height on both panels and whatever [trailing]
+ * holds (the Edit pills), so nothing moves when they appear.
+ */
 @Composable
-private fun LensSectionLabel(label: String, note: String) {
+private fun LensSectionLabel(label: String, note: String, trailing: (@Composable RowScope.() -> Unit)? = null) {
     val colors = MaterialTheme.nuvio.colors
-    Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp).height(LENS_LABEL_HEIGHT),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.textSecondary, modifier = Modifier.weight(1f), maxLines = 1)
-        Text(note, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)
+        if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)
+        trailing?.invoke(this)
     }
 }
+
+private val LENS_LABEL_HEIGHT = 26.dp
 
 /** The small card above the panel's button: fixed height, a label in [tint] and up to three lines. */
 @Composable
@@ -355,7 +371,7 @@ internal class LensSong(
 )
 
 /** A line about the song from the album's own notes: the AI's (one request for the album) or MusicBrainz's credits. */
-internal class LensNote(val text: String, val ai: Boolean)
+internal class LensNote(val text: String, val ai: Boolean, val pinned: Boolean = false)
 
 /** A count tile's value: "None" rather than a bare 0, which reads like a fault. */
 private fun countText(n: Int): String = if (n == 0) "None" else n.toString()
@@ -365,13 +381,62 @@ private fun countText(n: Int): String = if (n == 0) "None" else n.toString()
  * up by the AI when a key is set); a song with no article gets the album's own note on it instead, so the box is never empty.
  */
 @Composable
-internal fun SongBySongLeft(song: LensSong?, story: SongStory?, note: LensNote?, storyLoading: Boolean, onPlay: () -> Unit, modifier: Modifier = Modifier) {
+internal fun SongBySongLeft(
+    song: LensSong?,
+    story: SongStory?,
+    note: LensNote?,
+    storyLoading: Boolean,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier,
+    edit: LensEditing? = null,
+) {
     val colors = MaterialTheme.nuvio.colors
-    // The box gets whole sentences only: how it was made, then what it means when both fit (never a cut mid-quote).
-    val told = lensStoryText(story?.made, story?.meaning) ?: story?.after?.let { LensStoryText(wholeSentences(it), usedMeaning = false) }
+    // The box gets whole sentences only: how it was made, then what it means when both fit (never a cut mid-quote). Text the
+    // person pinned stands alone, word for word.
+    val told = lensStoryBox(story)
     val main = told?.text
+    val madePinned = story?.pinned?.contains(SONG_PART_MADE) == true
+    // True when the words in the box are the person's own: a pinned story, or a pinned note when there is no story.
+    val youWrote = (main != null && madePinned) || (main == null && note?.pinned == true)
+    // Editing: the box is a text field while it lasts. It edits the story's first part, or the song's note when the box is
+    // showing that (a song with no article). Reset is offered only when a pin is there.
+    var isEditing by remember(song?.title) { mutableStateOf(false) }
+    var draft by remember(song?.title) { mutableStateOf("") }
+    val target: LensEditTarget? = if (edit != null && song != null && !storyLoading) {
+        if (main == null && note != null) {
+            edit.noteKey(song.trackNumber)?.let { LensEditTarget(it, pinned = note.pinned) }
+        } else {
+            LensEditTarget(edit.madeKey(song.title), pinned = madePinned)
+        }
+    } else null
+    val shown = main ?: note?.text
+    val finishEdit: () -> Unit = { isEditing = false }
+    val saveEdit: () -> Unit = {
+        if (target != null && isPinChange(shown, draft)) {
+            com.nuvio.app.features.music.booklet.Pins.save(target.key, draft)
+            edit?.onChanged?.invoke()
+        }
+        isEditing = false
+    }
+    val resetEdit: () -> Unit = {
+        if (target != null) {
+            com.nuvio.app.features.music.booklet.Pins.clear(target.key)
+            edit?.onChanged?.invoke()
+        }
+        isEditing = false
+    }
+    val editPills: @Composable RowScope.() -> Unit = {
+        if (isEditing) {
+            PinPill("Cancel", colors.textSecondary, finishEdit)
+            if (target?.pinned == true) PinPill("Reset", colors.textSecondary, resetEdit)
+            PinPill("Save", colors.accent, saveEdit)
+        } else {
+            PinPill("Edit", colors.accent, { draft = shown.orEmpty(); isEditing = true })
+        }
+    }
     // Where the words in this panel come from, always named (the right panel always names its own).
     val source = when {
+        youWrote -> "You"
         main != null && story?.ai == true -> "AI"
         main != null -> "Wikipedia"
         note != null && note.ai -> "AI"
@@ -392,6 +457,8 @@ internal fun SongBySongLeft(song: LensSong?, story: SongStory?, note: LensNote?,
         LensSectionLabel(
             "THE STORY",
             when {
+                isEditing -> ""
+                youWrote -> "Edited by you"
                 main != null && story?.ai == true -> "Written from Wikipedia"
                 main != null -> "From Wikipedia"
                 note != null && note.ai -> "From the album's notes"
@@ -399,28 +466,40 @@ internal fun SongBySongLeft(song: LensSong?, story: SongStory?, note: LensNote?,
                 storyLoading -> "Looking…"
                 else -> ""
             },
+            trailing = if (target != null) editPills else null,
         )
         val body = main ?: note?.text
         LensBody(colors.accent, highlighted = true) {
-            Text(
-                body ?: when {
-                    song == null -> "Move down the track list to read about each song."
-                    storyLoading -> "Looking for this song's story…"
-                    else -> "Nothing has been written about this song yet."
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (body != null) colors.textPrimary else colors.textMuted,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            story?.quotes?.firstOrNull()?.let { q ->
-                Text(
-                    "“${q.text}”" + q.who.takeIf { it.isNotBlank() }?.let { " – $it" }.orEmpty(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
+            if (isEditing && target != null) {
+                PinEditField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    tint = colors.accent,
+                    onSave = saveEdit,
+                    onCancel = finishEdit,
+                    modifier = Modifier.weight(1f),
                 )
+            } else {
+                Text(
+                    body ?: when {
+                        song == null -> "Move down the track list to read about each song."
+                        storyLoading -> "Looking for this song's story…"
+                        else -> "Nothing has been written about this song yet."
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (body != null) colors.textPrimary else colors.textMuted,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                story?.quotes?.firstOrNull()?.let { q ->
+                    Text(
+                        "“${q.text}”" + q.who.takeIf { it.isNotBlank() }?.let { " – $it" }.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         // The small card: the article's other half when there is one, else the album's note (when the story box took the

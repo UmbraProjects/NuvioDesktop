@@ -104,6 +104,9 @@ import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.rememberLibraryAlbumInfo
 import com.nuvio.app.features.music.booklet.AlbumBookletRepository
 import com.nuvio.app.features.music.booklet.SongNotes
+import com.nuvio.app.features.music.booklet.PinKeys
+import com.nuvio.app.features.music.booklet.Pins
+import com.nuvio.app.features.music.booklet.SONG_PART_MADE
 import com.nuvio.app.features.music.booklet.TrackNotes
 import com.nuvio.app.features.music.booklet.StartHere
 import com.nuvio.app.features.music.library.ArtistTopSongs
@@ -272,7 +275,9 @@ private fun AlbumContent(
     }
     // The album's notes under the case: the cache's (free), and the live ones while this album plays, as on the Stage.
     val bookletRequest = remember(album.browseId, artistInfo) { bookletRequestFor(album, artistInfo) }
-    val cachedBooklet = remember(bookletRequest, loaded) { bookletRequest?.let { AlbumBookletRepository.peek(it) } }
+    // Bumped after a pin is saved or cleared, so what is kept (and the pins laid over it) is read again.
+    var pinTick by remember { mutableStateOf(0) }
+    val cachedBooklet = remember(bookletRequest, loaded, pinTick) { bookletRequest?.let { AlbumBookletRepository.peek(it) } }
     val liveUi = if (loaded) rememberBookletUi(album, artistInfo) else null
     val liveBooklet = liveUi as? BookletUi.Ready
     val booklet = liveBooklet?.booklet ?: cachedBooklet
@@ -512,10 +517,25 @@ private fun AlbumContent(
     }
     val lensNote = lensIndex?.let { i ->
         val n = view.tracks[i].trackNumber.takeIf { it > 0 } ?: (i + 1)
-        booklet?.let { b -> b.trackNotes[n]?.let { LensNote(it, ai = b.source == com.nuvio.app.features.music.booklet.BookletSource.Ai) } }
+        // The person's own note on the song beats everything the booklet and the AI wrote.
+        val pinnedNote = bookletRequest?.let { Pins.read(PinKeys.trackNote(it.artist, it.album, n)) }
+        pinnedNote?.let { LensNote(it.text, ai = false, pinned = true) }
+            ?: booklet?.let { b -> b.trackNotes[n]?.let { LensNote(it, ai = b.source == com.nuvio.app.features.music.booklet.BookletSource.Ai) } }
             ?: songNotes.ai[n]?.let { LensNote(it, ai = true) }
             ?: songNotes.credits[n]?.let { LensNote(it, ai = false) }
     }
+    // Editing the song panel's words: which pins its Edit control writes, and what to read again once one is saved.
+    val lensEditing = if (lensArtist != null) {
+        LensEditing(
+            madeKey = { title -> PinKeys.songPart(lensArtist, title, SONG_PART_MADE) },
+            noteKey = { n -> bookletRequest?.let { PinKeys.trackNote(it.artist, it.album, n) } },
+            onChanged = {
+                lensStory = if (storyKey != null) SongStories.peek(lensArtist, storyKey) else null
+                bookletRequest?.let { songNotes = TrackNotes.peek(it) }
+                pinTick++
+            },
+        )
+    } else null
     // Cut to fit: the time and mood chosen (per album, kept while the page is), the mood's pick, and the cut it gives.
     var cutMinutes by rememberSaveable(album.browseId) { mutableStateOf<Int?>(CUT_DEFAULT_MINUTES) }
     var cutMood by rememberSaveable(album.browseId) { mutableStateOf(CutMood.BestOf) }
@@ -594,6 +614,7 @@ private fun AlbumContent(
                         storyLoading = lensStoryLoading,
                         onPlay = { lensIndex?.let { tapTrack(it) } },
                         modifier = panelModifier,
+                        edit = lensEditing,
                     )
                     AlbumLens.CutToFit -> CutSidePanel(
                         icon = Icons.Rounded.Schedule,

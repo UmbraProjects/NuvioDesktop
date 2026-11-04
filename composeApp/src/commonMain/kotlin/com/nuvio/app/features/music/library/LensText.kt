@@ -1,6 +1,9 @@
 package com.nuvio.app.features.music.library
 // FORK UI (Spyder): Nick's album page lenses, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import com.nuvio.app.features.music.booklet.SONG_PART_MADE
+import com.nuvio.app.features.music.booklet.SongStory
+
 /*
  * fork:lenses - the Song by song story box's text. A story kept from Wikipedia is cut to a few hundred characters, and the
  * cut can fall mid-sentence (even mid-quote) with an ellipsis. The box has room for more, so it is given whole sentences
@@ -62,3 +65,20 @@ internal fun lensStoryText(made: String?, meaning: String?, max: Int = LENS_STOR
         else -> LensStoryText(first, usedMeaning = false)
     }
 }
+
+/**
+ * What the story box shows for [story]: the person's own text word for word when they pinned the "made" part (it stands
+ * alone, so the meaning moves down to the small card and nothing of theirs is cut or run together), else whole sentences of
+ * how it was made and what it means, else the article's last part. Null when there is nothing to show.
+ */
+internal fun lensStoryBox(story: SongStory?): LensStoryText? {
+    if (story == null) return null
+    if (SONG_PART_MADE in story.pinned) {
+        story.made?.takeIf { it.isNotBlank() }?.let { return LensStoryText(it, usedMeaning = false) }
+    }
+    return lensStoryText(story.made, story.meaning)
+        ?: story.after?.let { LensStoryText(wholeSentences(it), usedMeaning = false) }
+}
+
+/** True when [draft] is a change worth pinning: not blank-for-blank and different from what the box showed, ignoring edge space. */
+internal fun isPinChange(shown: String?, draft: String): Boolean = draft.trim() != shown.orEmpty().trim()
