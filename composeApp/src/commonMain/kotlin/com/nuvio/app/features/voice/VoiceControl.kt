@@ -84,8 +84,16 @@ data class VoiceControlSettings(
 sealed interface VoiceSessionState {
     data object Idle : VoiceSessionState
 
-    /** Recording. [transcript] is a rough reading of what has been said so far (may be empty). */
-    data class Listening(val level: Float, val transcript: String, val heardSpeech: Boolean) : VoiceSessionState
+    /**
+     * Recording. [transcript] is a rough reading of what has been said so far (may be empty); [scope]
+     * is set when a search box's mic started it, so plain words search there.
+     */
+    data class Listening(
+        val level: Float,
+        val transcript: String,
+        val heardSpeech: Boolean,
+        val scope: VoiceSearchScope? = null,
+    ) : VoiceSessionState
 
     /** The utterance is over; the final reading is being made. */
     data class Transcribing(val transcript: String) : VoiceSessionState
@@ -158,12 +166,16 @@ expect object VoiceControlRepository {
 
     /**
      * Push-to-talk: starts listening, or, while listening, ends the utterance now. With voice
-     * control off or no model it shows why in the overlay instead.
+     * control off or no model it shows why in the overlay instead. [scope]: started from that search
+     * box's mic (see [scopeVoiceIntent]).
      */
-    fun toggleListening()
+    fun toggleListening(scope: VoiceSearchScope? = null)
 
     /** Stops listening and drops what was said (Escape / B), or hides a result. */
     fun cancelListening()
+
+    /** Replaces what the overlay shows with [message] (why a command could not be carried out). */
+    fun showOutcome(message: String)
 }
 
 /** What a recognised command does, in words, for the overlay and the Settings test. */

@@ -70,8 +70,8 @@ internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
                     title = "Push to talk",
                     description = "Press $voiceKey (change it under Keyboard shortcuts), the mic in the sidebar, the " +
                         "mic button on a DualSense, or hold View on an Xbox controller, then speak. It stops when " +
-                        "you pause; press again to finish sooner, or Escape to cancel. While a video plays the " +
-                        "controller works, but the listening pill is hidden behind the picture.",
+                        "you pause; press again to finish sooner, or Escape to cancel. The mic in the search and " +
+                        "YouTube boxes searches there: just say what to look for.",
                     isTablet = isTablet,
                 ) {
                     SettingsGlassButton(
@@ -81,6 +81,15 @@ internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
                         onClick = VoiceControlRepository::toggleListening,
                     )
                 }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsActionRow(
+                    title = "Commands",
+                    description = "“Search YouTube / movies / shows / music for …”, “Search for …”, " +
+                        "“Open settings / library / home / YouTube / music / calendar / live TV”, " +
+                        "“Play”, “Pause”, “Next”, “Go back”. " +
+                        "During a video only play, pause, next and go back act.",
+                    isTablet = isTablet,
+                ) {}
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsDropdownChoiceRow(
                     title = "End of command",

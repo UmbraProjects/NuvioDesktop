@@ -123,6 +123,10 @@ fun VoiceSearchCommands(
 /**
  * The mic button: focuses the box ([focusField]) and opens voice typing over it. A square of [size]
  * with the icon in its middle, so it lines up with the icon buttons beside it.
+ *
+ * fork:voice-control - a box given a [voiceScope] uses the app's own voice control instead, once it
+ * is on and has a model: what is said is searched there ("cat videos" in the YouTube box), and other
+ * commands still work. Boxes that filter a list of their own keep Windows voice typing.
  */
 @Composable
 fun VoiceSearchButton(
@@ -132,7 +136,29 @@ fun VoiceSearchButton(
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     iconSize: Dp = 20.dp,
+    voiceScope: com.nuvio.app.features.voice.VoiceSearchScope? = null,
 ) {
+    val voiceControl by com.nuvio.app.features.voice.VoiceControlRepository.uiState.collectAsState()
+    val voiceSession by com.nuvio.app.features.voice.VoiceControlRepository.session.collectAsState()
+    if (voiceScope != null && voiceControl.ready) {
+        val active = (voiceSession as? com.nuvio.app.features.voice.VoiceSessionState.Listening)?.scope == voiceScope ||
+            voiceSession is com.nuvio.app.features.voice.VoiceSessionState.Transcribing
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(CircleShape)
+                .clickable { com.nuvio.app.features.voice.VoiceControlRepository.toggleListening(voiceScope) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Rounded.Mic,
+                contentDescription = "Search by voice",
+                tint = if (active) MaterialTheme.colorScheme.primary else tint,
+                modifier = Modifier.size(iconSize),
+            )
+        }
+        return
+    }
     val listening by VoiceSearch.owner.collectAsState()
     Box(
         modifier = modifier

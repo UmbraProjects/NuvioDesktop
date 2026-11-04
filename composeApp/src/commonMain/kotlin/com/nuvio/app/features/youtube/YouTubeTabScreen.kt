@@ -440,6 +440,13 @@ fun YouTubeTabScreen(
     }
     // The bar's box: Enter searches, its clear button leaves the results. Requests made before this
     // screen existed are not replayed.
+    // fork:voice-control - a search said while elsewhere, run once the tab is here.
+    LaunchedEffect(searchBox.pendingSearch) {
+        val query = searchBox.pendingSearch ?: return@LaunchedEffect
+        searchBox.pendingSearch = null
+        searchBox.text = query
+        submitSearch()
+    }
     var handledSubmits by remember { mutableStateOf(searchBox.submits) }
     LaunchedEffect(searchBox.submits) {
         if (searchBox.submits != handledSubmits) submitSearch()
@@ -595,6 +602,7 @@ fun YouTubeTabScreen(
                         // Clear of the pill's rounded end, as the search icon is at the other.
                         com.nuvio.app.core.ui.VoiceSearchButton(
                             owner = "youtube-tab",
+                            voiceScope = com.nuvio.app.features.voice.VoiceSearchScope.YouTube,
                             focusField = { runCatching { searchFocus.requestFocus() } },
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = 4.dp),

@@ -1726,6 +1726,30 @@ private fun MainAppContent(
         }
     }
 
+    /**
+     * Runs the main search for [query], as Enter in the top bar's box does. Results load as usual; if
+     * [confidentQuery] (the query, or the query with a type word from a voice command) can only mean
+     * one title, its details open on top once that is known, so Back lands on the full results.
+     */
+    fun submitSearch(query: String, confidentQuery: String = query) {
+        val trimmed = query.trim()
+        submittedSearchQuery = trimmed
+        searchOverlayActive = false
+        handleRootTabClick(AppScreenTab.Search)
+        navigateToContentCount++
+        confidentSearchJob[0]?.cancel()
+        confidentSearchJob[0] = coroutineScope.launch {
+            val match = com.nuvio.app.features.search.ConfidentSearch.resolve(confidentQuery.trim())
+                ?: return@launch
+            // Not if the user has already opened something or moved on.
+            val onResults = navController.currentBackStackEntry
+                ?.destination?.hasRoute<TabsRoute>() == true
+            if (onResults && selectedTab == AppScreenTab.Search && submittedSearchQuery == trimmed) {
+                navController.navigateIfResumed(DetailRoute(type = match.type, id = match.id))
+            }
+        }
+    }
+
     // The last playlist removed while the tab is open: same as hiding Discover.
     LaunchedEffect(liveTvTabVisible) {
         if (liveTvTabVisible) return@LaunchedEffect
@@ -1778,6 +1802,94 @@ private fun MainAppContent(
                 com.nuvio.app.features.navbar.NavBarEntry.YouTube -> latestRootTabClick.value(AppScreenTab.YouTube)
                 com.nuvio.app.features.navbar.NavBarEntry.Music -> latestRootTabClick.value(AppScreenTab.Music)
                 com.nuvio.app.features.navbar.NavBarEntry.Games -> com.nuvio.app.features.games.GameModeController.setActive(true)
+            }
+        }
+    }
+    // fork:voice-control - phase 4: carry out each understood command (VoiceCommandRouter decides what).
+    val latestSubmitSearch = rememberUpdatedState<(String, String) -> Unit> { q, confident -> submitSearch(q, confident) }
+    LaunchedEffect(navController) {
+        val voice = com.nuvio.app.features.voice.VoiceControlRepository
+        voice.intents.collect { intent ->
+            val context = com.nuvio.app.features.voice.VoiceRouteContext(
+                playerActive = navController.currentDestination?.hasRoute<PlayerRoute>() == true,
+                musicLoaded = com.nuvio.app.features.music.MusicPlayback.player.state.value.isActive,
+                youTubeTabEnabled = com.nuvio.app.features.youtube.YouTubeFeedRepository.tabEnabled.value == true,
+                musicTabEnabled = com.nuvio.app.features.music.library.MusicLibraryRepository.state.value.settings.tabEnabled,
+                liveTvShown = com.nuvio.app.features.iptv.IptvRepository.settings.value.tabShown,
+                discoverShown = ThemeSettingsRepository.desktopDiscoverTabVisible.value,
+            )
+            fun showTabs() {
+                if (navController.currentDestination?.hasRoute<TabsRoute>() != true) {
+                    navController.navigate(TabsRoute) {
+                        popUpTo<TabsRoute> { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            }
+            fun openTab(tab: AppScreenTab) {
+                showTabs()
+                if (selectedTab != tab) latestRootTabClick.value(tab)
+            }
+            when (val action = com.nuvio.app.features.voice.routeVoiceIntent(intent, context)) {
+                is com.nuvio.app.features.voice.VoiceAction.OpenTab -> openTab(
+                    when (action.destination) {
+                        com.nuvio.app.features.voice.VoiceDestination.Home -> AppScreenTab.Home
+                        com.nuvio.app.features.voice.VoiceDestination.Search -> AppScreenTab.Search
+                        com.nuvio.app.features.voice.VoiceDestination.Discover -> AppScreenTab.Discover
+                        com.nuvio.app.features.voice.VoiceDestination.Library -> AppScreenTab.Library
+                        com.nuvio.app.features.voice.VoiceDestination.LiveTv -> AppScreenTab.LiveTv
+                        com.nuvio.app.features.voice.VoiceDestination.Music -> AppScreenTab.Music
+                        com.nuvio.app.features.voice.VoiceDestination.YouTube -> AppScreenTab.YouTube
+                        com.nuvio.app.features.voice.VoiceDestination.Settings -> AppScreenTab.Settings
+                        com.nuvio.app.features.voice.VoiceDestination.Calendar -> AppScreenTab.Home // routed as OpenCalendar
+                    },
+                )
+                com.nuvio.app.features.voice.VoiceAction.OpenCalendar -> navController.navigateIfResumed(CalendarRoute)
+                is com.nuvio.app.features.voice.VoiceAction.SearchVideos -> {
+                    showTabs()
+                    searchQuery = action.query
+                    latestSubmitSearch.value(action.query, action.confidentQuery)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.SearchYouTube -> {
+                    openTab(AppScreenTab.YouTube)
+                    com.nuvio.app.features.youtube.YouTubeTopBarSearch.searchFor(action.query)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.SearchMusic -> {
+                    openTab(AppScreenTab.Music)
+                    com.nuvio.app.features.music.MusicTopBarSearch.searchFor(action.query)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.FocusSearch -> when (action.scope) {
+                    com.nuvio.app.features.voice.VoiceSearchScope.YouTube -> {
+                        openTab(AppScreenTab.YouTube)
+                        com.nuvio.app.features.youtube.YouTubeTopBarSearch.requestFocus()
+                    }
+                    com.nuvio.app.features.voice.VoiceSearchScope.Music -> {
+                        openTab(AppScreenTab.Music)
+                        com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
+                    }
+                    else -> {
+                        showTabs()
+                        latestRootTabClick.value(AppScreenTab.Search)
+                    }
+                }
+                is com.nuvio.app.features.voice.VoiceAction.Player -> {
+                    val player = com.nuvio.app.features.voice.VoicePlayback.player
+                    if (player == null) voice.showOutcome("The player is not ready")
+                    else player.control(action.command)?.let(voice::showOutcome)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.Music -> {
+                    val music = com.nuvio.app.features.music.MusicPlayback.player
+                    when (action.command) {
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.Play -> music.resume()
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.Pause -> music.pause()
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.Next -> music.next()
+                    }
+                }
+                com.nuvio.app.features.voice.VoiceAction.Back -> {
+                    val player = com.nuvio.app.features.voice.VoicePlayback.player.takeIf { context.playerActive }
+                    if (player != null) player.goBack() else com.nuvio.app.core.ui.DesktopNavigationGestureBridge.requestBack()
+                }
+                is com.nuvio.app.features.voice.VoiceAction.Refuse -> voice.showOutcome(action.message)
             }
         }
     }
@@ -4150,27 +4262,7 @@ private fun MainAppContent(
                                             searchQuery = searchQuery,
                                             onSearchQueryChange = { searchQuery = it },
                                             searchFocusRequestCount = searchFocusRequestCount,
-                                            onSearchSubmit = { q ->
-                                                val trimmed = q.trim()
-                                                submittedSearchQuery = trimmed
-                                                searchOverlayActive = false
-                                                handleRootTabClick(AppScreenTab.Search)
-                                                navigateToContentCount++
-                                                // Results load as usual; if the query can only mean one
-                                                // title, its details open on top once that's known, so
-                                                // Back lands on the full results.
-                                                confidentSearchJob[0]?.cancel()
-                                                confidentSearchJob[0] = coroutineScope.launch {
-                                                    val match = com.nuvio.app.features.search.ConfidentSearch.resolve(trimmed)
-                                                        ?: return@launch
-                                                    // Not if the user has already opened something or moved on.
-                                                    val onResults = navController.currentBackStackEntry
-                                                        ?.destination?.hasRoute<TabsRoute>() == true
-                                                    if (onResults && selectedTab == AppScreenTab.Search && submittedSearchQuery == trimmed) {
-                                                        navController.navigateIfResumed(DetailRoute(type = match.type, id = match.id))
-                                                    }
-                                                }
-                                            },
+                                            onSearchSubmit = { q -> submitSearch(q) },
                                             onNavigateToContent = { navigateToContentCount++ },
                                         )
                                     }
@@ -6852,6 +6944,7 @@ private fun TabletFloatingTopBar(
                         )
                         com.nuvio.app.core.ui.VoiceSearchButton(
                             owner = "app-search",
+                            voiceScope = com.nuvio.app.features.voice.VoiceSearchScope.All,
                             focusField = { try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {} },
                             tint = inactiveIconTint,
                             size = NuvioTokens.Space.s32,

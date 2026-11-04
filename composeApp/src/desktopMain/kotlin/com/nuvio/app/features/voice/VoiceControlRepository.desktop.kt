@@ -296,7 +296,7 @@ actual object VoiceControlRepository {
     // ---- Push-to-talk ----------------------------------------------------------------------------
 
     @Synchronized
-    actual fun toggleListening() {
+    actual fun toggleListening(scope: VoiceSearchScope?) {
         ensureLoaded()
         when (_session.value) {
             is VoiceSessionState.Listening -> {
@@ -320,12 +320,12 @@ actual object VoiceControlRepository {
         }
         hideJob?.cancel()
         stopListening = false
-        _session.value = VoiceSessionState.Listening(level = 0f, transcript = "", heardSpeech = false)
+        _session.value = VoiceSessionState.Listening(level = 0f, transcript = "", heardSpeech = false, scope = scope)
         val model = state.selectedModel
         val settings = state.settings
-        sessionJob = scope.launch {
+        sessionJob = this.scope.launch {
             try {
-                listen(model, settings)
+                listen(model, settings, scope)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -342,7 +342,7 @@ actual object VoiceControlRepository {
         _session.value = VoiceSessionState.Idle
     }
 
-    private suspend fun listen(model: VoiceModel, settings: VoiceControlSettings) {
+    private suspend fun listen(model: VoiceModel, settings: VoiceControlSettings, searchScope: VoiceSearchScope?) {
         val engine = transcriberFor(modelFile(model)).getOrElse { error ->
             reportEngineFailure(error)
             showResult(VoiceSessionState.Failed(error.message ?: "The speech engine could not start"))
@@ -385,7 +385,7 @@ actual object VoiceControlRepository {
                 }
                 if (now - lastShownAt >= 60) {
                     lastShownAt = now
-                    _session.value = VoiceSessionState.Listening(VoiceAudio.level(chunk), transcript.get(), detector.heardSpeech)
+                    _session.value = VoiceSessionState.Listening(VoiceAudio.level(chunk), transcript.get(), detector.heardSpeech, searchScope)
                 }
             }
         } finally {
@@ -404,7 +404,7 @@ actual object VoiceControlRepository {
         val started = System.nanoTime()
         val text = engine.transcribe(samples)
         val decodeMs = (System.nanoTime() - started) / 1_000_000
-        val intent = parseVoiceIntent(text)
+        val intent = scopeVoiceIntent(parseVoiceIntent(text), searchScope)
         log.i { "Heard ${samples.size * 1000L / VoiceAudio.SAMPLE_RATE}ms in ${decodeMs}ms: ${describeVoiceIntent(intent)}" }
         if (intent is VoiceIntent.Unknown && intent.text.isEmpty()) {
             showResult(VoiceSessionState.Failed("Didn't catch that"))
@@ -413,6 +413,8 @@ actual object VoiceControlRepository {
         showResult(VoiceSessionState.Heard(text, intent))
         if (intent !is VoiceIntent.Unknown) _intents.tryEmit(intent)
     }
+
+    actual fun showOutcome(message: String) = showResult(VoiceSessionState.Failed(message))
 
     /** Shows [state] in the overlay, then hides it. */
     private fun showResult(state: VoiceSessionState) {

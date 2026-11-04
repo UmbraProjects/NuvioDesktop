@@ -192,6 +192,18 @@ object MusicTopBarSearch {
     fun requestFocus() {
         focusRequests++
     }
+
+    /**
+     * fork:voice-control - a search asked for by voice: into the box, on the Search section, with the
+     * keyboard sent to the results when they arrive (as Enter does). The tab searches when the text changes.
+     */
+    fun searchFor(query: String) {
+        if (query.isBlank()) return
+        MusicTabState.filtering = false
+        MusicTabState.section = MusicSection.Search
+        MusicTabState.query = query
+        MusicTabState.focusResultsWhenReady = true
+    }
 }
 
 /**

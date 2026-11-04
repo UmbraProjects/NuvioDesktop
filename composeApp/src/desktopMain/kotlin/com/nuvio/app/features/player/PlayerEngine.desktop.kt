@@ -379,6 +379,54 @@ private fun NativePlayerSurface(
         )
     }
 
+    // fork:voice-control - spoken play / pause / next while this player is up, through the same
+    // paths as its buttons, so the screen's own state (watch party, next-episode rules) applies.
+    DisposableEffect(controller) {
+        val target = object : com.nuvio.app.features.voice.VoicePlaybackTarget {
+            override fun control(command: com.nuvio.app.features.voice.VoicePlaybackCommand): String? {
+                val wouldPlay = controller.toggleWouldPlay() ?: return "The player is not ready"
+                when (command) {
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.Play ->
+                        if (wouldPlay) latestOnPlayerControlsAction.value(PlayerControlsAction.TogglePlayback)
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.Pause ->
+                        if (!wouldPlay) latestOnPlayerControlsAction.value(PlayerControlsAction.TogglePlayback)
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.Next ->
+                        latestOnPlayerControlsEvent.value("nextEpisode", 0.0)
+                }
+                return null
+            }
+
+            override fun goBack() {
+                latestOnPlayerControlsAction.value(PlayerControlsAction.Back)
+            }
+        }
+        com.nuvio.app.features.voice.VoicePlayback.player = target
+        onDispose {
+            if (com.nuvio.app.features.voice.VoicePlayback.player === target) {
+                com.nuvio.app.features.voice.VoicePlayback.player = null
+            }
+        }
+    }
+
+    // fork:voice-control - the app's listening pill is drawn under the video, so the HUD's own pill
+    // stands in for it here.
+    LaunchedEffect(controller) {
+        var shown = false
+        com.nuvio.app.features.voice.VoiceControlRepository.session
+            .map(::voicePillText)
+            .distinctUntilChanged()
+            .collect { pill ->
+                if (pill == null) {
+                    // Cancelled mid-command: take the long-lived "Listening" pill down.
+                    if (shown) controller.showPresetPill("Voice", "Cancelled", 600)
+                    shown = false
+                    return@collect
+                }
+                controller.showPresetPill(pill.first, pill.second, pill.third)
+                shown = pill.third > VOICE_PILL_RESULT_MS
+            }
+    }
+
     DisposableEffect(controller) {
         PlayerShortcutsRepository.ensureLoaded()
         // Tells the gamepad poller which of a button's two meanings applies. Scoped to this
@@ -484,6 +532,24 @@ private fun NativePlayerSurface(
                 PlayerShortcutsRepository.actionForKeyCode(event.keyCode) == null
             ) {
                 controller.dispatchIptvDigit(digit)
+                event.consume()
+                return@KeyEventDispatcher true
+            }
+            // fork:voice-control - the voice key works over the player too (the HUD has the keyboard, so
+            // the window's own handler never sees it), and while listening Escape / a pad's B cancels
+            // the command instead of closing the film.
+            val voice = com.nuvio.app.features.voice.VoiceControlRepository
+            if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.VoiceCommand) &&
+                PlayerShortcutsRepository.actionForKeyCode(event.keyCode) == null
+            ) {
+                voice.toggleListening()
+                event.consume()
+                return@KeyEventDispatcher true
+            }
+            if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.DismissOverlay) &&
+                voice.session.value !is com.nuvio.app.features.voice.VoiceSessionState.Idle
+            ) {
+                voice.cancelListening()
                 event.consume()
                 return@KeyEventDispatcher true
             }
@@ -2096,3 +2162,21 @@ private const val POST_SHOW_SHRINK_MS = 500
 /** The box's gap from the bottom and right edges, and its width as a share of the space left. */
 private const val POST_SHOW_BOX_MARGIN_DP = 64
 private const val POST_SHOW_BOX_WIDTH = 0.3f
+
+// fork:voice-control - the HUD pill's title, value and how long it stays, for each listening state.
+private const val VOICE_PILL_RESULT_MS = 3_000
+private const val VOICE_PILL_LISTENING_MS = 12_000
+
+private fun voicePillText(state: com.nuvio.app.features.voice.VoiceSessionState): Triple<String, String, Int>? {
+    fun quoted(text: String) = "\u201C${text.trim().trimEnd('.')}\u201D"
+    return when (state) {
+        is com.nuvio.app.features.voice.VoiceSessionState.Listening ->
+            Triple("Listening\u2026", state.transcript.takeIf { it.isNotBlank() }?.let(::quoted) ?: "Say a command", VOICE_PILL_LISTENING_MS)
+        is com.nuvio.app.features.voice.VoiceSessionState.Transcribing ->
+            Triple("Listening\u2026", state.transcript.takeIf { it.isNotBlank() }?.let(::quoted) ?: "\u2026", VOICE_PILL_LISTENING_MS)
+        is com.nuvio.app.features.voice.VoiceSessionState.Heard ->
+            Triple(com.nuvio.app.features.voice.describeVoiceIntent(state.intent), quoted(state.text), VOICE_PILL_RESULT_MS)
+        is com.nuvio.app.features.voice.VoiceSessionState.Failed -> Triple("Voice", state.message, VOICE_PILL_RESULT_MS)
+        com.nuvio.app.features.voice.VoiceSessionState.Idle -> null
+    }
+}

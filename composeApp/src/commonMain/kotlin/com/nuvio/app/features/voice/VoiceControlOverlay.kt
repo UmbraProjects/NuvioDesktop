@@ -130,6 +130,7 @@ private fun pillText(state: VoiceSessionState): Pair<String, String> = when (sta
     is VoiceSessionState.Listening -> when {
         state.transcript.isNotBlank() -> quoted(state.transcript) to "Listening…"
         state.heardSpeech -> "Listening…" to ""
+        state.scope != null -> "Listening…" to "Say what to search for"
         else -> "Listening…" to "Say a command, like “search YouTube for cat videos”"
     }
     is VoiceSessionState.Transcribing ->
