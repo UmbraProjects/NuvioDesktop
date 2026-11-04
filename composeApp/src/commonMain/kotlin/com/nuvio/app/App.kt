@@ -446,6 +446,7 @@ import com.nuvio.app.features.watchprogress.nextUpDismissKey
 import com.nuvio.app.features.watchprogress.opensDetails
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import com.nuvio.app.features.watching.application.WatchingActions
+import com.nuvio.app.features.watching.application.canMarkWatched
 import com.nuvio.app.features.watching.application.WatchingState
 import io.ktor.http.Url
 import kotlinx.coroutines.CancellationException
@@ -4552,6 +4553,9 @@ private fun MainAppContent(
                 onRemove = {
                     selectedContinueWatchingForActions?.let(WatchProgressRepository::dismissContinueWatchingCard)
                 },
+                onMarkWatched = selectedContinueWatchingForActions
+                    ?.takeIf { it.canMarkWatched() }
+                    ?.let { item -> { WatchingActions.markContinueWatchingWatched(item) } },
                 zoomAnchor = selectedContinueWatchingAnchor,
                 zoomHazeState = posterOverlayHazeState,
                 contextMenuPosition = selectedContinueWatchingMenuPosition,
@@ -4805,6 +4809,7 @@ private fun MainAppContent(
                             responseHeaders = emptyMap(),
                             filename = stream.behaviorHints.filename,
                             videoSize = stream.behaviorHints.videoSize,
+                            videoHash = stream.behaviorHints.videoHash,
                             infoHash = infoHash,
                             fileIdx = stream.p2pFileIdx,
                             sources = stream.sources,
@@ -4930,6 +4935,7 @@ private fun MainAppContent(
                                 behaviorHints = StreamBehaviorHints(
                                     filename = cached.filename,
                                     videoSize = cached.videoSize,
+                                    videoHash = cached.videoHash,
                                     bingeGroup = cached.bingeGroup,
                                 ),
                             )
@@ -4953,6 +4959,7 @@ private fun MainAppContent(
                             behaviorHints = StreamBehaviorHints(
                                 filename = cached.filename,
                                 videoSize = cached.videoSize,
+                                videoHash = cached.videoHash,
                                 bingeGroup = cached.bingeGroup,
                             ),
                         )
@@ -5102,6 +5109,7 @@ private fun MainAppContent(
                             responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
                             filename = stream.behaviorHints.filename,
                             videoSize = stream.behaviorHints.videoSize,
+                            videoHash = stream.behaviorHints.videoHash,
                             bingeGroup = stream.behaviorHints.bingeGroup,
                             streamType = stream.streamType,
                             sourceIdentityKey = selectedSourceIdentityKey,
@@ -5304,6 +5312,7 @@ private fun MainAppContent(
                             responseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response),
                             filename = stream.behaviorHints.filename,
                             videoSize = stream.behaviorHints.videoSize,
+                            videoHash = stream.behaviorHints.videoHash,
                             bingeGroup = stream.behaviorHints.bingeGroup,
                             streamType = stream.streamType,
                             sourceIdentityKey = sourceIdentityKey,

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
@@ -63,6 +64,8 @@ fun NuvioContinueWatchingActionSheet(
     titlePlaybackActions: List<PosterZoomOverlayAction> = emptyList(),
     onResync: () -> Unit,
     onRemove: () -> Unit,
+    /** Marks the card's episode or film watched (and so takes it off the row). Null hides the row. */
+    onMarkWatched: (() -> Unit)? = null,
     /** Queues this card in a playlist. Null hides the row. */
     onAddToPlaylist: (() -> Unit)? = null,
     /** Queues every card in this card's row, e.g. all of Next Up. Null hides the row. */
@@ -139,6 +142,16 @@ fun NuvioContinueWatchingActionSheet(
                 group = 3,
             ),
         )
+        onMarkWatched?.let { markWatched ->
+            add(
+                PosterZoomOverlayAction(
+                    icon = Icons.Default.CheckCircle,
+                    label = stringResource(Res.string.hero_mark_watched),
+                    onSelected = markWatched,
+                    group = 4,
+                ),
+            )
+        }
         add(
             PosterZoomOverlayAction(
                 icon = Icons.Default.DeleteOutline,

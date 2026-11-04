@@ -371,6 +371,8 @@ internal class PlayerScreenRuntime(
     var secondarySubtitleSelectionApplied by mutableStateOf(false)
     var activeSubtitleTab by mutableStateOf(SubtitleTab.BuiltIn)
     var autoFetchedAddonSubtitlesForKey by mutableStateOf<String?>(null)
+    /** The last file hashed for subtitle requests: its URL, and its OpenSubtitles hash and size. */
+    var computedSubtitleVideoHash: Pair<String, Pair<String, Long>>? = null
     var completedAutoAddonSubtitleFetchForKey by mutableStateOf<String?>(null)
     var trackPreferenceRestoreApplied by mutableStateOf(false)
     var subtitleDelayMs by mutableStateOf(0)

@@ -6,14 +6,36 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.*
 import com.nuvio.app.core.i18n.localizedString
 
 internal fun PlayerScreenRuntime.fetchAddonSubtitlesForActiveItem(): Job? {
     val type = activeAddonSubtitleType.takeIf { it.isNotBlank() } ?: return null
     val videoId = activeVideoId?.takeIf { it.isNotBlank() } ?: return null
-    return SubtitleRepository.fetchAddonSubtitles(type, videoId)
+    val extras = SubtitleRequestExtras.from(activeStream?.behaviorHints, activeSourceUrl)
+    // A direct http(s) file the addon gave no hash for: hash it first (a HEAD and two 64 KiB range reads),
+    // so hash-matching addons can answer for this exact release. Torrents are not hashed: the tail read
+    // would make the engine fetch the file's last piece while the start is still buffering.
+    val hashUrl = activeSourceUrl.takeIf {
+        activeTorrentInfoHash == null && !isIptvPlayback &&
+            (it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true))
+    }
+    if (extras?.videoHash != null || hashUrl == null) {
+        return SubtitleRepository.fetchAddonSubtitles(type, videoId, extras)
+    }
+    val headers = activeSourceHeaders
+    return SubtitleRepository.fetchAddonSubtitles(type, videoId, extras) {
+        val (hash, size) = computedSubtitleVideoHash?.takeIf { it.first == hashUrl }?.second
+            ?: withTimeoutOrNull(SUBTITLE_HASH_TIMEOUT_MS) { computeVideoHash(hashUrl, headers) }
+                ?.also { computedSubtitleVideoHash = hashUrl to it }
+            ?: return@fetchAddonSubtitles null
+        (extras ?: SubtitleRequestExtras()).copy(videoHash = hash, videoSize = extras?.videoSize ?: size)
+    }
 }
+
+/** How long the file hash may hold the subtitle request back before it goes without one. */
+private const val SUBTITLE_HASH_TIMEOUT_MS = 4_000L
 
 /**
  * Loads [subtitle] into the player, then — when automatic subtitle sync is on — aligns it to the
