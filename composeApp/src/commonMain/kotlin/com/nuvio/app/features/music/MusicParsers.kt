@@ -469,6 +469,135 @@ internal fun parseSongSearch(body: String): List<MusicTrack> {
         .distinctBy { it.videoId }
 }
 
+/**
+ * fork:music-home - everything one unfiltered search answer holds, sorted by kind: the Top result card, then songs,
+ * albums (singles and EPs too), artists and music videos, each in the answer's order. Playlists, episodes, podcasts
+ * and user profiles are left out.
+ *
+ * Two layouts are read. The classic one groups results in titled shelves ("Songs", "Albums", ...) whose rows do not
+ * repeat the kind; the newer flat one puts each row in its own section and starts its second column with the kind
+ * ("Video • Yelawolf & Caskey • 19M views"). A row's own kind word wins, then its shelf's title, then what its links
+ * say (an album browse id, an artist page, the music video type).
+ */
+internal data class MusicSearchEverything(
+    val top: MusicTopResult?,
+    val songs: List<MusicTrack>,
+    val albums: List<MusicAlbumSummary>,
+    val artists: List<MusicArtistSummary>,
+    val videos: List<MusicTrack>,
+) {
+    val isEmpty: Boolean get() = top == null && songs.isEmpty() && albums.isEmpty() && artists.isEmpty() && videos.isEmpty()
+
+    companion object {
+        val EMPTY = MusicSearchEverything(null, emptyList(), emptyList(), emptyList(), emptyList())
+    }
+}
+
+private enum class SearchRowKind { Song, Video, Album, Artist, Other }
+
+/** The kind a row's first word or a shelf's title names; null for anything else (an artist's name, a view count). */
+private fun rowKindOfWord(word: String?): SearchRowKind? = when (word?.trim()?.lowercase()) {
+    "song", "songs" -> SearchRowKind.Song
+    "video", "videos" -> SearchRowKind.Video
+    "album", "albums", "single", "singles", "ep", "eps" -> SearchRowKind.Album
+    "artist", "artists" -> SearchRowKind.Artist
+    "playlist", "playlists", "community playlists", "featured playlists", "episode", "episodes", "podcast", "podcasts",
+    "profile", "profiles", "station", "stations", "top result" -> SearchRowKind.Other
+    else -> null
+}
+
+private fun JsonObject.musicPageType(): String? =
+    at("navigationEndpoint", "browseEndpoint", "browseEndpointContextSupportedConfigs", "browseEndpointContextMusicConfig", "pageType").str()
+
+private fun JsonObject.searchRowKind(shelfTitle: String?): SearchRowKind {
+    val firstWord = segments(runsOf(flexText(1))).firstOrNull()?.let(::segmentText)
+    rowKindOfWord(firstWord)?.let { return it }
+    rowKindOfWord(shelfTitle)?.let { return it }
+    val browseId = runBrowseId() ?: runsOf(flexText(0)).firstNotNullOfOrNull { it.runBrowseId() }
+    return when {
+        browseId?.startsWith(ALBUM_PREFIX) == true -> SearchRowKind.Album
+        musicPageType() == "MUSIC_PAGE_TYPE_ARTIST" -> SearchRowKind.Artist
+        trackVideoId() != null -> when (findAll(this, "watchEndpointMusicConfig").firstNotNullOfOrNull { it["musicVideoType"].str() }) {
+            "MUSIC_VIDEO_TYPE_ATV" -> SearchRowKind.Song
+            null -> SearchRowKind.Song
+            else -> SearchRowKind.Video
+        }
+        else -> SearchRowKind.Other
+    }
+}
+
+/**
+ * A song or video row as a track. In the flat layout the row starts "Video • channel", so an unlinked channel is the
+ * segment after the kind word, not the kind word itself.
+ */
+private fun JsonObject.toSearchTrack(number: Int): MusicTrack? {
+    val track = toListTrack(number) ?: return null
+    val parts = segments(runsOf(flexText(1))).map(::segmentText)
+    val startsWithKind = rowKindOfWord(parts.firstOrNull()) != null
+    if (!startsWithKind || track.artists.any { it.browseId != null }) return track
+    val channel = parts.getOrNull(1)?.takeIf { it.isNotEmpty() && !TRACK_LENGTH.matches(it) } ?: return track.copy(artists = emptyList())
+    return track.copy(artists = listOf(MusicArtistRef(channel)))
+}
+
+private fun JsonObject.toSearchArtist(): MusicArtistSummary? {
+    if (musicPageType() == "MUSIC_PAGE_TYPE_USER_CHANNEL") return null
+    val name = textOf(flexText(0)).trim().ifEmpty { return null }
+    val id = (runBrowseId() ?: runsOf(flexText(0)).firstNotNullOfOrNull { it.runBrowseId() })
+        ?.takeIf { it.startsWith(ARTIST_PREFIX) } ?: return null
+    return MusicArtistSummary(id, name, thumbnailOf(this["thumbnail"]))
+}
+
+internal fun parseSearchEverything(body: String): MusicSearchEverything {
+    val root = parseRoot(body) ?: return MusicSearchEverything.EMPTY
+    val rows = ArrayList<Pair<JsonObject, String?>>()
+    fun walk(node: JsonElement?, shelfTitle: String?) {
+        when (node) {
+            is JsonObject -> node.forEach { (key, value) ->
+                when {
+                    key == "musicResponsiveListItemRenderer" && value is JsonObject -> rows += value to shelfTitle
+                    key == "musicShelfRenderer" && value is JsonObject -> walk(value, textOf(value["title"]).trim().ifEmpty { null })
+                    else -> walk(value, shelfTitle)
+                }
+            }
+            is JsonArray -> node.forEach { walk(it, shelfTitle) }
+            else -> Unit
+        }
+    }
+    walk(root, null)
+    val songs = ArrayList<MusicTrack>()
+    val videos = ArrayList<MusicTrack>()
+    val albums = ArrayList<MusicAlbumSummary>()
+    val artists = ArrayList<MusicArtistSummary>()
+    for ((row, shelf) in rows) {
+        when (row.searchRowKind(shelf)) {
+            SearchRowKind.Song -> row.toSearchTrack(songs.size + 1)?.let { songs += it }
+            SearchRowKind.Video -> row.toSearchTrack(videos.size + 1)?.let { videos += it }
+            SearchRowKind.Album -> row.toAlbumSummary()?.let { albums += it }
+            SearchRowKind.Artist -> row.toSearchArtist()?.let { artists += it }
+            SearchRowKind.Other -> Unit
+        }
+    }
+    return MusicSearchEverything(
+        top = parseTopResult(body),
+        songs = songs.distinctBy { it.videoId },
+        albums = albums.distinctBy { it.browseId },
+        artists = artists.distinctBy { it.browseId },
+        videos = videos.distinctBy { it.videoId },
+    )
+}
+
+/**
+ * fork:music-home - the completions YouTube Music offers for what has been typed so far ("yela" gives "yelawolf",
+ * "yelawolf best friend", ...), in its order, lower-cased as it sends them, without repeats.
+ */
+internal fun parseSearchSuggestions(body: String): List<String> {
+    val root = parseRoot(body) ?: return emptyList()
+    return findAll(root, "searchSuggestionRenderer").mapNotNull { item ->
+        (item.at("navigationEndpoint", "searchEndpoint", "query").str() ?: textOf(item["suggestion"]))
+            .trim().ifEmpty { null }
+    }.distinct()
+}
+
 /** A playlist page (`browse` with `VL<id>`), or one of its continuation pages (no title). Null when nothing parses. */
 internal fun parsePlaylistPage(body: String, firstNumber: Int = 1): MusicPlaylistPage? {
     val root = parseRoot(body) ?: return null
