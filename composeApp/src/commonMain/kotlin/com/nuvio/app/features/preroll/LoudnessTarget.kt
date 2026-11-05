@@ -4,8 +4,9 @@ package com.nuvio.app.features.preroll
  * One loudness for everything that is not the film.
  *
  * The film is the reference: it plays untouched, at whatever level the viewer has set the volume to. Trailers,
- * the Home hero, the pre-show, theme songs and music are all brought to the same integrated loudness a film's
- * dialogue sits at, so nobody has to reach for the remote when one of them starts.
+ * the Home hero, the pre-show and theme songs are all brought to the same integrated loudness a film's dialogue sits
+ * at, so nobody has to reach for the remote when one of them starts. The Music tab is the exception: it plays at the
+ * level of other music apps (MUSIC_LOUDNESS_TARGET_LUFS in LoudnessPlan.kt).
  *
  * Before this, trailers went through `dynaudnorm`, which pulls peaks up towards full scale (consistent with each
  * other, but far louder than a film), and music played as mastered (about -9 to -14 LUFS).

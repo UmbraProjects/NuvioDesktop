@@ -345,7 +345,14 @@ class InAppYouTubeExtractor internal constructor(
             anonymous.reason == TrailerUnavailableReason.AGE_RESTRICTED
         if (needsAccount && !MusicRateLimit.isBlocked() && accountHeaders(YOUTUBE_ORIGIN).isNotEmpty()) {
             log.i { "Retrying login-gated video as the signed-in account" }
-            return@withContext attemptExtraction(youtubeUrl, forceRefreshConfig = false, singleUrl = singleUrl, useAccount = true)
+            val signedIn = attemptExtraction(youtubeUrl, forceRefreshConfig = false, singleUrl = singleUrl, useAccount = true)
+            // fork:youtube-unplayable - the TV clients answer an age-gated video with "The page needs to be
+            // reloaded" (UNKNOWN); the anonymous verdict is the one that says why.
+            return@withContext if (signedIn is TrailerResolution.Unavailable && signedIn.reason == TrailerUnavailableReason.UNKNOWN) {
+                anonymous
+            } else {
+                signedIn
+            }
         }
         anonymous
     }
@@ -667,7 +674,7 @@ class InAppYouTubeExtractor internal constructor(
         if (manifestUrls.isEmpty() && progressive.isEmpty() && adaptiveVideo.isEmpty() && adaptiveAudio.isEmpty()) {
             val reason = classifyUnavailability(lastPlayabilityStatus)
             log.i { "[$callerLabel] no streams for $videoId: playabilityStatus=$lastPlayabilityStatus reason=$reason" }
-            return TrailerResolution.Unavailable(reason)
+            return TrailerResolution.Unavailable(reason, youTubeReason = lastPlayabilityStatus?.stringValue("reason"))
         }
 
         var bestManifest: ManifestCandidate? = null

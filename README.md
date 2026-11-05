@@ -75,8 +75,15 @@ If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamS
 * Display expected quality in the hero via QualiCache.
 * Application and player UI scaling sliders.
 * Change the font of the application to any installed font.
+* Music tab that can play lossless albums from an Eclipse Music addon such as Nebula (Eclipse's addon protocol, used with Permission).
 
-The design of Nuvio HTPC is partly inspired by Nuvio TV and Stremio Kai. 
+The design of Nuvio HTPC is partly inspired by Nuvio TV and Stremio Kai.
+
+# Contributors
+
+* Deigue, for pull requests and testing.
+* Slokker, for GoatTV (Live TV), translations, pull requests and the [Linux port](https://github.com/iamSlokker/NuvioDesktop-Linux).
+* Spyder, for many pull requests, mostly the Music tab, and YouTube features. 
 
 ## Custom Hero Discovery Config & Badges
 

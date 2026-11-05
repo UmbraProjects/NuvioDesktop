@@ -1,0 +1,10 @@
+{
+  "reflection": [
+    {
+      "type": "com.nuvio.app.features.music.InnerTubeXFallback",
+      "fields": [
+        { "name": "INSTANCE" }
+      ]
+    }
+  ]
+}

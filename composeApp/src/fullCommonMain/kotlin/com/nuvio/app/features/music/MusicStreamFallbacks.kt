@@ -17,6 +17,14 @@ internal interface MusicStreamFallback {
     suspend fun resolve(videoId: String): TrailerPlaybackSource?
 
     /**
+     * fork:youtube-age-gate - a video stream (video and audio apart, or an HLS manifest) for [videoId], signed
+     * in where the account allows, for a video the in-app extractor cannot open: an age-gated one. At most
+     * [maxShortSide] pixels on the short side (null: the resolver's own ceiling). Null when this resolver
+     * cannot open it either, or does not do video.
+     */
+    suspend fun resolveVideo(videoId: String, maxShortSide: Int?): TrailerPlaybackSource? = null
+
+    /**
      * fork:potoken-first — true while this resolver can do what the in-app extractor cannot (mint PO
      * tokens), so [MusicResolver] asks it first for audio, as BitChord does, and lets a track the person
      * chose ask it once even while YouTube is refusing the in-app extractor.

@@ -305,8 +305,9 @@ private val CONTROLS_SIDE_TEXT = Color.White.copy(alpha = 0.7f)
 /**
  * The lyric view's own player, which stays on screen (the bar, dock and card step aside while the view is open). One
  * compact row: where the song is in the album or playlist on the left, previous / play / next and Add to playlist in
- * the middle, the time on the right; the seek bar under it, full width. The middle is placed in a Box on its own, so
- * it never moves as the texts either side change width.
+ * the middle, the time on the right; under it one row with the seek bar in two thirds and the volume in the last
+ * (not on a row of its own above). The middle is placed in a Box on its own, so it never moves as the texts either
+ * side change width.
  */
 @Composable
 internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, modifier: Modifier = Modifier, barModifier: Modifier = Modifier) {
@@ -346,14 +347,21 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
         }
-        SeekBar(
-            fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
-            onSeek = { player.seekTo((it * state.durationMs).toLong()) },
-            modifier = Modifier.fillMaxWidth().then(barModifier),
-            enabled = state.durationMs > 0L,
-            onNudge = { d -> player.seekTo((state.positionMs + d * 5_000L).coerceIn(0L, state.durationMs)) },
-            glass = true,
-        )
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            SeekBar(
+                fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
+                onSeek = { player.seekTo((it * state.durationMs).toLong()) },
+                modifier = Modifier.weight(2f).then(barModifier),
+                enabled = state.durationMs > 0L,
+                onNudge = { d -> player.seekTo((state.positionMs + d * 5_000L).coerceIn(0L, state.durationMs)) },
+                glass = true,
+            )
+            MusicVolumeControl(state, player, sliderWidth = null, modifier = Modifier.weight(1f), tint = Color.White, glass = true)
+        }
     }
 }
 

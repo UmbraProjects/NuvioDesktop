@@ -32,8 +32,9 @@ set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${NUVIO_WHISPER_ROOT}" whisper EXCLUDE_FROM_ALL)
 
-add_library(nuvio_whisper SHARED whisper_jni.cpp)
+# grammar-parser.cpp: whisper.cpp's GBNF parser (from its examples), for command-constrained decoding.
+add_library(nuvio_whisper SHARED whisper_jni.cpp "${NUVIO_WHISPER_ROOT}/examples/grammar-parser.cpp")
 set_target_properties(nuvio_whisper PROPERTIES PREFIX "" OUTPUT_NAME "nuvio_whisper")
 target_compile_features(nuvio_whisper PRIVATE cxx_std_17)
-target_include_directories(nuvio_whisper PRIVATE "${NUVIO_JNI_INCLUDE_DIR}" "${NUVIO_JNI_INCLUDE_DIR}/win32")
+target_include_directories(nuvio_whisper PRIVATE "${NUVIO_JNI_INCLUDE_DIR}" "${NUVIO_JNI_INCLUDE_DIR}/win32" "${NUVIO_WHISPER_ROOT}/examples")
 target_link_libraries(nuvio_whisper PRIVATE whisper)

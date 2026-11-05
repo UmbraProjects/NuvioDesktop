@@ -1832,7 +1832,10 @@ private fun MainAppContent(
     val latestSubmitSearch = rememberUpdatedState<(String, String) -> Unit> { q, confident -> submitSearch(q, confident) }
     LaunchedEffect(navController) {
         val voice = com.nuvio.app.features.voice.VoiceControlRepository
-        voice.intents.collect { intent ->
+        // Loaded at start, not first on opening its settings page: the wake word listens from launch,
+        // and the model is warm for the first push-to-talk.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { voice.ensureLoaded() }
+        fun carryOut(intent: com.nuvio.app.features.voice.VoiceIntent) {
             val context = com.nuvio.app.features.voice.VoiceRouteContext(
                 playerActive = navController.currentDestination?.hasRoute<PlayerRoute>() == true,
                 musicLoaded = com.nuvio.app.features.music.MusicPlayback.player.state.value.isActive,
@@ -1840,6 +1843,10 @@ private fun MainAppContent(
                 musicTabEnabled = com.nuvio.app.features.music.library.MusicLibraryRepository.state.value.settings.tabEnabled,
                 liveTvShown = com.nuvio.app.features.iptv.IptvRepository.settings.value.tabShown,
                 discoverShown = ThemeSettingsRepository.desktopDiscoverTabVisible.value,
+                detailsShown = com.nuvio.app.features.voice.VoiceScreenTargets.detailsPlay != null &&
+                    navController.currentDestination?.hasRoute<DetailRoute>() == true,
+                // Set only while a source list is drawn (the picker panel, or the full sources screen).
+                sourcesShown = com.nuvio.app.features.voice.VoiceScreenTargets.sources != null,
             )
             fun showTabs() {
                 if (navController.currentDestination?.hasRoute<TabsRoute>() != true) {
@@ -1908,14 +1915,52 @@ private fun MainAppContent(
                         com.nuvio.app.features.voice.VoicePlaybackCommand.Next -> music.next()
                         is com.nuvio.app.features.voice.VoicePlaybackCommand.Seek ->
                             music.seekTo((music.state.value.positionMs + action.command.deltaMs).coerceAtLeast(0L))
-                        is com.nuvio.app.features.voice.VoicePlaybackCommand.Speed -> Unit // refused by the router
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.Previous -> music.previous()
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.SeekTo -> music.seekTo(action.command.positionMs)
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.VolumeChange ->
+                            music.setVolume(music.state.value.volume + action.command.percent)
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.VolumeSet -> music.setVolume(action.command.percent)
+                        // Refused by the router: video-only.
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.Speed,
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.SkipSegment,
+                        is com.nuvio.app.features.voice.VoicePlaybackCommand.Mute,
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.NextSubtitles,
+                        com.nuvio.app.features.voice.VoicePlaybackCommand.NextAudio -> Unit
                     }
+                }
+                com.nuvio.app.features.voice.VoiceAction.ClosePlayer -> {
+                    val player = com.nuvio.app.features.voice.VoicePlayback.player
+                    if (player != null) player.close() else voice.showOutcome("Nothing is playing")
+                }
+                com.nuvio.app.features.voice.VoiceAction.PlayTitle -> {
+                    val play = com.nuvio.app.features.voice.VoiceScreenTargets.detailsPlay
+                    if (play == null) voice.showOutcome("Open a title first") else play()
+                }
+                is com.nuvio.app.features.voice.VoiceAction.PickSource -> {
+                    val pick = com.nuvio.app.features.voice.VoiceScreenTargets.sources
+                    if (pick == null) voice.showOutcome("The source list is not open") else pick(action.number)?.let(voice::showOutcome)
+                }
+                is com.nuvio.app.features.voice.VoiceAction.PressKey -> {
+                    val press = com.nuvio.app.features.voice.VoiceScreenTargets.pressKey
+                    if (press == null || !press(action.key, action.count)) voice.showOutcome("Bring Nuvio to the front first")
                 }
                 com.nuvio.app.features.voice.VoiceAction.Back -> {
                     val player = com.nuvio.app.features.voice.VoicePlayback.player.takeIf { context.playerActive }
                     if (player != null) player.goBack() else com.nuvio.app.core.ui.DesktopNavigationGestureBridge.requestBack()
                 }
                 is com.nuvio.app.features.voice.VoiceAction.Refuse -> voice.showOutcome(action.message)
+            }
+        }
+        voice.intents.collect { intent ->
+            if (intent is com.nuvio.app.features.voice.VoiceIntent.Chain) {
+                // "go right one and select": one step at a time, each routed against the screen as the
+                // step before left it (a press of Play opens the source list the next step picks from).
+                intent.steps.forEachIndexed { index, step ->
+                    if (index > 0) kotlinx.coroutines.delay(com.nuvio.app.features.voice.VOICE_CHAIN_STEP_MS)
+                    carryOut(step)
+                }
+            } else {
+                carryOut(intent)
             }
         }
     }

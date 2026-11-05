@@ -3,7 +3,11 @@ package com.nuvio.app.features.trailer
 /** Outcome of resolving a YouTube trailer to a direct, playable stream. */
 sealed class TrailerResolution {
     data class Available(val source: TrailerPlaybackSource) : TrailerResolution()
-    data class Unavailable(val reason: TrailerUnavailableReason) : TrailerResolution()
+    /** [youTubeReason]: YouTube's own wording for it (`playabilityStatus.reason`), when it gave one. */
+    data class Unavailable(
+        val reason: TrailerUnavailableReason,
+        val youTubeReason: String? = null,
+    ) : TrailerResolution()
 }
 
 /**

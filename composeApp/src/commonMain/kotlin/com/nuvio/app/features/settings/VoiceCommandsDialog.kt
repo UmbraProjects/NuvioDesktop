@@ -168,6 +168,7 @@ private fun AddPhraseBox(kind: VoiceCommandKind, onDone: () -> Unit) {
                     VoiceCommandKind.Takes.Query -> "e.g. “find on tube”"
                     VoiceCommandKind.Takes.Duration -> if (kind == VoiceCommandKind.SeekBack) "e.g. “back up”" else "e.g. “jump on”"
                     VoiceCommandKind.Takes.Rate -> "e.g. “play at”"
+                    VoiceCommandKind.Takes.Number -> "e.g. “go with”"
                     VoiceCommandKind.Takes.Nothing -> "e.g. “hold it”"
                 },
                 isError = problem != null,

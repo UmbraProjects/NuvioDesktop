@@ -34,7 +34,7 @@ enum class YouTubeFeedKind(val browseId: String, val label: String, val inHeader
     /** Results for [YouTubeFeedRepository.searchQuery]; not a browse feed, so it has no browse id. */
     Search("", "Search", inHeader = false),
 
-    /** The Videos tab of [YouTubeFeedRepository.openChannel]; its browse id is the channel's. */
+    /** The open tab (Videos or Live) of [YouTubeFeedRepository.openChannel]; its browse id is the channel's. */
     Channel("", "Channel", inHeader = false),
 
     /** The videos of [YouTubeFeedRepository.openPlaylist], in its order; browsed as "VL" + its id. */
@@ -63,6 +63,24 @@ data class YouTubePlaylistListState(
     val error: String? = null,
 )
 
+/** The tabs of a channel's page that the Channel view switches between, as the website names them. */
+enum class YouTubeChannelTab(val label: String) {
+    Videos("Videos"),
+
+    /** Its live streams: past ones (live-now and upcoming ones are left out, as on every feed). */
+    Live("Live"),
+    Playlists("Playlists"),
+}
+
+/** A channel's Playlists tab, a page at a time. */
+data class YouTubeChannelPlaylistsState(
+    val playlists: List<YouTubePlaylist> = emptyList(),
+    val continuation: String? = null,
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val error: String? = null,
+)
+
 /** A channel the tab has open, and whether the account is subscribed to it (null until known). */
 data class YouTubeOpenChannel(
     val channelId: String,
@@ -73,6 +91,8 @@ data class YouTubeOpenChannel(
     val changing: Boolean = false,
     /** Subscriber and video counts from the page's header; null until its first page is back. */
     val stats: YouTubeChannelStats? = null,
+    /** Which of the page's tabs is showing. */
+    val tab: YouTubeChannelTab = YouTubeChannelTab.Videos,
 )
 
 data class YouTubeChannelListState(
@@ -128,8 +148,13 @@ internal expect suspend fun youTubeBrowse(browseId: String?, continuation: Strin
  */
 internal expect suspend fun youTubeSearch(query: String?, continuation: String?, pageId: String?): YouTubeBrowseResult
 
-/** One page of a channel's Videos tab, newest first, signed like [youTubeBrowse]. */
-internal expect suspend fun youTubeChannelVideos(channelId: String, continuation: String?, pageId: String?): YouTubeBrowseResult
+/** One page of a channel's [tab] (Videos and Live newest first), signed like [youTubeBrowse]. */
+internal expect suspend fun youTubeChannelTab(
+    channelId: String,
+    tab: YouTubeChannelTab,
+    continuation: String?,
+    pageId: String?,
+): YouTubeBrowseResult
 
 /** Subscribes the account (as [pageId]) to [channelId], or unsubscribes it. */
 internal expect suspend fun youTubeSetSubscribed(channelId: String, subscribed: Boolean, pageId: String?): YouTubeBrowseResult
@@ -489,13 +514,79 @@ object YouTubeFeedRepository {
     @Volatile
     private var channelGeneration = 0
 
-    /** Opens [channelId]'s page: its uploads replace the Channel feed. */
+    /** Opens [channelId]'s page on its Videos tab: its uploads replace the Channel feed. */
     fun openChannel(channelId: String, name: String, avatarUrl: String? = null) {
         if (_openChannel.value?.channelId == channelId && _feeds.value.getValue(YouTubeFeedKind.Channel).error == null) return
         channelGeneration++
         _openChannel.value = YouTubeOpenChannel(channelId, name, avatarUrl)
+        _channelPlaylists.value = YouTubeChannelPlaylistsState()
         _feeds.update { it + (YouTubeFeedKind.Channel to YouTubeFeedState()) }
         fetch(YouTubeFeedKind.Channel, continuation = null)
+    }
+
+    private val _channelPlaylists = MutableStateFlow(YouTubeChannelPlaylistsState())
+
+    /** The open channel's Playlists tab; empty until that tab is picked. */
+    val channelPlaylists: StateFlow<YouTubeChannelPlaylistsState> = _channelPlaylists.asStateFlow()
+
+    /** Switches the open channel's page to [tab]: Videos and Live fill the Channel feed, Playlists [channelPlaylists]. */
+    fun selectChannelTab(tab: YouTubeChannelTab) {
+        val open = _openChannel.value ?: return
+        if (open.tab == tab) return
+        channelGeneration++
+        _openChannel.value = open.copy(tab = tab)
+        if (tab == YouTubeChannelTab.Playlists) {
+            _channelPlaylists.value = YouTubeChannelPlaylistsState()
+            fetchChannelPlaylists(continuation = null)
+        } else {
+            _feeds.update { it + (YouTubeFeedKind.Channel to YouTubeFeedState()) }
+            fetch(YouTubeFeedKind.Channel, continuation = null)
+        }
+    }
+
+    /** The next page of the open channel's playlists; [force] reloads the first. */
+    fun loadChannelPlaylists(force: Boolean = false) {
+        val current = _channelPlaylists.value
+        if (current.loading) return
+        when {
+            force || !current.loaded || (current.error != null && current.playlists.isEmpty()) -> {
+                channelGeneration++
+                fetchChannelPlaylists(continuation = null)
+            }
+            current.continuation != null -> fetchChannelPlaylists(current.continuation)
+        }
+    }
+
+    private fun fetchChannelPlaylists(continuation: String?) {
+        val open = _openChannel.value ?: return
+        val generation = channelGeneration
+        _channelPlaylists.update { it.copy(loading = true, error = null) }
+        scope.launch {
+            val result = if (!YouTubeMusicAuth.isSignedIn) {
+                YouTubeBrowseResult.SignedOut
+            } else {
+                youTubeChannelTab(open.channelId, YouTubeChannelTab.Playlists, continuation, _channel.value.pageId)
+            }
+            if (generation != channelGeneration) return@launch
+            _channelPlaylists.update { previous ->
+                when (result) {
+                    is YouTubeBrowseResult.Ok -> {
+                        val page = parseYouTubePlaylistPage(result.body)
+                        log.i { "Channel playlists: ${page.playlists.size}, more=${page.continuation != null}" }
+                        val seen = if (continuation == null) emptySet() else previous.playlists.mapTo(HashSet()) { it.playlistId }
+                        YouTubeChannelPlaylistsState(
+                            playlists = (if (continuation == null) emptyList() else previous.playlists) +
+                                page.playlists.filter { it.playlistId !in seen },
+                            continuation = page.continuation,
+                            loaded = true,
+                        )
+                    }
+                    YouTubeBrowseResult.SignedOut ->
+                        YouTubeChannelPlaylistsState(loaded = true, error = "Sign in to your YouTube account to see this channel's playlists.")
+                    is YouTubeBrowseResult.Failed -> previous.copy(loading = false, loaded = true, error = result.message)
+                }
+            }
+        }
     }
 
     /** Subscribes to the open channel, or unsubscribes; shown at once and put back if YouTube refuses. */
@@ -861,6 +952,8 @@ object YouTubeFeedRepository {
         val current = _feeds.value.getValue(kind)
         val token = current.continuation ?: return
         if (current.loading) return
+        // The Playlists tab pages through [loadChannelPlaylists]; the videos underneath stay as they were.
+        if (kind == YouTubeFeedKind.Channel && _openChannel.value?.tab == YouTubeChannelTab.Playlists) return
         fetch(kind, continuation = token)
     }
 
@@ -945,6 +1038,7 @@ object YouTubeFeedRepository {
         val search = searchGeneration
         val channelPage = channelGeneration
         val openChannelId = _openChannel.value?.channelId
+        val channelTab = _openChannel.value?.tab ?: YouTubeChannelTab.Videos
         val playlistPage = playlistGeneration
         val openPlaylistId = _openPlaylist.value?.playlistId
         scope.launch {
@@ -956,7 +1050,7 @@ object YouTubeFeedRepository {
                     pageId = _channel.value.pageId,
                 )
                 kind == YouTubeFeedKind.Channel -> openChannelId?.let {
-                    youTubeChannelVideos(it, continuation, _channel.value.pageId)
+                    youTubeChannelTab(it, channelTab, continuation, _channel.value.pageId)
                 } ?: YouTubeBrowseResult.Failed("No channel is open.")
                 kind == YouTubeFeedKind.Playlist -> openPlaylistId?.let {
                     youTubeBrowse("VL$it".takeIf { continuation == null }, continuation, _channel.value.pageId)

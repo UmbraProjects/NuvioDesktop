@@ -177,3 +177,47 @@ private fun StripButton(icon: ImageVector, label: String, enabled: Boolean = tru
         }
     }
 }
+
+/**
+ * Mute and a volume slider, for the players that have no room for the panel's volume row: the open dock and the lyric
+ * view's controls (the video strip has its own). A click on the speaker mutes and comes back to the level before;
+ * Left / Right on the slider step by 5.
+ */
+@Composable
+internal fun MusicVolumeControl(
+    state: MusicPlayerState,
+    player: MusicPlayer,
+    /** The slider's width; null fills what [modifier] gives the control (beside a seek bar, sharing its row). */
+    sliderWidth: Dp?,
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White.copy(alpha = 0.9f),
+    glass: Boolean = false,
+) {
+    var unmutedVolume by remember { mutableIntStateOf(if (state.volume > 0) state.volume else 50) }
+    val muted = state.volume == 0
+    val label = if (muted) "Unmute" else "Mute"
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        NuvioPosterHoverTooltip(title = label) {
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).musicKeyFocusRing(CircleShape).clickable {
+                    if (muted) player.setVolume(unmutedVolume) else { unmutedVolume = state.volume; player.setVolume(0) }
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
+                    contentDescription = label,
+                    tint = tint,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        SeekBar(
+            fraction = state.volume / 100f,
+            onSeek = { player.setVolume((it * 100).toInt().coerceIn(0, 100)) },
+            modifier = if (sliderWidth != null) Modifier.width(sliderWidth) else Modifier.weight(1f),
+            onNudge = { d -> player.setVolume((state.volume + d * 5).coerceIn(0, 100)) },
+            glass = glass,
+        )
+    }
+}

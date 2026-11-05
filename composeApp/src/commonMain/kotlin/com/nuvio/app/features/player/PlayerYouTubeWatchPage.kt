@@ -131,10 +131,6 @@ import kotlin.math.roundToInt
 private val TWO_COLUMN_MIN_WIDTH = 1000.dp
 private val SIDE_COLUMN_WIDTH = 428.dp
 
-/** The corner player: its margin from the window's edges and the range it can be resized in. */
-private val MINI_MARGIN = 24.dp
-private const val MINI_MIN_WIDTH_DP = 260f
-private const val MINI_MAX_FRACTION = 0.6f
 
 /** Theater: how much of the full-window video stays in view above the title once scrolled down to it. */
 private val THEATER_PEEK = 120.dp
@@ -157,7 +153,8 @@ internal fun PlayerScreenRuntime.YouTubeWatchFrame(player: @Composable (Modifier
     var videoBox by remember { mutableStateOf<Rect?>(null) }
     val mini by YouTubeWatchLayout.mini.collectAsState()
     val inCorner = pageShown && (mini || browsing)
-    var miniWidthDp by remember { mutableStateOf(YouTubeWatchLayout.miniWidthDp) }
+    // fork:youtube-mini-player - moved and resized from the HUD, with PiP's gestures (YouTubeWatchLayout.miniBox).
+    val miniBoxState by YouTubeWatchLayout.miniBox.collectAsState()
     val density = LocalDensity.current
     BoxWithConstraints(
         Modifier
@@ -177,27 +174,23 @@ internal fun PlayerScreenRuntime.YouTubeWatchFrame(player: @Composable (Modifier
         // Always called, and first: the player below keeps its place whether or not the page shows.
         YouTubeWatchPage(shown = pageShown && !browsing, onVideoBox = { videoBox = it })
         YouTubeMiniPlayerBrowsePage(shown = pageShown && browsing)
-        val maxMiniWidth = (maxWidth.value * MINI_MAX_FRACTION).coerceAtLeast(MINI_MIN_WIDTH_DP)
-        val miniWidth = miniWidthDp.coerceIn(MINI_MIN_WIDTH_DP, maxMiniWidth).dp
-        val miniHeight = miniWidth * 9f / 16f
-        val closeMiniPlayer: (() -> Unit)? = if (browsing) {
-            {
-                // Closing the box stops the video: the player goes, and the tab it was over stays. The box
-                // stays in its corner until then, not going back to the full video on its way out.
-                YouTubeWatchLayout.closeFromCorner()
-                // A still over the swap: the player going and the tab under it coming on screen.
-                PlayerHandoff.coverClose()
-                flushWatchProgress()
-                args.onBack()
-            }
-        } else {
-            null
-        }
-        if (inCorner) MiniPlayerHandles(miniWidth, miniHeight, onClose = closeMiniPlayer) { dragX, dragY ->
-            // Dragging the top left corner out (left or up) makes it bigger, along the 16:9 diagonal.
-            val grow = with(density) { -(dragX + dragY * 16f / 9f).toDp().value } / 2f
-            miniWidthDp = (miniWidthDp.coerceIn(MINI_MIN_WIDTH_DP, maxMiniWidth) + grow).coerceIn(MINI_MIN_WIDTH_DP, maxMiniWidth)
-            YouTubeWatchLayout.miniWidthDp = miniWidthDp
+        YouTubeWatchLayout.miniFrameDp = maxWidth.value to maxHeight.value
+        // A window made smaller since keeps the box inside it.
+        val miniBox = com.nuvio.app.features.youtube.clampMiniBox(miniBoxState, maxWidth.value, maxHeight.value)
+        // The HUD's X over the box (the tab's corner player only): closing it stops the video, and the
+        // tab it was over stays. The box stays in its corner until then, not going back to the full
+        // video on its way out.
+        val closeRequests by YouTubeWatchLayout.closeRequests.collectAsState()
+        var handledClose by remember { mutableStateOf(closeRequests) }
+        LaunchedEffect(closeRequests) {
+            if (closeRequests == handledClose) return@LaunchedEffect
+            handledClose = closeRequests
+            if (!browsing) return@LaunchedEffect
+            YouTubeWatchLayout.closeFromCorner()
+            // A still over the swap: the player going and the tab under it coming on screen.
+            PlayerHandoff.coverClose()
+            flushWatchProgress()
+            args.onBack()
         }
         val box = videoBox
         player(
@@ -205,8 +198,8 @@ internal fun PlayerScreenRuntime.YouTubeWatchFrame(player: @Composable (Modifier
                 !pageShown -> Modifier.fillMaxSize()
                 inCorner -> Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = MINI_MARGIN, bottom = MINI_MARGIN)
-                    .size(miniWidth, miniHeight)
+                    .padding(end = miniBox.rightDp.dp, bottom = miniBox.bottomDp.dp)
+                    .size(miniBox.widthDp.dp, miniBox.heightDp.dp)
                 // Until the page has laid out its box: out of sight rather than over the page.
                 box == null -> Modifier.size(1.dp)
                 else -> with(density) {
@@ -357,107 +350,6 @@ private fun VideoBox(maxHeight: Dp, placeholder: String?, onVideoBox: (Rect) -> 
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)))
             }
         }
-    }
-}
-
-/**
- * Beside the corner player, outside it (nothing may lie over the video), drawn as lightly as they can
- * be: a thin bracket hugging its top left corner that resizes it ([onDrag] with each drag's step), and
- * a bare chevron over its top right that goes back up. Faint until the pointer is on them.
- */
-@Composable
-private fun androidx.compose.foundation.layout.BoxScope.MiniPlayerHandles(
-    width: Dp,
-    height: Dp,
-    onClose: (() -> Unit)? = null,
-    onDrag: (Float, Float) -> Unit,
-) {
-    val gripInteraction = remember { MutableInteractionSource() }
-    val gripHovered by gripInteraction.collectIsHoveredAsState()
-    // The grip moves as the player grows, so the drag is measured in the window, not on the grip.
-    var gripOrigin by remember { mutableStateOf(Offset.Zero) }
-    var dragging by remember { mutableStateOf(false) }
-    val gripAlpha = if (gripHovered || dragging) 0.95f else 0.45f
-    NuvioPosterHoverTooltip(
-        title = "Drag to resize",
-        modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .padding(end = MINI_MARGIN + width, bottom = MINI_MARGIN + height),
-    ) {
-        androidx.compose.foundation.Canvas(
-            Modifier
-                .size(18.dp)
-                .hoverable(gripInteraction)
-                .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Crosshair)
-                .onGloballyPositioned { gripOrigin = it.positionInWindow() }
-                .pointerInput(Unit) {
-                    var last = Offset.Zero
-                    detectDragGestures(
-                        onDragStart = { start ->
-                            dragging = true
-                            last = gripOrigin + start
-                        },
-                        onDragEnd = { dragging = false },
-                        onDragCancel = { dragging = false },
-                    ) { change, _ ->
-                        change.consume()
-                        val now = gripOrigin + change.position
-                        onDrag(now.x - last.x, now.y - last.y)
-                        last = now
-                    }
-                },
-        ) {
-            // An L along the corner, just outside it: down the left edge and along the top.
-            val stroke = 2.5.dp.toPx()
-            val inset = stroke / 2
-            val path = androidx.compose.ui.graphics.Path().apply {
-                moveTo(inset, size.height)
-                lineTo(inset, inset)
-                lineTo(size.width, inset)
-            }
-            drawPath(
-                path,
-                color = Color.White.copy(alpha = gripAlpha),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
-            )
-        }
-    }
-    val backInteraction = remember { MutableInteractionSource() }
-    val backHovered by backInteraction.collectIsHoveredAsState()
-    // fork:youtube-mini-player - over the tab the box also closes, from an X beside the chevron.
-    if (onClose != null) {
-        val closeInteraction = remember { MutableInteractionSource() }
-        val closeHovered by closeInteraction.collectIsHoveredAsState()
-        NuvioPosterHoverTooltip(
-            title = "Close",
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = MINI_MARGIN + 30.dp, bottom = MINI_MARGIN + height + 2.dp),
-        ) {
-            Icon(
-                Icons.Rounded.Close,
-                contentDescription = "Close",
-                tint = Color.White.copy(alpha = if (closeHovered) 0.95f else 0.45f),
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .hoverable(closeInteraction)
-                    .clickable(interactionSource = closeInteraction, indication = null, onClick = onClose),
-            )
-        }
-    }
-    NuvioPosterHoverTooltip(
-        title = "Back to the video",
-        modifier = Modifier.align(Alignment.BottomEnd).padding(end = MINI_MARGIN, bottom = MINI_MARGIN + height + 2.dp),
-    ) {
-        Icon(
-            Icons.Rounded.KeyboardArrowUp,
-            contentDescription = "Back to the video",
-            tint = Color.White.copy(alpha = if (backHovered) 0.95f else 0.45f),
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .hoverable(backInteraction)
-                .clickable(interactionSource = backInteraction, indication = null, onClick = YouTubeWatchLayout::requestBackToVideo),
-        )
     }
 }
 

@@ -324,9 +324,15 @@ private fun channelOf(renderer: JsonObject): YouTubeChannel? {
  * The account's playlists (`FEplaylist_aggregation`, the website's Playlists page): its playlist
  * lockups, or the older `gridPlaylistRenderer` items.
  */
-internal fun parseYouTubePlaylists(body: String): List<YouTubePlaylist> {
-    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return emptyList()
+internal fun parseYouTubePlaylists(body: String): List<YouTubePlaylist> = parseYouTubePlaylistPage(body).playlists
+
+data class YouTubePlaylistPage(val playlists: List<YouTubePlaylist>, val continuation: String?)
+
+/** [parseYouTubePlaylists] with the next page's token: a channel's Playlists tab comes a page at a time. */
+internal fun parseYouTubePlaylistPage(body: String): YouTubePlaylistPage {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return YouTubePlaylistPage(emptyList(), null)
     val playlists = LinkedHashMap<String, YouTubePlaylist>()
+    var continuation: String? = null
     fun walk(element: JsonElement) {
         when (element) {
             is JsonObject -> for ((key, value) in element) {
@@ -336,6 +342,7 @@ internal fun parseYouTubePlaylists(body: String): List<YouTubePlaylist> {
                         ?.let { playlists.putIfAbsent(it.playlistId, it) }
                     "gridPlaylistRenderer", "playlistRenderer" -> (value as? JsonObject)?.let(::playlistRenderer)
                         ?.let { playlists.putIfAbsent(it.playlistId, it) }
+                    "continuationItemRenderer" -> findContinuationToken(value)?.let { continuation = it }
                     else -> walk(value)
                 }
             }
@@ -344,7 +351,7 @@ internal fun parseYouTubePlaylists(body: String): List<YouTubePlaylist> {
         }
     }
     walk(root)
-    return playlists.values.toList()
+    return YouTubePlaylistPage(playlists.values.toList(), continuation)
 }
 
 private fun playlistLockup(lockup: JsonObject): YouTubePlaylist? {

@@ -24,21 +24,23 @@ class LoudnessPlanTest {
 
     @Test
     fun gainBringsTheStreamToTheTarget() {
-        // Target -24: a -9 LUFS master is turned down 15 dB, a -30 LUFS recording is turned up 6 dB.
-        assertEquals(-15.0, planGainDb(-9.0, LoudnessClass.Music))
-        assertEquals(6.0, planGainDb(-30.0, LoudnessClass.Music))
+        // Music's target -14: a -9 LUFS master is turned down 5 dB, a -20 LUFS recording is turned up 6 dB.
+        assertEquals(-5.0, planGainDb(-9.0, LoudnessClass.Music))
+        assertEquals(6.0, planGainDb(-20.0, LoudnessClass.Music))
+        // Trailers' target -24 (the film's): a -9 LUFS trailer is turned down 15 dB.
+        assertEquals(-15.0, planGainDb(-9.0, LoudnessClass.Trailer))
     }
 
     @Test
     fun anUnknownStreamIsPlannedFromItsClass() {
-        assertEquals(LOUDNESS_TARGET_LUFS - LoudnessClass.Music.assumedLufs, planGainDb(null, LoudnessClass.Music))
+        assertEquals(MUSIC_LOUDNESS_TARGET_LUFS - LoudnessClass.Music.assumedLufs, planGainDb(null, LoudnessClass.Music))
         assertEquals(LOUDNESS_TARGET_LUFS - LoudnessClass.Trailer.assumedLufs, planGainDb(null, LoudnessClass.Trailer))
     }
 
     @Test
     fun gainIsBounded() {
         assertEquals(MAX_GAIN_DB, planGainDb(-80.0, LoudnessClass.Music))
-        assertEquals(MIN_GAIN_DB, planGainDb(10.0, LoudnessClass.Music))
+        assertEquals(MIN_GAIN_DB, planGainDb(20.0, LoudnessClass.Music))
     }
 
     @Test
@@ -70,7 +72,7 @@ class LoudnessPlanTest {
         val chain = staticLoudnessChain(LoudnessClass.Music, -13.0)
         assertEquals(3, chain.size)
         assertEquals("volume=-13.0dB", chain[0])
-        assertTrue(chain[1].startsWith("acompressor=threshold=-20dB:ratio=2.0"))
+        assertTrue(chain[1].startsWith("acompressor=threshold=-10dB:ratio=2.0"))
         assertTrue(chain[2].startsWith("alimiter="))
         // Left on, the limiter would normalise the output back up to full scale.
         assertTrue(chain[2].contains("level=disabled"))
@@ -79,7 +81,11 @@ class LoudnessPlanTest {
     @Test
     fun trailersAreHeldHarderThanMusic() {
         assertTrue(LoudnessClass.Trailer.compressorRatio > LoudnessClass.Music.compressorRatio)
-        assertTrue(LoudnessClass.Trailer.compressorThresholdDb < LoudnessClass.Music.compressorThresholdDb)
+        // Relative to each class's target, so the two thresholds compare.
+        assertTrue(
+            LoudnessClass.Trailer.compressorThresholdDb - LoudnessClass.Trailer.targetLufs <
+                LoudnessClass.Music.compressorThresholdDb - LoudnessClass.Music.targetLufs,
+        )
     }
 
     @Test

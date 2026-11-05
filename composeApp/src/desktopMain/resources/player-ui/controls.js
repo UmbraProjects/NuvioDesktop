@@ -29,13 +29,32 @@ const isChromelessSurface = (() => {
 })();
 
 const root = document.getElementById("playerRoot");
-// The YouTube watch page's corner player shows the picture alone; a click there goes back up to the video.
+// fork:youtube-mini-player - the YouTube corner player wears PiP's controls (play, seek, move and
+// resize; see the pip-ui class). Its exit button goes back up to the video and its X closes it; any
+// other click on the picture does nothing, as in PiP, so a drag never also starts something.
 root.addEventListener("click", event => {
-  if (!state.miniPlayer) return;
+  if (!state.miniPlayer || state.pictureInPictureActive) return;
+  if (event.target.closest("#pictureInPictureExitButton")) {
+    event.preventDefault();
+    event.stopPropagation();
+    send("miniPlayerClick", 0);
+    return;
+  }
+  if (event.target.closest("#miniPlayerCloseButton")) {
+    event.preventDefault();
+    event.stopPropagation();
+    send("miniPlayerClose", 0);
+    return;
+  }
+  if (event.target.closest("button,input")) return;
   event.preventDefault();
   event.stopPropagation();
-  send("miniPlayerClick", 0);
 }, true);
+
+/** The YouTube corner player (not in PiP): PiP's controls, its gestures moving the box instead of the window. */
+const isMiniPlayerUi = () => Boolean(state.miniPlayer) && !state.pictureInPictureActive;
+/** PiP or the YouTube corner player: the small video with PiP's controls. */
+const isCompactPlayerUi = () => Boolean(state.pictureInPictureActive) || isMiniPlayerUi();
 const contextMenu = document.getElementById("contextMenu");
 const seek = document.getElementById("seek");
 const pipSeek = document.getElementById("pipSeek");
@@ -112,6 +131,7 @@ const videoSettingsButton = document.getElementById("videoSettingsButton");
 const pictureInPictureButton = document.getElementById("pictureInPictureButton");
 const pictureInPictureExitButton = document.getElementById("pictureInPictureExitButton");
 const pictureInPicturePlayButton = document.getElementById("pictureInPicturePlayButton");
+const pictureInPictureExitButtonElement = document.getElementById("pictureInPictureExitButton");
 const pictureInPictureToggleIcon = document.getElementById("pictureInPictureToggleIcon");
 const pictureInPictureResizeHandles = document.querySelectorAll("[data-pip-resize]");
 const backButton = document.getElementById("backButton");
@@ -483,6 +503,7 @@ let state = {
   playbackInfoPanelEnabled: false,
   activeSubtitleLabel: "",
   appFullscreenKeyCode: 122,
+  voiceKeyCode: 0,
   playerShortcutKeyCodes: {},
   uiScalePercent: 0,
   controlIconScalePercent: 0,
@@ -768,13 +789,18 @@ function updateViewportUiScale() {
     : layoutWidth < 1500 ? "medium"
     : "full";
 
-  const signature = `${combined}|${panelScale}|${sourcePanelScale}|${feedbackScale}|${tier}`;
+  // PiP's and the YouTube corner player's controls: the windowed player's floor (what the corner
+  // player's small box comes to), not PiP's raw 0.5, so both are the same size on any display.
+  const pipUiScale = userScale * Math.min(1, 0.5 * hostDisplayScale);
+
+  const signature = `${combined}|${panelScale}|${sourcePanelScale}|${feedbackScale}|${tier}|${pipUiScale}`;
   if (signature === appliedScaleSignature) return;
   appliedScaleSignature = signature;
   appliedCombinedUserScale = combined;
 
   const rootStyle = document.documentElement.style;
   rootStyle.setProperty("--user-scale", String(combined));
+  rootStyle.setProperty("--pip-ui-scale", String(pipUiScale));
   rootStyle.setProperty("--panel-scale", String(panelScale));
   rootStyle.setProperty("--source-panel-scale", String(sourcePanelScale));
   rootStyle.setProperty("--feedback-scale", String(feedbackScale));
@@ -3593,7 +3619,7 @@ const refreshSubtitleStyleContextSubmenus = () => {
 };
 
 const openContextMenu = event => {
-  if (state.pictureInPictureActive) {
+  if (isCompactPlayerUi()) {
     event.preventDefault();
     event.stopPropagation();
     closeContextMenu();
@@ -5983,6 +6009,8 @@ const renderChrome = () => {
   }
   root.classList.toggle("locked", Boolean(state.isLocked));
   root.classList.toggle("mini-player", Boolean(state.miniPlayer));
+  root.classList.toggle("pip-ui", pictureInPictureActive || Boolean(state.miniPlayer));
+  root.classList.toggle("mini-player-closable", isMiniPlayerUi() && Boolean(state.miniPlayerClosable));
   root.classList.toggle("episode-panel-open", activeModal === "episodes");
   root.classList.toggle("source-panel-open", activeModal === "sources");
   root.classList.toggle("iptv-panel-open", activeModal === "iptvChannels");
@@ -6114,6 +6142,13 @@ const renderChrome = () => {
   pictureInPictureButton.setAttribute("aria-label", pictureInPictureLabel);
   pictureInPictureButton.setAttribute("title", pictureInPictureLabel);
   pictureInPictureButton.classList.toggle("selected", Boolean(state.pictureInPictureActive));
+  if (pictureInPictureExitButtonElement) {
+    const exitLabel = isMiniPlayerUi()
+      ? hudText("player_hud_back_to_video", "Back to the video")
+      : hudText("player_hud_exit_picture_in_picture", "Exit picture in picture");
+    pictureInPictureExitButtonElement.setAttribute("aria-label", exitLabel);
+    pictureInPictureExitButtonElement.setAttribute("title", exitLabel);
+  }
   pictureInPictureExitButton.setAttribute("aria-label", hudText("player_hud_exit_picture_in_picture", "Exit picture in picture"));
   const pictureInPicturePlaybackLabel = isPlaying ? (state.pauseLabel || "Pause") : (state.playLabel || "Play");
   pictureInPicturePlayButton.setAttribute("aria-label", pictureInPicturePlaybackLabel);
@@ -8046,14 +8081,14 @@ const beginPipPointerInteraction = (event, mode) => {
     // Pointer capture can fail if WebView has already cancelled the pointer. The native side
     // still receives the initial interaction and any subsequent events that remain in-view.
   }
-  send("beginPictureInPictureInteraction", mode);
+  send(isMiniPlayerUi() ? "beginMiniPlayerInteraction" : "beginPictureInPictureInteraction", mode);
 };
 
 const endPipPointerInteraction = event => {
   if (activePipPointerId === null || (event && event.pointerId !== activePipPointerId)) return;
   const pointerId = activePipPointerId;
   activePipPointerId = null;
-  send("endPictureInPictureInteraction", 0);
+  send(isMiniPlayerUi() ? "endMiniPlayerInteraction" : "endPictureInPictureInteraction", 0);
   try {
     if (root.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
   } catch (_) {}
@@ -8062,7 +8097,7 @@ const endPipPointerInteraction = event => {
 root.addEventListener("pointermove", event => {
   if (event.pointerId !== activePipPointerId) return;
   event.preventDefault();
-  send("updatePictureInPictureInteraction", 0);
+  send(isMiniPlayerUi() ? "updateMiniPlayerInteraction" : "updatePictureInPictureInteraction", 0);
 }, true);
 
 root.addEventListener("pointerup", endPipPointerInteraction, true);
@@ -8070,7 +8105,7 @@ root.addEventListener("pointercancel", endPipPointerInteraction, true);
 root.addEventListener("lostpointercapture", endPipPointerInteraction, true);
 
 root.addEventListener("pointerdown", event => {
-  if (!state.pictureInPictureActive || event.button !== 0) return;
+  if (!isCompactPlayerUi() || event.button !== 0) return;
   if (event.target.closest("button,input,.pip-resize-handle")) return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -8079,7 +8114,7 @@ root.addEventListener("pointerdown", event => {
 
 pictureInPictureResizeHandles.forEach(handleElement => {
   handleElement.addEventListener("pointerdown", event => {
-    if (!state.pictureInPictureActive || event.button !== 0) return;
+    if (!isCompactPlayerUi() || event.button !== 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     beginPipPointerInteraction(event, (Number(handleElement.dataset.pipResize) || 0) + 1);
@@ -8112,7 +8147,7 @@ const endHoldSpeed = () => {
 
 root.addEventListener("pointerdown", event => {
   if (event.button !== 0 || event.pointerType === "touch") return;
-  if (isHeroTrailerSurface || state.heroTrailerMode || state.pictureInPictureActive) return;
+  if (isHeroTrailerSurface || state.heroTrailerMode || isCompactPlayerUi()) return;
   if (state.isLocked || !state.isPlaying || contextMenuOpen || activeModal || playbackErrorText()) return;
   if (event.target.closest("button,input") || isChromeInteractionTarget(event.target)) return;
   endHoldSpeed();
@@ -8150,7 +8185,7 @@ root.addEventListener("click", event => {
     window.clearTimeout(tapTimer);
     return;
   }
-  if (state.pictureInPictureActive) return;
+  if (isCompactPlayerUi()) return;
   if (playbackErrorText()) return;
   if (event.target.closest("button,input")) return;
   const onVideoSurface = !isChromeInteractionTarget(event.target);
@@ -8344,6 +8379,15 @@ document.addEventListener("keydown", event => {
     event.preventDefault();
     focusShortcutRoot();
     send("toggleFullscreen", 0);
+    return;
+  }
+  // Voice control's push-to-talk key. Once the HUD is clicked it holds the keyboard and the app's own
+  // key handler never sees the key, so it is forwarded here (Kotlin sends 0 when a player action
+  // owns that key). Not while typing in a box, and not for auto-repeat: a held key is one press.
+  const voiceKey = Math.max(0, Number(state.voiceKeyCode) || 0);
+  if (voiceKey > 0 && awtKeyCodeForEvent(event) === voiceKey && !isTextEntryTarget(event.target)) {
+    event.preventDefault();
+    if (!event.repeat) send("voiceCommand", 0);
     return;
   }
   // In the channel search box Left/Right move the caret; Up/Down/Enter still walk the list.

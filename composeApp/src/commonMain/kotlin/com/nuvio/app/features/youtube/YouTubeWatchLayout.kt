@@ -168,9 +168,56 @@ internal object YouTubeWatchLayout {
         _scrollRequests.tryEmit(deltaDp)
     }
 
-    /** The corner player's width in dp, as last resized; kept for the next video. */
+    private val _miniBox = MutableStateFlow(YouTubeMiniBox())
+
+    /** The corner player's size and place, as last moved or resized; kept for the next video. */
+    val miniBox: StateFlow<YouTubeMiniBox> = _miniBox.asStateFlow()
+
+    /** The window area the corner player lives in, in dp; set by the layout so a drag stays inside it. */
     @kotlin.concurrent.Volatile
-    var miniWidthDp = 420f
+    var miniFrameDp: Pair<Float, Float> = 0f to 0f
+
+    private var interactionMode = 0
+    private var interactionStart: YouTubeMiniBox = YouTubeMiniBox()
+    private var interactionOrigin = 0f to 0f
+
+    /**
+     * fork:youtube-mini-player - a drag on the corner player's HUD began, the PiP window's gesture moving
+     * the box instead of the window: [mode] 1 moves it, 2..9 resize from an edge or corner (PiP's numbering:
+     * n, ne, e, se, s, sw, w, nw). [x], [y] are the pointer on screen in dp.
+     */
+    fun beginMiniInteraction(mode: Int, x: Float, y: Float) {
+        if (mode !in 1..9) return
+        interactionMode = mode
+        interactionStart = _miniBox.value
+        interactionOrigin = x to y
+    }
+
+    fun updateMiniInteraction(x: Float, y: Float) {
+        val mode = interactionMode
+        if (mode == 0) return
+        _miniBox.value = miniBoxAfterDrag(
+            start = interactionStart,
+            mode = mode,
+            dx = x - interactionOrigin.first,
+            dy = y - interactionOrigin.second,
+            frameWidth = miniFrameDp.first,
+            frameHeight = miniFrameDp.second,
+        )
+    }
+
+    fun endMiniInteraction() {
+        interactionMode = 0
+    }
+
+    private val _closeRequests = MutableStateFlow(0)
+
+    /** Bumped by the corner player's X (on the HUD): the layout closes the player, as the tab's X did. */
+    val closeRequests: StateFlow<Int> = _closeRequests.asStateFlow()
+
+    fun requestCloseFromCorner() {
+        if (_browsing.value) _closeRequests.value += 1
+    }
 
     /** The page is on screen around the video (not filling the window). */
     val pageShown: Boolean get() = _available.value && (_windowed.value || _browsing.value)
@@ -202,4 +249,71 @@ internal expect fun requestYouTubeFullscreen()
 internal object YouTubeMiniPlayerHost {
     var page: (@androidx.compose.runtime.Composable (androidx.compose.ui.Modifier) -> Unit)? by
         androidx.compose.runtime.mutableStateOf(null)
+}
+
+/** The corner player: its width and its distance from the window's right and bottom edges, in dp (16:9). */
+internal data class YouTubeMiniBox(val widthDp: Float = 420f, val rightDp: Float = 24f, val bottomDp: Float = 24f) {
+    val heightDp: Float get() = widthDp * 9f / 16f
+}
+
+internal const val YOUTUBE_MINI_MIN_WIDTH_DP = 260f
+internal const val YOUTUBE_MINI_MAX_FRACTION = 0.6f
+
+/** [box] kept inside a [frameWidth] x [frameHeight] window (an unknown frame, 0, leaves it as it is). */
+internal fun clampMiniBox(box: YouTubeMiniBox, frameWidth: Float, frameHeight: Float): YouTubeMiniBox {
+    if (frameWidth <= 0f || frameHeight <= 0f) return box
+    val maxWidth = minOf(frameWidth * YOUTUBE_MINI_MAX_FRACTION, frameHeight * 16f / 9f).coerceAtLeast(YOUTUBE_MINI_MIN_WIDTH_DP)
+    val width = box.widthDp.coerceIn(YOUTUBE_MINI_MIN_WIDTH_DP, maxWidth)
+    val height = width * 9f / 16f
+    return YouTubeMiniBox(
+        widthDp = width,
+        rightDp = box.rightDp.coerceIn(0f, (frameWidth - width).coerceAtLeast(0f)),
+        bottomDp = box.bottomDp.coerceIn(0f, (frameHeight - height).coerceAtLeast(0f)),
+    )
+}
+
+/**
+ * The corner player after a drag of [dx], [dy] dp from [start]: [mode] 1 moves it; 2..9 resize it from
+ * the edge or corner PiP numbers them by (n, ne, e, se, s, sw, w, nw), keeping 16:9 and the far side still.
+ */
+internal fun miniBoxAfterDrag(
+    start: YouTubeMiniBox,
+    mode: Int,
+    dx: Float,
+    dy: Float,
+    frameWidth: Float,
+    frameHeight: Float,
+): YouTubeMiniBox {
+    if (mode == 1) {
+        return clampMiniBox(start.copy(rightDp = start.rightDp - dx, bottomDp = start.bottomDp - dy), frameWidth, frameHeight)
+    }
+    val edge = mode - 1
+    val north = edge == 1 || edge == 2 || edge == 8
+    val south = edge == 4 || edge == 5 || edge == 6
+    val east = edge == 2 || edge == 3 || edge == 4
+    val west = edge == 6 || edge == 7 || edge == 8
+    // The width each axis asks for; a corner takes the two halfway.
+    val fromX = when {
+        east -> dx
+        west -> -dx
+        else -> null
+    }
+    val fromY = when {
+        south -> dy * 16f / 9f
+        north -> -dy * 16f / 9f
+        else -> null
+    }
+    val grow = when {
+        fromX != null && fromY != null -> (fromX + fromY) / 2f
+        else -> fromX ?: fromY ?: 0f
+    }
+    val sized = clampMiniBox(start.copy(widthDp = start.widthDp + grow), frameWidth, frameHeight)
+    val grown = sized.widthDp - start.widthDp
+    // East and south grow away from the right and bottom edges, so the left and top stay put.
+    val moved = start.copy(
+        widthDp = sized.widthDp,
+        rightDp = if (east) start.rightDp - grown else start.rightDp,
+        bottomDp = if (south) start.bottomDp - grown * 9f / 16f else start.bottomDp,
+    )
+    return clampMiniBox(moved, frameWidth, frameHeight)
 }

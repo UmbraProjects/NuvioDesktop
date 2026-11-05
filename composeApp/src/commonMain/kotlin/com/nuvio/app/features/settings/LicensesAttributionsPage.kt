@@ -59,10 +59,31 @@ private const val SimklUrl = "https://simkl.com"
 private const val KitsuUrl = "https://kitsu.app"
 private const val AnimeMappingUrl = "https://github.com/Fribb/anime-lists"
 private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioDesktop"
+private const val HtpcContributorsUrl = "https://github.com/UmbraProjects/NuvioDesktop/graphs/contributors"
 private const val NuvioContributeUrl = "https://tapframe.space/contribute"
 private const val MpvUrl = "https://mpv.io"
 private const val FfmpegUrl = "https://ffmpeg.org"
 private const val Msys2PackagesUrl = "https://packages.msys2.org"
+private const val EclipseMusicUrl = "https://eclipsemusic.app/"
+private const val GoatTvUrl = "https://github.com/GOAThings/GoatTV"
+private const val StremioKaiUrl = "https://github.com/allecsc/Stremio-Kai"
+private const val Anime4kUrl = "https://github.com/bloc97/Anime4K"
+private const val TrashGuidesUrl = "https://trash-guides.info/"
+private const val WhisperCppUrl = "https://github.com/ggml-org/whisper.cpp"
+private const val LibtorrentUrl = "https://libtorrent.org"
+private const val QuickJsKtUrl = "https://github.com/dokar3/quickjs-kt"
+private const val OnnxRuntimeUrl = "https://onnxruntime.ai"
+private const val GoogleFontsUrl = "https://fonts.google.com"
+private const val SponsorBlockUrl = "https://sponsor.ajay.app"
+private const val ReturnYouTubeDislikeUrl = "https://returnyoutubedislike.com"
+private const val WikipediaUrl = "https://en.wikipedia.org"
+private const val LrclibUrl = "https://lrclib.net"
+private const val MusicBrainzUrl = "https://musicbrainz.org"
+private const val TheAudioDbUrl = "https://www.theaudiodb.com"
+private const val FanartTvUrl = "https://fanart.tv"
+private const val IgdbUrl = "https://www.igdb.com"
+private const val AniListUrl = "https://anilist.co"
+private const val AniSkipUrl = "https://aniskip.com"
 
 private data class AttributionItem(
     val searchKey: String,
@@ -124,10 +145,31 @@ private fun LicensesAttributionsBody(
                 isTablet = isTablet,
             )
             PlainStackDivider()
+            AttributionRow(
+                item = htpcContributorsItem(),
+                isTablet = isTablet,
+            )
+            PlainStackDivider()
             LicenseRow(
                 item = appLicenseItem(),
                 isTablet = isTablet,
             )
+        }
+
+        PlainSettingsStack(
+            title = stringResource(Res.string.settings_licenses_attributions_section_projects),
+            isTablet = isTablet,
+        ) {
+            val items = projectAttributionItems()
+            items.forEachIndexed { index, item ->
+                AttributionRow(
+                    item = item,
+                    isTablet = isTablet,
+                )
+                if (index != items.lastIndex) {
+                    PlainStackDivider()
+                }
+            }
         }
 
         PlainSettingsStack(
@@ -155,6 +197,23 @@ private fun LicensesAttributionsBody(
                 LicenseRow(
                     item = item,
                     isTablet = isTablet,
+                )
+                if (index != items.lastIndex) {
+                    PlainStackDivider()
+                }
+            }
+        }
+
+        PlainSettingsStack(
+            title = stringResource(Res.string.settings_licenses_attributions_section_libraries),
+            isTablet = isTablet,
+        ) {
+            val items = bundledLibraryLicenseItems()
+            items.forEachIndexed { index, item ->
+                LicenseRow(
+                    item = item,
+                    isTablet = isTablet,
+                    footerRes = Res.string.settings_licenses_attributions_full_texts,
                 )
                 if (index != items.lastIndex) {
                     PlainStackDivider()
@@ -240,14 +299,20 @@ private fun AttributionRow(
 private fun LicenseRow(
     item: LicenseItem,
     isTablet: Boolean,
+    footerRes: StringResource? = null,
 ) {
     val uriHandler = LocalUriHandler.current
     val itemBody = stringResource(item.bodyRes)
     val itemLicense = stringResource(item.licenseRes)
+    val footer = footerRes?.let { stringResource(it) }
     val body = buildString {
         append(itemBody)
         append("\n")
         append(itemLicense)
+        if (footer != null) {
+            append(" ")
+            append(footer)
+        }
     }
     LinkedPlainRow(
         title = stringResource(item.titleRes),
@@ -487,7 +552,142 @@ private fun attributionItems(): List<AttributionItem> = listOf(
         logo = null,
         link = ImdbDatasetsUrl,
     ),
+    AttributionItem(
+        searchKey = "sponsorblock-attribution",
+        titleRes = Res.string.settings_licenses_attributions_sponsorblock_title,
+        bodyRes = Res.string.settings_licenses_attributions_sponsorblock_body,
+        logo = null,
+        logoText = "SB",
+        link = SponsorBlockUrl,
+    ),
+    AttributionItem(
+        searchKey = "ryd-attribution",
+        titleRes = Res.string.settings_licenses_attributions_ryd_title,
+        bodyRes = Res.string.settings_licenses_attributions_ryd_body,
+        logo = null,
+        logoText = "RYD",
+        link = ReturnYouTubeDislikeUrl,
+    ),
+    AttributionItem(
+        searchKey = "wikipedia-attribution",
+        titleRes = Res.string.settings_licenses_attributions_wikipedia_title,
+        bodyRes = Res.string.settings_licenses_attributions_wikipedia_body,
+        logo = null,
+        logoText = "W",
+        link = WikipediaUrl,
+    ),
+    AttributionItem(
+        searchKey = "lyrics-attribution",
+        titleRes = Res.string.settings_licenses_attributions_lyrics_title,
+        bodyRes = Res.string.settings_licenses_attributions_lyrics_body,
+        logo = null,
+        logoText = "LRC",
+        link = LrclibUrl,
+    ),
+    AttributionItem(
+        searchKey = "musicbrainz-attribution",
+        titleRes = Res.string.settings_licenses_attributions_musicbrainz_title,
+        bodyRes = Res.string.settings_licenses_attributions_musicbrainz_body,
+        logo = null,
+        logoText = "MB",
+        link = MusicBrainzUrl,
+    ),
+    AttributionItem(
+        searchKey = "music-metadata-attribution",
+        titleRes = Res.string.settings_licenses_attributions_music_metadata_title,
+        bodyRes = Res.string.settings_licenses_attributions_music_metadata_body,
+        logo = null,
+        logoText = "Music",
+        link = TheAudioDbUrl,
+    ),
+    AttributionItem(
+        searchKey = "fanart-attribution",
+        titleRes = Res.string.settings_licenses_attributions_fanart_title,
+        bodyRes = Res.string.settings_licenses_attributions_fanart_body,
+        logo = null,
+        logoText = "fanart",
+        link = FanartTvUrl,
+    ),
+    AttributionItem(
+        searchKey = "games-attribution",
+        titleRes = Res.string.settings_licenses_attributions_games_title,
+        bodyRes = Res.string.settings_licenses_attributions_games_body,
+        logo = null,
+        logoText = "IGDB",
+        link = IgdbUrl,
+    ),
+    AttributionItem(
+        searchKey = "anilist-attribution",
+        titleRes = Res.string.settings_licenses_attributions_anilist_title,
+        bodyRes = Res.string.settings_licenses_attributions_anilist_body,
+        logo = null,
+        logoText = "AniList",
+        link = AniListUrl,
+    ),
+    AttributionItem(
+        searchKey = "aniskip-attribution",
+        titleRes = Res.string.settings_licenses_attributions_aniskip_title,
+        bodyRes = Res.string.settings_licenses_attributions_aniskip_body,
+        logo = null,
+        logoText = "Skip",
+        link = AniSkipUrl,
+    ),
 )
+
+// Other people's work the app is built on: protocols, ported code, bundled shaders and data.
+private fun projectAttributionItems(): List<AttributionItem> = listOf(
+    AttributionItem(
+        searchKey = "eclipse-attribution",
+        titleRes = Res.string.settings_licenses_attributions_eclipse_title,
+        bodyRes = Res.string.settings_licenses_attributions_eclipse_body,
+        logo = null,
+        logoText = "Eclipse",
+        link = EclipseMusicUrl,
+    ),
+    AttributionItem(
+        searchKey = "goattv-attribution",
+        titleRes = Res.string.settings_licenses_attributions_goattv_title,
+        bodyRes = Res.string.settings_licenses_attributions_goattv_body,
+        logo = null,
+        logoText = "GoatTV",
+        link = GoatTvUrl,
+    ),
+    AttributionItem(
+        searchKey = "stremio-kai-attribution",
+        titleRes = Res.string.settings_licenses_attributions_stremio_kai_title,
+        bodyRes = Res.string.settings_licenses_attributions_stremio_kai_body,
+        logo = null,
+        logoText = "Kai",
+        link = StremioKaiUrl,
+    ),
+    AttributionItem(
+        searchKey = "anime4k-attribution",
+        titleRes = Res.string.settings_licenses_attributions_anime4k_title,
+        bodyRes = Res.string.settings_licenses_attributions_anime4k_body,
+        logo = null,
+        logoText = "MIT",
+        link = Anime4kUrl,
+    ),
+    AttributionItem(
+        searchKey = "trash-guides-attribution",
+        titleRes = Res.string.settings_licenses_attributions_trash_title,
+        bodyRes = Res.string.settings_licenses_attributions_trash_body,
+        logo = null,
+        logoText = "TRaSH",
+        link = TrashGuidesUrl,
+    ),
+)
+
+// The people who have worked on this fork itself, beside the upstream Nuvio team.
+private fun htpcContributorsItem(): AttributionItem =
+    AttributionItem(
+        searchKey = "htpc-contributors",
+        titleRes = Res.string.settings_licenses_attributions_htpc_contributors_title,
+        bodyRes = Res.string.settings_licenses_attributions_htpc_contributors_body,
+        logo = null,
+        logoText = "HTPC",
+        link = HtpcContributorsUrl,
+    )
 
 private fun nuvioAttributionItem(): AttributionItem =
     AttributionItem(
@@ -530,5 +730,44 @@ private fun playbackLicenseItems(): List<LicenseItem> = listOf(
         bodyRes = Res.string.settings_licenses_attributions_runtime_libraries_body,
         licenseRes = Res.string.settings_licenses_attributions_runtime_libraries_license,
         link = Msys2PackagesUrl,
+    ),
+)
+
+// Native and bundled code beyond the player; their licence texts ship in resources/licenses.
+private fun bundledLibraryLicenseItems(): List<LicenseItem> = listOf(
+    LicenseItem(
+        searchKey = "whisper-license",
+        titleRes = Res.string.settings_licenses_attributions_whisper_title,
+        bodyRes = Res.string.settings_licenses_attributions_whisper_body,
+        licenseRes = Res.string.settings_licenses_attributions_whisper_license,
+        link = WhisperCppUrl,
+    ),
+    LicenseItem(
+        searchKey = "libtorrent-license",
+        titleRes = Res.string.settings_licenses_attributions_libtorrent_title,
+        bodyRes = Res.string.settings_licenses_attributions_libtorrent_body,
+        licenseRes = Res.string.settings_licenses_attributions_libtorrent_license,
+        link = LibtorrentUrl,
+    ),
+    LicenseItem(
+        searchKey = "quickjs-license",
+        titleRes = Res.string.settings_licenses_attributions_quickjs_title,
+        bodyRes = Res.string.settings_licenses_attributions_quickjs_body,
+        licenseRes = Res.string.settings_licenses_attributions_quickjs_license,
+        link = QuickJsKtUrl,
+    ),
+    LicenseItem(
+        searchKey = "onnx-license",
+        titleRes = Res.string.settings_licenses_attributions_onnx_title,
+        bodyRes = Res.string.settings_licenses_attributions_onnx_body,
+        licenseRes = Res.string.settings_licenses_attributions_onnx_license,
+        link = OnnxRuntimeUrl,
+    ),
+    LicenseItem(
+        searchKey = "fonts-license",
+        titleRes = Res.string.settings_licenses_attributions_fonts_title,
+        bodyRes = Res.string.settings_licenses_attributions_fonts_body,
+        licenseRes = Res.string.settings_licenses_attributions_fonts_license,
+        link = GoogleFontsUrl,
     ),
 )

@@ -28,16 +28,28 @@ internal actual suspend fun youTubeBrowse(browseId: String?, continuation: Strin
 internal actual suspend fun youTubeSearch(query: String?, continuation: String?, pageId: String?): YouTubeBrowseResult =
     signedWebRequest("search", mapOf("query" to query, "continuation" to continuation), pageId)
 
-/** The `params` that pick a channel page's Videos tab (newest uploads), as the website sends them. */
-private const val CHANNEL_VIDEOS_TAB_PARAMS = "EgZ2aWRlb3PyBgQKAjoA"
+/**
+ * The `params` that pick a channel page's tab, as the website sends them: a protobuf of the tab's
+ * name ("videos", "streams", "playlists") and its sort.
+ */
+private fun channelTabParams(tab: YouTubeChannelTab): String = when (tab) {
+    YouTubeChannelTab.Videos -> "EgZ2aWRlb3PyBgQKAjoA"
+    YouTubeChannelTab.Live -> "EgdzdHJlYW1z8gYECgJ6AA=="
+    YouTubeChannelTab.Playlists -> "EglwbGF5bGlzdHPyBgQKAkIA"
+}
 
-internal actual suspend fun youTubeChannelVideos(channelId: String, continuation: String?, pageId: String?): YouTubeBrowseResult =
+internal actual suspend fun youTubeChannelTab(
+    channelId: String,
+    tab: YouTubeChannelTab,
+    continuation: String?,
+    pageId: String?,
+): YouTubeBrowseResult =
     signedWebRequest(
         "browse",
         if (continuation != null) {
             mapOf("continuation" to continuation)
         } else {
-            mapOf("browseId" to channelId, "params" to CHANNEL_VIDEOS_TAB_PARAMS)
+            mapOf("browseId" to channelId, "params" to channelTabParams(tab))
         },
         pageId,
     )
@@ -431,19 +443,35 @@ internal actual suspend fun youTubeStatsPing(url: String, pageId: String?): Int 
 /** The stats endpoints expect the desktop web player, which is the client the `player` request named; the same browser as every signed request. */
 private const val STATS_USER_AGENT = YouTubeWebClient.USER_AGENT
 
-internal actual suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): TrailerPlaybackSource? =
+internal actual suspend fun youTubeOpenVideo(videoId: String, ahead: Boolean): TrailerPlaybackSource? {
+    // fork:youtube-unplayable - YouTube said lately it will not serve this one (an age gate, a removed video):
+    // asking again costs a round of player requests for the same answer.
+    YouTubeUnplayable.ageGateFallbackAvailable = MusicResolver.canOpenAgeGatedVideos
+    YouTubeUnplayable.refusal(videoId)?.takeIf { it.definitive }?.let { refusal ->
+        // fork:youtube-age-gate - an age gate the fallback resolver can open: straight to it, but only for a
+        // click (a hover would start the BotGuard browser and a round of requests for a video not yet chosen).
+        if (refusal.ageGated && !ahead && MusicResolver.canOpenAgeGatedVideos) {
+            return withContext(youTubeTabCaller(ahead = false)) { MusicResolver.openAgeGatedVideo(videoId) }
+        }
+        log.i { "$videoId: not asked again, YouTube refused it lately (${refusal.reason})" }
+        return null
+    }
+    return openVideoStreams(videoId, ahead)
+}
+
+private fun youTubeTabCaller(ahead: Boolean) = YouTubeCaller(
+    label = if (ahead) "youtube tab ahead" else "youtube tab",
+    urgent = !ahead,
+    preferHdr = true,
+    skipManifestLadder = true,
+    parallelClients = true,
+    maxShortSide = YouTubeFeedRepository.maxQuality.value,
+    allAudioTracks = YouTubeFeedRepository.allLanguages.value,
+)
+
+private suspend fun openVideoStreams(videoId: String, ahead: Boolean): TrailerPlaybackSource? =
     // Ahead of a click (the card under the cursor): not a lookup anyone waits on yet, so it waits out a pause.
-    withContext(
-        YouTubeCaller(
-            label = if (ahead) "youtube tab ahead" else "youtube tab",
-            urgent = !ahead,
-            preferHdr = true,
-            skipManifestLadder = true,
-            parallelClients = true,
-            maxShortSide = YouTubeFeedRepository.maxQuality.value,
-            allAudioTracks = YouTubeFeedRepository.allLanguages.value,
-        ),
-    ) {
+    withContext(youTubeTabCaller(ahead)) {
         // fork:youtube-languages - any dubs ride along in the audio source string for the player to open.
         MusicResolver.openVideo(videoId)?.let { source ->
             if (source.extraAudioTracks.isEmpty()) {

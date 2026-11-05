@@ -2105,6 +2105,31 @@ internal fun StreamList(
     // sorted above it, and open near the bottom.
     KeepListAtTopWhileItemsArrive(listState, entries)
 
+    // fork:voice-control - "source 3", "play the first one": the Nth stream in the order drawn (the
+    // order keyboard navigation walks), played as a click on it would be.
+    val voiceStreams = androidx.compose.runtime.rememberUpdatedState(remember(filteredGroups) { orderedStreams(filteredGroups) })
+    val voiceSelect = androidx.compose.runtime.rememberUpdatedState(onStreamSelected)
+    val voiceResume = androidx.compose.runtime.rememberUpdatedState(resumePositionMs to resumeProgressFraction)
+    val voiceDebrid = androidx.compose.runtime.rememberUpdatedState(debridEnabled)
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val target: (Int) -> String? = pick@{ number ->
+            val streams = voiceStreams.value
+            if (streams.isEmpty()) return@pick "No sources yet"
+            val stream = streams.getOrNull(number - 1)
+                ?: return@pick if (streams.size == 1) "There is only one source" else "There are ${streams.size} sources"
+            if (!stream.isSelectableForPlayback(voiceDebrid.value)) return@pick "Source $number can’t be played"
+            val (position, fraction) = voiceResume.value
+            voiceSelect.value(stream, position, fraction)
+            null
+        }
+        com.nuvio.app.features.voice.VoiceScreenTargets.sources = target
+        onDispose {
+            if (com.nuvio.app.features.voice.VoiceScreenTargets.sources === target) {
+                com.nuvio.app.features.voice.VoiceScreenTargets.sources = null
+            }
+        }
+    }
+
     val formatStreamSize = rememberStreamSizeLabelFormat()
     val sharedStream = LocalSharedStream.current
     val streamCard: @Composable (StreamItem, Modifier) -> Unit = { stream, cardModifier ->

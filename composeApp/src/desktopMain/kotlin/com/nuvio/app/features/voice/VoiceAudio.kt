@@ -90,8 +90,11 @@ internal object VoiceAudio {
         return AudioSystem.getAudioInputStream(target, source)
     }
 
+    // Java Sound's mixer list is built by jsound.dll through JNI; the native exe needs
+    // native-image/java-sound/ for it (without it every Mixer.Info came back null).
+
     /** Recording devices by mixer name, as Windows names them ("Microphone (USB Audio Device)"). */
-    fun microphones(): List<String> = AudioSystem.getMixerInfo()
+    fun microphones(): List<String> = AudioSystem.getMixerInfo().filterNotNull()
         .filter { info ->
             runCatching {
                 AudioSystem.getMixer(info).targetLineInfo.any { it.lineClass == TargetDataLine::class.java }
@@ -105,7 +108,7 @@ internal object VoiceAudio {
     /** An open, started line on [microphone] (null: the default device) and the format it records in. */
     fun openMicrophone(microphone: String?): Pair<TargetDataLine, AudioFormat> {
         val mixer: Mixer? = microphone?.let { name ->
-            AudioSystem.getMixerInfo().firstOrNull { it.name == name }?.let(AudioSystem::getMixer)
+            AudioSystem.getMixerInfo().filterNotNull().firstOrNull { it.name == name }?.let(AudioSystem::getMixer)
         }
         var lastError: Exception? = null
         for (rate in CAPTURE_RATES) {
@@ -129,8 +132,18 @@ internal object VoiceAudio {
         )
     }
 
-    /** Collects a recording from [line] in 20 ms chunks; [onChunk] gets each chunk as 16 kHz floats. */
-    class Recorder(private val line: TargetDataLine, private val format: AudioFormat) {
+    /**
+     * Collects a recording from [line] in 20 ms chunks. With [keep] off nothing is collected (the
+     * wake-word listener runs for hours and keeps only the utterances it wants); [samples] is then empty.
+     */
+    class Recorder(
+        private val line: TargetDataLine,
+        private val format: AudioFormat,
+        private val keep: Boolean = true,
+        /** Called once, on the first [close]. */
+        private val onClose: () -> Unit = {},
+    ) {
+        private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
         private val raw = ByteArrayOutputStream()
         private val chunk = ByteArray(((format.sampleRate / 50).toInt()) * format.frameSize)
 
@@ -141,7 +154,7 @@ internal object VoiceAudio {
         fun readChunk(): FloatArray {
             val read = line.read(chunk, 0, chunk.size)
             if (read <= 0) return FloatArray(0)
-            raw.write(chunk, 0, read)
+            if (keep) raw.write(chunk, 0, read)
             return pcm16ToFloats(chunk, read, format.channels, format.isBigEndian)
         }
 
@@ -152,8 +165,10 @@ internal object VoiceAudio {
         }
 
         fun close() {
+            if (!closed.compareAndSet(false, true)) return
             runCatching { line.stop() }
             runCatching { line.close() }
+            onClose()
         }
     }
 }
