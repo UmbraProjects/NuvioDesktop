@@ -46,8 +46,11 @@ private const val RAW_LOG_CHARS = 1200
 
 private const val MAX_CANDIDATES = 3
 
-/** The least time between two availability searches (the addon refused a burst of about 1.5 a second). */
-private const val SEARCH_SPACING_MS = 800L
+/** The least time between two availability searches (0.8 s still drew 429s with 42 to 874 s bans; the addon's limit is not published). */
+private const val SEARCH_SPACING_MS = 2_000L
+
+/** The longest a check waits in line for a pause the addon asked for; a longer ban fails the check at once. */
+private const val MAX_SEARCH_QUEUE_WAIT_MS = 60_000L
 private const val LINK_RETRY_DELAY_MS = 700L
 
 /** How long a track the addon is still preparing is waited for in all, counted from the first ask, and how often it is asked again. */
@@ -382,7 +385,8 @@ internal object NebulaMusicSource {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                log.w(e) { "Music addon availability check failed" }
+                // A refusal by the addon is a line, not a stack trace (the log had hundreds of them).
+                if (e is AddonError) log.w { "Music addon availability check failed: ${e.reason}" } else log.w(e) { "Music addon availability check failed" }
                 // A broken addon would otherwise be asked about every row on screen: stop for a minute after three in a row.
                 if (++availFailures >= 3) {
                     availPausedUntil = LibraryClock.nowEpochMs() + 60_000L
@@ -401,6 +405,8 @@ internal object NebulaMusicSource {
         val wait = paceLock.withLock {
             val now = LibraryClock.nowEpochMs()
             val at = maxOf(now, nextSearchAt)
+            // A long ban (the addon asked for minutes): do not sit in line for it, fail now so the check is asked again next visit.
+            if (at - now > MAX_SEARCH_QUEUE_WAIT_MS) throw AddonError("The music addon is limiting searches (about ${(at - now) / 1000} s left). Try again later.")
             nextSearchAt = at + SEARCH_SPACING_MS
             at - now
         }
@@ -416,10 +422,15 @@ internal object NebulaMusicSource {
         waitForSearchTurn()
         var reply = get(base, "/search?q=${urlEncodeQuery(text)}")
         if (reply.status == 429) {
-            val seconds = Regex("""in (\d+) second""").find(reply.body)?.groupValues?.get(1)?.toLongOrNull() ?: 4L
-            val pause = (seconds.coerceIn(1L, 15L) + 1L) * 1000L
+            // The whole wait the addon names, not a shorter one: the log showed it answering 42, 59 and then 874 seconds to
+            // searches that came back after only 16, so asking early made the ban longer.
+            val seconds = Regex("""in (\d+) second""").find(reply.body)?.groupValues?.get(1)?.toLongOrNull() ?: 10L
+            val pause = (seconds.coerceIn(1L, 3_600L) + 2L) * 1000L
             paceLock.withLock { nextSearchAt = maxOf(nextSearchAt, LibraryClock.nowEpochMs() + pause) }
-            log.i { "Music addon asked for a ${pause / 1000} s pause between searches" }
+            log.i { "Music addon asked for a $seconds s pause between searches" }
+            // A short pause is waited out and the search asked once more; a long one fails this check (asked again next visit)
+            // and, through the turn, every check queued behind it.
+            if (pause > MAX_SEARCH_QUEUE_WAIT_MS) return reply.requireOk()
             waitForSearchTurn()
             reply = get(base, "/search?q=${urlEncodeQuery(text)}")
         }
