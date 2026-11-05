@@ -50,6 +50,8 @@ import nuvio.composeapp.generated.resources.settings_music_skip_non_music_descri
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
 import nuvio.composeapp.generated.resources.settings_music_album_lenses
 import nuvio.composeapp.generated.resources.settings_music_album_lenses_description
+import nuvio.composeapp.generated.resources.settings_music_artist_stage
+import nuvio.composeapp.generated.resources.settings_music_artist_stage_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
 import nuvio.composeapp.generated.resources.settings_music_section_general
 import nuvio.composeapp.generated.resources.settings_music_lyrics_amll
@@ -89,7 +91,7 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
             val settings = state.settings
             SettingsGroup(
                 isTablet = isTablet,
-                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion", "music-album-lenses"),
+                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion", "music-album-lenses", "music-artist-stage"),
             ) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_music_show_tab),
@@ -117,6 +119,14 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     checked = settings.albumLenses,
                     isTablet = isTablet,
                     onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(albumLenses = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_artist_stage),
+                    description = stringResource(Res.string.settings_music_artist_stage_description),
+                    checked = settings.artistStage,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(artistStage = it)) },
                 )
             }
         }

@@ -394,6 +394,55 @@ fun MusicArtistScreen(
     val playTarget = latest?.takeIf { it.isPlayable }
     val shuffleTarget = artist.releases.filter { (it.isPlayable || addon.albumIdOf(it.key) != null) && !it.isDemo() }.randomOrNull()
 
+    val onOpenRelease: (LibraryRelease) -> Unit = { release ->
+        val id = release.ytBrowseId
+        val addonId = albumPageIdOf(release)
+        when {
+            id == null && addonId != null -> onAlbumClick(addonId)
+            id == null -> selectedKey = release.key
+            release.playsOnClick() -> startPlayback(release, shuffled = false)
+            else -> onAlbumClick(id)
+        }
+    }
+    val onPlayTopAlbums: () -> Unit = {
+        playNotice = null
+        scope.launch {
+            if (!playTopAlbums(catalog, top.releases, shuffled = false)) playNotice = "Nothing here is on YouTube Music yet."
+        }
+    }
+
+    // fork:artist-stage - the redesigned page (Music settings, "New artist page"), on a window wide enough for its three panels.
+    BoxWithConstraints(modifier.fillMaxSize()) {
+    if (state.settings.artistStage && maxWidth >= ARTIST_STAGE_MIN_WIDTH) {
+        ArtistStage(
+            artist = artist,
+            discography = discography,
+            notice = playNotice,
+            saved = saved,
+            refreshing = working?.status,
+            working = working != null,
+            filter = filter,
+            playableOnly = playableOnly,
+            demosOpen = demosOpen || filter == ReleaseFilter.Demos,
+            canShuffle = shuffleTarget != null,
+            topLabel = topLabel,
+            onBack = onBack,
+            onPlayLatest = { startPlayback(playTarget, shuffled = false) },
+            onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
+            onPlayTop = onPlayTopAlbums,
+            onLinks = { showLinks = true },
+            onRefresh = { MusicLibraryRepository.refresh(artist.id) },
+            onRemove = { confirmRemove = true },
+            onOpenArtist = onArtistClick,
+            onOpen = onOpenRelease,
+            onInfo = { selectedKey = it.key },
+            onPlayableOnly = { playableOnly = it },
+            onFilter = { filterName = it.name },
+            onToggleDemos = { demosOpen = !demosOpen },
+            addonKeys = addonKeys,
+            modifier = Modifier.fillMaxSize(),
+        )
+    } else {
     ArtistRoom(
         artist = artist,
         discography = discography,
@@ -410,35 +459,23 @@ fun MusicArtistScreen(
         onBack = onBack,
         onPlay = { startPlayback(playTarget, shuffled = false) },
         onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
-        onPlayTop = {
-            playNotice = null
-            scope.launch {
-                if (!playTopAlbums(catalog, top.releases, shuffled = false)) playNotice = "Nothing here is on YouTube Music yet."
-            }
-        },
+        onPlayTop = onPlayTopAlbums,
         topLabel = topLabel,
         onAbout = { showAbout = true },
         onLinks = { showLinks = true },
         onOpenArtist = onArtistClick,
         onRefresh = { MusicLibraryRepository.refresh(artist.id) },
         onRemove = { confirmRemove = true },
-        onOpen = { release ->
-            val id = release.ytBrowseId
-            val addonId = albumPageIdOf(release)
-            when {
-                id == null && addonId != null -> onAlbumClick(addonId)
-                id == null -> selectedKey = release.key
-                release.playsOnClick() -> startPlayback(release, shuffled = false)
-                else -> onAlbumClick(id)
-            }
-        },
+        onOpen = onOpenRelease,
         onInfo = { selectedKey = it.key },
         onPlayableOnly = { playableOnly = it },
         onFilter = { filterName = it.name },
         onToggleDemos = { demosOpen = !demosOpen },
         addonKeys = addonKeys,
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
     )
+    }
+    }
 
     selectedKey?.let { key ->
         artist.releases.firstOrNull { it.key == key }?.let { release ->

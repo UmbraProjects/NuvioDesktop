@@ -233,7 +233,7 @@ internal fun LensPanel(modifier: Modifier = Modifier, content: @Composable Colum
 
 /** A panel's first line: icon and label in [tint], and a pill naming where the panel's words come from. */
 @Composable
-private fun LensPanelHeader(icon: ImageVector, label: String, pill: String?, tint: Color) {
+internal fun LensPanelHeader(icon: ImageVector, label: String, pill: String?, tint: Color) {
     val colors = MaterialTheme.nuvio.colors
     Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
@@ -253,7 +253,7 @@ private fun LensPanelHeader(icon: ImageVector, label: String, pill: String?, tin
 
 /** The panel's title and the line under it, each one line high whatever they say. */
 @Composable
-private fun LensPanelTitle(title: String, subtitle: String) {
+internal fun LensPanelTitle(title: String, subtitle: String) {
     val colors = MaterialTheme.nuvio.colors
     Spacer(Modifier.height(12.dp))
     Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -265,7 +265,7 @@ internal class LensFact(val label: String, val value: String, val bar: Float? = 
 
 /** Four facts in two rows of two equal tiles, 76 dp high. */
 @Composable
-private fun LensFactGrid(tiles: List<LensFact>) {
+internal fun LensFactGrid(tiles: List<LensFact>) {
     Column(Modifier.fillMaxWidth().padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         tiles.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { LensFactTile(it) } }
@@ -300,7 +300,7 @@ private fun RowScope.LensFactTile(fact: LensFact) {
  * holds (the Edit pills), so nothing moves when they appear.
  */
 @Composable
-private fun LensSectionLabel(label: String, note: String, trailing: (@Composable RowScope.() -> Unit)? = null) {
+internal fun LensSectionLabel(label: String, note: String, trailing: (@Composable RowScope.() -> Unit)? = null) {
     val colors = MaterialTheme.nuvio.colors
     Row(
         Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp).height(LENS_LABEL_HEIGHT),
@@ -320,7 +320,7 @@ private val LENS_LABEL_HEIGHT = 26.dp
  * pills, on the label's line (a fixed height, so they change nothing); [editor] stands in the text's place while editing.
  */
 @Composable
-private fun LensNoteCard(
+internal fun LensNoteCard(
     label: String,
     text: String,
     tint: Color,
@@ -352,7 +352,7 @@ private val LENS_NOTE_HEIGHT = 136.dp
 
 /** The panel's last line: one wide glass pill, the same on both sides, edged in the side's [tint]. */
 @Composable
-private fun LensButton(label: String, tint: Color, enabled: Boolean, onClick: () -> Unit) {
+internal fun LensButton(label: String, tint: Color, enabled: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(28.dp)
     Box(
@@ -369,7 +369,7 @@ private fun LensButton(label: String, tint: Color, enabled: Boolean, onClick: ()
 
 /** The big box in the middle of a panel: it takes what the window leaves, so its size depends on the window only. */
 @Composable
-private fun ColumnScope.LensBody(tint: Color, highlighted: Boolean, content: @Composable ColumnScope.() -> Unit) {
+internal fun ColumnScope.LensBody(tint: Color, highlighted: Boolean, content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     Column(
         Modifier.fillMaxWidth().weight(1f).clip(shape)
@@ -680,7 +680,7 @@ private fun VersionRow(v: SongVersion, onClick: () -> Unit) {
 
 /** A 64 dp glass row in the library tint: a title, a line under it, and a tag at the end. Not clickable without [onClick]. */
 @Composable
-private fun LensRow(title: String, where: String, tag: String, onClick: (() -> Unit)?) {
+internal fun LensRow(title: String, where: String, tag: String, onClick: (() -> Unit)?) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(14.dp)
     Row(

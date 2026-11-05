@@ -293,7 +293,7 @@ internal fun ArtistRoom(
 }
 
 /** The release grid's sections, in order, and the kinds each holds. */
-private val RELEASE_SECTIONS = listOf(
+internal val RELEASE_SECTIONS = listOf(
     "Albums" to setOf(ReleaseKind.Album),
     "Singles & EPs" to setOf(ReleaseKind.Single, ReleaseKind.EP),
     "Live & Compilations" to setOf(ReleaseKind.Live, ReleaseKind.Compilation),
@@ -316,7 +316,7 @@ private val TIMELINE_END_GAP = 24.dp
 /** How many of the newest releases get a palette worked out as the page opens. */
 private const val TIMELINE_PALETTE_LIMIT = 40
 
-private fun ReleaseGroup.passes(playableOnly: Boolean, filter: ReleaseFilter, addonKeys: Set<String>): Boolean =
+internal fun ReleaseGroup.passes(playableOnly: Boolean, filter: ReleaseFilter, addonKeys: Set<String>): Boolean =
     (!playableOnly || isPlayableWith(addonKeys)) && matches(filter)
 
 // region backdrop and lane
@@ -635,7 +635,7 @@ private fun TimelineRow(group: ReleaseGroup, playsHere: Boolean, leftSide: Boole
 /** The one filter system: playable-only, plus the kind chips. Always shown, above the release grid. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterPanel(
+internal fun FilterPanel(
     discography: ArtistDiscography,
     filter: ReleaseFilter,
     playableOnly: Boolean,
