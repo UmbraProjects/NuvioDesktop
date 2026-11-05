@@ -115,7 +115,7 @@ private const val DECODE_END_SLACK_SECONDS = 1.5
 private class DecodeProgress { var at = 0.0 }
 
 /** A read that stopped is picked up again from where it stopped, this many times, after 20 s, 40 s, 60 s...: a server that refuses the extra connections for a while lets go. */
-private const val DECODE_RESUMES = 6
+private const val DECODE_RESUMES = 12
 private const val DECODE_RESUME_DELAY_MS = 20_000L
 
 /**
@@ -446,7 +446,7 @@ actual fun MusicPlayerSurface(
             // moment) is picked up again from where it stopped, so the map still ends up whole; the part already
             // read stays on screen meanwhile.
             if (read || ++resumes > DECODE_RESUMES) break
-            val wait = DECODE_RESUME_DELAY_MS * resumes
+            val wait = DECODE_RESUME_DELAY_MS * minOf(resumes, 3)
             log.i { "track decode paused at ${progress.at.toInt()}s; resuming in ${wait / 1000}s (try $resumes of $DECODE_RESUMES)" }
             delay(wait)
         }
