@@ -51,6 +51,8 @@ import nuvio.composeapp.generated.resources.settings_music_reduced_motion
 import nuvio.composeapp.generated.resources.settings_music_album_lenses
 import nuvio.composeapp.generated.resources.settings_music_album_lenses_description
 import nuvio.composeapp.generated.resources.settings_music_artist_stage
+import nuvio.composeapp.generated.resources.settings_music_home
+import nuvio.composeapp.generated.resources.settings_music_home_description
 import nuvio.composeapp.generated.resources.settings_music_artist_stage_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
 import nuvio.composeapp.generated.resources.settings_music_section_general
@@ -91,7 +93,7 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
             val settings = state.settings
             SettingsGroup(
                 isTablet = isTablet,
-                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion", "music-album-lenses", "music-artist-stage"),
+                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion", "music-album-lenses", "music-artist-stage", "music-home"),
             ) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_music_show_tab),
@@ -127,6 +129,14 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     checked = settings.artistStage,
                     isTablet = isTablet,
                     onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(artistStage = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_home),
+                    description = stringResource(Res.string.settings_music_home_description),
+                    checked = settings.musicHome,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(musicHome = it)) },
                 )
             }
         }

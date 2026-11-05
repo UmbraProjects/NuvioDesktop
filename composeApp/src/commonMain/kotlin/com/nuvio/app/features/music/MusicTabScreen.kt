@@ -130,14 +130,14 @@ import kotlinx.coroutines.delay
 /** fork:music-youtube - [YouTube] searches plain YouTube for the query as typed, for songs YouTube Music has no album for. */
 private enum class MusicSearchKind { Albums, Artists, YouTube }
 
-private enum class MusicSection { Search, Library }
+internal enum class MusicSection { Search, Library }
 
 /**
  * fork:music-navbar - the Music tab's search box. One object rather than the tab's own state, because
  * on the floating top bar the box lives in the bar itself (see [MusicTopBarContent]) and the tab only
  * shows what it finds; without the floating bar the tab draws the box as before.
  */
-private object MusicTabState {
+internal object MusicTabState {
     var query by mutableStateOf("")
 
     // Opens on the shelf when the person has saved artists, and on Search when there is nothing to show
@@ -234,9 +234,15 @@ fun MusicTopBarContent(onLeave: () -> Unit, modifier: Modifier = Modifier) {
                     .onKeyEvent { arrowFocusDirection(it) == FocusDirection.Down && MusicTabState.focusPills() },
             )
         }
-        MusicFieldDivider()
-        Spacer(Modifier.width(6.dp))
-        MusicSearchBox(chromeless = true, modifier = Modifier.weight(1f))
+        // fork:music-home - the new first screen draws its own search line, so the bar keeps only its way back.
+        val musicHome = MusicLibraryRepository.state.collectAsState().value.settings.musicHome
+        if (musicHome) {
+            Spacer(Modifier.weight(1f))
+        } else {
+            MusicFieldDivider()
+            Spacer(Modifier.width(6.dp))
+            MusicSearchBox(chromeless = true, modifier = Modifier.weight(1f))
+        }
     }
 }
 
@@ -410,6 +416,8 @@ fun MusicTabScreen(
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
     LaunchedEffect(query, kind, attempt) {
+        // fork:music-home - the new first screen runs its own searches.
+        if (MusicLibraryRepository.state.value.settings.musicHome) return@LaunchedEffect
         val q = query.trim()
         if (q.length < MIN_QUERY_LENGTH) {
             results = MusicSearchResults.Idle
@@ -454,6 +462,20 @@ fun MusicTabScreen(
             onRequest = { ladder = it },
             modifier = modifier,
             topChromePadding = if (MusicTabState.barHosted) (topChromePadding - BAR_HOSTED_TRIM).coerceAtLeast(0.dp) else topChromePadding,
+        )
+        return
+    }
+
+    // fork:music-home - the quick-play first screen, when chosen in Music settings. Ladders still open over it (above).
+    if (MusicLibraryRepository.state.collectAsState().value.settings.musicHome) {
+        com.nuvio.app.features.music.home.MusicHomeScreen(
+            onAlbumClick = onAlbumClick,
+            onArtistClick = onArtistClick,
+            onPlaylistClick = onPlaylistClick,
+            onOpenLadder = { ladder = it },
+            modifier = modifier,
+            topChromePadding = if (MusicTabState.barHosted) (topChromePadding - BAR_HOSTED_TRIM).coerceAtLeast(0.dp) else topChromePadding,
+            catalog = catalog,
         )
         return
     }

@@ -1,6 +1,10 @@
 package com.nuvio.app.features.music.home
 
+import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.MusicArtistRef
+import com.nuvio.app.features.music.MusicArtistSummary
+import com.nuvio.app.features.music.MusicSearchEverything
+import com.nuvio.app.features.music.MusicTopResult
 import com.nuvio.app.features.music.MusicTrack
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -163,5 +167,72 @@ class MusicHomeSearchTest {
         assertEquals("UCother", s.offer("UCother").let { s.offer("UCother") })
         s.reset()
         assertNull(s.settled)
+    }
+
+    // Panels
+
+    private val yela = MusicArtistRef("Yelawolf", "UCyela")
+
+    private fun everything(
+        top: MusicTopResult? = MusicTopResult("Yelawolf", "Artist", listOf(yela), null, null),
+        songs: List<MusicTrack> = emptyList(),
+        albums: List<MusicAlbumSummary> = emptyList(),
+        artists: List<MusicArtistSummary> = emptyList(),
+        videos: List<MusicTrack> = emptyList(),
+    ) = MusicSearchEverything(top, songs, albums, artists, videos)
+
+    @Test
+    fun panelsMergeSourcesAndLeaveTheTopArtistOutOfTheList() {
+        val r = buildHomeResults(
+            parseQuery("yelawolf", library),
+            everything(
+                songs = listOf(track("a", "Till It's Gone", "Yelawolf", 240)),
+                artists = listOf(MusicArtistSummary("UCyela", "Yelawolf", null), MusicArtistSummary("UCrittz", "Rittz", null)),
+                videos = listOf(track("v1", "Till It's Gone (Official Video)", "Yelawolf", 241)),
+            ),
+            youtube = listOf(track("v1", "dup", "x", 1), track("v2", "Live session", "Yelawolf", 2000)),
+        )
+        assertEquals(listOf("Rittz"), r.artists.map { it.name })
+        assertEquals("v1", r.rows.single().video?.videoId)
+        assertEquals(listOf("v2"), r.videos.map { it.videoId })
+        assertEquals("UCyela", r.topKey)
+        assertFalse(r.isEmpty)
+    }
+
+    @Test
+    fun aKindChipNarrowsEveryList() {
+        val r = buildHomeResults(
+            parseQuery("yelawolf remix", library),
+            everything(
+                songs = listOf(track("a", "Till It's Gone", "Yelawolf", 240), track("b", "Till It's Gone (Remix)", "Yelawolf", 250)),
+                albums = listOf(MusicAlbumSummary("MPREb_1", "Love Story", listOf(yela), "2015", "Album", null), MusicAlbumSummary("MPREb_2", "The Remixes", listOf(yela), "2016", "EP", null)),
+            ),
+            youtube = listOf(track("v1", "Daddy's Lambo (Bootleg Mix)", "DJ", 300), track("v2", "Interview", "Radio", 600)),
+        )
+        assertEquals(listOf("b"), r.rows.map { it.song?.videoId })
+        assertEquals(listOf("MPREb_2"), r.albums.map { it.browseId })
+        assertEquals(listOf("v1"), r.videos.map { it.videoId })
+    }
+
+    @Test
+    fun albumsOnlyAndAYear() {
+        val r = buildHomeResults(
+            parseQuery("yelawolf albums 2011", library),
+            everything(
+                songs = listOf(track("a", "Pop the Trunk", "Yelawolf", 240)),
+                albums = listOf(MusicAlbumSummary("MPREb_1", "Love Story", listOf(yela), "2015", "Album", null), MusicAlbumSummary("MPREb_2", "Radioactive", listOf(yela), "2011", "Album", null)),
+            ),
+            youtube = listOf(track("v", "Pop the Trunk", "Yelawolf", 240)),
+        )
+        assertTrue(r.rows.isEmpty() && r.videos.isEmpty())
+        assertEquals(listOf("MPREb_2"), r.albums.map { it.browseId })
+    }
+
+    @Test
+    fun greetingWords() {
+        assertEquals("THURSDAY EVENING", greetingLabel(4, 21))
+        assertEquals("MONDAY MORNING", greetingLabel(1, 5))
+        assertEquals("SUNDAY NIGHT", greetingLabel(7, 2))
+        assertEquals("SATURDAY AFTERNOON", greetingLabel(6, 12))
     }
 }

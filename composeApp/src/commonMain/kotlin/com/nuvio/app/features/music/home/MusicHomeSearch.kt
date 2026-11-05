@@ -1,5 +1,9 @@
 package com.nuvio.app.features.music.home
 
+import com.nuvio.app.features.music.MusicAlbumSummary
+import com.nuvio.app.features.music.MusicArtistSummary
+import com.nuvio.app.features.music.MusicSearchEverything
+import com.nuvio.app.features.music.MusicTopResult
 import com.nuvio.app.features.music.MusicTrack
 
 /*
@@ -318,6 +322,67 @@ class MatchSettler(private val needed: Int = 2) {
         seen = 0
         settled = null
     }
+}
+
+// endregion
+
+// region The panels' contents
+
+/**
+ * What the three panels show for one search. Left: [top] and [artists]. Centre: [rows] (YouTube Music songs, each
+ * with its YouTube video when one matched) and [albums]. Right: [videos], the YouTube and YouTube Music videos no song
+ * claimed. A kind chip narrows every list to titles of that kind; "albums only" empties the song and video lists; a
+ * year chip keeps albums from that year.
+ */
+data class HomeResults(
+    val query: ParsedQuery,
+    val top: MusicTopResult?,
+    val artists: List<MusicArtistSummary>,
+    val rows: List<MergedRow>,
+    val albums: List<MusicAlbumSummary>,
+    val videos: List<MusicTrack>,
+) {
+    val isEmpty: Boolean get() = top == null && artists.isEmpty() && rows.isEmpty() && albums.isEmpty() && videos.isEmpty()
+
+    /** What identifies the top match for [MatchSettler]: its album, else its artist, else its video, else its title. */
+    val topKey: String?
+        get() = top?.let { it.albumBrowseId ?: it.artists.firstOrNull()?.browseId ?: it.videoId ?: it.title }
+}
+
+fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, youtube: List<MusicTrack>): HomeResults {
+    val kind = query.kind
+    val albumsOnly = kind == QueryKind.Albums
+    fun keep(title: String) = kind == null || albumsOnly || titleMatchesKind(title, kind)
+    val songs = if (albumsOnly) emptyList() else everything.songs.filter { keep(it.title) }
+    val videos = if (albumsOnly) emptyList() else (everything.videos + youtube).distinctBy { it.videoId }.filter { keep(it.title) }
+    val merged = mergeSourceRows(songs, videos)
+    val year = query.year?.toString()
+    val albums = everything.albums.filter { keep(it.title) && (year == null || it.year == year) }
+    // The top artist is drawn as the top match, so it is not listed again under it.
+    val topArtistId = everything.top?.takeIf { it.albumBrowseId == null && it.videoId == null }?.artists?.firstOrNull()?.browseId
+    return HomeResults(
+        query = query,
+        top = everything.top,
+        artists = everything.artists.filter { it.browseId != topArtistId },
+        rows = merged.rows,
+        albums = albums,
+        videos = merged.otherVideos,
+    )
+}
+
+/**
+ * The small line over the question: the weekday and the part of the day, "THURSDAY EVENING". [isoWeekday] is 1 for
+ * Monday to 7 for Sunday, [hour] 0 to 23. Night runs from 22:00 to 04:59.
+ */
+fun greetingLabel(isoWeekday: Int, hour: Int): String {
+    val day = listOf("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY")[(isoWeekday - 1).mod(7)]
+    val part = when (hour) {
+        in 5..11 -> "MORNING"
+        in 12..16 -> "AFTERNOON"
+        in 17..21 -> "EVENING"
+        else -> "NIGHT"
+    }
+    return "$day $part"
 }
 
 // endregion

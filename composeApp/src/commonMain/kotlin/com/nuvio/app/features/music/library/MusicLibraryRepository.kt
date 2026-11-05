@@ -75,6 +75,8 @@ data class MusicLibrarySettings(
     val albumLenses: Boolean = false,
     /** fork:artist-stage - the redesigned artist page (photo hero, then three panels with lens tabs). Off until chosen. */
     val artistStage: Boolean = false,
+    /** fork:music-home - the quick-play first screen (search line, letter strip, three result panels). Off until chosen. */
+    val musicHome: Boolean = false,
     /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
     val skipNonMusic: Boolean = false,
 )
