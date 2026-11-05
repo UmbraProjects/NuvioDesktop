@@ -39,6 +39,20 @@ interface MusicCatalog {
      * `VL` is allowed), every page of it up to a few thousand tracks. Null when it could not be read.
      */
     suspend fun playlist(playlistId: String): MusicPlaylistPage? = null
+
+    /**
+     * fork:music-home - one search for the first screen: YouTube Music's unfiltered answer read whole (its Top result,
+     * songs, albums, artists, music videos). When that answer holds no songs or no albums (YouTube Music sometimes
+     * sends only artists and videos), the filtered song and album searches fill them in, in parallel. Empty on failure;
+     * the default is empty for test fakes.
+     */
+    suspend fun searchEverything(query: String): MusicSearchEverything = MusicSearchEverything.EMPTY
+
+    /**
+     * fork:music-home - YouTube Music's completions for what has been typed so far ("yela" gives "yelawolf",
+     * "yelawolf best friend"...), lower case, in its order. Empty on failure; the default is empty for test fakes.
+     */
+    suspend fun searchSuggestions(typed: String): List<String> = emptyList()
 }
 
 /** The catalog the app uses: [MusicMetadataClient] on desktop. */

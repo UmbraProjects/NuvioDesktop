@@ -106,11 +106,61 @@ object MusicMetadataClient {
                 ?.let(::parseArtistSearch)?.takeIf { it.isNotEmpty() }
         }.orEmpty()
 
-    /** The unfiltered search's "Top result" for [q], or null. Shared by the album and artist searches. */
-    private suspend fun topResult(q: String): MusicTopResult? =
-        cached("top:${q.lowercase()}") {
-            TrailerPlaybackResolver.musicRequest("search", mapOf("query" to q))?.let(::parseTopResult)
+    /**
+     * The unfiltered search's "Top result" for [q], or null. Shared by the album and artist searches, and read from the
+     * same cached answer as [searchEverything], so the first screen and the album search never both send it.
+     */
+    private suspend fun topResult(q: String): MusicTopResult? = unfiltered(q)?.top
+
+    /**
+     * fork:music-home - the unfiltered search answer for [q], read whole. Null when the request got no answer (not kept,
+     * so the next keystroke asks again); an answer with nothing in it is kept like any other.
+     */
+    private suspend fun unfiltered(q: String): MusicSearchEverything? =
+        cached("all:${q.lowercase()}", keepMiss = { false }) {
+            TrailerPlaybackResolver.musicRequest("search", mapOf("query" to q))?.let(::parseSearchEverything)
         }
+
+    /**
+     * Whether the last unfiltered answer came without songs or albums. YouTube Music sends some sessions a flat answer
+     * of artists and videos only; once seen, the filtered searches start alongside the unfiltered one instead of after
+     * it, so the first screen does not wait for two round trips in a row.
+     */
+    @kotlin.concurrent.Volatile
+    private var unfilteredLacksMusic = false
+
+    /** fork:music-home - see [MusicCatalog.searchEverything]. */
+    suspend fun searchEverything(query: String): MusicSearchEverything = coroutineScope {
+        val q = query.trim().ifEmpty { return@coroutineScope MusicSearchEverything.EMPTY }
+        val early = unfilteredLacksMusic
+        val earlySongs = if (early) async { searchSongs(q) } else null
+        val earlyAlbums = if (early) async { filteredAlbums(q) } else null
+        val base = unfiltered(q)
+        val answer = base ?: MusicSearchEverything.EMPTY
+        val needSongs = answer.songs.isEmpty()
+        val needAlbums = answer.albums.isEmpty()
+        if (base != null) unfilteredLacksMusic = needSongs || needAlbums
+        val songs = when {
+            !needSongs -> { earlySongs?.cancel(); answer.songs }
+            earlySongs != null -> earlySongs.await()
+            else -> searchSongs(q)
+        }
+        val albums = when {
+            !needAlbums -> { earlyAlbums?.cancel(); answer.albums }
+            else -> rankAlbumResults(earlyAlbums?.await() ?: filteredAlbums(q), answer.top)
+        }
+        val merged = answer.copy(songs = songs, albums = albums)
+        if (base == null && merged.isEmpty) merged.copy(failed = true) else merged
+    }
+
+    /** fork:music-home - see [MusicCatalog.searchSuggestions]. A trailing space is kept: "yelawolf " asks for next words. */
+    suspend fun searchSuggestions(typed: String): List<String> {
+        val input = typed.trimStart().ifBlank { return emptyList() }
+        return cached("suggest:${input.lowercase()}", keepMiss = { false }) {
+            TrailerPlaybackResolver.musicRequest("music/get_search_suggestions", mapOf("input" to input))
+                ?.let(::parseSearchSuggestions)
+        }.orEmpty()
+    }
 
     /** fork:music-playlists - see [MusicCatalog.searchSongs]. */
     suspend fun searchSongs(query: String): List<MusicTrack> {

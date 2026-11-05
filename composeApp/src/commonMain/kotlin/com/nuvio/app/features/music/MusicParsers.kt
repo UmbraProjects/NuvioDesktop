@@ -144,7 +144,7 @@ internal fun parseAlbumSearch(body: String): List<MusicAlbumSummary> {
  * when the card is an album, [videoId] when it is a song or video (its album is then found with
  * [parseTrackAlbum]). Null when the response has no such card.
  */
-internal data class MusicTopResult(
+data class MusicTopResult(
     val title: String,
     val kind: String?,
     val artists: List<MusicArtistRef>,
@@ -479,12 +479,14 @@ internal fun parseSongSearch(body: String): List<MusicTrack> {
  * ("Video • Yelawolf & Caskey • 19M views"). A row's own kind word wins, then its shelf's title, then what its links
  * say (an album browse id, an artist page, the music video type).
  */
-internal data class MusicSearchEverything(
+data class MusicSearchEverything(
     val top: MusicTopResult?,
     val songs: List<MusicTrack>,
     val albums: List<MusicAlbumSummary>,
     val artists: List<MusicArtistSummary>,
     val videos: List<MusicTrack>,
+    /** True when no request got an answer (offline, YouTube Music unreachable), as opposed to an answer with nothing in it. */
+    val failed: Boolean = false,
 ) {
     val isEmpty: Boolean get() = top == null && songs.isEmpty() && albums.isEmpty() && artists.isEmpty() && videos.isEmpty()
 
