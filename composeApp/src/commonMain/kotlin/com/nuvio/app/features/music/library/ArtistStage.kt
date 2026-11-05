@@ -28,6 +28,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -75,7 +79,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nuvio.app.core.ui.HoldToSelectState
 import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.PosterZoomOverlayAction
+import com.nuvio.app.core.ui.rememberHoldToSelectState
 import com.nuvio.app.core.ui.NuvioBackButton
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.nuvio
@@ -94,6 +101,9 @@ import com.nuvio.app.features.music.LensRow
 import com.nuvio.app.features.music.LensSectionLabel
 import com.nuvio.app.features.music.LocalMusicBarInset
 import com.nuvio.app.features.music.MusicAlbum
+import com.nuvio.app.features.music.MusicItemMenu
+import com.nuvio.app.features.music.musicMenuTrigger
+import com.nuvio.app.features.music.rememberMusicMenu
 import com.nuvio.app.features.music.MusicPlayback
 import com.nuvio.app.features.music.MusicTopSong
 import com.nuvio.app.features.music.booklet.SongStories
@@ -159,10 +169,17 @@ internal fun ArtistStage(
     onFilter: (ReleaseFilter) -> Unit,
     onToggleDemos: () -> Unit,
     addonKeys: Set<String>,
+    /** fork:music-menu - plays [LibraryRelease] (shuffled or not) the way the old page's Play does. */
+    onPlayRelease: (LibraryRelease, Boolean) -> Unit,
+    /** fork:music-menu - puts the release after what is queued. */
+    onQueueRelease: (LibraryRelease) -> Unit,
+    /** fork:music-menu - opens an album page by its id (a song's album). */
+    onOpenAlbumId: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val catalog = remember { defaultMusicCatalog() }
+    val hold = rememberHoldToSelectState()
     val scope = rememberCoroutineScope()
 
     // Essentials: YouTube Music's most played list for the artist, then the albums of its songs (length, cover).
@@ -201,6 +218,26 @@ internal fun ArtistStage(
         val at = fromVideoId?.let { id -> queue.tracks.indexOfFirst { it.videoId == id } }?.takeIf { it >= 0 } ?: 0
         MusicPlayback.player.play(queue, trackIndex = at)
     }
+
+    // fork:music-menu - what a song's and a release's More menus offer.
+    fun oneSong(row: EssentialRow): MusicAlbum? {
+        val queue = mix ?: return null
+        val track = queue.tracks.firstOrNull { it.videoId == row.videoId } ?: return null
+        return queue.copy(browseId = "${queue.browseId}:${row.videoId}", title = row.title, tracks = listOf(track.copy(trackNumber = 1)))
+    }
+    val songActions = SongMenuActions(
+        playFrom = { playEssentials(it.videoId) },
+        playOne = { row -> oneSong(row)?.let { MusicPlayback.player.play(it) } },
+        queueOne = { row -> oneSong(row)?.let { MusicPlayback.player.enqueue(it) } },
+        openAlbum = onOpenAlbumId,
+    )
+    val releaseActions = ReleaseMenuActions(
+        play = onPlayRelease,
+        queue = onQueueRelease,
+        open = onOpen,
+        info = onInfo,
+        playable = { it.isPlayable || it.key in addonKeys },
+    )
 
     var lens by rememberSaveable(artist.id) { mutableStateOf(ArtistLens.Essentials) }
     // The song the keyboard is on in Essentials: the left panel is about it; null is about the artist.
@@ -252,6 +289,9 @@ internal fun ArtistStage(
                             focusRank = focusRank,
                             onFocusSong = { focusRank = it },
                             onPlaySong = { playEssentials(it.videoId) },
+                            songActions = songActions,
+                            releaseActions = releaseActions,
+                            hold = hold,
                             onOpen = onOpen,
                             onInfo = onInfo,
                             addonKeys = addonKeys,
@@ -270,6 +310,8 @@ internal fun ArtistStage(
                             onFilter = onFilter,
                             onToggleDemos = onToggleDemos,
                             addonKeys = addonKeys,
+                            releaseActions = releaseActions,
+                            hold = hold,
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
                     }
@@ -763,6 +805,9 @@ private fun EssentialsLens(
     focusRank: Int?,
     onFocusSong: (Int?) -> Unit,
     onPlaySong: (EssentialRow) -> Unit,
+    songActions: SongMenuActions,
+    releaseActions: ReleaseMenuActions,
+    hold: HoldToSelectState,
     onOpen: (LibraryRelease) -> Unit,
     onInfo: (LibraryRelease) -> Unit,
     addonKeys: Set<String>,
@@ -787,13 +832,17 @@ private fun EssentialsLens(
         rows.forEach { row ->
             val on = row.rank == focusRank
             val shape = RoundedCornerShape(10.dp)
+            val menu = rememberMusicMenu()
+            MusicItemMenu(menu) { songMenu(row, songActions) }
+            val select = { onFocusSong(row.rank); onPlaySong(row) }
             Row(
                 Modifier.fillMaxWidth().height(46.dp).clip(shape)
                     .background(if (on) colors.accent.copy(alpha = 0.10f) else Color.Transparent)
                     .border(1.dp, if (on) colors.accent.copy(alpha = 0.6f) else Color.Transparent, shape)
                     .onFocusChanged { if (it.isFocused) onFocusSong(row.rank) }
+                    .musicMenuTrigger(menu, hold, onSelect = select)
                     .musicKeyFocusRing(shape)
-                    .clickable { onFocusSong(row.rank); onPlaySong(row) }
+                    .clickable(onClick = select)
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -820,7 +869,7 @@ private fun EssentialsLens(
             )
             Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 top.take(5).forEach { release ->
-                    StageAlbumTile(release, addon = release.key in addonKeys, onFocus = { onFocusSong(null) }, onOpen = { onOpen(release) }, onInfo = { onInfo(release) }, modifier = Modifier.weight(1f))
+                    StageAlbumTile(release, addon = release.key in addonKeys, onFocus = { onFocusSong(null) }, actions = releaseActions, hold = hold, modifier = Modifier.weight(1f))
                 }
                 // Fewer than five: the empty slots keep the tiles the same size.
                 repeat(5 - top.take(5).size) { Spacer(Modifier.weight(1f)) }
@@ -832,15 +881,18 @@ private fun EssentialsLens(
 
 /** A top album: its cover and title; right click (or the release dialog) shows its details. */
 @Composable
-private fun StageAlbumTile(release: LibraryRelease, addon: Boolean, onFocus: () -> Unit, onOpen: () -> Unit, onInfo: () -> Unit, modifier: Modifier) {
+private fun StageAlbumTile(release: LibraryRelease, addon: Boolean, onFocus: () -> Unit, actions: ReleaseMenuActions, hold: HoldToSelectState, modifier: Modifier) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(12.dp)
+    val menu = rememberMusicMenu()
+    MusicItemMenu(menu) { releaseMenu(release, actions) }
+    val open = { actions.open(release) }
     Column(
         modifier.clip(shape)
             .onFocusChanged { if (it.isFocused) onFocus() }
-            .secondaryClick(onInfo)
+            .musicMenuTrigger(menu, hold, onSelect = open)
             .musicKeyFocusRing(shape)
-            .clickable(onClick = onOpen)
+            .clickable(onClick = open)
             .alpha(if (release.isPlayable || addon) 1f else 0.5f)
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -872,6 +924,8 @@ private fun DiscographyLens(
     onFilter: (ReleaseFilter) -> Unit,
     onToggleDemos: () -> Unit,
     addonKeys: Set<String>,
+    releaseActions: ReleaseMenuActions,
+    hold: HoldToSelectState,
     modifier: Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
@@ -911,7 +965,15 @@ private fun DiscographyLens(
                 val card = (maxWidth - gap * (columns - 1)) / columns
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     section.forEach { group ->
-                        ReleaseCard(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }, addon = group.onAddon(addonKeys), width = card)
+                        val menu = rememberMusicMenu()
+                        MusicItemMenu(menu) { releaseMenu(group.primary, releaseActions) }
+                        ReleaseCard(
+                            group,
+                            onClick = { onOpen(group.primary) },
+                            addon = group.onAddon(addonKeys),
+                            width = card,
+                            extra = Modifier.musicMenuTrigger(menu, hold, onSelect = { onOpen(group.primary) }),
+                        )
                     }
                 }
             }
@@ -921,6 +983,51 @@ private fun DiscographyLens(
         }
         Spacer(Modifier.height(16.dp))
     }
+}
+
+// endregion
+
+// region more menu
+
+/** fork:music-menu - what a song's More menu can do. */
+internal class SongMenuActions(
+    val playFrom: (EssentialRow) -> Unit,
+    val playOne: (EssentialRow) -> Unit,
+    val queueOne: (EssentialRow) -> Unit,
+    val openAlbum: (String) -> Unit,
+)
+
+/** fork:music-menu - what a release's More menu can do; [playable] says whether it plays here at all. */
+internal class ReleaseMenuActions(
+    val play: (LibraryRelease, Boolean) -> Unit,
+    val queue: (LibraryRelease) -> Unit,
+    val open: (LibraryRelease) -> Unit,
+    val info: (LibraryRelease) -> Unit,
+    val playable: (LibraryRelease) -> Boolean,
+)
+
+private fun songMenu(row: EssentialRow, actions: SongMenuActions): List<PosterZoomOverlayAction> = listOf(
+    PosterZoomOverlayAction(icon = Icons.Rounded.PlayArrow, label = "Play from here", onSelected = { actions.playFrom(row) }),
+    PosterZoomOverlayAction(icon = Icons.Rounded.MusicNote, label = "Play just this song", onSelected = { actions.playOne(row) }),
+    PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Add to queue", onSelected = { actions.queueOne(row) }),
+    PosterZoomOverlayAction(
+        icon = Icons.Rounded.Album,
+        label = row.albumTitle?.let { "Open $it" } ?: "Open the album",
+        onSelected = { row.albumBrowseId?.let(actions.openAlbum) },
+        enabled = row.albumBrowseId != null,
+        group = 1,
+    ),
+)
+
+private fun releaseMenu(release: LibraryRelease, actions: ReleaseMenuActions): List<PosterZoomOverlayAction> {
+    val plays = actions.playable(release)
+    return listOf(
+        PosterZoomOverlayAction(icon = Icons.Rounded.PlayArrow, label = "Play", onSelected = { actions.play(release, false) }, enabled = plays),
+        PosterZoomOverlayAction(icon = Icons.Rounded.Shuffle, label = "Shuffle", onSelected = { actions.play(release, true) }, enabled = plays),
+        PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Add to queue", onSelected = { actions.queue(release) }, enabled = plays),
+        PosterZoomOverlayAction(icon = Icons.Rounded.Album, label = "Open", onSelected = { actions.open(release) }, group = 1),
+        PosterZoomOverlayAction(icon = Icons.Rounded.Info, label = "Details and versions", onSelected = { actions.info(release) }, group = 1),
+    )
 }
 
 // endregion

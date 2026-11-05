@@ -6,6 +6,9 @@ import com.nuvio.app.features.music.nebula.NebulaSourceRow
 import com.nuvio.app.features.music.nebula.rememberNebulaAlbumController
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -468,6 +471,8 @@ private fun AlbumContent(
         noteLines()
     }
 
+    // fork:music-menu - one hold-to-select timer for the page's song rows.
+    val trackHold = com.nuvio.app.core.ui.rememberHoldToSelectState()
     fun tapTrack(index: Int) {
         if (loaded && startsFresh) {
             // fork:nebula - the album is playing from the other source: start it over in the chosen one.
@@ -1006,10 +1011,24 @@ private fun AlbumContent(
                             )
                         }
                         itemsIndexed(view.tracks) { index, track ->
+                            // fork:music-menu - right-click, the Menu key or a held OK: the song's More menu.
+                            val menu = rememberMusicMenu()
+                            MusicItemMenu(menu) {
+                                songRowMenu(
+                                    track = track,
+                                    playFrom = { lensFocus = index; tapTrack(index) },
+                                    playOne = { player.play(view.copy(browseId = "${view.browseId}:${track.videoId}", tracks = listOf(track.copy(trackNumber = 1)))) },
+                                    queueOne = { player.enqueue(view.copy(browseId = "${view.browseId}:${track.videoId}", tracks = listOf(track.copy(trackNumber = 1)))) },
+                                    addToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
+                                    openArtist = (track.artists.firstOrNull { it.browseId != null } ?: album.artists.firstOrNull { it.browseId != null })
+                                        ?.browseId?.let { id -> { onArtistClick(id) } },
+                                )
+                            }
                             TrackRow(
                                 album = album,
                                 track = track,
                                 current = playingRow == index,
+                                menuTrigger = if (track.isAvailable) Modifier.musicMenuTrigger(menu, trackHold, onSelect = { lensFocus = index; tapTrack(index) }) else Modifier,
                                 modifier = (if (index == firstPlayable) Modifier.focusRequester(firstTrackFocus) else Modifier)
                                     .onFocusChanged { if (it.hasFocus) lensFocus = index },
                                 onAddToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
@@ -1546,6 +1565,8 @@ private fun TrackRow(
     historyView: Boolean = false,
     historyPlays: Int = 0,
     historyMax: Int = 0,
+    /** fork:music-menu - the row's More menu trigger, put before its own click handling. */
+    menuTrigger: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
     val hoverSource = remember { MutableInteractionSource() }
@@ -1572,6 +1593,7 @@ private fun TrackRow(
             // A border, not a size change: the row is the same size with it or without it.
             .then(if (inFocus) Modifier.border(1.dp, colors.accent.copy(alpha = 0.6f), RoundedCornerShape(8.dp)) else Modifier)
             .hoverable(hoverSource)
+            .then(menuTrigger)
             .musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(enabled = track.isAvailable, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1724,4 +1746,23 @@ internal fun albumArtistToPreview(album: MusicAlbum): String? {
     val name = first.name.trim().lowercase()
     if (name == "various artists" || name == "various" || name == "va") return null
     return first.browseId
+}
+
+/** fork:music-menu - what a song row's More menu offers on the album page. */
+private fun songRowMenu(
+    track: MusicTrack,
+    playFrom: () -> Unit,
+    playOne: () -> Unit,
+    queueOne: () -> Unit,
+    addToPlaylist: (() -> Unit)?,
+    openArtist: (() -> Unit)?,
+): List<com.nuvio.app.core.ui.PosterZoomOverlayAction> = buildList {
+    add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.PlayArrow, label = "Play from here", onSelected = playFrom))
+    add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.MusicNote, label = "Play just this song", onSelected = playOne))
+    add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Add to queue", onSelected = queueOne))
+    addToPlaylist?.let { add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.LibraryAdd, label = "Add to a playlist", onSelected = it)) }
+    openArtist?.let {
+        val name = track.artists.firstOrNull()?.name
+        add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.Person, label = name?.let { n -> "Go to $n" } ?: "Go to the artist", onSelected = it, group = 1))
+    }
 }

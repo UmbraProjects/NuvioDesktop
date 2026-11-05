@@ -405,6 +405,17 @@ fun MusicArtistScreen(
             else -> onAlbumClick(id)
         }
     }
+    // fork:music-menu - queues [release] after what is playing (the release dialog's Add to queue).
+    fun queueRelease(release: LibraryRelease) {
+        scope.launch {
+            val album = albumOf(release)
+            playNotice = when {
+                album == null -> "Couldn't open ${release.title}."
+                MusicPlayback.player.enqueue(album) -> "${release.title} is up next."
+                else -> null
+            }
+        }
+    }
     val onPlayTopAlbums: () -> Unit = {
         playNotice = null
         scope.launch {
@@ -441,6 +452,9 @@ fun MusicArtistScreen(
             onFilter = { filterName = it.name },
             onToggleDemos = { demosOpen = !demosOpen },
             addonKeys = addonKeys,
+            onPlayRelease = { release, shuffled -> startPlayback(release, shuffled) },
+            onQueueRelease = { queueRelease(it) },
+            onOpenAlbumId = onAlbumClick,
             modifier = Modifier.fillMaxSize(),
         )
     } else {
@@ -610,11 +624,20 @@ internal fun LibraryRelease.playsOnClick(): Boolean = kind == ReleaseKind.Single
  * addon has it, so it is drawn in full and says so.
  */
 @Composable
-internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null, addon: Boolean = false, width: Dp = 150.dp) {
+internal fun ReleaseCard(
+    group: ReleaseGroup,
+    onClick: () -> Unit,
+    onSecondary: (() -> Unit)? = null,
+    addon: Boolean = false,
+    width: Dp = 150.dp,
+    /** fork:music-menu - put before the card's own click handling (the More menu's trigger). */
+    extra: Modifier = Modifier,
+) {
     val colors = MaterialTheme.nuvio.colors
     val release = group.primary
     Column(
         modifier = Modifier
+            .then(extra)
             .width(width)
             .clip(RoundedCornerShape(10.dp))
             .secondaryClick(onSecondary)
