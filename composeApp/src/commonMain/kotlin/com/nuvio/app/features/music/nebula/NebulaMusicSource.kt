@@ -398,16 +398,17 @@ internal object NebulaMusicSource {
     }
 
     private val paceLock = Mutex()
-    private var nextSearchAt = 0L
+    /** When each addon (by base address) may be searched next: the limit is the addon's own, so each is paced and banned on its own. */
+    private val nextSearchAt = HashMap<String, Long>()
 
-    /** Waits for this request's turn: availability searches start at least [SEARCH_SPACING_MS] apart, whichever release or addon they are for. */
-    private suspend fun waitForSearchTurn() {
+    /** Waits for this request's turn: availability searches to one addon start at least [SEARCH_SPACING_MS] apart, whichever release they are for. */
+    private suspend fun waitForSearchTurn(base: String) {
         val wait = paceLock.withLock {
             val now = LibraryClock.nowEpochMs()
-            val at = maxOf(now, nextSearchAt)
+            val at = maxOf(now, nextSearchAt[base] ?: 0L)
             // A long ban (the addon asked for minutes): do not sit in line for it, fail now so the check is asked again next visit.
             if (at - now > MAX_SEARCH_QUEUE_WAIT_MS) throw AddonError("The music addon is limiting searches (about ${(at - now) / 1000} s left). Try again later.")
-            nextSearchAt = at + SEARCH_SPACING_MS
+            nextSearchAt[base] = at + SEARCH_SPACING_MS
             at - now
         }
         if (wait > 0) delay(wait)
@@ -419,19 +420,19 @@ internal object NebulaMusicSource {
      * refused that way when 30 albums were asked about in a burst. Everyone else waits too while it waits.
      */
     private suspend fun pacedSearch(base: String, text: String): String {
-        waitForSearchTurn()
+        waitForSearchTurn(base)
         var reply = get(base, "/search?q=${urlEncodeQuery(text)}")
         if (reply.status == 429) {
             // The whole wait the addon names, not a shorter one: the log showed it answering 42, 59 and then 874 seconds to
             // searches that came back after only 16, so asking early made the ban longer.
             val seconds = Regex("""in (\d+) second""").find(reply.body)?.groupValues?.get(1)?.toLongOrNull() ?: 10L
             val pause = (seconds.coerceIn(1L, 3_600L) + 2L) * 1000L
-            paceLock.withLock { nextSearchAt = maxOf(nextSearchAt, LibraryClock.nowEpochMs() + pause) }
-            log.i { "Music addon asked for a $seconds s pause between searches" }
+            paceLock.withLock { nextSearchAt[base] = maxOf(nextSearchAt[base] ?: 0L, LibraryClock.nowEpochMs() + pause) }
+            log.i { "Music addon ${nebulaAddonKey(base)} asked for a $seconds s pause between searches" }
             // A short pause is waited out and the search asked once more; a long one fails this check (asked again next visit)
             // and, through the turn, every check queued behind it.
             if (pause > MAX_SEARCH_QUEUE_WAIT_MS) return reply.requireOk()
-            waitForSearchTurn()
+            waitForSearchTurn(base)
             reply = get(base, "/search?q=${urlEncodeQuery(text)}")
         }
         return reply.requireOk()
