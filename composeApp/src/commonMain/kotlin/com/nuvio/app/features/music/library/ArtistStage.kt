@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -173,6 +174,8 @@ internal fun ArtistStage(
     onPlayRelease: (LibraryRelease, Boolean) -> Unit,
     /** fork:music-menu - puts the release after what is queued. */
     onQueueRelease: (LibraryRelease) -> Unit,
+    /** fork:music-menu - plays the release once the track playing ends. */
+    onPlayNextRelease: (LibraryRelease) -> Unit,
     /** fork:music-menu - opens an album page by its id (a song's album). */
     onOpenAlbumId: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -229,11 +232,13 @@ internal fun ArtistStage(
         playFrom = { playEssentials(it.videoId) },
         playOne = { row -> oneSong(row)?.let { MusicPlayback.player.play(it) } },
         queueOne = { row -> oneSong(row)?.let { MusicPlayback.player.enqueue(it) } },
+        playNextOne = { row -> oneSong(row)?.let { MusicPlayback.player.playNext(it) } },
         openAlbum = onOpenAlbumId,
     )
     val releaseActions = ReleaseMenuActions(
         play = onPlayRelease,
         queue = onQueueRelease,
+        playNext = onPlayNextRelease,
         open = onOpen,
         info = onInfo,
         playable = { it.isPlayable || it.key in addonKeys },
@@ -994,6 +999,7 @@ internal class SongMenuActions(
     val playFrom: (EssentialRow) -> Unit,
     val playOne: (EssentialRow) -> Unit,
     val queueOne: (EssentialRow) -> Unit,
+    val playNextOne: (EssentialRow) -> Unit,
     val openAlbum: (String) -> Unit,
 )
 
@@ -1001,6 +1007,7 @@ internal class SongMenuActions(
 internal class ReleaseMenuActions(
     val play: (LibraryRelease, Boolean) -> Unit,
     val queue: (LibraryRelease) -> Unit,
+    val playNext: (LibraryRelease) -> Unit,
     val open: (LibraryRelease) -> Unit,
     val info: (LibraryRelease) -> Unit,
     val playable: (LibraryRelease) -> Boolean,
@@ -1009,6 +1016,7 @@ internal class ReleaseMenuActions(
 private fun songMenu(row: EssentialRow, actions: SongMenuActions): List<PosterZoomOverlayAction> = listOf(
     PosterZoomOverlayAction(icon = Icons.Rounded.PlayArrow, label = "Play from here", onSelected = { actions.playFrom(row) }),
     PosterZoomOverlayAction(icon = Icons.Rounded.MusicNote, label = "Play just this song", onSelected = { actions.playOne(row) }),
+    PosterZoomOverlayAction(icon = Icons.Rounded.SkipNext, label = "Play next", onSelected = { actions.playNextOne(row) }),
     PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Add to queue", onSelected = { actions.queueOne(row) }),
     PosterZoomOverlayAction(
         icon = Icons.Rounded.Album,
@@ -1024,6 +1032,7 @@ private fun releaseMenu(release: LibraryRelease, actions: ReleaseMenuActions): L
     return listOf(
         PosterZoomOverlayAction(icon = Icons.Rounded.PlayArrow, label = "Play", onSelected = { actions.play(release, false) }, enabled = plays),
         PosterZoomOverlayAction(icon = Icons.Rounded.Shuffle, label = "Shuffle", onSelected = { actions.play(release, true) }, enabled = plays),
+        PosterZoomOverlayAction(icon = Icons.Rounded.SkipNext, label = "Play next", onSelected = { actions.playNext(release) }, enabled = plays),
         PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Add to queue", onSelected = { actions.queue(release) }, enabled = plays),
         PosterZoomOverlayAction(icon = Icons.Rounded.Album, label = "Open", onSelected = { actions.open(release) }, group = 1),
         PosterZoomOverlayAction(icon = Icons.Rounded.Info, label = "Details and versions", onSelected = { actions.info(release) }, group = 1),

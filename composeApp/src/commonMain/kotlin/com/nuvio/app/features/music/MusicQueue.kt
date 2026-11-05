@@ -29,6 +29,9 @@ class MusicQueue(
     var shuffled: Boolean = shuffled
         private set
 
+    /** Album track indices still in this queue: all of them until [dropUpNext] hands the rest on. */
+    private var inQueue: List<Int> = album.tracks.indices.toList()
+
     /** Album track indices in playing order. */
     private var order: List<Int> = buildOrder(startIndex.coerceIn(0, (album.tracks.size - 1).coerceAtLeast(0)))
 
@@ -47,10 +50,22 @@ class MusicQueue(
     val upNext: List<MusicTrack> get() = order.drop(position + 1).mapNotNull { album.tracks.getOrNull(it) }
 
     private fun buildOrder(first: Int): List<Int> {
-        val all = album.tracks.indices.toList()
+        val all = inQueue
         if (!shuffled) return all
         // The track being played stays first so turning shuffle on never changes the song.
         return listOf(first) + all.filter { it != first }.shuffled(Random(seed))
+    }
+
+    /**
+     * fork:music-menu - Play next: ends this queue after the track playing and returns the tracks that were still to come,
+     * in playing order, so the player can put something in front of them. Turning shuffle on or off later never brings
+     * them back here.
+     */
+    fun dropUpNext(): List<MusicTrack> {
+        val dropped = upNext
+        order = order.take(position + 1)
+        inQueue = order.sorted()
+        return dropped
     }
 
     fun setShuffled(on: Boolean) {

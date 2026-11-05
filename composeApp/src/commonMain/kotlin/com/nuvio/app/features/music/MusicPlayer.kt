@@ -402,6 +402,36 @@ class MusicPlayer(
         return true
     }
 
+    /**
+     * fork:music-menu - Play next: [album] plays as soon as the track playing ends, then the rest of what was queued (the
+     * playing album's remaining tracks, then the queued albums). Plays it at once when nothing is playing. Returns true
+     * when it was put next (false when it started, or has no tracks).
+     */
+    fun playNext(album: MusicAlbum): Boolean {
+        if (album.tracks.isEmpty()) return false
+        val q = queue
+        if (q == null) {
+            play(album)
+            return false
+        }
+        val rest = q.dropUpNext()
+        val restAlbum = rest.takeIf { it.isNotEmpty() }?.let { tracks ->
+            // The remaining tracks as an album of their own, each keeping the cover and album it showed before.
+            q.album.copy(
+                tracks = tracks.map { t ->
+                    t.copy(
+                        coverUrl = t.coverUrl ?: q.album.thumbnailUrl,
+                        albumTitle = t.albumTitle ?: q.album.title,
+                        albumBrowseId = t.albumBrowseId ?: q.album.browseId,
+                    )
+                },
+            )
+        }
+        following = listOf(album) + listOfNotNull(restAlbum) + following
+        _state.update { it.copy(hasNext = true) }
+        return true
+    }
+
     /** Stops playback and clears the queue. The mini-player goes away. */
     fun stop() {
         request?.cancel()

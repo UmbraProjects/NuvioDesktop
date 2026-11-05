@@ -114,4 +114,27 @@ class MusicQueueTest {
         assertNull(q.current)
         assertNull(runSuspend { q.advance(all) })
     }
+
+    @Test
+    fun dropUpNextEndsTheQueueAfterTheTrackPlaying() {
+        val q = MusicQueue(album(5), MusicPlayMode.Audio, startIndex = 1)
+        assertEquals(listOf("id3", "id4", "id5"), q.dropUpNext().map { it.videoId })
+        assertTrue(q.upNext.isEmpty())
+        assertEquals("id2", q.current?.videoId)
+        assertNull(runSuspend { q.advance(all) })
+        // Back still reaches what was played before.
+        assertEquals("id1", runSuspend { q.retreat(all) }?.playable?.videoId)
+    }
+
+    @Test
+    fun shuffleAfterDropUpNextNeverBringsTheDroppedTracksBack() {
+        val q = MusicQueue(album(6), MusicPlayMode.Audio, startIndex = 2)
+        q.dropUpNext()
+        q.setShuffled(true)
+        assertEquals("id3", q.current?.videoId)
+        assertTrue(q.ordered.all { it.videoId in setOf("id1", "id2", "id3") })
+        q.setShuffled(false)
+        assertEquals(listOf("id1", "id2", "id3"), q.ordered.map { it.videoId })
+        assertEquals("id3", q.current?.videoId)
+    }
 }

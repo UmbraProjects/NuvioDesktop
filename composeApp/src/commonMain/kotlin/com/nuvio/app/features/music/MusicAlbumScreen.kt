@@ -7,6 +7,7 @@ import com.nuvio.app.features.music.nebula.rememberNebulaAlbumController
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.LibraryAdd
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Add
@@ -1019,6 +1020,7 @@ private fun AlbumContent(
                                     playFrom = { lensFocus = index; tapTrack(index) },
                                     playOne = { player.play(view.copy(browseId = "${view.browseId}:${track.videoId}", tracks = listOf(track.copy(trackNumber = 1)))) },
                                     queueOne = { player.enqueue(view.copy(browseId = "${view.browseId}:${track.videoId}", tracks = listOf(track.copy(trackNumber = 1)))) },
+                                    playNext = { player.playNext(view.copy(browseId = "${view.browseId}:${track.videoId}", tracks = listOf(track.copy(trackNumber = 1)))) },
                                     addToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
                                     openArtist = (track.artists.firstOrNull { it.browseId != null } ?: album.artists.firstOrNull { it.browseId != null })
                                         ?.browseId?.let { id -> { onArtistClick(id) } },
@@ -1754,11 +1756,13 @@ private fun songRowMenu(
     playFrom: () -> Unit,
     playOne: () -> Unit,
     queueOne: () -> Unit,
+    playNext: () -> Unit,
     addToPlaylist: (() -> Unit)?,
     openArtist: (() -> Unit)?,
 ): List<com.nuvio.app.core.ui.PosterZoomOverlayAction> = buildList {
     add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.PlayArrow, label = "Play from here", onSelected = playFrom))
     add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.MusicNote, label = "Play just this song", onSelected = playOne))
+    add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.SkipNext, label = "Play next", onSelected = playNext))
     add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Add to queue", onSelected = queueOne))
     addToPlaylist?.let { add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.LibraryAdd, label = "Add to a playlist", onSelected = it)) }
     openArtist?.let {

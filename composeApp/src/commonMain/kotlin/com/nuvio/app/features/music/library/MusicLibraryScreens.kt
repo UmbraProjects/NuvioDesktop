@@ -405,13 +405,15 @@ fun MusicArtistScreen(
             else -> onAlbumClick(id)
         }
     }
-    // fork:music-menu - queues [release] after what is playing (the release dialog's Add to queue).
-    fun queueRelease(release: LibraryRelease) {
+    // fork:music-menu - queues [release] after what is playing (the release dialog's Add to queue), or with [next] right
+    // after the track playing.
+    fun queueRelease(release: LibraryRelease, next: Boolean = false) {
         scope.launch {
             val album = albumOf(release)
             playNotice = when {
                 album == null -> "Couldn't open ${release.title}."
-                MusicPlayback.player.enqueue(album) -> "${release.title} is up next."
+                next && MusicPlayback.player.playNext(album) -> "${release.title} plays next."
+                !next && MusicPlayback.player.enqueue(album) -> "${release.title} is queued."
                 else -> null
             }
         }
@@ -454,6 +456,7 @@ fun MusicArtistScreen(
             addonKeys = addonKeys,
             onPlayRelease = { release, shuffled -> startPlayback(release, shuffled) },
             onQueueRelease = { queueRelease(it) },
+            onPlayNextRelease = { queueRelease(it, next = true) },
             onOpenAlbumId = onAlbumClick,
             modifier = Modifier.fillMaxSize(),
         )
