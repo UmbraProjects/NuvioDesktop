@@ -145,6 +145,9 @@ internal object NativePlayerBridge {
         outputPath: String,
     ): Int
 
+    /** fork:visualiser - makes [decodeAudioSpot] read the local file at [path] instead of the stream; null goes back to the stream. Windows bridge only. */
+    external fun setAudioSpotFile(handle: Long, path: String?)
+
     /** The playing source's size over its duration; negative when unknown. */
     external fun speechSourceBytesPerSecond(handle: Long): Double
 

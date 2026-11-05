@@ -1956,6 +1956,15 @@ internal class NativePlayerController(
         }
     }
 
+    /** fork:visualiser - the audio decodes read this local copy instead of opening the stream again; null goes back to the stream. A build without the native call just keeps reading the stream. */
+    fun setAudioSpotFile(path: String?) {
+        val current = handle.takeIf { it != 0L } ?: return
+        try {
+            NativePlayerBridge.setAudioSpotFile(current, path)
+        } catch (_: UnsatisfiedLinkError) {
+        }
+    }
+
     override fun sourceBytesPerSecond(): Double? =
         handle.takeIf { it != 0L }
             ?.let { NativePlayerBridge.speechSourceBytesPerSecond(it) }

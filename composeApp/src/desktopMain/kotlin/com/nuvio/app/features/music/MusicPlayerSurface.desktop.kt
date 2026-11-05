@@ -432,6 +432,16 @@ actual fun MusicPlayerSurface(
         delay(MEASURE_START_DELAY_MS)
         val meter = if (needLoudness) LoudnessMeter(MEASURE_SAMPLE_RATE, channels = 2) else null
         val builder = if (keptMap == null) TrackMapBuilder(MEASURE_SAMPLE_RATE) else null
+        // fork:visualiser - one download of the track's audio, read from disk by every slice below, instead of a new connection to
+        // the music server per slice (which it answered with HTTP 429). Without it (a playlist stream, a refusal) the stream is read as before.
+        val spotFile = downloadSpotFile(sourceAudioUrl ?: sourceUrl, source.headers)
+        if (spotFile != null) {
+            controller.setAudioSpotFile(spotFile.absolutePath)
+            currentCoroutineContext()[kotlinx.coroutines.Job]?.invokeOnCompletion {
+                controller.setAudioSpotFile(null)
+                spotFile.delete()
+            }
+        }
         val progress = DecodeProgress()
         var resumes = 0
         var read = false

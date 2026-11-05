@@ -4159,6 +4159,8 @@ private:
     std::atomic<std::chrono::steady_clock::time_point> eofSuppressedUntil{std::chrono::steady_clock::time_point{}};
 
     std::string externalAudioUrl;
+    // fork:visualiser - a local copy of the playing audio the throwaway decodes read instead of the network (set by the app; empty = use the stream).
+    std::string spotFilePath;
     struct ExtraAudioTrack {
         std::string lang;
         std::string title;
@@ -6321,7 +6323,8 @@ public:
         // A separate audio stream (YouTube video plus its own audio) is the audio being heard, and it
         // is a complete file on its own, so that is what gets decoded; the video URL has no sound.
         const bool separateAudio = !externalAudioUrl.empty();
-        const std::string spotUrl = separateAudio ? externalAudioUrl : thumbnailSourceUrl;
+        const std::string localCopy = spotFilePath;
+        const std::string spotUrl = !localCopy.empty() ? localCopy : (separateAudio ? externalAudioUrl : thumbnailSourceUrl);
         if (shuttingDown.load() || spotUrl.empty()) return -1;
         MpvApi &api = mpvApi();
         mpv_handle *probe = api.create();
@@ -6349,7 +6352,7 @@ public:
         api.setOptionString(probe, "start", start.c_str());
         api.setOptionString(probe, "end", end.c_str());
         if (numericAid) api.setOptionString(probe, "aid", aid.c_str());
-        if (!thumbnailHeaderLines.empty()) {
+        if (localCopy.empty() && !thumbnailHeaderLines.empty()) {
             std::string headers;
             for (size_t index = 0; index < thumbnailHeaderLines.size(); ++index) {
                 if (index > 0) headers.push_back(',');
@@ -7731,6 +7734,18 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeAudioSpot(
     auto player = playerFromHandle(handle);
     if (!player) return -1;
     return player->decodeAudioSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath), sampleRate, channelCount);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setAudioSpotFile(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring path
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->spotFilePath = path ? jstringToUtf8(env, path) : std::string();
 }
 
 extern "C" JNIEXPORT void JNICALL
