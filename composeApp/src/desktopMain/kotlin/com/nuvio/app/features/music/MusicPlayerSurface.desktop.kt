@@ -82,9 +82,12 @@ private fun musicGainPlan(source: TrailerPlaybackSource): MusicGainPlan {
     return MusicGainPlan(key, lufs, youTube, planGainDb(lufs, LoudnessClass.Music), measured = kept != null)
 }
 
-/** The decode the measurement reads: stereo at 24 kHz, a minute at a time (the native side stops a call after 90 s). */
+/**
+ * The decode the measurement reads: stereo at 24 kHz, two minutes at a time (the native side stops a call after 90 s, and keeps
+ * what it had by then). Every window opens a new connection to the stream, and the addon's CDN refuses some of them, so fewer is better.
+ */
 private const val MEASURE_SAMPLE_RATE = 24_000
-private const val MEASURE_WINDOW_SECONDS = 60.0
+private const val MEASURE_WINDOW_SECONDS = 120.0
 
 /** A track longer than this is measured over its first quarter of an hour. */
 private const val MEASURE_MAX_SECONDS = 900.0

@@ -1926,7 +1926,9 @@ internal class NativePlayerController(
         val file = File.createTempFile("speech-", ".f32", directory)
         return try {
             val result = NativePlayerBridge.decodeSpeechSpot(current, startSeconds, durationSeconds, file.absolutePath)
-            if (result != 0 || file.length() < 4) return null
+            // -1 is the native 90 s limit (or a start that failed): whatever was written by then is real audio, and the caller
+            // carries on from where it ends; any other failure gave nothing worth keeping.
+            if ((result != 0 && result != -1) || file.length() < 4) return null
             // ao=pcm with audio-format=float writes raw little-endian float32 samples.
             val samples = ByteBuffer.wrap(file.readBytes()).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
             FloatArray(samples.remaining()).also(samples::get)
