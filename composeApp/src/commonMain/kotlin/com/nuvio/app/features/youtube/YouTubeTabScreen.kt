@@ -247,10 +247,13 @@ fun YouTubeTabScreen(
     // Not on History, which is all watched by definition (a stream watched is history like any other).
     val filtered = kind != YouTubeFeedKind.History
     // The queue is shown as it is: the person put each one there.
+    // A channel's Live tab is nothing but streams, so "Hide streams" leaves it alone.
+    val dropStreams = hideStreams &&
+        !(kind == YouTubeFeedKind.Channel && openChannel?.tab == YouTubeChannelTab.Live)
     val videos = if (showingQueue) {
         watchQueue
-    } else if (filtered && (hideWatched || hideStreams)) {
-        feed.videos.filterNot { (hideWatched && isYouTubeVideoWatched(it)) || (hideStreams && it.wasLive) }
+    } else if (filtered && (hideWatched || dropStreams)) {
+        feed.videos.filterNot { (hideWatched && isYouTubeVideoWatched(it)) || (dropStreams && it.wasLive) }
     } else {
         feed.videos
     }
@@ -293,6 +296,8 @@ fun YouTubeTabScreen(
     var openingId by remember { mutableStateOf<String?>(null) }
     var openJob by remember { mutableStateOf<Job?>(null) }
     var openError by remember { mutableStateOf<String?>(null) }
+    // fork:youtube-unplayable - the age-gated video the message is about, for its "Open on youtube.com".
+    var openErrorVideoId by remember { mutableStateOf<String?>(null) }
     // What a like or a save did, as the app's toast: a line at the top of the grid went unnoticed.
     fun confirm(title: String, message: String) =
         com.nuvio.app.core.ui.NuvioToastController.show(message = message, title = title)
@@ -356,13 +361,20 @@ fun YouTubeTabScreen(
         YouTubePlayQueue.onOpened(video.videoId)
         openJob?.cancel()
         openError = null
+        openErrorVideoId = null
         openingId = video.videoId
         openJob = scope.launch {
             val launch = youTubePlayerLaunch(video)
             if (openingId != video.videoId) return@launch
             openingId = null
             if (launch == null) {
-                openError = "\"${youTubeDisplayTitle(video)}\" couldn't be opened. YouTube may be limiting requests; try again shortly."
+                // What YouTube said about it, when it said anything: an age gate is not throttling.
+                openError = YouTubeUnplayable.openErrorMessage(
+                    title = youTubeDisplayTitle(video),
+                    refusal = YouTubeUnplayable.refusal(video.videoId),
+                    paused = com.nuvio.app.features.music.MusicRateLimit.isBlocked(),
+                )
+                openErrorVideoId = video.videoId.takeIf { YouTubeUnplayable.refusal(it)?.ageGated == true }
                 return@launch
             }
             onPlay(launch)
@@ -689,12 +701,26 @@ fun YouTubeTabScreen(
         }
 
         openError?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
+            Row(
                 modifier = Modifier.padding(bottom = 12.dp),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                openErrorVideoId?.let { id ->
+                    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                    YouTubePill(
+                        label = "Open on youtube.com",
+                        selected = false,
+                        onClick = { runCatching { uriHandler.openUri("https://www.youtube.com/watch?v=$id") } },
+                    )
+                }
+            }
         }
         queue?.takeUnless { it.oneOff }?.let { playing ->
             Row(
@@ -725,6 +751,18 @@ fun YouTubeTabScreen(
                     onBack = ::goBack,
                     onSubscribe = YouTubeFeedRepository::setSubscribed,
                 )
+                Row(
+                    modifier = Modifier.padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    YouTubeChannelTab.entries.forEach { tab ->
+                        YouTubePill(
+                            label = tab.label,
+                            selected = open.tab == tab,
+                            onClick = { YouTubeFeedRepository.selectChannelTab(tab) },
+                        )
+                    }
+                }
             }
         }
         if (kind == YouTubeFeedKind.Playlist) {
@@ -771,6 +809,8 @@ fun YouTubeTabScreen(
                 returnTo = pendingReturn?.takeIf { it.page == PLAYLISTS_VIEW }?.itemKey,
                 onReturned = { pendingReturn = null },
             )
+            kind == YouTubeFeedKind.Channel && openChannel?.tab == YouTubeChannelTab.Playlists && auth.signedIn ->
+                ChannelPlaylists(onOpen = ::showPlaylist)
             !auth.signedIn && !showingQueue -> FeedMessage(
                 text = "Sign in to your YouTube account to see your home feed and subscriptions.",
                 action = "Open YouTube account settings",
@@ -809,7 +849,8 @@ fun YouTubeTabScreen(
                     YouTubeFeedKind.Search -> "No videos found for \"$searchQuery\"."
                     YouTubeFeedKind.History ->
                         "Nothing in this account's watch history. YouTube keeps none while watch history is paused."
-                    YouTubeFeedKind.Channel -> "This channel has no videos."
+                    YouTubeFeedKind.Channel ->
+                        if (openChannel?.tab == YouTubeChannelTab.Live) "This channel has no past live streams." else "This channel has no videos."
                     YouTubeFeedKind.Playlist -> "This playlist is empty."
                     YouTubeFeedKind.Home ->
                         "YouTube has no recommendations for this account yet. Watch history turned off gives an empty home feed."
@@ -1252,6 +1293,58 @@ private fun PlaylistLibrary(onOpen: (YouTubePlaylist) -> Unit, returnTo: String?
                             onClick = { onOpen(playlist) },
                             modifier = if (playlist.playlistId == returnTo) Modifier.focusRequester(returnFocus) else Modifier,
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The open channel's Playlists tab: its playlists, a page at a time as the grid is scrolled; picking one opens it. */
+@Composable
+private fun ChannelPlaylists(onOpen: (YouTubePlaylist) -> Unit) {
+    val state by YouTubeFeedRepository.channelPlaylists.collectAsStateWithLifecycle()
+    LaunchedEffect(state.loaded) { if (!state.loaded) YouTubeFeedRepository.loadChannelPlaylists() }
+    when {
+        state.playlists.isEmpty() && (state.loading || !state.loaded) -> Box(
+            modifier = Modifier.fillMaxWidth().padding(top = 96.dp),
+            contentAlignment = Alignment.TopCenter,
+        ) { CircularProgressIndicator() }
+        state.playlists.isEmpty() -> FeedMessage(
+            text = state.error ?: "This channel has no playlists.",
+            action = "Refresh",
+            onAction = { YouTubeFeedRepository.loadChannelPlaylists(force = true) },
+        )
+        else -> {
+            val gridState = rememberLazyGridState()
+            LaunchedEffect(gridState) {
+                snapshotFlow {
+                    val total = gridState.layoutInfo.totalItemsCount
+                    val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                    (last >= total - 8) to total
+                }.distinctUntilChanged().collect { (nearEnd, _) ->
+                    if (nearEnd) YouTubeFeedRepository.loadChannelPlaylists()
+                }
+            }
+            val columnFocus = rememberGridColumnFocus(gridState)
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 260.dp),
+                state = gridState,
+                modifier = Modifier.fillMaxSize().gridColumnKeys(columnFocus) { state.playlists.size },
+                contentPadding = PaddingValues(bottom = 48.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                itemsIndexed(state.playlists, key = { _, it -> it.playlistId }) { index, playlist ->
+                    GridColumnItem(columnFocus, index) {
+                        PlaylistTile(playlist = playlist, onClick = { onOpen(playlist) })
+                    }
+                }
+                if (state.loading && state.continuation != null) {
+                    item(key = "footer", span = { GridItemSpan(maxLineSpan) }) {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                        }
                     }
                 }
             }

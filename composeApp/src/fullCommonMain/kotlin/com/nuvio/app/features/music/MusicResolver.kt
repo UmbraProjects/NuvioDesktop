@@ -166,7 +166,33 @@ object MusicResolver {
      * fork:youtube-mode - a full-length video with its audio, through the same restricted-client retry and stream
      * probe the music videos get, so a long upload is not handed over on URLs that stop after a minute.
      */
-    suspend fun openVideo(videoId: String): TrailerPlaybackSource? = openStream(videoId, needsVideo = true)
+    suspend fun openVideo(videoId: String): TrailerPlaybackSource? {
+        openStream(videoId, needsVideo = true)?.let { return it }
+        // fork:youtube-age-gate - the in-app extractor cannot open an age-gated video even signed in (its
+        // signed-in clients send ciphered URLs it cannot decode); the fallback resolver can.
+        val refusal = com.nuvio.app.features.youtube.YouTubeUnplayable.refusal(videoId)
+        return if (refusal?.ageGated == true) openAgeGatedVideo(videoId) else null
+    }
+
+    /** True when this build has a resolver that can open an age-gated video (the extractor cannot). */
+    val canOpenAgeGatedVideos: Boolean get() = MusicStreamFallbacks.active != null
+
+    /**
+     * fork:youtube-age-gate - an age-gated video through the fallback resolver alone, for a video already known
+     * to be one: the in-app extractor would only be refused again.
+     */
+    suspend fun openAgeGatedVideo(videoId: String): TrailerPlaybackSource? {
+        val fallback = MusicStreamFallbacks.active ?: return null
+        return try {
+            fallback.resolveVideo(videoId, youTubeCaller()?.maxShortSide)
+                ?.also { log.i { "$videoId (age-gated) opened through ${fallback.name}" } }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            log.w { "${fallback.name} could not open age-gated $videoId: ${error.message}" }
+            null
+        }
+    }
 
     private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? =
         // fork:loudness - kept under the video's id, which outlives the stream's URL.
@@ -242,7 +268,15 @@ object MusicResolver {
 
     private suspend fun resolveSource(videoId: String): TrailerPlaybackSource? =
         try {
-            TrailerPlaybackResolver.resolveFromYouTubeUrl("https://www.youtube.com/watch?v=$videoId").sourceOrNull()
+            val resolution = TrailerPlaybackResolver.resolveFromYouTubeUrl("https://www.youtube.com/watch?v=$videoId")
+            // fork:youtube-unplayable - what YouTube said, for the YouTube tab's message and to stop asking again.
+            when (resolution) {
+                is com.nuvio.app.features.trailer.TrailerResolution.Available ->
+                    com.nuvio.app.features.youtube.YouTubeUnplayable.clear(videoId)
+                is com.nuvio.app.features.trailer.TrailerResolution.Unavailable ->
+                    com.nuvio.app.features.youtube.YouTubeUnplayable.note(videoId, resolution.reason, resolution.youTubeReason)
+            }
+            resolution.sourceOrNull()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {

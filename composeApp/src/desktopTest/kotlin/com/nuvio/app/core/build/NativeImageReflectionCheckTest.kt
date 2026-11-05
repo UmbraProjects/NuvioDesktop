@@ -50,8 +50,8 @@ class NativeImageReflectionCheckTest {
         ),
         Allowed(
             "features/music/MusicStreamFallbacks.kt", "Class.forName(className).getField(\"INSTANCE\").get(null)",
-            "InnerTubeXFallback is compiled in only with -Pnuvio.innertubex=true, which the native build does not " +
-                "pass; without it the lookup throws ClassNotFoundException and music runs without the second resolver.",
+            "InnerTubeXFallback is compiled in only with -Pnuvio.innertubex=true; native-image/innertubex/ registers it " +
+                "for the native build. Without the flag the lookup throws ClassNotFoundException and there is no fallback.",
         ),
     )
 

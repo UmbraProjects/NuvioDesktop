@@ -1,6 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.api.DefaultTask
 import java.util.concurrent.TimeUnit
+import java.security.MessageDigest
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
@@ -1844,7 +1845,7 @@ kotlin {
             }
             dependencies {
                 if (innerTubeXEnabled) {
-                    implementation("com.github.MetrolistGroup.innertubex:innertubex:v0.7.0")
+                    implementation("com.github.MetrolistGroup.innertubex:innertubex:v0.11.2")
                     implementation("io.ktor:ktor-client-okhttp:${libs.versions.ktor.get()}")
                     implementation("io.ktor:ktor-client-content-negotiation:${libs.versions.ktor.get()}")
                     implementation("io.ktor:ktor-serialization-kotlinx-json:${libs.versions.ktor.get()}")
@@ -2713,3 +2714,79 @@ tasks.register<Exec>("nativeImageTrace") {
 }
 
 
+
+/*
+ * fork:innertubex-pin — the InnerTubeX jars (and its JS engine, quackjs) are checked against the SHA-256 recorded
+ * here before anything compiles against them. They come from JitPack, which builds them from a git tag; a tag
+ * moved or a rebuild with other contents would otherwise reach the next clean build unnoticed. A jar of that
+ * group that is not listed (a new version, a new transitive library) fails too, naming its hash: bump the
+ * version, read the diff upstream, then record the new hash here.
+ */
+val innerTubeXPinnedSha256 = mapOf(
+    "innertubex-desktop-v0.11.2.jar" to "ca8f82ba87ca71b1674f4b2517b6559dea94ddb549532199cb2a2a461eb6b3c8",
+    "quackjs-jvm-0.1.2.jar" to "2cbd422c8290e3eb497cbefaa5a7021f094e16e8b6d9d6de010a17e9b15603a4",
+)
+
+abstract class VerifyPinnedJarsTask : DefaultTask() {
+    @get:org.gradle.api.tasks.InputFiles
+    @get:org.gradle.api.tasks.PathSensitive(org.gradle.api.tasks.PathSensitivity.NAME_ONLY)
+    abstract val jars: org.gradle.api.file.ConfigurableFileCollection
+
+    @get:Input
+    abstract val pinned: org.gradle.api.provider.MapProperty<String, String>
+
+    @get:OutputFile
+    abstract val stamp: RegularFileProperty
+
+    @TaskAction
+    fun verify() {
+        val expected = pinned.get()
+        val problems = mutableListOf<String>()
+        val seen = mutableSetOf<String>()
+        for (jar in jars.files.sortedBy { it.name }) {
+            seen += jar.name
+            val digest = MessageDigest.getInstance("SHA-256")
+            jar.inputStream().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            val actual = digest.digest().joinToString("") { "%02x".format(it) }
+            when (val want = expected[jar.name]) {
+                null -> problems += "${jar.name} is not pinned (sha256 $actual)"
+                actual -> Unit
+                else -> problems += "${jar.name} changed: expected sha256 $want, got $actual"
+            }
+        }
+        (expected.keys - seen).forEach { problems += "$it is pinned but was not resolved" }
+        if (problems.isNotEmpty()) {
+            throw GradleException(
+                "InnerTubeX dependency check failed (composeApp/build.gradle.kts, innerTubeXPinnedSha256):\n  " +
+                    problems.joinToString("\n  "),
+            )
+        }
+        stamp.get().asFile.writeText(expected.entries.joinToString("\n") { "${it.key} ${it.value}" })
+    }
+}
+
+if (innerTubeXEnabled) {
+    val metrolistJars = configurations.named("desktopRuntimeClasspath").flatMap { classpath ->
+        classpath.incoming.artifacts.resolvedArtifacts.map { artifacts ->
+            artifacts.filter { artifact ->
+                val id = artifact.id.componentIdentifier as? org.gradle.api.artifacts.component.ModuleComponentIdentifier
+                id?.group?.startsWith("com.github.MetrolistGroup") == true
+            }.map { it.file }
+        }
+    }
+    val verifyInnerTubeXJars = tasks.register<VerifyPinnedJarsTask>("verifyInnerTubeXJars") {
+        group = "verification"
+        description = "Checks the InnerTubeX jars against their pinned SHA-256."
+        jars.from(metrolistJars)
+        pinned.set(innerTubeXPinnedSha256)
+        stamp.set(layout.buildDirectory.file("innertubex/pinned-jars.txt"))
+    }
+    tasks.matching { it.name == "compileKotlinDesktop" }.configureEach { dependsOn(verifyInnerTubeXJars) }
+}

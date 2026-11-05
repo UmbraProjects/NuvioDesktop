@@ -87,13 +87,17 @@ internal object InnerTubeXFallback : MusicStreamFallback {
         if (event.level == InnerTubeLogLevel.INFO || event.level == InnerTubeLogLevel.DEBUG) log.i { line } else log.w { line }
     }
 
-    private const val PLAYER_CONFIG_URL =
-        "https://raw.githubusercontent.com/ZemerTeam/zemer-cipher/master/library/src/main/assets/player_configs.json"
-
+    /**
+     * No remote player-config table. It only ever named cipher functions in YouTube's own player script
+     * (the library checks each entry against a strict pattern, so it cannot carry code), and the cipher is
+     * solved from that script directly anyway. Off, nothing about the cipher comes from anywhere but
+     * youtube.com. (v0.11 also only accepts MetrolistGroup's own table; the ZemerTeam one once set here
+     * was already being refused.)
+     */
     private val repository = object : PlayerConfigRepository {
-        override val enabled: Boolean get() = true
-        override val sourceUrl: String = PLAYER_CONFIG_URL
-        override val defaultSourceUrl: String = PLAYER_CONFIG_URL
+        override val enabled: Boolean get() = false
+        override val sourceUrl: String = ""
+        override val defaultSourceUrl: String = ""
         override var cachedJson: String
             get() = read("config.json").orEmpty()
             set(value) { write("config.json", value) }
@@ -160,7 +164,12 @@ internal object InnerTubeXFallback : MusicStreamFallback {
     // fork:youtube-web — the same browser as every other signed request (one session, one device).
     private const val BROWSER_UA = com.nuvio.app.features.youtube.YouTubeWebClient.USER_AGENT
 
-    override suspend fun resolve(videoId: String): TrailerPlaybackSource? {
+    /**
+     * Points the library at the signed-in account (its cookies and the visitor data its own page issues)
+     * or, signed out, at the in-app extractor's anonymous session. Before every lookup: a sign-in can
+     * change between them.
+     */
+    private suspend fun prepareSession() {
         // Start the browser now if it is not up: it takes a few seconds the first time, and the library
         // gives a token request 18 s before it does without one.
         resolverScope.launch { runCatching { BrowserPoTokens.prewarm() } }
@@ -170,6 +179,49 @@ internal object InnerTubeXFallback : MusicStreamFallback {
         innerTube.visitorData = signedIn?.visitorData?.takeIf { signedIn.loggedIn }
             ?: TrailerPlaybackResolver.visitorData().orEmpty()
         innerTube.locale = YouTubeLocale(gl = "US", hl = "en")
+    }
+
+    override suspend fun resolveVideo(videoId: String, maxShortSide: Int?): TrailerPlaybackSource? {
+        prepareSession()
+        val stream = try {
+            extractor.extract(
+                videoId = videoId,
+                // Age-gated (the only kind sent here), video wanted. No SABR, which the player cannot open, and
+                // no client whose URLs only answer bounded ranges: mpv asks for open-ended ones. HLS is fine.
+                hints = ContentHints(isAgeRestricted = true, wantVideo = true, maxVideoHeight = maxShortSide)
+                    .withStreamCapabilities(allowHls = true, allowSabr = false, allowBoundedRange = false),
+                excludedClients = emptySet(),
+                audioQuality = AudioQuality.AUTO,
+                clientPlaybackNonce = generateClientPlaybackNonce(),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            log.i { "no video stream for $videoId: ${error.message}" }
+            return null
+        } ?: return null
+        val videoUrl = stream.videoUrl
+        if (stream.sabrBootstrap != null || videoUrl == null || !videoUrl.startsWith("http")) {
+            log.i { "$videoId: no video stream the player can open (SABR or audio only)" }
+            return null
+        }
+        // An HLS manifest carries its own audio; an adaptive pair plays the audio beside the video.
+        val manifest = videoUrl.contains(".m3u8") || videoUrl.contains("/manifest/hls")
+        val audioUrl = stream.audioUrl.takeIf { !manifest && it.startsWith("http") && it != videoUrl }
+        log.i {
+            "$videoId: video through ${stream.clientName} (${stream.profileId}), " +
+                "${stream.videoWidth ?: 0}x${stream.videoHeight ?: 0}${if (manifest) ", HLS" else ""}"
+        }
+        return TrailerPlaybackSource(
+            videoUrl = videoUrl,
+            audioUrl = audioUrl,
+            headers = stream.headers,
+            heightPx = listOfNotNull(stream.videoWidth, stream.videoHeight).filter { it > 0 }.minOrNull() ?: 0,
+        )
+    }
+
+    override suspend fun resolve(videoId: String): TrailerPlaybackSource? {
+        prepareSession()
         val stream = try {
             extractor.extract(
                 videoId = videoId,
