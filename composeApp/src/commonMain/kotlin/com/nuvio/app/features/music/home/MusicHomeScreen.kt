@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.home
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,7 +48,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -63,6 +68,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -84,18 +90,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.LocalPlatformContext
+import com.nuvio.app.core.ui.HoldToSelectState
+import com.nuvio.app.core.ui.LocalNuvioThemeTokens
 import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.PosterZoomOverlayAction
+import com.nuvio.app.core.ui.rememberHoldToSelectState
 import com.nuvio.app.core.ui.VoiceSearch
 import com.nuvio.app.core.ui.VoiceSearchCommands
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.trackTextInputFocus
 import com.nuvio.app.features.discover.BrowseFilterIconAction
+import com.nuvio.app.features.music.ArtistFanartRepository
 import com.nuvio.app.features.music.LensPanel
 import com.nuvio.app.features.music.LensPanelHeader
 import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.MusicArtistSummary
 import com.nuvio.app.features.music.MusicCatalog
-import com.nuvio.app.features.music.MusicPlayback
+import com.nuvio.app.features.music.MusicItemMenu
 import com.nuvio.app.features.music.MusicTabState
 import com.nuvio.app.features.music.MusicTopBarSearch
 import com.nuvio.app.features.music.MusicTopResult
@@ -107,12 +119,21 @@ import com.nuvio.app.features.music.library.MusicLibraryShelf
 import com.nuvio.app.features.music.library.MusicSearchHistory
 import com.nuvio.app.features.music.library.enlargeYtThumbnail
 import com.nuvio.app.features.music.library.musicKeyFocusRing
+import com.nuvio.app.features.music.identity.ArtworkPalette
+import com.nuvio.app.features.music.identity.ArtworkPaletteMath
+import com.nuvio.app.features.music.identity.MusicPaletteResolver
+import com.nuvio.app.features.music.identity.withAccent
+import com.nuvio.app.features.music.musicMenuTrigger
+import com.nuvio.app.features.music.rememberMusicMenu
+import com.nuvio.app.features.music.rememberMusicReducedMotion
 import com.nuvio.app.features.music.youTubeLengthLabel
-import com.nuvio.app.features.music.youTubeSingleAlbum
 import com.nuvio.app.features.settings.settingsSkyBackground
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /*
  * fork:music-home
@@ -161,7 +182,6 @@ internal fun MusicHomeScreen(
     topChromePadding: Dp = 0.dp,
     catalog: MusicCatalog,
 ) {
-    val tokens = MaterialTheme.nuvio
     val tab = MusicTabState
     val query = tab.query
     val libraryState by MusicLibraryRepository.state.collectAsStateWithLifecycle()
@@ -177,6 +197,18 @@ internal fun MusicHomeScreen(
     var settledTop by remember { mutableStateOf<String?>(null) }
     val lineFocus = remember { FocusRequester() }
     val resultsEntry = remember { FocusRequester() }
+    // The top match on screen: held until another has settled, so typing on does not flash between matches.
+    var heldTop by remember { mutableStateOf<MusicTopResult?>(null) }
+    // Down from the strip (or the line) with a top match swaps the strip for the action row in the same slot.
+    var actionsOpen by remember { mutableStateOf(false) }
+    var moveFocusToSlot by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val runner = remember(catalog) { HomeRunner(scope, catalog, onAlbumClick, onArtistClick) }
+    val hold = rememberHoldToSelectState()
+    val reducedMotion = rememberMusicReducedMotion()
+    val context = LocalPlatformContext.current
+    var backdrop by remember { mutableStateOf<String?>(null) }
+    var palette by remember { mutableStateOf<ArtworkPalette?>(null) }
 
     fun setQuery(text: String) {
         tab.query = text
@@ -185,10 +217,12 @@ internal fun MusicHomeScreen(
 
     // Completions after a short pause: they feed the strip, the greyed-out rest of the word and the chips.
     LaunchedEffect(query) {
+        actionsOpen = false
         if (query.isBlank()) {
             suggestions = emptyList()
             settler.reset()
             settledTop = null
+            heldTop = null
             return@LaunchedEffect
         }
         delay(SUGGEST_PAUSE_MS)
@@ -218,6 +252,12 @@ internal fun MusicHomeScreen(
         }
         search = next
         settledTop = settler.offer((next as? HomeSearchState.Ready)?.results?.topKey)
+        val settledNow = settledTop
+        if (settledNow == null) {
+            heldTop = null
+        } else if (next is HomeSearchState.Ready && next.results.topKey == settledNow) {
+            heldTop = next.results.top
+        }
         if (next is HomeSearchState.Ready && !next.results.isEmpty) MusicSearchHistory.record(text)
     }
 
@@ -245,13 +285,62 @@ internal fun MusicHomeScreen(
     }
     val likely = remember(query, candidates) { if (query.isBlank()) emptyList() else nextLetterRanks(query, candidates) }
     val ghost = remember(query, libraryNames, suggestions) { ghostCompletion(query, libraryNames + suggestions) }
-    val ready = (search as? HomeSearchState.Ready)?.results
-    val shownTop = ready?.top?.takeIf { settledTop != null && ready.topKey == settledTop && query.isNotBlank() }
+    val shownTop = heldTop?.takeIf { query.isNotBlank() }
 
+    // The morph: once a match has settled, its picture fades in behind the screen and the accent takes its colours.
+    // An artist match also has its YouTube Music page asked for now, so Play Essentials starts at once.
+    val morphKey = shownTop?.let { listOfNotNull(it.albumBrowseId, it.videoId, it.artists.firstOrNull()?.browseId, it.title).first() }
+    LaunchedEffect(morphKey) {
+        val top = shownTop
+        if (top == null) {
+            backdrop = null
+            palette = null
+            actionsOpen = false
+            return@LaunchedEffect
+        }
+        val artistId = top.artists.firstOrNull()?.browseId
+        if (topMatchKind(top) == TopMatchKind.Artist && artistId != null) launch { catalog.artist(artistId) }
+        val fanart = if (topMatchKind(top) == TopMatchKind.Artist) ArtistFanartRepository.forArtist(top.title).firstOrNull() else null
+        val cover = top.thumbnailUrl?.let { enlargeYtThumbnail(it, size = 1200) ?: it }
+        backdrop = fanart ?: cover
+        val seedUrl = top.thumbnailUrl ?: fanart
+        palette = seedUrl?.let { url ->
+            withContext(Dispatchers.Default) { MusicPaletteResolver.sampleOne(context, url) }?.let { ArtworkPaletteMath.derive(it, forUrl = url) }
+        }
+    }
+    val baseTokens = MaterialTheme.nuvio
+    val darkSurface = baseTokens.colors.background.luminance() < 0.5f
+    val wanted = palette?.takeIf { darkSurface && shownTop != null }
+    val accent by animateColorAsState(
+        wanted?.let { Color(it.accent) } ?: baseTokens.colors.accent,
+        animationSpec = tween(if (reducedMotion) 0 else 600),
+        label = "homeAccent",
+    )
+    val themed = remember(baseTokens, accent, wanted) {
+        if (wanted == null && accent == baseTokens.colors.accent) baseTokens
+        else baseTokens.withAccent(accent, wanted?.let { Color(it.onAccent) } ?: baseTokens.colors.onAccent)
+    }
+
+    // Focus follows the slot when it swaps (strip to action row and back), once the new one is on screen.
+    LaunchedEffect(actionsOpen) {
+        if (!moveFocusToSlot) return@LaunchedEffect
+        withFrameNanos { }
+        runCatching { tab.bodyFocus.requestFocus() }
+        moveFocusToSlot = false
+    }
+    fun openActions(): Boolean {
+        if (shownTop == null) return false
+        moveFocusToSlot = true
+        actionsOpen = true
+        return true
+    }
+
+    CompositionLocalProvider(LocalNuvioThemeTokens provides themed) {
+    Box(modifier.fillMaxSize().settingsSkyBackground(themed.colors.background, themed.colors.accent)) {
+    HomeBackdrop(backdrop, reducedMotion)
     Column(
-        modifier
+        Modifier
             .fillMaxSize()
-            .settingsSkyBackground(tokens.colors.background, tokens.colors.accent)
             // Back (Escape, a pad's B) with something typed clears the line and goes back to the strip instead of leaving.
             // Both halves of the key are eaten, so the screen's own Back does not fire on the same press.
             .onPreviewKeyEvent { event ->
@@ -280,14 +369,27 @@ internal fun MusicHomeScreen(
             ghost = ghost,
             onQueryChange = ::setQuery,
             focusRequester = lineFocus,
-            onDown = { runCatching { tab.bodyFocus.requestFocus() } },
+            onDown = { if (!openActions()) runCatching { tab.bodyFocus.requestFocus() } },
             onEnter = {
                 tab.focusResultsWhenReady = true
                 if (search is HomeSearchState.Ready) runCatching { resultsEntry.requestFocus() }
             },
         )
         Spacer(Modifier.height(14.dp))
-        LetterStrip(
+        // One slot, one height: the letter strip, or the action row in its place.
+        Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+        val actionTop = shownTop
+        if (actionsOpen && actionTop != null) {
+            HomeActionRow(
+                top = actionTop,
+                primaryFocus = tab.bodyFocus,
+                runner = runner,
+                onUp = {
+                    moveFocusToSlot = true
+                    actionsOpen = false
+                },
+            )
+        } else LetterStrip(
             arranged = remember(lastPressed, likely) { arrangeStrip(lastPressed, likely) },
             likely = remember(likely) { likely.take(STRIP_PULLED).toSet() },
             typing = query.isNotBlank(),
@@ -299,7 +401,9 @@ internal fun MusicHomeScreen(
             onSpace = { if (query.isNotBlank() && !query.endsWith(" ")) setQuery("$query ") },
             onDelete = { setQuery(query.dropLast(1)) },
             onMic = { VoiceSearch.start(VOICE_OWNER) },
+            onDown = ::openActions,
         )
+        }
         Spacer(Modifier.height(12.dp))
         HomeChipRow(
             label = if (query.isBlank()) "RECENT" else "SUGGESTED",
@@ -329,11 +433,13 @@ internal fun MusicHomeScreen(
                     search = search,
                     entry = resultsEntry,
                     onRetry = { attempt++ },
-                    onAlbumClick = onAlbumClick,
-                    onArtistClick = onArtistClick,
+                    runner = runner,
+                    hold = hold,
                 )
             }
         }
+    }
+    }
     }
 }
 
@@ -524,6 +630,8 @@ private fun LetterStrip(
     onSpace: () -> Unit,
     onDelete: () -> Unit,
     onMic: () -> Unit,
+    /** Down from the strip: true when it was taken (a top match opened the action row). */
+    onDown: () -> Boolean,
 ) {
     val tokensList = remember(arranged) {
         arranged.take(arranged.size / 2).map { it.toString() } + MIC_TOKEN + arranged.drop(arranged.size / 2).map { it.toString() }
@@ -535,6 +643,7 @@ private fun LetterStrip(
             Modifier.onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
+                    Key.DirectionDown -> onDown()
                     Key.Backspace -> if (typing) {
                         onDelete()
                         true
@@ -659,8 +768,8 @@ private fun HomeResultsBody(
     search: HomeSearchState,
     entry: FocusRequester,
     onRetry: () -> Unit,
-    onAlbumClick: (String) -> Unit,
-    onArtistClick: (String) -> Unit,
+    runner: HomeRunner,
+    hold: HoldToSelectState,
 ) {
     val results = (search as? HomeSearchState.Ready)?.results
     // The keyboard's way in: the first thing in the YouTube Music panel, else the top match, else the first video.
@@ -676,12 +785,12 @@ private fun HomeResultsBody(
             val r = results ?: return@PanelBody
             r.top?.let { top ->
                 item(key = "top") {
-                    TopMatchRow(top, if (entryPanel == 0) Modifier.focusRequester(entry) else Modifier, onAlbumClick, onArtistClick)
+                    TopMatchRow(top, if (entryPanel == 0) Modifier.focusRequester(entry) else Modifier, runner, hold)
                 }
             }
             if (r.artists.isNotEmpty()) item(key = "artists-label") { SectionLabel("ARTISTS") }
             items(r.artists, key = { "artist:" + it.browseId }) { artist ->
-                ArtistRow(artist, Modifier.let { m -> if (entryPanel == 0 && r.top == null && artist == r.artists.first()) m.focusRequester(entry) else m }) { onArtistClick(artist.browseId) }
+                ArtistRow(artist, Modifier.let { m -> if (entryPanel == 0 && r.top == null && artist == r.artists.first()) m.focusRequester(entry) else m }, runner, hold)
             }
         }
     }
@@ -692,13 +801,13 @@ private fun HomeResultsBody(
             r.rows.forEachIndexed { index, row ->
                 val song = row.song ?: return@forEachIndexed
                 item(key = "song:" + song.videoId) {
-                    SongRow(row, if (entryPanel == 1 && index == 0) Modifier.focusRequester(entry) else Modifier)
+                    SongRow(row, if (entryPanel == 1 && index == 0) Modifier.focusRequester(entry) else Modifier, runner, hold)
                 }
             }
             if (r.albums.isNotEmpty()) item(key = "albums-label") { SectionLabel("ALBUMS") }
             r.albums.forEachIndexed { index, album ->
                 item(key = "album:" + album.browseId) {
-                    AlbumRow(album, if (entryPanel == 1 && r.rows.isEmpty() && index == 0) Modifier.focusRequester(entry) else Modifier) { onAlbumClick(album.browseId) }
+                    AlbumRow(album, if (entryPanel == 1 && r.rows.isEmpty() && index == 0) Modifier.focusRequester(entry) else Modifier, runner, hold)
                 }
             }
         }
@@ -709,7 +818,7 @@ private fun HomeResultsBody(
             val r = results ?: return@PanelBody
             r.videos.forEachIndexed { index, video ->
                 item(key = "video:" + video.videoId) {
-                    VideoRow(video, if (entryPanel == 2 && index == 0) Modifier.focusRequester(entry) else Modifier)
+                    VideoRow(video, if (entryPanel == 2 && index == 0) Modifier.focusRequester(entry) else Modifier, runner, hold)
                 }
             }
         }
@@ -772,17 +881,11 @@ private fun SectionLabel(text: String) {
     )
 }
 
-/** The top match, larger: an artist opens their page, an album its page, a song or video plays. */
+/** The top match, larger: an artist opens their page, an album its page, a song or video plays. Hold OK for its menu. */
 @Composable
-private fun TopMatchRow(top: MusicTopResult, modifier: Modifier, onAlbumClick: (String) -> Unit, onArtistClick: (String) -> Unit) {
-    val artistId = top.artists.firstOrNull()?.browseId
-    val isArtist = top.albumBrowseId == null && top.videoId == null
-    val onClick: () -> Unit = when {
-        top.albumBrowseId != null -> { { onAlbumClick(top.albumBrowseId) } }
-        top.videoId != null -> { { MusicPlayback.player.play(youTubeSingleAlbum(topAsTrack(top, top.videoId))) } }
-        artistId != null -> { { onArtistClick(artistId) } }
-        else -> { {} }
-    }
+private fun TopMatchRow(top: MusicTopResult, modifier: Modifier, runner: HomeRunner, hold: HoldToSelectState) {
+    val kind = topMatchKind(top)
+    val isArtist = kind == TopMatchKind.Artist
     ResultRow(
         art = top.thumbnailUrl,
         circle = isArtist,
@@ -792,21 +895,29 @@ private fun TopMatchRow(top: MusicTopResult, modifier: Modifier, onAlbumClick: (
         trailing = null,
         videoMark = false,
         modifier = modifier,
-        onClick = onClick,
+        menu = { runner.moreFor(top) },
+        hold = hold,
+        onClick = {
+            when (kind) {
+                TopMatchKind.Album -> runner.run(HomeAction.OpenAlbum, top)
+                TopMatchKind.Track -> runner.run(HomeAction.PlayTrack, top)
+                TopMatchKind.Artist -> runner.run(HomeAction.OpenArtist, top)
+            }
+        },
     )
 }
 
-private fun topAsTrack(top: MusicTopResult, videoId: String) =
-    MusicTrack(videoId = videoId, title = top.title, artists = top.artists, durationSeconds = 0, trackNumber = 1, isAvailable = true, coverUrl = top.thumbnailUrl)
-
 @Composable
-private fun ArtistRow(artist: MusicArtistSummary, modifier: Modifier, onClick: () -> Unit) {
-    ResultRow(art = artist.thumbnailUrl, circle = true, artSize = 48.dp, title = artist.name, subtitle = null, trailing = null, videoMark = false, modifier = modifier, onClick = onClick)
+private fun ArtistRow(artist: MusicArtistSummary, modifier: Modifier, runner: HomeRunner, hold: HoldToSelectState) {
+    ResultRow(
+        art = artist.thumbnailUrl, circle = true, artSize = 48.dp, title = artist.name, subtitle = null, trailing = null, videoMark = false,
+        modifier = modifier, menu = { runner.artistMenu(artist) }, hold = hold, onClick = { runner.openArtist(artist.browseId) },
+    )
 }
 
 /** A YouTube Music song; plays on its own. The video mark says the same song is on YouTube as a video too. */
 @Composable
-private fun SongRow(row: MergedRow, modifier: Modifier) {
+private fun SongRow(row: MergedRow, modifier: Modifier, runner: HomeRunner, hold: HoldToSelectState) {
     val song = row.song ?: return
     ResultRow(
         art = song.coverUrl,
@@ -821,12 +932,14 @@ private fun SongRow(row: MergedRow, modifier: Modifier) {
         trailing = youTubeLengthLabel(song.durationSeconds),
         videoMark = row.hasVideo,
         modifier = modifier,
-        onClick = { MusicPlayback.player.play(youTubeSingleAlbum(song)) },
+        menu = { runner.songMenu(row) },
+        hold = hold,
+        onClick = { runner.track(song, PlayHow.Now) },
     )
 }
 
 @Composable
-private fun AlbumRow(album: MusicAlbumSummary, modifier: Modifier, onClick: () -> Unit) {
+private fun AlbumRow(album: MusicAlbumSummary, modifier: Modifier, runner: HomeRunner, hold: HoldToSelectState) {
     ResultRow(
         art = album.thumbnailUrl,
         circle = false,
@@ -836,12 +949,14 @@ private fun AlbumRow(album: MusicAlbumSummary, modifier: Modifier, onClick: () -
         trailing = null,
         videoMark = false,
         modifier = modifier,
-        onClick = onClick,
+        menu = { runner.albumMenu(album) },
+        hold = hold,
+        onClick = { runner.openAlbum(album.browseId) },
     )
 }
 
 @Composable
-private fun VideoRow(video: MusicTrack, modifier: Modifier) {
+private fun VideoRow(video: MusicTrack, modifier: Modifier, runner: HomeRunner, hold: HoldToSelectState) {
     ResultRow(
         art = video.coverUrl,
         circle = false,
@@ -852,7 +967,9 @@ private fun VideoRow(video: MusicTrack, modifier: Modifier) {
         trailing = youTubeLengthLabel(video.durationSeconds),
         videoMark = false,
         modifier = modifier,
-        onClick = { MusicPlayback.player.play(youTubeSingleAlbum(video)) },
+        menu = { runner.videoMenu(video) },
+        hold = hold,
+        onClick = { runner.track(video, PlayHow.Now) },
     )
 }
 
@@ -867,15 +984,21 @@ private fun ResultRow(
     videoMark: Boolean,
     modifier: Modifier,
     wideArt: Boolean = false,
+    /** The row's More menu (right-click, the Menu key or a held OK); a tap of OK is [onClick]. */
+    menu: (() -> List<PosterZoomOverlayAction>)? = null,
+    hold: HoldToSelectState? = null,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(10.dp)
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val menuState = rememberMusicMenu()
+    if (menu != null) MusicItemMenu(menuState, menu)
     Row(
         modifier
             .fillMaxWidth()
+            .then(if (menu != null && hold != null) Modifier.musicMenuTrigger(menuState, hold, onSelect = onClick) else Modifier)
             .musicKeyFocusRing(shape)
             .clip(shape)
             .background(if (hovered) Color.White.copy(alpha = 0.06f) else Color.Transparent, shape)

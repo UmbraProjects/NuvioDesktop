@@ -1,10 +1,14 @@
 package com.nuvio.app.features.music.home
 
+import com.nuvio.app.features.music.MusicAlbum
 import com.nuvio.app.features.music.MusicAlbumSummary
+import com.nuvio.app.features.music.MusicArtist
 import com.nuvio.app.features.music.MusicArtistSummary
 import com.nuvio.app.features.music.MusicSearchEverything
 import com.nuvio.app.features.music.MusicTopResult
 import com.nuvio.app.features.music.MusicTrack
+import com.nuvio.app.features.music.library.essentialRows
+import com.nuvio.app.features.music.library.essentialsMix
 
 /*
  * fork:music-home
@@ -383,6 +387,72 @@ fun greetingLabel(isoWeekday: Int, hour: Int): String {
         else -> "NIGHT"
     }
     return "$day $part"
+}
+
+// endregion
+
+// region The action row
+
+/** What the top match is, which decides its action row. */
+enum class TopMatchKind { Artist, Album, Track }
+
+fun topMatchKind(top: MusicTopResult): TopMatchKind = when {
+    top.albumBrowseId != null -> TopMatchKind.Album
+    top.videoId != null -> TopMatchKind.Track
+    else -> TopMatchKind.Artist
+}
+
+/** One button of the action row, which takes the letter strip's place once Down is pressed with a top match. */
+enum class HomeAction(val label: String) {
+    PlayEssentials("Play Essentials"),
+    ShuffleEssentials("Shuffle"),
+    PlayTopAlbums("Play Top 5"),
+    OpenArtist("Open artist page"),
+    PlayAlbum("Play album"),
+    ShuffleAlbum("Shuffle"),
+    QueueAlbum("Add to queue"),
+    OpenAlbum("Open album"),
+    PlayTrack("Play"),
+    QueueTrack("Add to queue"),
+    More("More"),
+}
+
+/**
+ * The action row for [top], the main action first (the one focus lands on): an artist plays its Essentials, an album
+ * plays, a song or video plays. "Open artist page" only when the match links an artist; More always ends the row.
+ */
+fun homeActions(top: MusicTopResult): List<HomeAction> = when (topMatchKind(top)) {
+    TopMatchKind.Artist -> listOfNotNull(
+        HomeAction.PlayEssentials,
+        HomeAction.ShuffleEssentials,
+        HomeAction.PlayTopAlbums,
+        HomeAction.OpenArtist.takeIf { top.artists.firstOrNull()?.browseId != null },
+        HomeAction.More,
+    )
+    TopMatchKind.Album -> listOf(HomeAction.PlayAlbum, HomeAction.ShuffleAlbum, HomeAction.QueueAlbum, HomeAction.OpenAlbum, HomeAction.More)
+    TopMatchKind.Track -> listOfNotNull(
+        HomeAction.PlayTrack,
+        HomeAction.QueueTrack,
+        HomeAction.OpenArtist.takeIf { top.artists.firstOrNull()?.browseId != null },
+        HomeAction.More,
+    )
+}
+
+/** How many of an artist's albums Play Top 5 opens and plays one after the other. */
+const val HOME_TOP_ALBUMS = 5
+
+/**
+ * The Essentials queue for an artist found by search (not necessarily in the library): YouTube Music's most played list
+ * from the artist's page, in its order, as the artist page's Play Essentials builds it. The songs' albums are not opened
+ * first, so it starts at once; lengths and covers fill in as each song plays. Null when the page lists no songs.
+ */
+fun searchEssentials(artist: MusicArtist): MusicAlbum? =
+    essentialsMix(artist.browseId, artist.name, artist.thumbnailUrl, essentialRows(artist.topSongs, emptyMap()))
+
+/** The albums Play Top 5 plays: the artist page's albums first, then its singles and EPs, at most [HOME_TOP_ALBUMS]. */
+fun topAlbumIds(artist: MusicArtist): List<String> {
+    val (albums, rest) = artist.albums.partition { it.kind == null || it.kind.equals("Album", ignoreCase = true) }
+    return (albums + rest).map { it.browseId }.distinct().take(HOME_TOP_ALBUMS)
 }
 
 // endregion

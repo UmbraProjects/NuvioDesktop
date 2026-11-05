@@ -1,10 +1,12 @@
 package com.nuvio.app.features.music.home
 
 import com.nuvio.app.features.music.MusicAlbumSummary
+import com.nuvio.app.features.music.MusicArtist
 import com.nuvio.app.features.music.MusicArtistRef
 import com.nuvio.app.features.music.MusicArtistSummary
 import com.nuvio.app.features.music.MusicSearchEverything
 import com.nuvio.app.features.music.MusicTopResult
+import com.nuvio.app.features.music.MusicTopSong
 import com.nuvio.app.features.music.MusicTrack
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -234,5 +236,44 @@ class MusicHomeSearchTest {
         assertEquals("MONDAY MORNING", greetingLabel(1, 5))
         assertEquals("SUNDAY NIGHT", greetingLabel(7, 2))
         assertEquals("SATURDAY AFTERNOON", greetingLabel(6, 12))
+    }
+
+    // Action row
+
+    @Test
+    fun theActionRowFitsWhatTheTopMatchIs() {
+        val artist = MusicTopResult("Yelawolf", "Artist", listOf(yela), null, null)
+        assertEquals(
+            listOf(HomeAction.PlayEssentials, HomeAction.ShuffleEssentials, HomeAction.PlayTopAlbums, HomeAction.OpenArtist, HomeAction.More),
+            homeActions(artist),
+        )
+        val album = MusicTopResult("Love Story", "Album", listOf(yela), "MPREb_love", null)
+        assertEquals(TopMatchKind.Album, topMatchKind(album))
+        assertEquals(HomeAction.PlayAlbum, homeActions(album).first())
+        val unlinkedVideo = MusicTopResult("Chaos in My Head", "Video", listOf(MusicArtistRef("Trunk Bangers")), null, null, videoId = "v")
+        assertEquals(listOf(HomeAction.PlayTrack, HomeAction.QueueTrack, HomeAction.More), homeActions(unlinkedVideo))
+    }
+
+    @Test
+    fun searchEssentialsPlaysTheMostPlayedListAtOnce() {
+        val page = MusicArtist(
+            browseId = "UCyela",
+            name = "Yelawolf",
+            thumbnailUrl = "https://img/yela",
+            albums = listOf(
+                MusicAlbumSummary("MPREb_s", "Till It's Gone", listOf(yela), "2014", "Single", null),
+                MusicAlbumSummary("MPREb_a", "Love Story", listOf(yela), "2015", "Album", null),
+            ),
+            topSongs = listOf(
+                MusicTopSong("t1", "Till It's Gone", "MPREb_a"),
+                MusicTopSong("t2", "Till It's Gone (Remix)", "MPREb_r"),
+                MusicTopSong("t3", "Daddy's Lambo"),
+            ),
+        )
+        val mix = searchEssentials(page)!!
+        assertEquals(listOf("t1", "t3"), mix.tracks.map { it.videoId })
+        assertEquals("essentials:UCyela", mix.browseId)
+        assertEquals(listOf("MPREb_a", "MPREb_s"), topAlbumIds(page))
+        assertNull(searchEssentials(page.copy(topSongs = emptyList())))
     }
 }
