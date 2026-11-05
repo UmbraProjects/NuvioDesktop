@@ -64,6 +64,8 @@ data class MusicAlbum(
     val audioPlaylistId: String?,
     /** Browse ids of the page's "Other versions" (a deluxe or expanded edition, say), when it lists any. */
     val otherVersionIds: List<String> = emptyList(),
+    /** The page's description when YouTube Music says it is "From Wikipedia" (the album's own Wikipedia opening); null otherwise. */
+    val wikipediaBlurb: String? = null,
 )
 
 data class MusicArtist(

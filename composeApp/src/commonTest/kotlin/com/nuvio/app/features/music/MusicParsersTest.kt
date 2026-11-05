@@ -298,4 +298,18 @@ class ArtistShelfParsersTest {
         val album = parseAlbum(body, "MPREb_x")
         assertEquals(223, album?.tracks?.single()?.durationSeconds)
     }
+
+    private fun shelf(description: String, footer: String?) = """{"musicDescriptionShelfRenderer":{
+      "description":{"runs":[{"text":"$description"}]}${footer?.let { ",\"footer\":{\"runs\":[{\"text\":\"$it\"}]}" } ?: ""}}}"""
+
+    @Test
+    fun albumPageKeepsAWikipediaBlurbOnly() {
+        val text = "Random Access Memories is the fourth studio album by French electronic duo Daft Punk, released in 2013."
+        val withWiki = albumPage.replace("\"x\":", "\"d\":${shelf(text, "From Wikipedia")},\"x\":")
+        assertEquals(text, parseAlbum(withWiki, "MPREb_abc123")?.wikipediaBlurb)
+        // A description that does not credit Wikipedia is not Wikipedia text; nor is a page with none.
+        val other = albumPage.replace("\"x\":", "\"d\":${shelf(text, "From a label")},\"x\":")
+        assertNull(parseAlbum(other, "MPREb_abc123")?.wikipediaBlurb)
+        assertNull(parseAlbum(albumPage, "MPREb_abc123")?.wikipediaBlurb)
+    }
 }

@@ -125,7 +125,7 @@ internal fun bookletArtistFrom(artist: LibraryArtist?): BookletArtist? {
 internal fun bookletRequestFor(album: MusicAlbum, artist: LibraryArtist? = null): BookletRequest? {
     if (!isBookletAlbum(album.browseId)) return null
     val name = album.artists.firstOrNull()?.name?.takeIf { it.isNotBlank() } ?: return null
-    return BookletRequest(name, album.title, album.year, album.tracks.map { BookletTrack(it.title, it.durationSeconds) }, bookletArtistFrom(artist))
+    return BookletRequest(name, album.title, album.year, album.tracks.map { BookletTrack(it.title, it.durationSeconds) }, bookletArtistFrom(artist), album.wikipediaBlurb)
 }
 
 /** The booklet for the album playing: from the cache at once, else looked up (once per album) in the background. */

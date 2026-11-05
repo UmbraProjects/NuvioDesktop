@@ -182,4 +182,16 @@ class AlbumBookletTest {
         assertFalse(isBookletAlbum("artist-mix:123"))
         assertFalse(isBookletAlbum(null))
     }
+
+    @Test
+    fun theYouTubeMusicBlurbBecomesTheIntro() {
+        val withBlurb = request.copy(blurb = "Travelling Without Moving is the third studio album by Jamiroquai. It was released in 1996.")
+        val kept = AlbumBooklet("An older intro.", emptyList(), emptyMap(), BookletSource.Ai, pinned = emptySet())
+        assertEquals("Travelling Without Moving is the third studio album by Jamiroquai. It was released in 1996.", kept.withBlurb(withBlurb)?.intro)
+        assertEquals(BookletSource.Ai, kept.withBlurb(withBlurb)?.source)
+        // No blurb: untouched. No booklet but a blurb: the blurb alone makes one.
+        assertEquals(kept, kept.withBlurb(request))
+        assertNull(null.withBlurb(request))
+        assertEquals(BookletSource.Wikipedia, null.withBlurb(withBlurb)?.source)
+    }
 }

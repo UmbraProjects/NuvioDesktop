@@ -249,7 +249,18 @@ internal fun parseAlbum(body: String, browseId: String): MusicAlbum? {
         tracks = tracks.distinctBy { it.videoId },
         audioPlaylistId = audioPlaylistId,
         otherVersionIds = otherVersionIds(root, browseId),
+        wikipediaBlurb = albumWikipediaBlurb(root),
     )
+}
+
+/**
+ * The album page's description (`musicDescriptionShelfRenderer`) when its footer credits Wikipedia ("From Wikipedia"),
+ * else null: only then is it Wikipedia text we may show as such (CC BY-SA 4.0). Null for a page with no description.
+ */
+internal fun albumWikipediaBlurb(root: JsonElement): String? {
+    val shelf = findAll(root, "musicDescriptionShelfRenderer").firstOrNull() ?: return null
+    if (!textOf(shelf["footer"]).contains("wikipedia", ignoreCase = true)) return null
+    return textOf(shelf["description"]).replace(Regex("""\s+"""), " ").trim().takeIf { it.length > 40 }
 }
 
 /** The albums under an album page's "Other versions" shelf, other than the page itself. */

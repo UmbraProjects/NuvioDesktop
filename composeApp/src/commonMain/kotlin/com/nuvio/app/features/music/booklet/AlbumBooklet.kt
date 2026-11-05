@@ -67,6 +67,8 @@ internal data class BookletRequest(
     val year: String?,
     val tracks: List<BookletTrack>,
     val artistInfo: BookletArtist? = null,
+    /** The album page's own "From Wikipedia" blurb from YouTube Music, when it has one; shown as the intro. Not part of any cache key. */
+    val blurb: String? = null,
 )
 
 private const val MAX_INTRO_CHARS = 700
@@ -98,6 +100,16 @@ internal fun bookletNorm(text: String): String =
 /** The key one album's booklet is cached under for [mode] ("ai" with the model, or "wiki"). */
 internal fun bookletKey(request: BookletRequest, mode: String): String =
     "v4|$mode|${bookletNorm(request.artist)}|${bookletNorm(request.album)}"
+
+/**
+ * The booklet with YouTube Music's own Wikipedia blurb as its intro (cut at a sentence), when [request] has one: it is the right
+ * album by construction, free, and worked out by Wikipedia's own editors. With no booklet at all (no Wikipedia page found
+ * by search) the blurb alone makes a booklet. Pins are laid over this afterwards, so a hand edit still wins.
+ */
+internal fun AlbumBooklet?.withBlurb(request: BookletRequest): AlbumBooklet? {
+    val intro = request.blurb?.takeIf { it.isNotBlank() }?.let { cutAtSentence(it, MAX_INTRO_CHARS) } ?: return this
+    return this?.copy(intro = intro) ?: AlbumBooklet(intro, emptyList(), emptyMap(), BookletSource.Wikipedia)
+}
 
 /** [text] cut to at most [max] characters: at the last sentence end that fits, else at a word with an ellipsis. */
 internal fun cutAtSentence(text: String, max: Int): String {
