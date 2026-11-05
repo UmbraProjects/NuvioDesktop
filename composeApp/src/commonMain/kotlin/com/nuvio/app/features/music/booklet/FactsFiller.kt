@@ -260,6 +260,9 @@ internal object FactsFiller {
         if (!ai0.isConfigured) { setActivity("Needs an AI key and consent (Settings > Discover > AI)"); return failStreak }
         val model = ai0.effectiveModel
         var songs = 0
+        // Tokens the provider has counted that no step has been charged for yet: stories, notes and recaps the person asked for share
+        // the same daily allowance, so the budget counts them too (a free Groq key stops at 200k a day whoever spent it).
+        var tokensSeen = DiscoverAiClient.tokensUsed
         var done = order.count { FillStorage.get("done1|${it.albumId}") == model }
         _status.update { it.copy(albumsTotal = order.size, albumsDone = done) }
         // Starts from the kept list, so what failed before a restart stays listed until it is filled.
@@ -298,13 +301,23 @@ internal object FactsFiller {
                     return failStreak
                 }
                 waitForQuiet()
+                // The provider has said when to come back (its day or minute is full): wait that long, which is not a failure.
+                while (true) {
+                    val left = DiscoverAiClient.rateLimitedForSeconds(ai)
+                    if (left <= 0) break
+                    setActivity("The AI provider's limit is reached; carries on in ${(left + 59) / 60} min")
+                    delay(minOf(left, 60) * 1_000L)
+                    currentCoroutineContext().ensureActive()
+                    if (!_status.value.enabled) return failStreak
+                }
                 setActivity("Filling ${step.title}")
-                val tokensBefore = DiscoverAiClient.tokensUsed
+                val tokensBefore = tokensSeen
                 while (!runYielding(step, request)) waitForQuiet()
                 val after = stateOf(step, request)
                 // What the provider said the step cost (cut-short attempts included, they were real requests). A provider that
                 // does not report tokens (Anthropic here) is charged the usual cost of the step.
-                val spent = (DiscoverAiClient.tokensUsed - tokensBefore).takeIf { it > 0L }
+                tokensSeen = DiscoverAiClient.tokensUsed
+                val spent = (tokensSeen - tokensBefore).takeIf { it > 0L }
                     ?: if (ai.provider == DiscoverAiProvider.Anthropic) estimateTokens(step.kind) else 0L
                 if (after == FactState.Missing) { unfillable += step.title; continue } // nothing to write from (no page); no request was made
                 budget = budget.spend(spent, now())

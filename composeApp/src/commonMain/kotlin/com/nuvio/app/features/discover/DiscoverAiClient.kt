@@ -85,6 +85,17 @@ object DiscoverAiClient {
     fun canSearchWeb(settings: DiscoverAiSettings): Boolean =
         settings.provider == DiscoverAiProvider.Groq && settings.effectiveModel.startsWith("openai/gpt-oss")
 
+    /** When each account's model may be asked again after a 429 (see the gate in [complete]); touched only under [inFlight]. */
+    private val rateLimitedUntilMs = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /** Seconds until [settings]'s model may be asked again after a 429 (0 when it may be asked now); the background filler waits on this. */
+    fun rateLimitedForSeconds(settings: DiscoverAiSettings): Int {
+        val until = rateLimitedUntilMs.value["${settings.effectiveBaseUrl}|${settings.effectiveModel}"] ?: return 0
+        return ((until - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
+    }
+    private const val DEFAULT_RATE_LIMIT_WAIT_SECONDS = 60
+    private const val MAX_RATE_LIMIT_WAIT_SECONDS = 3_600
+
     suspend fun complete(
         settings: DiscoverAiSettings,
         prompt: DiscoverAiPromptText,
@@ -97,11 +108,24 @@ object DiscoverAiClient {
         if (!settings.isConfigured) {
             return Result.failure(DiscoverAiException(DiscoverAiError.NotConfigured))
         }
-        // Logged on both sides of the wait. A request that never comes back used to leave no trace
-        // at all, which made "it just spun forever" indistinguishable from "nothing was ever sent".
-        log.i { "request -> ${settings.effectiveModel} at ${settings.effectiveBaseUrl}" }
         val startedAt = System.currentTimeMillis()
         return inFlight.withLock {
+            // fork:ai-gate - after a 429 the provider has said when to come back (Groq's daily allowance: minutes to hours), and
+            // every feature used to ask anyway, one request per song, each answered with another 429. Until that time, answer
+            // the same way without a request. The key is the account's model, which is what the limits are counted against.
+            val gateKey = "${settings.effectiveBaseUrl}|${settings.effectiveModel}"
+            rateLimitedUntilMs.value[gateKey]?.let { until ->
+                val left = ((until - System.currentTimeMillis() + 999) / 1000).toInt()
+                if (left > 0) {
+                    return@withLock Result.failure(
+                        DiscoverAiException(DiscoverAiError.RateLimited(left, "Rate limited a moment ago; not asking again for ${left}s.")),
+                    )
+                }
+                rateLimitedUntilMs.update { it - gateKey }
+            }
+            // Logged on both sides of the wait. A request that never comes back used to leave no trace
+            // at all, which made "it just spun forever" indistinguishable from "nothing was ever sent".
+            log.i { "request -> ${settings.effectiveModel} at ${settings.effectiveBaseUrl}" }
             val outcome = withTimeoutOrNull(TIMEOUT_MS) {
                 runCatching {
                     when (settings.provider) {
@@ -118,6 +142,14 @@ object DiscoverAiClient {
 
             outcome
                 .onSuccess { log.i { "reply in ${System.currentTimeMillis() - startedAt}ms, ${it.length} chars" } }
+                .onFailure { error ->
+                    val limited = (error as? DiscoverAiException)?.error as? DiscoverAiError.RateLimited
+                    if (limited != null) {
+                        val wait = (limited.retryAfterSeconds ?: DEFAULT_RATE_LIMIT_WAIT_SECONDS).coerceIn(1, MAX_RATE_LIMIT_WAIT_SECONDS)
+                        rateLimitedUntilMs.update { it + (gateKey to System.currentTimeMillis() + wait * 1000L) }
+                        log.w { "rate limited; no requests to ${settings.effectiveModel} for ${wait}s" }
+                    }
+                }
                 // Anything that is not already typed is a transport failure — a socket timeout, a
                 // DNS or TLS error. Left raw it reached the error mapper as "not a
                 // DiscoverAiException" and was reported to the user as *not configured*, sending
