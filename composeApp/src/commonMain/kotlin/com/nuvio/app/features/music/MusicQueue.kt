@@ -18,12 +18,16 @@ sealed interface MusicModeSwitch {
  * the same order.
  */
 class MusicQueue(
-    val album: MusicAlbum,
+    album: MusicAlbum,
     mode: MusicPlayMode,
     shuffled: Boolean = false,
     private val seed: Long = 0L,
     startIndex: Int = 0,
 ) {
+    /** The album being played. Its tracks can be swapped for the music addon's copies while it plays ([swapUpcoming]). */
+    var album: MusicAlbum = album
+        private set
+
     var mode: MusicPlayMode = mode
         private set
     var shuffled: Boolean = shuffled
@@ -66,6 +70,26 @@ class MusicQueue(
         order = order.take(position + 1)
         inQueue = order.sorted()
         return dropped
+    }
+
+    /**
+     * fork:nebula - fetch on Play: swaps the tracks still to come for [replacement]'s (the same album, matched by track index,
+     * with its tracks pointed at the music addon). The track playing, and any track [replacement] has no available counterpart
+     * for, stay as they are, so the order and the album's other tracks never change. Returns how many were swapped.
+     */
+    fun swapUpcoming(replacement: MusicAlbum): Int {
+        val tracks = album.tracks.toMutableList()
+        var swapped = 0
+        for (place in position + 1 until order.size) {
+            val index = order[place]
+            val old = tracks.getOrNull(index) ?: continue
+            val new = replacement.tracks.getOrNull(index) ?: continue
+            if (!new.isAvailable || new.videoId == old.videoId) continue
+            tracks[index] = new
+            swapped++
+        }
+        if (swapped > 0) album = album.copy(tracks = tracks)
+        return swapped
     }
 
     fun setShuffled(on: Boolean) {

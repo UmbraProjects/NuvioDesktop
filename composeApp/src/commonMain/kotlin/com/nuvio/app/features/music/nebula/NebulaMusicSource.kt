@@ -54,6 +54,10 @@ private const val LINK_RETRY_DELAY_MS = 700L
 private const val STREAM_PATIENCE_MS = 90_000L
 private const val STREAM_POLL_MS = 3_000L
 
+/** fork:nebula - fetch on Play waits much longer than a track tapped by hand (nobody is waiting on it): how long, and how often it asks. */
+private const val FETCH_AHEAD_PATIENCE_MS = 10 * 60_000L
+private const val FETCH_AHEAD_POLL_MS = 5_000L
+
 /**
  * The most a stream request may take. The addon asks TorBox for the file, which can sit for a minute on an
  * album nobody has fetched lately; past this the track is reported as not answering rather than left spinning.
@@ -581,6 +585,44 @@ internal object NebulaMusicSource {
         } catch (e: Exception) {
             log.w(e) { "Addon look-up for \"${track.title}\" failed; playing YouTube Music" }
             null
+        }
+    }
+
+    /**
+     * fork:nebula - fetch on Play. [album] is playing from YouTube Music; when the addon has it, one track of it is asked
+     * for (the first matched one after [afterIndex]), which makes the addon fetch the album when it is not ready. Asked
+     * again every [FETCH_AHEAD_POLL_MS] while the addon says it is still preparing, for up to [FETCH_AHEAD_PATIENCE_MS].
+     * Returns the album with its tracks pointed at the addon once that track answers (so the rest can swap to it), else
+     * null (not on the addon, nothing matched, the addon refused or never finished). It never touches the stream status
+     * the album page shows, and plays nothing itself. Every stream answer lands in the log (links masked).
+     */
+    suspend fun fetchAhead(album: MusicAlbum, afterIndex: Int): MusicAlbum? {
+        if (addons().isEmpty()) return null
+        if (parseAddonAlbumId(album.browseId) != null || album.kind == "Playlist" || album.kind == "Mix") return null
+        if (album.tracks.any { owns(it) }) return null
+        val match = (find(album) as? NebulaAlbumLookup.Found)?.match ?: return null
+        val prepared = prepare(album, match)
+        val pick = prepared.tracks.withIndex()
+            .filter { (i, t) -> i > afterIndex && owns(t) && t.isAvailable }
+            .firstOrNull()?.value
+            ?: prepared.tracks.firstOrNull { owns(it) && it.isAvailable }
+            ?: return null
+        val ref = nebulaTrackRef(pick.videoId) ?: return null
+        val addon = addonFor(ref.addonKey) ?: return null
+        val startedAt = LibraryClock.nowEpochMs()
+        log.i { "Fetch on Play: asking the addon for \"${pick.title}\" of \"${album.title}\" (${match.trackIds.count { it != null }} tracks matched)" }
+        while (true) {
+            val reply = fetchStream(addon.base, ref.id)
+            if (reply is StreamReply.Ok) {
+                log.i { "Fetch on Play: \"${pick.title}\" answered after ${(LibraryClock.nowEpochMs() - startedAt) / 1000} s, \"${album.title}\" is ready" }
+                return prepared
+            }
+            val waitable = (reply as? StreamReply.Refused)?.waitable == true
+            if (!waitable || LibraryClock.nowEpochMs() - startedAt >= FETCH_AHEAD_PATIENCE_MS) {
+                log.w { "Fetch on Play gave up on \"${album.title}\": ${(reply as? StreamReply.Refused)?.reason}" }
+                return null
+            }
+            delay(FETCH_AHEAD_POLL_MS)
         }
     }
 

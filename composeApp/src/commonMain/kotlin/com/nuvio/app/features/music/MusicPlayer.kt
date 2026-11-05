@@ -110,6 +110,8 @@ class MusicPlayer(
     initialVolume: Int = 100,
     /** Called (debounced) when the person changes the volume, to keep it for the next session. */
     private val saveVolume: (Int) -> Unit = {},
+    /** fork:nebula - called after an album's first track is shown (Play on an album, or the next queued album starting). */
+    private val onAlbumStarted: (MusicAlbum) -> Unit = {},
 ) {
     private val _state = MutableStateFlow(MusicPlayerState(volume = initialVolume.coerceIn(0, 100)))
     private var volumeSave: Job? = null
@@ -190,6 +192,24 @@ class MusicPlayer(
                 fresh, found, startPositionMs = start, skipped = found.skipped.size,
                 notice = if (fellBackToAudio) "No music video would open, playing the audio" else null,
             )
+            runCatching { onAlbumStarted(fresh.album) }
+        }
+    }
+
+    /**
+     * fork:nebula - fetch on Play: swaps the tracks still to come in the album playing ([albumBrowseId]) for [replacement]'s,
+     * the same album with its tracks pointed at the music addon, so the rest of it plays lossless from the next track.
+     * Nothing happens when another album is playing by now. The track playing is never touched.
+     */
+    fun swapUpcoming(albumBrowseId: String, replacement: MusicAlbum) {
+        scope.launch {
+            val q = queue ?: return@launch
+            if (q.album.browseId != albumBrowseId) return@launch
+            val swapped = q.swapUpcoming(replacement)
+            if (swapped == 0) return@launch
+            log.i { "swapped $swapped upcoming tracks of \"${q.album.title}\" to the addon's lossless copy" }
+            _state.update { if (it.album?.browseId == albumBrowseId) it.copy(album = q.album) else it }
+            prefetchNext(q)
         }
     }
 
@@ -599,6 +619,7 @@ class MusicPlayer(
             val found = fresh.jumpTo(fresh.currentIndex ?: 0) { track -> resolve(track, next, fresh.mode) } ?: continue
             queue = fresh
             show(fresh, found, startPositionMs = 0L, skipped = found.skipped.size, notice = notice)
+            runCatching { onAlbumStarted(fresh.album) }
             return
         }
         // End of the last album. Nothing else to play, so the bar goes away.
