@@ -90,6 +90,9 @@ data class PlayerSettingsUiState(
     // When true, the desktop speed button / speed keyboard shortcuts step by 0.1 instead of
     // jumping between the coarse preset stages (1, 1.25, 1.5, 2, 3, 4).
     val desktopPlaybackSpeedFineIncrementsEnabled: Boolean = false,
+    // When true, the wheel over the desktop player acts by pointer position: speed on the left
+    // third, seek in the middle, volume on the right. Off leaves the whole surface on volume.
+    val desktopPlayerScrollZonesEnabled: Boolean = false,
     // The two speeds the "Toggle playback speed" shortcut flips between. Both are user-set, so the
     // pair can be 1.2 / 1.6 just as well as the 1x / 2x default.
     val playbackSpeedToggleLow: Float = 1f,
@@ -303,6 +306,7 @@ object PlayerSettingsRepository {
     private var desktopAlwaysShowClockEnabled = false
     private var desktopPauseOverlaySourceEnabled = false
     private var desktopPlaybackSpeedFineIncrementsEnabled = false
+    private var desktopPlayerScrollZonesEnabled = false
     private var playbackSpeedToggleLow = 1f
     private var playbackSpeedToggleHigh = 2f
     private var desktopVerboseMpvLoggingEnabled = false
@@ -457,6 +461,7 @@ object PlayerSettingsRepository {
         desktopAlwaysShowClockEnabled = false
         desktopPauseOverlaySourceEnabled = false
         desktopPlaybackSpeedFineIncrementsEnabled = false
+        desktopPlayerScrollZonesEnabled = false
         playbackSpeedToggleLow = 1f
         playbackSpeedToggleHigh = 2f
         desktopVerboseMpvLoggingEnabled = false
@@ -624,6 +629,7 @@ object PlayerSettingsRepository {
         desktopPauseOverlaySourceEnabled = PlayerSettingsStorage.loadDesktopPauseOverlaySourceEnabled() ?: false
         desktopPlaybackSpeedFineIncrementsEnabled =
             PlayerSettingsStorage.loadDesktopPlaybackSpeedFineIncrementsEnabled() ?: false
+        desktopPlayerScrollZonesEnabled = PlayerSettingsStorage.loadDesktopPlayerScrollZonesEnabled() ?: false
         val toggleRange = normalizePlaybackSpeedToggleRange(
             low = PlayerSettingsStorage.loadPlaybackSpeedToggleLow() ?: 1f,
             high = PlayerSettingsStorage.loadPlaybackSpeedToggleHigh() ?: 2f,
@@ -1030,6 +1036,14 @@ object PlayerSettingsRepository {
         desktopPlaybackSpeedFineIncrementsEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled)
+    }
+
+    fun setDesktopPlayerScrollZonesEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopPlayerScrollZonesEnabled == enabled) return
+        desktopPlayerScrollZonesEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopPlayerScrollZonesEnabled(enabled)
     }
 
     /**
@@ -1814,6 +1828,7 @@ object PlayerSettingsRepository {
             desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
             desktopPauseOverlaySourceEnabled = desktopPauseOverlaySourceEnabled,
             desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,
+            desktopPlayerScrollZonesEnabled = desktopPlayerScrollZonesEnabled,
             playbackSpeedToggleLow = playbackSpeedToggleLow,
             playbackSpeedToggleHigh = playbackSpeedToggleHigh,
             desktopVerboseMpvLoggingEnabled = desktopVerboseMpvLoggingEnabled,

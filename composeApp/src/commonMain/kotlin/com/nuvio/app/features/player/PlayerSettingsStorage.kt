@@ -35,6 +35,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopPauseOverlaySourceEnabled(enabled: Boolean)
     fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean?
     fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean)
+    fun loadDesktopPlayerScrollZonesEnabled(): Boolean?
+    fun saveDesktopPlayerScrollZonesEnabled(enabled: Boolean)
     fun loadPlaybackSpeedToggleLow(): Float?
     fun savePlaybackSpeedToggleLow(speed: Float)
     fun loadPlaybackSpeedToggleHigh(): Float?

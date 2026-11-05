@@ -549,6 +549,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             hudButtonOrder = playerSettingsUiState.desktopHudButtonOrder.joinToString(","),
             alwaysShowClock = playerSettingsUiState.desktopAlwaysShowClockEnabled,
             playbackSpeedFineIncrementsEnabled = playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled,
+            scrollZonesEnabled = playerSettingsUiState.desktopPlayerScrollZonesEnabled,
             playbackSpeedToggleLow = playerSettingsUiState.playbackSpeedToggleLow,
             playbackSpeedToggleHigh = playerSettingsUiState.playbackSpeedToggleHigh,
             uiScalePercent = playerSettingsUiState.desktopUiScalePercent,

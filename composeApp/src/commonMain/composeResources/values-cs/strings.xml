@@ -1769,6 +1769,8 @@
   <string name="settings_playback_info_panel_description">Při přehrávání zobrazí souhrn informací o médiu.</string>
   <string name="settings_playback_fine_speed_increments">Jemné kroky rychlosti</string>
   <string name="settings_playback_fine_speed_increments_description">Rychlost se zvyšuje o 0,1 místo přednastavených hodnot.</string>
+  <string name="settings_playback_scroll_zones">Zóny posouvání</string>
+  <string name="settings_playback_scroll_zones_description">Posouváním vlevo měníte rychlost, uprostřed se přesouváte ve videu a vpravo měníte hlasitost.</string>
   <string name="settings_playback_speed_toggle">Rozsah přepínání rychlosti</string>
   <string name="settings_playback_speed_toggle_description">Stisknutím R přepnete mezi těmito rychlostmi.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Podrobné protokolování MPV</string>

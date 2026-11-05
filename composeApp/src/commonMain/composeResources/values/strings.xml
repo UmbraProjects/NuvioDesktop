@@ -1848,6 +1848,8 @@
     <string name="settings_playback_info_panel_description">Show media info summary on playback.</string>
     <string name="settings_playback_fine_speed_increments">Fine Speed Increments</string>
     <string name="settings_playback_fine_speed_increments_description">Speed increases by 0.1, rather than presets.</string>
+    <string name="settings_playback_scroll_zones">Scroll Zones</string>
+    <string name="settings_playback_scroll_zones_description">Scroll on the left for speed, the middle to seek, and the right for volume.</string>
     <string name="settings_playback_speed_toggle">Speed Toggle Range</string>
     <string name="settings_playback_speed_toggle_description">Press R to toggle between these speeds.</string>
     <string name="settings_playback_desktop_verbose_mpv_logging">Verbose MPV Logging</string>

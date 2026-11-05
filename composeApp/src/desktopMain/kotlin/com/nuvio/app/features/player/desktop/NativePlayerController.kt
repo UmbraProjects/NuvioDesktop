@@ -2921,6 +2921,8 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("playbackSpeedFineIncrementsEnabled", hud.playbackSpeedFineIncrementsEnabled)
         append(',')
+        appendJsonField("scrollZonesEnabled", hud.scrollZonesEnabled)
+        append(',')
         appendJsonField("playbackSpeedToggleLow", hud.playbackSpeedToggleLow)
         append(',')
         appendJsonField("playbackSpeedToggleHigh", hud.playbackSpeedToggleHigh)

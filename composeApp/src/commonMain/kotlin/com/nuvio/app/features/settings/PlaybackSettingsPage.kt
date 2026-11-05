@@ -1076,6 +1076,15 @@ private fun PlaybackSettingsSection(
                             onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackSpeedFineIncrementsEnabled,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_scroll_zones),
+                            description = stringResource(Res.string.settings_playback_scroll_zones_description),
+                            checked = autoPlayPlayerSettings.desktopPlayerScrollZonesEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("scroll-zones")),
+                            onCheckedChange = PlayerSettingsRepository::setDesktopPlayerScrollZonesEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
                         SettingsRangeSliderRow(
                             title = stringResource(Res.string.settings_playback_speed_toggle),
                             description = stringResource(Res.string.settings_playback_speed_toggle_description),

@@ -6,6 +6,7 @@ import com.nuvio.app.features.player.PlayerControlIptvState
 import com.nuvio.app.features.player.PlayerControlPartyMember
 import com.nuvio.app.features.player.PlayerControlPartyState
 import com.nuvio.app.features.player.PlayerControlsState
+import com.nuvio.app.features.player.PlayerHudSettings
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -130,6 +131,22 @@ class ControlsJsonGuardTest {
         assertEquals("Search channels", iptv.getValue("searchLabel").jsonPrimitive.content)
         assertEquals(2, iptv.getValue("groups").jsonArray.size)
         assertEquals(1, iptv.getValue("channels").jsonArray.size)
+    }
+
+    @Test
+    fun `the scroll zones switch reaches the HUD`() {
+        fun scrollZonesField(enabled: Boolean): String {
+            val payload = PlayerControlsState(hud = PlayerHudSettings(scrollZonesEnabled = enabled)).toControlsJson(
+                appFullscreenKeyCode = 122,
+                playerShortcutKeyCodes = emptyMap(),
+                skipIntervalKeyLabel = "S",
+            )
+            assertTrue(controlsJsonIsWellFormed(payload))
+            return Json.parseToJsonElement(payload).jsonObject.getValue("scrollZonesEnabled").jsonPrimitive.content
+        }
+
+        assertEquals("true", scrollZonesField(true))
+        assertEquals("false", scrollZonesField(false))
     }
 
     @Test

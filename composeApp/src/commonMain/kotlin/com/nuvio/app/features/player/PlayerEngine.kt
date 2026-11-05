@@ -478,6 +478,7 @@ data class PlayerHudSettings(
     val hudButtonOrder: String = "",
     val alwaysShowClock: Boolean = false,
     val playbackSpeedFineIncrementsEnabled: Boolean = false,
+    val scrollZonesEnabled: Boolean = false,
     val playbackSpeedToggleLow: Float = 1f,
     val playbackSpeedToggleHigh: Float = 2f,
     val uiScalePercent: Int = 0,

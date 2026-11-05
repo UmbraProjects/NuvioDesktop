@@ -35,6 +35,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopAlwaysShowClockEnabledKey = "desktop_always_show_clock_enabled"
     private const val desktopPauseOverlaySourceEnabledKey = "desktop_pause_overlay_source_enabled"
     private const val desktopPlaybackSpeedFineIncrementsEnabledKey = "desktop_playback_speed_fine_increments_enabled"
+    private const val desktopPlayerScrollZonesEnabledKey = "desktop_player_scroll_zones_enabled"
     private const val playbackSpeedToggleLowKey = "playback_speed_toggle_low"
     private const val playbackSpeedToggleHighKey = "playback_speed_toggle_high"
     private const val desktopVerboseMpvLoggingEnabledKey = "desktop_verbose_mpv_logging_enabled"
@@ -303,6 +304,8 @@ internal actual object PlayerSettingsStorage {
         saveBoolean(desktopPauseOverlaySourceEnabledKey, enabled)
     actual fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean? = loadBoolean(desktopPlaybackSpeedFineIncrementsEnabledKey)
     actual fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean) = saveBoolean(desktopPlaybackSpeedFineIncrementsEnabledKey, enabled)
+    actual fun loadDesktopPlayerScrollZonesEnabled(): Boolean? = loadBoolean(desktopPlayerScrollZonesEnabledKey)
+    actual fun saveDesktopPlayerScrollZonesEnabled(enabled: Boolean) = saveBoolean(desktopPlayerScrollZonesEnabledKey, enabled)
     actual fun loadPlaybackSpeedToggleLow(): Float? = loadFloat(playbackSpeedToggleLowKey)
     actual fun savePlaybackSpeedToggleLow(speed: Float) = saveFloat(playbackSpeedToggleLowKey, speed)
     actual fun loadPlaybackSpeedToggleHigh(): Float? = loadFloat(playbackSpeedToggleHighKey)
