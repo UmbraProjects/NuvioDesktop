@@ -6318,6 +6318,8 @@ public:
     // The same throwaway decode with a chosen output format: raw little-endian float32 PCM at sampleRate Hz with 1
     // (mono) or 2 (stereo) interleaved channels. The loudness measurement uses 24 kHz stereo: a mono mix cannot tell
     // a wide mix from a narrow one, which is 1 to 4 LU of error.
+    void setSpotFile(const std::string &path) { spotFilePath = path; }
+
     int decodeAudioSpot(double startSeconds, double durationSeconds, const std::string &outputPath,
                         int sampleRate, int channelCount) {
         // A separate audio stream (YouTube video plus its own audio) is the audio being heard, and it
@@ -7745,7 +7747,7 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setAudioSpotFile(
 ) {
     auto player = playerFromHandle(handle);
     if (!player) return;
-    player->spotFilePath = path ? jstringToUtf8(env, path) : std::string();
+    player->setSpotFile(path ? jstringToUtf8(env, path) : std::string());
 }
 
 extern "C" JNIEXPORT void JNICALL
