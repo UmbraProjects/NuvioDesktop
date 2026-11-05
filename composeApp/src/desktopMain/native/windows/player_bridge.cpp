@@ -6365,17 +6365,31 @@ public:
             const char *load[] = {"loadfile", spotUrl.c_str(), nullptr};
             if (api.command(probe, load) >= 0) {
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+                std::string why = shuttingDown.load() ? "player closing" : "no answer in 90 s";
                 while (std::chrono::steady_clock::now() < deadline && !shuttingDown.load()) {
                     mpv_event *event = api.waitEvent(probe, 0.25);
                     if (!event) continue;
-                    if (event->event_id == MPV_EVENT_SHUTDOWN) break;
+                    if (event->event_id == MPV_EVENT_SHUTDOWN) { why = "mpv shut down"; break; }
                     if (event->event_id == MPV_EVENT_END_FILE) {
                         const auto *endFile = static_cast<mpv_event_end_file *>(event->data);
                         result = endFile && endFile->reason == MPV_END_FILE_REASON_EOF ? 0 : -2;
+                        if (result != 0) {
+                            why = "end of file reason " + std::to_string(endFile ? endFile->reason : -1) + ", mpv error " +
+                                  (endFile ? api.errorText(endFile->error) : std::string("none"));
+                        }
                         break;
                     }
                 }
+                // fork:visualiser - why a window gave nothing; the Kotlin side only sees a null.
+                if (result != 0) {
+                    logBridge("audio spot " + std::to_string((int)startSeconds) + "s+" + std::to_string((int)durationSeconds) +
+                              "s failed: " + why);
+                }
+            } else {
+                logBridge("audio spot " + std::to_string((int)startSeconds) + "s: loadfile refused");
             }
+        } else {
+            logBridge("audio spot " + std::to_string((int)startSeconds) + "s: mpv would not start");
         }
         api.terminateDestroy(probe);
         return result;

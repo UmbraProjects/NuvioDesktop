@@ -108,6 +108,13 @@ private const val DECODE_RETRY_DELAY_MS = 2_000L
 /** The stream can end a little before the length mpv reported; that much short of it counts as the end. */
 private const val DECODE_END_SLACK_SECONDS = 1.5
 
+/** How far into the track the decode has read (seconds), kept between calls so a stopped read can be resumed where it stopped. */
+private class DecodeProgress { var at = 0.0 }
+
+/** A read that stopped is picked up again from where it stopped, this many times, after 20 s, 40 s, 60 s...: a server that refuses the extra connections for a while lets go. */
+private const val DECODE_RESUMES = 6
+private const val DECODE_RESUME_DELAY_MS = 20_000L
+
 /**
  * Reads the track [controller] is playing through a headless decode of the same stream, feeding [meter] (the loudness
  * measurement) and [map] (the visualiser's track map) with the same samples; [onWindow] runs after each window. False when
@@ -118,11 +125,12 @@ private suspend fun decodeTrack(
     durationMs: Long,
     meter: LoudnessMeter?,
     map: TrackMapBuilder?,
+    progress: DecodeProgress,
     onWindow: suspend () -> Unit,
 ): Boolean {
     val total = (durationMs / 1_000.0).coerceAtMost(MEASURE_MAX_SECONDS)
     if (total < MEASURE_MIN_SECONDS) return false
-    var at = 0.0
+    var at = progress.at
     var failures = 0
     try {
         while (at < total - DECODE_END_SLACK_SECONDS) {
@@ -152,6 +160,7 @@ private suspend fun decodeTrack(
             }
             if (got < length - 0.5) log.i { "track decode window at ${at.toInt()}s gave ${got.toInt()}s of ${length.toInt()}s; continuing from there" }
             at += got
+            progress.at = at
             onWindow()
         }
     } catch (error: CancellationException) {
@@ -420,11 +429,23 @@ actual fun MusicPlayerSurface(
         delay(MEASURE_START_DELAY_MS)
         val meter = if (needLoudness) LoudnessMeter(MEASURE_SAMPLE_RATE, channels = 2) else null
         val builder = if (keptMap == null) TrackMapBuilder(MEASURE_SAMPLE_RATE) else null
-        val read = decodeTrack(controller, durationMs, meter, builder) {
-            if (builder != null) {
-                val partial = withContext(Dispatchers.Default) { builder.snapshot() }
-                TrackMapLive.publish(LiveTrackMap(loadId, partial, knownLufs, analysing = true))
+        val progress = DecodeProgress()
+        var resumes = 0
+        var read = false
+        while (true) {
+            read = decodeTrack(controller, durationMs, meter, builder, progress) {
+                if (builder != null) {
+                    val partial = withContext(Dispatchers.Default) { builder.snapshot() }
+                    TrackMapLive.publish(LiveTrackMap(loadId, partial, knownLufs, analysing = true))
+                }
             }
+            // fork:visualiser - a read that stopped part way (the stream's server refusing the extra connection for a
+            // moment) is picked up again from where it stopped, so the map still ends up whole; the part already
+            // read stays on screen meanwhile.
+            if (read || ++resumes > DECODE_RESUMES) break
+            val wait = DECODE_RESUME_DELAY_MS * resumes
+            log.i { "track decode paused at ${progress.at.toInt()}s; resuming in ${wait / 1000}s (try $resumes of $DECODE_RESUMES)" }
+            delay(wait)
         }
         if (builder != null) {
             if (read) {
