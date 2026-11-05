@@ -14,6 +14,7 @@ import com.nuvio.app.features.music.library.PeopleCreditsBook
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.ReleaseKind
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +53,8 @@ internal data class FillStatus(
     val cap: Long = FILL_CAP_DEFAULT,
     /** Lookups that failed a moment ago; each is tried again by itself after two hours. */
     val retry: List<String> = emptyList(),
+    /** The credits sweep's own line ("Credits: 120 of 9461 albums checked"); it runs apart from the AI facts, so an AI limit never stops it. */
+    val credits: String = "",
 )
 
 /** True while the player owns the screen (a film or episode): the filler waits, so it never competes with playback. Set by the player screen. */
@@ -178,6 +181,7 @@ internal object FactsFiller {
             MusicPlayback.player.state.map { if (it.track != null) it.album?.browseId else null }.distinctUntilChanged()
                 .collect { id -> if (isBookletAlbum(id)) recordPlay(id!!) }
         }
+        launch { creditsSweep() }
         var failStreak = 0
         while (true) {
             currentCoroutineContext().ensureActive()
@@ -192,6 +196,46 @@ internal object FactsFiller {
             }
             withTimeoutOrNull(10 * 60_000L) { wake.receive() }
         }
+    }
+
+    /**
+     * fork:credits - every library album's MusicBrainz credits (Who made it), on its own track beside the AI facts: no AI is
+     * involved, so a Groq rate limit, a missing key, a used-up allowance or the 30-minute pause never holds it up. It still
+     * waits for a film and for the person's own lookups, and MusicBrainz's own pacing (one call a second) applies.
+     */
+    private suspend fun creditsSweep() {
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            if (!_status.value.enabled) { delay(5_000); continue }
+            var failed = false
+            try {
+                val order = fillOrder(candidates().map { it.first }, playsNow())
+                var checked = withContext(Dispatchers.Default) { order.count { !PeopleCreditsBook.missing(it.artist, it.album) } }
+                _status.update { it.copy(credits = creditsLine(checked, order.size)) }
+                for (c in order) {
+                    currentCoroutineContext().ensureActive()
+                    if (!_status.value.enabled) break
+                    if (!PeopleCreditsBook.missing(c.artist, c.album)) continue
+                    waitForQuiet()
+                    val kept = withContext(FillerWork() + BackgroundWork()) { PeopleCreditsBook.load(c.artist, c.album, c.albumId) }
+                    if (kept != null) checked += 1 else { failed = true; delay(30_000) } // MusicBrainz unreachable: slow down
+                    _status.update { it.copy(credits = creditsLine(checked, order.size)) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                log.w { "credits sweep failed: $e" }
+                failed = true
+            }
+            // A finished sweep looks again in 10 minutes (new albums); one that hit a failure, in 2.
+            delay(if (failed) 2 * 60_000L else 10 * 60_000L)
+        }
+    }
+
+    private fun creditsLine(checked: Int, total: Int) = when {
+        total == 0 -> ""
+        checked >= total -> "Credits: all $total albums checked"
+        else -> "Credits: $checked of $total albums checked"
     }
 
     private fun setActivity(text: String) = _status.update { it.copy(activity = text) }
@@ -227,13 +271,6 @@ internal object FactsFiller {
         for (c in order) {
             currentCoroutineContext().ensureActive()
             if (!_status.value.enabled) return failStreak
-            // fork:credits - the album's MusicBrainz credits for the Who made it lens (no AI, nothing from the daily limit),
-            // looked up even for albums whose AI facts are done, so its "elsewhere" panel can search the whole library.
-            if (PeopleCreditsBook.missing(c.artist, c.album)) {
-                waitForQuiet()
-                setActivity("Looking up credits for ${c.artist} - ${c.album}")
-                withContext(FillerWork() + BackgroundWork()) { PeopleCreditsBook.load(c.artist, c.album, c.albumId) }
-            }
             if (FillStorage.get("done1|${c.albumId}") == model) continue
             waitForQuiet()
             val ai = DiscoverAiSettingsRepository.snapshot()

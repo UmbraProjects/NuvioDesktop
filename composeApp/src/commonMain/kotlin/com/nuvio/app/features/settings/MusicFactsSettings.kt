@@ -122,6 +122,7 @@ internal fun LazyListScope.musicFactsSettingsContent(isTablet: Boolean) {
             if (status.enabled || status.albumsTotal > 0) {
                 val lines = buildList {
                     add(fillProgressLine(status.albumsDone, status.albumsTotal, status.songsKept))
+                    if (status.credits.isNotBlank()) add(status.credits)
                     add("Last 24 hours: ${status.used} of ${status.cap} tokens used")
                     if (status.activity.isNotBlank() && status.enabled) add(status.activity)
                     if (status.retry.isNotEmpty()) {
