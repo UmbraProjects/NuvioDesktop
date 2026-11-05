@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -98,6 +99,10 @@ internal suspend fun InAppYouTubeExtractor.searchVideos(query: String): List<You
                 }
             }
         }.onFailure {
+            // fork:music-home - a search the caller gave up on (typing moved on) is not a failure: when the caller's job is
+            // cancelled, pass that on, so nothing upstream takes "no answer" for "nothing found" and keeps it. A timeout
+            // still answers null as before.
+            ensureActive()
             innerTubeLog.w { "YouTube search failed for \"$query\": ${it.message}" }
         }.getOrDefault(emptyList())
     }
@@ -136,6 +141,9 @@ internal suspend fun InAppYouTubeExtractor.musicRequest(endpoint: String, params
                 response.body
             }
         }.onFailure {
+            // fork:music-home - cancelled by the caller (typing moved on): not a failure, and must not be cached as
+            // "nothing found" by MusicMetadataClient, which kept such misses for three minutes. A timeout still answers null.
+            ensureActive()
             innerTubeLog.w { "YouTube Music $endpoint failed: ${it.message}" }
         }.getOrNull()
     }

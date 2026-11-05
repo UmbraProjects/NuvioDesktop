@@ -1,6 +1,8 @@
 package com.nuvio.app.features.music.home
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -61,6 +63,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -77,7 +80,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
@@ -109,6 +115,7 @@ import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.MusicArtistSummary
 import com.nuvio.app.features.music.MusicCatalog
 import com.nuvio.app.features.music.MusicItemMenu
+import com.nuvio.app.features.music.MusicSearchEverything
 import com.nuvio.app.features.music.MusicTabState
 import com.nuvio.app.features.music.MusicTopBarSearch
 import com.nuvio.app.features.music.MusicTopResult
@@ -163,12 +170,11 @@ private val THREE_PANELS_MIN_WIDTH = 1100.dp
 private val YouTubeMusicTint = Color(0xFF8FB4F0)
 private val YouTubeTint = Color(0xFFB98CE6)
 
-private sealed interface HomeSearchState {
-    data object Idle : HomeSearchState
-    data object Loading : HomeSearchState
-    data object Failed : HomeSearchState
-    data class Ready(val results: HomeResults) : HomeSearchState
-}
+/** How one panel stands: waiting for its source's first answer, could not reach it, or showing what it has. */
+private enum class PanelState { Loading, Failed, Ready }
+
+/** How long an emptied line keeps the results up before the screen glides back to the centred search. */
+private const val COLLAPSE_AFTER_MS = 5_000L
 
 /** The token that stands for the mic key in the strip's list, between the two halves of the alphabet. */
 private const val MIC_TOKEN = "mic"
@@ -188,9 +194,17 @@ internal fun MusicHomeScreen(
     val libraryState by MusicLibraryRepository.state.collectAsStateWithLifecycle()
     val libraryNames = remember(libraryState.artists) { libraryState.artists.map { it.name } }
     val history by MusicSearchHistory.recent.collectAsState()
-    var libraryView by rememberSaveable { mutableStateOf(LibraryView.Shelf) }
+    // The tab in the icon row: null is Search, otherwise one of the Library's views.
+    var libraryTab by rememberSaveable { mutableStateOf<LibraryView?>(null) }
     var suggestions by remember { mutableStateOf(emptyList<String>()) }
-    var search by remember { mutableStateOf<HomeSearchState>(HomeSearchState.Idle) }
+    // Each source's latest answer, kept separately so each panel fills as soon as its own source answers. They stay up
+    // while the next search runs and are cleared when the screen glides back to the centred search.
+    var musicAnswer by remember { mutableStateOf<MusicSearchEverything?>(null) }
+    var youtubeAnswer by remember { mutableStateOf<List<MusicTrack>?>(null) }
+    var answeredQuery by remember { mutableStateOf<ParsedQuery?>(null) }
+    // True from the first letter until the line has been empty for COLLAPSE_AFTER_MS: the header sits at the top and
+    // the panels are up. False is the centred search.
+    var expanded by remember { mutableStateOf(tab.query.isNotBlank()) }
     var attempt by remember { mutableIntStateOf(0) }
     // The strip's last pressed letter: the likely next letters gather around it, and it keeps the focus.
     var lastPressed by remember { mutableStateOf<Char?>(null) }
@@ -205,6 +219,10 @@ internal fun MusicHomeScreen(
     var moveFocusToSlot by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val runner = remember(catalog) { HomeRunner(scope, catalog, onAlbumClick, onArtistClick) }
+    // A recent search is only kept once it led somewhere: something played or opened from it.
+    runner.onCommit = {
+        tab.query.trim().takeIf { it.length >= MIN_QUERY_LENGTH }?.let { MusicSearchHistory.record(it) }
+    }
     val hold = rememberHoldToSelectState()
     val reducedMotion = rememberMusicReducedMotion()
     val context = LocalPlatformContext.current
@@ -221,51 +239,76 @@ internal fun MusicHomeScreen(
         actionsOpen = false
         if (query.isBlank()) {
             suggestions = emptyList()
-            settler.reset()
-            settledTop = null
-            heldTop = null
             return@LaunchedEffect
         }
         delay(SUGGEST_PAUSE_MS)
         suggestions = catalog.searchSuggestions(query)
     }
 
-    // The search itself after the typing pause; YouTube Music and YouTube are asked together.
-    LaunchedEffect(query, attempt) {
-        val parsed = parseQuery(query, libraryNames)
-        val text = parsed.searchText.trim()
-        if (text.length < MIN_QUERY_LENGTH) {
-            search = HomeSearchState.Idle
-            return@LaunchedEffect
+    // The first letter lifts the header; an emptied line lets it glide back after COLLAPSE_AFTER_MS.
+    LaunchedEffect(query) {
+        if (query.isNotBlank()) {
+            expanded = true
+        } else if (expanded) {
+            delay(COLLAPSE_AFTER_MS)
+            expanded = false
         }
-        delay(SEARCH_PAUSE_MS)
-        // Results stay up while the next ones load, so typing does not blank the panels on every keystroke.
-        if (search !is HomeSearchState.Ready) search = HomeSearchState.Loading
-        val (everything, youtube) = coroutineScope {
-            val music = async { catalog.searchEverything(text) }
-            val videos = async { catalog.searchYouTube(text) }
-            music.await() to videos.await()
-        }
-        val next = if (everything.failed && youtube.isEmpty()) {
-            HomeSearchState.Failed
-        } else {
-            HomeSearchState.Ready(buildHomeResults(parsed, everything, youtube))
-        }
-        search = next
-        settledTop = settler.offer((next as? HomeSearchState.Ready)?.results?.topKey)
-        val settledNow = settledTop
-        if (settledNow == null) {
-            heldTop = null
-        } else if (next is HomeSearchState.Ready && next.results.topKey == settledNow) {
-            heldTop = next.results.top
-        }
-        if (next is HomeSearchState.Ready && !next.results.isEmpty) MusicSearchHistory.record(text)
+    }
+    // Back at the centred search: the last answers and the match are forgotten.
+    LaunchedEffect(expanded) {
+        if (expanded) return@LaunchedEffect
+        musicAnswer = null
+        youtubeAnswer = null
+        answeredQuery = null
+        settler.reset()
+        settledTop = null
+        heldTop = null
     }
 
+    // The search itself after the typing pause. YouTube Music and YouTube are asked together and each fills its own
+    // panels the moment it answers.
+    LaunchedEffect(query, attempt) {
+        val parsedNow = parseQuery(query, libraryNames)
+        val text = parsedNow.searchText.trim()
+        if (text.length < MIN_QUERY_LENGTH) return@LaunchedEffect
+        delay(SEARCH_PAUSE_MS)
+        coroutineScope {
+            launch {
+                val music = catalog.searchEverything(text)
+                answeredQuery = parsedNow
+                musicAnswer = music
+                if (!music.failed) {
+                    settledTop = settler.offer(music.top?.let(::topKeyOf))
+                    val settledNow = settledTop
+                    if (settledNow == null) {
+                        heldTop = null
+                    } else if (music.top?.let(::topKeyOf) == settledNow) {
+                        heldTop = music.top
+                    }
+                }
+            }
+            launch {
+                val videos = catalog.searchYouTube(text)
+                answeredQuery = parsedNow
+                youtubeAnswer = videos
+            }
+        }
+    }
+    val results = remember(answeredQuery, musicAnswer, youtubeAnswer) {
+        answeredQuery?.let { buildHomeResults(it, musicAnswer ?: MusicSearchEverything.EMPTY, youtubeAnswer.orEmpty()) }
+    }
+    val musicState = when {
+        musicAnswer == null -> PanelState.Loading
+        musicAnswer?.failed == true -> PanelState.Failed
+        else -> PanelState.Ready
+    }
+    val youtubeState = if (youtubeAnswer == null) PanelState.Loading else PanelState.Ready
+
     // Enter in the line (or a spoken search) sends the keyboard to the results once they are in.
-    LaunchedEffect(search, tab.focusResultsWhenReady) {
-        if (!tab.focusResultsWhenReady || search !is HomeSearchState.Ready) return@LaunchedEffect
+    LaunchedEffect(results, tab.focusResultsWhenReady) {
+        if (!tab.focusResultsWhenReady || results == null) return@LaunchedEffect
         tab.focusResultsWhenReady = false
+        withFrameNanos { }
         runCatching { resultsEntry.requestFocus() }
     }
 
@@ -286,13 +329,14 @@ internal fun MusicHomeScreen(
     }
     val likely = remember(query, candidates) { if (query.isBlank()) emptyList() else nextLetterRanks(query, candidates) }
     val ghost = remember(query, libraryNames, suggestions) { ghostCompletion(query, libraryNames + suggestions) }
-    val shownTop = heldTop?.takeIf { query.isNotBlank() }
+    // The match stays (picture and colours included) through the pause after the line is emptied.
+    val shownTop = heldTop?.takeIf { expanded }
+    val greetingTop = shownTop?.takeIf { query.isNotBlank() }
     // The line read as chips: a settled artist match counts as a known name even when it is not in the library.
     val chipNames = remember(libraryNames, shownTop) {
         libraryNames + listOfNotNull(shownTop?.takeIf { topMatchKind(it) == TopMatchKind.Artist }?.title)
     }
     val parsed = remember(query, chipNames) { parseQuery(query, chipNames) }
-    val readyResults = (search as? HomeSearchState.Ready)?.results
 
     // The morph: once a match has settled, its picture fades in behind the screen and the accent takes its colours.
     // An artist match also has its YouTube Music page asked for now, so Play Essentials starts at once.
@@ -361,97 +405,138 @@ internal fun MusicHomeScreen(
             .padding(top = topChromePadding),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        HomeViewIcons(
-            selected = libraryView,
+        HomeTabs(
+            libraryTab = libraryTab,
             onSelect = {
-                libraryView = it
-                setQuery("")
+                libraryTab = it
+                if (it != null) setQuery("")
             },
         )
-        Spacer(Modifier.height(12.dp))
-        HomeGreeting(top = shownTop, kind = parsed.kind)
-        Spacer(Modifier.height(16.dp))
-        HomeSearchLine(
-            query = query,
-            ghost = ghost,
-            parsed = parsed,
-            onQueryChange = ::setQuery,
-            focusRequester = lineFocus,
-            onDown = { if (!openActions()) runCatching { tab.bodyFocus.requestFocus() } },
-            onEnter = {
-                tab.focusResultsWhenReady = true
-                if (search is HomeSearchState.Ready) runCatching { resultsEntry.requestFocus() }
-            },
-        )
-        Spacer(Modifier.height(14.dp))
-        // One slot, one height: the letter strip, or the action row in its place.
-        Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
-        val actionTop = shownTop
-        if (actionsOpen && actionTop != null) {
-            HomeActionRow(
-                top = actionTop,
-                kind = parsed.kind,
-                tracks = readyResults?.centreTracks.orEmpty(),
-                primaryFocus = tab.bodyFocus,
-                runner = runner,
-                onUp = {
-                    moveFocusToSlot = true
-                    actionsOpen = false
-                },
-            )
-        } else LetterStrip(
-            arranged = remember(lastPressed, likely) { arrangeStrip(lastPressed, likely) },
-            likely = remember(likely) { likely.take(STRIP_PULLED).toSet() },
-            typing = query.isNotBlank(),
-            micFocus = tab.bodyFocus,
-            onLetter = { ch ->
-                setQuery(query + ch.lowercaseChar())
-                if (ch.uppercaseChar() in STRIP_LETTERS) lastPressed = ch.uppercaseChar()
-            },
-            onSpace = { if (query.isNotBlank() && !query.endsWith(" ")) setQuery("$query ") },
-            onDelete = { setQuery(query.dropLast(1)) },
-            onMic = { VoiceSearch.start(VOICE_OWNER) },
-            onDown = ::openActions,
-        )
-        }
-        Spacer(Modifier.height(12.dp))
-        // Recent searches, then suggestions while typing, then (once a match has settled) the Narrow row.
-        val chipItems = when {
-            query.isBlank() -> history.take(CHIPS_SHOWN).map { HomeChip(it) { setQuery(it); tab.focusResultsWhenReady = true } }
-            shownTop != null -> narrowChips(parsed, ::setQuery)
-            else -> suggestions.take(CHIPS_SHOWN).map { HomeChip(it) { setQuery(it); tab.focusResultsWhenReady = true } }
-        }
-        HomeChipRow(
-            label = when {
-                query.isBlank() -> "RECENT"
-                shownTop != null -> "NARROW"
-                else -> "SUGGESTED"
-            },
-            chips = chipItems,
-        )
-        Spacer(Modifier.height(16.dp))
-
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            if (query.isBlank()) {
-                if (libraryView == LibraryView.Playlists) {
-                    com.nuvio.app.features.music.playlist.PlaylistsView(onOpenPlaylist = onPlaylistClick, modifier = Modifier.fillMaxSize())
+        val selectedLibrary = libraryTab
+        if (selectedLibrary != null) {
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                if (selectedLibrary == LibraryView.Playlists) {
+                    com.nuvio.app.features.music.playlist.PlaylistsView(onOpenPlaylist = onPlaylistClick, modifier = Modifier.fillMaxSize().focusRequester(tab.bodyFocus))
                 } else {
                     MusicLibraryShelf(
                         onArtistClick = onArtistClick,
                         onAlbumClick = onAlbumClick,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().focusRequester(tab.bodyFocus),
                         onOpenLadder = onOpenLadder,
-                        view = libraryView,
+                        view = selectedLibrary,
                     )
                 }
-            } else {
-                HomeResultsBody(
-                    search = search,
-                    entry = resultsEntry,
-                    onRetry = { attempt++ },
-                    runner = runner,
-                    hold = hold,
-                )
+            }
+        } else {
+            // The search: centred on the screen until the first letter, then gliding up to the top while the panels
+            // rise into the room below it; back to the centre COLLAPSE_AFTER_MS after the line is emptied.
+            val density = LocalDensity.current
+            var headerHeight by remember { mutableStateOf(0.dp) }
+            val motion = if (reducedMotion) 0 else 550
+            val headerBias by animateFloatAsState(
+                if (expanded) -1f else 0f,
+                animationSpec = tween(motion, easing = FastOutSlowInEasing),
+                label = "homeHeaderBias",
+            )
+            val panelsShown by animateFloatAsState(
+                if (expanded) 1f else 0f,
+                animationSpec = tween(if (reducedMotion) 0 else 450, delayMillis = if (expanded && !reducedMotion) 150 else 0),
+                label = "homePanels",
+            )
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                if (panelsShown > 0f) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(top = headerHeight + 28.dp)
+                            .graphicsLayer {
+                                alpha = panelsShown
+                                translationY = (1f - panelsShown) * 48.dp.toPx()
+                            },
+                    ) {
+                        HomeResultsBody(
+                            results = results,
+                            musicState = musicState,
+                            youtubeState = youtubeState,
+                            entry = resultsEntry,
+                            onRetry = { attempt++ },
+                            runner = runner,
+                            hold = hold,
+                        )
+                    }
+                }
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .align(BiasAlignment(0f, headerBias))
+                        .padding(top = 12.dp)
+                        .onSizeChanged { headerHeight = with(density) { it.height.toDp() } },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    HomeGreeting(top = greetingTop, kind = parsed.kind)
+                    Spacer(Modifier.height(16.dp))
+                    HomeSearchLine(
+                        query = query,
+                        ghost = ghost,
+                        parsed = parsed,
+                        onQueryChange = ::setQuery,
+                        focusRequester = lineFocus,
+                        onDown = { if (!openActions()) runCatching { tab.bodyFocus.requestFocus() } },
+                        onEnter = {
+                            tab.focusResultsWhenReady = true
+                            if (results != null) runCatching { resultsEntry.requestFocus() }
+                        },
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    // One slot, one height: the letter strip, or the action row in its place.
+                    Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+                        val actionTop = shownTop
+                        if (actionsOpen && actionTop != null) {
+                            HomeActionRow(
+                                top = actionTop,
+                                kind = parsed.kind,
+                                tracks = results?.centreTracks.orEmpty(),
+                                primaryFocus = tab.bodyFocus,
+                                runner = runner,
+                                onUp = {
+                                    moveFocusToSlot = true
+                                    actionsOpen = false
+                                },
+                            )
+                        } else {
+                            LetterStrip(
+                                arranged = remember(lastPressed, likely) { arrangeStrip(lastPressed, likely) },
+                                likely = remember(likely) { likely.take(STRIP_PULLED).toSet() },
+                                typing = query.isNotBlank(),
+                                micFocus = tab.bodyFocus,
+                                onLetter = { ch ->
+                                    setQuery(query + ch.lowercaseChar())
+                                    if (ch.uppercaseChar() in STRIP_LETTERS) lastPressed = ch.uppercaseChar()
+                                },
+                                onSpace = { if (query.isNotBlank() && !query.endsWith(" ")) setQuery("$query ") },
+                                onDelete = { setQuery(query.dropLast(1)) },
+                                onMic = { VoiceSearch.start(VOICE_OWNER) },
+                                onDown = ::openActions,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    // Recent searches, then suggestions while typing, then (once a match has settled) the Narrow row.
+                    val chipItems = when {
+                        query.isBlank() -> history.take(CHIPS_SHOWN).map { HomeChip(it) { setQuery(it); tab.focusResultsWhenReady = true } }
+                        shownTop != null -> narrowChips(parsed, ::setQuery)
+                        else -> suggestions.take(CHIPS_SHOWN).map { HomeChip(it) { setQuery(it); tab.focusResultsWhenReady = true } }
+                    }
+                    HomeChipRow(
+                        label = when {
+                            query.isBlank() -> "RECENT"
+                            shownTop != null -> "NARROW"
+                            else -> "SUGGESTED"
+                        },
+                        chips = chipItems,
+                    )
+                }
             }
         }
     }
@@ -463,18 +548,19 @@ private const val VOICE_OWNER = "music-search"
 
 // region header
 
-/** The Library's views, as the old tab's icon row; choosing one clears the line and shows it below. */
+/** The icon row: Search first, then the Library's views (Shelf, Constellation, Eras, Playlists). Null is Search. */
 @Composable
-private fun HomeViewIcons(selected: LibraryView, onSelect: (LibraryView) -> Unit) {
+private fun HomeTabs(libraryTab: LibraryView?, onSelect: (LibraryView?) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        BrowseFilterIconAction(Icons.Rounded.Search, "Search", on = libraryTab == null) { onSelect(null) }
         HOME_VIEW_ICONS.forEach { (view, icon, label) ->
-            BrowseFilterIconAction(icon, label, on = selected == view) { onSelect(view) }
+            BrowseFilterIconAction(icon, label, on = libraryTab == view) { onSelect(view) }
         }
     }
 }
 
 private val HOME_VIEW_ICONS: List<Triple<LibraryView, ImageVector, String>> = listOf(
-    Triple(LibraryView.Shelf, Icons.Rounded.ViewModule, "Shelf"),
+    Triple(LibraryView.Shelf, Icons.Rounded.ViewModule, "Library shelf"),
     Triple(LibraryView.Constellation, Icons.Rounded.Hub, "Constellation"),
     Triple(LibraryView.Eras, Icons.Rounded.Timeline, "Eras"),
     Triple(LibraryView.Playlists, Icons.Rounded.QueueMusic, "Playlists"),
@@ -853,13 +939,14 @@ private fun LineChip(kicker: String, value: String, tint: Color) {
 
 @Composable
 private fun HomeResultsBody(
-    search: HomeSearchState,
+    results: HomeResults?,
+    musicState: PanelState,
+    youtubeState: PanelState,
     entry: FocusRequester,
     onRetry: () -> Unit,
     runner: HomeRunner,
     hold: HoldToSelectState,
 ) {
-    val results = (search as? HomeSearchState.Ready)?.results
     // The keyboard's way in: the first thing in the YouTube Music panel, else the top match, else the first video.
     val entryPanel = when {
         results == null -> -1
@@ -869,7 +956,7 @@ private fun HomeResultsBody(
     }
     val left: @Composable ColumnScope.() -> Unit = {
         LensPanelHeader(Icons.Rounded.Star, "TOP MATCH", null, MaterialTheme.nuvio.colors.accent)
-        PanelBody(search, onRetry, results?.let { it.top == null && it.artists.isEmpty() } ?: true) {
+        PanelBody(musicState, onRetry, results?.let { it.top == null && it.artists.isEmpty() } ?: true) {
             val r = results ?: return@PanelBody
             r.top?.let { top ->
                 item(key = "top") {
@@ -884,7 +971,7 @@ private fun HomeResultsBody(
     }
     val centre: @Composable ColumnScope.() -> Unit = {
         LensPanelHeader(Icons.Rounded.MusicNote, results?.centreLabel ?: "YOUTUBE MUSIC · SONGS AND ALBUMS", null, YouTubeMusicTint)
-        PanelBody(search, onRetry, results?.let { it.rows.isEmpty() && it.albums.isEmpty() } ?: true) {
+        PanelBody(if (results?.rows?.isNotEmpty() == true) PanelState.Ready else musicState, onRetry, results?.let { it.rows.isEmpty() && it.albums.isEmpty() } ?: true) {
             val r = results ?: return@PanelBody
             r.rows.forEachIndexed { index, row ->
                 val track = row.playable ?: return@forEachIndexed
@@ -902,7 +989,7 @@ private fun HomeResultsBody(
     }
     val right: @Composable ColumnScope.() -> Unit = {
         LensPanelHeader(Icons.Rounded.SmartDisplay, results?.rightLabel ?: "YOUTUBE · VIDEOS", null, YouTubeTint)
-        PanelBody(search, onRetry, results?.videos?.isEmpty() ?: true) {
+        PanelBody(youtubeState, onRetry, results?.videos?.isEmpty() ?: true) {
             val r = results ?: return@PanelBody
             r.videos.forEachIndexed { index, video ->
                 item(key = "video:" + video.videoId) {
@@ -933,7 +1020,7 @@ private fun HomeResultsBody(
 /** A panel's list under its header, or what to say instead: loading, could not search, nothing found. */
 @Composable
 private fun ColumnScope.PanelBody(
-    search: HomeSearchState,
+    state: PanelState,
     onRetry: () -> Unit,
     empty: Boolean,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
@@ -941,11 +1028,11 @@ private fun ColumnScope.PanelBody(
     val colors = MaterialTheme.nuvio.colors
     Spacer(Modifier.height(14.dp))
     when {
-        search is HomeSearchState.Loading || search is HomeSearchState.Idle -> Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.TopCenter) {
+        state == PanelState.Loading -> Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.TopCenter) {
             CircularProgressIndicator(color = colors.accent, modifier = Modifier.size(28.dp))
         }
-        search is HomeSearchState.Failed -> Column(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Couldn't reach YouTube. Check your connection.", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+        state == PanelState.Failed -> Column(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Couldn't reach YouTube Music. Check your connection.", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
             Spacer(Modifier.height(10.dp))
             Box(
                 Modifier.musicKeyFocusRing(RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp))

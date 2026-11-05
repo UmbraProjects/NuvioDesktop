@@ -403,8 +403,11 @@ data class HomeResults(
 
     /** What identifies the top match for [MatchSettler]: its album, else its artist, else its video, else its title. */
     val topKey: String?
-        get() = top?.let { it.albumBrowseId ?: it.artists.firstOrNull()?.browseId ?: it.videoId ?: it.title }
+        get() = top?.let(::topKeyOf)
 }
+
+/** What identifies a top match for [MatchSettler]: its album, else its artist, else its video, else its title. */
+fun topKeyOf(top: MusicTopResult): String = top.albumBrowseId ?: top.artists.firstOrNull()?.browseId ?: top.videoId ?: top.title
 
 fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, youtube: List<MusicTrack>): HomeResults {
     val kind = query.kind

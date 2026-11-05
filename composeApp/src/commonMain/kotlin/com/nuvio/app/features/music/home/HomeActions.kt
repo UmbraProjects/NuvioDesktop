@@ -82,12 +82,26 @@ internal enum class PlayHow { Now, Shuffled, Next, Queue }
 internal class HomeRunner(
     private val scope: CoroutineScope,
     private val catalog: MusicCatalog,
-    val openAlbum: (String) -> Unit,
-    val openArtist: (String) -> Unit,
+    private val albumPage: (String) -> Unit,
+    private val artistPage: (String) -> Unit,
 ) {
     private val player get() = MusicPlayback.player
 
+    /** Called whenever something is played or opened: the search that led there is kept as a recent search then. */
+    var onCommit: () -> Unit = {}
+
+    fun openAlbum(browseId: String) {
+        onCommit()
+        albumPage(browseId)
+    }
+
+    fun openArtist(browseId: String) {
+        onCommit()
+        artistPage(browseId)
+    }
+
     private fun start(album: MusicAlbum, how: PlayHow, label: String) {
+        onCommit()
         when (how) {
             PlayHow.Now -> player.play(album)
             PlayHow.Shuffled -> player.play(album, shuffled = true)
@@ -120,7 +134,12 @@ internal class HomeRunner(
         scope.launch {
             val ids = catalog.artist(artistId)?.let(::topAlbumIds).orEmpty()
             val albums = ids.map { id -> async { catalog.album(id) } }.awaitAll().filterNotNull()
-            if (albums.isEmpty()) NuvioToastController.show("Couldn't open $name's albums") else player.playAlbums(albums)
+            if (albums.isEmpty()) {
+                NuvioToastController.show("Couldn't open $name's albums")
+            } else {
+                onCommit()
+                player.playAlbums(albums)
+            }
         }
     }
 
@@ -140,6 +159,7 @@ internal class HomeRunner(
             tracks = tracks.distinctBy { it.videoId }.mapIndexed { i, t -> t.copy(trackNumber = i + 1) },
             audioPlaylistId = null,
         )
+        onCommit()
         player.play(queue, shuffled = shuffled)
     }
 
@@ -153,11 +173,11 @@ internal class HomeRunner(
             HomeAction.PlayEssentials -> artistId?.let { essentials(it, top.title, PlayHow.Now) }
             HomeAction.ShuffleEssentials -> artistId?.let { essentials(it, top.title, PlayHow.Shuffled) }
             HomeAction.PlayTopAlbums -> artistId?.let { topAlbums(it, top.title) }
-            HomeAction.OpenArtist -> artistId?.let(openArtist)
+            HomeAction.OpenArtist -> artistId?.let { openArtist(it) }
             HomeAction.PlayAlbum -> top.albumBrowseId?.let { album(it, top.title, PlayHow.Now) }
             HomeAction.ShuffleAlbum -> top.albumBrowseId?.let { album(it, top.title, PlayHow.Shuffled) }
             HomeAction.QueueAlbum -> top.albumBrowseId?.let { album(it, top.title, PlayHow.Queue) }
-            HomeAction.OpenAlbum -> top.albumBrowseId?.let(openAlbum)
+            HomeAction.OpenAlbum -> top.albumBrowseId?.let { openAlbum(it) }
             HomeAction.PlayTrack -> top.videoId?.let { track(topTrack(top, it), PlayHow.Now) }
             HomeAction.QueueTrack -> top.videoId?.let { track(topTrack(top, it), PlayHow.Queue) }
             HomeAction.PlayAll -> playAll(tracks, "${top.title}: ${kind?.plural ?: "results"}", top, shuffled = false)
