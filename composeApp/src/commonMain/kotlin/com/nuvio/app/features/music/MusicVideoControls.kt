@@ -187,7 +187,8 @@ private fun StripButton(icon: ImageVector, label: String, enabled: Boolean = tru
 internal fun MusicVolumeControl(
     state: MusicPlayerState,
     player: MusicPlayer,
-    sliderWidth: Dp,
+    /** The slider's width; null fills what [modifier] gives the control (beside a seek bar, sharing its row). */
+    sliderWidth: Dp?,
     modifier: Modifier = Modifier,
     tint: Color = Color.White.copy(alpha = 0.9f),
     glass: Boolean = false,
@@ -214,7 +215,7 @@ internal fun MusicVolumeControl(
         SeekBar(
             fraction = state.volume / 100f,
             onSeek = { player.setVolume((it * 100).toInt().coerceIn(0, 100)) },
-            modifier = Modifier.width(sliderWidth),
+            modifier = if (sliderWidth != null) Modifier.width(sliderWidth) else Modifier.weight(1f),
             onNudge = { d -> player.setVolume((state.volume + d * 5).coerceIn(0, 100)) },
             glass = glass,
         )

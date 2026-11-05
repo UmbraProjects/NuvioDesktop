@@ -332,17 +332,21 @@ private fun DockNowPlaying(
         }
         DockButton(Icons.Rounded.KeyboardArrowUp, "Show the player") { onRestore() }
     }
-    // The progress under the header: the bar's own seek bar, so a click, drag or Left/Right moves the song.
-    SeekBar(
-        fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
-        onSeek = { fraction -> player.seekTo((fraction * state.durationMs).toLong()) },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = state.durationMs > 0L,
-        onNudge = { direction -> player.seekTo((state.positionMs + direction * DOCK_NUDGE_MS).coerceIn(0L, state.durationMs)) },
-    )
-    // The volume, so it can be set without bringing the full player back.
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        MusicVolumeControl(state, player, sliderWidth = 150.dp, tint = colors.textPrimary)
+    // One row under the header: the song's seek bar (a click, drag or Left/Right moves it) in two thirds, the volume
+    // in the last, so it can be set without bringing the full player back and does not sit on a row of its own.
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        SeekBar(
+            fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
+            onSeek = { fraction -> player.seekTo((fraction * state.durationMs).toLong()) },
+            modifier = Modifier.weight(2f),
+            enabled = state.durationMs > 0L,
+            onNudge = { direction -> player.seekTo((state.positionMs + direction * DOCK_NUDGE_MS).coerceIn(0L, state.durationMs)) },
+        )
+        MusicVolumeControl(state, player, sliderWidth = null, modifier = Modifier.weight(1f), tint = colors.textPrimary)
     }
 }
 
