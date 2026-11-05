@@ -107,8 +107,13 @@ internal fun expectedEditionCounts(releases: List<LibraryRelease>, ytBrowseId: S
 internal suspend fun libraryEdition(catalog: MusicCatalog, album: MusicAlbum): MusicAlbum {
     val releases = MusicLibraryRepository.state.value.artistOfAlbum(album.browseId)?.releases.orEmpty()
     val expected = expectedEditionCounts(releases, album.browseId)
+    val have = album.tracks.size
+    // The album already has the count the library keeps for this release: it is the right edition and stays. Looking from
+    // here for a sibling's count swapped it for the other edition, and the next open swapped it back (Ren's "Vincent's
+    // Tale": 7 tracks, then 11, then 7). The sibling's edition is still looked for, and linked to the sibling instead.
+    val ownMatches = have > 0 && releases.firstOrNull { it.ytBrowseId == album.browseId }?.trackCount == have
     var edition = matchingEdition(album, expected) { catalog.album(it) }
-    if (edition.browseId == album.browseId && expected.any { it > 0 && it != album.tracks.size }) {
+    if (edition.browseId == album.browseId && expected.any { it > 0 && it != have }) {
         val query = (album.artists.firstOrNull()?.name.orEmpty() + " " + album.title).trim()
         val found = try {
             catalog.searchReleases(query).ifEmpty { catalog.searchAlbums(query) }
@@ -120,15 +125,19 @@ internal suspend fun libraryEdition(catalog: MusicCatalog, album: MusicAlbum): M
         edition = searchedEdition(album, expected, found) { catalog.album(it) }
     }
     log.i {
-        "album ${album.browseId} has ${album.tracks.size} tracks, the library expects $expected, " +
+        "album ${album.browseId} has $have tracks, the library expects $expected${if (ownMatches) " (its own count matches)" else ""}, " +
             "${album.otherVersionIds.size} other versions listed -> ${edition.browseId} (${edition.tracks.size} tracks)"
     }
+    if (ownMatches) {
+        if (edition.browseId != album.browseId) MusicLibraryRepository.linkSibling(album.browseId, edition.browseId, edition.tracks.size)
+        return album
+    }
     if (edition.browseId != album.browseId) {
-        MusicLibraryRepository.relinkRelease(album.browseId, edition.browseId, edition.tracks.size)
-    } else if (expected.isNotEmpty() && album.tracks.isNotEmpty() && album.tracks.size !in expected) {
+        MusicLibraryRepository.relinkRelease(album.browseId, edition.browseId, edition.tracks.size, fromTrackCount = have)
+    } else if (expected.isNotEmpty() && album.tracks.isNotEmpty() && have !in expected) {
         // No edition with the expected count exists on YouTube Music: say so, rather than let the artist page's version chip
         // keep promising the metadata sources' number ("11 tracks · YouTube Music" for a 7-track album).
-        MusicLibraryRepository.recordTrackCount(album.browseId, album.tracks.size)
+        MusicLibraryRepository.recordTrackCount(album.browseId, have)
     }
     return edition
 }

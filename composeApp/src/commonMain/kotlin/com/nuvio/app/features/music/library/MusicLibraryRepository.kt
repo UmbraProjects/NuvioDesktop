@@ -240,20 +240,34 @@ object MusicLibraryRepository {
      * disk; previewed ones stay in memory. With [trackCount] the relinked releases record how many tracks
      * that edition has, so opening it later finds the count already right and does not look again.
      */
-    fun relinkRelease(from: String, to: String, trackCount: Int? = null) {
+    fun relinkRelease(from: String, to: String, trackCount: Int? = null, fromTrackCount: Int? = null) {
         if (from == to) return
         ensureLoaded()
-        fun LibraryArtist.relinked() = copy(
-            releases = releases.map {
-                if (it.ytBrowseId == from) it.copy(ytBrowseId = to, trackCount = trackCount?.takeIf { n -> n > 0 } ?: it.trackCount) else it
-            },
-        )
+        fun LibraryArtist.relinked() = copy(releases = relinkedReleases(releases, from, to, trackCount, fromTrackCount))
         var savedChanged = false
         _state.update { s ->
             savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == from } }
             s.copy(
                 artists = s.artists.map { a -> if (a.releases.any { it.ytBrowseId == from }) a.relinked() else a },
                 preview = s.preview.mapValues { (_, a) -> if (a.releases.any { it.ytBrowseId == from }) a.relinked() else a },
+            )
+        }
+        if (savedChanged) persist()
+    }
+
+    /**
+     * fork:album-editions - links the edition [editionId] ([trackCount] tracks) to the sibling of the release linked to
+     * [linkedId] that has no YouTube Music link, the same title and that many tracks, so the version picker opens both.
+     */
+    fun linkSibling(linkedId: String, editionId: String, trackCount: Int) {
+        ensureLoaded()
+        fun LibraryArtist.linked() = copy(releases = siblingLinked(releases, linkedId, editionId, trackCount))
+        var savedChanged = false
+        _state.update { s ->
+            savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == linkedId } }
+            s.copy(
+                artists = s.artists.map { a -> if (a.releases.any { it.ytBrowseId == linkedId }) a.linked() else a },
+                preview = s.preview.mapValues { (_, a) -> if (a.releases.any { it.ytBrowseId == linkedId }) a.linked() else a },
             )
         }
         if (savedChanged) persist()
