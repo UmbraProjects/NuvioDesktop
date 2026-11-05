@@ -6745,7 +6745,10 @@ private fun TabletFloatingTopBar(
     var activationZoneHovered by remember { mutableStateOf(false) }
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
     // fork:music-navbar - on the Music tab the bar holds the Music search instead of the tabs.
-    val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive
+    // fork:music-home - the new music home has its own search line, so with it on the bar stays the normal tab bar.
+    val musicHomeOn = com.nuvio.app.features.music.library.MusicLibraryRepository.state
+        .collectAsStateWithLifecycle().value.settings.musicHome
+    val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive && !musicHomeOn
     // fork:youtube-mode - and on the YouTube tab, the YouTube search.
     val youTubeBarActive = selectedTab == AppScreenTab.YouTube && !isSearchActive
     val discoverTabVisible by remember {

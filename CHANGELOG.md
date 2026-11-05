@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Music Home: The Normal Top Bar On Music** - with the new music home on, the top bar on the Music tab stays the app's normal one (Home, Search, Discover, Library, Live TV, YouTube, Music, profile) instead of turning into an empty Music bar: the home's own search line does the searching. With the setting off, the Music bar is as before.
+
 - **Music Home: The Search Is The Whole Screen** - the new music home now opens on the search alone, centred on the screen: the greeting, the line, the letter strip and recent searches. Your library moved behind the icon row above it (Search, then Shelf, Constellation, Eras and Playlists). The first letter you type makes the search glide up to the top while the three panels rise into the room below it; empty the line and, after 5 seconds, it glides back to the centre (at once with reduced motion). Each panel now fills as soon as its own source answers, so YouTube's videos no longer wait for YouTube Music, and the last results stay up while the next search runs. Recent searches only keep what you played or opened something from, not every half-typed word.
 
 ### Fixed
