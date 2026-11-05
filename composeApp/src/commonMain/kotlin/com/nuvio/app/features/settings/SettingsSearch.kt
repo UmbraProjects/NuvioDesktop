@@ -829,6 +829,11 @@ private fun settingsSearchEntries(
     )
     listOf(
         PlaybackSearchRow("nuvio-license", resolve(Res.string.settings_licenses_attributions_nuvio_title), resolve(Res.string.settings_licenses_attributions_nuvio_license)),
+        PlaybackSearchRow("eclipse-attribution", resolve(Res.string.settings_licenses_attributions_eclipse_title), resolve(Res.string.settings_licenses_attributions_eclipse_body)),
+        PlaybackSearchRow("goattv-attribution", resolve(Res.string.settings_licenses_attributions_goattv_title), resolve(Res.string.settings_licenses_attributions_goattv_body)),
+        PlaybackSearchRow("stremio-kai-attribution", resolve(Res.string.settings_licenses_attributions_stremio_kai_title), resolve(Res.string.settings_licenses_attributions_stremio_kai_body)),
+        PlaybackSearchRow("anime4k-attribution", resolve(Res.string.settings_licenses_attributions_anime4k_title), resolve(Res.string.settings_licenses_attributions_anime4k_body)),
+        PlaybackSearchRow("trash-guides-attribution", resolve(Res.string.settings_licenses_attributions_trash_title), resolve(Res.string.settings_licenses_attributions_trash_body)),
         PlaybackSearchRow("tmdb-attribution", resolve(Res.string.settings_licenses_attributions_tmdb_title), resolve(Res.string.settings_licenses_attributions_tmdb_body)),
         PlaybackSearchRow("trakt-attribution", resolve(Res.string.settings_licenses_attributions_trakt_title), resolve(Res.string.settings_licenses_attributions_trakt_body)),
         PlaybackSearchRow("premiumize-attribution", resolve(Res.string.settings_licenses_attributions_premiumize_title), resolve(Res.string.settings_licenses_attributions_premiumize_body)),
@@ -843,6 +848,21 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("anime-mapping-attribution", resolve(Res.string.settings_licenses_attributions_anime_mapping_title), resolve(Res.string.settings_licenses_attributions_anime_mapping_body)),
         PlaybackSearchRow("mpv-license", resolve(Res.string.settings_licenses_attributions_mpv_title), resolve(Res.string.settings_licenses_attributions_mpv_license)),
         PlaybackSearchRow("ffmpeg-license", resolve(Res.string.settings_licenses_attributions_ffmpeg_title), resolve(Res.string.settings_licenses_attributions_ffmpeg_license)),
+        PlaybackSearchRow("sponsorblock-attribution", resolve(Res.string.settings_licenses_attributions_sponsorblock_title), resolve(Res.string.settings_licenses_attributions_sponsorblock_body)),
+        PlaybackSearchRow("ryd-attribution", resolve(Res.string.settings_licenses_attributions_ryd_title), resolve(Res.string.settings_licenses_attributions_ryd_body)),
+        PlaybackSearchRow("wikipedia-attribution", resolve(Res.string.settings_licenses_attributions_wikipedia_title), resolve(Res.string.settings_licenses_attributions_wikipedia_body)),
+        PlaybackSearchRow("lyrics-attribution", resolve(Res.string.settings_licenses_attributions_lyrics_title), resolve(Res.string.settings_licenses_attributions_lyrics_body)),
+        PlaybackSearchRow("musicbrainz-attribution", resolve(Res.string.settings_licenses_attributions_musicbrainz_title), resolve(Res.string.settings_licenses_attributions_musicbrainz_body)),
+        PlaybackSearchRow("music-metadata-attribution", resolve(Res.string.settings_licenses_attributions_music_metadata_title), resolve(Res.string.settings_licenses_attributions_music_metadata_body)),
+        PlaybackSearchRow("fanart-attribution", resolve(Res.string.settings_licenses_attributions_fanart_title), resolve(Res.string.settings_licenses_attributions_fanart_body)),
+        PlaybackSearchRow("games-attribution", resolve(Res.string.settings_licenses_attributions_games_title), resolve(Res.string.settings_licenses_attributions_games_body)),
+        PlaybackSearchRow("anilist-attribution", resolve(Res.string.settings_licenses_attributions_anilist_title), resolve(Res.string.settings_licenses_attributions_anilist_body)),
+        PlaybackSearchRow("aniskip-attribution", resolve(Res.string.settings_licenses_attributions_aniskip_title), resolve(Res.string.settings_licenses_attributions_aniskip_body)),
+        PlaybackSearchRow("whisper-license", resolve(Res.string.settings_licenses_attributions_whisper_title), resolve(Res.string.settings_licenses_attributions_whisper_license)),
+        PlaybackSearchRow("libtorrent-license", resolve(Res.string.settings_licenses_attributions_libtorrent_title), resolve(Res.string.settings_licenses_attributions_libtorrent_license)),
+        PlaybackSearchRow("quickjs-license", resolve(Res.string.settings_licenses_attributions_quickjs_title), resolve(Res.string.settings_licenses_attributions_quickjs_license)),
+        PlaybackSearchRow("onnx-license", resolve(Res.string.settings_licenses_attributions_onnx_title), resolve(Res.string.settings_licenses_attributions_onnx_license)),
+        PlaybackSearchRow("fonts-license", resolve(Res.string.settings_licenses_attributions_fonts_title), resolve(Res.string.settings_licenses_attributions_fonts_license)),
         PlaybackSearchRow("runtime-libraries-license", resolve(Res.string.settings_licenses_attributions_runtime_libraries_title), resolve(Res.string.settings_licenses_attributions_runtime_libraries_license)),
     ).forEach { row ->
         addRow(

@@ -1175,6 +1175,8 @@ val externalDesktopResources = listOf(
     "torrserver/**",
     "backdrop-framing/**",
     "anime-list-mini.json",
+    // Third-party licence texts, so they ship beside the binaries they cover (<install>esources\licenses).
+    "licenses/**",
 )
 val desktopResourcesSourceDir = layout.projectDirectory.dir("src/desktopMain/resources").asFile
 
