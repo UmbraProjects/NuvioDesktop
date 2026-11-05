@@ -97,3 +97,49 @@ internal fun essentialsMix(artistId: String, artistName: String, artistThumb: St
         audioPlaylistId = null,
     )
 }
+
+/**
+ * The four facts the left panel shows about the artist: fans, rating, releases and playable when known, with a fact that
+ * has a value (where they are from, when they began, their first release) taking the place of one that does not, so a
+ * tile never shows a dash. [total] and [playable] are the discography's counts.
+ */
+internal fun artistStageFacts(artist: LibraryArtist, total: Int, playable: Int): List<Pair<String, String>> {
+    val began = artist.beginYear?.takeIf { it.isNotBlank() }?.let { year ->
+        when {
+            artist.type.equals("Person", ignoreCase = true) -> "Born" to year
+            artist.type?.lowercase() in setOf("group", "orchestra", "choir") -> "Formed" to year
+            else -> "Since" to year
+        }
+    }
+    val first = artist.releases.mapNotNull { (it.year ?: it.releaseDate)?.take(4)?.takeIf { y -> y.length == 4 && y.all(Char::isDigit) } }.minOrNull()
+    val candidates = listOf(
+        artist.fans?.let { "Fans" to formatCount(it) },
+        ratingText(artist.rating)?.let { "Rating" to it },
+        "Releases" to "$total",
+        "Playable here" to "$playable",
+        (artist.area ?: artist.country)?.takeIf { it.isNotBlank() }?.let { "From" to it },
+        began,
+        first?.let { "First release" to it },
+    )
+    return candidates.filterNotNull().take(4)
+}
+
+/** The release the centre header shows beside the name: the top album, else the newest album or EP with a cover. */
+internal fun stageHeaderRelease(artist: LibraryArtist): LibraryRelease? =
+    artistTopReleases(artist, limit = 1).firstOrNull()
+        ?: artist.releases.filter { (it.kind == ReleaseKind.Album || it.kind == ReleaseKind.EP) && it.art.cover != null }
+            .maxByOrNull { it.releaseDate ?: it.year ?: "" }
+
+/**
+ * Whether Wikipedia's page summary found by the artist's name is about a musician, not a namesake (a place, a word): it
+ * must speak of music in some way. Used only when the library has no biography of its own.
+ */
+internal fun looksLikeMusicianText(text: String): Boolean {
+    val t = text.lowercase()
+    return MUSIC_WORDS.any { Regex("""\b$it""").containsMatchIn(t) }
+}
+
+private val MUSIC_WORDS = listOf(
+    "music", "musician", "singer", "rapper", "band", "dj", "record producer", "songwriter", "composer", "album", "single",
+    "drum and bass", "hip hop", "rock", "duo", "group", "vocalist", "guitarist",
+)

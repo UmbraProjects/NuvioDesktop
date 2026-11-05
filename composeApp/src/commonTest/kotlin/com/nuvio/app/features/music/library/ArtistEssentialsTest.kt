@@ -67,4 +67,42 @@ class ArtistEssentialsTest {
     fun nothingToPlayGivesNoMix() {
         assertNull(essentialsMix("UCpac", "2Pac", null, emptyList()))
     }
+
+    private fun rel(key: String, kind: ReleaseKind, year: String?, cover: String? = null) =
+        LibraryRelease(key = key, title = key, kind = kind, year = year, art = ReleaseArtwork(covers = listOfNotNull(cover)))
+
+    @Test
+    fun factsWithNoValueGiveWayToOnesThatHaveOne() {
+        val artist = LibraryArtist(
+            id = "UChc", name = "High Contrast", type = "Person", area = "Penarth", beginYear = "1979", fans = 50_000,
+            releases = listOf(rel("a", ReleaseKind.Album, "2002"), rel("b", ReleaseKind.Single, "1999")),
+        )
+        val facts = artistStageFacts(artist, total = 127, playable = 76)
+        assertEquals(listOf("Fans", "Releases", "Playable here", "From"), facts.map { it.first })
+        assertEquals("Penarth", facts[3].second)
+        val bare = artist.copy(fans = null, area = null, country = null)
+        assertEquals(listOf("Releases", "Playable here", "Born", "First release"), artistStageFacts(bare, 127, 76).map { it.first })
+        assertEquals("1999", artistStageFacts(bare, 127, 76)[3].second)
+    }
+
+    @Test
+    fun theHeaderFallsBackToTheNewestCoveredAlbum() {
+        val artist = LibraryArtist(
+            id = "UChc", name = "High Contrast",
+            releases = listOf(
+                rel("old", ReleaseKind.Album, "2002", "https://c/old"),
+                rel("new", ReleaseKind.Album, "2024", "https://c/new"),
+                rel("bare", ReleaseKind.Album, "2025"),
+                rel("single", ReleaseKind.Single, "2026", "https://c/single"),
+            ),
+        )
+        assertEquals("new", stageHeaderRelease(artist)?.key)
+        assertEquals("old", stageHeaderRelease(artist.copy(topAlbumKeys = listOf("old")))?.key)
+    }
+
+    @Test
+    fun onlyAMusiciansWikipediaPageCounts() {
+        assertEquals(true, looksLikeMusicianText("Lincoln Barrett, known as High Contrast, is a Welsh drum and bass DJ and record producer."))
+        assertEquals(false, looksLikeMusicianText("High contrast is a property of an image in which light and dark areas differ greatly."))
+    }
 }

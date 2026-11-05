@@ -74,6 +74,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAlertDialog
@@ -609,12 +610,12 @@ internal fun LibraryRelease.playsOnClick(): Boolean = kind == ReleaseKind.Single
  * addon has it, so it is drawn in full and says so.
  */
 @Composable
-internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null, addon: Boolean = false) {
+internal fun ReleaseCard(group: ReleaseGroup, onClick: () -> Unit, onSecondary: (() -> Unit)? = null, addon: Boolean = false, width: Dp = 150.dp) {
     val colors = MaterialTheme.nuvio.colors
     val release = group.primary
     Column(
         modifier = Modifier
-            .width(150.dp)
+            .width(width)
             .clip(RoundedCornerShape(10.dp))
             .secondaryClick(onSecondary)
             .musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable(onClick = onClick)

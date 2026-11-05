@@ -34,9 +34,12 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -420,8 +423,30 @@ private fun StageHero(
                     active = inLibrary,
                     onClick = { if (inLibrary) onRemove() else MusicLibraryRepository.add(artist.id) },
                 )
-                if (linkCount > 0) HeroButton("Links ($linkCount)", Icons.Rounded.Link, onClick = onLinks)
-                if (saved) HeroButton(refreshing ?: "Refresh", Icons.Rounded.Refresh, enabled = refreshing == null, onClick = onRefresh)
+                // Links and Refresh live in More, so the row stays one line, centred.
+                if (linkCount > 0 || saved) {
+                    var moreOpen by remember { mutableStateOf(false) }
+                    Box {
+                        HeroButton("More", Icons.Rounded.MoreHoriz, onClick = { moreOpen = true })
+                        DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                            if (linkCount > 0) {
+                                DropdownMenuItem(
+                                    text = { Text("Links ($linkCount)") },
+                                    leadingIcon = { Icon(Icons.Rounded.Link, contentDescription = null) },
+                                    onClick = { moreOpen = false; onLinks() },
+                                )
+                            }
+                            if (saved) {
+                                DropdownMenuItem(
+                                    text = { Text(refreshing ?: "Refresh") },
+                                    leadingIcon = { Icon(Icons.Rounded.Refresh, contentDescription = null) },
+                                    enabled = refreshing == null,
+                                    onClick = { moreOpen = false; onRefresh() },
+                                )
+                            }
+                        }
+                    }
+                }
             }
             (notice ?: refreshing)?.let { line ->
                 Text(line, style = MaterialTheme.typography.bodyMedium, color = if (notice != null) colors.warning else colors.textMuted, textAlign = TextAlign.Center, maxLines = 2)
@@ -484,19 +509,23 @@ private fun HeroButton(
 @Composable
 private fun StageArtistPanel(artist: LibraryArtist, discography: ArtistDiscography, canPlay: Boolean, onPlay: () -> Unit, modifier: Modifier) {
     val colors = MaterialTheme.nuvio.colors
-    val bio = artist.biography?.trim().orEmpty()
+    val own = artist.biography?.trim().orEmpty()
+    // No biography in the library: the opening of the artist's English Wikipedia page (the one Liner Notes reads), when it
+    // is about a musician.
+    val wiki by produceState<String?>(StageWikipedia.peek(artist.name), artist.name, own.isEmpty()) {
+        if (own.isEmpty() && value == null) value = StageWikipedia.load(artist.name)
+    }
+    val bio = own.ifEmpty { wiki.orEmpty() }
+    val bioSource = if (own.isNotEmpty()) artist.biographySource else if (bio.isNotEmpty()) "Wikipedia" else null
     LensPanel(modifier) {
-        LensPanelHeader(Icons.Rounded.AutoAwesome, "ABOUT THIS ARTIST", pill = artist.biographySource ?: "Library", tint = colors.accent)
+        LensPanelHeader(Icons.Rounded.AutoAwesome, "ABOUT THIS ARTIST", pill = bioSource ?: "Library", tint = colors.accent)
         LensPanelTitle(artist.name, passportLine(artist).ifEmpty { "Artist" })
         LensFactGrid(
-            listOf(
-                LensFact("Fans", artist.fans?.let { formatCount(it) } ?: "–"),
-                LensFact("Rating", ratingText(artist.rating) ?: "–"),
-                LensFact("Releases", "${discography.totalCount}"),
-                LensFact("Playable here", "${discography.playableCount}"),
-            ),
+            remember(artist, discography.totalCount, discography.playableCount) {
+                artistStageFacts(artist, discography.totalCount, discography.playableCount).map { (label, value) -> LensFact(label, value) }
+            },
         )
-        LensSectionLabel("THE STORY", artist.biographySource?.let { "From $it" }.orEmpty())
+        LensSectionLabel("THE STORY", bioSource?.let { "From $it" }.orEmpty())
         LensBody(colors.accent, highlighted = true) {
             Text(
                 bio.ifEmpty { "Nothing has been written about ${artist.name} yet." },
@@ -564,6 +593,27 @@ private fun StageSongPanel(artist: LibraryArtist, row: EssentialRow, single: Boo
             )
         }
         LensButton("Play the song", tint = colors.accent, enabled = true, onClick = onPlay)
+    }
+}
+
+/** The artist's Wikipedia opening, asked once per name per session (a miss is kept too, so it is not asked again). */
+private object StageWikipedia {
+    private val kept = HashMap<String, String?>()
+
+    fun peek(name: String): String? = kept[name.lowercase()]
+
+    suspend fun load(name: String): String? {
+        val key = name.lowercase()
+        if (kept.containsKey(key)) return kept[key]
+        val text = try {
+            WikipediaClient.artistText(name)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            return null // offline: asked again next time
+        }?.takeIf(::looksLikeMusicianText)
+        kept[key] = text
+        return text
     }
 }
 
@@ -647,7 +697,7 @@ private fun StageLibraryPanel(
 @Composable
 private fun StageCentreHeader(artist: LibraryArtist, discography: ArtistDiscography) {
     val colors = MaterialTheme.nuvio.colors
-    val firstTop = remember(artist.topAlbumKeys, artist.releases) { artistTopReleases(artist, limit = 1).firstOrNull() }
+    val firstTop = remember(artist.topAlbumKeys, artist.releases) { stageHeaderRelease(artist) }
     Row(Modifier.fillMaxWidth().height(104.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(96.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.06f)).border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)) {
             artist.art.thumb?.let { NuvioAsyncImage(model = it, contentDescription = artist.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
@@ -854,9 +904,15 @@ private fun DiscographyLens(
                 Text(title, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
                 Text("${section.size}", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(bottom = 2.dp))
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                section.forEach { group ->
-                    ReleaseCard(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }, addon = group.onAddon(addonKeys))
+            // As many columns of about 150 dp as fit, each widened so a row runs edge to edge.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val gap = 14.dp
+                val columns = ((maxWidth + gap) / (150.dp + gap)).toInt().coerceAtLeast(1)
+                val card = (maxWidth - gap * (columns - 1)) / columns
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    section.forEach { group ->
+                        ReleaseCard(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }, addon = group.onAddon(addonKeys), width = card)
+                    }
                 }
             }
         }
