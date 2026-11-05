@@ -181,7 +181,7 @@ internal object FactsFiller {
             MusicPlayback.player.state.map { if (it.track != null) it.album?.browseId else null }.distinctUntilChanged()
                 .collect { id -> if (isBookletAlbum(id)) recordPlay(id!!) }
         }
-        launch { creditsSweep() }
+        launch(Dispatchers.Default) { creditsSweep() }
         var failStreak = 0
         while (true) {
             currentCoroutineContext().ensureActive()

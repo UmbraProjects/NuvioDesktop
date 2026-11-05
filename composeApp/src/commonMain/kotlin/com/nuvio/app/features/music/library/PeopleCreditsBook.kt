@@ -32,8 +32,19 @@ internal object PeopleCreditsBook {
     /** What is kept for the album, never making a request. */
     fun peek(artist: String, album: String): AlbumCredits? = fresh(decodeAlbumCredits(CreditsStorage.get(creditsKey(artist, album))))
 
-    /** True when the album has nothing kept (or a stale "none"), so a lookup is due. */
-    fun missing(artist: String, album: String): Boolean = peek(artist, album) == null
+    private val FOUND = Regex(""""f"\s*:\s*"?true""")
+    private val AT = Regex(""""at"\s*:\s*(\d+)""")
+
+    /**
+     * True when the album has nothing kept (or a stale "none"), so a lookup is due. Reads two fields off the stored text instead
+     * of decoding it: the whole library is checked in one go (the facts filler), and an album's credits can be 100 KB of JSON.
+     */
+    fun missing(artist: String, album: String): Boolean {
+        val raw = CreditsStorage.get(creditsKey(artist, album)) ?: return true
+        if (FOUND.containsMatchIn(raw)) return false
+        val at = AT.find(raw)?.groupValues?.get(1)?.toLongOrNull() ?: return true
+        return now() - at >= CREDITS_NONE_TTL_MS
+    }
 
     /** The album's credits, asking MusicBrainz when nothing is kept; null when it could not be reached. */
     suspend fun load(artist: String, album: String, albumId: String?): AlbumCredits? = FactsPriority.foreground {
