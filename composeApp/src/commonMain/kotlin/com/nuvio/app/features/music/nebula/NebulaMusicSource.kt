@@ -41,6 +41,9 @@ internal fun firstAddonAnswer(answers: List<NebulaAlbumLookup>): NebulaAlbumLook
 
 private val log = Logger.withTag("NebulaMusic")
 
+/** How much of a raw addon answer goes in the log. */
+private const val RAW_LOG_CHARS = 1200
+
 private const val MAX_CANDIDATES = 3
 private const val LINK_RETRY_DELAY_MS = 700L
 
@@ -395,6 +398,8 @@ internal object NebulaMusicSource {
                 for (text in nebulaSearchQueries(query.title, query.artist)) {
                     val body = get(addon.base, "/search?q=${urlEncodeQuery(text)}").requireOk()
                     val match = strictNebulaMatch(parseNebulaSearchAlbums(body), query.title, query.artist, query.year, query.trackCount ?: 0)
+                    // fork:nebula - raw answer kept in the log, to learn how the addon marks an album ready on TorBox vs fetchable.
+                    log.i { "Lossless check \"${query.title}\" by ${query.artist} [$text]: matched=${match?.title} raw=${body.take(RAW_LOG_CHARS)}" }
                     if (match != null) return addon to match
                 }
             } catch (e: CancellationException) {
@@ -616,6 +621,8 @@ internal object NebulaMusicSource {
     private suspend fun fetchStream(base: String, id: String): StreamReply = try {
         val reply = get(base, "/stream/${urlEncodeQuery(id)}", callTimeoutMs = STREAM_TIMEOUT_MS, connectTimeoutMs = STREAM_CONNECT_TIMEOUT_MS)
         val stream = if (reply.status in 200..299) parseNebulaStream(reply.body) else null
+        // fork:nebula - the answer's shape (links masked), to learn what a ready vs a fetching track looks like.
+        log.i { "Music addon stream HTTP ${reply.status} for $id: ${reply.body.take(RAW_LOG_CHARS).replace(Regex("""https?://[^"\s\\]+"""), "<url>")}" }
         when {
             stream != null -> StreamReply.Ok(stream)
             reply.status in 200..299 -> {

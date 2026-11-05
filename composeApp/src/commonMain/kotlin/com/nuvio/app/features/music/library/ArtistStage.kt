@@ -902,10 +902,14 @@ private fun StageAlbumTile(release: LibraryRelease, addon: Boolean, onFocus: () 
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        ReleaseCover(release, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp)))
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            ReleaseCover(release, Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)))
+            // fork:nebula - an overlay on the cover, so the tile does not change when the addon's answer arrives.
+            if (addon) com.nuvio.app.features.music.nebula.LosslessPill(Modifier.align(Alignment.TopStart).padding(6.dp))
+        }
         Text(release.title, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
-            listOfNotNull(release.year ?: release.releaseDate?.take(4), if (addon) "On your addon" else null).joinToString(" · "),
+            release.year ?: release.releaseDate?.take(4) ?: "",
             style = MaterialTheme.typography.bodySmall,
             color = colors.textSecondary,
             maxLines = 1,
@@ -975,7 +979,7 @@ private fun DiscographyLens(
                         ReleaseCard(
                             group,
                             onClick = { onOpen(group.primary) },
-                            addon = group.onAddon(addonKeys),
+                            addon = group.hasLossless(addonKeys),
                             width = card,
                             extra = Modifier.musicMenuTrigger(menu, hold, onSelect = { onOpen(group.primary) }),
                         )

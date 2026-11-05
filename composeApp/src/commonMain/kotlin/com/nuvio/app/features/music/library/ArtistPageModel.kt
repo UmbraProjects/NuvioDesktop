@@ -22,6 +22,12 @@ internal data class ReleaseGroup(
  */
 internal fun ReleaseGroup.onAddon(addonKeys: Set<String>): Boolean = !isPlayable && versions.any { it.key in addonKeys }
 
+/**
+ * fork:nebula - true when the music addon has this card's release, whether or not YouTube Music lists it too: the card
+ * shows the Lossless pill. ([addonKeys] holds every release the addon had, so a YouTube-listed album can be in it.)
+ */
+internal fun ReleaseGroup.hasLossless(addonKeys: Set<String>): Boolean = versions.any { it.key in addonKeys }
+
 /** Playable on YouTube Music or from the music addon. The Playable-only filter and the playable counts use this. */
 internal fun ReleaseGroup.isPlayableWith(addonKeys: Set<String>): Boolean = isPlayable || onAddon(addonKeys)
 
@@ -168,6 +174,22 @@ internal fun releasesToAskAddon(releases: List<LibraryRelease>): List<LibraryRel
         .filter { !it.isPlayable && (it.kind == ReleaseKind.Album || it.kind == ReleaseKind.EP) }
         .sortedByDescending { it.primary.sortDate() }
         .map { it.primary }
+
+/**
+ * fork:nebula - the releases to ask the music addon about for the Lossless pill: the ones [releasesToAskAddon] gives (no
+ * YouTube Music version, they decide what is playable, so they come first), then every other album or EP card, YouTube
+ * Music's included, each part newest first. A release the addon has is badged whether or not YouTube Music has it too.
+ */
+internal fun releasesToAskAddonWide(releases: List<LibraryRelease>): List<LibraryRelease> {
+    val gaps = releasesToAskAddon(releases)
+    val seen = gaps.map { it.key }.toHashSet()
+    val rest = fold(releases.filterNot { it.isDemo() })
+        .filter { it.isPlayable && (it.kind == ReleaseKind.Album || it.kind == ReleaseKind.EP) }
+        .sortedByDescending { it.primary.sortDate() }
+        .map { it.primary }
+        .filter { seen.add(it.key) }
+    return gaps + rest
+}
 
 /**
  * The release the page leads with: the newest non-demo one that can be played, else the newest

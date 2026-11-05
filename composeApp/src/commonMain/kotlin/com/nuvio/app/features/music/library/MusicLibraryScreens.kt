@@ -650,6 +650,8 @@ internal fun ReleaseCard(
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             ReleaseCover(release, Modifier.fillMaxSize())
+            // fork:nebula - an overlay, so the card does not change size when the addon's answer arrives.
+            if (addon) com.nuvio.app.features.music.nebula.LosslessPill(Modifier.align(Alignment.TopStart).padding(6.dp))
             if (group.extraVersions > 0) {
                 Text(
                     "${group.versions.size} versions",
@@ -672,10 +674,6 @@ internal fun ReleaseCard(
         ).joinToString(" · ")
         if (sub.isNotEmpty()) {
             Text(sub, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        if (addon) {
-            // fork:nebula - the same wording as the badge on a YouTube Music album row.
-            Text("Lossless on your addon", style = MaterialTheme.typography.labelSmall, color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

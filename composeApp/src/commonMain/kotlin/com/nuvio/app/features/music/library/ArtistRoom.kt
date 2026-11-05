@@ -275,7 +275,7 @@ internal fun ArtistRoom(
                         }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             section.forEach { group ->
-                                ReleaseCard(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }, addon = group.onAddon(addonKeys))
+                                ReleaseCard(group, onClick = { onOpen(group.primary) }, onSecondary = { onInfo(group.primary) }, addon = group.hasLossless(addonKeys))
                             }
                         }
                     }
