@@ -14,23 +14,33 @@ import kotlin.math.roundToInt
  * usually is), and nothing rides afterwards. What is left inside a stream is handled by a compressor and limiter with
  * no memory of the gain, so there is nothing to pump.
  *
- * The target is [LOUDNESS_TARGET_LUFS] (LoudnessTarget.kt): the film's level, which stays untouched.
+ * Trailers aim at [LOUDNESS_TARGET_LUFS] (LoudnessTarget.kt): the film's level, which stays untouched. Music aims at
+ * [MUSIC_LOUDNESS_TARGET_LUFS], the level YouTube and Spotify play at: the Music tab is listened to on its own, next to
+ * other apps in the Windows mixer, not between films.
  */
 
 /** What kind of programme a stream is: the assumption made when nothing is known about it, and how hard it is held. */
 internal enum class LoudnessClass(
     /** Integrated loudness assumed for a stream nothing is known about: typical of the class as mastered. */
     val assumedLufs: Double,
-    /** Compressor threshold in dBFS, after the gain (the programme then sits at [LOUDNESS_TARGET_LUFS]). */
+    /** The integrated loudness the gain brings a stream of this class to. */
+    val targetLufs: Double,
+    /** Compressor threshold in dBFS, after the gain (the programme then sits at [targetLufs]). */
     val compressorThresholdDb: Int,
     val compressorRatio: Double,
 ) {
-    /** Album masters sit around -9 to -14 LUFS. Held lightly, so a song keeps its own dynamics. */
-    Music(assumedLufs = -11.0, compressorThresholdDb = -20, compressorRatio = 2.0),
+    /**
+     * Album masters sit around -9 to -14 LUFS. Held lightly, so a song keeps its own dynamics. At the film's -24 a song
+     * at 100% sounded like a third of the volume of any other music app (user report, 2026-11-04).
+     */
+    Music(assumedLufs = -11.0, targetLufs = MUSIC_LOUDNESS_TARGET_LUFS, compressorThresholdDb = -10, compressorRatio = 2.0),
 
     /** Trailers are mastered hot with loud bangs; held harder, so a finale cannot spike. */
-    Trailer(assumedLufs = -12.0, compressorThresholdDb = -22, compressorRatio = 4.0),
+    Trailer(assumedLufs = -12.0, targetLufs = LOUDNESS_TARGET_LUFS.toDouble(), compressorThresholdDb = -22, compressorRatio = 4.0),
 }
+
+/** Music's target: what YouTube and Spotify normalise to, so 100% here is as loud as 100% there. */
+internal const val MUSIC_LOUDNESS_TARGET_LUFS = -14.0
 
 /** The loudness YouTube normalises to; its per-stream `loudnessDb` is the offset from this. */
 internal const val YOUTUBE_REFERENCE_LUFS = -14.0
@@ -53,7 +63,7 @@ internal fun lufsFromYouTube(loudnessDb: Double?): Double? =
 internal fun planGainDb(
     lufs: Double?,
     loudnessClass: LoudnessClass,
-    target: Double = LOUDNESS_TARGET_LUFS.toDouble(),
+    target: Double = loudnessClass.targetLufs,
 ): Double = (target - (lufs ?: loudnessClass.assumedLufs)).coerceIn(MIN_GAIN_DB, MAX_GAIN_DB)
 
 /**

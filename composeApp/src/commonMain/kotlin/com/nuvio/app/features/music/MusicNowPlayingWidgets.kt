@@ -306,12 +306,16 @@ private val CONTROLS_SIDE_TEXT = Color.White.copy(alpha = 0.7f)
  * The lyric view's own player, which stays on screen (the bar, dock and card step aside while the view is open). One
  * compact row: where the song is in the album or playlist on the left, previous / play / next and Add to playlist in
  * the middle, the time on the right; the seek bar under it, full width. The middle is placed in a Box on its own, so
- * it never moves as the texts either side change width.
+ * it never moves as the texts either side change width. The volume sits above them, at the right: the column is too
+ * narrow for it in the row.
  */
 @Composable
 internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, modifier: Modifier = Modifier, barModifier: Modifier = Modifier) {
     val total = state.album?.tracks?.size ?: 0
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            MusicVolumeControl(state, player, sliderWidth = 140.dp, tint = Color.White, glass = true)
+        }
         Box(Modifier.fillMaxWidth().height(44.dp)) {
             if (total > 1 && state.trackIndex >= 0) {
                 Text(

@@ -340,6 +340,10 @@ private fun DockNowPlaying(
         enabled = state.durationMs > 0L,
         onNudge = { direction -> player.seekTo((state.positionMs + direction * DOCK_NUDGE_MS).coerceIn(0L, state.durationMs)) },
     )
+    // The volume, so it can be set without bringing the full player back.
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        MusicVolumeControl(state, player, sliderWidth = 150.dp, tint = colors.textPrimary)
+    }
 }
 
 @Composable
