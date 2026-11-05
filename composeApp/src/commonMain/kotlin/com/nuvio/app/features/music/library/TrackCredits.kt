@@ -20,6 +20,10 @@ private fun JsonElement?.arr() = this as? JsonArray
 private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.trim()?.takeIf { it.isNotEmpty() }
 
 /** The id of the first release in a MusicBrainz release search, null when there is none. */
+internal fun parseMbReleaseSearchIds(body: String): List<String> =
+    runCatching { CREDITS_JSON.parseToJsonElement(body) }.getOrNull().obj()?.get("releases").arr()
+        ?.mapNotNull { it.obj()?.text("id") }.orEmpty()
+
 internal fun parseMbReleaseSearchId(body: String): String? =
     runCatching { CREDITS_JSON.parseToJsonElement(body) }.getOrNull().obj()?.get("releases").arr()
         ?.firstNotNullOfOrNull { it.obj()?.text("id") }

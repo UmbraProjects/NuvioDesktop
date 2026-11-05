@@ -79,7 +79,7 @@ internal object TrackNotes {
     private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
     private fun norm(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
-    private fun creditsKey(r: BookletRequest) = "tcred1|${norm(r.artist)}|${norm(r.album)}"
+    private fun creditsKey(r: BookletRequest) = "tcred2|${norm(r.artist)}|${norm(r.album)}"
     private fun notesKey(r: BookletRequest, model: String) = "tnotes1|${norm(r.artist)}|${norm(r.album)}|$model"
 
     private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletCache.get(key))

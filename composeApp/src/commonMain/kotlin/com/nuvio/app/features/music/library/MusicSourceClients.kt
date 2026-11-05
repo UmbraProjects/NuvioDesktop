@@ -70,6 +70,7 @@ internal object MusicBrainzClient {
     private const val THROTTLE_RETRIES = 3
     private const val THROTTLE_BACKOFF_MS = 2_000L
     private const val MAX_PAGES = 6
+    private const val CREDIT_EDITIONS = 5
     private const val TAG_SEARCH_LIMIT = 100
     private const val ARTIST_SEARCH_LIMIT = 5
 
@@ -196,27 +197,35 @@ internal object MusicBrainzClient {
         return paced("$BASE/artist?query=$query&limit=$ARTIST_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
     }
 
-    /** fork:essentials - the writers and producers of each song on [album] by [artist] (see [parseMbTrackCredits]); empty when not found. */
-    suspend fun trackCredits(artist: String, album: String): Map<Int, String> {
+    /**
+     * The first of the album's editions (best match first, at most [CREDIT_EDITIONS]) that carries credits, read by [parse].
+     * MusicBrainz often has the credits on one edition only, while the top search hit is a bare digital reissue, so asking
+     * the first hit alone found nothing for most albums. [empty] is the answer when the album is not in MusicBrainz or no
+     * edition has credits; null when MusicBrainz could not be reached.
+     */
+    private suspend fun <T> firstEditionWithCredits(artist: String, album: String, empty: T, parse: (String) -> T, hasAny: (T) -> Boolean): T? {
         fun quote(v: String) = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
         val query = "release:${quote(album)} AND artist:${quote(artist)}".encodeURLParameter()
-        val id = paced("$BASE/release?query=$query&limit=3&fmt=json")?.let(::parseMbReleaseSearchId) ?: return emptyMap()
-        val body = paced("$BASE/release/$id?inc=recordings+recording-rels+work-rels+work-level-rels+artist-rels&fmt=json") ?: return emptyMap()
-        return parseMbTrackCredits(body)
+        val search = paced("$BASE/release?query=$query&limit=8&fmt=json") ?: return null
+        val ids = parseMbReleaseSearchIds(search).take(CREDIT_EDITIONS)
+        for (id in ids) {
+            val body = paced("$BASE/release/$id?inc=recordings+recording-rels+work-rels+work-level-rels+artist-rels&fmt=json") ?: return null
+            val found = parse(body)
+            if (hasAny(found)) return found
+        }
+        return empty
     }
 
+    /** fork:essentials - the writers and producers of each song on [album] by [artist] (see [parseMbTrackCredits]); empty when not found. */
+    suspend fun trackCredits(artist: String, album: String): Map<Int, String> =
+        firstEditionWithCredits(artist, album, emptyMap(), ::parseMbTrackCredits) { it.isNotEmpty() } ?: emptyMap()
+
     /**
-     * fork:credits - everyone credited on [album] by [artist] (see [parseMbPeople]): the same two calls as [trackCredits].
-     * An empty list when MusicBrainz has no such release; null when it could not be reached (so the caller asks again later).
+     * fork:credits - everyone credited on [album] by [artist] (see [parseMbPeople]), from the first edition that has credits.
+     * An empty list when MusicBrainz has no such release or credits; null when it could not be reached (so the caller asks again later).
      */
-    suspend fun peopleCredits(artist: String, album: String): List<Credit>? {
-        fun quote(v: String) = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-        val query = "release:${quote(album)} AND artist:${quote(artist)}".encodeURLParameter()
-        val search = paced("$BASE/release?query=$query&limit=3&fmt=json") ?: return null
-        val id = parseMbReleaseSearchId(search) ?: return emptyList()
-        val body = paced("$BASE/release/$id?inc=recordings+recording-rels+work-rels+work-level-rels+artist-rels&fmt=json") ?: return null
-        return parseMbPeople(body)
-    }
+    suspend fun peopleCredits(artist: String, album: String): List<Credit>? =
+        firstEditionWithCredits(artist, album, emptyList(), ::parseMbPeople) { it.isNotEmpty() }
 
     suspend fun artist(mbid: String): MbArtist? =
         offline { it.artist(mbid) }?.let(::parseMbArtist)

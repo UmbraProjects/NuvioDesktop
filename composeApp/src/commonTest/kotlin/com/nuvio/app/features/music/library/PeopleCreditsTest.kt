@@ -63,6 +63,6 @@ class PeopleCreditsTest {
         val found = elsewhere(paul, kept, creditsKey("Adele", "21"))
         assertEquals(listOf("25"), found.map { it.album }) // matched by MusicBrainz id, not by name
         assertEquals("Producer", found.single().what)
-        assertEquals("people1|adele|21", creditsKey("Adele", "21 (Deluxe)"))
+        assertEquals("people2|adele|21", creditsKey("Adele", "21 (Deluxe)"))
     }
 }

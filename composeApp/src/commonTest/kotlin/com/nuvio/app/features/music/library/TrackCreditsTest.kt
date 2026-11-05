@@ -37,4 +37,10 @@ class TrackCreditsTest {
     fun theFirstReleaseOfASearchIsTaken() {
         assertEquals("abc", parseMbReleaseSearchId("""{"releases":[{"id":"abc"},{"id":"def"}]}"""))
     }
+
+    @Test
+    fun releaseSearchIdsKeepEveryHitInOrder() {
+        assertEquals(listOf("abc", "def"), parseMbReleaseSearchIds("""{"releases":[{"id":"abc"},{"id":"def"}]}"""))
+        assertEquals(emptyList(), parseMbReleaseSearchIds("{}"))
+    }
 }

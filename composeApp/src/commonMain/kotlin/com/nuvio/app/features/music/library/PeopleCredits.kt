@@ -182,7 +182,7 @@ internal fun decodeAlbumCredits(raw: String?): AlbumCredits? {
 }
 
 /** The key an album's credits are kept under: its artist's and title's names, brackets and case aside. */
-internal fun creditsKey(artist: String, album: String): String = "people1|${songKey(artist)}|${songKey(album)}"
+internal fun creditsKey(artist: String, album: String): String = "people2|${songKey(artist)}|${songKey(album)}"
 
 /** Another record [person] is credited on: its title, artist, what they did on it, and the album id to open it with. */
 internal data class ElsewhereRecord(val album: String, val artist: String, val what: String, val albumId: String?)

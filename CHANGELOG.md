@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- **Who made it (and the song writers and producers) found nothing for almost every album** - Nuvio only looked at the first edition MusicBrainz listed, which is usually a bare digital reissue with no credits, and then remembered "no credits" for 30 days. It now checks up to five editions of the album and uses the first that has credits. Albums already marked "no credits" are looked up again (credits are kept under a new key, `people2`, and the song-credit cache under `tcred2`). Checked by hand against Nevermind, Tragic Kingdom and Travelling Without Moving; not yet looked at on the HTPC.
 - **Your history counted every version of a song as one** - playing Virtual Insanity once also marked its Salaam Remi remix and its live take as played (and counted three plays). Songs are now told apart by their whole title, so each remix, live take or demo has its own count. The plain song keeps the plays it already had; the versions start from zero.
 
 ### Added
