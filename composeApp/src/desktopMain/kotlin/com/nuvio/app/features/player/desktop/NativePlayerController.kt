@@ -517,12 +517,23 @@ internal class NativePlayerController(
     }
 
     /**
-     * fork:youtube-watch-page - the watch page's corner player: the HUD shows nothing, and a click sends
-     * `miniPlayerClick`. Kept here rather than in [PlayerControlsState], whose constructor is at the JVM's
+     * fork:youtube-watch-page - the watch page's corner player: the HUD shows PiP's controls, which move
+     * and resize the box rather than the window. Kept here rather than in [PlayerControlsState], whose constructor is at the JVM's
      * limit of 255 parameter slots (one more field and the class no longer loads).
      */
     var miniPlayer = false
     private var lastSentMiniPlayer = false
+
+    /** fork:youtube-mini-player - the corner player is over the tab, so its HUD shows an X that closes it. */
+    var miniPlayerClosable = false
+    private var lastSentMiniPlayerClosable = false
+
+    /**
+     * The pointer on screen, in AWT's scaled units, which are Compose's dp. Read from the OS rather than
+     * the HUD's events: the HUD moves with the box under the pointer while it is dragged.
+     */
+    private fun miniPlayerPointer(): Pair<Float, Float>? =
+        runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull()?.let { it.x.toFloat() to it.y.toFloat() }
 
     /** fork:youtube-watch-page - the page shows around the video: the wheel scrolls it rather than setting the volume. */
     var watchPage = false
@@ -558,9 +569,12 @@ internal class NativePlayerController(
                 state.mediaSessionArtwork,
             )
         }
-        if (structureKey == lastSentControlsStructureKey && miniPlayer == lastSentMiniPlayer && watchPage == lastSentWatchPage) return
+        if (structureKey == lastSentControlsStructureKey && miniPlayer == lastSentMiniPlayer && watchPage == lastSentWatchPage &&
+            miniPlayerClosable == lastSentMiniPlayerClosable
+        ) return
         lastSentControlsStructureKey = structureKey
         lastSentMiniPlayer = miniPlayer
+        lastSentMiniPlayerClosable = miniPlayerClosable
         lastSentWatchPage = watchPage
         AppShortcutsRepository.ensureLoaded()
         PlayerShortcutsRepository.ensureLoaded()
@@ -578,6 +592,7 @@ internal class NativePlayerController(
                 PlayerShortcutsRepository.keyCode(PlayerShortcutAction.SkipInterval),
             ),
             miniPlayer = miniPlayer,
+            miniPlayerClosable = miniPlayerClosable,
             watchPage = watchPage,
         )
         val payload = if (hudLabelsSent) controlsJson else controlsJson.withHudLabels()
@@ -1398,6 +1413,15 @@ internal class NativePlayerController(
             }
             // The YouTube watch page's corner player was clicked: back up to the video.
             "miniPlayerClick" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.requestBackToVideo()
+            // fork:youtube-mini-player - the corner player's X, and PiP's move/resize gestures on its box.
+            "miniPlayerClose" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.requestCloseFromCorner()
+            "beginMiniPlayerInteraction" -> miniPlayerPointer()?.let { (x, y) ->
+                com.nuvio.app.features.youtube.YouTubeWatchLayout.beginMiniInteraction(value.toInt(), x, y)
+            }
+            "updateMiniPlayerInteraction" -> miniPlayerPointer()?.let { (x, y) ->
+                com.nuvio.app.features.youtube.YouTubeWatchLayout.updateMiniInteraction(x, y)
+            }
+            "endMiniPlayerInteraction" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.endMiniInteraction()
             // The wheel over the video on the watch page, in the page's pixels: the page scrolls by it.
             "watchPageScroll" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.requestScroll(value.toFloat())
             "pictureInPicture" -> {
@@ -2580,6 +2604,7 @@ internal fun PlayerControlsState.toControlsJson(
     voiceKeyCode: Int = 0,
     miniPlayer: Boolean = false,
     watchPage: Boolean = false,
+    miniPlayerClosable: Boolean = false,
 ): String =
     buildString {
         append('{')
@@ -2640,6 +2665,8 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("pictureInPictureActive", pictureInPictureActive)
         append(',')
         appendJsonField("miniPlayer", miniPlayer)
+        append(',')
+        appendJsonField("miniPlayerClosable", miniPlayerClosable)
         append(',')
         appendJsonField("watchPage", watchPage)
         append(',')

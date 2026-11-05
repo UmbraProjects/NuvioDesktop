@@ -5220,24 +5220,24 @@ svg {
 .pip-play-button svg { width: 20px; height: 20px; }
 .pip-exit-button:hover,
 .pip-play-button:hover { background: rgba(0, 0, 0, .92); }
-.player:not(.pip-active) .pip-exit-button,
-.player:not(.pip-active) .pip-play-button { display: none; }
-.player.pip-active > :not(.pip-exit-button):not(.pip-play-button):not(.pip-resize-handle):not(.pip-seek) {
+.player:not(.pip-ui) .pip-exit-button,
+.player:not(.pip-ui) .pip-play-button { display: none; }
+.player.pip-ui > :not(.pip-exit-button):not(.pip-play-button):not(.pip-close-button):not(.pip-resize-handle):not(.pip-seek) {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
 }
-.player.pip-active:hover .pip-exit-button,
-.player.pip-active:hover .pip-play-button,
-.player.pip-active .pip-exit-button:focus-visible,
-.player.pip-active .pip-play-button:focus-visible {
+.player.pip-ui:hover .pip-exit-button,
+.player.pip-ui:hover .pip-play-button,
+.player.pip-ui .pip-exit-button:focus-visible,
+.player.pip-ui .pip-play-button:focus-visible {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
 }
-.player.pip-active { cursor: move; }
-.player.pip-active .pip-exit-button,
-.player.pip-active .pip-play-button { cursor: pointer; }
+.player.pip-ui { cursor: move; }
+.player.pip-ui .pip-exit-button,
+.player.pip-ui .pip-play-button { cursor: pointer; }
 
 /* Minimal seek bar for PiP: bottom-anchored, revealed with the escape-hatch buttons on hover, and
    sized in viewport units so it stays proportional as the (reshapeable) window shrinks or grows. */
@@ -5255,9 +5255,9 @@ svg {
   transform: translateY(4px);
   transition: opacity 140ms ease, transform 140ms var(--ease-out);
 }
-.player.pip-active .pip-seek { display: flex; }
-.player.pip-active:hover .pip-seek,
-.player.pip-active .pip-seek:focus-within {
+.player.pip-ui .pip-seek { display: flex; }
+.player.pip-ui:hover .pip-seek,
+.player.pip-ui .pip-seek:focus-within {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -5296,7 +5296,7 @@ svg {
   z-index: 190;
   display: none;
 }
-.player.pip-active .pip-resize-handle { display: block; }
+.player.pip-ui .pip-resize-handle { display: block; }
 .pip-resize-n, .pip-resize-s { left: 12px; right: 12px; height: 7px; }
 .pip-resize-e, .pip-resize-w { top: 12px; bottom: 12px; width: 7px; }
 .pip-resize-n { top: 0; cursor: n-resize; }
@@ -7726,15 +7726,95 @@ svg {
   letter-spacing: 0.02em;
 }
 
-/* fork:youtube-watch-page - the watch page's corner player: the picture alone; a click goes back up to the video. */
-.player.mini-player > * {
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-.player.mini-player { cursor: pointer; }
+/* fork:youtube-watch-page - the watch page's corner player wears PiP's controls (the pip-ui rules). */
 
 /* fork:youtube-mode - menu rows that do nothing for a YouTube tab video (see buildContextMenu). */
 .youtube-video .context-menu-group[data-youtube-hidden] {
   display: none;
+}
+
+/*
+ * PiP and the YouTube corner player (pip-ui): round glass buttons along the top right and a glass seek
+ * track along the bottom, revealed on hover. Sized by --pip-ui-scale (the windowed player's floor, so
+ * PiP's small window does not shrink them to nothing; set in updateViewportUiScale). Last in the file
+ * so they win over both sizings of the PiP controls above. Right to left: the corner player's X (when
+ * it is over the YouTube tab), back to full size, play/pause.
+ */
+.pip-close-button { display: none; }
+.pip-exit-button,
+.pip-play-button,
+.pip-close-button {
+  position: absolute;
+  z-index: 200;
+  top: calc(var(--pip-ui-scale, 1) * 12px);
+  right: calc(var(--pip-ui-scale, 1) * 12px);
+  width: calc(var(--pip-ui-scale, 1) * 32px);
+  height: calc(var(--pip-ui-scale, 1) * 32px);
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 999px;
+  background: rgba(20, 20, 24, .42);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .12);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms var(--ease-out), background-color 140ms ease;
+}
+.pip-play-button { right: calc(var(--pip-ui-scale, 1) * 50px); }
+.player.mini-player-closable .pip-exit-button { right: calc(var(--pip-ui-scale, 1) * 50px); }
+.player.mini-player-closable .pip-play-button { right: calc(var(--pip-ui-scale, 1) * 88px); }
+.pip-exit-button svg,
+.pip-play-button svg,
+.pip-close-button svg {
+  width: calc(var(--pip-ui-scale, 1) * 17px);
+  height: calc(var(--pip-ui-scale, 1) * 17px);
+}
+.pip-exit-button:hover,
+.pip-play-button:hover,
+.pip-close-button:hover { background: rgba(255, 255, 255, .22); }
+.player.pip-ui .pip-exit-button,
+.player.pip-ui .pip-play-button,
+.player.mini-player-closable .pip-close-button { display: grid; cursor: pointer; }
+.player.pip-ui:hover .pip-exit-button,
+.player.pip-ui:hover .pip-play-button,
+.player.mini-player-closable:hover .pip-close-button,
+.player.pip-ui .pip-exit-button:focus-visible,
+.player.pip-ui .pip-play-button:focus-visible,
+.player.mini-player-closable .pip-close-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* The seek bar itself is the glass: a frosted track with a bright edge, nothing drawn behind it. */
+.pip-seek {
+  left: calc(var(--pip-ui-scale, 1) * 14px);
+  right: calc(var(--pip-ui-scale, 1) * 14px);
+  bottom: calc(var(--pip-ui-scale, 1) * 12px);
+  height: calc(var(--pip-ui-scale, 1) * 18px);
+}
+.pip-scrub { height: calc(var(--pip-ui-scale, 1) * 18px); }
+.pip-scrub::-webkit-slider-runnable-track {
+  height: calc(var(--pip-ui-scale, 1) * 7px);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .18);
+  background:
+    linear-gradient(
+      to right,
+      var(--theme-timeline-fill) 0 var(--progress, 0%),
+      rgba(255, 255, 255, .34) var(--progress, 0%) var(--buffered, 0%),
+      rgba(255, 255, 255, .14) var(--buffered, 0%) 100%);
+}
+.pip-scrub::-webkit-slider-thumb {
+  width: calc(var(--pip-ui-scale, 1) * 15px);
+  height: calc(var(--pip-ui-scale, 1) * 15px);
+  margin-top: calc(var(--pip-ui-scale, 1) * -4px - 1px);
+  border: 1px solid rgba(255, 255, 255, .6);
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="controls.css?v=20261026-accent-night-2">
+  <link rel="stylesheet" href="controls.css?v=20261105-pip-glass-track">
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
@@ -809,6 +809,9 @@
     <button class="pip-exit-button" id="pictureInPictureExitButton" data-command="pictureInPicture" aria-label="Exit picture in picture" title="Exit picture in picture" data-i18n-aria-label="player_hud_exit_picture_in_picture" data-i18n-title="player_hud_exit_picture_in_picture">
       <svg><use href="#icon-pip"></use></svg>
     </button>
+    <button class="pip-close-button" id="miniPlayerCloseButton" type="button" aria-label="Close" title="Close" data-i18n-aria-label="action_close" data-i18n-title="action_close">
+      <svg><use href="#icon-close"></use></svg>
+    </button>
     <div class="pip-seek" id="pipSeekBar">
       <input id="pipSeek" class="pip-scrub" type="range" min="0" max="1000" value="0" aria-label="Seek" data-i18n-aria-label="player_hud_seek">
     </div>
@@ -822,6 +825,6 @@
     <div class="pip-resize-handle pip-resize-nw" data-pip-resize="8"></div>
   </div>
 
-  <script src="controls.js?v=20261027-hud-labels-accent-night"></script>
+  <script src="controls.js?v=20261105-pip-ui-scale"></script>
 </body>
 </html>

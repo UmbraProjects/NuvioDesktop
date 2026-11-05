@@ -1151,6 +1151,7 @@ private fun NativePlayerSurface(
         val youTubePage = (youTubePageAvailable && youTubePageWindowed) || youTubeBrowse
         controller.watchPage = youTubePage
         controller.miniPlayer = (youTubeMiniPlayer && youTubePage) || youTubeBrowse
+        controller.miniPlayerClosable = youTubeBrowse
         controller.updateControls(
             if (youTubePage && !youTubeTheater && !postShowBoxed) {
                 // The watch page shows the comments and related videos beside the video, larger than
