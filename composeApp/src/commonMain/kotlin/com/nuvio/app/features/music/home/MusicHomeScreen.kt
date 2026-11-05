@@ -51,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
@@ -170,6 +171,15 @@ private val THREE_PANELS_MIN_WIDTH = 1100.dp
 private val YouTubeMusicTint = Color(0xFF8FB4F0)
 private val YouTubeTint = Color(0xFFB98CE6)
 
+/** What a row brings up behind the screen while the pointer or the remote is on it: its artist's fanart, else [fallback]. */
+private data class RowPreview(val artist: String?, val fallback: String?)
+
+/** Where a row reports that the pointer or the remote is on it (set by the screen, read by every result row). */
+private val LocalRowPreview = staticCompositionLocalOf<(RowPreview) -> Unit> { {} }
+
+/** How long the pointer or the remote rests on a row before its picture comes up, so moving down a list does not flash. */
+private const val ROW_PREVIEW_PAUSE_MS = 300L
+
 /** How one panel stands: waiting for its source's first answer, could not reach it, or showing what it has. */
 private enum class PanelState { Loading, Failed, Ready }
 
@@ -227,6 +237,9 @@ internal fun MusicHomeScreen(
     val reducedMotion = rememberMusicReducedMotion()
     val context = LocalPlatformContext.current
     var backdrop by remember { mutableStateOf<String?>(null) }
+    // The row the pointer or the remote is on, and the picture it brought up (shown over the top match's).
+    var rowPreview by remember { mutableStateOf<RowPreview?>(null) }
+    var rowBackdrop by remember { mutableStateOf<String?>(null) }
     var palette by remember { mutableStateOf<ArtworkPalette?>(null) }
 
     fun setQuery(text: String) {
@@ -237,6 +250,7 @@ internal fun MusicHomeScreen(
     // Completions after a short pause: they feed the strip, the greyed-out rest of the word and the chips.
     LaunchedEffect(query) {
         actionsOpen = false
+        rowPreview = null
         if (query.isBlank()) {
             suggestions = emptyList()
             return@LaunchedEffect
@@ -338,6 +352,19 @@ internal fun MusicHomeScreen(
     }
     val parsed = remember(query, chipNames) { parseQuery(query, chipNames) }
 
+    // A row the pointer or the remote rests on: its artist's fanart (else its own picture) fades in behind the screen.
+    // The colours stay with the top match. Gone when the line changes or the screen glides back.
+    LaunchedEffect(rowPreview, expanded) {
+        val wanted = rowPreview?.takeIf { expanded }
+        if (wanted == null) {
+            rowBackdrop = null
+            return@LaunchedEffect
+        }
+        delay(ROW_PREVIEW_PAUSE_MS)
+        val fanart = wanted.artist?.takeIf { it.isNotBlank() }?.let { ArtistFanartRepository.forArtist(it).firstOrNull() }
+        rowBackdrop = fanart ?: wanted.fallback?.let { enlargeYtThumbnail(it, size = 1200) ?: it }
+    }
+
     // The morph: once a match has settled, its picture fades in behind the screen and the accent takes its colours.
     // An artist match also has its YouTube Music page asked for now, so Play Essentials starts at once.
     val morphKey = shownTop?.let { listOfNotNull(it.albumBrowseId, it.videoId, it.artists.firstOrNull()?.browseId, it.title).first() }
@@ -388,7 +415,7 @@ internal fun MusicHomeScreen(
 
     CompositionLocalProvider(LocalNuvioThemeTokens provides themed) {
     Box(modifier.fillMaxSize().settingsSkyBackground(themed.colors.background, themed.colors.accent)) {
-    HomeBackdrop(backdrop, reducedMotion)
+    HomeBackdrop(rowBackdrop ?: backdrop, reducedMotion)
     Column(
         Modifier
             .fillMaxSize()
@@ -455,6 +482,7 @@ internal fun MusicHomeScreen(
                                 translationY = (1f - panelsShown) * 48.dp.toPx()
                             },
                     ) {
+                        CompositionLocalProvider(LocalRowPreview provides { rowPreview = it }) {
                         HomeResultsBody(
                             results = results,
                             musicState = musicState,
@@ -464,6 +492,7 @@ internal fun MusicHomeScreen(
                             runner = runner,
                             hold = hold,
                         )
+                        }
                     }
                 }
                 Column(
@@ -1072,6 +1101,7 @@ private fun TopMatchRow(top: MusicTopResult, modifier: Modifier, runner: HomeRun
         modifier = modifier,
         menu = { runner.moreFor(top) },
         hold = hold,
+        preview = RowPreview(if (isArtist) top.title else top.artists.firstOrNull()?.name, top.thumbnailUrl),
         onClick = {
             when (kind) {
                 TopMatchKind.Album -> runner.run(HomeAction.OpenAlbum, top)
@@ -1087,6 +1117,7 @@ private fun ArtistRow(artist: MusicArtistSummary, modifier: Modifier, runner: Ho
     ResultRow(
         art = artist.thumbnailUrl, circle = true, artSize = 48.dp, title = artist.name, subtitle = null, trailing = null, videoMark = false,
         modifier = modifier, menu = { runner.artistMenu(artist) }, hold = hold, onClick = { runner.openArtist(artist.browseId) },
+        preview = RowPreview(artist.name, artist.thumbnailUrl),
     )
 }
 
@@ -1112,6 +1143,7 @@ private fun SongRow(row: MergedRow, modifier: Modifier, runner: HomeRunner, hold
         modifier = modifier,
         menu = { if (isSong) runner.songMenu(row) else runner.videoMenu(track) },
         hold = hold,
+        preview = RowPreview(track.artists.firstOrNull()?.name, track.coverUrl),
         onClick = { runner.track(track, PlayHow.Now) },
     )
 }
@@ -1129,6 +1161,7 @@ private fun AlbumRow(album: MusicAlbumSummary, modifier: Modifier, runner: HomeR
         modifier = modifier,
         menu = { runner.albumMenu(album) },
         hold = hold,
+        preview = RowPreview(album.artists.firstOrNull()?.name, album.thumbnailUrl),
         onClick = { runner.openAlbum(album.browseId) },
     )
 }
@@ -1147,6 +1180,7 @@ private fun VideoRow(video: MusicTrack, modifier: Modifier, runner: HomeRunner, 
         modifier = modifier,
         menu = { runner.videoMenu(video) },
         hold = hold,
+        preview = RowPreview(video.artists.firstOrNull()?.name, video.coverUrl),
         onClick = { runner.track(video, PlayHow.Now) },
     )
 }
@@ -1167,17 +1201,22 @@ private fun ResultRow(
     /** The row's More menu (right-click, the Menu key or a held OK); a tap of OK is [onClick]. */
     menu: (() -> List<PosterZoomOverlayAction>)? = null,
     hold: HoldToSelectState? = null,
+    /** What the row brings up behind the screen while the pointer or the remote is on it. */
+    preview: RowPreview? = null,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(10.dp)
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val report = LocalRowPreview.current
+    LaunchedEffect(hovered) { if (hovered && preview != null) report(preview) }
     val menuState = rememberMusicMenu()
     if (menu != null) MusicItemMenu(menuState, menu)
     Row(
         modifier
             .fillMaxWidth()
+            .onFocusChanged { if (it.isFocused && preview != null) report(preview) }
             .then(if (menu != null && hold != null) Modifier.musicMenuTrigger(menuState, hold, onSelect = onClick) else Modifier)
             .musicKeyFocusRing(shape)
             .clip(shape)
