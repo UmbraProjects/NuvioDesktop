@@ -2589,6 +2589,7 @@ private fun settingsSearchEntries(
         listOf(
             PlaybackSearchRow("voice-enable", "Voice commands", "Turn push-to-talk voice commands on or off", VOICE_SECTION_GENERAL),
             PlaybackSearchRow("voice-push-to-talk", "Push to talk", "The voice key, the sidebar mic and the controller buttons that start listening", VOICE_SECTION_GENERAL),
+            PlaybackSearchRow("voice-wake-word", "Wake word", "Say “Nuvio” and a command instead of pressing the voice key (hands-free, always listening)", VOICE_SECTION_GENERAL),
             PlaybackSearchRow("voice-end-pause", "End of command", "How long a pause ends a voice command", VOICE_SECTION_GENERAL),
             PlaybackSearchRow("voice-model", "Speech model", "Download or delete the offline speech recognition model (whisper)", VOICE_SECTION_MODEL),
             PlaybackSearchRow("voice-models-folder", "Models folder", "Where the speech models are kept", VOICE_SECTION_MODEL),

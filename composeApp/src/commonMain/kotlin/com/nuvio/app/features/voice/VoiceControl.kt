@@ -57,8 +57,8 @@ object VoiceModels {
     val SmallEn = VoiceModel(
         id = "small.en-q5_1",
         label = "Accurate",
-        description = "Best with strong accents and noisy rooms. About three times slower than Standard " +
-            "(around a second per command) and uses more memory.",
+        description = "Best with strong accents and noisy rooms. Slower than Standard " +
+            "(under a second per command) and uses more memory.",
         fileName = "ggml-small.en-q5_1.bin",
         url = SOURCE + "ggml-small.en-q5_1.bin",
         sizeBytes = 190_098_681L,
@@ -89,6 +89,8 @@ data class VoiceControlSettings(
     val microphone: String? = null,
     /** How long a pause ends a command; one of [VoiceActivityDetector.END_SILENCE_OPTIONS_MS]. */
     val endSilenceMs: Int = VoiceActivityDetector.DEFAULT_END_SILENCE_MS,
+    /** Listen all the time for "Nuvio ..." (see VoiceWakeWord.kt), besides push-to-talk. */
+    val wakeWord: Boolean = false,
 )
 
 /** A push-to-talk command, from the press to what it was understood as. Drives the listening overlay. */
@@ -133,6 +135,8 @@ data class VoiceControlUiState(
     /** The person's own command phrases (per account: they are the person's, not the PC's). */
     val phrases: VoiceCommandPhrases = VoiceCommandPhrases.None,
     val modelsFolder: String = "",
+    /** The microphone is open, listening for the wake word, right now. */
+    val wakeListening: Boolean = false,
 ) {
     fun stateOf(model: VoiceModel): VoiceModelState = models[model.id] ?: VoiceModelState.NotInstalled
 
@@ -171,6 +175,9 @@ expect object VoiceControlRepository {
     fun stopTest()
 
     fun setEndSilenceMs(ms: Int)
+
+    /** Turns the "Nuvio ..." wake word on or off; it listens only while voice control is [VoiceControlUiState.ready]. */
+    fun setWakeWord(enabled: Boolean)
 
     val session: StateFlow<VoiceSessionState>
 
@@ -214,6 +221,19 @@ fun describeVoiceIntent(intent: VoiceIntent): String = when (intent) {
     VoiceIntent.GoBack -> "Go back"
     is VoiceIntent.Seek -> (if (intent.deltaMs < 0) "Back " else "Forward ") + spokenDuration(kotlin.math.abs(intent.deltaMs))
     is VoiceIntent.Speed -> "Playback speed ${spokenRate(intent.rate)}\u00D7"
+    VoiceIntent.SkipSegment -> "Skip"
+    VoiceIntent.StopPlayback -> "Stop playback"
+    VoiceIntent.PreviousEpisode -> "Previous episode"
+    is VoiceIntent.SeekTo -> if (intent.positionMs == 0L) "Start over" else "Go to ${spokenClock(intent.positionMs)}"
+    is VoiceIntent.VolumeChange -> (if (intent.percent < 0) "Volume down " else "Volume up ") + "${kotlin.math.abs(intent.percent)}%"
+    is VoiceIntent.VolumeSet -> "Volume ${intent.percent}%"
+    is VoiceIntent.Mute -> if (intent.muted) "Mute" else "Unmute"
+    VoiceIntent.NextSubtitles -> "Next subtitles"
+    VoiceIntent.NextAudio -> "Next audio track"
+    is VoiceIntent.Choose -> "Pick number ${intent.number}"
+    is VoiceIntent.Move -> intent.direction.name + if (intent.count > 1) " \u00D7${intent.count}" else ""
+    VoiceIntent.Select -> "Select"
+    is VoiceIntent.Chain -> intent.steps.joinToString(", then ") { describeVoiceIntent(it) }
     is VoiceIntent.Unknown -> "Not a command"
 }
 
@@ -224,6 +244,14 @@ private fun spokenDuration(ms: Long): String {
         seconds % 60 == 0L -> "${seconds / 60} min"
         else -> "${seconds / 60} min ${seconds % 60} s"
     }
+}
+
+/** 1:05:00, 20:00. */
+private fun spokenClock(ms: Long): String {
+    val total = ms / 1000
+    val (h, m, s) = Triple(total / 3600, (total % 3600) / 60, total % 60)
+    fun two(n: Long) = n.toString().padStart(2, '0')
+    return if (h > 0) "$h:${two(m)}:${two(s)}" else "$m:${two(s)}"
 }
 
 private fun spokenRate(rate: Float): String =

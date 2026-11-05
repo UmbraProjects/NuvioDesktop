@@ -13,6 +13,20 @@ internal object WhisperNative {
     /** The text heard in [samples] (16 kHz mono, -1..1); null when decoding failed. */
     external fun nativeTranscribe(handle: Long, samples: FloatArray, initialPrompt: String?, threads: Int): String?
 
+    /**
+     * [samples] decoded with the output held to the GBNF [grammar] from [startRule]:
+     * "<mean log-probability>\t<min log-probability>\t<text>"; null when the grammar does not parse
+     * or decoding failed.
+     */
+    external fun nativeTranscribeWithGrammar(
+        handle: Long,
+        samples: FloatArray,
+        initialPrompt: String?,
+        threads: Int,
+        grammar: String,
+        startRule: String,
+    ): String?
+
     external fun nativeFree(handle: Long)
 
     /** ggml's CPU feature line ("AVX = 1 | AVX2 = 1 | ..."), for the log. */

@@ -40,10 +40,27 @@ enum class VoiceCommandKind(
     SeekBack("Seek back", GROUP_PLAYBACK, "rewind 10 seconds, go back 30 seconds", Takes.Duration),
     Speed("Playback speed", GROUP_PLAYBACK, "playback speed 1.5, normal speed, double speed", Takes.Rate),
     GoBack("Go back", GROUP_PLAYBACK, "go back, back", Takes.Nothing),
+    SkipSegment("Skip intro", GROUP_PLAYBACK, "skip the intro, skip the recap, skip the credits", Takes.Nothing),
+    StopPlayback("Stop playback", GROUP_PLAYBACK, "stop playback, close the player, stop watching", Takes.Nothing),
+    PreviousEpisode("Previous episode", GROUP_PLAYBACK, "previous episode, last episode", Takes.Nothing),
+    StartOver("Start over", GROUP_PLAYBACK, "start over, from the beginning; go to 20 minutes", Takes.Nothing),
+    VolumeUp("Volume up", GROUP_PLAYBACK, "volume up, louder, volume up by 20, volume 40", Takes.Nothing),
+    VolumeDown("Volume down", GROUP_PLAYBACK, "volume down, quieter, turn it down", Takes.Nothing),
+    Mute("Mute", GROUP_PLAYBACK, "mute, sound off", Takes.Nothing),
+    Unmute("Unmute", GROUP_PLAYBACK, "unmute, sound on", Takes.Nothing),
+    NextSubtitles("Next subtitles", GROUP_PLAYBACK, "next subtitles, change subtitles", Takes.Nothing),
+    NextAudio("Next audio track", GROUP_PLAYBACK, "next audio, change language", Takes.Nothing),
+
+    MoveUp("Move up", GROUP_NAVIGATE, "up, go up 2, previous row", Takes.Nothing),
+    MoveDown("Move down", GROUP_NAVIGATE, "down, go down 3 rows, next row", Takes.Nothing),
+    MoveLeft("Move left", GROUP_NAVIGATE, "left, go left 2", Takes.Nothing),
+    MoveRight("Move right", GROUP_NAVIGATE, "right, go right 4", Takes.Nothing),
+    Select("Select", GROUP_NAVIGATE, "select, open it, enter", Takes.Nothing),
+    Choose("Pick by number", GROUP_NAVIGATE, "source 3, the second one, play the first one", Takes.Number),
     ;
 
     /** What follows the phrase: nothing, the search words, an amount of time, or a speed. */
-    enum class Takes { Nothing, Query, Duration, Rate }
+    enum class Takes { Nothing, Query, Duration, Rate, Number }
 
     /** The intent of a phrase that takes nothing. */
     fun fixedIntent(): VoiceIntent = when (this) {
@@ -51,6 +68,21 @@ enum class VoiceCommandKind(
         Pause -> VoiceIntent.Pause
         Next -> VoiceIntent.Next
         GoBack -> VoiceIntent.GoBack
+        SkipSegment -> VoiceIntent.SkipSegment
+        StopPlayback -> VoiceIntent.StopPlayback
+        PreviousEpisode -> VoiceIntent.PreviousEpisode
+        StartOver -> VoiceIntent.SeekTo(0)
+        VolumeUp -> VoiceIntent.VolumeChange(VOLUME_STEP_PERCENT)
+        VolumeDown -> VoiceIntent.VolumeChange(-VOLUME_STEP_PERCENT)
+        Mute -> VoiceIntent.Mute(true)
+        Unmute -> VoiceIntent.Mute(false)
+        NextSubtitles -> VoiceIntent.NextSubtitles
+        NextAudio -> VoiceIntent.NextAudio
+        MoveUp -> VoiceIntent.Move(VoiceDirection.Up, 1)
+        MoveDown -> VoiceIntent.Move(VoiceDirection.Down, 1)
+        MoveLeft -> VoiceIntent.Move(VoiceDirection.Left, 1)
+        MoveRight -> VoiceIntent.Move(VoiceDirection.Right, 1)
+        Select -> VoiceIntent.Select
         else -> VoiceIntent.Open(destination ?: error("$this takes more than a phrase"))
     }
 
@@ -61,6 +93,7 @@ enum class VoiceCommandKind(
             Takes.Query -> "Say the phrase, then what to search for."
             Takes.Duration -> "Say the phrase, then how far (“30 seconds”); on its own it is 10 seconds."
             Takes.Rate -> "Say the phrase, then the speed (“1.5”)."
+            Takes.Number -> "Say the phrase, then the number (“3”)."
         }
 
     companion object {
@@ -75,7 +108,24 @@ enum class VoiceCommandKind(
             VoiceIntent.GoBack -> GoBack
             is VoiceIntent.Seek -> if (intent.deltaMs < 0) SeekBack else SeekForward
             is VoiceIntent.Speed -> Speed
-            is VoiceIntent.Unknown -> null
+            VoiceIntent.SkipSegment -> SkipSegment
+            VoiceIntent.StopPlayback -> StopPlayback
+            VoiceIntent.PreviousEpisode -> PreviousEpisode
+            is VoiceIntent.SeekTo -> StartOver
+            is VoiceIntent.VolumeChange -> if (intent.percent < 0) VolumeDown else VolumeUp
+            is VoiceIntent.VolumeSet -> VolumeUp
+            is VoiceIntent.Mute -> if (intent.muted) Mute else Unmute
+            VoiceIntent.NextSubtitles -> NextSubtitles
+            VoiceIntent.NextAudio -> NextAudio
+            is VoiceIntent.Move -> when (intent.direction) {
+                VoiceDirection.Up -> MoveUp
+                VoiceDirection.Down -> MoveDown
+                VoiceDirection.Left -> MoveLeft
+                VoiceDirection.Right -> MoveRight
+            }
+            VoiceIntent.Select -> Select
+            is VoiceIntent.Choose -> Choose
+            is VoiceIntent.Chain, is VoiceIntent.Unknown -> null
         }
 
         private fun ofScope(scope: VoiceSearchScope) = entries.first { it.scope == scope }
@@ -85,6 +135,7 @@ enum class VoiceCommandKind(
 private const val GROUP_SEARCH = "Search"
 private const val GROUP_OPEN = "Open"
 private const val GROUP_PLAYBACK = "Playback"
+private const val GROUP_NAVIGATE = "Navigate"
 
 /** The person's own phrases, by action (stored by [VoiceCommandKind.name]). */
 @Serializable

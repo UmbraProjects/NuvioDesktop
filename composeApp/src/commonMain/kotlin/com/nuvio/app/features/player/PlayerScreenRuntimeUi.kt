@@ -1486,6 +1486,34 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         }
         // fork:voice-control - "skip forward 30 seconds": any distance, not the seek step.
         "voiceSeekBy" -> seekBy(value.toLong())
+        // fork:voice-control - "go to 20 minutes", "start over": as a jump from here, so a watch party
+        // follows it the way it follows any other seek.
+        "voiceSeekTo" -> {
+            val durationMs = playbackSnapshot.durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE
+            val target = value.toLong().coerceIn(0L, durationMs)
+            seekBy(target - playbackSnapshot.positionMs.coerceAtLeast(0L))
+        }
+        // "stop playback": the player goes. Back would send a YouTube video to the mini player, so a
+        // YouTube video is closed the way the corner box's X closes it.
+        "voiceClosePlayer" -> {
+            if (isYouTubeVideoPlayback) {
+                com.nuvio.app.features.youtube.YouTubeWatchLayout.closeFromCorner()
+                PlayerHandoff.coverClose()
+                flushWatchProgress()
+                args.onBack()
+            } else {
+                handlePlayerControlsAction(PlayerControlsAction.Back)
+            }
+        }
+        // "skip the intro": the skip prompt's own action, or why there is nothing to skip.
+        "voiceSkipSegment" -> {
+            val interval = activeSkipInterval
+            if (interval == null) {
+                com.nuvio.app.features.voice.VoiceControlRepository.showOutcome("Nothing to skip right now")
+            } else {
+                acceptSkipInterval(interval)
+            }
+        }
         "setPlaybackSpeed" -> {
             if (partyBlocksControl()) return true
             applyUserPlaybackSpeed(value.toFloat().coerceIn(0.5f, 4f))

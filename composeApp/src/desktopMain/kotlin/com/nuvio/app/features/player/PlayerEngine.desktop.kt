@@ -406,12 +406,34 @@ private fun NativePlayerSurface(
                         latestOnPlayerControlsEvent.value("voiceSeekBy", command.deltaMs.toDouble())
                     is com.nuvio.app.features.voice.VoicePlaybackCommand.Speed ->
                         latestOnPlayerControlsEvent.value("setPlaybackSpeed", command.rate.toDouble())
+                    // The rest go the way the HUD's own buttons and keys send them.
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.SkipSegment ->
+                        latestOnPlayerControlsEvent.value("voiceSkipSegment", 0.0)
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.Previous ->
+                        latestOnPlayerControlsEvent.value("previousEpisode", 0.0)
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.SeekTo ->
+                        latestOnPlayerControlsEvent.value("voiceSeekTo", command.positionMs.toDouble())
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.VolumeChange ->
+                        latestOnPlayerControlsEvent.value("volumeDelta", command.percent / 100.0)
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.VolumeSet ->
+                        latestOnPlayerControlsEvent.value("volumeSet", command.percent.toDouble())
+                    // The mute key's own path (it shows the volume pill); only when it would change anything.
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.Mute ->
+                        if (controller.getVolume()?.isMuted != command.muted) controller.dispatchKeyboardShortcut("keyboardToggleMute")
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.NextSubtitles ->
+                        latestOnPlayerControlsEvent.value("keyboardNextSubtitle", 0.0)
+                    com.nuvio.app.features.voice.VoicePlaybackCommand.NextAudio ->
+                        latestOnPlayerControlsEvent.value("keyboardNextAudio", 0.0)
                 }
                 return null
             }
 
             override fun goBack() {
                 latestOnPlayerControlsAction.value(PlayerControlsAction.Back)
+            }
+
+            override fun close() {
+                latestOnPlayerControlsEvent.value("voiceClosePlayer", 0.0)
             }
         }
         com.nuvio.app.features.voice.VoicePlayback.player = target

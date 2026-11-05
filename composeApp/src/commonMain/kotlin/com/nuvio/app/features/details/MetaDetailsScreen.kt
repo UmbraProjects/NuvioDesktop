@@ -1169,6 +1169,19 @@ fun MetaDetailsScreen(
                     onAutoPlayOnLoadConsumed?.invoke()
                     onPrimaryPlayClick()
                 }
+                // fork:voice-control - "play" / "start playback" on this page presses its Play button.
+                if (onPlay != null) {
+                    val latestPrimaryPlay = rememberUpdatedState(onPrimaryPlayClick)
+                    DisposableEffect(meta.id) {
+                        val target: () -> Unit = { latestPrimaryPlay.value() }
+                        com.nuvio.app.features.voice.VoiceScreenTargets.detailsPlay = target
+                        onDispose {
+                            if (com.nuvio.app.features.voice.VoiceScreenTargets.detailsPlay === target) {
+                                com.nuvio.app.features.voice.VoiceScreenTargets.detailsPlay = null
+                            }
+                        }
+                    }
+                }
                 val alternatePlayHandler = onPlayAlternate
                 val primaryPlaybackVideoId =
                     if ((meta.type == "series" || hasEpisodes) && seriesAction != null) {

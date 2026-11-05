@@ -35,8 +35,8 @@ class VoiceSeekSpeedAndPhrasesTest {
         assertIntent(VoiceIntent.Next, "Skip.")
         assertIntent(VoiceIntent.GoBack, "Go back.")
         assertIntent(VoiceIntent.GoBack, "back")
-        // Not an amount: neither a seek nor anything else.
-        assertIntent(VoiceIntent.Unknown("skip intro"), "skip intro")
+        // Not an amount: not a seek ("skip intro" is the skip prompt's command, VoiceMoreCommandsTest).
+        assertIntent(VoiceIntent.SkipSegment, "skip intro")
         assertIntent(VoiceIntent.Unknown("go back a bit"), "go back a bit")
     }
 

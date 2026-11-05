@@ -566,6 +566,11 @@ internal class NativePlayerController(
         PlayerShortcutsRepository.ensureLoaded()
         val controlsJson = state.toControlsJson(
             appFullscreenKeyCode = AppShortcutsRepository.keyCode(AppShortcutAction.ToggleFullscreen),
+            // fork:voice-control - the AWT dispatcher only sees the voice key while Compose has the
+            // keyboard; once the HUD is clicked it has it, so the page forwards the key itself. Not
+            // when a player action is bound to the same key: that action wins, as in the dispatcher.
+            voiceKeyCode = AppShortcutsRepository.keyCode(AppShortcutAction.VoiceCommand)
+                .takeIf { PlayerShortcutsRepository.actionForKeyCode(it) == null } ?: 0,
             playerShortcutKeyCodes = PlayerShortcutAction.entries.associate { action ->
                 action.id to PlayerShortcutsRepository.keyCode(action)
             },
@@ -1373,8 +1378,14 @@ internal class NativePlayerController(
             // The HUD's Escape (with nothing of its own to close). The back button still sends "back".
             // A D-pad key while the post-show cards are up (the controls page forwards them: it holds keyboard focus).
             "postShowKey" -> PostShowController.press(value.toInt())
+            // fork:voice-control - the voice key pressed while the HUD has the keyboard.
+            "voiceCommand" -> com.nuvio.app.features.voice.VoiceControlRepository.toggleListening()
             "escapeBack" -> {
-                if (PostShowController.active.value) {
+                val voice = com.nuvio.app.features.voice.VoiceControlRepository
+                if (voice.session.value !is com.nuvio.app.features.voice.VoiceSessionState.Idle) {
+                    // Escape while listening drops the command, as it does from the dispatcher.
+                    voice.cancelListening()
+                } else if (PostShowController.active.value) {
                     // Escape closes the post-show cards instead of leaving the player.
                     PostShowController.press(PostShowKey.Back)
                 } else if (com.nuvio.app.features.youtube.handleYouTubeEscape(SwingUtilities.getWindowAncestor(host))) {
@@ -2566,6 +2577,7 @@ internal fun PlayerControlsState.toControlsJson(
     appFullscreenKeyCode: Int,
     playerShortcutKeyCodes: Map<String, Int>,
     skipIntervalKeyLabel: String,
+    voiceKeyCode: Int = 0,
     miniPlayer: Boolean = false,
     watchPage: Boolean = false,
 ): String =
@@ -2887,6 +2899,8 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("playbackSpeedToggleHigh", hud.playbackSpeedToggleHigh)
         append(',')
         appendJsonField("appFullscreenKeyCode", appFullscreenKeyCode)
+        append(',')
+        appendJsonField("voiceKeyCode", voiceKeyCode)
         append(',')
         appendJsonMapField("playerShortcutKeyCodes", playerShortcutKeyCodes)
         append(',')

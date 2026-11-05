@@ -141,4 +141,32 @@ class VoiceIntentParserTest {
         assertIntent(VoiceIntent.Unknown("Open the pod bay doors"), "Open the pod bay doors.")
         assertIntent(VoiceIntent.Unknown("Go back home now"), "Go back home now.")
     }
+
+    @Test
+    fun nearMissesAreCorrected() {
+        assertIntent(VoiceIntent.Speed(2f), "Playback speed tour.")
+        assertIntent(VoiceIntent.Speed(2f), "playback speed to")
+        assertIntent(VoiceIntent.Speed(4f), "set speed to for")
+        assertIntent(VoiceIntent.Pause, "Paws.")
+        assertIntent(VoiceIntent.Pause, "Pauze.")
+        assertIntent(VoiceIntent.Play, "Plate.")
+        assertIntent(VoiceIntent.Next, "Necks episode.")
+        assertIntent(VoiceIntent.Seek(30_000), "skip forward tirty seconds")
+        assertIntent(VoiceIntent.Open(D.Settings), "open setings")
+        assertIntent(VoiceIntent.Open(D.Library), "open libary")
+    }
+
+    @Test
+    fun aCorrectionNeverChangesTheTitle() {
+        assertIntent(VoiceIntent.Search(S.Movies, "Midsomer"), "Serch movies for Midsomer.")
+        assertIntent(VoiceIntent.Search(S.Movies, "Paws"), "Serch moovies for Paws")
+        // Already a command as said: nothing is corrected.
+        assertIntent(VoiceIntent.Search(S.All, "tour de france"), "search for tour de france")
+    }
+
+    @Test
+    fun speechThatIsNotNearACommandStaysUnknown() {
+        assertIntent(VoiceIntent.Unknown("What a lovely day"), "What a lovely day.")
+        assertIntent(VoiceIntent.Unknown("pause the music and dance"), "pause the music and dance")
+    }
 }

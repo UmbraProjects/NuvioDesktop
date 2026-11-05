@@ -38,4 +38,15 @@ class WhisperTranscriberTest {
             assertEquals(VoiceIntent.Unknown(""), parseVoiceIntent(silence))
         }
     }
+
+    @Test
+    fun collapsesACommandSaidTwice() {
+        assertEquals("Pause.", WhisperTranscriber.collapseRepeatedSentences("Pause. Pause."))
+        assertEquals("Play.", WhisperTranscriber.collapseRepeatedSentences("Play. Play. play"))
+        assertEquals("Go back.", WhisperTranscriber.collapseRepeatedSentences("Go back. Go back."))
+        assertEquals("Search movies for Midsommar.", WhisperTranscriber.collapseRepeatedSentences("Search movies for Midsommar."))
+        // Different sentences, or a repeat that is not back to back, stay as heard.
+        assertEquals("Pause. Play.", WhisperTranscriber.collapseRepeatedSentences("Pause. Play."))
+        assertEquals("Next. Back. Next.", WhisperTranscriber.collapseRepeatedSentences("Next. Back. Next."))
+    }
 }

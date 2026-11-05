@@ -53,7 +53,7 @@ internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
         SettingsSection(title = VOICE_SECTION_GENERAL, isTablet = isTablet) {
             SettingsGroup(
                 isTablet = isTablet,
-                modifier = Modifier.settingsSearchAnchors("voice-enable", "voice-push-to-talk", "voice-end-pause"),
+                modifier = Modifier.settingsSearchAnchors("voice-enable", "voice-push-to-talk", "voice-wake-word", "voice-end-pause"),
             ) {
                 SettingsSwitchRow(
                     title = "Voice commands",
@@ -84,13 +84,28 @@ internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
                     )
                 }
                 SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Wake word",
+                    description = "Say “Nuvio” and a command, such as “Nuvio, pause” or “Nuvio, search movies for " +
+                        "Midsommar”, or “Nuvio” alone and then the command. Keeps the microphone open while Nuvio " +
+                        "runs (Windows shows the mic as in use) and reads everything it hears on this PC, nothing " +
+                        "sent anywhere, so it uses some CPU while people talk or a film plays loudly." +
+                        if (state.wakeListening) " Listening now." else "",
+                    checked = state.settings.wakeWord,
+                    enabled = state.ready,
+                    isTablet = isTablet,
+                    onCheckedChange = VoiceControlRepository::setWakeWord,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
                 var commandsOpen by remember { mutableStateOf(false) }
                 val ownCount = state.phrases.custom.values.sumOf { it.size }
                 SettingsActionRow(
                     title = "Commands",
                     description = "Search YouTube / movies / shows / music for …, open a tab, play, pause, next, " +
-                        "skip forward or back by an amount, playback speed, go back. Give any of them a phrase of " +
-                        "your own, or replace its built-in ones." +
+                        "skip forward or back, go to 20 minutes, skip the intro, volume, subtitles, playback speed, " +
+                        "go back. On a title, “play” presses Play and “source 3” picks from the list; “down”, " +
+                        "“go right 3” and “select” move around. Give any of them a phrase of your own, or replace " +
+                        "its built-in ones." +
                         if (ownCount > 0) " $ownCount of your own so far." else "",
                     isTablet = isTablet,
                 ) {

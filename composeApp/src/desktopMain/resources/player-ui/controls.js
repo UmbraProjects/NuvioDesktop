@@ -483,6 +483,7 @@ let state = {
   playbackInfoPanelEnabled: false,
   activeSubtitleLabel: "",
   appFullscreenKeyCode: 122,
+  voiceKeyCode: 0,
   playerShortcutKeyCodes: {},
   uiScalePercent: 0,
   controlIconScalePercent: 0,
@@ -8344,6 +8345,15 @@ document.addEventListener("keydown", event => {
     event.preventDefault();
     focusShortcutRoot();
     send("toggleFullscreen", 0);
+    return;
+  }
+  // Voice control's push-to-talk key. Once the HUD is clicked it holds the keyboard and the app's own
+  // key handler never sees the key, so it is forwarded here (Kotlin sends 0 when a player action
+  // owns that key). Not while typing in a box, and not for auto-repeat: a held key is one press.
+  const voiceKey = Math.max(0, Number(state.voiceKeyCode) || 0);
+  if (voiceKey > 0 && awtKeyCodeForEvent(event) === voiceKey && !isTextEntryTarget(event.target)) {
+    event.preventDefault();
+    if (!event.repeat) send("voiceCommand", 0);
     return;
   }
   // In the channel search box Left/Right move the caret; Up/Down/Enter still walk the list.

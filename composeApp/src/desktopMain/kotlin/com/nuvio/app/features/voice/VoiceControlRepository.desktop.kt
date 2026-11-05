@@ -16,6 +16,13 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
@@ -31,6 +38,25 @@ actual object VoiceControlRepository {
     private const val KEY_MODEL = "model_id"
     private const val KEY_MICROPHONE = "microphone"
     private const val KEY_END_SILENCE = "end_silence_ms"
+    private const val KEY_WAKE_WORD = "wake_word"
+
+    /** Heard before speech is detected, kept so a clip does not start a word late. */
+    private const val WAKE_PRE_ROLL_MS = 300
+
+    /** Shorter than this is a cough or a click, not "Nuvio" and a command. */
+    private const val WAKE_MIN_CLIP_MS = 400
+
+    /** The longest wake-word clip: with music playing every clip runs this long, and each is decoded. */
+    private const val WAKE_MAX_CLIP_MS = 6_000
+
+    /** How much of a clip cut off mid-sound also starts the next ("Nuvio, pause" is under 2 s). */
+    private const val WAKE_CARRY_MS = 2_500
+
+    /** A carried tail with no sound after it for this long is dropped (it was decoded already). */
+    private const val WAKE_CARRY_IDLE_MS = 1_000
+
+    /** After the microphone fails to open, the wake-word listener tries again this much later. */
+    private const val WAKE_RETRY_MS = 15_000L
 
     /** How far the app's own audio goes down while listening, so the microphone hears the person. */
     private const val DUCK_TO = 0.25
@@ -95,6 +121,7 @@ actual object VoiceControlRepository {
             endSilenceMs = store.getInt(KEY_END_SILENCE)
                 ?.takeIf { it in VoiceActivityDetector.END_SILENCE_OPTIONS_MS }
                 ?: VoiceActivityDetector.DEFAULT_END_SILENCE_MS,
+            wakeWord = store.getBoolean(KEY_WAKE_WORD) ?: false,
         )
         _uiState.update {
             it.copy(
@@ -107,6 +134,19 @@ actual object VoiceControlRepository {
         }
         refreshMicrophones()
         warmUp()
+        superviseWakeWord()
+        // "down", "go right 3", "select": the keystrokes a gamepad sends, so every screen that walks
+        // with the arrow keys walks by voice too.
+        VoiceScreenTargets.pressKey = { key, count ->
+            val code = when (key) {
+                VoiceKey.Up -> java.awt.event.KeyEvent.VK_UP
+                VoiceKey.Down -> java.awt.event.KeyEvent.VK_DOWN
+                VoiceKey.Left -> java.awt.event.KeyEvent.VK_LEFT
+                VoiceKey.Right -> java.awt.event.KeyEvent.VK_RIGHT
+                VoiceKey.Enter -> java.awt.event.KeyEvent.VK_ENTER
+            }
+            (0 until count.coerceIn(1, 20)).all { com.nuvio.app.features.input.GamepadKeyInjector.sendKeyCode(code) }
+        }
     }
 
     /** A file of the catalogue's size is trusted; hashing 60 MB at every start is not worth it. */
@@ -137,6 +177,11 @@ actual object VoiceControlRepository {
         if (ms !in VoiceActivityDetector.END_SILENCE_OPTIONS_MS) return
         store.putInt(KEY_END_SILENCE, ms)
         updateSettings { it.copy(endSilenceMs = ms) }
+    }
+
+    actual fun setWakeWord(enabled: Boolean) {
+        store.putBoolean(KEY_WAKE_WORD, enabled)
+        updateSettings { it.copy(wakeWord = enabled) }
     }
 
     private fun updateSettings(transform: (VoiceControlSettings) -> VoiceControlSettings) {
@@ -249,11 +294,11 @@ actual object VoiceControlRepository {
                     return@launch
                 }
                 val started = System.nanoTime()
-                val text = engine.transcribe(samples, prompt())
+                val recognized = recognize(engine, samples, scope = null)
                 val decodeMs = (System.nanoTime() - started) / 1_000_000
                 val audioMs = samples.size * 1000L / VoiceAudio.SAMPLE_RATE
-                log.i { "Test: ${audioMs}ms of audio decoded in ${decodeMs}ms with ${model.id}" }
-                setTest(VoiceTestState.Heard(text, parseVoiceIntent(text, _uiState.value.phrases), audioMs, decodeMs))
+                log.i { "Test: ${audioMs}ms of audio decoded in ${decodeMs}ms with ${model.id} [${recognized.how}]" }
+                setTest(VoiceTestState.Heard(recognized.text, recognized.intent, audioMs, decodeMs))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -360,7 +405,10 @@ actual object VoiceControlRepository {
         val detector = VoiceActivityDetector(endSilenceMs = settings.endSilenceMs)
         val frameRate = recorder.sampleRate
         var preview: Job? = null
-        val previewAllowed = AtomicBoolean(true)
+        // Live previews only once a decode has shown this model is quick on this PC. A preview
+        // still decoding when speech ends holds the final decode up for its whole length (one
+        // transcriber, serialised), so a slow model paid its decode time twice per command.
+        val previewAllowed = AtomicBoolean(engine.lastDecodeMs?.let { it <= PREVIEW_TOO_SLOW_MS } == true)
         val transcript = AtomicReference("")
         var lastPreviewAt = 0L
         var lastShownAt = 0L
@@ -409,10 +457,14 @@ actual object VoiceControlRepository {
         preview?.join()
         val samples = recorder.samples()
         val started = System.nanoTime()
-        val text = engine.transcribe(samples, prompt())
+        val recognized = recognize(engine, samples, searchScope)
+        val text = recognized.text
         val decodeMs = (System.nanoTime() - started) / 1_000_000
-        val intent = scopeVoiceIntent(parseVoiceIntent(text, _uiState.value.phrases), searchScope)
-        log.i { "Heard ${samples.size * 1000L / VoiceAudio.SAMPLE_RATE}ms in ${decodeMs}ms: ${describeVoiceIntent(intent)}" }
+        val intent = recognized.intent
+        log.i {
+            "Heard ${samples.size * 1000L / VoiceAudio.SAMPLE_RATE}ms in ${decodeMs}ms: ${describeVoiceIntent(intent)}" +
+                (if (intent is VoiceIntent.Unknown) " (\"${text.take(120)}\")" else "") + " [${recognized.how}]"
+        }
         if (intent is VoiceIntent.Unknown && intent.text.isEmpty()) {
             showResult(VoiceSessionState.Failed("Didn't catch that"))
             return
@@ -469,17 +521,297 @@ actual object VoiceControlRepository {
         }
     }
 
+    // ---- Wake word ---------------------------------------------------------------------------------
+
+    /**
+     * Runs the wake-word listener whenever it should: switched on, voice control ready, and the
+     * microphone not wanted by push-to-talk or the Settings test (each gets it to itself; a result
+     * still on screen does not count, so "Nuvio, play" can follow "Nuvio, pause" straight away).
+     * A change of model or microphone restarts it with the new one.
+     */
+    private fun superviseWakeWord() {
+        scope.launch {
+            combine(_uiState, _session) { ui, session ->
+                val micFree = ui.test == VoiceTestState.Idle &&
+                    session !is VoiceSessionState.Listening && session !is VoiceSessionState.Transcribing
+                if (ui.ready && ui.settings.wakeWord && micFree) ui.selectedModel to ui.settings.microphone else null
+            }.distinctUntilChanged().collectLatest { wanted ->
+                if (wanted == null) return@collectLatest
+                val (model, microphone) = wanted
+                while (isActive) {
+                    listenForWakeWord(model, microphone)
+                    delay(WAKE_RETRY_MS)
+                }
+            }
+        }
+    }
+
+    /**
+     * Cuts the microphone into utterances with the same detector push-to-talk uses and decodes each
+     * one; only one that starts with the name goes any further ([commandAfterWakeWord]). Returns
+     * when the microphone or the engine cannot be had; cancelled when it should stop.
+     */
+    private suspend fun listenForWakeWord(model: VoiceModel, microphone: String?) = coroutineScope {
+        val engine = transcriberFor(modelFile(model)).getOrElse { error ->
+            reportEngineFailure(error)
+            return@coroutineScope
+        }
+        val recorder = openRecorder(microphone, keep = false) { message -> log.w { "Wake word: $message" } }
+            ?: return@coroutineScope
+        log.i { "Listening for the wake word with ${model.id}" }
+        _uiState.update { it.copy(wakeListening = true) }
+        // One clip waiting at most: if decoding falls behind (a film playing loudly), the newest wins.
+        val clips = Channel<WakeClip>(capacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        val decoder = launch {
+            // The command the last clip carried out, so a carried tail that holds it too is not run twice.
+            var lastActed: String? = null
+            for (clip in clips) {
+                try {
+                    val acted = onWakeClip(engine, clip.samples, repeatOf = lastActed.takeIf { clip.startsWithCarry })
+                    lastActed = acted
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    log.w(error) { "Wake word: decoding failed" }
+                }
+            }
+        }
+        try {
+            val rate = recorder.sampleRate
+            fun newDetector() = VoiceActivityDetector(
+                endSilenceMs = _uiState.value.settings.endSilenceMs,
+                noSpeechTimeoutMs = Int.MAX_VALUE,
+                maxUtteranceMs = WAKE_MAX_CLIP_MS,
+            )
+            var detector = newDetector()
+            val preRoll = ArrayDeque<FloatArray>()
+            var preRollMs = 0
+            val speech = ArrayList<FloatArray>()
+            // After a clip cut off mid-sound (music, a film: no pause to end it at), its last
+            // WAKE_CARRY_MS start the next one, so "Nuvio, pause" said across the cut is whole in one
+            // of the two. Dropped if the sound stops instead.
+            var carrying = false
+            var carryIdleMs = 0
+            var clipStartsWithCarry = false
+            while (isActive) {
+                // Suspends once per chunk. collectLatest starts this block undispatched, on the very
+                // coroutine that collects the state saying when to stop: a loop of blocking reads that
+                // never suspended kept it from seeing push-to-talk start, so the mic was never handed
+                // over ("The microphone is busy" after "Nuvio" alone, Nov 5).
+                kotlinx.coroutines.yield()
+                val chunk = recorder.readChunk()
+                if (chunk.isEmpty()) continue
+                val chunkMs = (chunk.size * 1000 / rate).coerceAtLeast(1)
+                val activity = detector.accept(chunk, chunkMs)
+                if (!detector.heardSpeech && carrying) {
+                    speech.add(chunk)
+                    carryIdleMs += chunkMs
+                    if (carryIdleMs > WAKE_CARRY_IDLE_MS) {
+                        speech.clear()
+                        carrying = false
+                        clipStartsWithCarry = false
+                    }
+                    continue
+                }
+                if (!detector.heardSpeech) {
+                    preRoll.addLast(chunk)
+                    preRollMs += chunkMs
+                    while (preRollMs > WAKE_PRE_ROLL_MS && preRoll.size > 1) {
+                        preRollMs -= preRoll.removeFirst().size * 1000 / rate
+                    }
+                    continue
+                }
+                if (speech.isEmpty()) {
+                    speech.addAll(preRoll)
+                    preRoll.clear()
+                    preRollMs = 0
+                }
+                speech.add(chunk)
+                carrying = false
+                if (activity == VoiceActivity.SpeechEnded || activity == VoiceActivity.TooLong) {
+                    val joined = FloatArray(speech.sumOf { it.size })
+                    var at = 0
+                    for (part in speech) {
+                        part.copyInto(joined, at)
+                        at += part.size
+                    }
+                    if (activity == VoiceActivity.TooLong) {
+                        var keptMs = 0
+                        val tail = ArrayDeque<FloatArray>()
+                        for (part in speech.asReversed()) {
+                            if (keptMs >= WAKE_CARRY_MS) break
+                            tail.addFirst(part)
+                            keptMs += part.size * 1000 / rate
+                        }
+                        speech.clear()
+                        speech.addAll(tail)
+                        carrying = true
+                        carryIdleMs = 0
+                    } else {
+                        speech.clear()
+                    }
+                    detector = newDetector()
+                    val sentStartsWithCarry = clipStartsWithCarry
+                    clipStartsWithCarry = carrying
+                    if (joined.size * 1000L / rate >= WAKE_MIN_CLIP_MS) {
+                        clips.trySend(WakeClip(VoiceAudio.resampleTo16k(joined, rate), sentStartsWithCarry))
+                    }
+                }
+            }
+        } finally {
+            recorder.close()
+            clips.close()
+            decoder.cancel()
+            _uiState.update { it.copy(wakeListening = false) }
+        }
+    }
+
+    /** What was said is never logged unless it was addressed to Nuvio: the room's talk is not the app's. */
+    /** One utterance for the wake-word decoder; [startsWithCarry]: it begins with the last clip's tail. */
+    private class WakeClip(val samples: FloatArray, val startsWithCarry: Boolean)
+
+    /**
+     * Decodes [clip] and acts on a command addressed to Nuvio. Returns the command acted on (as
+     * heard, after the name), null when nothing was. [repeatOf]: the command the clip before carried
+     * out, when this one begins with its tail; the same command again is that tail, not a new one.
+     */
+    private fun onWakeClip(engine: WhisperTranscriber, clip: FloatArray, repeatOf: String? = null): String? {
+        // One decode for every clip, held to the wake grammar: free text, then the name, then a
+        // command. Talk not meant for Nuvio passes through as said (the grammar can stop before the
+        // name), and on noisy clips it finds the name more often than a free decode does (Nov 5: the
+        // free decode wrote "New deal. Force." for "Nuvio, pause", the held one "Nuvio, pause.").
+        val wakePrompt = prompt() + " " + WAKE_WORD_PROMPT // whisper keeps the end of a long prompt
+        val held = if (GRAMMAR_FIRST) engine.transcribeHeld(clip, VOICE_GRAMMAR_WAKE_RULE, grammar(), wakePrompt) else null
+        val text = held?.text ?: engine.transcribe(clip, wakePrompt)
+        val command = commandAfterWakeWord(text) ?: return null
+        if (repeatOf != null && normalizeVoicePhrase(command) == normalizeVoicePhrase(repeatOf)) return null
+        val busy = _session.value.let { it is VoiceSessionState.Listening || it is VoiceSessionState.Transcribing }
+        if (busy) return null
+        if (command.isEmpty()) {
+            // The name alone: listen for the command, as a press of the voice key would.
+            log.i { "Wake word heard; listening for the command" }
+            toggleListening()
+            return command
+        }
+        val (heard, intent, how) = recognizeAfterName(engine, clip, command, held)
+        val clipMs = clip.size * 1000L / VoiceAudio.SAMPLE_RATE
+        val unknownText = if (intent is VoiceIntent.Unknown) " (\"${heard.take(120)}\")" else ""
+        log.i { "Wake word: ${clipMs}ms: ${describeVoiceIntent(intent)}$unknownText [$how]" }
+        if (intent is VoiceIntent.Unknown && intent.text.isEmpty()) return null
+        showResult(VoiceSessionState.Heard(heard, intent))
+        if (intent is VoiceIntent.Unknown) return null
+        _intents.tryEmit(intent)
+        return command
+    }
+
+    // ---- Recognition -------------------------------------------------------------------------------
+
+    /**
+     * Commands are decoded held to the command grammar first (see voiceCommandGrammar): whisper can
+     * then only write a command, so a near sound becomes the nearest command ("go write one" cannot
+     * come out). That reading is used when it parses and whisper was sure enough of it; otherwise (it
+     * was not a command, or noise forced into one) the free decode is read as before. A search box's
+     * mic is free text, so it skips the held pass. False goes back to the free decode only.
+     */
+    private const val GRAMMAR_FIRST = true
+
+    /**
+     * The lowest mean token log-probability a held reading is trusted at. Measured on noisy command
+     * clips (Nov 5, small.en): commands heard right came out between -0.0 and -0.35, a mumbled
+     * "pause" forced into "Home" or "Hold on" at -1.0 and below.
+     */
+    private const val HELD_MIN_MEAN_LOGPROB = -0.6f
+
+    private class Recognized(val text: String, val intent: VoiceIntent, val how: String) {
+        operator fun component1() = text
+        operator fun component2() = intent
+        operator fun component3() = how
+    }
+
+    @Volatile
+    private var grammarCache: Pair<VoiceCommandPhrases, String>? = null
+
+    /** The command grammar for the person's phrases, built again only when those change. */
+    private fun grammar(): String {
+        val phrases = _uiState.value.phrases
+        grammarCache?.let { (forPhrases, text) -> if (forPhrases == phrases) return text }
+        return voiceCommandGrammar(phrases).also { grammarCache = phrases to it }
+    }
+
+    private fun WhisperTranscriber.Held.describe() =
+        "held \"${text.take(60)}\" ${"%.2f".format(meanLogProb)}"
+
+    /** A push-to-talk utterance (or the Settings test): held first, then free. [scope]: a search box's mic. */
+    private fun recognize(engine: WhisperTranscriber, samples: FloatArray, scope: VoiceSearchScope?): Recognized {
+        val phrases = _uiState.value.phrases
+        var heldNote = ""
+        if (GRAMMAR_FIRST && scope == null) {
+            val held = engine.transcribeHeld(samples, VOICE_GRAMMAR_COMMAND_RULE, grammar(), prompt())
+            if (held != null) {
+                val intent = parseVoiceIntent(held.text, phrases)
+                if (intent !is VoiceIntent.Unknown && held.meanLogProb >= HELD_MIN_MEAN_LOGPROB) {
+                    return Recognized(held.text, intent, held.describe())
+                }
+                heldNote = held.describe() + " rejected; "
+            } else {
+                heldNote = "held failed; "
+            }
+        }
+        val text = engine.transcribe(samples, prompt())
+        return Recognized(text, scopeVoiceIntent(parseVoiceIntent(text, phrases), scope), heldNote + "free")
+    }
+
+    /**
+     * What to do with [command], heard after the name in [clip]. [held]: the wake decode it came from,
+     * held to the grammar; when what followed the name does not parse there (cut short, or noise), the
+     * clip is decoded freely once more and that reading is used. No confidence check: lyrics or
+     * dialogue before the name are free text and drag the mean down, and the name was heard.
+     */
+    private fun recognizeAfterName(
+        engine: WhisperTranscriber,
+        clip: FloatArray,
+        command: String,
+        held: WhisperTranscriber.Held?,
+    ): Recognized {
+        val phrases = _uiState.value.phrases
+        val intent = parseVoiceIntent(command, phrases)
+        if (held == null || intent !is VoiceIntent.Unknown) {
+            return Recognized(command, intent, held?.describe() ?: "free")
+        }
+        val free = engine.transcribe(clip, prompt() + " " + WAKE_WORD_PROMPT)
+        val freeCommand = commandAfterWakeWord(free)?.takeIf { it.isNotEmpty() } ?: command
+        return Recognized(freeCommand, parseVoiceIntent(freeCommand, phrases), held.describe() + " did not parse; free")
+    }
+
     // ---- Shared ------------------------------------------------------------------------------------
 
-    private fun openRecorder(microphone: String?, onFailure: (String) -> Unit): VoiceAudio.Recorder? =
-        try {
+    /**
+     * One recorder at a time. Java Sound on Windows opens a microphone for one line only: a second
+     * open while another is recording fails with "format ... not supported", which is what pressing
+     * the voice key (or saying the wake word alone) did while the wake-word listener had the mic.
+     * Push-to-talk and the test change the state that stops the listener, then wait here the ~20 ms
+     * it takes to close its line.
+     */
+    private val microphoneLock = kotlinx.coroutines.sync.Mutex()
+
+    private const val MICROPHONE_WAIT_MS = 2_000L
+
+    private suspend fun openRecorder(microphone: String?, keep: Boolean = true, onFailure: (String) -> Unit): VoiceAudio.Recorder? {
+        if (kotlinx.coroutines.withTimeoutOrNull(MICROPHONE_WAIT_MS) { microphoneLock.lock() } == null) {
+            log.w { "The microphone is still in use by another recording" }
+            onFailure("The microphone is busy")
+            return null
+        }
+        return try {
             val (line, format) = VoiceAudio.openMicrophone(microphone)
-            VoiceAudio.Recorder(line, format)
+            VoiceAudio.Recorder(line, format, keep, onClose = { microphoneLock.unlock() })
         } catch (error: Exception) {
+            microphoneLock.unlock()
             log.w(error) { "Opening the microphone failed" }
             onFailure(error.message ?: "No microphone could be opened")
             null
         }
+    }
 
     private fun reportEngineFailure(error: Throwable) {
         log.w(error) { "Could not start the speech engine" }
