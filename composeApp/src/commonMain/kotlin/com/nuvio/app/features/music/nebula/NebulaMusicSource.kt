@@ -45,6 +45,9 @@ private val log = Logger.withTag("NebulaMusic")
 private const val RAW_LOG_CHARS = 1200
 
 private const val MAX_CANDIDATES = 3
+
+/** The least time between two availability searches (the addon refused a burst of about 1.5 a second). */
+private const val SEARCH_SPACING_MS = 800L
 private const val LINK_RETRY_DELAY_MS = 700L
 
 /** How long a track the addon is still preparing is waited for in all, counted from the first ask, and how often it is asked again. */
@@ -386,6 +389,39 @@ internal object NebulaMusicSource {
         }
     }
 
+    private val paceLock = Mutex()
+    private var nextSearchAt = 0L
+
+    /** Waits for this request's turn: availability searches start at least [SEARCH_SPACING_MS] apart, whichever release or addon they are for. */
+    private suspend fun waitForSearchTurn() {
+        val wait = paceLock.withLock {
+            val now = LibraryClock.nowEpochMs()
+            val at = maxOf(now, nextSearchAt)
+            nextSearchAt = at + SEARCH_SPACING_MS
+            at - now
+        }
+        if (wait > 0) delay(wait)
+    }
+
+    /**
+     * fork:nebula - one /search for the availability check, paced, and asked once more after the wait when the addon says
+     * "too many search requests" (its reply names the seconds to wait). The log showed 85 of a 4-minute visit's checks
+     * refused that way when 30 albums were asked about in a burst. Everyone else waits too while it waits.
+     */
+    private suspend fun pacedSearch(base: String, text: String): String {
+        waitForSearchTurn()
+        var reply = get(base, "/search?q=${urlEncodeQuery(text)}")
+        if (reply.status == 429) {
+            val seconds = Regex("""in (\d+) second""").find(reply.body)?.groupValues?.get(1)?.toLongOrNull() ?: 4L
+            val pause = (seconds.coerceIn(1L, 15L) + 1L) * 1000L
+            paceLock.withLock { nextSearchAt = maxOf(nextSearchAt, LibraryClock.nowEpochMs() + pause) }
+            log.i { "Music addon asked for a ${pause / 1000} s pause between searches" }
+            waitForSearchTurn()
+            reply = get(base, "/search?q=${urlEncodeQuery(text)}")
+        }
+        return reply.requireOk()
+    }
+
     /**
      * The addon album for [query] from /search alone (artist and title first, then the title alone), asking each addon in
      * turn: the first that has it, with that addon. When none has it but one could not be asked, that failure is thrown, so
@@ -396,7 +432,7 @@ internal object NebulaMusicSource {
         for (addon in addons) {
             try {
                 for (text in nebulaSearchQueries(query.title, query.artist)) {
-                    val body = get(addon.base, "/search?q=${urlEncodeQuery(text)}").requireOk()
+                    val body = pacedSearch(addon.base, text)
                     val match = strictNebulaMatch(parseNebulaSearchAlbums(body), query.title, query.artist, query.year, query.trackCount ?: 0)
                     // fork:nebula - raw answer kept in the log, to learn how the addon marks an album ready on TorBox vs fetchable.
                     log.i { "Lossless check \"${query.title}\" by ${query.artist} [$text]: matched=${match?.title} raw=${body.take(RAW_LOG_CHARS)}" }
