@@ -276,4 +276,52 @@ class MusicHomeSearchTest {
         assertEquals(listOf("MPREb_a", "MPREb_s"), topAlbumIds(page))
         assertNull(searchEssentials(page.copy(topSongs = emptyList())))
     }
+
+    // Narrow row and split panels
+
+    @Test
+    fun theNarrowRowRewritesTheKindWord() {
+        val q = parseQuery("yelawolf live 2012", library)
+        assertEquals("yelawolf remix 2012", withKind(q, QueryKind.Remix))
+        assertEquals("yelawolf 2012", withKind(q, null))
+        assertEquals("yelawolf", withKind(q, null, keepYear = false))
+        assertEquals("yelawolf albums", withKind(parseQuery("yelawolf", library), QueryKind.Albums))
+    }
+
+    @Test
+    fun aRemixChipSplitsOwnUploadsFromFans() {
+        val r = buildHomeResults(
+            parseQuery("yelawolf remix", library),
+            everything(songs = listOf(track("a", "Till It's Gone (Remix)", "Yelawolf", 250))),
+            youtube = listOf(
+                track("v1", "Box Chevy V (Remix)", "YelawolfVEVO", 271),
+                track("v2", "Till it's Gone Remix", "Mordern Music", 260),
+                track("v3", "Daddy's Lambo (Slowed Remix)", "Some DJ", 300),
+            ),
+        )
+        assertTrue(r.split)
+        assertEquals(listOf(RowSource.YouTubeMusic, RowSource.YouTube), r.rows.map { it.source })
+        assertEquals(listOf("a", "v1"), r.centreTracks.map { it.videoId })
+        assertEquals(listOf("v2", "v3"), r.videos.map { it.videoId })
+        assertEquals("OFFICIAL REMIXES · BOTH SOURCES", r.centreLabel)
+        assertEquals("FAN AND DJ REMIXES · YOUTUBE", r.rightLabel)
+    }
+
+    @Test
+    fun withoutASplitKindVideosStayRight() {
+        val r = buildHomeResults(parseQuery("yelawolf", library), everything(), youtube = listOf(track("v1", "Box Chevy V", "YelawolfVEVO", 271)))
+        assertFalse(r.split)
+        assertTrue(r.rows.isEmpty())
+        assertEquals(listOf("v1"), r.videos.map { it.videoId })
+        assertEquals("YOUTUBE MUSIC · SONGS AND ALBUMS", r.centreLabel)
+    }
+
+    @Test
+    fun aSplitKindLeadsTheActionRowWithPlayAll() {
+        val artist = MusicTopResult("Yelawolf", "Artist", listOf(yela), null, null)
+        assertEquals(listOf(HomeAction.PlayAll, HomeAction.ShuffleAll, HomeAction.OpenArtist, HomeAction.More), homeActions(artist, QueryKind.Remix))
+        assertEquals("Play all remixes", HomeAction.PlayAll.labelFor(QueryKind.Remix))
+        assertEquals("Shuffle live", HomeAction.ShuffleAll.labelFor(QueryKind.Live))
+        assertEquals(HomeAction.PlayEssentials, homeActions(artist, QueryKind.Albums).first())
+    }
 }

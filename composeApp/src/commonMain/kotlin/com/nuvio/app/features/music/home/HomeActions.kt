@@ -124,8 +124,30 @@ internal class HomeRunner(
         }
     }
 
-    /** What one press of an action-row button does for [top]. More is opened by the row itself. */
-    fun run(action: HomeAction, top: MusicTopResult) {
+    /** [tracks] as one queue, in order or shuffled: the centre panel's remixes, live takes or acoustic versions. */
+    fun playAll(tracks: List<MusicTrack>, title: String, top: MusicTopResult, shuffled: Boolean) {
+        if (tracks.isEmpty()) {
+            NuvioToastController.show("Nothing to play here yet")
+            return
+        }
+        val queue = MusicAlbum(
+            browseId = "home:" + title.lowercase(),
+            title = title,
+            artists = top.artists,
+            year = null,
+            kind = "Mix",
+            thumbnailUrl = top.thumbnailUrl,
+            tracks = tracks.distinctBy { it.videoId }.mapIndexed { i, t -> t.copy(trackNumber = i + 1) },
+            audioPlaylistId = null,
+        )
+        player.play(queue, shuffled = shuffled)
+    }
+
+    /**
+     * What one press of an action-row button does for [top]. More is opened by the row itself. [kind] and [tracks] are
+     * the chip in the line and what the centre panel can play, for Play all and Shuffle all.
+     */
+    fun run(action: HomeAction, top: MusicTopResult, kind: QueryKind? = null, tracks: List<MusicTrack> = emptyList()) {
         val artistId = top.artists.firstOrNull()?.browseId
         when (action) {
             HomeAction.PlayEssentials -> artistId?.let { essentials(it, top.title, PlayHow.Now) }
@@ -138,6 +160,8 @@ internal class HomeRunner(
             HomeAction.OpenAlbum -> top.albumBrowseId?.let(openAlbum)
             HomeAction.PlayTrack -> top.videoId?.let { track(topTrack(top, it), PlayHow.Now) }
             HomeAction.QueueTrack -> top.videoId?.let { track(topTrack(top, it), PlayHow.Queue) }
+            HomeAction.PlayAll -> playAll(tracks, "${top.title}: ${kind?.plural ?: "results"}", top, shuffled = false)
+            HomeAction.ShuffleAll -> playAll(tracks, "${top.title}: ${kind?.plural ?: "results"}", top, shuffled = true)
             HomeAction.More -> Unit
         }
     }
@@ -205,8 +229,8 @@ internal fun topTrack(top: MusicTopResult, videoId: String) =
     MusicTrack(videoId = videoId, title = top.title, artists = top.artists, durationSeconds = 0, trackNumber = 1, isAvailable = true, coverUrl = top.thumbnailUrl)
 
 private fun HomeAction.icon(): ImageVector = when (this) {
-    HomeAction.PlayEssentials, HomeAction.PlayAlbum, HomeAction.PlayTrack -> Icons.Rounded.PlayArrow
-    HomeAction.ShuffleEssentials, HomeAction.ShuffleAlbum -> Icons.Rounded.Shuffle
+    HomeAction.PlayEssentials, HomeAction.PlayAlbum, HomeAction.PlayTrack, HomeAction.PlayAll -> Icons.Rounded.PlayArrow
+    HomeAction.ShuffleEssentials, HomeAction.ShuffleAlbum, HomeAction.ShuffleAll -> Icons.Rounded.Shuffle
     HomeAction.PlayTopAlbums -> Icons.Rounded.LocalFireDepartment
     HomeAction.OpenArtist -> Icons.Rounded.Person
     HomeAction.QueueAlbum, HomeAction.QueueTrack -> Icons.Rounded.PlaylistAdd
@@ -219,8 +243,15 @@ private fun HomeAction.icon(): ImageVector = when (this) {
  * focus ([primaryFocus]). Up goes back to the letter strip ([onUp]); Down goes on to the panels.
  */
 @Composable
-internal fun HomeActionRow(top: MusicTopResult, primaryFocus: FocusRequester, runner: HomeRunner, onUp: () -> Unit) {
-    val actions = remember(top) { homeActions(top) }
+internal fun HomeActionRow(
+    top: MusicTopResult,
+    kind: QueryKind?,
+    tracks: List<MusicTrack>,
+    primaryFocus: FocusRequester,
+    runner: HomeRunner,
+    onUp: () -> Unit,
+) {
+    val actions = remember(top, kind) { homeActions(top, kind) }
     val menu = rememberMusicMenu()
     MusicItemMenu(menu) { runner.moreFor(top) }
     Row(
@@ -239,18 +270,19 @@ internal fun HomeActionRow(top: MusicTopResult, primaryFocus: FocusRequester, ru
             val more = action == HomeAction.More
             HomeActionButton(
                 action = action,
+                label = action.labelFor(kind),
                 primary = index == 0,
                 modifier = Modifier
                     .then(if (index == 0) Modifier.focusRequester(primaryFocus) else Modifier)
                     .then(if (more) Modifier.onGloballyPositioned { menu.bounds = it.boundsInWindow() } else Modifier),
-                onClick = { if (more) menu.openFromKeys() else runner.run(action, top) },
+                onClick = { if (more) menu.openFromKeys() else runner.run(action, top, kind, tracks) },
             )
         }
     }
 }
 
 @Composable
-private fun HomeActionButton(action: HomeAction, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun HomeActionButton(action: HomeAction, label: String, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(24.dp)
     val content = if (primary) colors.onAccent else colors.textPrimary
@@ -267,7 +299,7 @@ private fun HomeActionButton(action: HomeAction, primary: Boolean, modifier: Mod
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Icon(action.icon(), contentDescription = null, tint = content, modifier = Modifier.size(20.dp))
-        Text(action.label, style = MaterialTheme.typography.titleSmall, fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal, color = content, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Normal, color = content, maxLines = 1)
     }
 }
 

@@ -23,12 +23,26 @@ import com.nuvio.app.features.music.library.essentialsMix
 // region Sentence chips
 
 /** What a word in the search line can ask for beyond the name itself. */
-enum class QueryKind(val label: String) {
-    Remix("remix"),
-    Live("live"),
-    Acoustic("acoustic"),
-    Albums("albums only"),
+enum class QueryKind(val label: String, val plural: String) {
+    Remix("remix", "remixes"),
+    Live("live", "live"),
+    Acoustic("acoustic", "acoustic"),
+    Albums("albums only", "albums"),
 }
+
+/** The kinds that split results into the artist's own uploads (centre) and everyone else's (right). */
+val SPLIT_KINDS: Set<QueryKind> = setOf(QueryKind.Remix, QueryKind.Live, QueryKind.Acoustic)
+
+/**
+ * The line rewritten for the Narrow row: the name being searched for, then [kind]'s word (none to clear it), then the
+ * year when [keepYear]. "yelawolf live" with Remix gives "yelawolf remix".
+ */
+fun withKind(query: ParsedQuery, kind: QueryKind?, keepYear: Boolean = true): String =
+    listOfNotNull(
+        query.terms.trim().ifEmpty { null },
+        kind?.let { k -> KIND_WORDS.entries.first { it.value == k }.key },
+        query.year?.takeIf { keepYear }?.toString(),
+    ).joinToString(" ")
 
 /** A chip drawn in the search line. [word] is the text it came from, so Delete can give it back. */
 sealed interface QueryChip {
@@ -148,7 +162,8 @@ fun titleMatchesKind(title: String, kind: QueryKind): Boolean {
 fun isOfficialUpload(channel: String?, artistNames: List<String>): Boolean {
     val c = foldName(channel ?: return false)
     if (c.isEmpty()) return false
-    if (c.endsWith(" topic") || c.endsWith("vevo") || c.endsWith(" records") || c.endsWith(" music")) return true
+    // "... Music" is left out on purpose: plenty of fan and re-upload channels are called that.
+    if (c.endsWith(" topic") || c.endsWith("vevo") || c.endsWith(" records")) return true
     return artistNames.any { name ->
         val a = foldName(name)
         a.isNotEmpty() && (c == a || c == a.replace(" ", "") || c.startsWith("$a ") || c.startsWith(a.replace(" ", "")))
@@ -162,7 +177,20 @@ fun isOfficialUpload(channel: String?, artistNames: List<String>): Boolean {
 /** One song as the screen lists it: the YouTube Music track, its YouTube video, or both. */
 data class MergedRow(val song: MusicTrack?, val video: MusicTrack?) {
     val hasVideo: Boolean get() = video != null
+
+    /** Where the row came from, for the badge on split panels: both sources, YouTube Music alone, or YouTube alone. */
+    val source: RowSource
+        get() = when {
+            song != null && video != null -> RowSource.Both
+            song != null -> RowSource.YouTubeMusic
+            else -> RowSource.YouTube
+        }
+
+    /** What plays: the YouTube Music track when there is one, else the video. */
+    val playable: MusicTrack? get() = song ?: video
 }
+
+enum class RowSource(val label: String) { Both("BOTH"), YouTubeMusic("YT MUSIC"), YouTube("YOUTUBE") }
 
 /** The merge's answer: the rows for the YouTube Music panel and the videos no song claimed, for the YouTube panel. */
 data class MergedResults(val rows: List<MergedRow>, val otherVideos: List<MusicTrack>)
@@ -348,6 +376,31 @@ data class HomeResults(
 ) {
     val isEmpty: Boolean get() = top == null && artists.isEmpty() && rows.isEmpty() && albums.isEmpty() && videos.isEmpty()
 
+    /** True when a remix, live or acoustic chip split the results into the artist's own and everyone else's. */
+    val split: Boolean get() = query.kind in SPLIT_KINDS
+
+    /** The centre panel's title. */
+    val centreLabel: String
+        get() = when (query.kind) {
+            QueryKind.Remix -> "OFFICIAL REMIXES · BOTH SOURCES"
+            QueryKind.Live -> "OFFICIAL LIVE · BOTH SOURCES"
+            QueryKind.Acoustic -> "OFFICIAL ACOUSTIC · BOTH SOURCES"
+            QueryKind.Albums -> "YOUTUBE MUSIC · ALBUMS"
+            null -> "YOUTUBE MUSIC · SONGS AND ALBUMS"
+        }
+
+    /** The right panel's title. */
+    val rightLabel: String
+        get() = when (query.kind) {
+            QueryKind.Remix -> "FAN AND DJ REMIXES · YOUTUBE"
+            QueryKind.Live -> "FAN-FILMED AND SESSIONS · YOUTUBE"
+            QueryKind.Acoustic -> "COVERS AND SESSIONS · YOUTUBE"
+            QueryKind.Albums, null -> "YOUTUBE · VIDEOS"
+        }
+
+    /** Everything the centre panel can play, in its order: the queue "Play all" starts. */
+    val centreTracks: List<MusicTrack> get() = rows.mapNotNull { it.playable }
+
     /** What identifies the top match for [MatchSettler]: its album, else its artist, else its video, else its title. */
     val topKey: String?
         get() = top?.let { it.albumBrowseId ?: it.artists.firstOrNull()?.browseId ?: it.videoId ?: it.title }
@@ -360,6 +413,14 @@ fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, yout
     val songs = if (albumsOnly) emptyList() else everything.songs.filter { keep(it.title) }
     val videos = if (albumsOnly) emptyList() else (everything.videos + youtube).distinctBy { it.videoId }.filter { keep(it.title) }
     val merged = mergeSourceRows(songs, videos)
+    // A remix, live or acoustic chip: the artist's own uploads join the songs in the centre, everyone else's go right.
+    val ownNames = listOfNotNull(query.artist) + everything.top?.artists.orEmpty().map { it.name } +
+        query.terms.takeIf { it.isNotBlank() }.let { listOfNotNull(it) }
+    val (ownVideos, otherVideos) = if (kind in SPLIT_KINDS) {
+        merged.otherVideos.partition { isOfficialUpload(it.artists.firstOrNull()?.name, ownNames) }
+    } else {
+        emptyList<MusicTrack>() to merged.otherVideos
+    }
     val year = query.year?.toString()
     val albums = everything.albums.filter { keep(it.title) && (year == null || it.year == year) }
     // The top artist is drawn as the top match, so it is not listed again under it.
@@ -368,9 +429,9 @@ fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, yout
         query = query,
         top = everything.top,
         artists = everything.artists.filter { it.browseId != topArtistId },
-        rows = merged.rows,
+        rows = merged.rows + ownVideos.map { MergedRow(song = null, video = it) },
         albums = albums,
-        videos = merged.otherVideos,
+        videos = otherVideos,
     )
 }
 
@@ -414,14 +475,36 @@ enum class HomeAction(val label: String) {
     OpenAlbum("Open album"),
     PlayTrack("Play"),
     QueueTrack("Add to queue"),
+    PlayAll("Play all"),
+    ShuffleAll("Shuffle all"),
     More("More"),
+}
+
+/** The button's words: "Play all remixes", "Shuffle live"; the rest as named. */
+fun HomeAction.labelFor(kind: QueryKind?): String = when {
+    this == HomeAction.PlayAll && kind != null -> "Play all ${kind.plural}"
+    this == HomeAction.ShuffleAll && kind != null -> "Shuffle ${kind.plural}"
+    else -> label
 }
 
 /**
  * The action row for [top], the main action first (the one focus lands on): an artist plays its Essentials, an album
  * plays, a song or video plays. "Open artist page" only when the match links an artist; More always ends the row.
  */
-fun homeActions(top: MusicTopResult): List<HomeAction> = when (topMatchKind(top)) {
+fun homeActions(top: MusicTopResult, kind: QueryKind? = null): List<HomeAction> {
+    // With a remix, live or acoustic chip the row leads with playing what the centre panel found.
+    if (kind in SPLIT_KINDS) {
+        return listOfNotNull(
+            HomeAction.PlayAll,
+            HomeAction.ShuffleAll,
+            HomeAction.OpenArtist.takeIf { top.artists.firstOrNull()?.browseId != null },
+            HomeAction.More,
+        )
+    }
+    return baseActions(top)
+}
+
+private fun baseActions(top: MusicTopResult): List<HomeAction> = when (topMatchKind(top)) {
     TopMatchKind.Artist -> listOfNotNull(
         HomeAction.PlayEssentials,
         HomeAction.ShuffleEssentials,

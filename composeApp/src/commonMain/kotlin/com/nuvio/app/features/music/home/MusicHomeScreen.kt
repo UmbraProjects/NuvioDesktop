@@ -62,6 +62,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -286,6 +287,12 @@ internal fun MusicHomeScreen(
     val likely = remember(query, candidates) { if (query.isBlank()) emptyList() else nextLetterRanks(query, candidates) }
     val ghost = remember(query, libraryNames, suggestions) { ghostCompletion(query, libraryNames + suggestions) }
     val shownTop = heldTop?.takeIf { query.isNotBlank() }
+    // The line read as chips: a settled artist match counts as a known name even when it is not in the library.
+    val chipNames = remember(libraryNames, shownTop) {
+        libraryNames + listOfNotNull(shownTop?.takeIf { topMatchKind(it) == TopMatchKind.Artist }?.title)
+    }
+    val parsed = remember(query, chipNames) { parseQuery(query, chipNames) }
+    val readyResults = (search as? HomeSearchState.Ready)?.results
 
     // The morph: once a match has settled, its picture fades in behind the screen and the accent takes its colours.
     // An artist match also has its YouTube Music page asked for now, so Play Essentials starts at once.
@@ -362,11 +369,12 @@ internal fun MusicHomeScreen(
             },
         )
         Spacer(Modifier.height(12.dp))
-        HomeGreeting(top = shownTop)
+        HomeGreeting(top = shownTop, kind = parsed.kind)
         Spacer(Modifier.height(16.dp))
         HomeSearchLine(
             query = query,
             ghost = ghost,
+            parsed = parsed,
             onQueryChange = ::setQuery,
             focusRequester = lineFocus,
             onDown = { if (!openActions()) runCatching { tab.bodyFocus.requestFocus() } },
@@ -382,6 +390,8 @@ internal fun MusicHomeScreen(
         if (actionsOpen && actionTop != null) {
             HomeActionRow(
                 top = actionTop,
+                kind = parsed.kind,
+                tracks = readyResults?.centreTracks.orEmpty(),
                 primaryFocus = tab.bodyFocus,
                 runner = runner,
                 onUp = {
@@ -405,13 +415,19 @@ internal fun MusicHomeScreen(
         )
         }
         Spacer(Modifier.height(12.dp))
+        // Recent searches, then suggestions while typing, then (once a match has settled) the Narrow row.
+        val chipItems = when {
+            query.isBlank() -> history.take(CHIPS_SHOWN).map { HomeChip(it) { setQuery(it); tab.focusResultsWhenReady = true } }
+            shownTop != null -> narrowChips(parsed, ::setQuery)
+            else -> suggestions.take(CHIPS_SHOWN).map { HomeChip(it) { setQuery(it); tab.focusResultsWhenReady = true } }
+        }
         HomeChipRow(
-            label = if (query.isBlank()) "RECENT" else "SUGGESTED",
-            chips = (if (query.isBlank()) history else suggestions).take(CHIPS_SHOWN),
-            onPick = {
-                setQuery(it)
-                tab.focusResultsWhenReady = true
+            label = when {
+                query.isBlank() -> "RECENT"
+                shownTop != null -> "NARROW"
+                else -> "SUGGESTED"
             },
+            chips = chipItems,
         )
         Spacer(Modifier.height(16.dp))
 
@@ -469,16 +485,24 @@ private val HOME_VIEW_ICONS: List<Triple<LibraryView, ImageVector, String>> = li
  * settled, its kind over its name. A fixed height, so the line below never moves.
  */
 @Composable
-private fun HomeGreeting(top: MusicTopResult?) {
+private fun HomeGreeting(top: MusicTopResult?, kind: QueryKind?) {
     val colors = MaterialTheme.nuvio.colors
-    val label = remember(top) {
-        top?.let { listOfNotNull("TOP MATCH", it.kind?.uppercase()).joinToString(" · ") }
+    val label = remember(top, kind) {
+        top?.let { listOfNotNull("TOP MATCH", it.kind?.uppercase(), kind?.let { k -> "SHOWING ${k.plural.uppercase()}" }).joinToString(" · ") }
             ?: localWeekdayAndHour().let { (day, hour) -> greetingLabel(day, hour) }
     }
     Column(Modifier.height(72.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.accent, maxLines = 1)
         Text(
-            top?.title ?: "What do you want to hear?",
+            if (top == null) {
+                buildAnnotatedString { append("What do you want to hear?") }
+            } else {
+                buildAnnotatedString {
+                    append(top.title)
+                    // The kind asked for, fainter after the name: "Yelawolf remixes".
+                    if (kind != null) withStyle(SpanStyle(color = colors.textPrimary.copy(alpha = 0.45f))) { append(" " + kind.plural) }
+                }
+            },
             fontFamily = FontFamily.Serif,
             fontSize = 40.sp,
             color = colors.textPrimary,
@@ -497,6 +521,7 @@ private fun HomeGreeting(top: MusicTopResult?) {
 private fun HomeSearchLine(
     query: String,
     ghost: String,
+    parsed: ParsedQuery,
     onQueryChange: (String) -> Unit,
     focusRequester: FocusRequester,
     onDown: () -> Unit,
@@ -566,8 +591,12 @@ private fun HomeSearchLine(
                     }
                 },
             decorationBox = { inner ->
+                // Away from the line, what was typed reads as chips (artist, kind, year); in it, as plain text to edit.
+                val asChips = !focused && query.isNotBlank() && parsed.chips.isNotEmpty()
                 Box(contentAlignment = Alignment.CenterStart) {
-                    if (query.isEmpty()) {
+                    if (asChips) {
+                        LineChips(parsed)
+                    } else if (query.isEmpty()) {
                         Text("Artist, album, song, remix…", style = textStyle, color = colors.textMuted, maxLines = 1)
                     } else if (ghost.isNotEmpty()) {
                         // The typed part drawn invisibly, so the grey rest starts exactly where the text ends.
@@ -580,7 +609,7 @@ private fun HomeSearchLine(
                             maxLines = 1,
                         )
                     }
-                    inner()
+                    Box(if (asChips) Modifier.alpha(0f) else Modifier) { inner() }
                 }
             },
         )
@@ -732,9 +761,28 @@ private fun StripKey(
     }
 }
 
-/** Recent searches before anything is typed, YouTube Music's suggestions after: one pick runs it. Fixed height. */
+/** One chip in the row under the strip. [selected] draws it lit (the Narrow row's chosen kind). */
+private class HomeChip(val label: String, val selected: Boolean = false, val onClick: () -> Unit)
+
+/**
+ * The Narrow row for [parsed]: Everything, then each kind as "+ remix" (adds it) or, when chosen, "remix ×" (removes
+ * it), then the year as "2012 ×" when there is one. Each rewrites the line, which searches again.
+ */
+private fun narrowChips(parsed: ParsedQuery, setQuery: (String) -> Unit): List<HomeChip> = buildList {
+    add(HomeChip("Everything", selected = parsed.kind == null) { setQuery(withKind(parsed, null)) })
+    QueryKind.entries.forEach { kind ->
+        if (parsed.kind == kind) {
+            add(HomeChip("${kind.label} ×", selected = true) { setQuery(withKind(parsed, null)) })
+        } else {
+            add(HomeChip("+ ${kind.label}") { setQuery(withKind(parsed, kind)) })
+        }
+    }
+    parsed.year?.let { year -> add(HomeChip("$year ×", selected = true) { setQuery(withKind(parsed, parsed.kind, keepYear = false)) }) }
+}
+
+/** Recent searches, suggestions or the Narrow row: one label and the chips. Fixed height, so nothing below moves. */
 @Composable
-private fun HomeChipRow(label: String, chips: List<String>, onPick: (String) -> Unit) {
+private fun HomeChipRow(label: String, chips: List<HomeChip>) {
     val colors = MaterialTheme.nuvio.colors
     Row(Modifier.height(36.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
         if (chips.isNotEmpty()) {
@@ -747,15 +795,55 @@ private fun HomeChipRow(label: String, chips: List<String>, onPick: (String) -> 
                     .height(34.dp)
                     .musicKeyFocusRing(shape)
                     .clip(shape)
-                    .background(Color.White.copy(alpha = 0.05f), shape)
-                    .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
-                    .clickable { onPick(chip) }
+                    .background(if (chip.selected) colors.accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f), shape)
+                    .border(1.dp, if (chip.selected) colors.accent.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.14f), shape)
+                    .clickable(onClick = chip.onClick)
                     .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(chip, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    chip.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (chip.selected) colors.textPrimary else colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
+    }
+}
+
+/**
+ * What was typed, drawn as chips in the line: the artist (when the whole name is one the library or the settled match
+ * knows), else the words as typed, then the kind and the year.
+ */
+@Composable
+private fun LineChips(parsed: ParsedQuery) {
+    val colors = MaterialTheme.nuvio.colors
+    val wholeArtist = parsed.artist?.takeIf { foldName(it) == foldName(parsed.terms) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (wholeArtist != null) {
+            LineChip("ARTIST", wholeArtist, colors.accent)
+        } else if (parsed.terms.isNotBlank()) {
+            Text(parsed.terms, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary, maxLines = 1)
+        }
+        parsed.kind?.let { LineChip("KIND", it.label, LineKindTint) }
+        parsed.year?.let { LineChip("YEAR", it.toString(), colors.textSecondary) }
+    }
+}
+
+private val LineKindTint = Color(0xFFC9A6EE)
+
+@Composable
+private fun LineChip(kicker: String, value: String, tint: Color) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        Modifier.height(36.dp).clip(shape).background(tint.copy(alpha = 0.16f), shape).border(1.dp, tint.copy(alpha = 0.5f), shape).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(kicker, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = tint, maxLines = 1)
+        Text(value, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.nuvio.colors.textPrimary, maxLines = 1)
     }
 }
 
@@ -795,13 +883,13 @@ private fun HomeResultsBody(
         }
     }
     val centre: @Composable ColumnScope.() -> Unit = {
-        LensPanelHeader(Icons.Rounded.MusicNote, "YOUTUBE MUSIC · SONGS AND ALBUMS", null, YouTubeMusicTint)
+        LensPanelHeader(Icons.Rounded.MusicNote, results?.centreLabel ?: "YOUTUBE MUSIC · SONGS AND ALBUMS", null, YouTubeMusicTint)
         PanelBody(search, onRetry, results?.let { it.rows.isEmpty() && it.albums.isEmpty() } ?: true) {
             val r = results ?: return@PanelBody
             r.rows.forEachIndexed { index, row ->
-                val song = row.song ?: return@forEachIndexed
-                item(key = "song:" + song.videoId) {
-                    SongRow(row, if (entryPanel == 1 && index == 0) Modifier.focusRequester(entry) else Modifier, runner, hold)
+                val track = row.playable ?: return@forEachIndexed
+                item(key = "row:" + track.videoId) {
+                    SongRow(row, if (entryPanel == 1 && index == 0) Modifier.focusRequester(entry) else Modifier, runner, hold, badge = row.source.label.takeIf { r.split })
                 }
             }
             if (r.albums.isNotEmpty()) item(key = "albums-label") { SectionLabel("ALBUMS") }
@@ -813,7 +901,7 @@ private fun HomeResultsBody(
         }
     }
     val right: @Composable ColumnScope.() -> Unit = {
-        LensPanelHeader(Icons.Rounded.SmartDisplay, "YOUTUBE · VIDEOS", null, YouTubeTint)
+        LensPanelHeader(Icons.Rounded.SmartDisplay, results?.rightLabel ?: "YOUTUBE · VIDEOS", null, YouTubeTint)
         PanelBody(search, onRetry, results?.videos?.isEmpty() ?: true) {
             val r = results ?: return@PanelBody
             r.videos.forEachIndexed { index, video ->
@@ -917,24 +1005,27 @@ private fun ArtistRow(artist: MusicArtistSummary, modifier: Modifier, runner: Ho
 
 /** A YouTube Music song; plays on its own. The video mark says the same song is on YouTube as a video too. */
 @Composable
-private fun SongRow(row: MergedRow, modifier: Modifier, runner: HomeRunner, hold: HoldToSelectState) {
-    val song = row.song ?: return
+private fun SongRow(row: MergedRow, modifier: Modifier, runner: HomeRunner, hold: HoldToSelectState, badge: String? = null) {
+    val track = row.playable ?: return
+    val isSong = row.song != null
     ResultRow(
-        art = song.coverUrl,
+        art = track.coverUrl,
         circle = false,
         artSize = 48.dp,
-        title = song.title,
+        wideArt = !isSong,
+        title = track.title,
         subtitle = listOfNotNull(
-            "Song",
-            song.artists.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name },
-            song.albumTitle,
+            if (isSong) "Song" else "Video",
+            track.artists.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name },
+            track.albumTitle,
         ).joinToString(" · "),
-        trailing = youTubeLengthLabel(song.durationSeconds),
-        videoMark = row.hasVideo,
+        trailing = youTubeLengthLabel(track.durationSeconds),
+        videoMark = isSong && row.hasVideo && badge == null,
+        badge = badge,
         modifier = modifier,
-        menu = { runner.songMenu(row) },
+        menu = { if (isSong) runner.songMenu(row) else runner.videoMenu(track) },
         hold = hold,
-        onClick = { runner.track(song, PlayHow.Now) },
+        onClick = { runner.track(track, PlayHow.Now) },
     )
 }
 
@@ -984,6 +1075,8 @@ private fun ResultRow(
     videoMark: Boolean,
     modifier: Modifier,
     wideArt: Boolean = false,
+    /** A small source pill before the length (BOTH, YT MUSIC, YOUTUBE) on split panels. */
+    badge: String? = null,
     /** The row's More menu (right-click, the Menu key or a held OK); a tap of OK is [onClick]. */
     menu: (() -> List<PosterZoomOverlayAction>)? = null,
     hold: HoldToSelectState? = null,
@@ -1036,6 +1129,16 @@ private fun ResultRow(
         }
         if (videoMark) {
             Icon(Icons.Rounded.SmartDisplay, contentDescription = "Also on YouTube as a video", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+        }
+        if (badge != null) {
+            Text(
+                badge,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textSecondary,
+                maxLines = 1,
+                modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+            )
         }
         if (trailing != null) {
             Text(trailing, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)
