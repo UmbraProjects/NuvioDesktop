@@ -961,6 +961,8 @@
     <string name="settings_licenses_attributions_section_playback">PLAYBACK LICENSE</string>
     <string name="settings_licenses_attributions_nuvio_team_title">Nuvio</string>
     <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC is a fork of Nuvio Desktop, led by Tapframe and the Nuvio team. Support their work through the contribution page.</string>
+    <string name="settings_licenses_attributions_htpc_contributors_title">Nuvio HTPC contributors</string>
+    <string name="settings_licenses_attributions_htpc_contributors_body">Deigue: pull requests and testing. Slokker: GoatTV (Live TV), translations, pull requests and the Linux port. Spyder: many pull requests, mostly the Music tab, and YouTube features. Thank you.</string>
     <string name="settings_licenses_attributions_nuvio_title">Nuvio Desktop</string>
     <string name="settings_licenses_attributions_nuvio_body">This project is based on Nuvio Desktop. Source code and license terms are available in the project repository.</string>
     <string name="settings_licenses_attributions_nuvio_license">Licensed under the GNU General Public License v3.0.</string>

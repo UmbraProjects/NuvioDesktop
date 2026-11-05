@@ -828,6 +828,7 @@ private fun settingsSearchEntries(
         icon = Icons.Rounded.Info,
     )
     listOf(
+        PlaybackSearchRow("htpc-contributors", resolve(Res.string.settings_licenses_attributions_htpc_contributors_title), resolve(Res.string.settings_licenses_attributions_htpc_contributors_body)),
         PlaybackSearchRow("nuvio-license", resolve(Res.string.settings_licenses_attributions_nuvio_title), resolve(Res.string.settings_licenses_attributions_nuvio_license)),
         PlaybackSearchRow("eclipse-attribution", resolve(Res.string.settings_licenses_attributions_eclipse_title), resolve(Res.string.settings_licenses_attributions_eclipse_body)),
         PlaybackSearchRow("goattv-attribution", resolve(Res.string.settings_licenses_attributions_goattv_title), resolve(Res.string.settings_licenses_attributions_goattv_body)),

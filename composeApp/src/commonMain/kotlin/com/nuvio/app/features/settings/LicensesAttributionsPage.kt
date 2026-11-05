@@ -59,6 +59,7 @@ private const val SimklUrl = "https://simkl.com"
 private const val KitsuUrl = "https://kitsu.app"
 private const val AnimeMappingUrl = "https://github.com/Fribb/anime-lists"
 private const val NuvioRepositoryUrl = "https://github.com/NuvioMedia/NuvioDesktop"
+private const val HtpcContributorsUrl = "https://github.com/UmbraProjects/NuvioDesktop/graphs/contributors"
 private const val NuvioContributeUrl = "https://tapframe.space/contribute"
 private const val MpvUrl = "https://mpv.io"
 private const val FfmpegUrl = "https://ffmpeg.org"
@@ -141,6 +142,11 @@ private fun LicensesAttributionsBody(
         ) {
             AttributionRow(
                 item = nuvioAttributionItem(),
+                isTablet = isTablet,
+            )
+            PlainStackDivider()
+            AttributionRow(
+                item = htpcContributorsItem(),
                 isTablet = isTablet,
             )
             PlainStackDivider()
@@ -671,6 +677,17 @@ private fun projectAttributionItems(): List<AttributionItem> = listOf(
         link = TrashGuidesUrl,
     ),
 )
+
+// The people who have worked on this fork itself, beside the upstream Nuvio team.
+private fun htpcContributorsItem(): AttributionItem =
+    AttributionItem(
+        searchKey = "htpc-contributors",
+        titleRes = Res.string.settings_licenses_attributions_htpc_contributors_title,
+        bodyRes = Res.string.settings_licenses_attributions_htpc_contributors_body,
+        logo = null,
+        logoText = "HTPC",
+        link = HtpcContributorsUrl,
+    )
 
 private fun nuvioAttributionItem(): AttributionItem =
     AttributionItem(
