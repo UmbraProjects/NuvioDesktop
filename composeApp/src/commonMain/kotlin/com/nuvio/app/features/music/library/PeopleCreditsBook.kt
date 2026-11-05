@@ -52,6 +52,6 @@ internal object PeopleCreditsBook {
     }
 
     /** Every album's kept credits that were found, by key. Reads the whole store: call it off the main thread. */
-    fun allKept(): Map<String, AlbumCredits> = CreditsStorage.keys().filter { it.startsWith("people2|") }
+    fun allKept(): Map<String, AlbumCredits> = CreditsStorage.keys().filter { it.startsWith("people3|") }
         .mapNotNull { k -> decodeAlbumCredits(CreditsStorage.get(k))?.takeIf { it.found }?.let { k to it } }.toMap()
 }
