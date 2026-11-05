@@ -28,9 +28,12 @@ import com.nuvio.app.core.i18n.localizedString
 
 /** Whether a segment can be sent at all: submitting is on, a SkipDB key is set, and the title has
  *  an IMDb id to file it under. IntroDB-only keys do not count — that is not the database this
- *  contributes to, and [SkipIntroRepository.submitSegment] would send nothing to SkipDB. */
+ *  contributes to, and [SkipIntroRepository.submitSegment] would send nothing to SkipDB.
+ *  Never for a YouTube video: its chapters can be called "Intro" and skip like one, but SkipDB is
+ *  for movies and episodes, so neither the post-skip offer nor capture mode belongs there. */
 internal fun PlayerScreenRuntime.canContributeSkipSegments(): Boolean =
-    playerSettingsUiState.introSubmitEnabled &&
+    !isYouTubeVideoPlayback &&
+        playerSettingsUiState.introSubmitEnabled &&
         playerSettingsUiState.skipDbApiKey.isNotBlank() &&
         !isProviderDiagnosticVideoPlayback &&
         !activeSubmitIntroImdbId().isNullOrBlank()
