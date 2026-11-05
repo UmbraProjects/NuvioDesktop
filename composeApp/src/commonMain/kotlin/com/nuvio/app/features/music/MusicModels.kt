@@ -66,6 +66,8 @@ data class MusicAlbum(
     val otherVersionIds: List<String> = emptyList(),
     /** The page's description when YouTube Music says it is "From Wikipedia" (the album's own Wikipedia opening); null otherwise. */
     val wikipediaBlurb: String? = null,
+    /** fork:lenses - true when YouTube Music marks the album, or any of its tracks, explicit (its "E" badge). */
+    val explicit: Boolean = false,
 )
 
 data class MusicArtist(

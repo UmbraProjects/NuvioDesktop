@@ -660,7 +660,7 @@ internal fun SongBySongRight(
         Spacer(Modifier.height(16.dp))
         LensNoteCard(
             label = "HOW THESE WERE MATCHED",
-            text = "By the song's title with its brackets left out, across this album, the artist's singles and the records Deezer lists it on.",
+            text = "By the song's title with its brackets left out, across this album and its other editions, the artist's singles and the records Deezer lists it on.",
             tint = LENS_LIBRARY_TINT,
             footer = null,
         )
@@ -675,7 +675,7 @@ private fun VersionRow(v: SongVersion, onClick: () -> Unit) {
         v.onThisAlbum -> listOfNotNull("This album · track ${v.trackIndex!! + 1}", v.durationSeconds.takeIf { it > 0 }?.let { formatMusicTime(it * 1000L) }).joinToString(" · ")
         else -> v.recordTitle ?: "Another record"
     }
-    LensRow(v.title, where, v.kind.label, onClick.takeIf { v.onThisAlbum || v.release?.ytBrowseId != null })
+    LensRow(v.title, where, v.kind.label, onClick.takeIf { v.onThisAlbum || v.onEdition || v.release?.ytBrowseId != null })
 }
 
 /** A 64 dp glass row in the library tint: a title, a line under it, and a tag at the end. Not clickable without [onClick]. */

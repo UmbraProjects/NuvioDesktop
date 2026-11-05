@@ -218,8 +218,10 @@ internal fun parseAlbum(body: String, browseId: String): MusicAlbum? {
     val artists = artistsFrom(subtitleRuns)
 
     val tracks = ArrayList<MusicTrack>()
+    var explicit = header?.let(::hasExplicitBadge) == true
     findAll(root, "musicResponsiveListItemRenderer").forEach { item ->
         val videoId = item.trackVideoId() ?: return@forEach
+        if (hasExplicitBadge(item)) explicit = true
         val name = textOf(item.flexText(0)).trim().ifEmpty { return@forEach }
         // The web layout puts the length in a fixed column; the layout sent to the app's TV user agent has no fixed
         // columns and gives it as the last flex column instead ("6.6M plays", "3:43"). Either way it reads "m:ss".
@@ -250,8 +252,15 @@ internal fun parseAlbum(body: String, browseId: String): MusicAlbum? {
         audioPlaylistId = audioPlaylistId,
         otherVersionIds = otherVersionIds(root, browseId),
         wikipediaBlurb = albumWikipediaBlurb(root),
+        explicit = explicit,
     )
 }
+
+/** fork:lenses - whether [node] carries YouTube Music's explicit ("E") badge anywhere inside it. */
+internal fun hasExplicitBadge(node: JsonElement): Boolean =
+    findAll(node, "musicInlineBadgeRenderer").any { badge ->
+        badge.at("icon", "iconType").str()?.contains("EXPLICIT", ignoreCase = true) == true
+    }
 
 /**
  * The album page's description (`musicDescriptionShelfRenderer`) when its footer credits Wikipedia ("From Wikipedia"),

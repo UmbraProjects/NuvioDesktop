@@ -125,6 +125,17 @@ class MusicParsersTest {
     }
 
     @Test
+    fun albumPageReadsTheExplicitBadge() {
+        assertEquals(false, assertNotNull(parseAlbum(albumPage, "MPREb_abc123")).explicit)
+        val badge = "\"badges\":[{\"musicInlineBadgeRenderer\":{\"icon\":{\"iconType\":\"MUSIC_EXPLICIT_BADGE\"}}}],"
+        val withTrackBadge = albumPage.replaceFirst("\"playlistItemData\":{\"videoId\":\"AAAAAAAAAAA\"}", badge + "\"playlistItemData\":{\"videoId\":\"AAAAAAAAAAA\"}")
+        assertEquals(true, assertNotNull(parseAlbum(withTrackBadge, "MPREb_abc123")).explicit)
+        val headerBadge = "\"subtitleBadge\":[{\"musicInlineBadgeRenderer\":{\"icon\":{\"iconType\":\"MUSIC_EXPLICIT_BADGE\"}}}],"
+        val withHeaderBadge = albumPage.replaceFirst("\"title\":{\"runs\":[{\"text\":\"Random Access Memories\"}]},", "\"title\":{\"runs\":[{\"text\":\"Random Access Memories\"}]}," + headerBadge)
+        assertEquals(true, assertNotNull(parseAlbum(withHeaderBadge, "MPREb_abc123")).explicit)
+    }
+
+    @Test
     fun albumWithoutTitleOrTracksIsNull() {
         assertNull(parseAlbum("{}", "MPREb_x"))
         assertNull(parseAlbum("nope", "MPREb_x"))

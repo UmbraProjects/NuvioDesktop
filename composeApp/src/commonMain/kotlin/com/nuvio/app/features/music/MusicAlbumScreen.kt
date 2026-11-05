@@ -121,6 +121,7 @@ import com.nuvio.app.features.music.library.songKey
 import com.nuvio.app.features.music.library.ReleaseKind
 import com.nuvio.app.features.music.library.trackPopularity
 import com.nuvio.app.features.music.library.songVersions
+import com.nuvio.app.features.music.library.AlbumEditionTracks
 import com.nuvio.app.features.music.library.versionCounts
 import com.nuvio.app.features.music.booklet.SongStories
 import com.nuvio.app.features.music.booklet.CutPicks
@@ -217,6 +218,9 @@ fun MusicAlbumScreen(
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+/** fork:lenses - how many of an album's other editions the Song by song panel reads; rarely more than two. */
+private const val MAX_LENS_EDITIONS = 3
+
 @Composable
 private fun AlbumContent(
     album: MusicAlbum,
@@ -519,9 +523,33 @@ private fun AlbumContent(
             artistName = lensArtist ?: "the artist",
         )
     }
-    val lensVersions = remember(lensIndex, view.tracks, topSongs, artistReleases) {
+    // The album's other editions on YouTube Music (its "Other versions" shelf: the censored "2001" beside the explicit one),
+    // so the panel can offer the same song on them. Read once the lens is on screen; the catalog keeps them in memory.
+    var editions by remember(album.browseId) { mutableStateOf<List<MusicAlbum>>(emptyList()) }
+    LaunchedEffect(lensesOn, lens, album.browseId) {
+        if (!lensesOn || lens != AlbumLens.SongBySong || album.otherVersionIds.isEmpty() || editions.isNotEmpty()) return@LaunchedEffect
+        val found = ArrayList<MusicAlbum>()
+        for (id in album.otherVersionIds.take(MAX_LENS_EDITIONS)) {
+            val other = try {
+                catalog.album(id)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                null
+            }
+            if (other != null && other.browseId != album.browseId) found += other
+        }
+        editions = found
+    }
+    val editionTracks = remember(editions) {
+        editions.map { e -> AlbumEditionTracks(e.browseId, e.title, e.explicit, e.tracks.map { it.title }, e.tracks.map { it.durationSeconds }) }
+    }
+    val lensVersions = remember(lensIndex, view.tracks, topSongs, artistReleases, editionTracks) {
         lensIndex?.let { i ->
-            songVersions(i, view.tracks.map { it.title }, view.tracks.map { it.durationSeconds }, album.title, topSongs, artistReleases)
+            songVersions(
+                i, view.tracks.map { it.title }, view.tracks.map { it.durationSeconds }, album.title, topSongs, artistReleases,
+                editions = editionTracks, thisExplicit = album.explicit,
+            )
         }.orEmpty()
     }
     val lensMarked = remember(lensVersions) { lensVersions.mapNotNull { it.trackIndex }.toSet() }
@@ -1008,7 +1036,13 @@ private fun AlbumContent(
                         suggestions = lensSuggestions,
                         onVersion = { v ->
                             val i = v.trackIndex
-                            if (i != null) { lensFocus = i; tapTrack(i) } else v.release?.ytBrowseId?.let(onAlbumClick)
+                            val edition = v.editionId?.let { id -> editions.firstOrNull { it.browseId == id } }
+                            when {
+                                i != null -> { lensFocus = i; tapTrack(i) }
+                                edition != null && v.editionTrack != null ->
+                                    player.play(edition, trackIndex = v.editionTrack, mode = chosenMode, shuffled = false)
+                                else -> v.release?.ytBrowseId?.let(onAlbumClick)
+                            }
                         },
                         onQueue = {
                             val picks = (listOfNotNull(lensIndex) + lensVersions.mapNotNull { it.trackIndex }).distinct().sorted()

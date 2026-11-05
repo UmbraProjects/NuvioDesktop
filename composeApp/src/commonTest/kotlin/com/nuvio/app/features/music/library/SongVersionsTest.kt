@@ -63,4 +63,37 @@ class SongVersionsTest {
         assertTrue(songVersions(0, titles, durations, "Album", emptyList(), emptyList()).isEmpty())
         assertTrue(songVersions(99, titles, durations, "Album", emptyList(), emptyList()).isEmpty())
     }
+
+    // fork:lenses - "2001": the explicit album lists its censored edition under YouTube Music's "Other versions".
+    private val clean = AlbumEditionTracks(
+        browseId = "MPREb_clean", title = "2001", explicit = false,
+        trackTitles = listOf("Lolo (Intro)", "The Watcher", "Still D.R.E. (feat. Snoop Dogg)"), trackDurations = listOf(40, 206, 274),
+    )
+
+    @Test
+    fun theCleanEditionOffersTheSameSong() {
+        val tracks = listOf("Lolo (Intro)", "The Watcher", "Still D.R.E.")
+        val v = songVersions(2, tracks, listOf(40, 206, 270), "2001", emptyList(), emptyList(), editions = listOf(clean), thisExplicit = true)
+        val copy = v.single()
+        assertEquals(VersionKind.Clean, copy.kind)
+        assertEquals("MPREb_clean", copy.editionId)
+        assertEquals(2, copy.editionTrack)
+        assertEquals(274, copy.durationSeconds)
+        assertTrue(copy.recordTitle!!.startsWith("Clean edition"))
+        assertEquals(VersionCounts(found = 1, onThisAlbum = 0, elsewhere = 1, reworks = 0), versionCounts(v))
+    }
+
+    @Test
+    fun editionKindsFollowTheBadgeAndTitle() {
+        assertEquals(VersionKind.Explicit, editionKind(clean.copy(explicit = true), thisExplicit = false))
+        assertEquals(VersionKind.Edition, editionKind(clean.copy(title = "2001 (Deluxe)", explicit = true), thisExplicit = true))
+        assertEquals(VersionKind.Clean, editionKind(clean.copy(title = "2001 (Edited)", explicit = true), thisExplicit = true))
+        assertEquals(VersionKind.Edition, editionKind(clean, thisExplicit = false))
+    }
+
+    @Test
+    fun anEditionWithoutTheSongAddsNothing() {
+        val v = songVersions(0, listOf("Forgot About Dre"), listOf(222), "2001", emptyList(), emptyList(), editions = listOf(clean), thisExplicit = true)
+        assertTrue(v.isEmpty())
+    }
 }
