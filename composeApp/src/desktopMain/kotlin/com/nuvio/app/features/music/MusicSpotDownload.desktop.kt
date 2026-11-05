@@ -21,8 +21,8 @@ private val RETRY_DELAYS_MS = longArrayOf(5_000L, 15_000L, 30_000L, 60_000L, 60_
  * Null when it cannot be had (a playlist stream, too big, refused after every try); the caller then reads the stream as before.
  */
 internal suspend fun downloadSpotFile(url: String, headers: Map<String, String>): File? {
-    val lower = url.lowercase()
-    if (!lower.startsWith("http") || ".m3u8" in lower || "manifest" in lower) return null
+    // A YouTube stream is read slice by slice as before; only the addon's kind of link is downloaded (see SpotSource.kt).
+    if (!com.nuvio.app.features.music.visualiser.spotDownloadWanted(url)) return null
     for (attempt in 0..RETRY_DELAYS_MS.size) {
         currentCoroutineContext().ensureActive()
         val outcome = withContext(Dispatchers.IO) { fetch(url, headers) }
@@ -55,6 +55,7 @@ private fun fetch(url: String, headers: Map<String, String>): Fetched {
             file.delete()
             return Fetched(null, false, code)
         }
+        val expected = connection.contentLengthLong
         var total = 0L
         connection.inputStream.use { input ->
             file.outputStream().use { output ->
@@ -67,6 +68,12 @@ private fun fetch(url: String, headers: Map<String, String>): Fetched {
                     output.write(buffer, 0, read)
                 }
             }
+        }
+        // A connection that ended early looks like a short file: only the whole file is used, else it is asked for again.
+        if (!com.nuvio.app.features.music.visualiser.spotDownloadComplete(total, expected)) {
+            log.w { "download ended at ${total / 1024} KB of ${expected / 1024} KB; not using it" }
+            file.delete()
+            return Fetched(null, true, code)
         }
         log.i { "audio kept for analysis: ${total / 1024} KB" }
         return Fetched(file, false, code)

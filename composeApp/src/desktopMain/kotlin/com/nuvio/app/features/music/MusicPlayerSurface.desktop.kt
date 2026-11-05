@@ -430,18 +430,37 @@ actual fun MusicPlayerSurface(
             if (snapshot.isPlaying) durationMs = snapshot.durationMs
         }
         delay(MEASURE_START_DELAY_MS)
-        val meter = if (needLoudness) LoudnessMeter(MEASURE_SAMPLE_RATE, channels = 2) else null
-        val builder = if (keptMap == null) TrackMapBuilder(MEASURE_SAMPLE_RATE) else null
-        // fork:visualiser - one download of the track's audio, read from disk by every slice below, instead of a new connection to
-        // the music server per slice (which it answered with HTTP 429). Without it (a playlist stream, a refusal) the stream is read as before.
-        val spotFile = downloadSpotFile(sourceAudioUrl ?: sourceUrl, source.headers)
-        if (spotFile != null) {
-            controller.setAudioSpotFile(spotFile.absolutePath)
-            currentCoroutineContext()[kotlinx.coroutines.Job]?.invokeOnCompletion {
-                controller.setAudioSpotFile(null)
-                spotFile.delete()
+        // fork:visualiser - a music video whose song's album audio already has a complete map, at the same length within
+        // 2 s, is the same recording: its map is reused (and kept under the video's id too) instead of reading the video.
+        // A longer or shorter video (an intro, a skit) gets its own map as before.
+        var mapNow = keptMap
+        if (mapNow == null && key != null) {
+            val audioKey = com.nuvio.app.features.music.visualiser.audioMapKey(MusicPlayback.player.state.value.track?.videoId)
+            val borrowed = audioKey?.takeIf { it != key }
+                ?.let { withContext(Dispatchers.IO) { TrackMapBook.get(it) } }
+                ?.takeIf { it.complete && com.nuvio.app.features.music.visualiser.sameLengthForMap(it.analysedMs, durationMs) }
+            if (borrowed != null) {
+                withContext(Dispatchers.IO) { TrackMapBook.put(key, borrowed) }
+                TrackMapLive.publish(LiveTrackMap(loadId, borrowed, knownLufs, analysing = false))
+                log.i { "visualiser map $key: reused the album audio's ($audioKey), same length" }
+                mapNow = borrowed
+                if (!needLoudness) return@LaunchedEffect
             }
         }
+        val meter = if (needLoudness) LoudnessMeter(MEASURE_SAMPLE_RATE, channels = 2) else null
+        val builder = if (mapNow == null) TrackMapBuilder(MEASURE_SAMPLE_RATE) else null
+        // fork:visualiser - one download of the track's audio, read from disk by every slice below, instead of a new connection to
+        // the music server per slice (which it answered with HTTP 429). Without it (a playlist stream, a refusal) the stream is read as before.
+        val downloaded = downloadSpotFile(sourceAudioUrl ?: sourceUrl, source.headers)
+        if (downloaded != null) {
+            controller.setAudioSpotFile(downloaded.absolutePath)
+            currentCoroutineContext()[kotlinx.coroutines.Job]?.invokeOnCompletion {
+                controller.setAudioSpotFile(null)
+                downloaded.delete()
+            }
+        }
+        // The file in use, until it runs out and the read goes on from the stream.
+        var spotFile: java.io.File? = downloaded
         val progress = DecodeProgress()
         var resumes = 0
         var read = false
@@ -455,7 +474,18 @@ actual fun MusicPlayerSurface(
             // fork:visualiser - a read that stopped part way (the stream's server refusing the extra connection for a
             // moment) is picked up again from where it stopped, so the map still ends up whole; the part already
             // read stays on screen meanwhile.
-            if (read || ++resumes > DECODE_RESUMES) break
+            if (read) break
+            // fork:visualiser - the downloaded file ran out before the song did: carry on from the stream itself at once,
+            // rather than asking the same file again (that left YouTube tracks "Analysing" for good).
+            val usedFile = spotFile
+            if (usedFile != null) {
+                log.i { "track decode: the downloaded audio ran out at ${progress.at.toInt()}s; reading the stream from there" }
+                controller.setAudioSpotFile(null)
+                usedFile.delete()
+                spotFile = null
+                continue
+            }
+            if (++resumes > DECODE_RESUMES) break
             val wait = DECODE_RESUME_DELAY_MS * minOf(resumes, 3)
             log.i { "track decode paused at ${progress.at.toInt()}s; resuming in ${wait / 1000}s (try $resumes of $DECODE_RESUMES)" }
             delay(wait)
