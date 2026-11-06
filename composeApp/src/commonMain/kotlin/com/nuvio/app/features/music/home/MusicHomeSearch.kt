@@ -420,8 +420,19 @@ fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, yout
     val kind = query.kind
     val albumsOnly = kind == QueryKind.Albums
     fun keep(title: String) = kind == null || albumsOnly || titleMatchesKind(title, kind)
+    // An artist match: a song YouTube Music lists with no artist is shown under that artist.
+    val matchArtists = everything.top?.takeIf { topMatchKind(it) == TopMatchKind.Artist }?.artists.orEmpty()
     val songs = if (albumsOnly) emptyList() else everything.songs.filter { keep(it.title) }
-    val videos = if (albumsOnly) emptyList() else (everything.videos + youtube).distinctBy { it.videoId }.filter { keep(it.title) }
+        .map { if (it.artists.isEmpty() && matchArtists.isNotEmpty()) it.copy(artists = matchArtists) else it }
+    val videos = if (albumsOnly) emptyList() else {
+        val all = (everything.videos + youtube).distinctBy { it.videoId }.filter { keep(it.title) }
+        // An artist match: videos that name that artist come first, so a near-namesake ("Gangstar" for "Gang Starr") sinks.
+        val wanted = matchArtists.firstOrNull()?.name?.let { foldName(it).replace(" ", "") }
+        if (wanted.isNullOrEmpty()) all else all.sortedBy { v ->
+            val text = foldName(v.title + " " + v.artists.joinToString(" ") { it.name }).replace(" ", "")
+            if (wanted in text) 0 else 1
+        }
+    }
     val merged = mergeSourceRows(songs, videos)
     // A remix, live or acoustic chip: the artist's own uploads join the songs in the centre, everyone else's go right.
     val ownNames = listOfNotNull(query.artist) + everything.top?.artists.orEmpty().map { it.name } +

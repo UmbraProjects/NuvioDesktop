@@ -339,3 +339,24 @@ class RecentSearchLabelTest {
         kotlin.test.assertEquals("sleep token", recentSearchLabel("sleep token", "Sleep Token"))
     }
 }
+
+class ArtistMatchResultsTest {
+    private fun track(id: String, title: String, artist: String?) = MusicTrack(
+        videoId = id, title = title,
+        artists = artist?.let { listOf(MusicArtistRef(it, "UC$it")) }.orEmpty(),
+        durationSeconds = 200, trackNumber = 0, isAvailable = true,
+    )
+
+    @kotlin.test.Test
+    fun namesakeVideoSinksAndArtistlessSongGetsTheMatchArtist() {
+        val top = MusicTopResult("Gang Starr", "Artist", listOf(MusicArtistRef("Gang Starr", "UCgs")), null, null)
+        val everything = MusicSearchEverything.EMPTY.copy(
+            top = top,
+            songs = listOf(track("s1", "Tha Squeeze", null)),
+            videos = listOf(track("v1", "Gangstar", "Oruam"), track("v2", "Gang Starr - Full Clip", "Gang Starr Topic")),
+        )
+        val results = buildHomeResults(ParsedQuery("gang starr", "gang starr", null, null, null), everything, emptyList())
+        kotlin.test.assertEquals("Gang Starr", results.rows.first().song?.artists?.firstOrNull()?.name)
+        kotlin.test.assertEquals("v2", results.videos.first().videoId)
+    }
+}
