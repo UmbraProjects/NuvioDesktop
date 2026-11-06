@@ -411,7 +411,13 @@ data class HomeResults(
 fun recentSearchLabel(typed: String, topTitle: String?): String {
     val line = typed.trim()
     val title = topTitle?.trim().orEmpty()
-    return if (title.isNotEmpty() && title.length > line.length && title.startsWith(line, ignoreCase = true)) title else line
+    if (title.isEmpty() || title.length <= line.length || !title.startsWith(line, ignoreCase = true)) return line
+    // Only a line ending in an unfinished word is completed: "sleep t" becomes "Sleep Token", "gang starr" stays as typed.
+    val typedWords = line.split(' ').filter { it.isNotEmpty() }
+    val titleWords = title.split(' ').filter { it.isNotEmpty() }
+    val last = typedWords.lastOrNull() ?: return line
+    val full = titleWords.getOrNull(typedWords.size - 1) ?: return line
+    return if (last.length < full.length) title else line
 }
 
 fun topKeyOf(top: MusicTopResult): String = top.albumBrowseId ?: top.artists.firstOrNull()?.browseId ?: top.videoId ?: top.title
