@@ -206,7 +206,12 @@ internal fun MusicHomeScreen(
     val history by MusicSearchHistory.recent.collectAsState()
     // The tab in the icon row: null is Search, otherwise one of the Library's views.
     var libraryTab by rememberSaveable { mutableStateOf<LibraryView?>(null) }
-    var suggestions by remember { mutableStateOf(emptyList<String>()) }
+    var fetchedSuggestions by remember { mutableStateOf(emptyList<String>()) }
+    // Answers for an earlier, shorter line stay hidden until the pause passes: only ones that still begin with the line count.
+    val suggestions = remember(fetchedSuggestions, query) {
+        val line = foldName(query.trim())
+        fetchedSuggestions.filter { foldName(it).startsWith(line) }
+    }
     // Each source's latest answer, kept separately so each panel fills as soon as its own source answers. They stay up
     // while the next search runs and are cleared when the screen glides back to the centred search.
     var musicAnswer by remember { mutableStateOf<MusicSearchEverything?>(null) }
@@ -252,11 +257,11 @@ internal fun MusicHomeScreen(
         actionsOpen = false
         rowPreview = null
         if (query.isBlank()) {
-            suggestions = emptyList()
+            fetchedSuggestions = emptyList()
             return@LaunchedEffect
         }
         delay(SUGGEST_PAUSE_MS)
-        suggestions = catalog.searchSuggestions(query)
+        fetchedSuggestions = catalog.searchSuggestions(query)
     }
 
     // The first letter lifts the header; an emptied line lets it glide back after COLLAPSE_AFTER_MS.
@@ -381,9 +386,13 @@ internal fun MusicHomeScreen(
         val fanart = if (topMatchKind(top) == TopMatchKind.Artist) ArtistFanartRepository.forArtist(top.title).firstOrNull() else null
         val cover = top.thumbnailUrl?.let { enlargeYtThumbnail(it, size = 1200) ?: it }
         backdrop = fanart ?: cover
-        val seedUrl = top.thumbnailUrl ?: fanart
-        palette = seedUrl?.let { url ->
-            withContext(Dispatchers.Default) { MusicPaletteResolver.sampleOne(context, url) }?.let { ArtworkPaletteMath.derive(it, forUrl = url) }
+        // The match's own picture first; a picture with no usable colour (a black-and-white photo) lets the fanart and
+        // the cover try, so the accent still follows the match.
+        palette = null
+        for (url in listOfNotNull(top.thumbnailUrl, fanart, cover).distinct()) {
+            val sampled = withContext(Dispatchers.Default) { MusicPaletteResolver.sampleOne(context, url) } ?: continue
+            palette = ArtworkPaletteMath.derive(sampled, forUrl = url)
+            break
         }
     }
     val baseTokens = MaterialTheme.nuvio
