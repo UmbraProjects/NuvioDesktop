@@ -13,6 +13,7 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -1121,6 +1122,8 @@ private fun ArtistRow(artist: MusicArtistSummary, modifier: Modifier, runner: Ho
     )
 }
 
+private const val NO_LENGTH_LABEL = "–:––"
+
 /** A YouTube Music song; plays on its own. The video mark says the same song is on YouTube as a video too. */
 @Composable
 private fun SongRow(row: MergedRow, modifier: Modifier, runner: HomeRunner, hold: HoldToSelectState, badge: String? = null) {
@@ -1137,8 +1140,9 @@ private fun SongRow(row: MergedRow, modifier: Modifier, runner: HomeRunner, hold
             track.artists.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name },
             track.albumTitle,
         ).joinToString(" · "),
-        trailing = youTubeLengthLabel(track.durationSeconds),
+        trailing = youTubeLengthLabel(track.durationSeconds) ?: NO_LENGTH_LABEL,
         videoMark = isSong && row.hasVideo && badge == null,
+        reserveVideoSlot = isSong && badge == null,
         badge = badge,
         modifier = modifier,
         menu = { if (isSong) runner.songMenu(row) else runner.videoMenu(track) },
@@ -1175,7 +1179,7 @@ private fun VideoRow(video: MusicTrack, modifier: Modifier, runner: HomeRunner, 
         wideArt = true,
         title = video.title,
         subtitle = video.artists.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name },
-        trailing = youTubeLengthLabel(video.durationSeconds),
+        trailing = youTubeLengthLabel(video.durationSeconds) ?: NO_LENGTH_LABEL,
         videoMark = false,
         modifier = modifier,
         menu = { runner.videoMenu(video) },
@@ -1196,6 +1200,8 @@ private fun ResultRow(
     videoMark: Boolean,
     modifier: Modifier,
     wideArt: Boolean = false,
+    /** Song rows keep the video mark's slot even when empty, so the length never shifts between rows. */
+    reserveVideoSlot: Boolean = false,
     /** A small source pill before the length (BOTH, YT MUSIC, YOUTUBE) on split panels. */
     badge: String? = null,
     /** The row's More menu (right-click, the Menu key or a held OK); a tap of OK is [onClick]. */
@@ -1255,6 +1261,8 @@ private fun ResultRow(
         }
         if (videoMark) {
             Icon(Icons.Rounded.SmartDisplay, contentDescription = "Also on YouTube as a video", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+        } else if (reserveVideoSlot) {
+            Spacer(Modifier.size(18.dp))
         }
         if (badge != null) {
             Text(
