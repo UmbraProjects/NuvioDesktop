@@ -117,11 +117,34 @@ internal fun artistStageFacts(artist: LibraryArtist, total: Int, playable: Int):
         ratingText(artist.rating)?.let { "Rating" to it },
         "Releases" to "$total",
         "Playable here" to "$playable",
-        (artist.area ?: artist.country)?.takeIf { it.isNotBlank() }?.let { "From" to it },
+        (artist.area ?: artist.country)?.takeIf { it.isNotBlank() }?.let { "From" to shortPlace(it) },
         began,
         first?.let { "First release" to it },
     )
     return candidates.filterNotNull().take(4)
+}
+
+/**
+ * The Facts card under the story: what the library knows beyond the four tiles (years active, style, mood, genres, first and
+ * latest release). Rows with nothing to say are left out.
+ */
+internal fun artistFactRows(artist: LibraryArtist): List<Pair<String, String>> {
+    val years = artist.beginYear?.takeIf { it.isNotBlank() }?.let { begin ->
+        when {
+            artist.ended && artist.endYear != null -> "$begin–${artist.endYear}"
+            artist.ended -> "$begin–"
+            else -> "$begin–present"
+        }
+    }
+    val dates = artist.releases.mapNotNull { (it.year ?: it.releaseDate)?.take(4)?.takeIf { y -> y.length == 4 && y.all(Char::isDigit) } }
+    return listOfNotNull(
+        years?.let { "Years active" to it },
+        artist.genres.take(3).takeIf { it.isNotEmpty() }?.let { "Genres" to it.joinToString(", ") },
+        artist.style?.takeIf { it.isNotBlank() }?.let { "Style" to it },
+        artist.mood?.takeIf { it.isNotBlank() }?.let { "Mood" to it },
+        dates.minOrNull()?.let { "First release" to it },
+        dates.maxOrNull()?.takeIf { it != dates.minOrNull() }?.let { "Latest release" to it },
+    )
 }
 
 /** The release the centre header shows beside the name: the top album, else the newest album or EP with a cover. */
@@ -143,3 +166,7 @@ private val MUSIC_WORDS = listOf(
     "music", "musician", "singer", "rapper", "band", "dj", "record producer", "songwriter", "composer", "album", "single",
     "drum and bass", "hip hop", "rock", "duo", "group", "vocalist", "guitarist",
 )
+
+/** A place short enough for a fact tile: "Boston, Massachusetts, USA" keeps its last part ("USA") when it would not fit. */
+internal fun shortPlace(place: String, max: Int = 14): String =
+    if (place.length <= max) place else place.substringAfterLast(',').trim().ifEmpty { place }

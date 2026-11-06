@@ -574,13 +574,26 @@ private fun StageArtistPanel(artist: LibraryArtist, discography: ArtistDiscograp
         )
         LensSectionLabel("THE STORY", bioSource?.let { "From $it" }.orEmpty())
         LensBody(colors.accent, highlighted = true) {
-            Text(
-                bio.ifEmpty { "Nothing has been written about ${artist.name} yet." },
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (bio.isNotEmpty()) colors.textPrimary else colors.textMuted,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            // The story takes the room its text needs (scrolling past a long one); a Facts card fills the rest, so the
+            // box itself never changes size.
+            val facts = remember(artist) { artistFactRows(artist) }
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                Text(
+                    bio.ifEmpty { "Nothing has been written about ${artist.name} yet." },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (bio.isNotEmpty()) colors.textPrimary else colors.textMuted,
+                )
+            }
+            if (facts.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text("FACTS", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.accent)
+                facts.forEach { (label, value) ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.width(110.dp), maxLines = 1)
+                        Text(value, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
         LensButton("Play Essentials", tint = colors.accent, enabled = canPlay, onClick = onPlay)
     }
@@ -709,7 +722,7 @@ private fun StageLibraryPanel(
             listOf(
                 LensFact("Albums", "${counts[ReleaseFilter.Albums] ?: 0}"),
                 LensFact("Singles & EPs", "${(counts[ReleaseFilter.Singles] ?: 0) + (counts[ReleaseFilter.EPs] ?: 0)}"),
-                LensFact("On your addon", if (addonCount == 0) "None" else "$addonCount"),
+                LensFact("Only on addon", if (addonCount == 0) "None" else "$addonCount"),
                 LensFact("Demos", if (discography.demos.isEmpty()) "None" else "${discography.demos.size}"),
             ),
         )
@@ -769,7 +782,14 @@ private fun StageCentreHeader(artist: LibraryArtist, discography: ArtistDiscogra
             )
         }
         Box(Modifier.size(96.dp).clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.06f))) {
-            firstTop?.let { ReleaseCover(it, Modifier.fillMaxSize()) }
+            // The top album's cover; without one, the artist's logo or a wide fanart picture, so the square is never empty.
+            val logo = artist.art.bestLogo
+            val fanart = artist.art.bestBackground
+            when {
+                firstTop != null -> ReleaseCover(firstTop, Modifier.fillMaxSize())
+                logo != null -> NuvioAsyncImage(model = logo, contentDescription = artist.name, modifier = Modifier.fillMaxSize().padding(8.dp), contentScale = ContentScale.Fit)
+                fanart != null -> NuvioAsyncImage(model = fanart, contentDescription = artist.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
         }
     }
 }

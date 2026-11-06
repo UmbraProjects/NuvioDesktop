@@ -106,3 +106,17 @@ class ArtistEssentialsTest {
         assertEquals(false, looksLikeMusicianText("High contrast is a property of an image in which light and dark areas differ greatly."))
     }
 }
+
+class ArtistFactRowsTest {
+    @Test
+    fun shortPlaceKeepsTheLastPartWhenTooLong() {
+        assertEquals("USA", shortPlace("Boston, Massachusetts, USA"))
+        assertEquals("London", shortPlace("London"))
+    }
+
+    @Test
+    fun factRowsSkipWhatIsUnknown() {
+        val artist = LibraryArtist(id = "UC1", name = "Gang Starr", beginYear = "1987", genres = listOf("Hip hop", "Jazz rap"))
+        assertEquals(listOf("Years active" to "1987–present", "Genres" to "Hip hop, Jazz rap"), artistFactRows(artist))
+    }
+}
