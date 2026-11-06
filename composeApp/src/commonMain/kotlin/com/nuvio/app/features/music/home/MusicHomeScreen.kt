@@ -231,7 +231,7 @@ internal fun MusicHomeScreen(
     val runner = remember(catalog) { HomeRunner(scope, catalog, onAlbumClick, onArtistClick) }
     // A recent search is only kept once it led somewhere: something played or opened from it.
     runner.onCommit = {
-        tab.query.trim().takeIf { it.length >= MIN_QUERY_LENGTH }?.let { MusicSearchHistory.record(it) }
+        recentSearchLabel(tab.query, heldTop?.title).takeIf { it.length >= MIN_QUERY_LENGTH }?.let { MusicSearchHistory.record(it) }
     }
     val hold = rememberHoldToSelectState()
     val reducedMotion = rememberMusicReducedMotion()

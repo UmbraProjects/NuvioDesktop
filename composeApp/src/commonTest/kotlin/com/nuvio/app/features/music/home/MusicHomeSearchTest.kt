@@ -325,3 +325,17 @@ class MusicHomeSearchTest {
         assertEquals(HomeAction.PlayEssentials, homeActions(artist, QueryKind.Albums).first())
     }
 }
+
+class RecentSearchLabelTest {
+    @kotlin.test.Test
+    fun halfTypedLineBecomesTheMatchName() {
+        kotlin.test.assertEquals("Sleep Token", recentSearchLabel("sleep t", "Sleep Token"))
+    }
+
+    @kotlin.test.Test
+    fun otherLinesStayAsTyped() {
+        kotlin.test.assertEquals("gang starr", recentSearchLabel(" gang starr ", "Gang Starr Foundation"))
+        kotlin.test.assertEquals("tha squeeze", recentSearchLabel("tha squeeze", null))
+        kotlin.test.assertEquals("sleep token", recentSearchLabel("sleep token", "Sleep Token"))
+    }
+}

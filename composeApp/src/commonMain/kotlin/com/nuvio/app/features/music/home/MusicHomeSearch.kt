@@ -407,6 +407,13 @@ data class HomeResults(
 }
 
 /** What identifies a top match for [MatchSettler]: its album, else its artist, else its video, else its title. */
+/** What a recent search is saved as: a half-typed line ("sleep t") that led to a match it begins ("Sleep Token") is kept as the match's name. */
+fun recentSearchLabel(typed: String, topTitle: String?): String {
+    val line = typed.trim()
+    val title = topTitle?.trim().orEmpty()
+    return if (title.isNotEmpty() && title.length > line.length && title.startsWith(line, ignoreCase = true)) title else line
+}
+
 fun topKeyOf(top: MusicTopResult): String = top.albumBrowseId ?: top.artists.firstOrNull()?.browseId ?: top.videoId ?: top.title
 
 fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, youtube: List<MusicTrack>): HomeResults {
