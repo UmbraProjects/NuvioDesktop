@@ -57,6 +57,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -120,6 +121,7 @@ import com.nuvio.app.features.music.MusicSearchEverything
 import com.nuvio.app.features.music.MusicTabState
 import com.nuvio.app.features.music.MusicTopBarSearch
 import com.nuvio.app.features.music.MusicTopResult
+import com.nuvio.app.features.music.MusicTopSong
 import com.nuvio.app.features.music.MusicTrack
 import com.nuvio.app.features.music.library.LadderRequest
 import com.nuvio.app.features.music.library.LibraryView
@@ -350,6 +352,12 @@ internal fun MusicHomeScreen(
     val ghost = remember(query, libraryNames, suggestions) { ghostCompletion(query, libraryNames + suggestions) }
     // The match stays (picture and colours included) through the pause after the line is emptied.
     val shownTop = heldTop?.takeIf { expanded }
+    // The top match's artist's most played songs: they fill the Top Match panel under the artists.
+    val topArtistId = shownTop?.artists?.firstOrNull()?.browseId
+    val matchSongs by produceState<List<MusicTopSong>>(emptyList(), topArtistId) {
+        value = emptyList()
+        value = topArtistId?.let { runCatching { catalog.artist(it)?.topSongs.orEmpty() }.getOrNull() }.orEmpty()
+    }
     val greetingTop = shownTop?.takeIf { query.isNotBlank() }
     // The line read as chips: a settled artist match counts as a known name even when it is not in the library.
     val chipNames = remember(libraryNames, shownTop) {
@@ -500,6 +508,7 @@ internal fun MusicHomeScreen(
                             onRetry = { attempt++ },
                             runner = runner,
                             hold = hold,
+                            matchSongs = matchSongs,
                         )
                         }
                     }
@@ -984,6 +993,7 @@ private fun HomeResultsBody(
     onRetry: () -> Unit,
     runner: HomeRunner,
     hold: HoldToSelectState,
+    matchSongs: List<MusicTopSong> = emptyList(),
 ) {
     // The keyboard's way in: the first thing in the YouTube Music panel, else the top match, else the first video.
     val entryPanel = when {
@@ -1004,6 +1014,21 @@ private fun HomeResultsBody(
             if (r.artists.isNotEmpty()) item(key = "artists-label") { SectionLabel("ARTISTS") }
             items(r.artists, key = { "artist:" + it.browseId }) { artist ->
                 ArtistRow(artist, Modifier.let { m -> if (entryPanel == 0 && r.top == null && artist == r.artists.first()) m.focusRequester(entry) else m }, runner, hold)
+            }
+            if (matchSongs.isNotEmpty()) {
+                item(key = "match-songs-label") { SectionLabel("TOP SONGS") }
+                items(matchSongs.take(MATCH_SONGS_SHOWN), key = { "match-song:" + it.videoId }) { song ->
+                    val track = MusicTrack(
+                        videoId = song.videoId, title = song.title, artists = r.top?.artists.orEmpty(), durationSeconds = 0,
+                        trackNumber = 0, isAvailable = true, albumBrowseId = song.albumBrowseId,
+                    )
+                    ResultRow(
+                        art = null, circle = false, artSize = 40.dp, title = song.title, subtitle = r.top?.artists?.firstOrNull()?.name,
+                        trailing = null, videoMark = false, modifier = Modifier, hold = hold,
+                        menu = { runner.videoMenu(track) },
+                        onClick = { runner.track(track, PlayHow.Now) },
+                    )
+                }
             }
         }
     }
@@ -1129,6 +1154,8 @@ private fun ArtistRow(artist: MusicArtistSummary, modifier: Modifier, runner: Ho
         preview = RowPreview(artist.name, artist.thumbnailUrl),
     )
 }
+
+private const val MATCH_SONGS_SHOWN = 6
 
 private const val NO_LENGTH_LABEL = "–:––"
 
