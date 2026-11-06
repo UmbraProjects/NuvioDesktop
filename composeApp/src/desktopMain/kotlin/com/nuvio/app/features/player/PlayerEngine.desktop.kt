@@ -413,10 +413,15 @@ private fun NativePlayerSurface(
                         latestOnPlayerControlsEvent.value("previousEpisode", 0.0)
                     is com.nuvio.app.features.voice.VoicePlaybackCommand.SeekTo ->
                         latestOnPlayerControlsEvent.value("voiceSeekTo", command.positionMs.toDouble())
-                    is com.nuvio.app.features.voice.VoicePlaybackCommand.VolumeChange ->
+                    // The HUD only learns of volume it didn't set itself through the pill, so show it.
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.VolumeChange -> {
                         latestOnPlayerControlsEvent.value("volumeDelta", command.percent / 100.0)
-                    is com.nuvio.app.features.voice.VoicePlaybackCommand.VolumeSet ->
+                        controller.showVolumePillFromNative()
+                    }
+                    is com.nuvio.app.features.voice.VoicePlaybackCommand.VolumeSet -> {
                         latestOnPlayerControlsEvent.value("volumeSet", command.percent.toDouble())
+                        controller.showVolumePillFromNative()
+                    }
                     // The mute key's own path (it shows the volume pill); only when it would change anything.
                     is com.nuvio.app.features.voice.VoicePlaybackCommand.Mute ->
                         if (controller.getVolume()?.isMuted != command.muted) controller.dispatchKeyboardShortcut("keyboardToggleMute")

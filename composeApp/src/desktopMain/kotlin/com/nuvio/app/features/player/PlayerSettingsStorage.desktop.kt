@@ -28,6 +28,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopUltraHudEnabledKey = "desktop_ultra_hud_enabled"
     private const val desktopOfficialHudEnabledKey = "desktop_official_hud_enabled"
     private const val desktopMinimalHudPillsEnabledKey = "desktop_minimal_hud_pills_enabled"
+    private const val desktopDockPanelFromBarEnabledKey = "desktop_dock_panel_from_bar_enabled"
     private const val desktopSeekHandleEnabledKey = "desktop_seek_handle_enabled"
     private const val desktopHudVignetteEnabledKey = "desktop_hud_vignette_enabled"
     private const val desktopHiddenHudButtonsKey = "desktop_hidden_hud_buttons"
@@ -289,6 +290,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopOfficialHudEnabled(enabled: Boolean) = saveBoolean(desktopOfficialHudEnabledKey, enabled)
     actual fun loadDesktopMinimalHudPillsEnabled(): Boolean? = loadBoolean(desktopMinimalHudPillsEnabledKey)
     actual fun saveDesktopMinimalHudPillsEnabled(enabled: Boolean) = saveBoolean(desktopMinimalHudPillsEnabledKey, enabled)
+    actual fun loadDesktopDockPanelFromBarEnabled(): Boolean? = loadBoolean(desktopDockPanelFromBarEnabledKey)
+    actual fun saveDesktopDockPanelFromBarEnabled(enabled: Boolean) = saveBoolean(desktopDockPanelFromBarEnabledKey, enabled)
     actual fun loadDesktopSeekHandleEnabled(): Boolean? = loadBoolean(desktopSeekHandleEnabledKey)
     actual fun saveDesktopSeekHandleEnabled(enabled: Boolean) = saveBoolean(desktopSeekHandleEnabledKey, enabled)
     actual fun loadDesktopHudVignetteEnabled(): Boolean? = loadBoolean(desktopHudVignetteEnabledKey)

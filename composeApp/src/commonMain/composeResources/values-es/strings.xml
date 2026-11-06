@@ -2300,6 +2300,8 @@
     <string name="settings_playback_hud_layout_minimal">Mínimo</string>
     <string name="settings_playback_hud_layout_pills">Píldoras de controles mínimos</string>
     <string name="settings_playback_hud_layout_pills_description">Coloca cada grupo de controles en su propia píldora translúcida en lugar de directamente sobre la imagen.</string>
+    <string name="settings_playback_hud_dock_from_bar">Paneles que crecen desde la píldora de herramientas</string>
+    <string name="settings_playback_hud_dock_from_bar_description">Los paneles de subtítulos, audio y demás del reproductor se abren desde la píldora de herramientas con su mismo ancho, como una sola pieza. Requiere Píldoras de controles mínimos.</string>
     <string name="settings_playback_seek_handle">Control deslizante de la barra de progreso</string>
     <string name="settings_playback_seek_handle_description">Dibuja el control redondo en la barra de progreso. Desactivado deja solo la barra de progreso de color.</string>
     <string name="settings_playback_hud_vignette">Viñeta de los controles</string>

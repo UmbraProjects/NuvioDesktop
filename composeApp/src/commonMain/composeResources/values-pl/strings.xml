@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Minimalny</string>
   <string name="settings_playback_hud_layout_pills">Pigułki minimalnych elementów sterowania</string>
   <string name="settings_playback_hud_layout_pills_description">Umieść każdą grupę elementów sterowania na osobnej półprzezroczystej pigułce zamiast bezpośrednio na obrazie.</string>
+  <string name="settings_playback_hud_dock_from_bar">Panele wyrastają z pigułki narzędzi</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Panele napisów, dźwięku i inne panele odtwarzacza otwierają się z pigułki narzędzi na jej szerokość, tworząc z nią jedną całość. Wymaga Pigułek minimalnych elementów sterowania.</string>
   <string name="settings_playback_seek_handle">Uchwyt paska przewijania</string>
   <string name="settings_playback_seek_handle_description">Rysuj okrągły uchwyt na pasku przewijania. Wyłączone zostawia tylko kolorowy pasek postępu.</string>
   <string name="settings_playback_hud_vignette">Winieta elementów sterowania</string>

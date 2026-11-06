@@ -2299,6 +2299,8 @@
     <string name="settings_playback_hud_layout_minimal">Minimal</string>
     <string name="settings_playback_hud_layout_pills">Minimale Steuerung als Pills</string>
     <string name="settings_playback_hud_layout_pills_description">Jede Steuerungsgruppe auf eine eigene transluzente Pill setzen, statt direkt auf das Bild.</string>
+    <string name="settings_playback_hud_dock_from_bar">Panels wachsen aus der Werkzeug-Pill</string>
+    <string name="settings_playback_hud_dock_from_bar_description">Untertitel-, Audio- und die anderen Player-Panels öffnen sich aus der Werkzeug-Pill in deren Breite, als ein Stück mit ihr. Erfordert Minimale Steuerung als Pills.</string>
     <string name="settings_playback_seek_handle">Griff der Zeitleiste</string>
     <string name="settings_playback_seek_handle_description">Den runden Griff auf der Zeitleiste zeichnen. Aus lässt nur den farbigen Fortschrittsbalken.</string>
     <string name="settings_playback_hud_vignette">Vignette der Steuerung</string>

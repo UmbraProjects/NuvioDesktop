@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Minimal</string>
   <string name="settings_playback_hud_layout_pills">Pil Kontrol Minimal</string>
   <string name="settings_playback_hud_layout_pills_description">Letakkan setiap grup kontrol pada pil tembus pandang tersendiri alih-alih langsung di atas gambar.</string>
+  <string name="settings_playback_hud_dock_from_bar">Panel Tumbuh dari Pil Alat</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Panel subtitle, audio, dan panel pemutar lainnya terbuka dari pil alat dengan lebar yang sama, menyatu dengannya. Memerlukan Pil Kontrol Minimal.</string>
   <string name="settings_playback_seek_handle">Gagang Bilah Seek</string>
   <string name="settings_playback_seek_handle_description">Gambar gagang bulat pada bilah seek. Jika mati, hanya bilah progres berwarna yang tersisa.</string>
   <string name="settings_playback_hud_vignette">Vinyet Kontrol</string>

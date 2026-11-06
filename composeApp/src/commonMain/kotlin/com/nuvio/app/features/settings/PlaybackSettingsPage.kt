@@ -1210,6 +1210,17 @@ private fun PlaybackSettingsSection(
                                 isTablet = isTablet,
                                 onCheckedChange = PlayerSettingsRepository::setDesktopMinimalHudPillsEnabled,
                             )
+                            SettingsGroupDivider(isTablet = isTablet)
+                            // Needs the pills: the panel takes the tool pill's width and joins it.
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_hud_dock_from_bar),
+                                description = stringResource(Res.string.settings_playback_hud_dock_from_bar_description),
+                                checked = autoPlayPlayerSettings.desktopDockPanelFromBarEnabled &&
+                                    autoPlayPlayerSettings.desktopMinimalHudPillsEnabled,
+                                enabled = autoPlayPlayerSettings.desktopMinimalHudPillsEnabled,
+                                isTablet = isTablet,
+                                onCheckedChange = PlayerSettingsRepository::setDesktopDockPanelFromBarEnabled,
+                            )
                         }
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(

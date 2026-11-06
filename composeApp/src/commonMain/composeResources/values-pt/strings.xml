@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Mínimo</string>
   <string name="settings_playback_hud_layout_pills">Pílulas dos controlos mínimos</string>
   <string name="settings_playback_hud_layout_pills_description">Coloca cada grupo de controlos na sua própria pílula translúcida em vez de diretamente sobre a imagem.</string>
+  <string name="settings_playback_hud_dock_from_bar">Painéis a partir da pílula de ferramentas</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Os painéis de legendas, áudio e os outros painéis do leitor abrem a partir da pílula de ferramentas, com a mesma largura, como uma só peça. Requer Pílulas dos controlos mínimos.</string>
   <string name="settings_playback_seek_handle">Manípulo da barra de progresso</string>
   <string name="settings_playback_seek_handle_description">Desenha o manípulo redondo na barra de progresso. Desativado deixa apenas a barra colorida.</string>
   <string name="settings_playback_hud_vignette">Vinheta dos controlos</string>

@@ -2681,6 +2681,8 @@
     <string name="settings_playback_hud_layout_minimal">Minimal</string>
     <string name="settings_playback_hud_layout_pills">Pastilles des commandes minimales</string>
     <string name="settings_playback_hud_layout_pills_description">Place chaque groupe de commandes sur sa propre pastille translucide au lieu de le poser directement sur l’image.</string>
+    <string name="settings_playback_hud_dock_from_bar">Panneaux issus de la pastille d\'outils</string>
+    <string name="settings_playback_hud_dock_from_bar_description">Les panneaux des sous-titres, de l\'audio et les autres panneaux du lecteur s\'ouvrent depuis la pastille d\'outils, à sa largeur, d\'un seul tenant avec elle. Nécessite Pastilles des commandes minimales.</string>
     <string name="settings_playback_seek_handle">Poignée de la barre de progression</string>
     <string name="settings_playback_seek_handle_description">Dessine la poignée ronde sur la barre de progression. Désactivé, il ne reste que la barre de progression colorée.</string>
     <string name="settings_playback_hud_vignette">Vignettage des commandes</string>

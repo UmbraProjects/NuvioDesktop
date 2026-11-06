@@ -541,6 +541,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             legacyHudEnabled = playerSettingsUiState.desktopLegacyHudEnabled,
             minimalHudEnabled = playerSettingsUiState.desktopMinimalHudEnabled,
             minimalHudPillsEnabled = playerSettingsUiState.desktopMinimalHudPillsEnabled,
+            dockPanelFromBarEnabled = playerSettingsUiState.desktopDockPanelFromBarEnabled,
             ultraHudEnabled = playerSettingsUiState.desktopUltraHudEnabled,
             officialHudEnabled = playerSettingsUiState.desktopOfficialHudEnabled,
             seekHandleEnabled = playerSettingsUiState.desktopSeekHandleEnabled,

@@ -1799,6 +1799,8 @@
     <string name="settings_playback_hud_layout_minimal">Minimal</string>
     <string name="settings_playback_hud_layout_pills">Minimal Controls Pills</string>
     <string name="settings_playback_hud_layout_pills_description">Sit each control group on its own translucent pill instead of directly on the picture.</string>
+    <string name="settings_playback_hud_dock_from_bar">Panels Grow From The Tool Pill</string>
+    <string name="settings_playback_hud_dock_from_bar_description">Subtitle, audio and the other player panels open out of the tool pill at its width, as one piece with it. Needs Minimal Controls Pills.</string>
     <string name="settings_playback_seek_handle">Seek Bar Handle</string>
     <string name="settings_playback_seek_handle_description">Draw the round handle on the seek bar. Off leaves just the coloured progress bar.</string>
     <string name="settings_playback_hud_vignette">Controls Vignette</string>

@@ -75,6 +75,8 @@ data class PlayerSettingsUiState(
     val desktopOfficialHudEnabled: Boolean = false,
     // Minimal layout only: each control group sits on its own translucent pill.
     val desktopMinimalHudPillsEnabled: Boolean = true,
+    // Minimal + pills only: the player panels grow out of the tool pill, at its width.
+    val desktopDockPanelFromBarEnabled: Boolean = false,
     // Draw the round handle on the seek bar; off leaves the coloured fill edge as the marker.
     val desktopSeekHandleEnabled: Boolean = true,
     // The dark top/bottom edge gradients that fade in with the HUD so its controls stay legible.
@@ -299,6 +301,7 @@ object PlayerSettingsRepository {
     private var desktopUltraHudEnabled = false
     private var desktopOfficialHudEnabled = false
     private var desktopMinimalHudPillsEnabled = true
+    private var desktopDockPanelFromBarEnabled = false
     private var desktopSeekHandleEnabled = true
     private var desktopHudVignetteEnabled = true
     private var desktopHiddenHudButtons: Set<String> = emptySet()
@@ -454,6 +457,7 @@ object PlayerSettingsRepository {
         desktopUltraHudEnabled = false
         desktopOfficialHudEnabled = false
         desktopMinimalHudPillsEnabled = true
+        desktopDockPanelFromBarEnabled = false
         desktopSeekHandleEnabled = true
         desktopHudVignetteEnabled = true
         desktopHiddenHudButtons = emptySet()
@@ -604,6 +608,7 @@ object PlayerSettingsRepository {
         desktopUltraHudEnabled = storedUltraHud ?: false
         desktopOfficialHudEnabled = storedOfficialHud ?: false
         desktopMinimalHudPillsEnabled = PlayerSettingsStorage.loadDesktopMinimalHudPillsEnabled() ?: true
+        desktopDockPanelFromBarEnabled = PlayerSettingsStorage.loadDesktopDockPanelFromBarEnabled() ?: false
         desktopSeekHandleEnabled = PlayerSettingsStorage.loadDesktopSeekHandleEnabled() ?: true
         desktopHudVignetteEnabled = PlayerSettingsStorage.loadDesktopHudVignetteEnabled() ?: true
         desktopHudButtonOrder = PlayerSettingsStorage.loadDesktopHudButtonOrder()
@@ -952,6 +957,14 @@ object PlayerSettingsRepository {
         desktopMinimalHudPillsEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopMinimalHudPillsEnabled(enabled)
+    }
+
+    fun setDesktopDockPanelFromBarEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopDockPanelFromBarEnabled == enabled) return
+        desktopDockPanelFromBarEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopDockPanelFromBarEnabled(enabled)
     }
 
     fun setDesktopSeekHandleEnabled(enabled: Boolean) {
@@ -1821,6 +1834,7 @@ object PlayerSettingsRepository {
             desktopUltraHudEnabled = desktopUltraHudEnabled,
             desktopOfficialHudEnabled = desktopOfficialHudEnabled,
             desktopMinimalHudPillsEnabled = desktopMinimalHudPillsEnabled,
+            desktopDockPanelFromBarEnabled = desktopDockPanelFromBarEnabled,
             desktopSeekHandleEnabled = desktopSeekHandleEnabled,
             desktopHudVignetteEnabled = desktopHudVignetteEnabled,
             desktopHiddenHudButtons = desktopHiddenHudButtons,

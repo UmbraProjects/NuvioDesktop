@@ -468,6 +468,8 @@ data class PlayerHudSettings(
     val legacyHudEnabled: Boolean = false,
     val minimalHudEnabled: Boolean = false,
     val minimalHudPillsEnabled: Boolean = false,
+    /** Minimal + pills only: the HUD's docked panels open out of the tool pill, at its width. */
+    val dockPanelFromBarEnabled: Boolean = false,
     val ultraHudEnabled: Boolean = false,
     val officialHudEnabled: Boolean = false,
     val seekHandleEnabled: Boolean = true,

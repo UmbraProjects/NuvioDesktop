@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Minimální</string>
   <string name="settings_playback_hud_layout_pills">Minimální ovládání v bublinách</string>
   <string name="settings_playback_hud_layout_pills_description">Každá skupina ovládacích prvků je na vlastní průsvitné bublině místo přímo na obraze.</string>
+  <string name="settings_playback_hud_dock_from_bar">Panely vyrůstají z bubliny nástrojů</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Panely titulků, zvuku a další panely přehrávače se otevírají z bubliny nástrojů v její šířce a tvoří s ní jeden celek. Vyžaduje minimální ovládání v bublinách.</string>
   <string name="settings_playback_seek_handle">Úchyt posuvníku</string>
   <string name="settings_playback_seek_handle_description">Zobrazí kulatý úchyt na posuvníku přehrávání. Když je vypnuto, zůstane jen barevný ukazatel průběhu.</string>
   <string name="settings_playback_hud_vignette">Vinětace ovládání</string>

@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Minimal</string>
   <string name="settings_playback_hud_layout_pills">Piller for minimale kontroller</string>
   <string name="settings_playback_hud_layout_pills_description">Legg hver kontrollgruppe på sin egen gjennomsiktige pille i stedet for direkte på bildet.</string>
+  <string name="settings_playback_hud_dock_from_bar">Paneler vokser ut fra verktøypillen</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Undertekst-, lyd- og de andre spillerpanelene åpnes fra verktøypillen i samme bredde, i ett stykke med den. Krever Piller for minimale kontroller.</string>
   <string name="settings_playback_seek_handle">Håndtak på spolelinjen</string>
   <string name="settings_playback_seek_handle_description">Tegn det runde håndtaket på spolelinjen. Av gir bare den fargede fremdriftslinjen.</string>
   <string name="settings_playback_hud_vignette">Vignett for kontroller</string>

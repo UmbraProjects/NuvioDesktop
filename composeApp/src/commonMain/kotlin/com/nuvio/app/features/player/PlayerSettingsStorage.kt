@@ -21,6 +21,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopOfficialHudEnabled(enabled: Boolean)
     fun loadDesktopMinimalHudPillsEnabled(): Boolean?
     fun saveDesktopMinimalHudPillsEnabled(enabled: Boolean)
+    fun loadDesktopDockPanelFromBarEnabled(): Boolean?
+    fun saveDesktopDockPanelFromBarEnabled(enabled: Boolean)
     fun loadDesktopSeekHandleEnabled(): Boolean?
     fun saveDesktopSeekHandleEnabled(enabled: Boolean)
     fun loadDesktopHudVignetteEnabled(): Boolean?

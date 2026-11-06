@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Minimale</string>
   <string name="settings_playback_hud_layout_pills">Pillole dei controlli minimali</string>
   <string name="settings_playback_hud_layout_pills_description">Posiziona ogni gruppo di controlli su una propria pillola traslucida invece che direttamente sull'immagine.</string>
+  <string name="settings_playback_hud_dock_from_bar">Pannelli che crescono dalla pillola strumenti</string>
+  <string name="settings_playback_hud_dock_from_bar_description">I pannelli di sottotitoli, audio e gli altri pannelli del player si aprono dalla pillola strumenti con la sua larghezza, in un unico pezzo. Richiede Pillole dei controlli minimali.</string>
   <string name="settings_playback_seek_handle">Cursore della barra di avanzamento</string>
   <string name="settings_playback_seek_handle_description">Disegna il cursore rotondo sulla barra di avanzamento. Disattivato lascia solo la barra di avanzamento colorata.</string>
   <string name="settings_playback_hud_vignette">Vignettatura dei controlli</string>

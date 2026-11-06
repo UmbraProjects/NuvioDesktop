@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Ελάχιστη</string>
   <string name="settings_playback_hud_layout_pills">Ελάχιστη με κουμπιά-κάψουλες</string>
   <string name="settings_playback_hud_layout_pills_description">Τοποθετεί κάθε ομάδα ελέγχων σε δικό της ημιδιάφανο χάπι αντί απευθείας πάνω στην εικόνα.</string>
+  <string name="settings_playback_hud_dock_from_bar">Τα πάνελ αναπτύσσονται από την κάψουλα εργαλείων</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Τα πάνελ υποτίτλων, ήχου και τα άλλα πάνελ του προγράμματος αναπαραγωγής ανοίγουν από την κάψουλα εργαλείων στο πλάτος της, ενιαία με αυτήν. Απαιτεί Ελάχιστη με κουμπιά-κάψουλες.</string>
   <string name="settings_playback_seek_handle">Λαβή γραμμής χρόνου</string>
   <string name="settings_playback_seek_handle_description">Σχεδιάζει τη στρογγυλή λαβή στη γραμμή χρόνου. Απενεργοποιημένο, μένει μόνο η έγχρωμη γραμμή προόδου.</string>
   <string name="settings_playback_hud_vignette">Σκίαση ελέγχων</string>

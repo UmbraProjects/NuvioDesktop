@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Minimal</string>
   <string name="settings_playback_hud_layout_pills">Minimal kontrol balonları</string>
   <string name="settings_playback_hud_layout_pills_description">Her kontrol grubunu doğrudan görüntü üzerine değil, kendi yarı saydam balonunun üzerine yerleştir.</string>
+  <string name="settings_playback_hud_dock_from_bar">Paneller araç balonundan açılır</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Altyazı, ses ve diğer oynatıcı panelleri araç balonundan onun genişliğinde, onunla tek parça olarak açılır. Minimal kontrol balonları gerektirir.</string>
   <string name="settings_playback_seek_handle">İlerleme çubuğu tutamacı</string>
   <string name="settings_playback_seek_handle_description">İlerleme çubuğunda yuvarlak tutamacı çiz. Kapalıyken yalnızca renkli ilerleme çubuğu kalır.</string>
   <string name="settings_playback_hud_vignette">Kontrol vinyeti</string>
