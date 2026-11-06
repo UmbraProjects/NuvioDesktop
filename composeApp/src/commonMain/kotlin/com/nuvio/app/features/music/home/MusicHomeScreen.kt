@@ -802,7 +802,12 @@ private fun LetterStrip(
         // Keys shrink to fit a narrow window instead of running off it.
         val keyWidth = min(36.dp, (maxWidth - 140.dp - 4.dp * 29) / 27)
         Row(
-            Modifier.onPreviewKeyEvent { event ->
+            Modifier
+                // Glass behind the keys, so the letters read over a bright fanart.
+                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp))
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+                .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.DirectionDown -> onDown()
