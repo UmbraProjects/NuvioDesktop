@@ -577,7 +577,7 @@ internal fun SongBySongLeft(
                 LensCardKind.Meaning -> "WHAT IT MEANS"
                 else -> "WHY IT MATTERS"
             },
-            text = card?.text ?: fallback ?: "Nothing more is known about this song yet.",
+            text = card?.text ?: fallback ?: if (storyLoading) "Still looking for this song's story…" else "Nothing more is known about this song yet.",
             tint = colors.accent,
             footer = when {
                 cardPinned -> "Edited by you"

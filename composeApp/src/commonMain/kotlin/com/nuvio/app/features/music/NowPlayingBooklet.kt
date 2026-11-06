@@ -362,12 +362,12 @@ internal fun NavPill(label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = if (enabled) 0.12f else 0.05f))
+            .background(Color.White.copy(alpha = if (enabled) 0.12f else 0.08f))
             .onTap { if (enabled) onClick() }
             .padding(horizontal = 14.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = Color.White.copy(alpha = if (enabled) 0.9f else 0.3f), fontSize = 18.sp)
+        Text(label, color = Color.White.copy(alpha = if (enabled) 0.9f else 0.5f), fontSize = 18.sp)
     }
 }
 

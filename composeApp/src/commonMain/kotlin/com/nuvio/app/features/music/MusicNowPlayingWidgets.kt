@@ -340,7 +340,7 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
                 }
             }
             Text(
-                "${formatMusicTime(state.positionMs)}/${formatMusicTime(state.durationMs)}",
+                "${formatMusicTime(state.positionMs)} / ${formatMusicTime(state.durationMs)}",
                 color = CONTROLS_SIDE_TEXT,
                 fontSize = 15.sp,
                 maxLines = 1,
