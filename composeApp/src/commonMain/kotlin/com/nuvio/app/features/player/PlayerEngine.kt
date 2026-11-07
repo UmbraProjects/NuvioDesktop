@@ -480,7 +480,10 @@ data class PlayerHudSettings(
     val hudButtonOrder: String = "",
     val alwaysShowClock: Boolean = false,
     val playbackSpeedFineIncrementsEnabled: Boolean = false,
-    val scrollZonesEnabled: Boolean = false,
+    // Player zones, as the HUD reads them: "off" / "wheel" / "drag", and the three zones' actions
+    // left to right ("speed,seek,volume").
+    val zoneInput: String = "off",
+    val zoneActions: String = "speed,seek,volume",
     val playbackSpeedToggleLow: Float = 1f,
     val playbackSpeedToggleHigh: Float = 2f,
     val uiScalePercent: Int = 0,

@@ -37,8 +37,12 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopPauseOverlaySourceEnabled(enabled: Boolean)
     fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean?
     fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean)
+    /** The wheel-only switch zones began as; read to migrate it to [loadDesktopPlayerZoneInput]. */
     fun loadDesktopPlayerScrollZonesEnabled(): Boolean?
-    fun saveDesktopPlayerScrollZonesEnabled(enabled: Boolean)
+    fun loadDesktopPlayerZoneInput(): String?
+    fun saveDesktopPlayerZoneInput(input: String)
+    fun loadDesktopPlayerZoneActions(): String?
+    fun saveDesktopPlayerZoneActions(actions: String)
     fun loadPlaybackSpeedToggleLow(): Float?
     fun savePlaybackSpeedToggleLow(speed: Float)
     fun loadPlaybackSpeedToggleHigh(): Float?

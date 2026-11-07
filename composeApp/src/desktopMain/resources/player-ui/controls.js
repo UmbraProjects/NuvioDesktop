@@ -388,7 +388,8 @@ let state = {
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
   playbackSpeedFineIncrementsEnabled: false,
-  scrollZonesEnabled: false,
+  zoneInput: "off",
+  zoneActions: "speed,seek,volume",
   playbackSpeedToggleLow: 1,
   playbackSpeedToggleHigh: 2,
   subtitlesLabel: "Subs",
@@ -8556,28 +8557,73 @@ const HoldSpeedValue = 2;
 let holdSpeedTimer = 0;
 let holdSpeedPointerId = null;
 let holdSpeedRestoreValue = null;
+let holdSpeedButton = -1;
 let consumeHoldSpeedClick = false;
+let consumeZoneContextMenu = false;
 
-const endHoldSpeed = () => {
+// Player zones can be driven by a drag with the left (drag), right (rmb) or a side button (xb1 /
+// xb2): the zone input's event.button, or -1 for the wheel and off.
+const ZONE_INPUT_BUTTONS = { drag: 0, rmb: 2, xb1: 3, xb2: 4 };
+const zoneButton = () => ZONE_INPUT_BUTTONS[state.zoneInput] ?? -1;
+// event.buttons bit for an event.button: left 1, middle 4, right 2, back 8, forward 16.
+const mouseButtonMask = button => [1, 4, 2, 8, 16][button] ?? 0;
+
+// A press of a zone button that did something (a drag, a 2x hold) must not also do the button's own
+// job when it comes up: the left button's click (pause), the right button's context menu.
+const swallowZoneButtonRelease = button => {
+  if (button === 0) {
+    consumeHoldSpeedClick = true;
+    window.setTimeout(() => { consumeHoldSpeedClick = false; }, 500);
+  } else if (button === 2) {
+    consumeZoneContextMenu = true;
+    window.setTimeout(() => { consumeZoneContextMenu = false; }, 500);
+  }
+};
+
+// The other half: a zone press that came up unused does the button's own job after all. Only Back
+// needs this; it normally acts on press, so while it drives the zones it waits for the release.
+const zoneButtonReleasedUnused = button => {
+  if (button === 3) handleMouseBack();
+};
+
+// Capture phase on window, so it runs before the context menu's own listener on root.
+window.addEventListener("contextmenu", event => {
+  if (!consumeZoneContextMenu) return;
+  consumeZoneContextMenu = false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+const endHoldSpeed = (released = false) => {
   window.clearTimeout(holdSpeedTimer);
   holdSpeedTimer = 0;
   holdSpeedPointerId = null;
-  if (holdSpeedRestoreValue === null) return;
+  const button = holdSpeedButton;
+  holdSpeedButton = -1;
+  if (holdSpeedRestoreValue === null) {
+    if (released) zoneButtonReleasedUnused(button);
+    return;
+  }
   const restore = holdSpeedRestoreValue;
   holdSpeedRestoreValue = null;
-  consumeHoldSpeedClick = true;
-  window.setTimeout(() => { consumeHoldSpeedClick = false; }, 500);
+  swallowZoneButtonRelease(button);
   send("setPlaybackSpeed", restore);
   window.nuvioShowPresetPill(hudText("player_hud_playback_speed", "Playback speed"), `${restore.toFixed(2).replace(/\.?0+$/, "")}x`);
 };
 
 root.addEventListener("pointerdown", event => {
-  if (event.button !== 0 || event.pointerType === "touch") return;
+  if (event.pointerType === "touch") return;
+  // A fast-forward zone gives the hold to the zone button, whichever it is. With left-button zones
+  // the left hold belongs to the zones, so a press that rests before it starts dragging can't also
+  // switch to 2x; with any other zone input the left button keeps its usual hold.
+  const zoneHold = event.button === zoneButton() && zoneActionAt(event.clientX) === "fastforward";
+  if (!zoneHold && (event.button !== 0 || state.zoneInput === "drag")) return;
   if (isHeroTrailerSurface || state.heroTrailerMode || isCompactPlayerUi()) return;
   if (state.isLocked || !state.isPlaying || contextMenuOpen || activeModal || playbackErrorText()) return;
   if (event.target.closest("button,input") || isChromeInteractionTarget(event.target)) return;
   endHoldSpeed();
   holdSpeedPointerId = event.pointerId;
+  holdSpeedButton = event.button;
   holdSpeedTimer = window.setTimeout(() => {
     holdSpeedTimer = 0;
     // Re-check: the press may have outlived playback (end of file, pause from a key).
@@ -8590,10 +8636,10 @@ root.addEventListener("pointerdown", event => {
 });
 ["pointerup", "pointercancel"].forEach(type => window.addEventListener(type, event => {
   if (holdSpeedPointerId === null || event.pointerId !== holdSpeedPointerId) return;
-  endHoldSpeed();
+  endHoldSpeed(type === "pointerup");
 }, true));
 // Losing focus mid-hold (alt-tab, a native dialog) never delivers the pointerup.
-window.addEventListener("blur", endHoldSpeed);
+window.addEventListener("blur", () => endHoldSpeed());
 
 root.addEventListener("click", event => {
   if (consumeHoldSpeedClick) {
@@ -8678,11 +8724,34 @@ const stepVolumeFromWheel = event => {
   send("volumeDelta", direction * 0.05);
 };
 
-// Scroll zones: the third of the window under the pointer picks what the wheel does.
-const scrollZoneAt = (clientX, left, width) => {
-  const fraction = (clientX - left) / width;
-  if (fraction < 1 / 3) return "speed";
-  return fraction < 2 / 3 ? "seek" : "volume";
+// Player zones: the third of the window under the pointer picks the action, each third's set in
+// Settings (zoneActions, left to right: none / speed / seek / volume / fastforward).
+const zoneActionAt = clientX => {
+  const bounds = root.getBoundingClientRect();
+  const fraction = bounds.width > 0 ? (clientX - bounds.left) / bounds.width : 0.5;
+  const index = fraction < 1 / 3 ? 0 : fraction < 2 / 3 ? 1 : 2;
+  return String(state.zoneActions || "").split(",")[index]?.trim().toLowerCase() || "none";
+};
+
+// One step of a zone action, +1 up / faster / forward. volumeStep is the percent per step: a wheel
+// notch moves 5, a drag step (a few pixels) less, so dragging feels continuous.
+const applyZoneStep = (action, direction, volumeStep) => {
+  if (action === "volume") {
+    adjustLocalVolume(direction * volumeStep);
+    send("volumeDelta", direction * volumeStep / 100);
+    return;
+  }
+  // Live TV arrives in real time, so a faster speed would only run out of buffer.
+  if (action === "speed") {
+    if (!state.iptv) stepPlaybackSpeed(direction);
+    return;
+  }
+  if (action === "seek") {
+    // The seek buttons are hidden while a title opens; a stray step must not move its start point.
+    if (root.classList.contains("opening-active")) return;
+    revealChromeForPlaybackInteraction();
+    send(direction > 0 ? "seekForward" : "seekBack", 0);
+  }
 };
 
 // A mouse notch reads 120 / page zoom in wheelDeltaY, and the native side sets that zoom to
@@ -8726,27 +8795,87 @@ const handleScrollZoneWheel = event => {
   if (activeModal || contextMenuOpen) return;
   if (event.target.closest(scrollZoneExcludedSelector) || wheelScrollableAncestor(event.target)) return;
   event.preventDefault();
-  const bounds = root.getBoundingClientRect();
-  const zone = event.target.closest("#playerVolumeControl")
-    ? "volume"
-    : scrollZoneAt(event.clientX, bounds.left, bounds.width);
+  const zone = event.target.closest("#playerVolumeControl") ? "volume" : zoneActionAt(event.clientX);
   if (zone === "volume") {
     stepVolumeFromWheel(event);
     return;
   }
-  // Live TV arrives in real time, so a faster speed would only run out of buffer.
-  if (zone === "speed" && state.iptv) return;
-  // The seek buttons are hidden while a title opens; a stray notch must not move its start point.
-  if (zone === "seek" && root.classList.contains("opening-active")) return;
+  // Nothing, or the drag-only fast-forward: the wheel does nothing here.
+  if (zone !== "speed" && zone !== "seek") return;
   const direction = countWheelSteps(zone, event.wheelDeltaY, event.timeStamp);
-  if (direction === 0) return;
-  if (zone === "speed") {
-    stepPlaybackSpeed(direction);
+  if (direction !== 0) applyZoneStep(zone, direction, 5);
+};
+
+// Drag input: hold the zone button (left, right or a side button) on the bare video and move up or down. Up is louder / faster /
+// forward. A press that never travels ZONE_DRAG_START_PX stays an ordinary click (pause), and one
+// that does swallows that click. The wheel is left alone, so this works on the YouTube watch page,
+// where the wheel scrolls the page. Fast-forward zones are the hold-for-2x gesture further down.
+const ZONE_DRAG_START_PX = 8;
+const ZONE_DRAG_STEP_PX = { volume: 6, seek: 28, speed: 40 };
+const ZONE_DRAG_VOLUME_STEP = 2;
+let zoneDrag = null;
+
+const zoneDragEligible = event =>
+  event.button === zoneButton() && event.pointerType !== "touch" &&
+  !isHeroTrailerSurface && !state.heroTrailerMode && !isCompactPlayerUi() && !state.pictureInPictureActive &&
+  !state.isLocked && !contextMenuOpen && !activeModal && !playbackErrorText() &&
+  !event.target.closest("button,input") && !isChromeInteractionTarget(event.target);
+
+const endZoneDrag = (released = false) => {
+  if (!zoneDrag) return;
+  const { pointerId, active, button } = zoneDrag;
+  zoneDrag = null;
+  try {
+    if (root.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
+  } catch (_) {}
+  if (active) {
+    swallowZoneButtonRelease(button);
+  } else if (released) {
+    zoneButtonReleasedUnused(button);
+  }
+};
+
+root.addEventListener("pointerdown", event => {
+  if (!zoneDragEligible(event)) return;
+  const action = zoneActionAt(event.clientX);
+  if (action !== "speed" && action !== "seek" && action !== "volume") return;
+  endZoneDrag();
+  zoneDrag = {
+    pointerId: event.pointerId,
+    button: event.button,
+    action,
+    startY: event.clientY,
+    anchorY: event.clientY,
+    active: false,
+  };
+});
+
+window.addEventListener("pointermove", event => {
+  if (!zoneDrag || event.pointerId !== zoneDrag.pointerId) return;
+  // The button came up somewhere this page never heard about.
+  if ((event.buttons & mouseButtonMask(zoneDrag.button)) === 0) {
+    endZoneDrag();
     return;
   }
-  revealChromeForPlaybackInteraction();
-  send(direction > 0 ? "seekForward" : "seekBack", 0);
-};
+  if (!zoneDrag.active) {
+    if (Math.abs(event.clientY - zoneDrag.startY) < ZONE_DRAG_START_PX) return;
+    zoneDrag.active = true;
+    zoneDrag.anchorY = event.clientY;
+    window.clearTimeout(tapTimer);
+    try { root.setPointerCapture(event.pointerId); } catch (_) {}
+  }
+  event.preventDefault();
+  const stepPx = ZONE_DRAG_STEP_PX[zoneDrag.action];
+  while (Math.abs(zoneDrag.anchorY - event.clientY) >= stepPx) {
+    const direction = event.clientY < zoneDrag.anchorY ? 1 : -1;
+    zoneDrag.anchorY -= direction * stepPx;
+    applyZoneStep(zoneDrag.action, direction, ZONE_DRAG_VOLUME_STEP);
+  }
+}, true);
+["pointerup", "pointercancel"].forEach(type => window.addEventListener(type, event => {
+  if (zoneDrag && event.pointerId === zoneDrag.pointerId) endZoneDrag(type === "pointerup");
+}, true));
+window.addEventListener("blur", () => endZoneDrag());
 
 root.addEventListener("wheel", event => {
   if (state.pictureInPictureActive) return;
@@ -8772,7 +8901,7 @@ root.addEventListener("wheel", event => {
   }
   if (playbackErrorText()) return;
   if (state.isLocked) return;
-  if (state.scrollZonesEnabled && !isHeroTrailerSurface && !state.heroTrailerMode) {
+  if (state.zoneInput === "wheel" && !isHeroTrailerSurface && !state.heroTrailerMode) {
     handleScrollZoneWheel(event);
     return;
   }
@@ -8795,10 +8924,9 @@ root.addEventListener("dblclick", event => {
 // Mouse "Back" side button (X1 / button 3) closes the player, mirroring Esc. WebView2 mouse events
 // don't reach the app-level AWT listener that handles Back on every other screen, so the button is
 // wired here in the HUD instead. (Button 4 / Forward is intentionally left alone.)
-document.addEventListener("mousedown", event => {
-  if (isHeroTrailerSurface || state.heroTrailerMode) return;
-  if (event.button !== 3) return;
-  event.preventDefault();
+// When Back drives the player zones, a press on the video belongs to them (pointerdown, which runs
+// first, has claimed it), and Back runs on a release that neither dragged nor held.
+function handleMouseBack() {
   if (contextMenuOpen) {
     closeContextMenu();
     return;
@@ -8809,6 +8937,14 @@ document.addEventListener("mousedown", event => {
     return;
   }
   send("back", 0);
+}
+
+document.addEventListener("mousedown", event => {
+  if (isHeroTrailerSurface || state.heroTrailerMode) return;
+  if (event.button !== 3) return;
+  event.preventDefault();
+  if (zoneDrag?.button === 3 || (holdSpeedPointerId !== null && holdSpeedButton === 3)) return;
+  handleMouseBack();
 });
 
 document.addEventListener("keydown", event => {

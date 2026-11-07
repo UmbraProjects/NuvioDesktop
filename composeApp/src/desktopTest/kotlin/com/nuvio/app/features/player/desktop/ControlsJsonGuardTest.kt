@@ -134,19 +134,18 @@ class ControlsJsonGuardTest {
     }
 
     @Test
-    fun `the scroll zones switch reaches the HUD`() {
-        fun scrollZonesField(enabled: Boolean): String {
-            val payload = PlayerControlsState(hud = PlayerHudSettings(scrollZonesEnabled = enabled)).toControlsJson(
-                appFullscreenKeyCode = 122,
-                playerShortcutKeyCodes = emptyMap(),
-                skipIntervalKeyLabel = "S",
-            )
-            assertTrue(controlsJsonIsWellFormed(payload))
-            return Json.parseToJsonElement(payload).jsonObject.getValue("scrollZonesEnabled").jsonPrimitive.content
-        }
-
-        assertEquals("true", scrollZonesField(true))
-        assertEquals("false", scrollZonesField(false))
+    fun `the player zone settings reach the HUD`() {
+        val payload = PlayerControlsState(
+            hud = PlayerHudSettings(zoneInput = "drag", zoneActions = "fastforward,seek,none"),
+        ).toControlsJson(
+            appFullscreenKeyCode = 122,
+            playerShortcutKeyCodes = emptyMap(),
+            skipIntervalKeyLabel = "S",
+        )
+        assertTrue(controlsJsonIsWellFormed(payload))
+        val json = Json.parseToJsonElement(payload).jsonObject
+        assertEquals("drag", json.getValue("zoneInput").jsonPrimitive.content)
+        assertEquals("fastforward,seek,none", json.getValue("zoneActions").jsonPrimitive.content)
     }
 
     @Test
