@@ -366,12 +366,10 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
                 for (j in maxOf(0, decided - 20)..minOf(f.size - 1, decided + LOOKAHEAD)) { sum += f[j]; count++ }
                 candidate[g] = v > group.floor && v > max(sum / count * group.sensitivity, recentMax[g] * group.peakShare)
             }
-            // A kick's beater click reaches the snare's range. With a kick at the same moment, the snare range must rise
-            // strongly for a snare (a click is a small rise there, a clap on a four-on-the-floor kick a big one).
-            // (There used to be a second rule here dropping a snare when the hats rose harder than the snare range. Snares
-            // very often land together with a hat, so it removed real snares: on dumped flux, snare recall went 0.53 -> 0.71
-            // with it off, precision 0.58 -> 0.61.)
-            if (candidate[SNARE] && candidate[KICK] && strength[SNARE] < SNARE_ON_KICK_STRENGTH) {
+            // A kick's beater click and a hi-hat both reach the snare's range. With a kick at the same moment, the snare range
+            // must rise strongly for a snare (a click is a small rise there, a clap on a four-on-the-floor kick a big one);
+            // and where the hats rose harder than the snare range, it was the hats.
+            if (candidate[SNARE] && (candidate[KICK] && strength[SNARE] < SNARE_ON_KICK_STRENGTH || strength[SNARE] < strength[HATS] * 0.9f)) {
                 candidate[SNARE] = false
             }
             var bits = 0
