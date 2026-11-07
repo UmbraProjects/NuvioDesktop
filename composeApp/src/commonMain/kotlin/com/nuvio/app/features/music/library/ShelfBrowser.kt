@@ -41,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,22 +80,23 @@ import com.nuvio.app.features.music.MusicPlayback
 import com.nuvio.app.features.music.defaultMusicCatalog
 import com.nuvio.app.features.music.identity.ReleasePaletteResolver
 import com.nuvio.app.features.music.nebula.rememberAddonReleases
+import com.nuvio.app.features.music.playlist.MusicPlaylistRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /*
- * fork:shelf - the Shelf, redesigned as a collection browser in three panels (the model is ShelfBrowserModel.kt):
+ * fork:shelf - the Shelf: your collection in three panels (the model is ShelfBrowserModel.kt, the data ShelfSources.kt).
  *
- *  - By artist: the artists A to Z on the left (All, Starred, Added recently; a letter rail, and a typed letter, jump), the
- *    artist in focus's albums in the middle as one page of eight covers (top five numbered, Lossless marked when the music
- *    addon has them), and the album in focus on the right with Play, Add to queue and Open.
- *  - All albums: the left panel sorts (album, artist, year, added) and narrows (starred, a decade) the wall, and the middle
- *    is a page of fifteen covers.
+ *  - Left: the shelves. What only your library knows comes first: New from your artists, Recently played, Most played,
+ *    Gathering dust (from the play log, MusicPlayLog.kt), Lossless (what the music addon is known to have), Starred, Your
+ *    playlists (made here, and your YouTube Music ones) and Mixed for you (YouTube Music's mixes for your account). Then
+ *    Artists A to Z (the artist list, its letter rail and typed letters) and All albums (sort and narrow a wall).
+ *  - Middle: the shelf's page of covers, or the artist's albums. OK on an album opens its page; on a playlist or mix it plays.
+ *  - Right: what focus rests on, with Play, Shuffle or Add to queue, and Open, Go to artist or Save to your playlists.
  *
  * Everything fits one screen: pages turn instead of scrolling (Down past the last row, Up past the first), and nothing moves
- * or resizes as focus moves or answers arrive. OK on a cover opens its album page; Left from the first column goes back to the
- * artist that is open. Only the artist list scrolls, inside its panel.
+ * or resizes as focus moves or answers arrive. Only the artist list scrolls, inside its panel.
  */
 
 private val PANEL_GAP = 24.dp
@@ -122,99 +124,201 @@ internal fun ShelfBrowser(
     onAlbumClick: (browseId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var mode by rememberSaveable { mutableStateOf(ShelfMode.ByArtist) }
+    var section by rememberSaveable { mutableStateOf<ShelfSection?>(null) }
     var artistFilter by rememberSaveable { mutableStateOf(ShelfArtistFilter.All) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var sort by rememberSaveable { mutableStateOf(ShelfAlbumSort.Year) }
     var show by remember { mutableStateOf<ShelfAlbumShow>(ShelfAlbumShow.All) }
     var focusedKey by remember { mutableStateOf<String?>(null) }
 
+    val scope = rememberCoroutineScope()
+    val catalog = remember { defaultMusicCatalog() }
+    val actions = remember(scope) { ShelfActions(catalog, scope) }
     val now = remember { LibraryClock.nowEpochMs() }
+    val daySeed = remember(now) { (now / (24L * 60 * 60 * 1000)).toInt() }
+
+    // What the smart shelves read: the play log, the account's YouTube Music shelves, playlists made here, and what the music
+    // addon is known to have (its kept answers only; nothing is asked from here).
+    val plays by MusicPlayLog.entries.collectAsState()
+    val account by MusicAccountShelves.state.collectAsState()
+    val localPlaylists by MusicPlaylistRepository.playlists.collectAsState()
+    LaunchedEffect(Unit) { MusicAccountShelves.refresh(catalog) }
+    var losslessKeys by remember { mutableStateOf(emptySet<String>()) }
+    val everyAlbum = remember(artists, filterQuery) { shelfAllAlbums(artists, filterQuery) }
+    LaunchedEffect(everyAlbum) {
+        losslessKeys = everyAlbum.mapNotNull { a ->
+            val key = com.nuvio.app.features.music.nebula.addonCacheKey(a.artist.id, a.release.key)
+            key.takeIf { runCatching { com.nuvio.app.features.music.nebula.NebulaMusicSource.cachedAvailability(it)?.has }.getOrNull() == true }
+        }.toSet()
+    }
+
+    val lastPlayed = remember(plays) { lastPlayedByAlbum(plays) }
+    val playCounts = remember(plays) { playsByAlbum(plays) }
+    val libraryById = remember(everyAlbum) { everyAlbum.filter { it.release.ytBrowseId != null }.associateBy { it.release.ytBrowseId!! } }
+    val shelves: Map<ShelfSection, List<ShelfItem>> = remember(everyAlbum, plays, account, localPlaylists, losslessKeys, daySeed) {
+        fun albums(list: List<ShelfAlbum>) = list.map { ShelfItem.Album(it) }
+        mapOf(
+            ShelfSection.New to albums(shelfNew(everyAlbum, now)),
+            ShelfSection.Recent to recentPlays(plays).map { p ->
+                when (p) {
+                    is RecentPlay.Album -> libraryById[p.browseId]?.let { ShelfItem.Album(it) } ?: ShelfItem.PlayedAlbum(p)
+                    is RecentPlay.Queue -> ShelfItem.Played(p)
+                }
+            },
+            ShelfSection.MostPlayed to albums(shelfMostPlayed(everyAlbum, playCounts)),
+            ShelfSection.Dust to albums(shelfDust(everyAlbum, lastPlayed, now, daySeed)),
+            ShelfSection.Lossless to albums(shelfLossless(everyAlbum, losslessKeys)),
+            ShelfSection.Starred to albums(shelfStarred(everyAlbum)),
+            ShelfSection.Playlists to localPlaylists.map { ShelfItem.Local(it) } + account.playlists.map { ShelfItem.Playlist(it) },
+            ShelfSection.Mixes to shelfMixes(account.home).map { ShelfItem.Playlist(it) },
+        )
+    }
+    // The shelf that opens first: what is new, else what was played, else the artists.
+    val current = section ?: when {
+        shelves[ShelfSection.New].orEmpty().isNotEmpty() -> ShelfSection.New
+        shelves[ShelfSection.Recent].orEmpty().isNotEmpty() -> ShelfSection.Recent
+        else -> ShelfSection.Artists
+    }
+
     val list = remember(artists, artistFilter, filterQuery) { shelfArtists(artists, artistFilter, filterQuery, now) }
     val selected = list.firstOrNull { it.id == selectedId } ?: list.firstOrNull()
-    val allAlbums = remember(artists, filterQuery, mode) { if (mode == ShelfMode.AllAlbums) shelfAllAlbums(artists, filterQuery) else emptyList() }
-    val showChoices = remember(allAlbums) { shelfShowChoices(allAlbums) }
+    val showChoices = remember(everyAlbum) { shelfShowChoices(everyAlbum) }
     // A decade the collection no longer has (an artist removed) falls back to everything.
     val shown = if (show in showChoices) show else ShelfAlbumShow.All
-    val wall = remember(allAlbums, sort, shown) { shelfWall(allAlbums, sort, shown) }
+    val wall = remember(everyAlbum, sort, shown, current) { if (current == ShelfSection.AllAlbums) shelfWall(everyAlbum, sort, shown) else emptyList() }
 
-    // The album the right panel shows: the one focus (or the pointer) last rested on, while it is still in view.
+    // What the right panel shows: the item focus (or the pointer) last rested on, while it is still in view.
     val artistAlbums = remember(selected) { selected?.let(::shelfAlbumsOf).orEmpty() }
-    val inView = if (mode == ShelfMode.ByArtist) artistAlbums else wall
-    val focusedAlbum = inView.firstOrNull { it.key == focusedKey } ?: inView.firstOrNull()
+    val inView: List<ShelfItem> = when (current) {
+        ShelfSection.Artists -> artistAlbums.map { ShelfItem.Album(it) }
+        ShelfSection.AllAlbums -> wall.map { ShelfItem.Album(it) }
+        else -> shelves[current].orEmpty()
+    }
+    val focusedItem = inView.firstOrNull { it.key == focusedKey } ?: inView.firstOrNull()
 
     // The artist rows' focus, so Left from the covers lands on the artist that is open (not the nearest row).
     val artistFocus = remember { HashMap<String, FocusRequester>() }
     fun artistRequester(id: String) = artistFocus.getOrPut(id) { FocusRequester() }
+    fun choose(next: ShelfSection) {
+        if (next != current) { section = next; focusedKey = null }
+    }
 
     BoxWithConstraints(modifier.fillMaxSize().padding(start = 48.dp, end = 48.dp, top = 8.dp, bottom = 24.dp)) {
         val side = (maxWidth * 0.24f).coerceIn(SIDE_MIN, SIDE_MAX)
         val showRight = maxWidth >= 1100.dp
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(PANEL_GAP)) {
             ShelfPanel(Modifier.width(side)) {
-                ModeSwitch(mode) { mode = it; focusedKey = null }
-                Spacer(Modifier.height(18.dp))
-                if (mode == ShelfMode.ByArtist) {
-                    ArtistList(
-                        list = list,
-                        pending = pending,
-                        filter = artistFilter,
-                        onFilter = { artistFilter = it },
-                        selectedId = selected?.id,
-                        requester = ::artistRequester,
-                        onSelect = { id -> if (id != selectedId) { selectedId = id; focusedKey = null } },
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    WallOptions(
-                        sort = sort,
-                        onSort = { sort = it },
-                        show = shown,
-                        choices = showChoices,
-                        onShow = { show = it },
-                        count = wall.size,
+                when (current) {
+                    ShelfSection.Artists -> {
+                        BackToShelves { section = ShelfSection.New.takeIf { shelves[it].orEmpty().isNotEmpty() } ?: ShelfSection.Recent }
+                        Spacer(Modifier.height(14.dp))
+                        ArtistList(
+                            list = list,
+                            pending = pending,
+                            filter = artistFilter,
+                            onFilter = { artistFilter = it },
+                            selectedId = selected?.id,
+                            requester = ::artistRequester,
+                            onSelect = { id -> if (id != selectedId) { selectedId = id; focusedKey = null } },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    ShelfSection.AllAlbums -> {
+                        BackToShelves { section = ShelfSection.New.takeIf { shelves[it].orEmpty().isNotEmpty() } ?: ShelfSection.Recent }
+                        Spacer(Modifier.height(14.dp))
+                        WallOptions(
+                            sort = sort,
+                            onSort = { sort = it },
+                            show = shown,
+                            choices = showChoices,
+                            onShow = { show = it },
+                            count = wall.size,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    else -> ShelfList(
+                        current = current,
+                        counts = shelves.mapValues { it.value.size },
+                        signedIn = account.signedIn,
+                        onChoose = ::choose,
                         modifier = Modifier.weight(1f),
                     )
                 }
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (mode == ShelfMode.ByArtist) {
-                    if (selected == null) {
+                when (current) {
+                    ShelfSection.Artists -> if (selected == null) {
                         EmptyPanel("No artists match.", Modifier.fillMaxSize())
                     } else {
                         ArtistAlbumsPanel(
                             artist = selected,
                             albums = artistAlbums,
-                            focusedKey = focusedAlbum?.key,
-                            onFocusAlbum = { focusedKey = it.key },
+                            focusedKey = (focusedItem as? ShelfItem.Album)?.album?.key,
+                            onFocusAlbum = { focusedKey = ShelfItem.Album(it).key },
                             onBackToArtist = { runCatching { artistRequester(selected.id).requestFocus() } },
                             onArtistClick = onArtistClick,
                             onAlbumClick = onAlbumClick,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
-                } else {
-                    WallPanel(
+                    ShelfSection.AllAlbums -> WallPanel(
                         title = shelfWallTitle(shown),
                         albums = wall,
-                        focusedKey = focusedAlbum?.key,
-                        onFocusAlbum = { focusedKey = it.key },
+                        focusedKey = (focusedItem as? ShelfItem.Album)?.album?.key,
+                        onFocusAlbum = { focusedKey = ShelfItem.Album(it).key },
                         onAlbumClick = onAlbumClick,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    else -> ItemsPanel(
+                        section = current,
+                        items = shelves[current].orEmpty(),
+                        empty = emptyShelfText(current, account),
+                        focusedKey = focusedItem?.key,
+                        onFocusItem = { focusedKey = it.key },
+                        onOpen = { item ->
+                            when (item) {
+                                is ShelfItem.Album -> item.album.release.ytBrowseId?.let(onAlbumClick)
+                                is ShelfItem.PlayedAlbum -> onAlbumClick(item.play.browseId)
+                                else -> actions.play(item)
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
             if (showRight) {
-                AlbumPanel(
-                    album = focusedAlbum,
-                    byArtist = mode == ShelfMode.ByArtist,
-                    onAlbumClick = onAlbumClick,
-                    onArtistClick = onArtistClick,
-                    modifier = Modifier.width(side),
-                )
+                when (val item = focusedItem) {
+                    is ShelfItem.Album -> AlbumPanel(
+                        album = item.album,
+                        byArtist = current == ShelfSection.Artists,
+                        onAlbumClick = onAlbumClick,
+                        onArtistClick = onArtistClick,
+                        modifier = Modifier.width(side),
+                    )
+                    null -> AlbumPanel(album = null, byArtist = true, onAlbumClick = onAlbumClick, onArtistClick = onArtistClick, modifier = Modifier.width(side))
+                    else -> ItemPanel(item, actions, onAlbumClick, onArtistClick, Modifier.width(side))
+                }
             }
         }
     }
+}
+
+/** What an empty shelf says. */
+private fun emptyShelfText(section: ShelfSection, account: MusicAccountShelves.State): String = when (section) {
+    ShelfSection.New -> "Nothing new from your artists in the last six months."
+    ShelfSection.Recent -> "What you play shows here."
+    ShelfSection.MostPlayed -> "The albums you play most show here once you have played them a few times."
+    ShelfSection.Dust -> "Nothing gathering dust yet."
+    ShelfSection.Lossless -> "No albums known on your music addon yet. Open an artist to have their albums checked."
+    ShelfSection.Starred -> "Star an album or an artist to see them here."
+    ShelfSection.Playlists -> if (account.signedIn) "No playlists yet." else "No playlists yet. Sign in under Settings > YouTube account to see your YouTube Music playlists too."
+    ShelfSection.Mixes -> when {
+        !account.signedIn -> "Sign in under Settings > YouTube account to see the mixes YouTube Music makes for you."
+        account.loading -> "Asking YouTube Music…"
+        account.failed -> "YouTube Music didn't answer. Try again later."
+        else -> "YouTube Music has no mixes for you yet."
+    }
+    ShelfSection.Artists, ShelfSection.AllAlbums -> ""
 }
 
 // region panels
@@ -230,33 +334,6 @@ private fun EmptyPanel(text: String, modifier: Modifier) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(text, fontSize = 20.sp, color = MaterialTheme.nuvio.colors.textMuted)
         }
-    }
-}
-
-/** By artist / All albums, as one two-part switch. */
-@Composable
-private fun ModeSwitch(mode: ShelfMode, onMode: (ShelfMode) -> Unit) {
-    val shape = RoundedCornerShape(28.dp)
-    Row(
-        Modifier.fillMaxWidth().height(58.dp).clip(shape).background(Color.Black.copy(alpha = 0.35f))
-            .border(1.dp, Color.White.copy(alpha = 0.09f), shape).padding(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        SwitchHalf("By artist", mode == ShelfMode.ByArtist, Modifier.weight(1f)) { onMode(ShelfMode.ByArtist) }
-        SwitchHalf("All albums", mode == ShelfMode.AllAlbums, Modifier.weight(1f)) { onMode(ShelfMode.AllAlbums) }
-    }
-}
-
-@Composable
-private fun SwitchHalf(label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(24.dp)
-    Box(
-        modifier.fillMaxHeight().clip(shape).background(if (on) Color.White.copy(alpha = 0.14f) else Color.Transparent)
-            .musicKeyFocusRing(shape).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, fontSize = 19.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = if (on) colors.textPrimary else colors.textSecondary, maxLines = 1)
     }
 }
 
@@ -818,5 +895,288 @@ private fun ShelfButton(
         Text(label, fontSize = 18.sp, fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Medium, color = tint, maxLines = 1)
     }
 }
+
+// region smart shelves (fork:shelf)
+
+/** The row that leads back from Artists A to Z or All albums to the list of shelves. */
+@Composable
+private fun BackToShelves(onBack: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        Modifier.fillMaxWidth().height(52.dp).clip(shape).musicKeyFocusRing(shape).clickable(onClick = onBack).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("‹", fontSize = 26.sp, color = colors.accent)
+        Text("All shelves", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+    }
+}
+
+/**
+ * The shelves, one row each with how many things it holds; resting on one (focus or pointer) opens it in the middle, as the
+ * artist list does. Artists A to Z and All albums sit at the bottom, under a line.
+ */
+@Composable
+private fun ShelfList(
+    current: ShelfSection,
+    counts: Map<ShelfSection, Int>,
+    signedIn: Boolean,
+    onChoose: (ShelfSection) -> Unit,
+    modifier: Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        SectionLabel("SHELVES")
+        Spacer(Modifier.height(8.dp))
+        ShelfSection.entries.forEach { s ->
+            if (s == ShelfSection.Artists) {
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.10f)))
+                Spacer(Modifier.height(8.dp))
+            }
+            val on = s == current
+            val source = remember { MutableInteractionSource() }
+            val focused by source.collectIsKeyboardFocusedAsState()
+            val hovered by source.collectIsHoveredAsState()
+            val shape = RoundedCornerShape(14.dp)
+            val count = counts[s]
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .onFocusChanged { if (it.hasFocus && s != ShelfSection.Artists && s != ShelfSection.AllAlbums) onChoose(s) }
+                    .clip(shape)
+                    .background(if (on) Color.White.copy(alpha = 0.12f) else if (hovered) MusicGlassRaised else Color.Transparent)
+                    .border(if (focused) 2.dp else 0.dp, if (focused) colors.borderFocus else Color.Transparent, shape)
+                    .hoverable(source)
+                    .clickable(interactionSource = source, indication = null) { onChoose(s) }
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (on) colors.accent else Color.Transparent))
+                Spacer(Modifier.width(10.dp))
+                Text(s.label, fontSize = 19.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                val trailing = when {
+                    s == ShelfSection.Mixes && !signedIn -> "Sign in"
+                    count != null && count > 0 -> count.toString()
+                    s == ShelfSection.Artists || s == ShelfSection.AllAlbums -> "›"
+                    else -> null
+                }
+                trailing?.let { Text(it, fontSize = 16.sp, color = colors.textMuted, maxLines = 1) }
+            }
+        }
+    }
+}
+
+/** The middle panel for a smart shelf: its name and line, and a page of fifteen covers. */
+@Composable
+private fun ItemsPanel(
+    section: ShelfSection,
+    items: List<ShelfItem>,
+    empty: String,
+    focusedKey: String?,
+    onFocusItem: (ShelfItem) -> Unit,
+    onOpen: (ShelfItem) -> Unit,
+    modifier: Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    LensPanel(modifier) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Text(section.label, fontSize = 40.sp, fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(section.blurb, fontSize = 17.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+            }
+            if (items.isNotEmpty()) Text("${items.size}", fontSize = 19.sp, color = colors.textSecondary)
+        }
+        Spacer(Modifier.height(20.dp))
+        if (items.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(empty, fontSize = 19.sp, color = colors.textMuted)
+            }
+        } else {
+            ItemPages(items, focusedKey, section, onFocusItem, onOpen, Modifier.weight(1f).fillMaxWidth())
+        }
+    }
+}
+
+/** A fixed grid of fifteen shelf items, turned a page at a time as the album grids are. OK or a click opens (an album) or plays (a list). */
+@Composable
+private fun ItemPages(
+    items: List<ShelfItem>,
+    focusedKey: String?,
+    resetKey: Any,
+    onFocusItem: (ShelfItem) -> Unit,
+    onOpen: (ShelfItem) -> Unit,
+    modifier: Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val columns = SHELF_WALL_COLUMNS
+    val perPage = SHELF_WALL_PAGE
+    val rows = perPage / columns
+    val pages = shelfPageCount(items.size, perPage)
+    var turnedTo by remember(resetKey, items.size) { mutableIntStateOf(0) }
+    val page = turnedTo.coerceAtMost(pages - 1)
+    val slots = remember(resetKey) { List(perPage) { FocusRequester() } }
+    var pendingSlot by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(page, pendingSlot) {
+        val slot = pendingSlot ?: return@LaunchedEffect
+        withFrameNanos { }
+        runCatching { slots[slot].requestFocus() }
+        pendingSlot = null
+    }
+    val onPage = items.shelfPage(page, perPage)
+    fun turn(to: Int, slot: Int) {
+        val count = items.shelfPage(to, perPage).size
+        turnedTo = to
+        pendingSlot = slot.coerceAtMost(count - 1).coerceAtLeast(0)
+    }
+    Column(modifier) {
+        Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            for (r in 0 until rows) {
+                Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    for (c in 0 until columns) {
+                        val slot = r * columns + c
+                        val item = onPage.getOrNull(slot)
+                        Box(Modifier.weight(1f).fillMaxHeight()) {
+                            if (item != null) {
+                                ItemCell(
+                                    item = item,
+                                    requester = slots[slot],
+                                    onFocus = { onFocusItem(item) },
+                                    onOpen = { onOpen(item) },
+                                    onKey = { key ->
+                                        when {
+                                            key == Key.DirectionDown && (r == rows - 1 || slot + columns >= onPage.size) && page < pages - 1 -> { turn(page + 1, c); true }
+                                            key == Key.DirectionDown && slot + columns >= onPage.size -> true
+                                            key == Key.DirectionUp && r == 0 && page > 0 -> { turn(page - 1, (rows - 1) * columns + c); true }
+                                            key == Key.DirectionRight && slot == onPage.size - 1 && c < columns - 1 -> true
+                                            else -> false
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth().height(22.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            if (pages > 1) {
+                for (p in 0 until minOf(pages, 12)) {
+                    Box(Modifier.padding(horizontal = 4.dp).height(8.dp).width(if (p == page) 28.dp else 8.dp).clip(CircleShape).background(if (p == page) colors.accent else Color.White.copy(alpha = 0.3f)))
+                }
+                Text("Page ${page + 1} of $pages", fontSize = 15.sp, color = colors.textMuted, modifier = Modifier.padding(start = 10.dp))
+            }
+        }
+    }
+}
+
+/** A shelf item's cover, title and line, for the grid. */
+private fun itemLines(item: ShelfItem): Triple<String, String, String?> = when (item) {
+    is ShelfItem.Album -> Triple(item.album.release.title, listOfNotNull(item.album.artist.name, item.album.release.year ?: item.album.release.releaseDate?.take(4)).joinToString(" · "), null)
+    is ShelfItem.PlayedAlbum -> Triple(item.play.title, item.play.artist.orEmpty(), item.play.coverUrl)
+    is ShelfItem.Playlist -> Triple(item.list.title, item.list.subtitle ?: if (item.list.radio) "Mix" else "Playlist", item.list.thumbnailUrl)
+    is ShelfItem.Played -> Triple(item.play.title, item.play.kind ?: "Played", item.play.coverUrl)
+    is ShelfItem.Local -> Triple(item.playlist.name, "${item.playlist.tracks.size} songs · made here", item.playlist.covers.firstOrNull())
+}
+
+@Composable
+private fun ItemCell(item: ShelfItem, requester: FocusRequester, onFocus: () -> Unit, onOpen: () -> Unit, onKey: (Key) -> Boolean) {
+    val colors = MaterialTheme.nuvio.colors
+    val source = remember { MutableInteractionSource() }
+    val keyFocused by source.collectIsKeyboardFocusedAsState()
+    val hovered by source.collectIsHoveredAsState()
+    LaunchedEffect(hovered) { if (hovered) onFocus() }
+    val (title, line, cover) = itemLines(item)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val coverSize: Dp = minOf(maxWidth, maxHeight - 46.dp).coerceAtLeast(40.dp)
+        Column(Modifier.width(coverSize)) {
+            val shape = RoundedCornerShape(12.dp)
+            Box(
+                Modifier
+                    .size(coverSize)
+                    .focusRequester(requester)
+                    .onFocusChanged { if (it.isFocused) onFocus() }
+                    .onKeyEvent { event -> event.type == KeyEventType.KeyDown && onKey(event.navigationKey()) }
+                    .border(if (keyFocused) 3.dp else 0.dp, if (keyFocused) colors.borderFocus else Color.Transparent, shape)
+                    .hoverable(source)
+                    .clickable(interactionSource = source, indication = null, onClick = onOpen),
+            ) {
+                if (item is ShelfItem.Album) {
+                    ReleaseCover(item.album.release, Modifier.fillMaxSize().padding(if (keyFocused) 3.dp else 0.dp))
+                } else {
+                    MusicCover(cover, title, size = coverSize, modifier = Modifier.padding(if (keyFocused) 3.dp else 0.dp))
+                }
+                val badge = when (item) {
+                    is ShelfItem.Playlist -> if (item.list.radio) "Mix" else null
+                    is ShelfItem.Played -> if (item.play.playlistId == null || com.nuvio.app.features.music.isRadioPlaylistId(item.play.playlistId!!)) "Radio" else null
+                    else -> null
+                }
+                badge?.let {
+                    Text(
+                        it,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+            }
+            Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+            Text(line, fontSize = 14.sp, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** The right panel for a playlist, mix, played radio or album from the play log. */
+@Composable
+private fun ItemPanel(item: ShelfItem, actions: ShelfActions, onAlbumClick: (String) -> Unit, onArtistClick: (String) -> Unit, modifier: Modifier) {
+    val colors = MaterialTheme.nuvio.colors
+    val (title, line, cover) = itemLines(item)
+    LensPanel(modifier) {
+        SectionLabel(
+            when (item) {
+                is ShelfItem.PlayedAlbum -> "ALBUM"
+                is ShelfItem.Local -> "YOUR PLAYLIST"
+                is ShelfItem.Playlist -> if (item.list.radio) "MIX" else "PLAYLIST"
+                is ShelfItem.Played -> "PLAYED LATELY"
+                is ShelfItem.Album -> "ALBUM"
+            },
+        )
+        Spacer(Modifier.height(14.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val size = minOf(maxWidth, maxHeight * 0.62f)
+            Column {
+                MusicCover(cover, title, size = size)
+                Text(title, fontSize = 32.sp, fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 16.dp))
+                Text(line, fontSize = 18.sp, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+        ShelfButton(if (item is ShelfItem.PlayedAlbum) "Play album" else "Play", Icons.Rounded.PlayArrow, primary = true, modifier = Modifier.fillMaxWidth()) { actions.play(item) }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (item is ShelfItem.PlayedAlbum) {
+                ShelfButton("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic, modifier = Modifier.weight(1f)) { actions.queue(item) }
+                ShelfButton("Open album", Icons.AutoMirrored.Rounded.OpenInNew, modifier = Modifier.weight(1f)) { onAlbumClick(item.play.browseId) }
+            } else {
+                ShelfButton("Shuffle", Icons.Rounded.Shuffle, modifier = Modifier.weight(1f)) { actions.play(item, shuffled = true) }
+                ShelfButton("Add to queue", Icons.AutoMirrored.Rounded.QueueMusic, modifier = Modifier.weight(1f)) { actions.queue(item) }
+            }
+        }
+        val secondary: Pair<String, () -> Unit>? = when (item) {
+            is ShelfItem.Playlist -> "Save to your playlists" to { actions.save(item) }
+            is ShelfItem.PlayedAlbum -> item.play.artistId?.let { id -> "Go to ${item.play.artist ?: "the artist"}" to { onArtistClick(id) } }
+            else -> null
+        }
+        secondary?.let { (label, act) ->
+            Spacer(Modifier.height(12.dp))
+            ShelfButton(label, Icons.Rounded.LibraryMusic, modifier = Modifier.fillMaxWidth(), onClick = act)
+        }
+    }
+}
+
+// endregion
 
 // endregion

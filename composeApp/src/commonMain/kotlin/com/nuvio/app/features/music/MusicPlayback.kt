@@ -96,7 +96,7 @@ object MusicPlayback {
             saveVolume = com.nuvio.app.features.music.library.MusicLibraryStorage::savePlayerVolume,
             // fork:nebula - fetch on Play: an album that started from YouTube Music and that the addon has is asked for quietly.
             onAlbumStarted = { album -> com.nuvio.app.features.music.nebula.NebulaFetchOnPlay.start(album, player) },
-        )
+        ).also { com.nuvio.app.features.music.library.MusicPlayLog.watch(it) } // fork:shelf - the play log
     }
 }
 

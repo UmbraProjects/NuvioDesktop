@@ -42,6 +42,8 @@ internal data class ShelfAlbum(
     val release: LibraryRelease,
     val rank: Int?,
     val pinned: Boolean,
+    /** One of the artist's top albums (ranked, starred, or their latest five when nothing is ranked). */
+    val top: Boolean = false,
 ) {
     val key: String get() = "${artist.id}|${release.key}"
 }
@@ -91,7 +93,7 @@ internal fun shelfJumpTo(letterIndex: Map<Char, Int>, letter: Char): Int? {
 
 /** [artist]'s playable albums as the Shelf shows them: the top five first, then the rest oldest to newest. */
 internal fun shelfAlbumsOf(artist: LibraryArtist): List<ShelfAlbum> =
-    buildShelfRow(artist).tiles.map { ShelfAlbum(artist, it.release, it.rank, it.pinned) }
+    buildShelfRow(artist).tiles.map { ShelfAlbum(artist, it.release, it.rank, it.pinned, top = it.featured) }
 
 /** A decade on the album wall's Show list ("1980s"), from a release's year. Null without a year. */
 internal fun decadeOf(release: LibraryRelease): Int? {
@@ -168,3 +170,110 @@ internal fun shelfArtistLine(total: Int, playable: Int, lossless: Int): String =
     if (playable != total) append(" · $playable play here")
     if (lossless > 0) append(" · $lossless lossless on your addon")
 }
+
+// region smart shelves
+
+/**
+ * The shelves on the left of the Shelf, in order. The first ones are what only your library knows (new from your artists,
+ * what you play, what you have not played lately, what your addon has in lossless, what you starred, your playlists and
+ * YouTube Music's mixes for you); the last two browse everything (by artist, or all albums as a wall).
+ */
+internal enum class ShelfSection(val label: String, val blurb: String) {
+    New("New from your artists", "Released lately by artists in your library"),
+    Recent("Recently played", "Albums, playlists and radios you played lately"),
+    MostPlayed("Most played", "The albums you come back to"),
+    Dust("Gathering dust", "Albums you have not played in a while"),
+    Lossless("Lossless", "Albums your music addon has in lossless"),
+    Starred("Starred", "Albums you starred, and your starred artists' top albums"),
+    Playlists("Your playlists", "Playlists made here, and your YouTube Music playlists"),
+    Mixes("Mixed for you", "YouTube Music's mixes and playlists for your account"),
+    Artists("Artists A to Z", "Browse your library by artist"),
+    AllAlbums("All albums", "Every album, sorted and narrowed"),
+}
+
+/** How far back "new" reaches. */
+private const val NEW_DAYS = 180L
+
+/** An album not played for this long is gathering dust. */
+private const val DUST_DAYS = 90L
+private const val DUST_MAX = 30
+
+/** A full release date ("2026-10-03") as days since 1970, or null for anything less (a year, a month). */
+internal fun releaseDay(release: LibraryRelease): Long? {
+    val d = release.releaseDate ?: return null
+    val parts = d.split('-')
+    if (parts.size != 3) return null
+    val y = parts[0].toIntOrNull() ?: return null
+    val m = parts[1].toIntOrNull() ?: return null
+    val day = parts[2].toIntOrNull() ?: return null
+    return civilToDays(y, m, day)
+}
+
+/** Days since 1970-01-01 for a civil date (Howard Hinnant's days_from_civil). */
+internal fun civilToDays(year: Int, month: Int, day: Int): Long {
+    val y = (if (month <= 2) year - 1 else year).toLong()
+    val era = (if (y >= 0) y else y - 399) / 400
+    val yoe = y - era * 400
+    val mp = (month + 9) % 12
+    val doy = (153 * mp + 2) / 5 + day - 1
+    val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * 146097 + doe - 719468
+}
+
+/**
+ * New from your artists: their playable releases out in the last [NEW_DAYS] days (by full release date; a release with only
+ * a year counts when it is this year's), newest first.
+ */
+internal fun shelfNew(albums: List<ShelfAlbum>, nowEpochMs: Long): List<ShelfAlbum> {
+    val today = nowEpochMs / DAY_MS
+    val thisYear = yearOfDay(today)
+    return albums.mapNotNull { a ->
+        val day = releaseDay(a.release)
+        when {
+            day != null -> a.takeIf { today - day in 0..NEW_DAYS }?.let { it to day }
+            (a.release.year ?: a.release.releaseDate?.take(4))?.toIntOrNull() == thisYear -> a to (today - NEW_DAYS)
+            else -> null
+        }
+    }.sortedByDescending { it.second }.map { it.first }
+}
+
+/** The calendar year of [day] (days since 1970). */
+internal fun yearOfDay(day: Long): Int {
+    // Hinnant's civil_from_days, year only.
+    val z = day + 719468
+    val era = (if (z >= 0) z else z - 146096) / 146097
+    val doe = z - era * 146097
+    val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+    val mp = (5 * doy + 2) / 153
+    val month = if (mp < 10) mp + 3 else mp - 9
+    return (yoe + era * 400 + if (month <= 2) 1 else 0).toInt()
+}
+
+/** Most played: albums with at least two plays, most played first. */
+internal fun shelfMostPlayed(albums: List<ShelfAlbum>, plays: Map<String, Int>): List<ShelfAlbum> =
+    albums.mapNotNull { a -> a.release.ytBrowseId?.let { plays[it] }?.takeIf { it >= 2 }?.let { a to it } }
+        .sortedByDescending { it.second }.map { it.first }
+
+/**
+ * Gathering dust: albums last played more than [DUST_DAYS] days ago, the longest-forgotten first; then, to fill the shelf,
+ * top-five albums never played, in an order that changes each day ([daySeed]). At most [DUST_MAX].
+ */
+internal fun shelfDust(albums: List<ShelfAlbum>, lastPlayed: Map<String, Long>, nowEpochMs: Long, daySeed: Int): List<ShelfAlbum> {
+    val cutoff = nowEpochMs - DUST_DAYS * DAY_MS
+    val forgotten = albums.mapNotNull { a -> a.release.ytBrowseId?.let { lastPlayed[it] }?.takeIf { it < cutoff }?.let { a to it } }
+        .sortedBy { it.second }.map { it.first }
+    val never = albums.filter { a -> a.top && a.release.ytBrowseId?.let { it !in lastPlayed } == true }
+        .sortedBy { (it.key.hashCode() xor daySeed * 1_000_003) }
+    return (forgotten + never).distinctBy { it.key }.take(DUST_MAX)
+}
+
+/** Starred: albums you starred, then your starred artists' top albums. */
+internal fun shelfStarred(albums: List<ShelfAlbum>): List<ShelfAlbum> =
+    (albums.filter { it.pinned } + albums.filter { it.artist.favourite && it.top }).distinctBy { it.key }
+
+/** Lossless: the albums your music addon has, by "artistId|releaseKey". */
+internal fun shelfLossless(albums: List<ShelfAlbum>, losslessKeys: Set<String>): List<ShelfAlbum> =
+    albums.filter { "${it.artist.id}|${it.release.key}" in losslessKeys }
+
+// endregion

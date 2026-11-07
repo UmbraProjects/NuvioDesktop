@@ -58,4 +58,10 @@ internal actual object MusicLibraryStorage {
     actual fun savePlaylists(profileId: Int, payload: String) {
         store.putString("playlists_$profileId", payload)
     }
+
+    actual fun loadPlayLog(profileId: Int): String? = store.getString("play_log_$profileId")
+
+    actual fun savePlayLog(profileId: Int, payload: String) {
+        store.putString("play_log_$profileId", payload)
+    }
 }

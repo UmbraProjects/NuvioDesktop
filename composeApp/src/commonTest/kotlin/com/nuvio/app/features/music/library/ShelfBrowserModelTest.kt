@@ -124,4 +124,56 @@ class ShelfBrowserModelTest {
         assertEquals("11 releases · 9 play here · 4 lossless on your addon", shelfArtistLine(11, 9, 4))
         assertEquals("1 release", shelfArtistLine(1, 1, 0))
     }
+
+    // ---- smart shelves ----
+
+    private fun dated(key: String, date: String) =
+        LibraryRelease(key = key, title = key, kind = ReleaseKind.Album, year = date.take(4), releaseDate = date, ytBrowseId = "MPREb_$key")
+
+    @Test
+    fun civilDaysRoundTrip() {
+        assertEquals(0L, civilToDays(1970, 1, 1))
+        assertEquals(20_399L, civilToDays(2025, 11, 7))
+        assertEquals(2026, yearOfDay(civilToDays(2026, 11, 7)))
+        assertEquals(2025, yearOfDay(civilToDays(2025, 12, 31)))
+    }
+
+    @Test
+    fun newFromYourArtistsIsTheLastSixMonthsNewestFirst() {
+        val today = civilToDays(2026, 11, 7) * day
+        val a = artist("Prince", dated("fresh", "2026-10-30"), dated("summer", "2026-06-01"), dated("old", "2025-01-01"))
+        val new = shelfNew(shelfAlbumsOf(a), today)
+        assertEquals(listOf("fresh", "summer"), new.map { it.release.key })
+    }
+
+    @Test
+    fun mostPlayedNeedsTwoPlays() {
+        val a = artist("Prince", r("one"), r("two"), r("three"))
+        val plays = mapOf("MPREb_one" to 5, "MPREb_two" to 1, "MPREb_three" to 2)
+        assertEquals(listOf("one", "three"), shelfMostPlayed(shelfAlbumsOf(a), plays).map { it.release.key })
+    }
+
+    @Test
+    fun gatheringDustIsTheLongestForgottenFirst() {
+        val a = artist("Prince", r("lastYear"), r("lastWeek"), r("twoYears"))
+        val last = mapOf("MPREb_lastYear" to now - 365 * day, "MPREb_lastWeek" to now - 7 * day, "MPREb_twoYears" to now - 730 * day)
+        val dust = shelfDust(shelfAlbumsOf(a), last, now, daySeed = 1)
+        assertEquals(listOf("twoYears", "lastYear"), dust.map { it.release.key })
+    }
+
+    @Test
+    fun starredHasStarredAlbumsThenStarredArtistsTopAlbums() {
+        val starredAlbum = artist("A", r("pinned"), r("other"), pinned = listOf("pinned"))
+        val starredArtist = artist("B", r("hit"), favourite = true)
+        val shelf = shelfStarred(shelfAlbumsOf(starredAlbum) + shelfAlbumsOf(starredArtist))
+        assertEquals("pinned", shelf.first().release.key)
+        assertTrue(shelf.any { it.release.key == "hit" })
+        assertTrue(shelf.none { it.release.key == "other" && !it.artist.favourite && !it.pinned && it.rank == null })
+    }
+
+    @Test
+    fun losslessIsWhatTheAddonIsKnownToHave() {
+        val a = artist("Prince", r("x"), r("y"))
+        assertEquals(listOf("y"), shelfLossless(shelfAlbumsOf(a), setOf("prince|y")).map { it.release.key })
+    }
 }
