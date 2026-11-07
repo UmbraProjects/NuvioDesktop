@@ -4,6 +4,8 @@ package com.nuvio.app.features.music.library
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -170,10 +172,13 @@ internal fun ShelfBrowser(
             },
             ShelfSection.MostPlayed to albums(shelfMostPlayed(everyAlbum, playCounts)),
             ShelfSection.Dust to albums(shelfDust(everyAlbum, lastPlayed, now, daySeed)),
+            ShelfSection.Unplayed to albums(shelfUnplayed(everyAlbum, playCounts, daySeed)),
             ShelfSection.Lossless to albums(shelfLossless(everyAlbum, losslessKeys)),
             ShelfSection.Starred to albums(shelfStarred(everyAlbum)),
+            ShelfSection.Liked to shelfLiked(account.playlists).map { ShelfItem.Playlist(it) },
             ShelfSection.Playlists to localPlaylists.map { ShelfItem.Local(it) } + account.playlists.map { ShelfItem.Playlist(it) },
             ShelfSection.Mixes to shelfMixes(account.home).map { ShelfItem.Playlist(it) },
+            ShelfSection.ListenAgain to shelfListenAgain(account.home).map { ShelfItem.Playlist(it) },
         )
     }
     // The shelf that opens first: what is new, else what was played, else the artists.
@@ -312,8 +317,19 @@ private fun emptyShelfText(section: ShelfSection, account: MusicAccountShelves.S
     ShelfSection.Recent -> "What you play shows here."
     ShelfSection.MostPlayed -> "The albums you play most show here once you have played them a few times."
     ShelfSection.Dust -> "Nothing gathering dust yet."
+    ShelfSection.Unplayed -> "Every album in your library has been played here."
     ShelfSection.Lossless -> "No albums known on your music addon yet. Open an artist to have their albums checked."
     ShelfSection.Starred -> "Star an album or an artist to see them here."
+    ShelfSection.Liked -> when {
+        !account.signedIn -> "Sign in under Settings > YouTube account to play your Liked Music."
+        account.loading -> "Asking YouTube Music…"
+        else -> "YouTube Music did not list Liked Music among your playlists."
+    }
+    ShelfSection.ListenAgain -> when {
+        !account.signedIn -> "Sign in under Settings > YouTube account to see what YouTube Music suggests you listen to again."
+        account.loading -> "Asking YouTube Music…"
+        else -> "YouTube Music has no Listen again playlists for you right now."
+    }
     ShelfSection.Playlists -> if (account.signedIn) "No playlists yet." else "No playlists yet. Sign in under Settings > YouTube account to see your YouTube Music playlists too."
     ShelfSection.Mixes -> when {
         !account.signedIn -> "Sign in under Settings > YouTube account to see the mixes YouTube Music makes for you."
@@ -978,7 +994,7 @@ private fun ShelfList(
     modifier: Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SectionLabel("SHELVES")
         Spacer(Modifier.height(8.dp))
         ShelfSection.entries.forEach { s ->
@@ -1010,7 +1026,7 @@ private fun ShelfList(
                 Spacer(Modifier.width(10.dp))
                 Text(s.label, fontSize = 19.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 val trailing = when {
-                    s == ShelfSection.Mixes && !signedIn -> "Sign in"
+                    (s == ShelfSection.Mixes || s == ShelfSection.Liked || s == ShelfSection.ListenAgain) && !signedIn -> "Sign in"
                     count != null && count > 0 -> count.toString()
                     s == ShelfSection.Artists || s == ShelfSection.AllAlbums -> "›"
                     else -> null

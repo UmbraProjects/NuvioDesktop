@@ -183,10 +183,13 @@ internal enum class ShelfSection(val label: String, val blurb: String) {
     Recent("Recently played", "Albums, playlists and radios you played lately"),
     MostPlayed("Most played", "The albums you come back to"),
     Dust("Gathering dust", "Albums you have not played in a while"),
+    Unplayed("Unplayed", "Albums in your library you have never played here"),
     Lossless("Lossless", "Albums your music addon has in lossless"),
     Starred("Starred", "Albums you starred, and your starred artists' top albums"),
+    Liked("Liked Music", "Your YouTube Music likes, to play or shuffle"),
     Playlists("Your playlists", "Playlists made here, and your YouTube Music playlists"),
     Mixes("Mixed for you", "YouTube Music's mixes and playlists for your account"),
+    ListenAgain("Listen again", "What YouTube Music suggests you come back to"),
     Artists("Artists A to Z", "Browse your library by artist"),
     AllAlbums("All albums", "Every album, sorted and narrowed"),
 }
@@ -267,6 +270,16 @@ internal fun shelfDust(albums: List<ShelfAlbum>, lastPlayed: Map<String, Long>, 
         .sortedBy { (it.key.hashCode() xor daySeed * 1_000_003) }
     return (forgotten + never).distinctBy { it.key }.take(DUST_MAX)
 }
+
+/** How many never-played albums the Unplayed shelf keeps. */
+private const val UNPLAYED_MAX = 150
+
+/** Unplayed: albums in the library with no play in the log, in an order that changes each day ([daySeed]). */
+internal fun shelfUnplayed(albums: List<ShelfAlbum>, playCounts: Map<String, Int>, daySeed: Int): List<ShelfAlbum> =
+    albums.filter { a -> a.release.ytBrowseId?.let { it !in playCounts } == true }
+        .distinctBy { it.key }
+        .sortedBy { (it.key.hashCode() xor daySeed * 1_000_003) }
+        .take(UNPLAYED_MAX)
 
 /** Starred: albums you starred, then your starred artists' top albums. */
 internal fun shelfStarred(albums: List<ShelfAlbum>): List<ShelfAlbum> =

@@ -176,4 +176,25 @@ class ShelfBrowserModelTest {
         val a = artist("Prince", r("x"), r("y"))
         assertEquals(listOf("y"), shelfLossless(shelfAlbumsOf(a), setOf("prince|y")).map { it.release.key })
     }
+
+    @Test
+    fun unplayedIsWhatTheLogNeverSawAndDropsUnplayable() {
+        val a = artist("Prince", r("one"), r("two"), r("three"), r("gone", yt = null))
+        val unplayed = shelfUnplayed(shelfAlbumsOf(a), mapOf("MPREb_two" to 3), daySeed = 1)
+        assertEquals(setOf("one", "three"), unplayed.map { it.release.key }.toSet())
+    }
+
+    @Test
+    fun likedAndListenAgainComeFromTheAccount() {
+        val lists = listOf(
+            com.nuvio.app.features.music.MusicPlaylistSummary("PLx", "Mine", null, null),
+            com.nuvio.app.features.music.MusicPlaylistSummary("LM", "Liked Music", null, null),
+        )
+        assertEquals(listOf("LM"), shelfLiked(lists).map { it.playlistId })
+        val home = listOf(
+            com.nuvio.app.features.music.MusicHomeShelf("Mixed for you", listOf(lists[0])),
+            com.nuvio.app.features.music.MusicHomeShelf("Listen again", listOf(lists[1], lists[1])),
+        )
+        assertEquals(listOf("LM"), shelfListenAgain(home).map { it.playlistId })
+    }
 }

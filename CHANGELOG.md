@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Shelf: Liked Music, Unplayed And Listen Again** - three more shelves on the Shelf's left panel. **Liked Music** is your YouTube Music likes as one card to play or shuffle. **Unplayed** is the albums in your library that the play log has never seen, in an order that changes each day (up to 150). **Listen again** is the playlists on YouTube Music's own "Listen again" home shelf. Liked Music and Listen again need the sign-in under Settings > YouTube account; Listen again only shows what that shelf holds as playlists. With thirteen shelves the list scrolls inside its panel when the window is short. Not yet tried against a real account.
+
 - **Radio: Keep Going?** - a radio is read about 100 songs ahead; when the third song from the end starts, a box now asks "Keep (name) radio going?". Keep going reads another radio from the last song, leaves out what already played and queues it after; it asks again near its own end. No lets it end. Each radio is asked once, and the box floats over the screen without moving anything. Playlists and albums are never asked. Not yet tried on the HTPC.
 
 - **Play History: Import From YouTube Music, And Clear** - Settings > Music has a new Play history section. **Import from YouTube Music** adds the songs on your YouTube Music History (the latest three pages) to the play log that the Shelf's Recently played, Most played and Gathering dust are made from; YouTube Music only says "Today", "Yesterday", "This week" and the like, so each song is dated by its heading (four minutes apart to keep the order), and importing again adds nothing twice. It needs the sign-in under YouTube account. **Clear play history** (press twice) forgets every play for the profile. Not yet tried against a real History page.

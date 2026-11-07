@@ -104,6 +104,14 @@ internal object MusicAccountShelves {
 internal fun shelfMixes(home: List<MusicHomeShelf>): List<MusicPlaylistSummary> =
     (home.filter { it.isMixes } + home.filterNot { it.isMixes }).flatMap { it.playlists }.distinctBy { it.playlistId }
 
+/** Liked Music: the account's Liked Music playlist, when it is among its playlists. */
+internal fun shelfLiked(playlists: List<MusicPlaylistSummary>): List<MusicPlaylistSummary> =
+    playlists.filter { it.playlistId == "LM" }.take(1)
+
+/** Listen again: the playlists on YouTube Music's home shelves titled "Listen again" (or "Listen again to..."). */
+internal fun shelfListenAgain(home: List<MusicHomeShelf>): List<MusicPlaylistSummary> =
+    home.filter { it.title.contains("listen again", ignoreCase = true) }.flatMap { it.playlists }.distinctBy { it.playlistId }
+
 /** Plays, queues and saves shelf items; long work runs in the background and says when it fails. */
 internal class ShelfActions(private val catalog: MusicCatalog, private val scope: CoroutineScope) {
     private val player get() = MusicPlayback.player
