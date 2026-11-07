@@ -18,6 +18,9 @@ private const val FILTER_SONGS = "EgWKAQIIAWoMEA4QChADEAQQCRAF"
 /** Playlist pages read at most (100 tracks each). */
 private const val MAX_PLAYLIST_PAGES = 30
 
+/** fork:music-radio - pages of a radio read at most (each is about 25 tracks). */
+private const val MAX_RADIO_PAGES = 8
+
 private const val FOUND_TTL_MS = 30 * 60_000L
 
 /** Pages of one "more" grid read at most (100 releases each). */
@@ -189,6 +192,34 @@ object MusicMetadataClient {
             pages++
         }
         return MusicPlaylistPage(first.title, tracks.distinctBy { it.videoId }, null)
+    }
+
+    /** fork:music-radio - see [MusicCatalog.radio]. Not cached: a radio is made fresh each time. */
+    suspend fun radio(playlistId: String, videoId: String? = null, maxTracks: Int = 100): MusicPlaylistPage? {
+        val id = playlistId.trim().removePrefix("VL").ifEmpty { return null }
+        val base = buildMap<String, Any?> {
+            put("playlistId", id)
+            if (videoId != null) put("videoId", videoId)
+            // As music.youtube.com starts a radio: "wAEB" (no shuffle), audio first.
+            put("params", "wAEB")
+            put("isAudioOnly", true)
+        }
+        val first = TrailerPlaybackResolver.musicRequest("next", base)?.let { parseRadioPage(it) }
+            ?: return null.also { log.w { "radio $id: no readable queue" } }
+        val tracks = first.tracks.toMutableList()
+        var token = first.continuation
+        var pages = 1
+        while (token != null && tracks.size < maxTracks && pages < MAX_RADIO_PAGES) {
+            val page = TrailerPlaybackResolver.musicRequest("next", base + ("continuation" to token))
+                ?.let { parseRadioPage(it, firstNumber = tracks.size + 1) } ?: break
+            val fresh = page.tracks.filter { t -> tracks.none { it.videoId == t.videoId } }
+            if (fresh.isEmpty()) break
+            tracks += fresh
+            token = page.continuation?.takeIf { it != token }
+            pages++
+        }
+        log.i { "radio $id: ${tracks.size} tracks in $pages page(s)" }
+        return MusicPlaylistPage(first.title, tracks.take(maxTracks), token)
     }
 
     suspend fun album(browseId: String): MusicAlbum? {

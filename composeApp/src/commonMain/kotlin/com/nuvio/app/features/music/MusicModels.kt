@@ -77,7 +77,29 @@ data class MusicArtist(
     val albums: List<MusicAlbumSummary>,
     /** The page's "Songs" shelf: YouTube Music's own most-played list for the artist, most popular first. */
     val topSongs: List<MusicTopSong> = emptyList(),
+    /** fork:music-radio - the artist's radio (`RDEM...`/`RDAO...`) when the page offers one. */
+    val radioPlaylistId: String? = null,
 )
+
+/**
+ * fork:music-radio - a playlist or a station found by search (or, later, on YouTube Music's home): its id (`PL...`,
+ * `RDCLAK...` and the other fixed lists, or a radio's `RD...`), name, the line under it and its cover. [radio] lists are
+ * made as they play (YouTube Music's "up next"), so they are read with the watch-next call rather than as a page.
+ */
+data class MusicPlaylistSummary(
+    val playlistId: String,
+    val title: String,
+    val subtitle: String?,
+    val thumbnailUrl: String?,
+) {
+    val radio: Boolean get() = isRadioPlaylistId(playlistId)
+}
+
+/** True for a list YouTube Music makes as it plays (a radio or mix, `RD...`), false for a fixed one (`PL...`, `OLAK5uy...`, `RDCLAK...`). */
+fun isRadioPlaylistId(id: String): Boolean {
+    val bare = id.removePrefix("VL")
+    return bare.startsWith("RD") && !bare.startsWith("RDCLAK")
+}
 
 /** One entry of an artist's most-played list. [albumBrowseId] is the album it is listed under, when the page names one. */
 data class MusicTopSong(

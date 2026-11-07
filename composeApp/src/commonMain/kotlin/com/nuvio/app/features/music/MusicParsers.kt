@@ -151,6 +151,8 @@ data class MusicTopResult(
     val albumBrowseId: String?,
     val thumbnailUrl: String?,
     val videoId: String? = null,
+    /** fork:music-radio - a playlist or station top match: its id without the `VL` page prefix. */
+    val playlistId: String? = null,
 )
 
 internal fun parseTopResult(body: String): MusicTopResult? {
@@ -165,13 +167,19 @@ internal fun parseTopResult(body: String): MusicTopResult? {
         titleBrowseId != null && titleBrowseId.startsWith(ARTIST_PREFIX) -> listOf(MusicArtistRef(title, titleBrowseId))
         else -> artistsFrom(subtitleRuns)
     }
+    val videoId = titleRuns.firstNotNullOfOrNull { it.at("navigationEndpoint", "watchEndpoint", "videoId").str() }
+    // fork:music-radio - a playlist's page link (`VL...`), or, for a card that links no artist, album or song, the list its
+    // Play button starts (a station). An artist card's Shuffle and Radio buttons also start lists, so those are not taken.
+    val playlistId = titleBrowseId?.takeIf { it.startsWith("VL") }?.removePrefix("VL")
+        ?: if (titleBrowseId == null && videoId == null) findAll(card, "watchPlaylistEndpoint").firstNotNullOfOrNull { it["playlistId"].str() } else null
     return MusicTopResult(
         title = title,
         kind = kind,
         artists = artists,
         albumBrowseId = titleBrowseId?.takeIf { it.startsWith(ALBUM_PREFIX) },
         thumbnailUrl = thumbnailOf(card["thumbnail"]),
-        videoId = titleRuns.firstNotNullOfOrNull { it.at("navigationEndpoint", "watchEndpoint", "videoId").str() },
+        videoId = videoId,
+        playlistId = playlistId,
     )
 }
 
@@ -358,7 +366,10 @@ internal fun parseArtist(body: String, browseId: String): MusicArtist? {
     val self = MusicArtistRef(name, browseId)
     val albums = findAll(root, "musicTwoRowItemRenderer").mapNotNull { it.toTwoRowAlbum(self, fallbackKind = null) }
         .distinctBy { it.browseId }
-    return MusicArtist(browseId, name, thumbnailOf(header?.get("thumbnail")), albums, topSongsOf(root))
+    // fork:music-radio - the header's Radio button (or Shuffle's list, which is the same kind of mix).
+    val radio = findAll(header ?: root, "watchPlaylistEndpoint").mapNotNull { it["playlistId"].str() }
+        .firstOrNull { it.startsWith("RDEM") || it.startsWith("RDAO") || it.startsWith("RDAMPL") }
+    return MusicArtist(browseId, name, thumbnailOf(header?.get("thumbnail")), albums, topSongsOf(root), radioPlaylistId = radio)
 }
 
 /**
@@ -397,6 +408,41 @@ private fun JsonObject.toWatchTrack(): MusicWatchTrack? {
         videoType = type,
         counterpart = counterpart,
     )
+}
+
+/**
+ * fork:music-radio - one page of a radio or mix (a watch-next response, or its continuation): the queue's tracks with their
+ * artists, album and cover from each row's byline ("Artist • Album • Year"; a video reads "Channel • views • likes"), and the
+ * token for the next page. Null when nothing parses.
+ */
+internal fun parseRadioPage(body: String, firstNumber: Int = 1): MusicPlaylistPage? {
+    val root = parseRoot(body) ?: return null
+    val tracks = findAll(root, "playlistPanelVideoRenderer").mapIndexedNotNull { i, item ->
+        val videoId = item["videoId"].str()?.takeIf { it.length == 11 } ?: return@mapIndexedNotNull null
+        val title = textOf(item["title"]).trim().ifEmpty { return@mapIndexedNotNull null }
+        val runs = runsOf(item["longBylineText"]).ifEmpty { runsOf(item["shortBylineText"]) }
+        val artists = artistsFrom(runs).ifEmpty {
+            segments(runs).firstOrNull()?.let(::segmentText)?.takeIf { it.isNotEmpty() }?.let { listOf(MusicArtistRef(it)) }.orEmpty()
+        }
+        val albumRun = runs.firstOrNull { it.runBrowseId()?.startsWith(ALBUM_PREFIX) == true }
+        val length = textOf(item["lengthText"]).trim()
+        MusicTrack(
+            videoId = videoId,
+            title = title,
+            artists = artists,
+            durationSeconds = if (TRACK_LENGTH.matches(length)) parseDurationSeconds(length) else 0,
+            trackNumber = firstNumber + i,
+            isAvailable = true,
+            coverUrl = thumbnailOf(item["thumbnail"]),
+            albumTitle = albumRun?.get("text").str()?.trim(),
+            albumBrowseId = albumRun?.runBrowseId(),
+        )
+    }.distinctBy { it.videoId }
+    val continuation = findAll(root, "nextRadioContinuationData").firstNotNullOfOrNull { it["continuation"].str() }
+        ?: findAll(root, "nextContinuationData").firstNotNullOfOrNull { it["continuation"].str() }
+    if (tracks.isEmpty()) return null
+    val title = findAll(root, "playlistPanelRenderer").firstNotNullOfOrNull { textOf(it["title"]).trim().ifEmpty { null } }
+    return MusicPlaylistPage(title, tracks, continuation)
 }
 
 /** The tracks in a watch-next ("next") response, each with its counterpart when YouTube Music links one. */
@@ -487,6 +533,8 @@ data class MusicSearchEverything(
     val videos: List<MusicTrack>,
     /** True when no request got an answer (offline, YouTube Music unreachable), as opposed to an answer with nothing in it. */
     val failed: Boolean = false,
+    /** fork:music-radio - the playlists and stations in the answer (community playlists, YouTube Music's own, radios). */
+    val playlists: List<MusicPlaylistSummary> = emptyList(),
 ) {
     val isEmpty: Boolean get() = top == null && songs.isEmpty() && albums.isEmpty() && artists.isEmpty() && videos.isEmpty()
 
@@ -549,6 +597,22 @@ private fun JsonObject.toSearchArtist(): MusicArtistSummary? {
     return MusicArtistSummary(id, name, thumbnailOf(this["thumbnail"]))
 }
 
+/**
+ * fork:music-radio - a playlist or station row of a search: a link to a playlist page (`VL...`, page type PLAYLIST), or a
+ * row that only starts a list. Podcasts, episodes and profiles are left out (they are not music lists).
+ */
+private fun JsonObject.toPlaylistSummary(): MusicPlaylistSummary? {
+    val pageType = musicPageType()
+    if (pageType != null && pageType != "MUSIC_PAGE_TYPE_PLAYLIST") return null
+    val browseId = runBrowseId() ?: runsOf(flexText(0)).firstNotNullOfOrNull { it.runBrowseId() }
+    val id = browseId?.takeIf { it.startsWith("VL") }?.removePrefix("VL")
+        ?: findAll(this, "watchPlaylistEndpoint").firstNotNullOfOrNull { it["playlistId"].str() }
+        ?: return null
+    val title = textOf(flexText(0)).trim().ifEmpty { return null }
+    val subtitle = textOf(flexText(1)).trim().ifEmpty { null }
+    return MusicPlaylistSummary(id, title, subtitle, thumbnailOf(this["thumbnail"]))
+}
+
 internal fun parseSearchEverything(body: String): MusicSearchEverything {
     val root = parseRoot(body) ?: return MusicSearchEverything.EMPTY
     val rows = ArrayList<Pair<JsonObject, String?>>()
@@ -570,13 +634,14 @@ internal fun parseSearchEverything(body: String): MusicSearchEverything {
     val videos = ArrayList<MusicTrack>()
     val albums = ArrayList<MusicAlbumSummary>()
     val artists = ArrayList<MusicArtistSummary>()
+    val playlists = ArrayList<MusicPlaylistSummary>()
     for ((row, shelf) in rows) {
         when (row.searchRowKind(shelf)) {
             SearchRowKind.Song -> row.toSearchTrack(songs.size + 1)?.let { songs += it }
             SearchRowKind.Video -> row.toSearchTrack(videos.size + 1)?.let { videos += it }
             SearchRowKind.Album -> row.toAlbumSummary()?.let { albums += it }
             SearchRowKind.Artist -> row.toSearchArtist()?.let { artists += it }
-            SearchRowKind.Other -> Unit
+            SearchRowKind.Other -> row.toPlaylistSummary()?.let { playlists += it }
         }
     }
     return MusicSearchEverything(
@@ -585,6 +650,7 @@ internal fun parseSearchEverything(body: String): MusicSearchEverything {
         albums = albums.distinctBy { it.browseId },
         artists = artists.distinctBy { it.browseId },
         videos = videos.distinctBy { it.videoId },
+        playlists = playlists.distinctBy { it.playlistId },
     )
 }
 

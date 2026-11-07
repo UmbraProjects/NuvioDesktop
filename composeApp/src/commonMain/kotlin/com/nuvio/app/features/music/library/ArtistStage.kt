@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.MusicNote
@@ -464,6 +465,8 @@ private fun StageHero(
                 HeroButton("Play Essentials", Icons.Rounded.PlayArrow, primary = true, modifier = Modifier.focusRequester(playFocus), onClick = onPlayEssentials)
                 HeroButton("Shuffle all", Icons.Rounded.Shuffle, enabled = canShuffle, onClick = onShuffle)
                 topLabel?.let { HeroButton("Play $it", Icons.Rounded.LocalFireDepartment, onClick = onPlayTop) }
+                // fork:music-radio - the artist's radio, as YouTube Music makes it.
+                if (artist.id.startsWith("UC")) HeroButton("Radio", Icons.Rounded.Radio, onClick = { com.nuvio.app.features.music.MusicRadioStarter.artist(artist.id, artist.name) })
                 HeroButton(
                     if (inLibrary) "In your library" else "Add to library",
                     if (inLibrary) Icons.Rounded.Check else Icons.Rounded.Add,
@@ -1042,6 +1045,8 @@ private fun songMenu(row: EssentialRow, actions: SongMenuActions): List<PosterZo
     PosterZoomOverlayAction(icon = Icons.Rounded.MusicNote, label = "Play just this song", onSelected = { actions.playOne(row) }),
     PosterZoomOverlayAction(icon = Icons.Rounded.SkipNext, label = "Play next", onSelected = { actions.playNextOne(row) }),
     PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Add to queue", onSelected = { actions.queueOne(row) }),
+    // fork:music-radio - YouTube Music's "Start radio" from this song.
+    PosterZoomOverlayAction(icon = Icons.Rounded.Radio, label = "Start radio", onSelected = { com.nuvio.app.features.music.MusicRadioStarter.song(row.videoId, row.title) }),
     PosterZoomOverlayAction(
         icon = Icons.Rounded.Album,
         label = row.albumTitle?.let { "Open $it" } ?: "Open the album",

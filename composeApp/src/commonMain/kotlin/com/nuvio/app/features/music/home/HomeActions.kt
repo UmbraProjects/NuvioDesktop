@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SmartDisplay
@@ -55,6 +56,10 @@ import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.MusicArtistSummary
 import com.nuvio.app.features.music.MusicCatalog
 import com.nuvio.app.features.music.MusicItemMenu
+import com.nuvio.app.features.music.MusicPlaylistSummary
+import com.nuvio.app.features.music.loadArtistRadio
+import com.nuvio.app.features.music.loadPlaylistQueue
+import com.nuvio.app.features.music.loadSongRadio
 import com.nuvio.app.features.music.MusicPlayback
 import com.nuvio.app.features.music.MusicTopResult
 import com.nuvio.app.features.music.MusicTrack
@@ -111,6 +116,33 @@ internal class HomeRunner(
     }
 
     fun track(track: MusicTrack, how: PlayHow) = start(youTubeSingleAlbum(track), how, track.title)
+
+    /** fork:music-radio - a playlist or station: a fixed list in full, a radio about 100 tracks ahead. */
+    fun playlist(playlistId: String, title: String, how: PlayHow, cover: String? = null) {
+        NuvioToastController.show("Opening $title…")
+        scope.launch {
+            val queue = loadPlaylistQueue(catalog, playlistId, title, cover)
+            if (queue == null) NuvioToastController.show("Couldn't open $title") else start(queue, how, title)
+        }
+    }
+
+    /** fork:music-radio - YouTube Music's "Start radio" from a song. */
+    fun songRadio(track: MusicTrack, how: PlayHow = PlayHow.Now) {
+        NuvioToastController.show("Starting ${track.title} radio…")
+        scope.launch {
+            val queue = loadSongRadio(catalog, track.videoId, track.title, track.artists)
+            if (queue == null) NuvioToastController.show("Couldn't start a radio for ${track.title}") else start(queue, how, "${track.title} radio")
+        }
+    }
+
+    /** fork:music-radio - an artist's radio. */
+    fun artistRadio(artistId: String, name: String, how: PlayHow = PlayHow.Now) {
+        NuvioToastController.show("Starting $name radio…")
+        scope.launch {
+            val queue = loadArtistRadio(catalog, artistId, name)
+            if (queue == null) NuvioToastController.show("Couldn't start a radio for $name") else start(queue, how, "$name radio")
+        }
+    }
 
     fun album(browseId: String, title: String, how: PlayHow) {
         scope.launch {
@@ -180,6 +212,11 @@ internal class HomeRunner(
             HomeAction.OpenAlbum -> top.albumBrowseId?.let { openAlbum(it) }
             HomeAction.PlayTrack -> top.videoId?.let { track(topTrack(top, it), PlayHow.Now) }
             HomeAction.QueueTrack -> top.videoId?.let { track(topTrack(top, it), PlayHow.Queue) }
+            HomeAction.StartRadio -> top.videoId?.let { songRadio(topTrack(top, it)) }
+            HomeAction.ArtistRadio -> artistId?.let { artistRadio(it, top.title) }
+            HomeAction.PlayList -> top.playlistId?.let { playlist(it, top.title, PlayHow.Now, top.thumbnailUrl) }
+            HomeAction.ShuffleList -> top.playlistId?.let { playlist(it, top.title, PlayHow.Shuffled, top.thumbnailUrl) }
+            HomeAction.QueueList -> top.playlistId?.let { playlist(it, top.title, PlayHow.Queue, top.thumbnailUrl) }
             HomeAction.PlayAll -> playAll(tracks, "${top.title}: ${kind?.plural ?: "results"}", top, shuffled = false)
             HomeAction.ShuffleAll -> playAll(tracks, "${top.title}: ${kind?.plural ?: "results"}", top, shuffled = true)
             HomeAction.More -> Unit
@@ -193,6 +230,7 @@ internal class HomeRunner(
             TopMatchKind.Artist -> listOfNotNull(
                 artistId?.let { PosterZoomOverlayAction(Icons.Rounded.SkipNext, "Play Essentials next", onSelected = { essentials(it, top.title, PlayHow.Next) }) },
                 artistId?.let { PosterZoomOverlayAction(Icons.Rounded.PlaylistAdd, "Add Essentials to queue", onSelected = { essentials(it, top.title, PlayHow.Queue) }) },
+                artistId?.let { PosterZoomOverlayAction(Icons.Rounded.Radio, "${top.title} radio", onSelected = { artistRadio(it, top.title) }) },
                 artistId?.let { PosterZoomOverlayAction(Icons.Rounded.Person, "Open artist page", onSelected = { openArtist(it) }, group = 1) },
             )
             TopMatchKind.Album -> listOfNotNull(
@@ -201,7 +239,12 @@ internal class HomeRunner(
             )
             TopMatchKind.Track -> listOfNotNull(
                 top.videoId?.let { PosterZoomOverlayAction(Icons.Rounded.SkipNext, "Play next", onSelected = { track(topTrack(top, it), PlayHow.Next) }) },
+                top.videoId?.let { PosterZoomOverlayAction(Icons.Rounded.Radio, "Start radio", onSelected = { songRadio(topTrack(top, it)) }) },
                 artistId?.let { PosterZoomOverlayAction(Icons.Rounded.Person, "Go to the artist", onSelected = { openArtist(it) }, group = 1) },
+            )
+            TopMatchKind.Playlist -> listOfNotNull(
+                top.playlistId?.let { PosterZoomOverlayAction(Icons.Rounded.SkipNext, "Play next", onSelected = { playlist(it, top.title, PlayHow.Next, top.thumbnailUrl) }) },
+                top.playlistId?.let { PosterZoomOverlayAction(Icons.Rounded.PlaylistAdd, "Add to queue", onSelected = { playlist(it, top.title, PlayHow.Queue, top.thumbnailUrl) }) },
             )
         }
     }
@@ -213,6 +256,7 @@ internal class HomeRunner(
             PosterZoomOverlayAction(Icons.Rounded.PlayArrow, "Play", onSelected = { track(song, PlayHow.Now) }),
             PosterZoomOverlayAction(Icons.Rounded.SkipNext, "Play next", onSelected = { track(song, PlayHow.Next) }),
             PosterZoomOverlayAction(Icons.Rounded.PlaylistAdd, "Add to queue", onSelected = { track(song, PlayHow.Queue) }),
+            PosterZoomOverlayAction(Icons.Rounded.Radio, "Start radio", onSelected = { songRadio(song) }),
             row.video?.let { video -> PosterZoomOverlayAction(Icons.Rounded.SmartDisplay, "Play the YouTube video", onSelected = { track(video, PlayHow.Now) }) },
             song.albumBrowseId?.let { id ->
                 PosterZoomOverlayAction(Icons.Rounded.Album, song.albumTitle?.let { "Open $it" } ?: "Open the album", onSelected = { openAlbum(id) }, group = 1)
@@ -240,7 +284,16 @@ internal class HomeRunner(
         PosterZoomOverlayAction(Icons.Rounded.PlayArrow, "Play Essentials", onSelected = { essentials(artist.browseId, artist.name, PlayHow.Now) }),
         PosterZoomOverlayAction(Icons.Rounded.Shuffle, "Shuffle Essentials", onSelected = { essentials(artist.browseId, artist.name, PlayHow.Shuffled) }),
         PosterZoomOverlayAction(Icons.Rounded.PlaylistAdd, "Add Essentials to queue", onSelected = { essentials(artist.browseId, artist.name, PlayHow.Queue) }),
+        PosterZoomOverlayAction(Icons.Rounded.Radio, "${artist.name} radio", onSelected = { artistRadio(artist.browseId, artist.name) }),
         PosterZoomOverlayAction(Icons.Rounded.Person, "Open artist page", onSelected = { openArtist(artist.browseId) }, group = 1),
+    )
+
+    /** fork:music-radio - a playlist or station row's More menu. */
+    fun playlistMenu(list: MusicPlaylistSummary): List<PosterZoomOverlayAction> = listOf(
+        PosterZoomOverlayAction(Icons.Rounded.PlayArrow, "Play", onSelected = { playlist(list.playlistId, list.title, PlayHow.Now, list.thumbnailUrl) }),
+        PosterZoomOverlayAction(Icons.Rounded.Shuffle, "Shuffle", onSelected = { playlist(list.playlistId, list.title, PlayHow.Shuffled, list.thumbnailUrl) }),
+        PosterZoomOverlayAction(Icons.Rounded.SkipNext, "Play next", onSelected = { playlist(list.playlistId, list.title, PlayHow.Next, list.thumbnailUrl) }),
+        PosterZoomOverlayAction(Icons.Rounded.PlaylistAdd, "Add to queue", onSelected = { playlist(list.playlistId, list.title, PlayHow.Queue, list.thumbnailUrl) }),
     )
 }
 
@@ -249,11 +302,12 @@ internal fun topTrack(top: MusicTopResult, videoId: String) =
     MusicTrack(videoId = videoId, title = top.title, artists = top.artists, durationSeconds = 0, trackNumber = 1, isAvailable = true, coverUrl = top.thumbnailUrl)
 
 private fun HomeAction.icon(): ImageVector = when (this) {
-    HomeAction.PlayEssentials, HomeAction.PlayAlbum, HomeAction.PlayTrack, HomeAction.PlayAll -> Icons.Rounded.PlayArrow
-    HomeAction.ShuffleEssentials, HomeAction.ShuffleAlbum, HomeAction.ShuffleAll -> Icons.Rounded.Shuffle
+    HomeAction.PlayEssentials, HomeAction.PlayAlbum, HomeAction.PlayTrack, HomeAction.PlayAll, HomeAction.PlayList -> Icons.Rounded.PlayArrow
+    HomeAction.ShuffleEssentials, HomeAction.ShuffleAlbum, HomeAction.ShuffleAll, HomeAction.ShuffleList -> Icons.Rounded.Shuffle
+    HomeAction.StartRadio, HomeAction.ArtistRadio -> Icons.Rounded.Radio
     HomeAction.PlayTopAlbums -> Icons.Rounded.LocalFireDepartment
     HomeAction.OpenArtist -> Icons.Rounded.Person
-    HomeAction.QueueAlbum, HomeAction.QueueTrack -> Icons.Rounded.PlaylistAdd
+    HomeAction.QueueAlbum, HomeAction.QueueTrack, HomeAction.QueueList -> Icons.Rounded.PlaylistAdd
     HomeAction.OpenAlbum -> Icons.Rounded.Album
     HomeAction.More -> Icons.Rounded.MoreHoriz
 }

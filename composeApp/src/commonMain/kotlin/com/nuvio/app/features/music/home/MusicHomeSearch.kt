@@ -4,6 +4,7 @@ import com.nuvio.app.features.music.MusicAlbum
 import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.MusicArtist
 import com.nuvio.app.features.music.MusicArtistSummary
+import com.nuvio.app.features.music.MusicPlaylistSummary
 import com.nuvio.app.features.music.MusicSearchEverything
 import com.nuvio.app.features.music.MusicTopResult
 import com.nuvio.app.features.music.MusicTrack
@@ -373,8 +374,10 @@ data class HomeResults(
     val rows: List<MergedRow>,
     val albums: List<MusicAlbumSummary>,
     val videos: List<MusicTrack>,
+    /** fork:music-radio - playlists and stations, under the albums. */
+    val playlists: List<MusicPlaylistSummary> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = top == null && artists.isEmpty() && rows.isEmpty() && albums.isEmpty() && videos.isEmpty()
+    val isEmpty: Boolean get() = top == null && artists.isEmpty() && rows.isEmpty() && albums.isEmpty() && videos.isEmpty() && playlists.isEmpty()
 
     /** True when a remix, live or acoustic chip split the results into the artist's own and everyone else's. */
     val split: Boolean get() = query.kind in SPLIT_KINDS
@@ -451,7 +454,7 @@ fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, yout
     val year = query.year?.toString()
     val albums = everything.albums.filter { keep(it.title) && (year == null || it.year == year) }
     // The top artist is drawn as the top match, so it is not listed again under it.
-    val topArtistId = everything.top?.takeIf { it.albumBrowseId == null && it.videoId == null }?.artists?.firstOrNull()?.browseId
+    val topArtistId = everything.top?.takeIf { topMatchKind(it) == TopMatchKind.Artist }?.artists?.firstOrNull()?.browseId
     return HomeResults(
         query = query,
         top = everything.top,
@@ -459,6 +462,8 @@ fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, yout
         rows = merged.rows + ownVideos.map { MergedRow(song = null, video = it) },
         albums = albums,
         videos = otherVideos,
+        // Only for a plain search: a chip (remix, albums, a year) asks for something else.
+        playlists = if (kind == null && year == null) everything.playlists.filter { it.playlistId != everything.top?.playlistId } else emptyList(),
     )
 }
 
@@ -482,11 +487,13 @@ fun greetingLabel(isoWeekday: Int, hour: Int): String {
 // region The action row
 
 /** What the top match is, which decides its action row. */
-enum class TopMatchKind { Artist, Album, Track }
+enum class TopMatchKind { Artist, Album, Track, Playlist }
 
 fun topMatchKind(top: MusicTopResult): TopMatchKind = when {
     top.albumBrowseId != null -> TopMatchKind.Album
     top.videoId != null -> TopMatchKind.Track
+    // fork:music-radio - a playlist or station: it links no artist page (an artist card's buttons also start lists).
+    top.playlistId != null && top.artists.none { it.browseId != null && it.name == top.title } -> TopMatchKind.Playlist
     else -> TopMatchKind.Artist
 }
 
@@ -502,6 +509,11 @@ enum class HomeAction(val label: String) {
     OpenAlbum("Open album"),
     PlayTrack("Play"),
     QueueTrack("Add to queue"),
+    StartRadio("Start radio"),
+    ArtistRadio("Radio"),
+    PlayList("Play"),
+    ShuffleList("Shuffle"),
+    QueueList("Add to queue"),
     PlayAll("Play all"),
     ShuffleAll("Shuffle all"),
     More("More"),
@@ -536,6 +548,7 @@ private fun baseActions(top: MusicTopResult): List<HomeAction> = when (topMatchK
         HomeAction.PlayEssentials,
         HomeAction.ShuffleEssentials,
         HomeAction.PlayTopAlbums,
+        HomeAction.ArtistRadio.takeIf { top.artists.firstOrNull()?.browseId != null },
         HomeAction.OpenArtist.takeIf { top.artists.firstOrNull()?.browseId != null },
         HomeAction.More,
     )
@@ -543,9 +556,11 @@ private fun baseActions(top: MusicTopResult): List<HomeAction> = when (topMatchK
     TopMatchKind.Track -> listOfNotNull(
         HomeAction.PlayTrack,
         HomeAction.QueueTrack,
+        HomeAction.StartRadio,
         HomeAction.OpenArtist.takeIf { top.artists.firstOrNull()?.browseId != null },
         HomeAction.More,
     )
+    TopMatchKind.Playlist -> listOf(HomeAction.PlayList, HomeAction.ShuffleList, HomeAction.QueueList, HomeAction.More)
 }
 
 /** How many of an artist's albums Play Top 5 opens and plays one after the other. */

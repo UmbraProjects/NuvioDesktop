@@ -41,6 +41,13 @@ interface MusicCatalog {
     suspend fun playlist(playlistId: String): MusicPlaylistPage? = null
 
     /**
+     * fork:music-radio - a radio or mix as YouTube Music makes it while it plays (its watch-next "up next" queue): the list
+     * [playlistId] (a station's `RD...`, an artist's `RDEM...`, a song's `RDAMVM<videoId>`), optionally started from
+     * [videoId], read page by page up to [maxTracks]. Null when it could not be read.
+     */
+    suspend fun radio(playlistId: String, videoId: String? = null, maxTracks: Int = 100): MusicPlaylistPage? = null
+
+    /**
      * fork:music-home - one search for the first screen: YouTube Music's unfiltered answer read whole (its Top result,
      * songs, albums, artists, music videos). When that answer holds no songs or no albums (YouTube Music sometimes
      * sends only artists and videos), the filtered song and album searches fill them in, in parallel. Empty on failure;

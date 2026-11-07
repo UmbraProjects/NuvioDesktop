@@ -51,6 +51,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import com.nuvio.app.features.music.library.LibraryRelease
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -1764,6 +1765,8 @@ private fun songRowMenu(
     add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.MusicNote, label = "Play just this song", onSelected = playOne))
     add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.SkipNext, label = "Play next", onSelected = playNext))
     add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.PlaylistAdd, label = "Add to queue", onSelected = queueOne))
+    // fork:music-radio - YouTube Music's "Start radio" from this song.
+    add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.Radio, label = "Start radio", onSelected = { MusicRadioStarter.song(track.videoId, track.title, track.artists) }))
     addToPlaylist?.let { add(com.nuvio.app.core.ui.PosterZoomOverlayAction(icon = Icons.Rounded.LibraryAdd, label = "Add to a playlist", onSelected = it)) }
     openArtist?.let {
         val name = track.artists.firstOrNull()?.name

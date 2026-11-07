@@ -122,6 +122,7 @@ import com.nuvio.app.features.music.MusicTabState
 import com.nuvio.app.features.music.MusicTopBarSearch
 import com.nuvio.app.features.music.MusicTopResult
 import com.nuvio.app.features.music.MusicTopSong
+import com.nuvio.app.features.music.MusicPlaylistSummary
 import com.nuvio.app.features.music.MusicTrack
 import com.nuvio.app.features.music.library.LadderRequest
 import com.nuvio.app.features.music.library.LibraryView
@@ -1037,7 +1038,7 @@ private fun HomeResultsBody(
     }
     val centre: @Composable ColumnScope.() -> Unit = {
         LensPanelHeader(Icons.Rounded.MusicNote, results?.centreLabel ?: "YOUTUBE MUSIC · SONGS AND ALBUMS", null, YouTubeMusicTint)
-        PanelBody(if (results?.rows?.isNotEmpty() == true) PanelState.Ready else musicState, onRetry, results?.let { it.rows.isEmpty() && it.albums.isEmpty() } ?: true) {
+        PanelBody(if (results?.rows?.isNotEmpty() == true) PanelState.Ready else musicState, onRetry, results?.let { it.rows.isEmpty() && it.albums.isEmpty() && it.playlists.isEmpty() } ?: true) {
             val r = results ?: return@PanelBody
             r.rows.forEachIndexed { index, row ->
                 val track = row.playable ?: return@forEachIndexed
@@ -1050,6 +1051,11 @@ private fun HomeResultsBody(
                 item(key = "album:" + album.browseId) {
                     AlbumRow(album, if (entryPanel == 1 && r.rows.isEmpty() && index == 0) Modifier.focusRequester(entry) else Modifier, runner, hold)
                 }
+            }
+            // fork:music-radio - community playlists, YouTube Music's own and stations: OK plays, hold OK for the menu.
+            if (r.playlists.isNotEmpty()) item(key = "playlists-label") { SectionLabel("PLAYLISTS AND RADIO") }
+            r.playlists.forEach { list ->
+                item(key = "list:" + list.playlistId) { PlaylistRow(list, runner, hold) }
             }
         }
     }
@@ -1144,6 +1150,7 @@ private fun TopMatchRow(top: MusicTopResult, modifier: Modifier, runner: HomeRun
                 TopMatchKind.Album -> runner.run(HomeAction.OpenAlbum, top)
                 TopMatchKind.Track -> runner.run(HomeAction.PlayTrack, top)
                 TopMatchKind.Artist -> runner.run(HomeAction.OpenArtist, top)
+                TopMatchKind.Playlist -> runner.run(HomeAction.PlayList, top)
             }
         },
     )
@@ -1205,6 +1212,25 @@ private fun AlbumRow(album: MusicAlbumSummary, modifier: Modifier, runner: HomeR
         hold = hold,
         preview = RowPreview(album.artists.firstOrNull()?.name, album.thumbnailUrl),
         onClick = { runner.openAlbum(album.browseId) },
+    )
+}
+
+/** fork:music-radio - a playlist or station: its cover, name and line ("Playlist • YouTube Music • 47 songs"). */
+@Composable
+private fun PlaylistRow(list: MusicPlaylistSummary, runner: HomeRunner, hold: HoldToSelectState) {
+    ResultRow(
+        art = list.thumbnailUrl,
+        circle = false,
+        artSize = 48.dp,
+        title = list.title,
+        subtitle = list.subtitle,
+        trailing = if (list.radio) "Radio" else null,
+        videoMark = false,
+        modifier = Modifier,
+        menu = { runner.playlistMenu(list) },
+        hold = hold,
+        preview = RowPreview(null, list.thumbnailUrl),
+        onClick = { runner.playlist(list.playlistId, list.title, PlayHow.Now, list.thumbnailUrl) },
     )
 }
 
