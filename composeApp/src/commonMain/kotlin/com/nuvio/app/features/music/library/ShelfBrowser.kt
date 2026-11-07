@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -63,6 +64,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -680,7 +683,7 @@ private fun CoverPages(
     }
 
 
-    Column(modifier) {
+    Column(modifier.pageTurning(page, pages) { turnedTo = it }) {
         Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             for (r in 0 until rows) {
                 Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -716,14 +719,63 @@ private fun CoverPages(
         }
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth().height(22.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            if (pages > 1) {
-                for (p in 0 until minOf(pages, 12)) {
-                    Box(Modifier.padding(horizontal = 4.dp).height(8.dp).width(if (p == page) 28.dp else 8.dp).clip(CircleShape).background(if (p == page) colors.accent else Color.White.copy(alpha = 0.3f)))
-                }
-                Text("Page ${page + 1} of $pages", fontSize = 15.sp, color = colors.textMuted, modifier = Modifier.padding(start = 10.dp))
-            }
+            PageFooter(page, pages) { turnedTo = it }
         }
     }
+}
+
+/**
+ * Turning pages without the remote: the mouse wheel (one page per notch, not per tick of a trackpad), Page Up and Page Down.
+ * Arrow keys on the covers turn them as before.
+ */
+private fun Modifier.pageTurning(page: Int, pages: Int, turnTo: (Int) -> Unit): Modifier = composed {
+    var lastWheel by remember { mutableStateOf(0L) }
+    this
+        .onPointerEvent(PointerEventType.Scroll) { event ->
+            val dy = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+            val now = LibraryClock.nowEpochMs()
+            if (dy != 0f && now - lastWheel > 250) {
+                val to = if (dy > 0) page + 1 else page - 1
+                if (to in 0 until pages) { lastWheel = now; turnTo(to) }
+            }
+        }
+        .onKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+            val to = when (event.key) {
+                Key.PageDown -> page + 1
+                Key.PageUp -> page - 1
+                else -> return@onKeyEvent false
+            }
+            if (to in 0 until pages) { turnTo(to); true } else false
+        }
+}
+
+/** Under a grid: a page dot for each page (up to twelve), arrows and "Page 2 of 27", all clickable. Keeps its height whatever the page count. */
+@Composable
+private fun PageFooter(page: Int, pages: Int, turnTo: (Int) -> Unit) {
+    if (pages <= 1) return
+    val colors = MaterialTheme.nuvio.colors
+    @Composable
+    fun Arrow(label: String, to: Int) {
+        val on = to in 0 until pages
+        Text(
+            label,
+            fontSize = 20.sp,
+            color = if (on) colors.textPrimary else colors.textMuted.copy(alpha = 0.4f),
+            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = on) { turnTo(to) }.padding(horizontal = 10.dp),
+        )
+    }
+    Arrow("‹", page - 1)
+    // Twelve dots around the page in view, so a long wall still shows where it is.
+    val first = (page - 5).coerceAtLeast(0).coerceAtMost((pages - 12).coerceAtLeast(0))
+    for (p in first until minOf(pages, first + 12)) {
+        Box(
+            Modifier.clickable { turnTo(p) }.padding(horizontal = 4.dp, vertical = 7.dp).height(8.dp).width(if (p == page) 28.dp else 8.dp).clip(CircleShape)
+                .background(if (p == page) colors.accent else Color.White.copy(alpha = 0.3f)),
+        )
+    }
+    Arrow("›", page + 1)
+    Text("Page ${page + 1} of $pages", fontSize = 15.sp, color = colors.textMuted, modifier = Modifier.padding(start = 4.dp))
 }
 
 /** One cover in the grid, square in whatever room the cell has, with its title and year (and artist on the wall) under it. */
@@ -1031,7 +1083,7 @@ private fun ItemPages(
         turnedTo = to
         pendingSlot = slot.coerceAtMost(count - 1).coerceAtLeast(0)
     }
-    Column(modifier) {
+    Column(modifier.pageTurning(page, pages) { turnedTo = it }) {
         Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             for (r in 0 until rows) {
                 Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -1063,12 +1115,7 @@ private fun ItemPages(
         }
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth().height(22.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            if (pages > 1) {
-                for (p in 0 until minOf(pages, 12)) {
-                    Box(Modifier.padding(horizontal = 4.dp).height(8.dp).width(if (p == page) 28.dp else 8.dp).clip(CircleShape).background(if (p == page) colors.accent else Color.White.copy(alpha = 0.3f)))
-                }
-                Text("Page ${page + 1} of $pages", fontSize = 15.sp, color = colors.textMuted, modifier = Modifier.padding(start = 10.dp))
-            }
+            PageFooter(page, pages) { turnedTo = it }
         }
     }
 }
