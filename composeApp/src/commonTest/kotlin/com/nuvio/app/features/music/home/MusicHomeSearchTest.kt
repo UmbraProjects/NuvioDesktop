@@ -244,14 +244,14 @@ class MusicHomeSearchTest {
     fun theActionRowFitsWhatTheTopMatchIs() {
         val artist = MusicTopResult("Yelawolf", "Artist", listOf(yela), null, null)
         assertEquals(
-            listOf(HomeAction.PlayEssentials, HomeAction.ShuffleEssentials, HomeAction.PlayTopAlbums, HomeAction.OpenArtist, HomeAction.More),
+            listOf(HomeAction.PlayEssentials, HomeAction.ShuffleEssentials, HomeAction.PlayTopAlbums, HomeAction.ArtistRadio, HomeAction.OpenArtist, HomeAction.More),
             homeActions(artist),
         )
         val album = MusicTopResult("Love Story", "Album", listOf(yela), "MPREb_love", null)
         assertEquals(TopMatchKind.Album, topMatchKind(album))
         assertEquals(HomeAction.PlayAlbum, homeActions(album).first())
         val unlinkedVideo = MusicTopResult("Chaos in My Head", "Video", listOf(MusicArtistRef("Trunk Bangers")), null, null, videoId = "v")
-        assertEquals(listOf(HomeAction.PlayTrack, HomeAction.QueueTrack, HomeAction.More), homeActions(unlinkedVideo))
+        assertEquals(listOf(HomeAction.PlayTrack, HomeAction.QueueTrack, HomeAction.StartRadio, HomeAction.More), homeActions(unlinkedVideo))
     }
 
     @Test
