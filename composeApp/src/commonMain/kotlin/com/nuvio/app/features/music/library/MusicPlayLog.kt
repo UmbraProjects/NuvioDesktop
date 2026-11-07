@@ -3,6 +3,8 @@ package com.nuvio.app.features.music.library
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.library.LibraryClock
+import com.nuvio.app.features.music.MusicCatalog
+import com.nuvio.app.features.music.MusicHistoryItem
 import com.nuvio.app.features.music.MusicPlayer
 import com.nuvio.app.features.profiles.ProfileRepository
 import kotlinx.coroutines.CoroutineScope
@@ -113,6 +115,32 @@ internal object MusicPlayLog {
         }
     }
 
+    /** Forgets every play for the active profile; the Shelf's played shelves start over. */
+    fun clear() {
+        ensureLoaded()
+        val profile = loadedProfile ?: return
+        _entries.value = emptyList()
+        runCatching { MusicLibraryStorage.savePlayLog(profile, "[]") }
+            .onFailure { log.w { "could not clear the play log: ${it.message}" } }
+    }
+
+    /**
+     * Adds what YouTube Music's History lists for the signed-in account (about three pages), dated as well as its headings say.
+     * Plays already in the log are not added twice. Returns how many were added, or null when YouTube Music could not be read.
+     */
+    suspend fun importHistory(catalog: MusicCatalog): Int? {
+        val items = runCatching { catalog.accountHistory() }.getOrNull() ?: return null
+        ensureLoaded()
+        val added = historyEntries(items, LibraryClock.nowEpochMs(), _entries.value)
+        if (added.isEmpty()) return 0
+        val profile = loadedProfile ?: return 0
+        val next = (added + _entries.value).sortedByDescending { it.atMs }.take(PLAY_LOG_MAX)
+        _entries.value = next
+        runCatching { MusicLibraryStorage.savePlayLog(profile, json.encodeToString(next)) }
+            .onFailure { log.w { "could not keep the play log: ${it.message}" } }
+        return added.size
+    }
+
     private fun record(entry: PlayEntry) {
         ensureLoaded()
         val profile = loadedProfile ?: return
@@ -121,6 +149,48 @@ internal object MusicPlayLog {
         runCatching { MusicLibraryStorage.savePlayLog(profile, json.encodeToString(next)) }
             .onFailure { log.w { "could not keep the play log: ${it.message}" } }
     }
+}
+
+private const val DAY_MS = 24L * 60 * 60 * 1000
+
+/** About when a History heading's songs were played: the heading only says how long ago. */
+internal fun historyHeadingAgeMs(heading: String): Long = when (heading.trim().lowercase()) {
+    "today" -> 0L
+    "yesterday" -> DAY_MS
+    "this week" -> 3 * DAY_MS
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday" -> 4 * DAY_MS
+    "last week" -> 10 * DAY_MS
+    else -> 21 * DAY_MS
+}
+
+/**
+ * Plays for the songs of YouTube Music's History (newest first within each heading), dated by their heading and four minutes
+ * apart so their order is kept. A song already in [existing] within a day and a half of that date is skipped, so importing
+ * twice adds nothing.
+ */
+internal fun historyEntries(items: List<MusicHistoryItem>, nowMs: Long, existing: List<PlayEntry>): List<PlayEntry> {
+    val byVideo = existing.groupBy { it.videoId }
+    val seen = HashSet<String>()
+    val index = HashMap<String, Int>()
+    val out = ArrayList<PlayEntry>()
+    for (item in items) {
+        val n = index.merge(item.section, 1, Int::plus)!! - 1
+        val at = nowMs - historyHeadingAgeMs(item.section) - n * 4 * 60_000L
+        val t = item.track
+        val duplicate = byVideo[t.videoId].orEmpty().any { kotlin.math.abs(it.atMs - at) < DAY_MS * 3 / 2 }
+        if (duplicate || !seen.add("${t.videoId}@${item.section}")) continue
+        out += PlayEntry(
+            atMs = at,
+            videoId = t.videoId,
+            title = t.title,
+            artist = t.artists.firstOrNull()?.name,
+            artistId = t.artists.firstOrNull()?.browseId,
+            albumBrowseId = t.albumBrowseId?.takeIf { it.startsWith("MPREb_") },
+            albumTitle = t.albumTitle,
+            coverUrl = t.coverUrl,
+        )
+    }
+    return out
 }
 
 // region what the Shelf reads from the log (pure, tested)

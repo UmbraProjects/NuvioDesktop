@@ -372,6 +372,7 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
     }
 
     musicFactsSettingsContent(isTablet) // fork:facts-filler
+    musicPlayLogSettingsContent(isTablet) // fork:shelf
 }
 
 /** The offline MusicBrainz copy: what it is, how far a download or build has got, and its buttons. */

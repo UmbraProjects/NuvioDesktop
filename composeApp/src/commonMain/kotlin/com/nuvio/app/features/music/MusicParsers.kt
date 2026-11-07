@@ -728,3 +728,23 @@ internal fun parsePlaylistPage(body: String, firstNumber: Int = 1): MusicPlaylis
 }
 
 // endregion
+
+/** fork:music-account - one song YouTube Music's History page lists, and the heading of the group it sits in ("Today", "Yesterday", "This week", a month). */
+internal data class MusicHistoryItem(val section: String, val track: MusicTrack)
+
+/** fork:music-account - a page of YouTube Music's History (newest first) and the token for the next one. */
+internal data class MusicHistoryPage(val items: List<MusicHistoryItem>, val continuation: String?)
+
+internal fun parseHistory(body: String): MusicHistoryPage? {
+    val root = parseRoot(body) ?: return null
+    val items = ArrayList<MusicHistoryItem>()
+    for (shelf in findAll(root, "musicShelfRenderer")) {
+        val section = textOf(shelf["title"]).trim()
+        findAll(shelf, "musicResponsiveListItemRenderer").forEachIndexed { i, row ->
+            row.toListTrack(i + 1)?.let { items += MusicHistoryItem(section, it) }
+        }
+    }
+    val continuation = findAll(root, "nextContinuationData").firstNotNullOfOrNull { it["continuation"].str() }
+    if (items.isEmpty()) return null
+    return MusicHistoryPage(items, continuation)
+}

@@ -263,6 +263,23 @@ object MusicMetadataClient {
         return lists
     }
 
+    /** fork:music-account - see [MusicCatalog.accountHistory]. */
+    suspend fun accountHistory(): List<MusicHistoryItem>? {
+        val first = TrailerPlaybackResolver.musicRequestSigned("browse", mapOf("browseId" to "FEmusic_history"))
+            ?.let(::parseHistory) ?: return null
+        val items = first.items.toMutableList()
+        var token = first.continuation
+        var pages = 1
+        while (token != null && pages < 3) {
+            val page = TrailerPlaybackResolver.musicRequestSigned("browse", mapOf("continuation" to token))?.let(::parseHistory) ?: break
+            items += page.items
+            token = page.continuation?.takeIf { it != token }
+            pages++
+        }
+        log.i { "account history: ${items.size} songs" }
+        return items
+    }
+
     suspend fun album(browseId: String): MusicAlbum? {
         if (!browseId.startsWith("MPREb_")) return null.also { log.w { "album $browseId: not a YouTube Music album id" } }
         var unanswered = false
