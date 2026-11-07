@@ -17,6 +17,10 @@
     <string name="settings_music_where_next_description">On an artist page, finds where to go next without being asked. Turn off on a slow connection; the page then waits for a button.</string>
     <string name="settings_music_skip_non_music">Skip non-music parts</string>
     <string name="settings_music_skip_non_music_description">Skips the spoken intros, skits and outros in music videos, as marked by SponsorBlock users. Videos are looked up by a short hash prefix, so SponsorBlock never learns what you play.</string>
+    <string name="settings_music_pause_for_trailers">Pause for trailers</string>
+    <string name="settings_music_pause_for_trailers_description">Pauses music while a trailer or theme song plays with sound, and carries on when it ends.</string>
+    <string name="settings_music_resume_after_playback">Resume after playback</string>
+    <string name="settings_music_resume_after_playback_description">Music paused by a film or episode plays again when you leave the player. Off, it stays paused.</string>
     <string name="settings_music_nebula_link">Music addon link (Nebula)</string>
     <string name="settings_music_nebula_link_2">Second music addon link</string>
     <string name="settings_music_nebula_link_3">Third music addon link</string>

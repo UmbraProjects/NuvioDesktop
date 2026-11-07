@@ -352,12 +352,13 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            SeekBar(
-                fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
-                onSeek = { player.seekTo((it * state.durationMs).toLong()) },
-                modifier = Modifier.weight(2f).then(barModifier),
-                enabled = state.durationMs > 0L,
-                onNudge = { d -> player.seekTo((state.positionMs + d * 5_000L).coerceIn(0L, state.durationMs)) },
+            MusicSeekControl(
+                state,
+                player,
+                nudgeMs = 5_000L,
+                modifier = Modifier.weight(2f),
+                barModifier = barModifier,
+                tint = Color.White,
                 glass = true,
             )
             MusicVolumeControl(state, player, sliderWidth = null, modifier = Modifier.weight(1f), tint = Color.White, glass = true)

@@ -339,13 +339,7 @@ private fun DockNowPlaying(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SeekBar(
-            fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
-            onSeek = { fraction -> player.seekTo((fraction * state.durationMs).toLong()) },
-            modifier = Modifier.weight(2f),
-            enabled = state.durationMs > 0L,
-            onNudge = { direction -> player.seekTo((state.positionMs + direction * DOCK_NUDGE_MS).coerceIn(0L, state.durationMs)) },
-        )
+        MusicSeekControl(state, player, nudgeMs = DOCK_NUDGE_MS, modifier = Modifier.weight(2f), tint = colors.textPrimary)
         MusicVolumeControl(state, player, sliderWidth = null, modifier = Modifier.weight(1f), tint = colors.textPrimary)
     }
 }

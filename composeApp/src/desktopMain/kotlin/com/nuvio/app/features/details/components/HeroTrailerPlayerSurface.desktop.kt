@@ -63,6 +63,8 @@ actual fun HeroTrailerPlayerSurface(
     val latestOnReclaimFocus = rememberUpdatedState(onReclaimFocus)
     // Effective mpv volume: muting forces silence regardless of the slider position.
     val effectiveVolume = if (muted) 0 else volume.coerceIn(0, 100)
+    // Music steps aside while this trailer is audible, and comes back after.
+    com.nuvio.app.features.music.MusicPausedWhileTrailerPlays(audible = playWhenReady && effectiveVolume > 0)
 
     if (!supported) {
         LaunchedEffect(sourceUrl) {

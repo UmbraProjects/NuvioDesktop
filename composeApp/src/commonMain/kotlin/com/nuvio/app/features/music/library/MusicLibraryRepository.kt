@@ -71,6 +71,10 @@ data class MusicLibrarySettings(
     val lyricsPlusLyrics: Boolean = false,
     /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
     val skipNonMusic: Boolean = false,
+    /** Music pauses while a trailer or theme song plays with sound, and carries on when it ends. */
+    val pauseForTrailers: Boolean = true,
+    /** Music paused by a film plays again once the player is closed. Off leaves it paused. */
+    val resumeAfterPlayback: Boolean = true,
 )
 
 /** The music addon links that are set, in the order they are asked (first, second, third); blanks included. */

@@ -47,6 +47,10 @@ import nuvio.composeapp.generated.resources.settings_music_lastfm_key_descriptio
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive_description
 import nuvio.composeapp.generated.resources.settings_music_skip_non_music
 import nuvio.composeapp.generated.resources.settings_music_skip_non_music_description
+import nuvio.composeapp.generated.resources.settings_music_pause_for_trailers
+import nuvio.composeapp.generated.resources.settings_music_pause_for_trailers_description
+import nuvio.composeapp.generated.resources.settings_music_resume_after_playback
+import nuvio.composeapp.generated.resources.settings_music_resume_after_playback_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
 import nuvio.composeapp.generated.resources.settings_music_section_general
@@ -296,6 +300,30 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                 )
             }
             val musicSettings by MusicLibraryRepository.state.collectAsStateWithLifecycle()
+            SettingsGroup(
+                isTablet = isTablet,
+                modifier = Modifier.settingsSearchAnchors("music-pause-for-trailers", "music-resume-after-playback"),
+            ) {
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_pause_for_trailers),
+                    description = stringResource(Res.string.settings_music_pause_for_trailers_description),
+                    checked = musicSettings.settings.pauseForTrailers,
+                    isTablet = isTablet,
+                    onCheckedChange = {
+                        MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(pauseForTrailers = it))
+                    },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_resume_after_playback),
+                    description = stringResource(Res.string.settings_music_resume_after_playback_description),
+                    checked = musicSettings.settings.resumeAfterPlayback,
+                    isTablet = isTablet,
+                    onCheckedChange = {
+                        MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(resumeAfterPlayback = it))
+                    },
+                )
+            }
             SettingsGroup(
                 isTablet = isTablet,
                 modifier = Modifier.settingsSearchAnchors("music-skip-non-music"),
