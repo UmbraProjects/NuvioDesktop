@@ -27,10 +27,11 @@ fun selectFinishWhatYouStarted(
     minIdleMs: Long,
     maxIdleMs: Long = FINISH_MAX_IDLE_MS,
     limit: Int = FINISH_ROW_LIMIT,
+    watchedSincePaused: (WatchProgressEntry) -> Boolean = { false },
 ): List<WatchProgressEntry> {
     if (limit <= 0) return emptyList()
 
-    return finishWhatYouStartedCandidates(entries, continueWatchingParentKeys)
+    return finishWhatYouStartedCandidates(entries, continueWatchingParentKeys, watchedSincePaused)
         .filter { entry ->
             val idle = now - entry.lastUpdatedEpochMs
             // The ceiling is what keeps this from becoming a graveyard: something untouched for
@@ -55,18 +56,49 @@ fun selectFinishWhatYouStarted(
 fun finishWhatYouStartedCandidates(
     entries: List<WatchProgressEntry>,
     continueWatchingParentKeys: Set<String>,
+    watchedSincePaused: (WatchProgressEntry) -> Boolean = { false },
 ): List<WatchProgressEntry> {
     if (entries.isEmpty()) return emptyList()
     return entries
         .asSequence()
-        .filter { it.shouldTreatAsInProgressForContinueWatching() }
-        .filter { it.parentMetaId.isNotBlank() && it.title.isNotBlank() }
+        .filter { it.parentMetaId.isNotBlank() }
         // One card per title, not per episode: a show abandoned mid-season typically has several
         // part-watched videos, and they are all the same "finish this".
         .groupBy { finishGroupKey(it.parentMetaType, it.parentMetaId) }
         .filterKeys { it !in continueWatchingParentKeys }
-        .mapNotNull { (_, rows) -> rows.maxByOrNull { it.lastUpdatedEpochMs } }
+        .mapNotNull { (_, rows) ->
+            val candidate = rows
+                .filter { it.shouldTreatAsInProgressForContinueWatching() && it.title.isNotBlank() }
+                .maxByOrNull { it.lastUpdatedEpochMs }
+                ?: return@mapNotNull null
+            // A part-watched episode is not unfinished business once the show has been watched past
+            // it: anything of the title played after it (the later episodes, up to the finale) means
+            // it was skipped or stopped at the credits, not abandoned. A finished series has no
+            // Continue Watching row to exclude it, so without this its stale episode came back here.
+            if (rows.any { it.lastUpdatedEpochMs > candidate.lastUpdatedEpochMs }) return@mapNotNull null
+            // Watched since (on another device, through Trakt or Simkl, or marked by hand): the
+            // episode or the whole title is on the watched list with a date after the pause.
+            if (watchedSincePaused(candidate)) return@mapNotNull null
+            candidate
+        }
         .toList()
+}
+
+/**
+ * Whether [entry]'s video, or its whole title, was marked watched at or after the playback stopped. A
+ * mark from before it is a rewatch in progress, which still counts as unfinished.
+ */
+fun finishEntryWatchedSincePaused(entry: WatchProgressEntry): Boolean {
+    val pausedAt = entry.lastUpdatedEpochMs
+    if (pausedAt <= 0L) return false
+    val watched = com.nuvio.app.features.watched.WatchedRepository
+    val episodeAt = if (entry.seasonNumber != null && entry.episodeNumber != null) {
+        watched.watchedAtEpochMs(entry.parentMetaId, entry.parentMetaType, entry.seasonNumber, entry.episodeNumber)
+    } else {
+        null
+    }
+    val titleAt = watched.watchedAtEpochMs(entry.parentMetaId, entry.parentMetaType)
+    return listOfNotNull(episodeAt, titleAt).any { it >= pausedAt }
 }
 
 /**

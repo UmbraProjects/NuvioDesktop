@@ -28,6 +28,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopUltraHudEnabledKey = "desktop_ultra_hud_enabled"
     private const val desktopOfficialHudEnabledKey = "desktop_official_hud_enabled"
     private const val desktopMinimalHudPillsEnabledKey = "desktop_minimal_hud_pills_enabled"
+    private const val desktopDockPanelFromBarEnabledKey = "desktop_dock_panel_from_bar_enabled"
     private const val desktopSeekHandleEnabledKey = "desktop_seek_handle_enabled"
     private const val desktopHudVignetteEnabledKey = "desktop_hud_vignette_enabled"
     private const val desktopHiddenHudButtonsKey = "desktop_hidden_hud_buttons"
@@ -35,6 +36,9 @@ internal actual object PlayerSettingsStorage {
     private const val desktopAlwaysShowClockEnabledKey = "desktop_always_show_clock_enabled"
     private const val desktopPauseOverlaySourceEnabledKey = "desktop_pause_overlay_source_enabled"
     private const val desktopPlaybackSpeedFineIncrementsEnabledKey = "desktop_playback_speed_fine_increments_enabled"
+    private const val desktopPlayerScrollZonesEnabledKey = "desktop_player_scroll_zones_enabled"
+    private const val desktopPlayerZoneInputKey = "desktop_player_zone_input"
+    private const val desktopPlayerZoneActionsKey = "desktop_player_zone_actions"
     private const val playbackSpeedToggleLowKey = "playback_speed_toggle_low"
     private const val playbackSpeedToggleHighKey = "playback_speed_toggle_high"
     private const val desktopVerboseMpvLoggingEnabledKey = "desktop_verbose_mpv_logging_enabled"
@@ -288,6 +292,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopOfficialHudEnabled(enabled: Boolean) = saveBoolean(desktopOfficialHudEnabledKey, enabled)
     actual fun loadDesktopMinimalHudPillsEnabled(): Boolean? = loadBoolean(desktopMinimalHudPillsEnabledKey)
     actual fun saveDesktopMinimalHudPillsEnabled(enabled: Boolean) = saveBoolean(desktopMinimalHudPillsEnabledKey, enabled)
+    actual fun loadDesktopDockPanelFromBarEnabled(): Boolean? = loadBoolean(desktopDockPanelFromBarEnabledKey)
+    actual fun saveDesktopDockPanelFromBarEnabled(enabled: Boolean) = saveBoolean(desktopDockPanelFromBarEnabledKey, enabled)
     actual fun loadDesktopSeekHandleEnabled(): Boolean? = loadBoolean(desktopSeekHandleEnabledKey)
     actual fun saveDesktopSeekHandleEnabled(enabled: Boolean) = saveBoolean(desktopSeekHandleEnabledKey, enabled)
     actual fun loadDesktopHudVignetteEnabled(): Boolean? = loadBoolean(desktopHudVignetteEnabledKey)
@@ -303,6 +309,11 @@ internal actual object PlayerSettingsStorage {
         saveBoolean(desktopPauseOverlaySourceEnabledKey, enabled)
     actual fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean? = loadBoolean(desktopPlaybackSpeedFineIncrementsEnabledKey)
     actual fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean) = saveBoolean(desktopPlaybackSpeedFineIncrementsEnabledKey, enabled)
+    actual fun loadDesktopPlayerScrollZonesEnabled(): Boolean? = loadBoolean(desktopPlayerScrollZonesEnabledKey)
+    actual fun loadDesktopPlayerZoneInput(): String? = loadString(desktopPlayerZoneInputKey)
+    actual fun saveDesktopPlayerZoneInput(input: String) = saveString(desktopPlayerZoneInputKey, input)
+    actual fun loadDesktopPlayerZoneActions(): String? = loadString(desktopPlayerZoneActionsKey)
+    actual fun saveDesktopPlayerZoneActions(actions: String) = saveString(desktopPlayerZoneActionsKey, actions)
     actual fun loadPlaybackSpeedToggleLow(): Float? = loadFloat(playbackSpeedToggleLowKey)
     actual fun savePlaybackSpeedToggleLow(speed: Float) = saveFloat(playbackSpeedToggleLowKey, speed)
     actual fun loadPlaybackSpeedToggleHigh(): Float? = loadFloat(playbackSpeedToggleHighKey)

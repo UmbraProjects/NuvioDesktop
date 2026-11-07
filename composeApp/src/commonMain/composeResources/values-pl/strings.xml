@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Minimalny</string>
   <string name="settings_playback_hud_layout_pills">Pigułki minimalnych elementów sterowania</string>
   <string name="settings_playback_hud_layout_pills_description">Umieść każdą grupę elementów sterowania na osobnej półprzezroczystej pigułce zamiast bezpośrednio na obrazie.</string>
+  <string name="settings_playback_hud_dock_from_bar">Panele wyrastają z pigułki narzędzi</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Panele napisów, dźwięku i inne panele odtwarzacza otwierają się z pigułki narzędzi na jej szerokość, tworząc z nią jedną całość. Wymaga Pigułek minimalnych elementów sterowania.</string>
   <string name="settings_playback_seek_handle">Uchwyt paska przewijania</string>
   <string name="settings_playback_seek_handle_description">Rysuj okrągły uchwyt na pasku przewijania. Wyłączone zostawia tylko kolorowy pasek postępu.</string>
   <string name="settings_playback_hud_vignette">Winieta elementów sterowania</string>
@@ -1769,6 +1771,18 @@
   <string name="settings_playback_info_panel_description">Pokaż podsumowanie informacji o multimediach podczas odtwarzania.</string>
   <string name="settings_playback_fine_speed_increments">Dokładne zmiany prędkości</string>
   <string name="settings_playback_fine_speed_increments_description">Prędkość zmienia się co 0,1 zamiast według ustawień wstępnych.</string>
+  <string name="settings_playback_scroll_zones">Strefy odtwarzacza</string>
+  <string name="settings_playback_scroll_zones_description">Dzieli wideo na trzy części: trzymaj kursor w jednej z nich, przytrzymaj przycisk i przewijaj. Kółko nie działa na YouTube.</string>
+  <string name="settings_playback_zone_input_wheel">Kółko myszy</string>
+  <string name="settings_playback_zone_input_drag">Przeciąganie %1$s</string>
+  <string name="settings_playback_zone_left">Lewa strefa</string>
+  <string name="settings_playback_zone_middle">Środkowa strefa</string>
+  <string name="settings_playback_zone_right">Prawa strefa</string>
+  <string name="settings_playback_zone_action_none">Nic</string>
+  <string name="settings_playback_zone_action_speed">Prędkość odtwarzania</string>
+  <string name="settings_playback_zone_action_seek">Przewijanie</string>
+  <string name="settings_playback_zone_action_volume">Głośność</string>
+  <string name="settings_playback_zone_action_fast_forward">Przytrzymaj, aby przyspieszyć</string>
   <string name="settings_playback_speed_toggle">Zakres przełączania prędkości</string>
   <string name="settings_playback_speed_toggle_description">Naciśnij R, aby przełączać między tymi prędkościami.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Szczegółowe logi MPV</string>

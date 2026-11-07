@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Ελάχιστη</string>
   <string name="settings_playback_hud_layout_pills">Ελάχιστη με κουμπιά-κάψουλες</string>
   <string name="settings_playback_hud_layout_pills_description">Τοποθετεί κάθε ομάδα ελέγχων σε δικό της ημιδιάφανο χάπι αντί απευθείας πάνω στην εικόνα.</string>
+  <string name="settings_playback_hud_dock_from_bar">Τα πάνελ αναπτύσσονται από την κάψουλα εργαλείων</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Τα πάνελ υποτίτλων, ήχου και τα άλλα πάνελ του προγράμματος αναπαραγωγής ανοίγουν από την κάψουλα εργαλείων στο πλάτος της, ενιαία με αυτήν. Απαιτεί Ελάχιστη με κουμπιά-κάψουλες.</string>
   <string name="settings_playback_seek_handle">Λαβή γραμμής χρόνου</string>
   <string name="settings_playback_seek_handle_description">Σχεδιάζει τη στρογγυλή λαβή στη γραμμή χρόνου. Απενεργοποιημένο, μένει μόνο η έγχρωμη γραμμή προόδου.</string>
   <string name="settings_playback_hud_vignette">Σκίαση ελέγχων</string>
@@ -1769,6 +1771,18 @@
   <string name="settings_playback_info_panel_description">Εμφάνιση σύνοψης πληροφοριών πολυμέσου κατά την αναπαραγωγή.</string>
   <string name="settings_playback_fine_speed_increments">Λεπτά βήματα ταχύτητας</string>
   <string name="settings_playback_fine_speed_increments_description">Η ταχύτητα αυξάνεται κατά 0,1 αντί για προκαθορισμένες τιμές.</string>
+  <string name="settings_playback_scroll_zones">Ζώνες αναπαραγωγής</string>
+  <string name="settings_playback_scroll_zones_description">Χωρίζει το βίντεο σε τρία μέρη: κρατήστε τον δείκτη σε ένα μέρος, κρατήστε πατημένο το κουμπί και κυλήστε. Η ροδέλα δεν λειτουργεί στο YouTube.</string>
+  <string name="settings_playback_zone_input_wheel">Ροδέλα ποντικιού</string>
+  <string name="settings_playback_zone_input_drag">Σύρσιμο %1$s</string>
+  <string name="settings_playback_zone_left">Αριστερή ζώνη</string>
+  <string name="settings_playback_zone_middle">Μεσαία ζώνη</string>
+  <string name="settings_playback_zone_right">Δεξιά ζώνη</string>
+  <string name="settings_playback_zone_action_none">Τίποτα</string>
+  <string name="settings_playback_zone_action_speed">Ταχύτητα αναπαραγωγής</string>
+  <string name="settings_playback_zone_action_seek">Μετακίνηση</string>
+  <string name="settings_playback_zone_action_volume">Ένταση ήχου</string>
+  <string name="settings_playback_zone_action_fast_forward">Κράτημα για γρήγορη προώθηση</string>
   <string name="settings_playback_speed_toggle">Εύρος εναλλαγής ταχύτητας</string>
   <string name="settings_playback_speed_toggle_description">Πατήστε R για εναλλαγή μεταξύ αυτών των ταχυτήτων.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Αναλυτική καταγραφή MPV</string>

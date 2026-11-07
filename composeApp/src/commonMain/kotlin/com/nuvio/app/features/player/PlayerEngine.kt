@@ -468,6 +468,8 @@ data class PlayerHudSettings(
     val legacyHudEnabled: Boolean = false,
     val minimalHudEnabled: Boolean = false,
     val minimalHudPillsEnabled: Boolean = false,
+    /** Minimal + pills only: the HUD's docked panels open out of the tool pill, at its width. */
+    val dockPanelFromBarEnabled: Boolean = false,
     val ultraHudEnabled: Boolean = false,
     val officialHudEnabled: Boolean = false,
     val seekHandleEnabled: Boolean = true,
@@ -478,6 +480,10 @@ data class PlayerHudSettings(
     val hudButtonOrder: String = "",
     val alwaysShowClock: Boolean = false,
     val playbackSpeedFineIncrementsEnabled: Boolean = false,
+    // Player zones, as the HUD reads them: "off" / "wheel" / "drag", and the three zones' actions
+    // left to right ("speed,seek,volume").
+    val zoneInput: String = "off",
+    val zoneActions: String = "speed,seek,volume",
     val playbackSpeedToggleLow: Float = 1f,
     val playbackSpeedToggleHigh: Float = 2f,
     val uiScalePercent: Int = 0,

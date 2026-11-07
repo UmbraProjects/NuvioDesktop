@@ -1,12 +1,15 @@
 package com.nuvio.app.features.voice
 
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioInputStream
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine
+import javax.sound.sampled.AudioFileFormat
 import javax.sound.sampled.Mixer
+import javax.sound.sampled.SourceDataLine
 import javax.sound.sampled.TargetDataLine
 import kotlin.math.PI
 import kotlin.math.abs
@@ -21,6 +24,50 @@ internal object VoiceAudio {
 
     /** Rates asked of a microphone, best first; anything but 16 kHz is resampled. */
     private val CAPTURE_RATES = floatArrayOf(16_000f, 48_000f, 44_100f, 32_000f, 22_050f)
+
+    /** 16 kHz mono, signed 16-bit little-endian: how a clip of [samples] is played back or saved. */
+    private val CLIP_FORMAT = AudioFormat(SAMPLE_RATE.toFloat(), 16, 1, true, false)
+
+    private fun toPcm16(samples: FloatArray): ByteArray {
+        val bytes = ByteArray(samples.size * 2)
+        samples.forEachIndexed { index, sample ->
+            val value = (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt()
+            bytes[index * 2] = value.toByte()
+            bytes[index * 2 + 1] = (value shr 8).toByte()
+        }
+        return bytes
+    }
+
+    /** [samples] written to [file] as a 16 kHz mono WAV. */
+    fun writeWav(samples: FloatArray, file: File) {
+        val bytes = toPcm16(samples)
+        AudioInputStream(ByteArrayInputStream(bytes), CLIP_FORMAT, samples.size.toLong()).use { stream ->
+            AudioSystem.write(stream, AudioFileFormat.Type.WAVE, file)
+        }
+    }
+
+    /**
+     * Plays [samples] through the default output and returns once they have been heard, or as soon as
+     * [stopped] reads true (checked every ~100 ms of audio).
+     */
+    fun play(samples: FloatArray, stopped: () -> Boolean = { false }) {
+        val bytes = toPcm16(samples)
+        val line = AudioSystem.getLine(DataLine.Info(SourceDataLine::class.java, CLIP_FORMAT)) as SourceDataLine
+        line.open(CLIP_FORMAT)
+        try {
+            line.start()
+            val step = SAMPLE_RATE / 10 * 2
+            var offset = 0
+            while (offset < bytes.size && !stopped()) {
+                val length = minOf(step, bytes.size - offset)
+                offset += line.write(bytes, offset, length)
+            }
+            if (stopped()) line.flush() else line.drain()
+        } finally {
+            line.stop()
+            line.close()
+        }
+    }
 
     /** Signed 16-bit PCM ([bigEndian] or not) to floats, keeping only the first of [channels]. */
     fun pcm16ToFloats(bytes: ByteArray, length: Int, channels: Int, bigEndian: Boolean): FloatArray {

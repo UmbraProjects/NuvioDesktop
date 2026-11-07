@@ -2300,6 +2300,8 @@
     <string name="settings_playback_hud_layout_minimal">Mínimo</string>
     <string name="settings_playback_hud_layout_pills">Píldoras de controles mínimos</string>
     <string name="settings_playback_hud_layout_pills_description">Coloca cada grupo de controles en su propia píldora translúcida en lugar de directamente sobre la imagen.</string>
+    <string name="settings_playback_hud_dock_from_bar">Paneles que crecen desde la píldora de herramientas</string>
+    <string name="settings_playback_hud_dock_from_bar_description">Los paneles de subtítulos, audio y demás del reproductor se abren desde la píldora de herramientas con su mismo ancho, como una sola pieza. Requiere Píldoras de controles mínimos.</string>
     <string name="settings_playback_seek_handle">Control deslizante de la barra de progreso</string>
     <string name="settings_playback_seek_handle_description">Dibuja el control redondo en la barra de progreso. Desactivado deja solo la barra de progreso de color.</string>
     <string name="settings_playback_hud_vignette">Viñeta de los controles</string>
@@ -2339,6 +2341,18 @@
     <string name="settings_playback_info_panel_description">Muestra un resumen de la información del contenido durante la reproducción.</string>
     <string name="settings_playback_fine_speed_increments">Incrementos finos de velocidad</string>
     <string name="settings_playback_fine_speed_increments_description">La velocidad aumenta de 0,1 en 0,1, en lugar de usar valores preestablecidos.</string>
+    <string name="settings_playback_scroll_zones">Zonas del reproductor</string>
+    <string name="settings_playback_scroll_zones_description">Divide el vídeo en tercios: deja el cursor en un tercio, mantén pulsado el botón y desplázate. La rueda no funciona en YouTube.</string>
+    <string name="settings_playback_zone_input_wheel">Rueda del ratón</string>
+    <string name="settings_playback_zone_input_drag">Arrastrar %1$s</string>
+    <string name="settings_playback_zone_left">Zona izquierda</string>
+    <string name="settings_playback_zone_middle">Zona central</string>
+    <string name="settings_playback_zone_right">Zona derecha</string>
+    <string name="settings_playback_zone_action_none">Nada</string>
+    <string name="settings_playback_zone_action_speed">Velocidad de reproducción</string>
+    <string name="settings_playback_zone_action_seek">Avanzar o retroceder</string>
+    <string name="settings_playback_zone_action_volume">Volumen</string>
+    <string name="settings_playback_zone_action_fast_forward">Mantener para avance rápido</string>
     <string name="settings_playback_speed_toggle">Rango de alternancia de velocidad</string>
     <string name="settings_playback_speed_toggle_description">Pulsa R para alternar entre estas velocidades.</string>
     <string name="settings_playback_desktop_verbose_mpv_logging">Registro detallado de MPV</string>

@@ -6,6 +6,7 @@ import com.nuvio.app.features.player.PlayerControlIptvState
 import com.nuvio.app.features.player.PlayerControlPartyMember
 import com.nuvio.app.features.player.PlayerControlPartyState
 import com.nuvio.app.features.player.PlayerControlsState
+import com.nuvio.app.features.player.PlayerHudSettings
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -130,6 +131,21 @@ class ControlsJsonGuardTest {
         assertEquals("Search channels", iptv.getValue("searchLabel").jsonPrimitive.content)
         assertEquals(2, iptv.getValue("groups").jsonArray.size)
         assertEquals(1, iptv.getValue("channels").jsonArray.size)
+    }
+
+    @Test
+    fun `the player zone settings reach the HUD`() {
+        val payload = PlayerControlsState(
+            hud = PlayerHudSettings(zoneInput = "drag", zoneActions = "fastforward,seek,none"),
+        ).toControlsJson(
+            appFullscreenKeyCode = 122,
+            playerShortcutKeyCodes = emptyMap(),
+            skipIntervalKeyLabel = "S",
+        )
+        assertTrue(controlsJsonIsWellFormed(payload))
+        val json = Json.parseToJsonElement(payload).jsonObject
+        assertEquals("drag", json.getValue("zoneInput").jsonPrimitive.content)
+        assertEquals("fastforward,seek,none", json.getValue("zoneActions").jsonPrimitive.content)
     }
 
     @Test

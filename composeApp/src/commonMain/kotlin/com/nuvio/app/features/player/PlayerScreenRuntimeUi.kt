@@ -541,6 +541,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             legacyHudEnabled = playerSettingsUiState.desktopLegacyHudEnabled,
             minimalHudEnabled = playerSettingsUiState.desktopMinimalHudEnabled,
             minimalHudPillsEnabled = playerSettingsUiState.desktopMinimalHudPillsEnabled,
+            dockPanelFromBarEnabled = playerSettingsUiState.desktopDockPanelFromBarEnabled,
             ultraHudEnabled = playerSettingsUiState.desktopUltraHudEnabled,
             officialHudEnabled = playerSettingsUiState.desktopOfficialHudEnabled,
             seekHandleEnabled = playerSettingsUiState.desktopSeekHandleEnabled,
@@ -549,6 +550,10 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             hudButtonOrder = playerSettingsUiState.desktopHudButtonOrder.joinToString(","),
             alwaysShowClock = playerSettingsUiState.desktopAlwaysShowClockEnabled,
             playbackSpeedFineIncrementsEnabled = playerSettingsUiState.desktopPlaybackSpeedFineIncrementsEnabled,
+            zoneInput = playerSettingsUiState.desktopPlayerZoneInput.hudKey,
+            zoneActions = playerSettingsUiState.desktopPlayerZoneActions.hudValue(
+                playerSettingsUiState.desktopPlayerZoneInput,
+            ),
             playbackSpeedToggleLow = playerSettingsUiState.playbackSpeedToggleLow,
             playbackSpeedToggleHigh = playerSettingsUiState.playbackSpeedToggleHigh,
             uiScalePercent = playerSettingsUiState.desktopUiScalePercent,

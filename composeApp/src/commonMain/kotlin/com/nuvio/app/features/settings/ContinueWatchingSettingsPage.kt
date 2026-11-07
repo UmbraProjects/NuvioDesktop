@@ -439,54 +439,53 @@ private fun ContinueWatchingStyleOption(
         },
         shape = shape,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = if (isTablet) 12.dp else 8.dp, vertical = if (isTablet) 14.dp else 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(if (isTablet) 8.dp else 6.dp),
-        ) {
-            Row(
+        // The tick sits over the tile's corner rather than on a row of its own, so the preview and
+        // its labels are centred in the tile; the even padding leaves the corner room for it.
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(if (isTablet) 12.dp else 6.dp)
+                    .size(if (isTablet) 24.dp else 18.dp)
+                    .alpha(if (selected) 1f else 0f),
+            )
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = if (isTablet) 4.dp else 0.dp),
-                horizontalArrangement = Arrangement.End,
+                    .padding(horizontal = if (isTablet) 12.dp else 8.dp, vertical = if (isTablet) 28.dp else 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(if (isTablet) 8.dp else 6.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                Box(
                     modifier = Modifier
-                        .size(if (isTablet) 24.dp else 18.dp)
-                        .alpha(if (selected) 1f else 0f),
+                        .fillMaxWidth()
+                        .height(if (isTablet) 96.dp else 66.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ContinueWatchingStylePreview(
+                        style = style,
+                        isSelected = selected,
+                    )
+                }
+                Text(
+                    text = stringResource(style.labelRes),
+                    style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.labelMedium,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(style.descriptionRes),
+                    style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (isTablet) 96.dp else 66.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                ContinueWatchingStylePreview(
-                    style = style,
-                    isSelected = selected,
-                )
-            }
-            Text(
-                text = stringResource(style.labelRes),
-                style = if (isTablet) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.labelMedium,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = stringResource(style.descriptionRes),
-                style = if (isTablet) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }

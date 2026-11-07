@@ -1541,6 +1541,11 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_seek_step_description),
             ),
             if (isDesktop) PlaybackSearchRow(
+                "scroll-zones",
+                resolve(Res.string.settings_playback_scroll_zones),
+                resolve(Res.string.settings_playback_scroll_zones_description),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "speed-toggle",
                 resolve(Res.string.settings_playback_speed_toggle),
                 resolve(Res.string.settings_playback_speed_toggle_description),
@@ -2683,6 +2688,8 @@ private fun settingsSearchEntries(
             PlaybackSearchRow("music-lyrics-lrcmux", resolve(Res.string.settings_music_lyrics_lrcmux), resolve(Res.string.settings_music_lyrics_lrcmux_description), resolve(Res.string.settings_music_section_lyrics)),
             PlaybackSearchRow("music-lyrics-lyricsplus", resolve(Res.string.settings_music_lyrics_lyricsplus), resolve(Res.string.settings_music_lyrics_lyricsplus_description), resolve(Res.string.settings_music_section_lyrics)),
             PlaybackSearchRow("music-keep-audio-alive", resolve(Res.string.settings_music_keep_audio_alive), resolve(Res.string.settings_music_keep_audio_alive_description), resolve(Res.string.settings_music_section_playback)),
+            PlaybackSearchRow("music-pause-for-trailers", resolve(Res.string.settings_music_pause_for_trailers), resolve(Res.string.settings_music_pause_for_trailers_description), resolve(Res.string.settings_music_section_playback)),
+            PlaybackSearchRow("music-resume-after-playback", resolve(Res.string.settings_music_resume_after_playback), resolve(Res.string.settings_music_resume_after_playback_description), resolve(Res.string.settings_music_section_playback)),
             PlaybackSearchRow("music-skip-non-music", resolve(Res.string.settings_music_skip_non_music), resolve(Res.string.settings_music_skip_non_music_description), resolve(Res.string.settings_music_section_playback)),
         ).forEach { row ->
             addRow(
