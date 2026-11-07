@@ -135,6 +135,38 @@ class TrackMapTest {
         }
     }
 
+    /**
+     * On a grid that is right (the network's), Billie Jean's loud bass line, which repeats every bar as a kick does, no longer
+     * lights the kick row between the kicks, and the snare row is the backbeat alone.
+     */
+    @Test
+    fun onTheGridTheBassLineIsNotAKick() {
+        val bpm = 117.0
+        val builder = TrackMapBuilder(rate)
+        val samples = billie(60.0, bpm)
+        var at = 0
+        while (at < samples.size) { builder.add(samples.copyOfRange(at, minOf(samples.size, at + rate))); at += rate }
+        val map = builder.finish()
+        val grid = assertNotNull(BeatGrid.uniform(60_000.0 / bpm, 500.0, 0.0, 60_000.0))
+        val drums = builder.drumsOnGrid(map, grid)
+        fun steps(m: TrackMap, kind: Int): Pair<Int, Int> {
+            var on = 0
+            var off = 0
+            for (step in grid.stepAt(4_000.0) until grid.stepAt(56_000.0)) {
+                val start = grid.stepStartMs(step)
+                if (!m.hitsBetween(kind, start - grid.stepMs / 2, start + grid.stepMs / 2)) continue
+                if (step.mod(16L).toInt() in (if (kind == Onset.KICK) setOf(0, 8) else setOf(4, 12))) on++ else off++
+            }
+            return on to off
+        }
+        val (kicks, strayKicks) = steps(drums, Onset.KICK)
+        val (snares, straySnares) = steps(drums, Onset.SNARE)
+        val bars = ((56_000.0 - 4_000.0) / (4 * 60_000.0 / bpm)).toInt()
+        assertTrue(kicks >= bars * 2 * 0.9, "kicks on 1 and 3: $kicks of ${bars * 2}")
+        assertTrue(strayKicks <= bars / 4, "kicks off 1 and 3: $strayKicks (was ${steps(map, Onset.KICK).second} before)")
+        assertTrue(snares >= bars * 2 * 0.9 && straySnares <= bars / 4, "snares $snares, off the backbeat $straySnares")
+    }
+
     @Test
     fun theBeatLocksOnWhileTheMapIsStillGrowing() {
         val samples = billie(60.0, 117.0)

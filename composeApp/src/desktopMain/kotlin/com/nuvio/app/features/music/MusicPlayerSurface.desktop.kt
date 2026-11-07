@@ -467,7 +467,12 @@ actual fun MusicPlayerSurface(
         } else null
         fun beatGrid(map: com.nuvio.app.features.music.visualiser.TrackMap, final: Boolean): com.nuvio.app.features.music.visualiser.TrackMap {
             val tracker = beats ?: return map
-            return runCatching { map.withBeat(tracker.grid(final)) }
+            return runCatching {
+                // With a grid it can trust, the kick, snare and hats are read again on it (DrumGrid.kt).
+                val grid = tracker.grid(final)
+                val withGrid = map.withBeat(grid)
+                if (grid != null) builder?.drumsOnGrid(withGrid) ?: withGrid else withGrid
+            }
                 .onFailure {
                     log.w(it) { "beat grid network failed; using the signal-processing estimate" }
                     beats = null

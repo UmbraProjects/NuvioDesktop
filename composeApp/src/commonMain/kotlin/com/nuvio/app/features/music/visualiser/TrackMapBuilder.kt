@@ -220,6 +220,18 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
         return build(decided, complete = true)
     }
 
+    /**
+     * [map] (this builder's snapshot or finished map) with its kick, snare and hats re-read on [grid] (see DrumGrid.kt), when
+     * [grid] is the network's. The map's own grid is used when [grid] is null; a map with no grid is returned as it is.
+     */
+    fun drumsOnGrid(map: TrackMap, grid: BeatGrid? = map.beat): TrackMap {
+        val g = grid ?: return map
+        val n = minOf(map.frames, flux[0].size, flux[1].size, flux[2].size)
+        if (n <= 0) return map
+        val onsets = drumsOnGrid(map.onsets, n, flux[0].data, flux[1].data, flux[2].data, g)
+        return TrackMap(map.frames, map.bands, map.level, map.left, map.right, onsets, map.beat, map.complete)
+    }
+
     private fun build(frames: Int, complete: Boolean): TrackMap {
         val n = minOf(frames, level.size, analysed)
         val beat = if (n >= BEAT_MIN_FRAMES) {
