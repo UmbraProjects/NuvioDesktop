@@ -93,7 +93,7 @@ import kotlinx.coroutines.launch
  *    is a page of fifteen covers.
  *
  * Everything fits one screen: pages turn instead of scrolling (Down past the last row, Up past the first), and nothing moves
- * or resizes as focus moves or answers arrive. OK on a cover plays the album; Left from the first column goes back to the
+ * or resizes as focus moves or answers arrive. OK on a cover opens its album page; Left from the first column goes back to the
  * artist that is open. Only the artist list scrolls, inside its panel.
  */
 
@@ -189,6 +189,7 @@ internal fun ShelfBrowser(
                             onFocusAlbum = { focusedKey = it.key },
                             onBackToArtist = { runCatching { artistRequester(selected.id).requestFocus() } },
                             onArtistClick = onArtistClick,
+                            onAlbumClick = onAlbumClick,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -198,6 +199,7 @@ internal fun ShelfBrowser(
                         albums = wall,
                         focusedKey = focusedAlbum?.key,
                         onFocusAlbum = { focusedKey = it.key },
+                        onAlbumClick = onAlbumClick,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -452,6 +454,7 @@ private fun ArtistAlbumsPanel(
     onFocusAlbum: (ShelfAlbum) -> Unit,
     onBackToArtist: () -> Unit,
     onArtistClick: (String) -> Unit,
+    onAlbumClick: (String) -> Unit,
     modifier: Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
@@ -520,6 +523,7 @@ private fun ArtistAlbumsPanel(
                 lossless = addon.keys,
                 onFocusAlbum = onFocusAlbum,
                 onLeftEdge = onBackToArtist,
+                onOpen = onAlbumClick,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
@@ -528,7 +532,7 @@ private fun ArtistAlbumsPanel(
 
 /** The middle panel in All albums: the wall's title, its count and a page of fifteen covers. */
 @Composable
-private fun WallPanel(title: String, albums: List<ShelfAlbum>, focusedKey: String?, onFocusAlbum: (ShelfAlbum) -> Unit, modifier: Modifier) {
+private fun WallPanel(title: String, albums: List<ShelfAlbum>, focusedKey: String?, onFocusAlbum: (ShelfAlbum) -> Unit, onAlbumClick: (String) -> Unit, modifier: Modifier) {
     val colors = MaterialTheme.nuvio.colors
     LensPanel(modifier) {
         Row(verticalAlignment = Alignment.Bottom) {
@@ -551,6 +555,7 @@ private fun WallPanel(title: String, albums: List<ShelfAlbum>, focusedKey: Strin
                 lossless = emptySet(),
                 onFocusAlbum = onFocusAlbum,
                 onLeftEdge = null,
+                onOpen = onAlbumClick,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
@@ -560,7 +565,7 @@ private fun WallPanel(title: String, albums: List<ShelfAlbum>, focusedKey: Strin
 /**
  * A fixed grid of [perPage] covers, [columns] across, turned a page at a time: Down past the last row and Up past the first
  * turn the page (Up on the first page goes on to the buttons above). Left from the first column calls [onLeftEdge] when given.
- * OK or a click plays the album. The grid keeps its size whatever is on the page.
+ * OK or a click opens the album's page ([onOpen]). The grid keeps its size whatever is on the page.
  */
 @Composable
 private fun CoverPages(
@@ -573,11 +578,10 @@ private fun CoverPages(
     lossless: Set<String>,
     onFocusAlbum: (ShelfAlbum) -> Unit,
     onLeftEdge: (() -> Unit)?,
+    onOpen: (browseId: String) -> Unit,
     modifier: Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val scope = rememberCoroutineScope()
-    val catalog = remember { defaultMusicCatalog() }
     val rows = perPage / columns
     val pages = shelfPageCount(albums.size, perPage)
     var turnedTo by remember(resetKey, albums.size) { mutableIntStateOf(0) }
@@ -598,13 +602,6 @@ private fun CoverPages(
         pendingSlot = slot.coerceAtMost(count - 1).coerceAtLeast(0)
     }
 
-    fun play(album: ShelfAlbum) {
-        val id = album.release.ytBrowseId ?: return
-        scope.launch {
-            val opened = runCatching { catalog.album(id) }.getOrNull() ?: return@launch
-            MusicPlayback.player.play(opened, trackIndex = 0, shuffled = false)
-        }
-    }
 
     Column(modifier) {
         Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -622,7 +619,7 @@ private fun CoverPages(
                                     lossless = album.release.key in lossless,
                                     requester = slots[slot],
                                     onFocus = { onFocusAlbum(album) },
-                                    onPlay = { play(album) },
+                                    onOpen = { album.release.ytBrowseId?.let(onOpen) },
                                     onKey = { key ->
                                         when {
                                             key == Key.DirectionDown && (r == rows - 1 || slot + columns >= onPage.size) && page < pages - 1 -> { turn(page + 1, c); true }
@@ -661,7 +658,7 @@ private fun CoverCell(
     lossless: Boolean,
     requester: FocusRequester,
     onFocus: () -> Unit,
-    onPlay: () -> Unit,
+    onOpen: () -> Unit,
     onKey: (Key) -> Boolean,
 ) {
     val colors = MaterialTheme.nuvio.colors
@@ -683,7 +680,7 @@ private fun CoverCell(
                     .onKeyEvent { event -> event.type == KeyEventType.KeyDown && onKey(event.navigationKey()) }
                     .border(if (keyFocused || (focused && hovered)) 3.dp else 0.dp, if (keyFocused) colors.borderFocus else colors.accent, shape)
                     .hoverable(source)
-                    .clickable(interactionSource = source, indication = null, onClick = onPlay),
+                    .clickable(interactionSource = source, indication = null, onClick = onOpen),
             ) {
                 ReleaseCover(album.release, Modifier.fillMaxSize().padding(if (keyFocused) 3.dp else 0.dp))
                 if (album.rank != null) {
