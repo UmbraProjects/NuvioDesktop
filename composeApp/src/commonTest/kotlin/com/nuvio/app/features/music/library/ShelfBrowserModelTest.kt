@@ -197,4 +197,20 @@ class ShelfBrowserModelTest {
         )
         assertEquals(listOf("LM"), shelfListenAgain(home).map { it.playlistId })
     }
+
+    @Test
+    fun genresCountArtistsAndNarrowTheList() {
+        val artists = listOf(
+            artist("A", genres = listOf("hip hop", "rap")),
+            artist("B", genres = listOf("hip hop")),
+            artist("C", genres = listOf("rock")),
+        )
+        val genres = shelfGenres(artists)
+        val hip = canonicalGenre("hip hop")!!
+        assertEquals(hip, genres.first().key)
+        assertEquals(2, genres.first().count)
+        assertTrue(genres.first().label.first().isUpperCase())
+        assertEquals(listOf("A", "B"), shelfByGenre(artists, hip).map { it.name })
+        assertEquals(3, shelfByGenre(artists, null).size)
+    }
 }

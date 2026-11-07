@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -97,17 +99,16 @@ import kotlinx.coroutines.launch
  *    Gathering dust (from the play log, MusicPlayLog.kt), Lossless (what the music addon is known to have), Starred, Your
  *    playlists (made here, and your YouTube Music ones) and Mixed for you (YouTube Music's mixes for your account). Then
  *    Artists A to Z (the artist list, its letter rail and typed letters) and All albums (sort and narrow a wall).
- *  - Middle: the shelf's page of covers, or the artist's albums. OK on an album opens its page; on a playlist or mix it plays.
+ *  - Middle: the shelf's page of covers, or (Artists A to Z) a scrolling grid of artists that opens the artist page. OK on an album opens its page; on a playlist or mix it plays.
  *  - Right: what focus rests on, with Play, Shuffle or Add to queue, and Open, Go to artist or Save to your playlists.
  *
  * Everything fits one screen: pages turn instead of scrolling (Down past the last row, Up past the first), and nothing moves
- * or resizes as focus moves or answers arrive. Only the artist list scrolls, inside its panel.
+ * or resizes as focus moves or answers arrive. Only the artist grid and the genre list scroll, inside their panels.
  */
 
 private val PANEL_GAP = 24.dp
 private val SIDE_MIN = 320.dp
 private val SIDE_MAX = 460.dp
-private val ROW_HEIGHT = 68.dp
 
 /** Keys A to Z, for typing a letter to jump the artist list. */
 private val LETTER_KEYS: Map<Key, Char> = mapOf(
@@ -132,6 +133,7 @@ internal fun ShelfBrowser(
     var section by rememberSaveable { mutableStateOf<ShelfSection?>(null) }
     var artistFilter by rememberSaveable { mutableStateOf(ShelfArtistFilter.All) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var genre by rememberSaveable { mutableStateOf<String?>(null) }
     var sort by rememberSaveable { mutableStateOf(ShelfAlbumSort.Year) }
     var show by remember { mutableStateOf<ShelfAlbumShow>(ShelfAlbumShow.All) }
     var focusedKey by remember { mutableStateOf<String?>(null) }
@@ -188,7 +190,11 @@ internal fun ShelfBrowser(
         else -> ShelfSection.Artists
     }
 
-    val list = remember(artists, artistFilter, filterQuery) { shelfArtists(artists, artistFilter, filterQuery, now) }
+    val filtered = remember(artists, artistFilter, filterQuery) { shelfArtists(artists, artistFilter, filterQuery, now) }
+    val genreChoices = remember(artists) { shelfGenres(artists) }
+    // A genre the artists no longer have (one removed) falls back to every genre.
+    val activeGenre = genre?.takeIf { g -> genreChoices.any { it.key == g } }
+    val list = remember(filtered, activeGenre) { shelfByGenre(filtered, activeGenre) }
     val selected = list.firstOrNull { it.id == selectedId } ?: list.firstOrNull()
     val showChoices = remember(everyAlbum) { shelfShowChoices(everyAlbum) }
     // A decade the collection no longer has (an artist removed) falls back to everything.
@@ -196,9 +202,8 @@ internal fun ShelfBrowser(
     val wall = remember(everyAlbum, sort, shown, current) { if (current == ShelfSection.AllAlbums) shelfWall(everyAlbum, sort, shown) else emptyList() }
 
     // What the right panel shows: the item focus (or the pointer) last rested on, while it is still in view.
-    val artistAlbums = remember(selected) { selected?.let(::shelfAlbumsOf).orEmpty() }
     val inView: List<ShelfItem> = when (current) {
-        ShelfSection.Artists -> artistAlbums.map { ShelfItem.Album(it) }
+        ShelfSection.Artists -> emptyList()
         ShelfSection.AllAlbums -> wall.map { ShelfItem.Album(it) }
         else -> shelves[current].orEmpty()
     }
@@ -220,14 +225,14 @@ internal fun ShelfBrowser(
                     ShelfSection.Artists -> {
                         BackToShelves { section = ShelfSection.New.takeIf { shelves[it].orEmpty().isNotEmpty() } ?: ShelfSection.Recent }
                         Spacer(Modifier.height(14.dp))
-                        ArtistList(
-                            list = list,
+                        ArtistFilters(
                             pending = pending,
                             filter = artistFilter,
                             onFilter = { artistFilter = it },
-                            selectedId = selected?.id,
-                            requester = ::artistRequester,
-                            onSelect = { id -> if (id != selectedId) { selectedId = id; focusedKey = null } },
+                            genres = genreChoices,
+                            genre = activeGenre,
+                            totalArtists = filtered.size,
+                            onGenre = { genre = it },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -255,20 +260,16 @@ internal fun ShelfBrowser(
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when (current) {
-                    ShelfSection.Artists -> if (selected == null) {
-                        EmptyPanel("No artists match.", Modifier.fillMaxSize())
-                    } else {
-                        ArtistAlbumsPanel(
-                            artist = selected,
-                            albums = artistAlbums,
-                            focusedKey = (focusedItem as? ShelfItem.Album)?.album?.key,
-                            onFocusAlbum = { focusedKey = ShelfItem.Album(it).key },
-                            onBackToArtist = { runCatching { artistRequester(selected.id).requestFocus() } },
-                            onArtistClick = onArtistClick,
-                            onAlbumClick = onAlbumClick,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
+                    ShelfSection.Artists -> ArtistGridPanel(
+                        title = genreChoices.firstOrNull { it.key == activeGenre }?.label ?: "Artists A to Z",
+                        list = list,
+                        filter = artistFilter,
+                        focusedId = selected?.id,
+                        requester = ::artistRequester,
+                        onFocusArtist = { id -> if (id != selectedId) selectedId = id },
+                        onOpenArtist = onArtistClick,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                     ShelfSection.AllAlbums -> WallPanel(
                         title = shelfWallTitle(shown),
                         albums = wall,
@@ -294,7 +295,9 @@ internal fun ShelfBrowser(
                     )
                 }
             }
-            if (showRight) {
+            if (showRight && current == ShelfSection.Artists) {
+                ArtistSummaryPanel(selected, onArtistClick, Modifier.width(side))
+            } else if (showRight) {
                 when (val item = focusedItem) {
                     is ShelfItem.Album -> AlbumPanel(
                         album = item.album,
@@ -370,32 +373,20 @@ private fun ShelfChip(label: String, on: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** Left panel of Artists A to Z: the All / Starred / Added recently chips, then the genres to narrow the grid by. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ArtistList(
-    list: List<LibraryArtist>,
+private fun ArtistFilters(
     pending: List<String>,
     filter: ShelfArtistFilter,
     onFilter: (ShelfArtistFilter) -> Unit,
-    selectedId: String?,
-    requester: (String) -> FocusRequester,
-    onSelect: (String) -> Unit,
+    genres: List<ShelfGenre>,
+    genre: String?,
+    totalArtists: Int,
+    onGenre: (String?) -> Unit,
     modifier: Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
-    val letters = remember(list, filter) { if (filter == ShelfArtistFilter.AddedRecently) emptyMap() else shelfLetterIndex(list) }
-    fun jump(letter: Char) {
-        val index = shelfJumpTo(letters, letter) ?: return
-        val artist = list[index]
-        onSelect(artist.id)
-        scope.launch {
-            listState.scrollToItem(index)
-            withFrameNanos { }
-            runCatching { requester(artist.id).requestFocus() }
-        }
-    }
     Column(modifier) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ShelfArtistFilter.entries.forEach { f -> ShelfChip(f.label, f == filter) { onFilter(f) } }
@@ -404,9 +395,88 @@ private fun ArtistList(
         pending.take(2).forEach { status ->
             Text("Adding… $status", fontSize = 16.sp, color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 6.dp))
         }
+        SectionLabel("GENRE")
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            item(key = "all") { GenreRow("All genres", totalArtists, genre == null) { onGenre(null) } }
+            items(genres, key = { it.key }) { g -> GenreRow(g.label, g.count, g.key == genre) { onGenre(g.key) } }
+        }
+    }
+}
+
+/** One genre: its name and how many artists have it; chosen it edges in the accent and narrows the grid. */
+@Composable
+private fun GenreRow(label: String, count: Int, on: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsKeyboardFocusedAsState()
+    val hovered by source.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.fillMaxWidth().height(52.dp).clip(shape)
+            .background(if (on) Color.White.copy(alpha = 0.12f) else if (hovered) MusicGlassRaised else Color.Transparent)
+            .border(if (focused) 2.dp else 0.dp, if (focused) colors.borderFocus else Color.Transparent, shape)
+            .hoverable(source)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (on) colors.accent else Color.Transparent))
+        Spacer(Modifier.width(10.dp))
+        Text(label, fontSize = 19.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(count.toString(), fontSize = 16.sp, color = colors.textMuted, maxLines = 1)
+    }
+}
+
+/**
+ * The middle panel of Artists A to Z: every artist as a photo card in a grid that scrolls (the one thing on the Shelf that
+ * does), a letter rail beside it, and typing a letter jumps. Resting on a card shows the artist on the right; OK or a click
+ * opens their artist page, the one with the big fanart.
+ */
+@Composable
+private fun ArtistGridPanel(
+    title: String,
+    list: List<LibraryArtist>,
+    filter: ShelfArtistFilter,
+    focusedId: String?,
+    requester: (String) -> FocusRequester,
+    onFocusArtist: (String) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    modifier: Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val scope = rememberCoroutineScope()
+    val gridState = rememberLazyGridState()
+    val letters = remember(list, filter) { if (filter == ShelfArtistFilter.AddedRecently) emptyMap() else shelfLetterIndex(list) }
+    // A new list (another genre or filter) starts at the top.
+    LaunchedEffect(title, filter, list.size) { gridState.scrollToItem(0) }
+    fun jump(letter: Char) {
+        val index = shelfJumpTo(letters, letter) ?: return
+        val artist = list[index]
+        onFocusArtist(artist.id)
+        scope.launch {
+            gridState.scrollToItem(index)
+            withFrameNanos { }
+            runCatching { requester(artist.id).requestFocus() }
+        }
+    }
+    LensPanel(modifier) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(title, fontSize = 40.sp, fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("${list.size} artist${if (list.size == 1) "" else "s"}", fontSize = 19.sp, color = colors.textSecondary)
+        }
+        Spacer(Modifier.height(20.dp))
+        if (list.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(if (filter == ShelfArtistFilter.Starred) "Star an artist on their page to see them here." else "No artists match.", fontSize = 19.sp, color = colors.textMuted)
+            }
+            return@LensPanel
+        }
         Row(Modifier.weight(1f).fillMaxWidth()) {
-            LazyColumn(
-                Modifier.weight(1f).fillMaxHeight().onKeyEvent { event ->
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(176.dp),
+                state = gridState,
+                modifier = Modifier.weight(1f).fillMaxHeight().onKeyEvent { event ->
                     // A typed letter jumps to the first artist filed under it.
                     if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                     val letter = LETTER_KEYS[event.key] ?: return@onKeyEvent false
@@ -414,27 +484,17 @@ private fun ArtistList(
                     jump(letter)
                     true
                 },
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (list.isEmpty()) {
-                    item(key = "none") {
-                        Text(
-                            if (filter == ShelfArtistFilter.Starred) "Star an artist on their page to see them here." else "No artists match.",
-                            fontSize = 17.sp,
-                            color = colors.textMuted,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    }
-                }
                 items(list, key = { it.id }) { artist ->
-                    ArtistRow(artist, artist.id == selectedId, requester(artist.id)) { onSelect(artist.id) }
+                    ArtistCard(artist, artist.id == focusedId, requester(artist.id), onFocus = { onFocusArtist(artist.id) }, onOpen = { onOpenArtist(artist.id) })
                 }
             }
             if (letters.isNotEmpty()) {
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.width(30.dp).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.CenterHorizontally) {
-                    val current = list.firstOrNull { it.id == selectedId }?.shelfLetter()
+                    val current = list.firstOrNull { it.id == focusedId }?.shelfLetter()
                     RAIL_LETTERS.forEach { letter ->
                         val has = letter in letters
                         val on = letter == current
@@ -461,36 +521,38 @@ private fun ArtistList(
     }
 }
 
-/** One artist: picture, name and how many releases; resting on it (focus or pointer) opens its albums in the middle. */
+/** One artist in the grid: round photo, name and releases. Every card is the same size; a star marks a starred artist. */
 @Composable
-private fun ArtistRow(artist: LibraryArtist, selected: Boolean, requester: FocusRequester, onSelect: () -> Unit) {
+private fun ArtistCard(artist: LibraryArtist, selected: Boolean, requester: FocusRequester, onFocus: () -> Unit, onOpen: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsKeyboardFocusedAsState()
+    val keyFocused by source.collectIsKeyboardFocusedAsState()
     val hovered by source.collectIsHoveredAsState()
-    val shape = RoundedCornerShape(16.dp)
+    LaunchedEffect(hovered) { if (hovered) onFocus() }
+    val shape = RoundedCornerShape(18.dp)
     val count = remember(artist.releases) { countReleaseCards(artist.releases) }
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
-            .height(ROW_HEIGHT)
+            .height(204.dp)
             .focusRequester(requester)
-            .onFocusChanged { if (it.hasFocus) onSelect() }
+            .onFocusChanged { if (it.isFocused) onFocus() }
             .clip(shape)
-            .background(if (selected) Color.White.copy(alpha = 0.12f) else if (hovered) MusicGlassRaised else Color.Transparent)
-            .border(if (focused) 2.dp else 0.dp, if (focused) colors.borderFocus else Color.Transparent, shape)
+            .background(if (selected || keyFocused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .border(if (keyFocused) 3.dp else 0.dp, if (keyFocused) colors.borderFocus else Color.Transparent, shape)
             .hoverable(source)
-            .clickable(interactionSource = source, indication = null, onClick = onSelect)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+            .clickable(interactionSource = source, indication = null, onClick = onOpen)
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        MusicCover(artist.art.thumb, artist.name, size = 48.dp, circle = true)
-        Column(Modifier.weight(1f)) {
-            Text(artist.name, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$count release${if (count == 1) "" else "s"}", fontSize = 15.sp, color = colors.textMuted, maxLines = 1)
+        Box {
+            MusicCover(artist.art.thumb, artist.name, size = 124.dp, circle = true)
+            if (artist.favourite) {
+                Icon(Icons.Rounded.Star, contentDescription = "Starred", tint = GOLD, modifier = Modifier.align(Alignment.TopEnd).size(24.dp))
+            }
         }
-        if (artist.favourite) Icon(Icons.Rounded.Star, contentDescription = "Starred", tint = GOLD, modifier = Modifier.size(22.dp))
+        Text(artist.name, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp))
+        Text("$count release${if (count == 1) "" else "s"}", fontSize = 14.sp, color = colors.textMuted, maxLines = 1)
     }
 }
 
@@ -541,87 +603,59 @@ private fun SectionLabel(text: String) {
     Text(text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, color = MaterialTheme.nuvio.colors.accent)
 }
 
-/** The middle panel in By artist: the artist, three buttons, and a page of eight of their albums. */
+/** The right panel of Artists A to Z: the artist in focus, with the way into their page and a quick play. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ArtistAlbumsPanel(
-    artist: LibraryArtist,
-    albums: List<ShelfAlbum>,
-    focusedKey: String?,
-    onFocusAlbum: (ShelfAlbum) -> Unit,
-    onBackToArtist: () -> Unit,
-    onArtistClick: (String) -> Unit,
-    onAlbumClick: (String) -> Unit,
-    modifier: Modifier,
-) {
+private fun ArtistSummaryPanel(artist: LibraryArtist?, onArtistClick: (String) -> Unit, modifier: Modifier) {
     val colors = MaterialTheme.nuvio.colors
-    val context = LocalPlatformContext.current
     val scope = rememberCoroutineScope()
     val catalog = remember { defaultMusicCatalog() }
-    val row = remember(artist) { buildShelfRow(artist) }
-    val addon = rememberAddonReleases(artist)
-    val lossless = albums.count { it.release.key in addon.keys }
-    // Artists added before Top 5 existed get their ranking filled in once, quietly; the covers on the page get a palette.
-    LaunchedEffect(artist.id) { MusicLibraryRepository.ensureTopAlbums(artist.id) }
-    val keys = remember(albums) { albums.map { it.release.key }.toSet() }
-    LaunchedEffect(artist.id, keys) { ReleasePaletteResolver.ensure(context, artist, keys = keys, limit = 40) }
-
-    var notice by remember(artist.id) { mutableStateOf<String?>(null) }
-    var busy by remember(artist.id) { mutableStateOf(false) }
-    fun launchPlay(opening: String, failed: String, play: suspend () -> Boolean) {
+    var busy by remember(artist?.id) { mutableStateOf(false) }
+    fun launchPlay(shuffled: Boolean) {
+        val a = artist ?: return
         if (busy) return
         busy = true
-        notice = opening
+        com.nuvio.app.core.ui.NuvioToastController.show(if (shuffled) "Mixing ${a.name}…" else "Opening ${a.name}…")
         scope.launch {
-            val ok = try { play() } catch (e: CancellationException) { throw e } catch (_: Throwable) { false }
+            val albums = shelfAlbumsOf(a).map { it.release }
+            val ok = try {
+                if (shuffled) playArtistMix(catalog, a, albums) else playTopAlbums(catalog, albums.take(12), shuffled = false)
+            } catch (e: CancellationException) { throw e } catch (_: Throwable) { false }
             busy = false
-            notice = if (ok) null else failed
-            if (!ok) { delay(4_000); if (notice == failed) notice = null }
+            if (!ok) com.nuvio.app.core.ui.NuvioToastController.show("Couldn't open ${a.name}")
         }
     }
-
     LensPanel(modifier) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Column(Modifier.weight(1f)) {
-                SectionLabel("ARTIST")
-                Text(artist.name, fontSize = 44.sp, fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-                Text(
-                    notice ?: shelfArtistLine(row.totalReleases, row.playableReleases, lossless),
-                    fontSize = 18.sp,
-                    color = if (notice != null) colors.accent else colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
+        SectionLabel("ARTIST")
+        Spacer(Modifier.height(14.dp))
+        if (artist == null) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text("Rest on an artist to see them here.", fontSize = 18.sp, color = colors.textMuted)
             }
-            if (albums.isNotEmpty()) {
-                ShelfButton("Play all", Icons.Rounded.PlayArrow, primary = true) {
-                    launchPlay("Opening their albums…", "Couldn't open their albums.") { playTopAlbums(catalog, albums.take(12).map { it.release }, shuffled = false) }
-                }
-                ShelfButton("Shuffle", Icons.Rounded.Shuffle) {
-                    launchPlay("Mixing their tracks…", "Couldn't open their tracks.") { playArtistMix(catalog, artist, albums.map { it.release }) }
-                }
-            }
-            ShelfButton("Artist page", Icons.Rounded.Person) { onArtistClick(artist.id) }
+            return@LensPanel
         }
-        Spacer(Modifier.height(24.dp))
-        if (albums.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Nothing by ${artist.name} plays here yet. Their page has every release.", fontSize = 19.sp, color = colors.textMuted)
+        val row = remember(artist) { buildShelfRow(artist) }
+        val genres = remember(artist) { artist.genres.mapNotNull { canonicalGenre(it) }.distinct().take(4).map { ShelfGenre(it, 0).label } }
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val size = minOf(maxWidth, maxHeight * 0.55f)
+            Column {
+                MusicCover(artist.art.thumb, artist.name, size = size)
+                Text(artist.name, fontSize = 32.sp, fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 16.dp))
+                Text(shelfArtistLine(row.totalReleases, row.playableReleases, 0), fontSize = 18.sp, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                if (genres.isNotEmpty()) {
+                    FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        genres.forEach { g ->
+                            Text(g, fontSize = 15.sp, color = colors.textSecondary, modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(999.dp)).padding(horizontal = 12.dp, vertical = 5.dp))
+                        }
+                    }
+                }
             }
-        } else {
-            CoverPages(
-                albums = albums,
-                columns = SHELF_ARTIST_COLUMNS,
-                perPage = SHELF_ARTIST_PAGE,
-                resetKey = artist.id,
-                focusedKey = focusedKey,
-                showArtist = false,
-                lossless = addon.keys,
-                onFocusAlbum = onFocusAlbum,
-                onLeftEdge = onBackToArtist,
-                onOpen = onAlbumClick,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
+        }
+        ShelfButton("Open artist page", Icons.Rounded.Person, primary = true, modifier = Modifier.fillMaxWidth()) { onArtistClick(artist.id) }
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ShelfButton("Play", Icons.Rounded.PlayArrow, modifier = Modifier.weight(1f)) { launchPlay(false) }
+            ShelfButton("Shuffle", Icons.Rounded.Shuffle, modifier = Modifier.weight(1f)) { launchPlay(true) }
         }
     }
 }

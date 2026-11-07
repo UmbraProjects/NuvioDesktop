@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Shelf: Artists A To Z Is A Scrolling Grid That Opens The Artist Page** - the Shelf's artist view no longer keeps you inside the Shelf: it took the artist page's big fanart away. **Artists A to Z** now has the genres on the left (with All, Starred and Added recently above them; each genre says how many of your artists have it), a scrolling grid of artist photos in the middle (a letter rail beside it, and typing a letter jumps), and the artist in focus on the right with Open artist page, Play and Shuffle. OK or a click on an artist opens their artist page with the hero fanart. The grid and the genre list scroll; nothing else on the Shelf does, and every card is the same size. Their albums are one step further in (the artist page, or All albums on the Shelf).
+
 - **Artist Page: All The Buttons On One Row** - with Radio added, the artist page's six buttons (Play Essentials, Shuffle all, Play Top 5, Radio, In your library, More) no longer fitted in a line and More dropped to a second row. The buttons are now a little tighter (14 dp inside, 8 dp apart) so all six sit on one centred row; only a window too narrow for them wraps.
 
 - **Shelf: Liked Music Is Your Songs** - the Liked Music shelf is no longer one card: after the Liked Music card (Play, Shuffle) come your newest 300 liked songs as covers. OK on a song plays Liked Music from that song on; Add to queue adds just that song; Go to artist opens its artist. Needs the sign-in under Settings > YouTube account. Not yet tried against a real account.

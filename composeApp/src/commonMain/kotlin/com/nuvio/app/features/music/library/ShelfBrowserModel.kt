@@ -78,6 +78,24 @@ internal fun shelfArtists(artists: List<LibraryArtist>, filter: ShelfArtistFilte
     }
 }
 
+/** A genre in the artists' left panel: its name as the artist page shows it, and how many of the library's artists have it. */
+internal data class ShelfGenre(val key: String, val count: Int) {
+    val label: String get() = key.split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
+}
+
+/** The genres of [artists], most artists first (then A to Z), at most [limit]; a genre only one artist has is left out unless there are few. */
+internal fun shelfGenres(artists: List<LibraryArtist>, limit: Int = 40): List<ShelfGenre> {
+    val counts = HashMap<String, Int>()
+    for (a in artists) a.genres.mapNotNull { canonicalGenre(it) }.distinct().forEach { counts.merge(it, 1, Int::plus) }
+    val all = counts.map { ShelfGenre(it.key, it.value) }.sortedWith(compareByDescending<ShelfGenre> { it.count }.thenBy { it.key })
+    val shared = all.filter { it.count >= 2 }
+    return (if (shared.size >= 6) shared else all).take(limit)
+}
+
+/** [artists] that have [genre] (a [ShelfGenre.key]); everyone when it is null. */
+internal fun shelfByGenre(artists: List<LibraryArtist>, genre: String?): List<LibraryArtist> =
+    if (genre == null) artists else artists.filter { a -> a.genres.any { canonicalGenre(it) == genre } }
+
 /** Where each letter's first artist is in [artists] (A to Z order); a letter with no artist is absent. */
 internal fun shelfLetterIndex(artists: List<LibraryArtist>): Map<Char, Int> {
     val out = LinkedHashMap<Char, Int>()
