@@ -29,6 +29,9 @@ internal val MusicPlayerState.coverUrl: String? get() = track?.coverUrl ?: album
 /** The album the playing track is from: the track's own (a playlist mixes albums), else the queue's album. */
 internal val MusicPlayerState.albumTitle: String? get() = track?.albumTitle ?: album?.title
 
+/** fork:music - what happens when the queue's track ends: nothing more, the queue again, or the same track again. */
+enum class MusicRepeat { Off, All, One }
+
 data class MusicPlayerState(
     val album: MusicAlbum? = null,
     val track: MusicTrack? = null,
@@ -36,6 +39,7 @@ data class MusicPlayerState(
     val trackIndex: Int = -1,
     val mode: MusicPlayMode = MusicPlayMode.Audio,
     val shuffled: Boolean = false,
+    val repeat: MusicRepeat = MusicRepeat.Off,
     /** What the surface should open. The head of a fallback chain; see [MusicPlayer.onSurfaceError]. */
     val source: TrailerPlaybackSource? = null,
     /** Where the surface starts [source]: 0 for a new track, the song's position after a mode switch. */
@@ -228,6 +232,11 @@ class MusicPlayer(
 
     fun next() {
         val q = queue ?: return
+        if (current.repeat == MusicRepeat.One && current.source != null) {
+            // The same song again, from the start.
+            _state.update { it.copy(startPositionMs = 0L, loadId = ++loadCounter, isLoading = true) }
+            return
+        }
         launchRequest {
             _state.update { it.copy(isLoading = true) }
             advanceFrom(q)
@@ -329,6 +338,68 @@ class MusicPlayer(
         _state.update { it.copy(shuffled = on, hasNext = q.upNext.isNotEmpty() || following.isNotEmpty()) }
         prefetchNext(q)
     }
+
+    fun setRepeat(mode: MusicRepeat) {
+        _state.update { it.copy(repeat = mode) }
+    }
+
+    /** Takes [track] out of what is queued after the one playing (the playing album's rest, or a queued album's). */
+    fun removeUpNext(track: MusicTrack) {
+        val q = queue ?: return
+        if (q.upNext.any { it.videoId == track.videoId }) {
+            val rest = q.dropUpNext().filter { it.videoId != track.videoId }
+            following = listOfNotNull(restAlbumOf(q, rest)) + following
+        } else {
+            following = following.mapNotNull { album ->
+                val left = album.tracks.filter { it.videoId != track.videoId }
+                when {
+                    left.size == album.tracks.size -> album
+                    left.isEmpty() -> null
+                    else -> album.copy(tracks = left)
+                }
+            }
+        }
+        _state.update { it.copy(hasNext = q.upNext.isNotEmpty() || following.isNotEmpty()) }
+    }
+
+    /** Moves [track], already queued, to play right after the one playing. */
+    fun playTrackNext(track: MusicTrack) {
+        val q = queue ?: return
+        removeUpNext(track)
+        playNext(
+            q.album.copy(
+                tracks = listOf(
+                    track.copy(
+                        coverUrl = track.coverUrl ?: q.album.thumbnailUrl,
+                        albumTitle = track.albumTitle ?: q.album.title,
+                        albumBrowseId = track.albumBrowseId ?: q.album.browseId,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    /** Empties the queue after the track playing, which carries on to its end. */
+    fun clearUpNext() {
+        val q = queue ?: return
+        q.dropUpNext()
+        following = emptyList()
+        _state.update { it.copy(hasNext = false) }
+    }
+
+    /** The tracks as an album of their own, each keeping the cover and album it showed before; null for none. */
+    private fun restAlbumOf(q: MusicQueue, tracks: List<MusicTrack>): MusicAlbum? =
+        tracks.takeIf { it.isNotEmpty() }?.let { list ->
+            q.album.copy(
+                tracks = list.map { t ->
+                    t.copy(
+                        coverUrl = t.coverUrl ?: q.album.thumbnailUrl,
+                        albumTitle = t.albumTitle ?: q.album.title,
+                        albumBrowseId = t.albumBrowseId ?: q.album.browseId,
+                    )
+                },
+            )
+        }
 
     fun pause() {
         _state.update { it.copy(playWhenReady = false) }
@@ -621,6 +692,14 @@ class MusicPlayer(
             show(fresh, found, startPositionMs = 0L, skipped = found.skipped.size, notice = notice)
             runCatching { onAlbumStarted(fresh.album) }
             return
+        }
+        // fork:music - Repeat all: the queue starts over from its first track instead of ending.
+        if (_state.value.repeat == MusicRepeat.All) {
+            val again = q.jumpTo(0) { track -> resolve(track, q.album, q.mode) }
+            if (again != null) {
+                show(q, again, startPositionMs = 0L, skipped = again.skipped.size, notice = notice)
+                return
+            }
         }
         // End of the last album. Nothing else to play, so the bar goes away.
         stop()

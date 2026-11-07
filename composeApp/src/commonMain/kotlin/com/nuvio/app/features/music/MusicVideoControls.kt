@@ -193,10 +193,22 @@ internal fun MusicSeekControl(
     barModifier: Modifier = Modifier,
     tint: Color = Color.White.copy(alpha = 0.9f),
     glass: Boolean = false,
+    /** fork:music - the dock: the elapsed time stands where the note icon was, the time left at the end, and a hover shows the time under the pointer. */
+    showTimes: Boolean = false,
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        if (showTimes) {
+            Text(
+                formatMusicTime(state.positionMs),
+                style = MaterialTheme.typography.labelMedium,
+                color = tint.copy(alpha = 0.75f),
+                maxLines = 1,
+                modifier = Modifier.widthIn(min = 34.dp),
+            )
+        } else {
+            Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+            }
         }
         SeekBar(
             fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
@@ -205,7 +217,17 @@ internal fun MusicSeekControl(
             enabled = state.durationMs > 0L,
             onNudge = { d -> player.seekTo((state.positionMs + d * nudgeMs).coerceIn(0L, state.durationMs)) },
             glass = glass,
+            hoverLabel = if (showTimes) { f -> formatMusicTime((f * state.durationMs).toLong()) } else null,
         )
+        if (showTimes) {
+            Text(
+                "-" + formatMusicTime((state.durationMs - state.positionMs).coerceAtLeast(0L)),
+                style = MaterialTheme.typography.labelMedium,
+                color = tint.copy(alpha = 0.75f),
+                maxLines = 1,
+                modifier = Modifier.widthIn(min = 34.dp),
+            )
+        }
     }
 }
 

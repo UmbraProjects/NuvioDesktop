@@ -38,6 +38,11 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.ClearAll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -215,7 +220,7 @@ private fun DockPanel(
     opensDown: Boolean,
     entry: FocusRequester,
 ) {
-    Column(Modifier.width(440.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.width(500.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (opensDown) {
             DockNowPlaying(state, player, onRestore, onExpandVideo, entry)
             DockDivider()
@@ -233,16 +238,57 @@ private fun DockDivider() {
     Box(Modifier.fillMaxWidth().padding(vertical = 2.dp).height(1.dp).background(NuvioGlass.EdgeColor))
 }
 
-/** The next few tracks, unlabelled: in a panel this small the list speaks for itself. */
+/** What the open dock says the queue is: the radio, playlist or album it plays from. */
+private fun upNextSource(state: MusicPlayerState): String? =
+    playingFromLabel(state.album)?.removePrefix("From ") ?: state.albumTitle?.takeIf { it.isNotBlank() }
+
+/**
+ * The next few tracks under a header naming where they come from, with the queue's own buttons (shuffle, repeat, clear)
+ * on its right. A row has the track's cover; a click plays it, and under the pointer the duration gives way to
+ * "Play next" and "Remove".
+ */
 @Composable
 private fun DockUpNext(state: MusicPlayerState, player: MusicPlayer) {
     val colors = MaterialTheme.nuvio.colors
-    val upNext = remember(state.track, state.trackIndex, state.shuffled) { player.upNext(UP_NEXT_COUNT) }
+    val upNext = remember(state.track, state.trackIndex, state.shuffled, state.hasNext) { player.upNext(UP_NEXT_COUNT) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            listOfNotNull("Up next", upNextSource(state)).joinToString(" · "),
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 6.dp),
+        )
+        DockButton(Icons.Rounded.Shuffle, if (state.shuffled) "Shuffle on" else "Shuffle off", active = state.shuffled, small = true) {
+            player.setShuffled(!state.shuffled)
+        }
+        DockButton(
+            if (state.repeat == MusicRepeat.One) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+            when (state.repeat) {
+                MusicRepeat.Off -> "Repeat off"
+                MusicRepeat.All -> "Repeat the queue"
+                MusicRepeat.One -> "Repeat this song"
+            },
+            active = state.repeat != MusicRepeat.Off,
+            small = true,
+        ) {
+            player.setRepeat(
+                when (state.repeat) {
+                    MusicRepeat.Off -> MusicRepeat.All
+                    MusicRepeat.All -> MusicRepeat.One
+                    MusicRepeat.One -> MusicRepeat.Off
+                },
+            )
+        }
+        DockButton(Icons.Rounded.ClearAll, "Clear the queue", enabled = upNext.isNotEmpty(), small = true) { player.clearUpNext() }
+    }
     if (upNext.isEmpty()) {
         Text(
             if (state.hasNext) "The next album starts after this one" else "Nothing after this track",
             style = MaterialTheme.typography.bodyMedium,
             color = colors.textSecondary,
+            modifier = Modifier.padding(horizontal = 6.dp),
         )
     }
     upNext.forEach { track ->
@@ -260,7 +306,9 @@ private fun DockUpNext(state: MusicPlayerState, player: MusicPlayer) {
                 .clickable(interactionSource = rowSource, indication = null) { player.playUpNext(track) }
                 .padding(horizontal = 6.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            Cover(track.coverUrl ?: state.album?.thumbnailUrl, size = 30)
             Text(
                 track.title,
                 style = MaterialTheme.typography.bodyMedium,
@@ -269,15 +317,36 @@ private fun DockUpNext(state: MusicPlayerState, player: MusicPlayer) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                formatMusicTime(track.durationSeconds * 1000L),
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.textMuted,
-                maxLines = 1,
-            )
+            if (rowHovered) {
+                RowAction("Play next") { player.playTrackNext(track) }
+                RowAction("Remove") { player.removeUpNext(track) }
+            } else {
+                Text(
+                    formatMusicTime(track.durationSeconds * 1000L),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
+            }
         }
     }
+}
+
+/** A small text action on an Up next row, shown while the pointer is on it. */
+@Composable
+private fun RowAction(label: String, onClick: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = colors.textPrimary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(MusicGlassRaised)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 /** The track, the time and the transport, with the seek bar under them. */
@@ -293,53 +362,67 @@ private fun DockNowPlaying(
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Cover(state.coverUrl, size = 56)
         Column(Modifier.weight(1f)) {
+            // The quality is a pill beside the title, so the artist and album line has the room.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    state.track?.title.orEmpty().ifBlank { "Now playing" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                qualityTag(state)?.let { tag ->
+                    Text(
+                        tag,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.accent,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(colors.accent.copy(alpha = 0.16f))
+                            .padding(horizontal = 7.dp, vertical = 1.dp),
+                    )
+                }
+            }
             Text(
-                state.track?.title.orEmpty().ifBlank { "Now playing" },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                subtitle(state),
+                subtitle(state, withQuality = false),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                "${formatMusicTime(state.positionMs)} / ${formatMusicTime(state.durationMs)}",
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.textMuted,
-                maxLines = 1,
-            )
         }
-        DockButton(
-            icon = if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-            description = if (state.playWhenReady) "Pause" else "Play",
-            filled = true,
-            modifier = Modifier.focusRequester(entry),
-        ) { player.togglePlayback() }
-        DockButton(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
-        onExpandVideo?.let { DockButton(Icons.Rounded.OpenInFull, "Expand video", onClick = it) }
-        state.track?.let { track ->
-            DockButton(Icons.Rounded.PlaylistAdd, "Add to playlist") {
-                com.nuvio.app.features.music.playlist.PlaylistPicker.request(
-                    listOf(with(com.nuvio.app.features.music.playlist.MusicPlaylistTracks) { track.forPlaylist(state.album) }),
-                )
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            DockButton(Icons.Rounded.SkipPrevious, "Previous") { player.previous() }
+            DockButton(
+                icon = if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                description = if (state.playWhenReady) "Pause" else "Play",
+                filled = true,
+                modifier = Modifier.focusRequester(entry),
+            ) { player.togglePlayback() }
+            DockButton(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
+            onExpandVideo?.let { DockButton(Icons.Rounded.OpenInFull, "Expand video", onClick = it) }
+            state.track?.let { track ->
+                DockButton(Icons.Rounded.PlaylistAdd, "Add to playlist") {
+                    com.nuvio.app.features.music.playlist.PlaylistPicker.request(
+                        listOf(with(com.nuvio.app.features.music.playlist.MusicPlaylistTracks) { track.forPlaylist(state.album) }),
+                    )
+                }
             }
+            DockButton(Icons.Rounded.KeyboardArrowUp, "Show the player") { onRestore() }
         }
-        DockButton(Icons.Rounded.KeyboardArrowUp, "Show the player") { onRestore() }
     }
     // One row under the header: the song's seek bar (a click, drag or Left/Right moves it) in two thirds, the volume
     // in the last, so it can be set without bringing the full player back and does not sit on a row of its own.
+    // The elapsed time stands at its start and the time left at its end; hovering shows the time under the pointer.
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        MusicSeekControl(state, player, nudgeMs = DOCK_NUDGE_MS, modifier = Modifier.weight(2f), tint = colors.textPrimary)
+        MusicSeekControl(state, player, nudgeMs = DOCK_NUDGE_MS, modifier = Modifier.weight(2f), tint = colors.textPrimary, showTimes = true)
         MusicVolumeControl(state, player, sliderWidth = null, modifier = Modifier.weight(1f), tint = colors.textPrimary)
     }
 }
@@ -366,12 +449,16 @@ private fun DockButton(
     filled: Boolean = false,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    /** A toggle that is on (shuffle, repeat): drawn in the accent. */
+    active: Boolean = false,
+    /** The queue header's buttons. */
+    small: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Box(
         modifier
-            .size(36.dp)
+            .size(if (small) 30.dp else 36.dp)
             .clip(CircleShape)
             .then(if (filled) Modifier.background(colors.accentFill) else Modifier)
             .musicKeyFocusRing(CircleShape).clickable(enabled = enabled, onClick = onClick),
@@ -382,10 +469,11 @@ private fun DockButton(
             contentDescription = description,
             tint = when {
                 filled -> colors.onAccent
+                active && enabled -> colors.accent
                 enabled -> colors.textPrimary
                 else -> colors.textDisabled
             },
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(if (small) 18.dp else 22.dp),
         )
     }
 }
