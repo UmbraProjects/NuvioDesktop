@@ -595,7 +595,7 @@ private const val VOICE_OWNER = "music-search"
 
 // region header
 
-/** The icon row: Search first, then the Library's views (Shelf, Constellation, Eras, Playlists). Null is Search. */
+/** The icon row: Search first, then the Library's views (Shelf, Playlists). Null is Search. */
 @Composable
 private fun HomeTabs(libraryTab: LibraryView?, onSelect: (LibraryView?) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -608,8 +608,6 @@ private fun HomeTabs(libraryTab: LibraryView?, onSelect: (LibraryView?) -> Unit)
 
 private val HOME_VIEW_ICONS: List<Triple<LibraryView, ImageVector, String>> = listOf(
     Triple(LibraryView.Shelf, Icons.Rounded.ViewModule, "Library shelf"),
-    Triple(LibraryView.Constellation, Icons.Rounded.Hub, "Constellation"),
-    Triple(LibraryView.Eras, Icons.Rounded.Timeline, "Eras"),
     Triple(LibraryView.Playlists, Icons.Rounded.QueueMusic, "Playlists"),
 )
 

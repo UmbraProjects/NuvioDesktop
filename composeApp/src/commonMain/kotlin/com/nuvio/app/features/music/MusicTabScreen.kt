@@ -17,7 +17,6 @@ import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.nuvio.app.features.music.library.LibraryView
-import com.nuvio.app.features.music.library.constellationGaps
 import com.nuvio.app.features.music.library.musicGlass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -518,23 +517,6 @@ fun MusicTabScreen(
                         }
                     }
                 }
-                // fork:music - the Constellation's thin spots: genres you tag but barely own, each a ladder into it.
-                if (libraryView == LibraryView.Constellation) {
-                    val gaps = remember(libraryState.artists) { constellationGaps(libraryState.artists) }
-                    if (gaps.isNotEmpty()) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("Thin spots", style = MaterialTheme.typography.labelLarge, color = tokens.colors.textMuted)
-                            gaps.forEach { gap ->
-                                MusicGlassPill(gap.genre.replaceFirstChar { it.uppercase() }, selected = false, accent = true) {
-                                    ladder = LadderRequest.Genre(gap.genre)
-                                }
-                            }
-                        }
-                    }
-                }
             }
             if (section == MusicSection.Search) {
                 Row(
@@ -644,15 +626,12 @@ private val BAR_HOSTED_TRIM = 36.dp
 /** The Library's views, as the icons under the bar. */
 private val LIBRARY_VIEW_ICONS = listOf(
     Triple(LibraryView.Shelf, Icons.Rounded.ViewModule, "Shelf"),
-    Triple(LibraryView.Constellation, Icons.Rounded.Hub, "Constellation"),
-    Triple(LibraryView.Eras, Icons.Rounded.Timeline, "Eras"),
     Triple(LibraryView.Playlists, Icons.Rounded.QueueMusic, "Playlists"),
 )
 
 /** The search header is a centred column this wide at most; the grid below gets the room. */
 private val MUSIC_HEADER_MAX_WIDTH = 720.dp
 
-/** With the Constellation's filter beside the search, the bar gets this much room for the two halves. */
 /** The search box: the Library's view pills (about 260 dp) and a fifth of that again on each side. */
 private val MUSIC_SEARCH_WIDTH = 380.dp
 

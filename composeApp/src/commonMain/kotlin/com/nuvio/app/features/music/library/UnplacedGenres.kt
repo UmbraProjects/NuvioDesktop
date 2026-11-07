@@ -1,7 +1,9 @@
 package com.nuvio.app.features.music.library
 
 /**
- * Constellation: artists no source has genres for, as pure data (no Compose, so it is unit-tested).
+ * Artists no source has genres for, and the genre picker's logic ([GenrePickerPanel]), as pure data (no Compose, so it is
+ * unit-tested). Written for the Constellation view, which is retired; the artist room's genre picker and the library's
+ * tag look-ups still use it.
  *
  *  - Backoff: a completed look-up that finds no genres or tags is remembered ([LibraryArtist.tagMisses],
  *    [LibraryArtist.tagsCheckedAtEpochMs]) and the tray stops offering a retry for 3, then 7, then 14 days. A look-up

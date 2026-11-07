@@ -449,8 +449,7 @@ private fun RoomLane(
         val inLibrary = library.contains(artist.id)
         val (mood, genres) = passportChips(artist)
         val genreLine = (listOfNotNull(mood) + genres).joinToString("  ·  ") { it.titleCased() }
-        // A saved artist's genres can be changed here (the Constellation's own picker): the line opens it, or "Add genres"
-        // when there are none. The Constellation only offers the picker while an artist has no genres at all.
+        // A saved artist's genres can be changed here (GenrePicker.kt): the line opens it, or "Add genres" when there are none.
         var editingGenres by remember { mutableStateOf(false) }
         if (genreLine.isNotEmpty() || inLibrary) {
             Box {

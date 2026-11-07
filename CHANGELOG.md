@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Constellation And Eras Are Retired** - the Library's Constellation (the star map of saved artists) and Eras (the timeline of releases) views are gone; the Library's views are now Shelf and Playlists, on the Music tab and on the new music home's icon row. What other screens used stays: the genre picker in the artist room (its "On your map" list now reads "In your library"), the artist page's "Similar in your library", and the artist page's own release timeline. The Constellation's "Thin spots" row and its star menus went with it. A redesigned Shelf comes next.
+
 - **Music Home: Fanart On Hover** - on the new music home's result panels, resting the pointer or the remote on a row brings that row's artist fanart up behind the screen (an artist, song, album or video: the artist's fanart from TheAudioDB, else the row's own cover or thumbnail, blown up). It waits 0.3 s first, so moving down a list does not flash through every artist. The colours stay with the top match. Typing again or the screen gliding back to the centre puts the top match's picture back.
 
 - **Music Home: The Normal Top Bar On Music** - with the new music home on, the top bar on the Music tab stays the app's normal one (Home, Search, Discover, Library, Live TV, YouTube, Music, profile) instead of turning into an empty Music bar: the home's own search line does the searching. With the setting off, the Music bar is as before.

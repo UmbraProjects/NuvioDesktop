@@ -109,8 +109,7 @@ import kotlinx.coroutines.launch
  * the top five. A star by the artist's name floats it to the top of the shelf. Clicking a cover opens
  * the album; the avatar, name or "All" open the room.
  * Above the rows sit up to four cards (a year ago this week, a starred artist, added recently, continue your ladder).
- * [view] picks Shelf (this file), Constellation ([ConstellationView]) or Eras ([LibraryErasView]); the Music tab's
- * header holds the switch, and on Constellation its filter box feeds [filterQuery]. The page sits on the tab's
+ * The Music tab's header holds the Library's view switch (Shelf or Playlists) and its filter box feeds [filterQuery]. The page sits on the tab's
  * sky and the app accent: the artists' own colours are kept for their own pages.
  */
 @Composable
@@ -137,7 +136,7 @@ internal fun MusicLibraryShelf(
         shelfCards(state.artists, yearAgo, LadderProgressStore.resumable(), daySeed = y * 372 + m * 31 + d)
     }
     val totalReleases = remember(state.artists) { state.artists.sumOf { countReleaseCards(it.releases) } }
-    // The header's filter narrows the Shelf and Eras here; the Constellation dims what doesn't match instead.
+    // The header's filter narrows the Shelf.
     val shown = remember(state.artists, filterQuery) { state.artists.filter { it.matchesLibraryFilter(filterQuery) } }
     // Starred artists first; the sort is stable, so each group stays alphabetical.
     val ordered = remember(shown) { shown.sortedByDescending { it.favourite } }
@@ -149,25 +148,6 @@ internal fun MusicLibraryShelf(
             }
             if (state.artists.isEmpty() && state.working.isEmpty()) {
                 MusicMessage("Open an artist from Search and choose Add to library. Every album, single and EP comes with it, with artwork and details.")
-            } else if (view == LibraryView.Constellation) { // fork:music
-                ConstellationView(
-                    artists = state.artists,
-                    pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }.values.map { it.status },
-                    onArtistClick = onArtistClick,
-                    query = filterQuery,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    onOpenLadder = onOpenLadder, // HTPC phase 5
-                )
-            } else if (view == LibraryView.Eras) { // fork:music
-                LibraryErasView(
-                    artists = shown,
-                    pending = state.working.filterKeys { id -> state.artists.none { it.id == id } }.values.map { it.status },
-                    reducedMotion = state.settings.reducedMotion,
-                    onArtistClick = onArtistClick,
-                    onAlbumClick = onAlbumClick,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    yearAgo = yearAgo?.let { pick -> { YearAgoStrip(pick, state.artists.size, totalReleases) } },
-                )
             } else {
                 val shelfListState = rememberLazyListState()
                 val shelfScope = rememberCoroutineScope()

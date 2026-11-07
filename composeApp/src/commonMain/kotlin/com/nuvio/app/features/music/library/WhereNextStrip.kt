@@ -81,7 +81,7 @@ internal object WhereNextCache {
     }
 }
 
-/** The saved artists most like [artist] by the constellation's own tag similarity, best first. */
+/** The saved artists most like [artist] by the library's tag similarity ([buildConstellationGraph]), best first. */
 internal fun similarInLibrary(artist: LibraryArtist, all: List<LibraryArtist>, limit: Int = 8): List<LibraryArtist> {
     val byId = all.associateBy { it.id }
     return buildConstellationGraph(all).neighbours(artist.id).mapNotNull { byId[it.first] }.take(limit)
