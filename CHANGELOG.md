@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Radio: Keep Going?** - a radio is read about 100 songs ahead; when the third song from the end starts, a box now asks "Keep (name) radio going?". Keep going reads another radio from the last song, leaves out what already played and queues it after; it asks again near its own end. No lets it end. Each radio is asked once, and the box floats over the screen without moving anything. Playlists and albums are never asked. Not yet tried on the HTPC.
+
 - **Play History: Import From YouTube Music, And Clear** - Settings > Music has a new Play history section. **Import from YouTube Music** adds the songs on your YouTube Music History (the latest three pages) to the play log that the Shelf's Recently played, Most played and Gathering dust are made from; YouTube Music only says "Today", "Yesterday", "This week" and the like, so each song is dated by its heading (four minutes apart to keep the order), and importing again adds nothing twice. It needs the sign-in under YouTube account. **Clear play history** (press twice) forgets every play for the profile. Not yet tried against a real History page.
 
 - **Shelf: Pages Turn With The Mouse** - the Shelf's pages ("Page 1 of 27") only turned with Down and Up on a focused cover, so with a mouse they stayed put. The mouse wheel now turns them (a page per notch), Page Up and Page Down do too, and the dots and the new arrows under the grid are clickable; the dots follow the page you are on in a long wall instead of stopping at twelve. Nothing moves or resizes: the strip keeps its height.

@@ -1,5 +1,17 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.core.ui.NuvioModalDialog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /*
@@ -7,7 +19,7 @@ import kotlinx.coroutines.launch
  * station or mix (made as it plays, read with the watch-next "up next" call), a song's radio and an artist's radio. Each
  * becomes one queue the player plays like an album (as the music home's Play all does), each track with its own cover.
  *
- * A radio is read about 100 tracks ahead when it starts; it does not top itself up after that yet.
+ * A radio is read about 100 tracks ahead when it starts; near the end of them the player asks whether to keep going ([RadioKeepGoing]).
  */
 
 /** How far ahead a radio is read when it starts. */
@@ -94,4 +106,85 @@ internal object MusicRadioStarter {
             else MusicPlayback.player.play(queue)
         }
     }
+}
+
+/** How many tracks from the end of a radio the question comes. */
+private const val KEEP_GOING_AHEAD = 3
+
+/** True for the queues [loadPlaylistQueue], [loadSongRadio] and [loadArtistRadio] make from a radio (not a fixed playlist or an album). */
+internal fun isRadioQueue(browseId: String?): Boolean = when {
+    browseId == null -> false
+    browseId.startsWith("radio:") || browseId.startsWith("artist-radio:") -> true
+    browseId.startsWith("list:") -> isRadioPlaylistId(browseId.removePrefix("list:"))
+    else -> false
+}
+
+/** Whether [index] is within the last few of [size] tracks of a radio. */
+internal fun nearRadioEnd(browseId: String?, index: Int, size: Int): Boolean =
+    isRadioQueue(browseId) && size > 0 && index >= 0 && index >= size - KEEP_GOING_AHEAD
+
+/** The tracks of [more] not already in [played], for topping a radio up without repeats. */
+internal fun freshTracks(more: List<MusicTrack>, played: List<MusicTrack>): List<MusicTrack> {
+    val seen = played.mapTo(HashSet()) { it.videoId }
+    return more.filter { seen.add(it.videoId) }
+}
+
+/**
+ * fork:music-radio - a radio is read about 100 tracks ahead. Near the end of them the player asks "Keep this radio going?";
+ * Yes reads another radio from the last song and queues it after, which asks again near its own end. Each queue is asked once.
+ */
+internal object RadioKeepGoing {
+    data class Offer(val queueId: String, val title: String, val lastVideoId: String, val played: List<MusicTrack>)
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val _offer = MutableStateFlow<Offer?>(null)
+    val offer: StateFlow<Offer?> = _offer.asStateFlow()
+    private val asked = HashSet<String>()
+
+    /** Follows [player] for the life of the app. */
+    suspend fun watch(player: MusicPlayer) {
+        player.state.collect { s ->
+            val album = s.album ?: return@collect
+            if (album.browseId in asked || _offer.value != null) return@collect
+            if (!nearRadioEnd(album.browseId, s.trackIndex, album.tracks.size)) return@collect
+            val last = album.tracks.lastOrNull() ?: return@collect
+            asked += album.browseId
+            _offer.value = Offer(album.browseId, album.title.removeSuffix(" radio"), last.videoId, album.tracks)
+        }
+    }
+
+    fun no() { _offer.value = null }
+
+    fun yes() {
+        val offer = _offer.value ?: return
+        _offer.value = null
+        scope.launch {
+            val page = defaultMusicCatalog().radio("RDAMVM${offer.lastVideoId}", videoId = offer.lastVideoId, maxTracks = RADIO_TRACKS)
+            val tracks = page?.let { freshTracks(it.tracks, offer.played) }.orEmpty()
+            if (tracks.isEmpty()) {
+                com.nuvio.app.core.ui.NuvioToastController.show("No more for ${offer.title} radio")
+                return@launch
+            }
+            // Queued under a new id, so it is asked about again near its own end.
+            val next = listQueue("radio:${offer.lastVideoId}", "${offer.title} radio", "Radio", null, emptyList(), tracks)
+            MusicPlayback.player.enqueue(next)
+            com.nuvio.app.core.ui.NuvioToastController.show("Added ${next.tracks.size} more to ${offer.title} radio")
+        }
+    }
+}
+
+/** The question itself, over whatever is on screen; it moves nothing. Place once in the root. */
+@Composable
+internal fun RadioKeepGoingDialog() {
+    val offer by RadioKeepGoing.offer.collectAsStateWithLifecycle()
+    val o = offer ?: return
+    NuvioModalDialog(
+        onDismissRequest = RadioKeepGoing::no,
+        title = "Keep ${o.title} radio going?",
+        subtitle = "It is nearly out of songs. More like these can follow.",
+        actions = {
+            TextButton(onClick = RadioKeepGoing::no) { Text("No, let it end") }
+            TextButton(onClick = RadioKeepGoing::yes) { Text("Keep going") }
+        },
+    ) {}
 }

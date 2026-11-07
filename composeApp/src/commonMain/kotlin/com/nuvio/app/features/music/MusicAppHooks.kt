@@ -136,6 +136,9 @@ fun BoxScope.MusicRootHosts(
     androidx.compose.runtime.LaunchedEffect(Unit) { com.nuvio.app.features.music.booklet.FactsFiller.run() }
     // fork:history - counts each song's plays and skips for the album page's Your history lens, for the life of the app.
     androidx.compose.runtime.LaunchedEffect(Unit) { com.nuvio.app.features.music.library.SongHistory.run() }
+    // fork:music-radio - asks "Keep this radio going?" near the end of a radio's tracks.
+    androidx.compose.runtime.LaunchedEffect(Unit) { RadioKeepGoing.watch(MusicPlayback.player) }
+    RadioKeepGoingDialog()
     MusicNowPlayingHost(
         hidden = hidden,
         onOpenArtist = onOpenArtist,
