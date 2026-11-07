@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Shelf: Liked Music Is Your Songs** - the Liked Music shelf is no longer one card: after the Liked Music card (Play, Shuffle) come your newest 300 liked songs as covers. OK on a song plays Liked Music from that song on; Add to queue adds just that song; Go to artist opens its artist. Needs the sign-in under Settings > YouTube account. Not yet tried against a real account.
+
+- **The Bar Says Where A Radio Or Playlist Plays From** - the mini-player's line (artist, album, quality) now adds "From Discover Mix", "From Prince radio" or "From Road trip" when what plays is a radio, mix or playlist rather than an album. Nothing on the Now Playing stage changed, so nothing there moves or resizes.
+
 - **Shelf: Liked Music, Unplayed And Listen Again** - three more shelves on the Shelf's left panel. **Liked Music** is your YouTube Music likes as one card to play or shuffle. **Unplayed** is the albums in your library that the play log has never seen, in an order that changes each day (up to 150). **Listen again** is the playlists on YouTube Music's own "Listen again" home shelf. Liked Music and Listen again need the sign-in under Settings > YouTube account; Listen again only shows what that shelf holds as playlists. With thirteen shelves the list scrolls inside its panel when the window is short. Not yet tried against a real account.
 
 - **Radio: Keep Going?** - a radio is read about 100 songs ahead; when the third song from the end starts, a box now asks "Keep (name) radio going?". Keep going reads another radio from the last song, leaves out what already played and queues it after; it asks again near its own end. No lets it end. Each radio is asked once, and the box floats over the screen without moving anything. Playlists and albums are never asked. Not yet tried on the HTPC.

@@ -33,4 +33,14 @@ class RadioKeepGoingTest {
         val more = freshTracks(listOf(track("a"), track("b"), track("b"), track("c")), listOf(track("a")))
         assertEquals(listOf("b", "c"), more.map { it.videoId })
     }
+
+    private fun queue(id: String, title: String, kind: String?) = MusicAlbum(id, title, emptyList(), null, kind, null, emptyList(), null)
+
+    @Test
+    fun theBarSaysWhichRadioOrPlaylistItIsPlayingFrom() {
+        assertEquals("From Prince radio", playingFromLabel(queue("artist-radio:UCx", "Prince radio", "Radio")))
+        assertEquals("From Road trip", playingFromLabel(queue("list:PLx", "Road trip", "Playlist")))
+        assertEquals(null, playingFromLabel(queue("MPREb_a", "Purple Rain", "Album")))
+        assertEquals(null, playingFromLabel(null))
+    }
 }

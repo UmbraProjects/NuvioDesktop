@@ -6,6 +6,8 @@ import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.features.music.MusicCatalog
 import com.nuvio.app.features.music.MusicHomeShelf
 import com.nuvio.app.features.music.MusicPlayback
+import com.nuvio.app.features.music.MusicTrack
+import com.nuvio.app.features.music.listQueue
 import com.nuvio.app.features.music.MusicPlaylistSummary
 import com.nuvio.app.features.music.loadArtistRadio
 import com.nuvio.app.features.music.loadPlaylistQueue
@@ -53,6 +55,11 @@ internal sealed interface ShelfItem {
         override val key: String get() = play.key
     }
 
+    /** A song from the account's Liked Music; plays Liked Music from this song. */
+    data class Song(val track: MusicTrack) : ShelfItem {
+        override val key: String get() = "song:" + track.videoId
+    }
+
     /** A playlist made or imported here. */
     data class Local(val playlist: MusicPlaylist) : ShelfItem {
         override val key: String get() = "local:" + playlist.id
@@ -66,11 +73,14 @@ internal object MusicAccountShelves {
         val loading: Boolean = false,
         val home: List<MusicHomeShelf> = emptyList(),
         val playlists: List<MusicPlaylistSummary> = emptyList(),
+        /** The newest songs of Liked Music, newest first. */
+        val liked: List<MusicTrack> = emptyList(),
         val loadedAtMs: Long = 0L,
         val failed: Boolean = false,
     )
 
     private const val FRESH_MS = 30 * 60_000L
+    private const val LIKED_MAX = 300
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -88,11 +98,13 @@ internal object MusicAccountShelves {
         scope.launch {
             val home = runCatching { catalog.accountHome() }.getOrNull()
             val lists = runCatching { catalog.accountPlaylists() }.getOrNull()
+            val liked = if (lists.orEmpty().any { it.playlistId == "LM" }) runCatching { catalog.playlist("LM") }.getOrNull()?.tracks?.filter { it.isAvailable }?.take(LIKED_MAX).orEmpty() else emptyList()
             _state.value = State(
                 signedIn = true,
                 loading = false,
                 home = home.orEmpty(),
                 playlists = lists.orEmpty(),
+                liked = liked,
                 loadedAtMs = LibraryClock.nowEpochMs(),
                 failed = home == null && lists == null,
             )
@@ -116,7 +128,8 @@ internal fun shelfListenAgain(home: List<MusicHomeShelf>): List<MusicPlaylistSum
 internal class ShelfActions(private val catalog: MusicCatalog, private val scope: CoroutineScope) {
     private val player get() = MusicPlayback.player
 
-    private suspend fun queueOf(item: ShelfItem): com.nuvio.app.features.music.MusicAlbum? = when (item) {
+    private suspend fun queueOf(item: ShelfItem, whole: Boolean = true): com.nuvio.app.features.music.MusicAlbum? = when (item) {
+        is ShelfItem.Song -> if (whole) loadPlaylistQueue(catalog, "LM", "Liked Music") else listQueue("song:" + item.track.videoId, item.track.title, "Song", item.track.coverUrl, item.track.artists, listOf(item.track))
         is ShelfItem.Album -> item.album.release.ytBrowseId?.let { catalog.album(it) }
         is ShelfItem.PlayedAlbum -> catalog.album(item.play.browseId)
         is ShelfItem.Playlist -> loadPlaylistQueue(catalog, item.list.playlistId, item.list.title, item.list.thumbnailUrl)
@@ -133,6 +146,7 @@ internal class ShelfActions(private val catalog: MusicCatalog, private val scope
     }
 
     fun titleOf(item: ShelfItem): String = when (item) {
+        is ShelfItem.Song -> item.track.title
         is ShelfItem.Album -> item.album.release.title
         is ShelfItem.PlayedAlbum -> item.play.title
         is ShelfItem.Playlist -> item.list.title
@@ -141,11 +155,13 @@ internal class ShelfActions(private val catalog: MusicCatalog, private val scope
     }
 
     fun play(item: ShelfItem, shuffled: Boolean = false) = launchWith(item, "Opening") { queue ->
-        player.play(queue, shuffled = shuffled)
+        // A liked song plays Liked Music from that song (shuffling mixes the lot).
+        val at = (item as? ShelfItem.Song)?.let { s -> queue.tracks.indexOfFirst { it.videoId == s.track.videoId } }?.coerceAtLeast(0) ?: 0
+        player.play(queue, trackIndex = if (shuffled) 0 else at, shuffled = shuffled)
         null
     }
 
-    fun queue(item: ShelfItem) = launchWith(item, "Opening") { queue ->
+    fun queue(item: ShelfItem) = launchWith(item, "Opening", whole = false) { queue ->
         if (player.enqueue(queue)) "Added ${titleOf(item)} to the queue" else null
     }
 
@@ -155,11 +171,11 @@ internal class ShelfActions(private val catalog: MusicCatalog, private val scope
         "Saved to your playlists as ${playlist.name}"
     }
 
-    private fun launchWith(item: ShelfItem, verb: String, then: (com.nuvio.app.features.music.MusicAlbum) -> String?) {
+    private fun launchWith(item: ShelfItem, verb: String, whole: Boolean = true, then: (com.nuvio.app.features.music.MusicAlbum) -> String?) {
         val title = titleOf(item)
-        if (item !is ShelfItem.Local && item !is ShelfItem.Album) NuvioToastController.show("$verb $title…")
+        if (item !is ShelfItem.Local && item !is ShelfItem.Album && item !is ShelfItem.Song) NuvioToastController.show("$verb $title…")
         scope.launch {
-            val queue = runCatching { queueOf(item) }.getOrNull()
+            val queue = runCatching { queueOf(item, whole) }.getOrNull()
             if (queue == null || queue.tracks.isEmpty()) {
                 NuvioToastController.show("Couldn't open $title")
                 return@launch

@@ -456,7 +456,8 @@ internal fun subtitle(state: MusicPlayerState): String {
     // Only while the addon's audio is what plays: a real video carries YouTube's own sound.
     val quality = state.track?.videoId?.let(com.nuvio.app.features.music.nebula.NebulaMusicSource::qualityOf)
         ?.takeUnless { state.mode == MusicPlayMode.Video && !state.lyricVideo }
-    return listOf(artist, state.albumTitle.orEmpty(), quality.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
+    // fork:music-radio - a radio, mix or playlist says which one it is playing from.
+    return listOf(artist, state.albumTitle.orEmpty(), playingFromLabel(state.album).orEmpty(), quality.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
 /** The three controls that stay on the bar: previous, play or pause, next. */

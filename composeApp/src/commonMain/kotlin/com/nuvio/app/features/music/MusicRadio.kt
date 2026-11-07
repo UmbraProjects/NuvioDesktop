@@ -188,3 +188,14 @@ internal fun RadioKeepGoingDialog() {
         },
     ) {}
 }
+
+/**
+ * fork:music-radio - where a queue came from when it is not an album: "From Discover Mix", "From Prince radio", "From Road trip".
+ * Null for an album or single (the track's own album is already on the line) and for nothing playing.
+ */
+internal fun playingFromLabel(queue: MusicAlbum?): String? {
+    queue ?: return null
+    if (queue.browseId.startsWith("MPREb_") || queue.title.isBlank()) return null
+    if (queue.kind != "Radio" && queue.kind != "Playlist") return null
+    return "From ${queue.title}"
+}

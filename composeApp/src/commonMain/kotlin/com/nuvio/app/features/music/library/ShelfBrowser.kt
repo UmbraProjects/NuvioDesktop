@@ -175,7 +175,7 @@ internal fun ShelfBrowser(
             ShelfSection.Unplayed to albums(shelfUnplayed(everyAlbum, playCounts, daySeed)),
             ShelfSection.Lossless to albums(shelfLossless(everyAlbum, losslessKeys)),
             ShelfSection.Starred to albums(shelfStarred(everyAlbum)),
-            ShelfSection.Liked to shelfLiked(account.playlists).map { ShelfItem.Playlist(it) },
+            ShelfSection.Liked to shelfLiked(account.playlists).map { ShelfItem.Playlist(it) } + account.liked.map { ShelfItem.Song(it) },
             ShelfSection.Playlists to localPlaylists.map { ShelfItem.Local(it) } + account.playlists.map { ShelfItem.Playlist(it) },
             ShelfSection.Mixes to shelfMixes(account.home).map { ShelfItem.Playlist(it) },
             ShelfSection.ListenAgain to shelfListenAgain(account.home).map { ShelfItem.Playlist(it) },
@@ -1138,6 +1138,7 @@ private fun ItemPages(
 
 /** A shelf item's cover, title and line, for the grid. */
 private fun itemLines(item: ShelfItem): Triple<String, String, String?> = when (item) {
+    is ShelfItem.Song -> Triple(item.track.title, item.track.artists.joinToString(", ") { it.name }, item.track.coverUrl)
     is ShelfItem.Album -> Triple(item.album.release.title, listOfNotNull(item.album.artist.name, item.album.release.year ?: item.album.release.releaseDate?.take(4)).joinToString(" · "), null)
     is ShelfItem.PlayedAlbum -> Triple(item.play.title, item.play.artist.orEmpty(), item.play.coverUrl)
     is ShelfItem.Playlist -> Triple(item.list.title, item.list.subtitle ?: if (item.list.radio) "Mix" else "Playlist", item.list.thumbnailUrl)
@@ -1206,6 +1207,7 @@ private fun ItemPanel(item: ShelfItem, actions: ShelfActions, onAlbumClick: (Str
                 is ShelfItem.Playlist -> if (item.list.radio) "MIX" else "PLAYLIST"
                 is ShelfItem.Played -> "PLAYED LATELY"
                 is ShelfItem.Album -> "ALBUM"
+                is ShelfItem.Song -> "LIKED SONG"
             },
         )
         Spacer(Modifier.height(14.dp))
@@ -1231,6 +1233,7 @@ private fun ItemPanel(item: ShelfItem, actions: ShelfActions, onAlbumClick: (Str
         val secondary: Pair<String, () -> Unit>? = when (item) {
             is ShelfItem.Playlist -> "Save to your playlists" to { actions.save(item) }
             is ShelfItem.PlayedAlbum -> item.play.artistId?.let { id -> "Go to ${item.play.artist ?: "the artist"}" to { onArtistClick(id) } }
+            is ShelfItem.Song -> item.track.artists.firstOrNull()?.takeIf { it.browseId != null }?.let { a -> "Go to ${a.name}" to { onArtistClick(a.browseId!!) } }
             else -> null
         }
         secondary?.let { (label, act) ->
