@@ -2,6 +2,8 @@ package com.nuvio.app.features.music.visualiser
 // FORK UI (Spyder): Nick's Now Playing stage, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.ln
@@ -201,6 +203,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
         decide(flush = false)
     }
 
+
     /** The map as far as it is known, for drawing while the rest is read. */
     fun snapshot(): TrackMap = build(decided, complete = false)
 
@@ -219,7 +222,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
     private fun build(frames: Int, complete: Boolean): TrackMap {
         val n = minOf(frames, level.size, analysed)
         val beat = if (n >= BEAT_MIN_FRAMES) {
-            estimateBeat(kick = flux[0].data, snare = flux[1].data, hats = flux[2].data, frames = n, melody = flux[3].data)
+            estimateBeat(kick = flux[0].data, snare = flux[1].data, hats = flux[2].data, frames = n, melody = flux[3].data, bands = bands.data)
         } else null
         return TrackMap(
             frames = n,
@@ -363,10 +366,12 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
                 for (j in maxOf(0, decided - 20)..minOf(f.size - 1, decided + LOOKAHEAD)) { sum += f[j]; count++ }
                 candidate[g] = v > group.floor && v > max(sum / count * group.sensitivity, recentMax[g] * group.peakShare)
             }
-            // A kick's beater click and a hi-hat both reach the snare's range. With a kick at the same moment, the snare range
-            // must rise strongly for a snare (a click is a small rise there, a clap on a four-on-the-floor kick a big one);
-            // and where the hats rose harder than the snare range, it was the hats.
-            if (candidate[SNARE] && (candidate[KICK] && strength[SNARE] < SNARE_ON_KICK_STRENGTH || strength[SNARE] < strength[HATS] * 0.9f)) {
+            // A kick's beater click reaches the snare's range. With a kick at the same moment, the snare range must rise
+            // strongly for a snare (a click is a small rise there, a clap on a four-on-the-floor kick a big one).
+            // (There used to be a second rule here dropping a snare when the hats rose harder than the snare range. Snares
+            // very often land together with a hat, so it removed real snares: on dumped flux, snare recall went 0.53 -> 0.71
+            // with it off, precision 0.58 -> 0.61.)
+            if (candidate[SNARE] && candidate[KICK] && strength[SNARE] < SNARE_ON_KICK_STRENGTH) {
                 candidate[SNARE] = false
             }
             var bits = 0
@@ -400,30 +405,57 @@ private fun median(a: FloatArray, n: Int): Float {
     return if (n % 2 == 1) a[n / 2] else (a[n / 2 - 1] + a[n / 2]) * 0.5f
 }
 
+/** Tempo range searched, in beats a minute. */
+private const val BEAT_MIN_BPM = 67.0
+private const val BEAT_MAX_BPM = 185.0
+
+/** A beat period is judged on how well its first four multiples (a beat, two, three and the whole bar of 4/4) repeat. */
+private const val BAR_BEATS = 4
+
+/** How much the hats and the melody add to the pulse the tempo is found on (the kick and snare count in full). */
+private const val PULSE_HATS = 0.3f
+private const val PULSE_MELODY = 0.3f
+
+/**
+ * The tempo a listener would tap is preferred where several fit equally: a broad bell on a log scale, centred a little above
+ * 120 and wide enough (a standard deviation of an octave) that a track at 70 or 175 still wins on its own evidence.
+ */
+private const val TEMPO_CENTRE_BPM = 122.0
+private const val TEMPO_SPREAD_OCTAVES = 1.0
+
+/** A pulse is only a beat if its best period repeats at least this well (mean autocorrelation over its multiples) and clearly above the other periods. */
+private const val BEAT_MIN_REPEAT = 0.30
+private const val BEAT_MIN_STANDOUT = 1.4
+
+/** Bar position, in 4/4: how much the kick counts on beat 1 and 3, the snare on 2 and 4, and how much a change in the sound at the bar line adds. */
+private const val DOWNBEAT_KICK_ONE = 2f
+private const val DOWNBEAT_KICK_THREE = 1f
+private const val DOWNBEAT_SNARE = 1f
+private const val DOWNBEAT_CHANGE = 0.3f
+
 /**
  * The steady beat in the first [frames] of the drum flux, or null when there is none worth drawing a grid on. Public to
  * the package for tests.
  *
- * Every beat period from 185 to 67 BPM is tried as a comb over the whole track: the period whose beats land on the most
- * kick and snare wins, with a gentle preference for tempos near 120 so that double or half time (which fits the same hits)
- * loses. Hats are left out: off-beat and sixteenth hats (garage, house, funk) made an autocorrelation find a beat and a half
- * as steady as one beat, and a four-on-the-floor track at 130 BPM read as 87.
+ * The tempo is the period whose pulse repeats best at one, two, three and four beats (the bar of a 4/4 song), found on the
+ * autocorrelation of an onset pulse made of the kick and snare (the hats and melody count for a little). Judging a period on
+ * its bar as well as its beat is what stops sixteenth hats and syncopated kicks passing for a beat and a quarter or two
+ * thirds of the real tempo (a track at 84 read as 105, one at 93 as 116, with a comb that looked at the beat alone). Where a
+ * period and its double fit alike, a bell around 120 BPM breaks the tie. The period and phase are then settled finely on the
+ * smoothed pulse over the whole track, so the grid does not drift over a long song, and the downbeat is the beat of the four
+ * where the kick falls on 1 and 3, the snare on 2 and 4, and the sound changes (a new bass note or chord) at the bar line.
+ * [bands] (the map's 16 band levels per frame) feeds the last.
  */
-internal fun estimateBeat(kick: FloatArray, snare: FloatArray, hats: FloatArray, frames: Int, melody: FloatArray? = null): BeatGrid? {
+internal fun estimateBeat(
+    kick: FloatArray, snare: FloatArray, hats: FloatArray, frames: Int,
+    melody: FloatArray? = null, bands: ByteArray? = null,
+): BeatGrid? {
     if (frames < BEAT_MIN_FRAMES) return null
     fun meanOf(a: FloatArray): Float { var s = 0f; for (i in 0 until frames) s += a[i]; return (s / frames).takeIf { it > 1e-6f } ?: 1f }
-    val mk = meanOf(kick); val ms = meanOf(snare); val mh = meanOf(hats)
-    // A clear kick-and-snare pulse first. Busy mixes (a loud bass riff, gated reverb snares) bury it, so then the same fit is
-    // tried on a gentler bar, and last with the hats added: a steady pulse of any kind is better than none.
-    beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms }, frames, 1.3)?.let { return it }
-    beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + 0.5f * hats[it] / mh }, frames, 1.25)?.let { return it }
-    // Last: every struck and sustained onset together (a riff, stabs and hats all fall on the pulse), with no bar at all: in a dense mix (hats, riff and stabs on every eighth) the widened hits cover most frames, so a ratio to the track's mean can never clear any bar, yet the best comb still finds the pulse.
-    val mm = melody?.let(::meanOf) ?: 1f
-    return beatFrom(kick, snare, mk, ms, FloatArray(frames) { kick[it] / mk + snare[it] / ms + hats[it] / mh + (melody?.get(it) ?: 0f) / mm }, frames, 0.0)
-}
+    val mk = meanOf(kick); val ms = meanOf(snare); val mh = meanOf(hats); val mm = melody?.let(::meanOf) ?: 1f
 
-private fun beatFrom(kick: FloatArray, snare: FloatArray, mk: Float, ms: Float, raw: FloatArray, frames: Int, gate: Double): BeatGrid? {
-    // Take away the local mean so loud passages do not look like beats.
+    // The pulse: every frame's drum (and a little of the rest) onset strength, less its local mean so loud passages do not look like beats.
+    val raw = FloatArray(frames) { kick[it] / mk + snare[it] / ms + PULSE_HATS * hats[it] / mh + PULSE_MELODY * (melody?.get(it) ?: 0f) / mm }
     val env = FloatArray(frames)
     var run = 0f
     val span = 32
@@ -432,72 +464,175 @@ private fun beatFrom(kick: FloatArray, snare: FloatArray, mk: Float, ms: Float, 
         if (i >= span) run -= raw[i - span]
         env[i] = max(0f, raw[i] - run / min(i + 1, span))
     }
-    // A hit counts for the frame either side too, so a comb a fraction of a frame off the grid still meets it.
-    val wide = FloatArray(frames) { i -> max(env[i], max(env.getOrElse(i - 1) { 0f }, env.getOrElse(i + 1) { 0f })) }
-    var meanWide = 0.0
-    for (v in wide) meanWide += v
-    meanWide /= frames
-    if (meanWide <= 1e-9) return null
+    var total = 0.0
+    for (v in env) total += v
+    if (total <= 1e-9) return null
 
-    fun comb(period: Double): Pair<Double, Double> {
-        var best = -1.0
-        var bestPhase = 0.0
-        var phase = 0.0
-        while (phase < period) {
-            var s = 0.0
-            var k = 0
-            var at = phase
-            while (at < frames - 1) { s += wide[at.roundToInt()]; k++; at += period }
-            val fit = s / k
-            if (fit > best) { best = fit; bestPhase = phase }
-            phase += 0.5
-        }
-        return best to bestPhase
-    }
-    fun prior(period: Double): Double {
-        val bpm = 60_000.0 / (period * MAP_FRAME_MS)
-        return exp(-0.5 * (log2(bpm / 120.0) / 0.55).pow(2))
-    }
-
-    var period = -1.0
-    var top = -1.0
-    var fitAtTop = 0.0
-    var p = 60_000.0 / 185.0 / MAP_FRAME_MS
-    val longest = 60_000.0 / 67.0 / MAP_FRAME_MS
-    while (p <= longest) {
-        val fit = comb(p).first
-        val score = fit * prior(p)
-        if (score > top) { top = score; period = p; fitAtTop = fit }
-        p += 0.25
-    }
-    // A beat's hits must stand well clear of the track's average, or there is no steady beat to draw.
-    if (period < 0 || fitAtTop / meanWide < gate) return null
-    // Settle the period and phase finely around the winner.
-    var phase = 0.0
-    var bestFit = -1.0
-    val coarse = period
-    p = coarse * 0.98
-    while (p <= coarse * 1.02) {
-        val (fit, ph) = comb(p)
-        if (fit > bestFit) { bestFit = fit; period = p; phase = ph }
-        p += 0.02
-    }
-    // The downbeat: of the four beats in a bar, the one where the kick falls on 1 and 3 and the snare (or clap) on 2 and 4.
-    // A four-on-the-floor kick is the same on every beat, so there the backbeat decides.
-    fun at(a: FloatArray, beat: Double): Float = a[beat.roundToInt().coerceIn(0, frames - 1)] / max(1e-6f, if (a === kick) mk else ms)
-    var bar = 0
-    var barScore = -1.0
-    for (q in 0 until 4) {
-        var s = 0.0
-        var b = phase + q * period
-        while (b < frames) {
-            s += at(kick, b) + at(snare, b + period) + at(kick, b + 2 * period) * 0.5 + at(snare, b + 3 * period)
-            b += 4 * period
-        }
-        if (s > barScore) { barScore = s; bar = q }
-    }
+    val coarse = pickPeriod(env, frames) ?: return null
+    val (period, phase) = settleGrid(env, frames, coarse)
+    val bar = pickDownbeat(kick, snare, mk, ms, bands, frames, period, phase)
     val downbeatFrame = phase + bar * period
     return BeatGrid(periodMs = period * MAP_FRAME_MS, downbeatMs = downbeatFrame * MAP_FRAME_MS + MAP_FRAME_MS / 2.0)
+}
+
+/** The beat period in frames (to within a few per cent), or null when no period repeats well enough to be a beat. */
+private fun pickPeriod(env: FloatArray, frames: Int): Double? {
+    // A hit counts for the frame either side too, so a period a fraction of a frame off still meets it.
+    val wide = FloatArray(frames) { i -> max(env[i], max(env.getOrElse(i - 1) { 0f }, env.getOrElse(i + 1) { 0f })) }
+    val shortest = 60_000.0 / BEAT_MAX_BPM / MAP_FRAME_MS
+    val longest = 60_000.0 / BEAT_MIN_BPM / MAP_FRAME_MS
+    val maxLag = ceil(longest * BAR_BEATS).toInt() + 2
+    if (frames <= maxLag * 2) return null
+    val acf = DoubleArray(maxLag + 1)
+    for (lag in 0..maxLag) {
+        var s = 0.0
+        for (i in 0 until frames - lag) s += wide[i] * wide[i + lag]
+        acf[lag] = s / (frames - lag)
+    }
+    if (acf[0] <= 1e-12) return null
+    for (lag in 0..maxLag) acf[lag] /= acf[0]
+    fun at(x: Double): Double {
+        val i = x.toInt()
+        if (i + 1 > maxLag) return 0.0
+        val f = x - i
+        return acf[i] * (1 - f) + acf[i + 1] * f
+    }
+    var best = -1.0
+    var bestRepeat = 0.0
+    var period = -1.0
+    var sumRepeat = 0.0
+    var count = 0
+    var p = shortest
+    while (p <= longest) {
+        var repeat = 0.0
+        for (m in 1..BAR_BEATS) repeat += at(m * p)
+        repeat /= BAR_BEATS
+        val bpm = 60_000.0 / (p * MAP_FRAME_MS)
+        val score = repeat * exp(-0.5 * (log2(bpm / TEMPO_CENTRE_BPM) / TEMPO_SPREAD_OCTAVES).pow(2))
+        if (score > best) { best = score; period = p; bestRepeat = repeat }
+        sumRepeat += repeat; count++
+        p += 0.1
+    }
+    if (period < 0 || bestRepeat < BEAT_MIN_REPEAT || bestRepeat < sumRepeat / count * BEAT_MIN_STANDOUT) return null
+    return period
+}
+
+/** The period and phase (in frames; the phase is where a beat falls in the first period) that best fit the smoothed pulse. */
+private fun settleGrid(env: FloatArray, frames: Int, around: Double): Pair<Double, Double> {
+    // Smoothed over about a frame either side, so the fit has one clear top and a period is told apart from the next to a few thousandths.
+    val smooth = FloatArray(frames)
+    val kernel = floatArrayOf(0.054f, 0.244f, 0.403f, 0.244f, 0.054f)
+    for (i in 0 until frames) {
+        var s = 0f
+        for (k in -2..2) { val j = i + k; if (j in 0 until frames) s += env[j] * kernel[k + 2] }
+        smooth[i] = s
+    }
+    fun fit(period: Double, phase: Double): Double {
+        var s = 0.0
+        var k = 0
+        var at = phase
+        while (at < frames - 1.001) {
+            val i = at.toInt()
+            val f = at - i
+            s += smooth[i] * (1 - f) + smooth[i + 1] * f
+            k++
+            at += period
+        }
+        return if (k == 0) 0.0 else s / k
+    }
+    var bestFit = -1.0
+    var period = around
+    var phase = 0.0
+    fun search(from: Double, to: Double, step: Double, phaseFrom: Double?, phaseTo: Double?, phaseStep: Double) {
+        var p = from
+        while (p <= to) {
+            var ph = phaseFrom ?: 0.0
+            val end = phaseTo ?: p
+            while (ph < end) {
+                val f = fit(p, ph.mod(p))
+                if (f > bestFit) { bestFit = f; period = p; phase = ph.mod(p) }
+                ph += phaseStep
+            }
+            p += step
+        }
+    }
+    search(around * 0.97, around * 1.03, around * 0.0015, null, null, 0.25)
+    val coarse = period
+    val coarsePhase = phase
+    bestFit = -1.0
+    search(coarse * 0.9985, coarse * 1.0015, coarse * 0.0001, coarsePhase - 0.6, coarsePhase + 0.6, 0.05)
+    return period to phase
+}
+
+/** Which of four beats of a bar (counted from the first beat of the grid) is the downbeat. */
+private fun pickDownbeat(
+    kick: FloatArray, snare: FloatArray, mk: Float, ms: Float, bands: ByteArray?, frames: Int, period: Double, phase: Double,
+): Int {
+    fun sample(a: FloatArray, x: Double): Float {
+        val c = x.coerceIn(0.0, frames - 1.001)
+        val i = c.toInt()
+        val f = (c - i).toFloat()
+        return a[i] * (1 - f) + a[i + 1] * f
+    }
+    // A hit may sit a little either side of the beat (the flux is blurred over about 85 ms), so each beat reads the strongest of five points.
+    fun around(a: FloatArray, m: Float, x: Double): Float {
+        var best = 0f
+        for (d in -2..2) best = max(best, sample(a, x + d * 0.5))
+        return best / m
+    }
+    val beats = ArrayList<Double>()
+    var at = phase
+    while (at < frames - 1.001) { beats += at; at += period }
+    val n = beats.size
+    if (n < 8) return 0
+    val k = FloatArray(n) { around(kick, mk, beats[it]) }
+    val s = FloatArray(n) { around(snare, ms, beats[it]) }
+    // How much the sound changes across each beat: the band levels of the stretch after it against the stretch before, the lows counting more
+    // (a new bass note or chord is what marks the start of a bar).
+    val change = FloatArray(n)
+    if (bands != null) {
+        val weight = FloatArray(MAP_BANDS) { 1.5f - it / (MAP_BANDS - 1f) }
+        for (j in 0 until n) {
+            val a0 = (beats[j] - 0.45 * period).toInt(); val a1 = (beats[j] - 0.05 * period).toInt()
+            val c0 = (beats[j] + 0.05 * period).toInt(); val c1 = (beats[j] + 0.45 * period).toInt()
+            if (a0 < 0 || c1 >= frames || a1 < a0 || c1 < c0) continue
+            var d = 0f
+            for (b in 0 until MAP_BANDS) {
+                var before = 0f; var after = 0f
+                for (f in a0..a1) before += (bands[f * MAP_BANDS + b].toInt() and 0xFF) / 255f
+                for (f in c0..c1) after += (bands[f * MAP_BANDS + b].toInt() and 0xFF) / 255f
+                d += abs(after / (c1 - c0 + 1) - before / (a1 - a0 + 1)) * weight[b]
+            }
+            change[j] = d
+        }
+    }
+    val template = FloatArray(4)
+    val changed = FloatArray(4)
+    for (q in 0 until 4) {
+        var t = 0f; var c = 0f; var bars = 0
+        var j = q
+        while (j + 3 < n) {
+            t += DOWNBEAT_KICK_ONE * k[j] + DOWNBEAT_SNARE * s[j + 1] + DOWNBEAT_KICK_THREE * k[j + 2] + DOWNBEAT_SNARE * s[j + 3]
+            c += change[j]
+            bars++
+            j += 4
+        }
+        if (bars > 0) { template[q] = t / bars; changed[q] = c / bars }
+    }
+    // Each cue is read as its spread around its own mean, so a cue that is flat across the four beats says nothing.
+    fun spread(v: FloatArray): FloatArray {
+        val mean = v.sum() / v.size
+        return if (mean > 1e-9f) FloatArray(v.size) { (v[it] - mean) / mean } else FloatArray(v.size)
+    }
+    val a = spread(template)
+    val b = spread(changed)
+    var bar = 0
+    var top = -Float.MAX_VALUE
+    for (q in 0 until 4) {
+        val score = a[q] + DOWNBEAT_CHANGE * b[q]
+        if (score > top) { top = score; bar = q }
+    }
+    return bar
 }
 
 /** A growable byte array. */

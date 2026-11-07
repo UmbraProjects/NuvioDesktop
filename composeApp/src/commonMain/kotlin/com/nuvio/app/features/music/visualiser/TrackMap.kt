@@ -194,10 +194,12 @@ internal fun vuFor(level: Float, scale: MapScale): Double =
 
 // ---- storage format ----
 
+// "NVM5": maps from before the repeat-checked tempo and bar-line downbeat (Nov 7, 2026) could hold a tempo a quarter or a third too fast
+// (84 read as 105) and a bar position that was wrong on about half the songs, so they are redone.
 // "NVM4": maps kept before the all-onset beat fit (Nov 3, 2026, late) stored "no beat" for busy mixes such as Billie Jean and
 // would show it for ever, so they are redone. "NVM3": maps from before the comb tempo (Nov 3, 2026) could hold a tempo two-thirds of the real one (off-beat hats), and
 // those from before the drum split found bass notes as kicks; older maps are read as missing and redone.
-private const val MAGIC = 0x4E564D34 // "NVM4"
+private const val MAGIC = 0x4E564D35 // "NVM5"
 
 /** The map as bytes for the disk cache. */
 internal fun encodeTrackMap(map: TrackMap): ByteArray {
