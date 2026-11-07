@@ -720,6 +720,8 @@ internal fun SeekBar(
     glass: Boolean = false,
     /** fork:music - the text shown above the pointer while it hovers the bar (a time), given the place as 0..1. */
     hoverLabel: ((Float) -> String)? = null,
+    /** fork:music - the colour of the played part; the app's accent when null (the dock tints it from the cover). */
+    fill: Color? = null,
 ) {
     val colors = MaterialTheme.nuvio.colors
     var hover by remember { mutableStateOf<Float?>(null) }
@@ -786,7 +788,7 @@ internal fun SeekBar(
                 else Modifier.background(Color.White.copy(alpha = 0.20f)),
             ),
         )
-        Box(Modifier.fillMaxWidth(shown).height(trackHeight).clip(track).background(colors.accent))
+        Box(Modifier.fillMaxWidth(shown).height(trackHeight).clip(track).background(fill ?: colors.accent))
         if (active && enabled) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(shown.coerceIn(0.001f, 0.999f)))

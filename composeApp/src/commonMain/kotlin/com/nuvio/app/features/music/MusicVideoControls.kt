@@ -195,6 +195,8 @@ internal fun MusicSeekControl(
     glass: Boolean = false,
     /** fork:music - the dock: the elapsed time stands where the note icon was, the time left at the end, and a hover shows the time under the pointer. */
     showTimes: Boolean = false,
+    /** The colour of the played part of the bar, when not the app's accent. */
+    fill: Color? = null,
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         if (showTimes) {
@@ -218,6 +220,7 @@ internal fun MusicSeekControl(
             onNudge = { d -> player.seekTo((state.positionMs + d * nudgeMs).coerceIn(0L, state.durationMs)) },
             glass = glass,
             hoverLabel = if (showTimes) { f -> formatMusicTime((f * state.durationMs).toLong()) } else null,
+            fill = fill,
         )
         if (showTimes) {
             Text(

@@ -79,7 +79,12 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.musicGlass
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import com.nuvio.app.features.music.identity.ArtworkPaletteMath
+import com.nuvio.app.features.music.identity.MusicPaletteResolver
+import com.nuvio.app.features.music.visualiser.TrackMapLive
 
 /*
  * fork:music
@@ -203,6 +208,9 @@ private fun Notch(state: MusicPlayerState, onRestore: () -> Unit) {
             // Fills the pill, so the arrow always sits at its right end whatever the title's length.
             modifier = Modifier.weight(1f),
         )
+        // A radio nearly out of songs asks to keep going: the question waits in the open panel, and this dot says so.
+        val asking by RadioKeepGoing.offer.collectAsState()
+        if (asking != null) Box(Modifier.size(8.dp).clip(CircleShape).background(colors.accent))
         Icon(
             Icons.Rounded.KeyboardArrowUp,
             contentDescription = if (state.playWhenReady) "Show the player, playing" else "Show the player, paused",
@@ -226,6 +234,7 @@ private fun DockPanel(
     entry: FocusRequester,
 ) {
     Column(Modifier.width(520.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        DockKeepGoing()
         if (opensDown) {
             DockNowPlaying(state, player, onRestore, onExpandVideo, entry)
             DockDivider()
@@ -337,6 +346,73 @@ private fun DockUpNext(state: MusicPlayerState, player: MusicPlayer) {
     }
 }
 
+/** A small rounded tag beside the title: the quality, or Radio. */
+@Composable
+private fun DockPill(text: String, color: Color) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.16f))
+            .padding(horizontal = 7.dp, vertical = 1.dp),
+    )
+}
+
+/** The cover's colour, as the Artwork palette's accent; null until it is read (or when the art is grey or missing). */
+@Composable
+private fun rememberCoverTint(url: String?): Color? {
+    val context = coil3.compose.LocalPlatformContext.current
+    var tint by remember(url) { mutableStateOf<Color?>(null) }
+    LaunchedEffect(url) {
+        if (url == null) return@LaunchedEffect
+        val seed = withContext(Dispatchers.Default) { MusicPaletteResolver.sampleOne(context, url) } ?: return@LaunchedEffect
+        tint = Color(ArtworkPaletteMath.derive(seed).accent)
+    }
+    return tint
+}
+
+/** A dot that pulses on the beat while the song has a Beat Grid (shown nowhere else; a song without one has no dot). */
+@Composable
+private fun BeatDot(state: MusicPlayerState, color: Color) {
+    val live by TrackMapLive.state.collectAsState()
+    val grid = live?.takeIf { it.loadId == state.loadId }?.map?.beat ?: return
+    val position by rememberSmoothPositionMs(state.positionMs, state.isPlaying)
+    val phase = grid.stepAt(position.toDouble()).mod(4L).toInt()
+    val strength = if (!state.isPlaying) 0.25f else when (phase) { 0 -> 1f; 1 -> 0.55f; 2 -> 0.3f; else -> 0.2f }
+    Box(Modifier.size(8.dp).clip(CircleShape).background(color.copy(alpha = strength)))
+}
+
+/** The radio's "keep going?" question, inside the open panel instead of a pop-up over the app. */
+@Composable
+private fun DockKeepGoing() {
+    val colors = MaterialTheme.nuvio.colors
+    val offer by RadioKeepGoing.offer.collectAsState()
+    val o = offer ?: return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.accent.copy(alpha = 0.14f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            "Keep ${o.title} radio going?",
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        RowAction("Keep going") { RadioKeepGoing.yes() }
+        RowAction("No") { RadioKeepGoing.no() }
+    }
+}
+
 /** Likes the song on YouTube Music (and un-likes it); only there when the account is signed in. */
 @Composable
 private fun DockHeart(state: MusicPlayerState) {
@@ -382,6 +458,8 @@ private fun DockNowPlaying(
     entry: FocusRequester,
 ) {
     val colors = MaterialTheme.nuvio.colors
+    // The played part of the bar and the beat dot take the cover's colour.
+    val tint = rememberCoverTint(state.coverUrl)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Cover(state.coverUrl, size = 56)
         Column(Modifier.weight(1f)) {
@@ -396,18 +474,9 @@ private fun DockNowPlaying(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                qualityTag(state)?.let { tag ->
-                    Text(
-                        tag,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.accent,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(colors.accent.copy(alpha = 0.16f))
-                            .padding(horizontal = 7.dp, vertical = 1.dp),
-                    )
-                }
+                if (isRadioQueue(state.album?.browseId)) DockPill("Radio", colors.accent)
+                qualityTag(state)?.let { tag -> DockPill(tag, colors.accent) }
+                BeatDot(state, tint ?: colors.accent)
             }
             Text(
                 subtitle(state, withQuality = false),
@@ -446,7 +515,7 @@ private fun DockNowPlaying(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        MusicSeekControl(state, player, nudgeMs = DOCK_NUDGE_MS, modifier = Modifier.weight(2f), tint = colors.textPrimary, showTimes = true)
+        MusicSeekControl(state, player, nudgeMs = DOCK_NUDGE_MS, modifier = Modifier.weight(2f), tint = colors.textPrimary, showTimes = true, fill = tint)
         MusicVolumeControl(state, player, sliderWidth = null, modifier = Modifier.weight(1f), tint = colors.textPrimary)
     }
 }

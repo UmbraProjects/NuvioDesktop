@@ -177,6 +177,8 @@ internal object RadioKeepGoing {
 @Composable
 internal fun RadioKeepGoingDialog() {
     val offer by RadioKeepGoing.offer.collectAsStateWithLifecycle()
+    // fork:music - the dock asks inside its own panel (and flags the notch), so the pop-up is for the other player styles.
+    if (rememberMusicBarStyle() == MusicBarStyle.Dock) return
     val o = offer ?: return
     NuvioModalDialog(
         onDismissRequest = RadioKeepGoing::no,
