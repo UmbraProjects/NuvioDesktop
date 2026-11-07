@@ -15,6 +15,7 @@ private object MetadataClientCatalog : MusicCatalog {
     override suspend fun accountHome() = MusicMetadataClient.accountHome()
     override suspend fun accountPlaylists() = MusicMetadataClient.accountPlaylists()
     override suspend fun accountHistory() = MusicMetadataClient.accountHistory()
+    override suspend fun setSongLiked(videoId: String, liked: Boolean) = MusicMetadataClient.setSongLiked(videoId, liked)
     override suspend fun searchEverything(query: String) = MusicMetadataClient.searchEverything(query)
     override suspend fun searchSuggestions(typed: String) = MusicMetadataClient.searchSuggestions(typed)
     override suspend fun searchYouTube(query: String) =

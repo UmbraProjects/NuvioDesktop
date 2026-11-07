@@ -60,6 +60,9 @@ interface MusicCatalog {
     /** fork:music-account - the signed-in account's YouTube Music History, newest first (up to three pages). Null when nobody is signed in or it could not be read. */
     suspend fun accountHistory(): List<MusicHistoryItem>? = null
 
+    /** fork:music-account - likes ([liked] true) or un-likes the song for the signed-in account (it joins or leaves Liked Music). False when nobody is signed in or YouTube Music refused. */
+    suspend fun setSongLiked(videoId: String, liked: Boolean): Boolean = false
+
     /**
      * fork:music-home - one search for the first screen: YouTube Music's unfiltered answer read whole (its Top result,
      * songs, albums, artists, music videos). When that answer holds no songs or no albums (YouTube Music sometimes

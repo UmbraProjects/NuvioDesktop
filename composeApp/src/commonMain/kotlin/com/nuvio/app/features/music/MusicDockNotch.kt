@@ -43,6 +43,11 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.ClearAll
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.runtime.collectAsState
+import com.nuvio.app.features.music.library.MusicAccountShelves
+import com.nuvio.app.features.music.library.MusicLikedSongs
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -220,7 +225,7 @@ private fun DockPanel(
     opensDown: Boolean,
     entry: FocusRequester,
 ) {
-    Column(Modifier.width(500.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.width(520.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (opensDown) {
             DockNowPlaying(state, player, onRestore, onExpandVideo, entry)
             DockDivider()
@@ -332,6 +337,24 @@ private fun DockUpNext(state: MusicPlayerState, player: MusicPlayer) {
     }
 }
 
+/** Likes the song on YouTube Music (and un-likes it); only there when the account is signed in. */
+@Composable
+private fun DockHeart(state: MusicPlayerState) {
+    val videoId = state.track?.videoId ?: return
+    val catalog = remember { defaultMusicCatalog() }
+    val signedIn = com.nuvio.app.features.youtubemusic.YouTubeMusicAuth.isSignedIn
+    LaunchedEffect(signedIn) { if (signedIn) MusicAccountShelves.refresh(catalog) }
+    if (!signedIn) return
+    val account by MusicAccountShelves.state.collectAsState()
+    val overrides by MusicLikedSongs.overrides.collectAsState()
+    val liked = MusicLikedSongs.isLiked(videoId, account.liked, overrides)
+    DockButton(
+        if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+        if (liked) "Unlike on YouTube Music" else "Like on YouTube Music",
+        active = liked,
+    ) { MusicLikedSongs.toggle(catalog, videoId, liked) }
+}
+
 /** A small text action on an Up next row, shown while the pointer is on it. */
 @Composable
 private fun RowAction(label: String, onClick: () -> Unit) {
@@ -404,6 +427,7 @@ private fun DockNowPlaying(
             ) { player.togglePlayback() }
             DockButton(Icons.Rounded.SkipNext, "Next", enabled = state.hasNext) { player.next() }
             onExpandVideo?.let { DockButton(Icons.Rounded.OpenInFull, "Expand video", onClick = it) }
+            DockHeart(state)
             state.track?.let { track ->
                 DockButton(Icons.Rounded.PlaylistAdd, "Add to playlist") {
                     com.nuvio.app.features.music.playlist.PlaylistPicker.request(

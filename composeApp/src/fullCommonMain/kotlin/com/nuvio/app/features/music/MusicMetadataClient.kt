@@ -280,6 +280,16 @@ object MusicMetadataClient {
         return items
     }
 
+    /** fork:music-account - see [MusicCatalog.setSongLiked]. */
+    suspend fun setSongLiked(videoId: String, liked: Boolean): Boolean {
+        val answer = TrailerPlaybackResolver.musicRequestSigned(
+            if (liked) "like/like" else "like/removelike",
+            mapOf("target" to mapOf("videoId" to videoId)),
+        )
+        log.i { "song $videoId ${if (liked) "liked" else "unliked"}: ${if (answer != null) "done" else "failed"}" }
+        return answer != null
+    }
+
     suspend fun album(browseId: String): MusicAlbum? {
         if (!browseId.startsWith("MPREb_")) return null.also { log.w { "album $browseId: not a YouTube Music album id" } }
         var unanswered = false
