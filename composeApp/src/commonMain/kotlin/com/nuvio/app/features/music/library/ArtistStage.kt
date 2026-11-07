@@ -459,7 +459,7 @@ private fun StageHero(
             }
             FlowRow(
                 Modifier.padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 HeroButton("Play Essentials", Icons.Rounded.PlayArrow, primary = true, modifier = Modifier.focusRequester(playFocus), onClick = onPlayEssentials)
@@ -473,7 +473,7 @@ private fun StageHero(
                     active = inLibrary,
                     onClick = { if (inLibrary) onRemove() else MusicLibraryRepository.add(artist.id) },
                 )
-                // Links and Refresh live in More, so the row stays one line, centred.
+                // Links and Refresh live in More, and the buttons are kept compact (14 dp inside, 8 dp apart), so all six fit one centred line.
                 if (linkCount > 0 || saved) {
                     var moreOpen by remember { mutableStateOf(false) }
                     Box {
@@ -542,9 +542,9 @@ private fun HeroButton(
         modifier.height(56.dp).clip(shape).background(fill).border(1.dp, edge, shape)
             .musicKeyFocusRing(shape)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
         Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Medium, color = tint, maxLines = 1)

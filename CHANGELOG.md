@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Artist Page: All The Buttons On One Row** - with Radio added, the artist page's six buttons (Play Essentials, Shuffle all, Play Top 5, Radio, In your library, More) no longer fitted in a line and More dropped to a second row. The buttons are now a little tighter (14 dp inside, 8 dp apart) so all six sit on one centred row; only a window too narrow for them wraps.
+
 - **Shelf: Liked Music Is Your Songs** - the Liked Music shelf is no longer one card: after the Liked Music card (Play, Shuffle) come your newest 300 liked songs as covers. OK on a song plays Liked Music from that song on; Add to queue adds just that song; Go to artist opens its artist. Needs the sign-in under Settings > YouTube account. Not yet tried against a real account.
 
 - **The Bar Says Where A Radio Or Playlist Plays From** - the mini-player's line (artist, album, quality) now adds "From Discover Mix", "From Prince radio" or "From Road trip" when what plays is a radio, mix or playlist rather than an album. Nothing on the Now Playing stage changed, so nothing there moves or resizes.
