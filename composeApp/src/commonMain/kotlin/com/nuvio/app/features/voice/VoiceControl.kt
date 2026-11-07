@@ -137,6 +137,8 @@ data class VoiceControlUiState(
     val modelsFolder: String = "",
     /** The microphone is open, listening for the wake word, right now. */
     val wakeListening: Boolean = false,
+    /** The Settings test's recording is being played back. */
+    val testPlaying: Boolean = false,
 ) {
     fun stateOf(model: VoiceModel): VoiceModelState = models[model.id] ?: VoiceModelState.NotInstalled
 
@@ -171,8 +173,18 @@ expect object VoiceControlRepository {
     /** Records up to [VOICE_TEST_MAX_MS] from the chosen microphone, then transcribes it with the selected model. */
     fun startTest()
 
-    /** Ends a test recording early (it is then transcribed), or dismisses a result. */
+    /** Ends a test recording early (it is then transcribed), or dismisses a result (and drops its recording). */
     fun stopTest()
+
+    /**
+     * Plays back the audio the last test gave the model, exactly as it was decoded (16 kHz mono), or
+     * stops a playback under way. Only the test keeps its audio, in memory, until it is dismissed or
+     * the next test starts; commands and the wake word never keep theirs.
+     */
+    fun playTestRecording()
+
+    /** Saves the last test's audio as a WAV in the data folder and shows it in Explorer; the file goes with the result. */
+    fun showTestRecording()
 
     fun setEndSilenceMs(ms: Int)
 

@@ -155,32 +155,44 @@ private fun AddPhraseBox(kind: VoiceCommandKind, onDone: () -> Unit) {
         problem = VoiceControlRepository.addPhrase(kind, text)
         if (problem == null) onDone()
     }
+    val colors = MaterialTheme.nuvio.colors
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NuvioTextField(
-                value = text,
-                onValueChange = {
-                    text = it
-                    problem = null
-                },
-                modifier = Modifier.weight(1f),
-                placeholder = when (kind.takes) {
-                    VoiceCommandKind.Takes.Query -> "e.g. “find on tube”"
-                    VoiceCommandKind.Takes.Duration -> if (kind == VoiceCommandKind.SeekBack) "e.g. “back up”" else "e.g. “jump on”"
-                    VoiceCommandKind.Takes.Rate -> "e.g. “play at”"
-                    VoiceCommandKind.Takes.Number -> "e.g. “go with”"
-                    VoiceCommandKind.Takes.Nothing -> "e.g. “hold it”"
-                },
-                isError = problem != null,
-                supportingText = problem ?: kind.usage,
-                onImeAction = ::add,
-            )
-            SettingsGlassButton(text = "Add", accent = true, enabled = text.isNotBlank(), onClick = ::add)
-        }
+        NuvioTextField(
+            value = text,
+            onValueChange = {
+                text = it
+                problem = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = when (kind.takes) {
+                VoiceCommandKind.Takes.Query -> "e.g. “find on tube”"
+                VoiceCommandKind.Takes.Duration -> if (kind == VoiceCommandKind.SeekBack) "e.g. “back up”" else "e.g. “jump on”"
+                VoiceCommandKind.Takes.Rate -> "e.g. “play at”"
+                VoiceCommandKind.Takes.Number -> "e.g. “go with”"
+                VoiceCommandKind.Takes.Nothing -> "e.g. “hold it”"
+            },
+            isError = problem != null,
+            supportingText = problem ?: kind.usage,
+            onImeAction = ::add,
+            // A small Add inside the field, on its line, rather than a full button beside it.
+            trailingContent = {
+                val canAdd = text.isNotBlank()
+                Text(
+                    text = "Add",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (canAdd) colors.accent else colors.textDisabled,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = canAdd, onClick = ::add)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            },
+        )
         Text(
             text = "Cancel",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.nuvio.colors.textMuted,
+            color = colors.textMuted,
             modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onDone).padding(vertical = 2.dp),
         )
     }

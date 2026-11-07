@@ -99,6 +99,18 @@ actual object VoiceControlRepository {
     @Volatile
     private var stopRecording = false
 
+    /** What the last Settings test fed the model; null once its result is dismissed. Never written for commands. */
+    @Volatile
+    private var testClip: FloatArray? = null
+    private var playJob: Job? = null
+
+    @Volatile
+    private var stopPlayback = false
+
+    /** Where [showTestRecording] puts the test's audio; deleted with the result, and on start in case it outlived one. */
+    private val testRecordingFile: File
+        get() = DesktopStorage.rootDir.resolve("voice").resolve("test-recording.wav").toFile()
+
     @Volatile
     private var stopListening = false
 
@@ -114,6 +126,7 @@ actual object VoiceControlRepository {
     actual fun ensureLoaded() {
         if (loaded) return
         loaded = true
+        scope.launch { runCatching { testRecordingFile.delete() } }
         val settings = VoiceControlSettings(
             enabled = store.getBoolean(KEY_ENABLED) ?: false,
             modelId = store.getString(KEY_MODEL)?.takeIf { VoiceModels.byId(it) != null } ?: VoiceModels.default.id,
@@ -283,10 +296,12 @@ actual object VoiceControlRepository {
             return
         }
         stopRecording = false
+        dropTestClip()
         setTest(VoiceTestState.Recording(level = 0f, elapsedMs = 0))
         testJob = scope.launch {
             try {
                 val samples = recordTest(state.settings.microphone) ?: return@launch
+                testClip = samples
                 setTest(VoiceTestState.Transcribing)
                 val engine = transcriberFor(modelFile(model)).getOrElse { error ->
                     reportEngineFailure(error)
@@ -336,9 +351,50 @@ actual object VoiceControlRepository {
     actual fun stopTest() {
         when (_uiState.value.test) {
             is VoiceTestState.Recording -> stopRecording = true
-            is VoiceTestState.Heard, is VoiceTestState.Failed -> setTest(VoiceTestState.Idle)
+            is VoiceTestState.Heard, is VoiceTestState.Failed -> {
+                dropTestClip()
+                setTest(VoiceTestState.Idle)
+            }
             else -> Unit
         }
+    }
+
+    actual fun playTestRecording() {
+        if (playJob?.isActive == true) {
+            stopPlayback = true
+            return
+        }
+        val clip = testClip ?: return
+        stopPlayback = false
+        _uiState.update { it.copy(testPlaying = true) }
+        playJob = scope.launch {
+            try {
+                VoiceAudio.play(clip) { stopPlayback }
+            } catch (error: Exception) {
+                log.w(error) { "Could not play the test recording" }
+            } finally {
+                _uiState.update { it.copy(testPlaying = false) }
+            }
+        }
+    }
+
+    actual fun showTestRecording() {
+        val clip = testClip ?: return
+        scope.launch {
+            val file = testRecordingFile
+            runCatching {
+                file.parentFile?.mkdirs()
+                VoiceAudio.writeWav(clip, file)
+                ProcessBuilder("explorer.exe", "/select,${file.absolutePath}").start()
+            }.onFailure { log.w(it) { "Could not save the test recording" } }
+        }
+    }
+
+    /** Forgets the test's audio: stops its playback and deletes the saved copy, if there is one. */
+    private fun dropTestClip() {
+        testClip = null
+        stopPlayback = true
+        scope.launch { runCatching { testRecordingFile.delete() } }
     }
 
     private fun setTest(state: VoiceTestState) {
