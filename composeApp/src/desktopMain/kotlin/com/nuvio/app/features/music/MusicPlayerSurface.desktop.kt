@@ -130,6 +130,7 @@ private suspend fun decodeTrack(
     durationMs: Long,
     meter: LoudnessMeter?,
     map: TrackMapBuilder?,
+    beats: com.nuvio.app.features.music.visualiser.BeatTracker?,
     progress: DecodeProgress,
     onWindow: suspend () -> Unit,
 ): Boolean {
@@ -162,6 +163,8 @@ private suspend fun decodeTrack(
             withContext(Dispatchers.Default) {
                 meter?.add(pcm)
                 map?.add(pcm)
+                // fork:visualiser - the beat grid's network reads the same samples (it keeps only its spectrogram).
+                beats?.add(pcm)
             }
             if (got < length - 0.5) log.i { "track decode window at ${at.toInt()}s gave ${got.toInt()}s of ${length.toInt()}s; continuing from there" }
             at += got
@@ -417,6 +420,12 @@ actual fun MusicPlayerSurface(
         val keptMap = key?.let { TrackMapBook.get(it) }?.takeIf { it.complete }
         var knownLufs = key?.let { TrackLoudnessBook.get(it) }
         TrackMapLive.publish(LiveTrackMap(loadId, keptMap, knownLufs, analysing = keptMap == null))
+        // fork:visualiser - a bar line moved by hand on the Beat Grid is kept with the track's map.
+        if (key != null) {
+            TrackMapLive.keeper = { id, moved ->
+                if (id == loadId) kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { TrackMapBook.put(key, moved) }
+            }
+        }
         val needLoudness = key != null && !gainPlan.measured
         if (!needLoudness && keptMap != null) return@LaunchedEffect
         var durationMs = 0L
@@ -451,6 +460,20 @@ actual fun MusicPlayerSurface(
         }
         val meter = if (needLoudness) LoudnessMeter(MEASURE_SAMPLE_RATE, channels = 2) else null
         val builder = if (mapNow == null) TrackMapBuilder(MEASURE_SAMPLE_RATE) else null
+        // fork:visualiser - the Beat This! network finds the beat grid; without it (no models, ONNX Runtime will not load, or it
+        // fails part way) the signal-processing estimate in the builder is used as before.
+        var beats = if (builder != null) {
+            withContext(Dispatchers.Default) { com.nuvio.app.features.music.visualiser.BeatTracker.create(MEASURE_SAMPLE_RATE) }
+        } else null
+        fun beatGrid(map: com.nuvio.app.features.music.visualiser.TrackMap, final: Boolean): com.nuvio.app.features.music.visualiser.TrackMap {
+            val tracker = beats ?: return map
+            return runCatching { map.withBeat(tracker.grid(final)) }
+                .onFailure {
+                    log.w(it) { "beat grid network failed; using the signal-processing estimate" }
+                    beats = null
+                }
+                .getOrDefault(map)
+        }
         // fork:visualiser - one download of the track's audio, read from disk by every slice below, instead of a new connection to
         // the music server per slice (which it answered with HTTP 429). Without it (a playlist stream, a refusal) the stream is read as before.
         val downloaded = downloadSpotFile(sourceAudioUrl ?: sourceUrl, source.headers)
@@ -467,9 +490,9 @@ actual fun MusicPlayerSurface(
         var resumes = 0
         var read = false
         while (true) {
-            read = decodeTrack(controller, durationMs, meter, builder, progress) {
+            read = decodeTrack(controller, durationMs, meter, builder, beats, progress) {
                 if (builder != null) {
-                    val partial = withContext(Dispatchers.Default) { builder.snapshot() }
+                    val partial = withContext(Dispatchers.Default) { beatGrid(builder.snapshot(), final = false) }
                     TrackMapLive.publish(LiveTrackMap(loadId, partial, knownLufs, analysing = true))
                 }
             }
@@ -494,18 +517,20 @@ actual fun MusicPlayerSurface(
         }
         if (builder != null) {
             if (read) {
-                val finished = withContext(Dispatchers.Default) { builder.finish() }
+                val finished = withContext(Dispatchers.Default) { beatGrid(builder.finish(), final = true) }
+                TrackMapLive.publish(LiveTrackMap(loadId, finished, knownLufs, analysing = false))
+                // What is on screen: the finished map with any bar line moved by hand while it was being read.
+                val shown = TrackMapLive.state.value?.takeIf { it.loadId == loadId }?.map ?: finished
                 key?.let { k ->
                     withContext(Dispatchers.IO) {
-                        TrackMapBook.put(k, finished)
+                        TrackMapBook.put(k, shown)
                         // fork:sonic-map - the album page's Sonic map places the song by this, long after the map file is gone.
-                        com.nuvio.app.features.music.library.keepSoundPrint(k, finished)
+                        com.nuvio.app.features.music.library.keepSoundPrint(k, shown)
                     }
                 }
-                TrackMapLive.publish(LiveTrackMap(loadId, finished, knownLufs, analysing = false))
-                log.i { "visualiser map ${key ?: "(no key)"}: ${finished.frames} frames, beat ${finished.beat?.bpm?.let { "%.1f BPM".format(it) } ?: "none"}" }
+                log.i { "visualiser map ${key ?: "(no key)"}: ${finished.frames} frames, beat ${finished.beat?.let { "%.1f BPM, %d a bar, %s".format(it.bpm, it.beatsPerBar, if (beats != null) "Beat This!" else "signal estimate") } ?: "none"}" }
             } else {
-                val partial = builder.snapshot().takeIf { it.frames > 0 }
+                val partial = withContext(Dispatchers.Default) { builder.snapshot().takeIf { it.frames > 0 }?.let { beatGrid(it, final = false) } }
                 TrackMapLive.publish(LiveTrackMap(loadId, partial, knownLufs, analysing = false, unavailable = partial == null))
             }
         }

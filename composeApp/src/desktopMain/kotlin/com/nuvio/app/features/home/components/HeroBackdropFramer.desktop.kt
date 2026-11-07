@@ -403,7 +403,7 @@ private class AreaWeights(sourceSize: Int, targetSize: Int) {
  * Windows, cannot delete them while loaded — so each session would strand ~17MB in %TEMP%.
  * Extract them once into the app data directory instead and point the loader there.
  */
-private object OnnxRuntimeNatives {
+internal object OnnxRuntimeNatives {
     // Keep in step with the onnxruntime dependency in composeApp/build.gradle.kts.
     private const val Version = "1.31.0"
     private const val NativePathProperty = "onnxruntime.native.path"

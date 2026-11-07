@@ -1175,8 +1175,11 @@ val leanDesktopJar = providers.gradleProperty("nuvio.desktop.leanJar")
 val externalDesktopResources = listOf(
     "torrserver/**",
     "backdrop-framing/**",
+    // fork:visualiser - the Beat This! beat grid models (about 11 MB).
+    "beat-tracking/**",
     "anime-list-mini.json",
-    // Third-party licence texts, so they ship beside the binaries they cover (<install>esources\licenses).
+    // Third-party licence texts, so they ship beside the binaries they cover (<install>
+esources\licenses).
     "licenses/**",
 )
 val desktopResourcesSourceDir = layout.projectDirectory.dir("src/desktopMain/resources").asFile

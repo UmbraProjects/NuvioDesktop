@@ -27,18 +27,6 @@ internal object Onset {
     const val MELODY = 8
 }
 
-/** A steady beat: [periodMs] between beats, and the time of a downbeat (the first beat of a bar of four). */
-internal data class BeatGrid(val periodMs: Double, val downbeatMs: Double) {
-    val bpm: Double get() = 60_000.0 / periodMs
-    val stepMs: Double get() = periodMs / 4.0
-
-    /** The sixteenth-note step [atMs] falls in, counted from the downbeat (negative before it). */
-    fun stepAt(atMs: Double): Long = floor((atMs - downbeatMs) / stepMs).toLong()
-
-    /** When step [step] starts. */
-    fun stepStartMs(step: Long): Double = downbeatMs + step * stepMs
-}
-
 /** The analysed track. Values are stored as unsigned bytes (0..255 for 0..1). Frames past [frames] are not analysed yet. */
 internal class TrackMap(
     val frames: Int,
@@ -120,6 +108,9 @@ internal class TrackMap(
         return best
     }
 
+    /** The same map with [beat] for its grid. */
+    fun withBeat(beat: BeatGrid?): TrackMap = TrackMap(frames, bands, level, left, right, onsets, beat, complete)
+
     companion object {
         private fun u(b: Byte): Float = (b.toInt() and 0xFF) / 255f
     }
@@ -142,8 +133,39 @@ internal object TrackMapLive {
     private val _state = MutableStateFlow<LiveTrackMap?>(null)
     val state: StateFlow<LiveTrackMap?> = _state
 
+    // The bar line moved by hand for the track loaded as shiftLoadId; kept across the maps published while it is read.
+    private var shiftLoadId = Long.MIN_VALUE
+    private var shift = 0
+
+    /** Keeps a map whose bar line was moved by hand (the desktop player sets it for the track it plays). */
+    var keeper: ((loadId: Long, map: TrackMap) -> Unit)? = null
+
     fun publish(live: LiveTrackMap) {
-        _state.value = live
+        synchronized(this) {
+            val kept = live.map?.beat?.barShift ?: 0
+            if (live.loadId != shiftLoadId) {
+                shiftLoadId = live.loadId
+                shift = kept
+            } else if (shift == 0 && kept != 0) {
+                shift = kept
+            }
+            _state.value = live.copy(map = live.map?.let { m -> m.beat?.let { m.withBeat(it.withShift(shift)) } ?: m })
+        }
+    }
+
+    /** Moves the Beat Grid's bar line on by [beats] for the track loaded as [loadId], and keeps it once the map is whole. */
+    fun shiftBar(loadId: Long, beats: Int) {
+        val moved: TrackMap
+        synchronized(this) {
+            val live = _state.value?.takeIf { it.loadId == loadId } ?: return
+            val map = live.map ?: return
+            val beat = map.beat ?: return
+            shiftLoadId = loadId
+            shift = (shift + beats).mod(GRID_BEATS)
+            moved = map.withBeat(beat.withShift(shift))
+            _state.value = live.copy(map = moved)
+        }
+        if (moved.complete) keeper?.invoke(loadId, moved)
     }
 }
 
@@ -194,53 +216,60 @@ internal fun vuFor(level: Float, scale: MapScale): Double =
 
 // ---- storage format ----
 
-// "NVM5": maps from before the repeat-checked tempo and bar-line downbeat (Nov 7, 2026) could hold a tempo a quarter or a third too fast
-// (84 read as 105) and a bar position that was wrong on about half the songs, so they are redone.
-// "NVM4": maps kept before the all-onset beat fit (Nov 3, 2026, late) stored "no beat" for busy mixes such as Billie Jean and
-// would show it for ever, so they are redone. "NVM3": maps from before the comb tempo (Nov 3, 2026) could hold a tempo two-thirds of the real one (off-beat hats), and
-// those from before the drum split found bass notes as kicks; older maps are read as missing and redone.
-private const val MAGIC = 0x4E564D35 // "NVM5"
+// "NVM6": the beat grid is the song's own beats from the Beat This! network, with each beat's place in its bar and the bar
+// line moved by hand, instead of one tempo and one downbeat (Nov 7, 2026): maps from before put the bar line on the wrong beat
+// of songs such as Billie Jean (kick on 1 and 3 looks the same from either), and drifted on songs played by people, so they are redone.
+// "NVM5": maps from before the repeat-checked tempo and bar-line downbeat (Nov 7, 2026) could hold a tempo a quarter or a third too fast.
+// "NVM4" and older: earlier tempo finders; read as missing and redone.
+private const val MAGIC = 0x4E564D36 // "NVM6"
+private const val HEADER = 4 + 4 + 1 + 4 + 1
 
 /** The map as bytes for the disk cache. */
 internal fun encodeTrackMap(map: TrackMap): ByteArray {
     val n = map.frames
-    val out = ByteArray(4 + 4 + 1 + 1 + 8 + 8 + n * (MAP_BANDS + 4))
+    val beats = map.beat?.beatsMs?.size ?: 0
+    val out = ByteArray(HEADER + n * (MAP_BANDS + 4) + beats * 9)
     var at = 0
     fun int(v: Int) { for (s in 24 downTo 0 step 8) out[at++] = (v ushr s).toByte() }
     fun long(v: Long) { for (s in 56 downTo 0 step 8) out[at++] = (v ushr s).toByte() }
     int(MAGIC)
     int(n)
     out[at++] = if (map.complete) 1 else 0
-    out[at++] = if (map.beat != null) 1 else 0
-    long((map.beat?.periodMs ?: 0.0).toRawBits())
-    long((map.beat?.downbeatMs ?: 0.0).toRawBits())
+    int(beats)
+    out[at++] = (map.beat?.barShift ?: 0).toByte()
     map.bands.copyInto(out, at, 0, n * MAP_BANDS); at += n * MAP_BANDS
     map.level.copyInto(out, at, 0, n); at += n
     map.left.copyInto(out, at, 0, n); at += n
     map.right.copyInto(out, at, 0, n); at += n
-    map.onsets.copyInto(out, at, 0, n)
+    map.onsets.copyInto(out, at, 0, n); at += n
+    map.beat?.let { grid ->
+        for (t in grid.beatsMs) long(t.toRawBits())
+        grid.barPos.copyInto(out, at); at += beats
+    }
     return out
 }
 
 /** The map from [bytes], or null when they are not a map this version wrote. */
 internal fun decodeTrackMap(bytes: ByteArray): TrackMap? {
-    if (bytes.size < 26) return null
+    if (bytes.size < HEADER) return null
     var at = 0
     fun int(): Int { var v = 0; repeat(4) { v = (v shl 8) or (bytes[at++].toInt() and 0xFF) }; return v }
     fun long(): Long { var v = 0L; repeat(8) { v = (v shl 8) or (bytes[at++].toLong() and 0xFF) }; return v }
     if (int() != MAGIC) return null
     val n = int()
-    if (n < 0 || bytes.size != 26 + n * (MAP_BANDS + 4)) return null
     val complete = bytes[at++] == 1.toByte()
-    val hasBeat = bytes[at++] == 1.toByte()
-    val period = Double.fromBits(long())
-    val downbeat = Double.fromBits(long())
+    val beats = int()
+    val shift = bytes[at++].toInt()
+    if (n < 0 || beats < 0 || bytes.size.toLong() != HEADER + n.toLong() * (MAP_BANDS + 4) + beats.toLong() * 9) return null
     fun take(size: Int): ByteArray = bytes.copyOfRange(at, at + size).also { at += size }
     val bands = take(n * MAP_BANDS)
     val level = take(n)
     val left = take(n)
     val right = take(n)
     val onsets = take(n)
-    val beat = if (hasBeat && period > 0.0) BeatGrid(period, downbeat) else null
+    val beat = if (beats >= 2) {
+        val times = DoubleArray(beats) { Double.fromBits(long()) }
+        BeatGrid(times, take(beats), shift)
+    } else null
     return TrackMap(n, bands, level, left, right, onsets, beat, complete)
 }

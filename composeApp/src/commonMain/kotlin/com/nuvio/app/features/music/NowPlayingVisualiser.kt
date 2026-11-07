@@ -413,7 +413,8 @@ private fun DrawScope.drawBeatGrid(m: TextMeasurer, map: TrackMap?, nowMs: Long,
     val stepMs: Double
     val current: Long
     if (beat != null) {
-        stepMs = beat.stepMs
+        // The song's own beat here (it can drift a little over a song played by people).
+        stepMs = beat.stepMsAt(now)
         current = beat.stepAt(now)
     } else {
         // No steady beat: the columns are the last two seconds, newest on the right.
@@ -436,7 +437,8 @@ private fun DrawScope.drawBeatGrid(m: TextMeasurer, map: TrackMap?, nowMs: Long,
                 val inThisBar = s <= cursor
                 val step = (if (inThisBar) bar else bar - 1) * 16 + s
                 val start = beat.stepStartMs(step) - stepMs / 2
-                lit = map.hitsBetween(kind, start, start + stepMs)
+                // A bar of three has no fourth beat: its steps stay dark.
+                lit = beat.hasStep(step) && map.hitsBetween(kind, start, start + stepMs)
                 alpha = when {
                     !lit -> 0.06f
                     s == cursor -> {

@@ -403,7 +403,7 @@ class TrackMapTest {
 
     @Test
     fun beatGridCountsSixteenths() {
-        val grid = BeatGrid(periodMs = 500.0, downbeatMs = 1_000.0)
+        val grid = assertNotNull(BeatGrid.uniform(periodMs = 500.0, downbeatMs = 1_000.0, fromMs = 0.0, toMs = 10_000.0))
         assertEquals(0L, grid.stepAt(1_000.0))
         assertEquals(3L, grid.stepAt(1_499.0))
         assertEquals(16L, grid.stepAt(3_000.0))

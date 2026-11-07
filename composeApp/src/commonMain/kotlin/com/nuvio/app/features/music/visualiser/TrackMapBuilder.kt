@@ -27,7 +27,8 @@ import kotlin.math.sqrt
  * over 17 frames keeps it; a drum hit is a short burst across many frequencies, so the median over 13 neighbouring
  * bands keeps it. Kick, snare and hats are picked from the struck part's spectral flux, melody from the sustained part's,
  * each with an adaptive threshold. The beat grid is the period whose comb over the whole track lands on the most kick and
- * snare, and the downbeat the beat with the kick on 1 and 3 and the backbeat on 2 and 4 (see [estimateBeat]).
+ * snare, and the downbeat the beat with the kick on 1 and 3 and the backbeat on 2 and 4 (see [estimateBeat]). On desktop that
+ * estimate is only the fallback: the Beat This! network's grid replaces it whenever the network can run (BeatTracker.desktop.kt).
  */
 
 /**
@@ -470,7 +471,12 @@ internal fun estimateBeat(
     val (period, phase) = settleGrid(env, frames, coarse)
     val bar = pickDownbeat(kick, snare, mk, ms, bands, frames, period, phase)
     val downbeatFrame = phase + bar * period
-    return BeatGrid(periodMs = period * MAP_FRAME_MS, downbeatMs = downbeatFrame * MAP_FRAME_MS + MAP_FRAME_MS / 2.0)
+    return BeatGrid.uniform(
+        periodMs = period * MAP_FRAME_MS,
+        downbeatMs = downbeatFrame * MAP_FRAME_MS + MAP_FRAME_MS / 2.0,
+        fromMs = 0.0,
+        toMs = frames.toDouble() * MAP_FRAME_MS,
+    )
 }
 
 /** The beat period in frames (to within a few per cent), or null when no period repeats well enough to be a beat. */

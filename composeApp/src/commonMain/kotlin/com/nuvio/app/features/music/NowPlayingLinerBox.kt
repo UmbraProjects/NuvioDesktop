@@ -44,6 +44,7 @@ import com.nuvio.app.features.music.library.musicGlass
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import com.nuvio.app.features.music.visualiser.LiveTrackMap
 import com.nuvio.app.features.music.visualiser.StageBoxView
+import com.nuvio.app.features.music.visualiser.TrackMapLive
 import com.nuvio.app.features.music.visualiser.VisualiserStyle
 import com.nuvio.app.features.music.visualiser.clockLabel
 import com.nuvio.app.features.music.visualiser.nextChorusStartMs
@@ -195,9 +196,17 @@ private fun VisualiserDeck(
             }
             VisualiserStyle.Halo -> "Reacting to the bass"
             VisualiserStyle.TwinVu -> "Left and right level"
-            VisualiserStyle.BeatGrid -> map?.beat?.let { "Kick, snare, hats and melody" }
+            // fork:visualiser - OK (or a click on the grid) moves beat one along, for a song the network reads a beat out.
+            VisualiserStyle.BeatGrid -> map?.beat?.let { if (it.barShift == 0) "Kick, snare, hats and melody · OK moves beat one" else "Beat one moved by hand · OK moves it again" }
                 ?: if (map?.complete == true) "No steady beat" else if (map != null && map.frames > 0) "Listening for the beat" else "Finding the beat"
         }
+    }
+
+    fun moveBeatOne(): Boolean {
+        if (style != VisualiserStyle.BeatGrid || map?.beat == null) return false
+        val id = live?.loadId ?: return false
+        TrackMapLive.shiftBar(id, 1)
+        return true
     }
 
     fun turn(direction: Int): Boolean {
@@ -218,6 +227,7 @@ private fun VisualiserDeck(
                     when (event.key) {
                         Key.DirectionLeft -> turn(-1)
                         Key.DirectionRight -> turn(1)
+                        Key.Enter, Key.NumPadEnter, Key.DirectionCenter -> moveBeatOne()
                         else -> false
                     }
                 }
@@ -241,7 +251,7 @@ private fun VisualiserDeck(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp),
             )
-            Box(Modifier.weight(1f).fillMaxWidth().padding(top = 14.dp)) {
+            Box(Modifier.weight(1f).fillMaxWidth().padding(top = 14.dp).onTap { moveBeatOne() }) {
                 if (reduced) {
                     VisualiserView(style, live, position, durationMs, sections, coverUrl, accent, reduced, Modifier.fillMaxSize())
                 } else {
