@@ -1,0 +1,127 @@
+package com.nuvio.app.features.music.library
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class ShelfBrowserModelTest {
+    private val day = 24L * 60 * 60 * 1000
+    private val now = 1_000L * day
+
+    private fun r(key: String, year: String = "2020", yt: String? = "MPREb_$key", tracks: Int? = 10, seconds: Int? = null) =
+        LibraryRelease(key = key, title = key, kind = ReleaseKind.Album, year = year, trackCount = tracks, durationSeconds = seconds, ytBrowseId = yt)
+
+    private fun artist(
+        name: String,
+        vararg releases: LibraryRelease,
+        sortName: String? = null,
+        favourite: Boolean = false,
+        addedDaysAgo: Long? = null,
+        pinned: List<String> = emptyList(),
+        genres: List<String> = emptyList(),
+    ) = LibraryArtist(
+        id = name.lowercase(),
+        name = name,
+        sortName = sortName,
+        favourite = favourite,
+        addedAtEpochMs = addedDaysAgo?.let { now - it * day } ?: 0L,
+        releases = releases.toList(),
+        pinnedTopKeys = pinned,
+        genres = genres,
+    )
+
+    @Test
+    fun artistsRunAToZIgnoringALeadingThe() {
+        val list = shelfArtists(listOf(artist("The Cure"), artist("Blur"), artist("ABBA")), ShelfArtistFilter.All, "", now)
+        assertEquals(listOf("ABBA", "Blur", "The Cure"), list.map { it.name })
+        assertEquals('C', artist("The Cure").shelfLetter())
+    }
+
+    @Test
+    fun aSortNameWinsAndOtherScriptsFileUnderHash() {
+        assertEquals('J', artist("Michael Jackson", sortName = "Jackson, Michael").shelfLetter())
+        assertEquals('#', artist("2Pac").shelfLetter())
+        assertEquals('#', artist("坂本龍一").shelfLetter())
+    }
+
+    @Test
+    fun starredListsOnlyStarredArtists() {
+        val list = shelfArtists(listOf(artist("A", favourite = true), artist("B")), ShelfArtistFilter.Starred, "", now)
+        assertEquals(listOf("A"), list.map { it.name })
+    }
+
+    @Test
+    fun addedRecentlyIsNewestFirstAndAlwaysShowsAFew() {
+        val artists = (1..20).map { artist("Artist$it", addedDaysAgo = it * 30L) }
+        val list = shelfArtists(artists, ShelfArtistFilter.AddedRecently, "", now)
+        // Only two were added in the last 60 days, so the newest twelve show, newest first.
+        assertEquals(12, list.size)
+        assertEquals("Artist1", list.first().name)
+        assertTrue(list.zipWithNext().all { (a, b) -> a.addedAtEpochMs >= b.addedAtEpochMs })
+    }
+
+    @Test
+    fun theHeaderFilterNarrowsByNameOrGenre() {
+        val artists = listOf(artist("Massive Attack", genres = listOf("trip hop")), artist("Metallica", genres = listOf("metal")))
+        assertEquals(listOf("Massive Attack"), shelfArtists(artists, ShelfArtistFilter.All, "trip", now).map { it.name })
+    }
+
+    @Test
+    fun aLetterJumpsToItsFirstArtistOrTheNextLetterThatHasOne() {
+        val list = shelfArtists(listOf(artist("Abba"), artist("Blur"), artist("Bowie"), artist("Dido")), ShelfArtistFilter.All, "", now)
+        val index = shelfLetterIndex(list)
+        assertEquals(1, shelfJumpTo(index, 'B'))
+        assertEquals(3, shelfJumpTo(index, 'C'))
+        assertNull(shelfJumpTo(index, 'E'))
+    }
+
+    @Test
+    fun theWallSortsAndNarrowsByDecade() {
+        val artists = listOf(
+            artist("Prince", r("Purple Rain", "1984"), r("Sign", "1987"), addedDaysAgo = 5),
+            artist("Abba", r("Arrival", "1976"), addedDaysAgo = 50),
+            artist("Unplayable", r("Gone", "1985", yt = null)),
+        )
+        val all = shelfAllAlbums(artists, "")
+        assertEquals(3, all.size)
+        val choices = shelfShowChoices(all)
+        assertEquals(listOf("All", "Starred", "1970s", "1980s"), choices.map { it.label })
+        val eighties = shelfWall(all, ShelfAlbumSort.Year, ShelfAlbumShow.Decade(1980))
+        assertEquals(listOf("Sign", "Purple Rain"), eighties.map { it.release.title })
+        assertEquals("The 1980s", shelfWallTitle(ShelfAlbumShow.Decade(1980)))
+        assertEquals(listOf("Arrival", "Purple Rain", "Sign"), shelfWall(all, ShelfAlbumSort.Album, ShelfAlbumShow.All).map { it.release.title })
+        assertEquals("Prince", shelfWall(all, ShelfAlbumSort.Added, ShelfAlbumShow.All).first().artist.name)
+    }
+
+    @Test
+    fun starredOnTheWallMeansStarredAlbums() {
+        val a = artist("Prince", r("Purple Rain", "1984"), r("Sign", "1987"), pinned = listOf("Sign"))
+        val starred = shelfWall(shelfAllAlbums(listOf(a), ""), ShelfAlbumSort.Album, ShelfAlbumShow.Starred)
+        assertEquals(listOf("Sign"), starred.map { it.release.title })
+    }
+
+    @Test
+    fun theWallFilterMatchesAlbumTitlesToo() {
+        val artists = listOf(artist("Prince", r("Purple Rain", "1984"), r("Sign", "1987")))
+        assertEquals(listOf("Purple Rain"), shelfAllAlbums(artists, "purple").map { it.release.title })
+        assertEquals(2, shelfAllAlbums(artists, "prince").size)
+    }
+
+    @Test
+    fun pagesTurnRatherThanScroll() {
+        val items = (1..20).toList()
+        assertEquals(3, shelfPageCount(items.size, SHELF_ARTIST_PAGE))
+        assertEquals(1, shelfPageCount(0, SHELF_ARTIST_PAGE))
+        assertEquals((17..20).toList(), items.shelfPage(2, SHELF_ARTIST_PAGE))
+        assertTrue(items.shelfPage(3, SHELF_ARTIST_PAGE).isEmpty())
+    }
+
+    @Test
+    fun theLinesSayOnlyWhatIsKnown() {
+        assertEquals("2020 · 9 songs · 42 min", shelfAlbumLine(r("x", tracks = 9, seconds = 42 * 60 + 10)))
+        assertEquals("Prince · 2020", shelfAlbumLine(r("x", tracks = null), artistName = "Prince"))
+        assertEquals("11 releases · 9 play here · 4 lossless on your addon", shelfArtistLine(11, 9, 4))
+        assertEquals("1 release", shelfArtistLine(1, 1, 0))
+    }
+}
