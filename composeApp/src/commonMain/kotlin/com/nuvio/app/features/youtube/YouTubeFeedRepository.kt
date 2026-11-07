@@ -571,7 +571,12 @@ object YouTubeFeedRepository {
             _channelPlaylists.update { previous ->
                 when (result) {
                     is YouTubeBrowseResult.Ok -> {
-                        val page = parseYouTubePlaylistPage(result.body)
+                        // A channel without a Playlists tab answers with its Home tab, whose shelves are not its playlists.
+                        val page = if (continuation == null && !isYouTubeChannelTabAnswer(result.body, YouTubeChannelTab.Playlists)) {
+                            YouTubePlaylistPage(emptyList(), null)
+                        } else {
+                            parseYouTubePlaylistPage(result.body)
+                        }
                         log.i { "Channel playlists: ${page.playlists.size}, more=${page.continuation != null}" }
                         val seen = if (continuation == null) emptySet() else previous.playlists.mapTo(HashSet()) { it.playlistId }
                         YouTubeChannelPlaylistsState(
@@ -1080,7 +1085,15 @@ object YouTubeFeedRepository {
                 val previous = feeds.getValue(kind)
                 val next = when (result) {
                     is YouTubeBrowseResult.Ok -> {
-                        val page = parseYouTubeFeed(result.body)
+                        // A channel without this tab (no live streams) answers with its Home tab: nothing to list.
+                        val page = if (kind == YouTubeFeedKind.Channel && continuation == null &&
+                            !isYouTubeChannelTabAnswer(result.body, channelTab)
+                        ) {
+                            log.i { "Channel: no ${channelTab.label} tab, YouTube answered another" }
+                            YouTubeFeedPage(emptyList(), null)
+                        } else {
+                            parseYouTubeFeed(result.body)
+                        }
                         // Each History page goes into this PC's copy of the history, under its days.
                         if (kind == YouTubeFeedKind.History) YouTubeWatchHistory.noteHistoryPage(page)
                         // The label only: a search query stays out of the log.
